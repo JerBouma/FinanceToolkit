@@ -4,6 +4,9 @@ from FinancialModelingPrep and uses Yahoo Finance to obtain stock data for any f
 the user to do most of the essential fundamental analysis. It also gives the possibility to quickly compare
 multiple companies or do a full fledged sector analysis.
 
+See a visualisation of the data on my
+[Fundamentals Quantifier website](https://github.com/JerBouma/FundamentalsQuantifier).
+
 ![](images/FundamentalAnalysis.png)
 
 ## Functions

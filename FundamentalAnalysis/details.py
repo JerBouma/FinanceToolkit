@@ -7,29 +7,25 @@ def available_companies():
     """
     Description
     ----
-    Gives all company names and tickers that are available for retrieval
-    of financial statements, ratios and extended stock data. General stock
-    data can be retrieved for any company or financial instrument.
+    Gives all tickers, company names and stock exchange that are available
+    for retrieval of financial statements, ratios and extended stock data.
+    General stock data can be retrieved for any company or financial instrument.
 
     Output
     ----
     data (dataframe)
-        Data with the ticker as the index and the company name in the column.
+        Data with the ticker as the index and the company name, price and
+        stock exchange in the column.
     """
     response = urlopen("https://financialmodelingprep.com/api/v3/company/stock/list")
     data = response.read().decode("utf-8")
     data_json = json.loads(data)['symbolsList']
 
-    ticker_list = {}
-    for ticker in data_json:
-        try:
-            ticker_list[ticker["symbol"]] = ticker['name']
-        except KeyError:
-            ticker_list[ticker["symbol"]] = ticker['symbol']
-    data_formatted = pd.DataFrame(ticker_list,
-                                  index=["name"]).T.sort_index()
+    df = pd.DataFrame(data_json)
+    df.loc[df["name"].isna(), "name"] = df["symbol"]
+    df = df.set_index("symbol")
 
-    return data_formatted
+    return df
 
 
 def profile(ticker):

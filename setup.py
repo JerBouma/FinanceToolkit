@@ -6,9 +6,10 @@ with open("README.md", "r") as fh:
 setuptools.setup(
     name="FundamentalAnalysis",
     packages=["FundamentalAnalysis"],
-    version="0.2.0",
+    version="0.2.1",
     license="MIT",
-    description="Collects a large set of fundamental and stock data.",
+    description="Fully-fledged Fundamental Analysis package capable of collecting 10 years of Company Profiles,\
+    Financial Statements, Ratios and Stock Data of 13.000+ companies.",
     author="JerBouma",
     author_email="jer.bouma@gmail.com",
     url="https://github.com/JerBouma/FundamentalAnalysis",

@@ -61,7 +61,7 @@ def stock_data(ticker, period="max", interval="1d", start=None, end=None):
     dates = []
     for ts in timestamp:
         if interval in ['1m', '2m', '5m', '15m',
-                        '30m', '60m', '1h']:
+                        '30m', '60m', '90m', '1h']:
             dates.append(datetime.fromtimestamp(int(ts)))
         else:
             dates.append(datetime.fromtimestamp(int(ts)).date())

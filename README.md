@@ -2,7 +2,7 @@
 This package collects fundamentals and detailed company stock data from a large group of companies (13.000+)
 from FinancialModelingPrep and uses Yahoo Finance to obtain stock data for any financial instrument. It allows
 the user to do most of the essential fundamental analysis. It also gives the possibility to quickly compare
-multiple companies or do a full fledged sector analysis.
+multiple companies or do a sector analysis.
 
 See a visualisation of the data on my
 [Fundamentals Quantifier website](https://github.com/JerBouma/FundamentalsQuantifier).
@@ -13,7 +13,8 @@ See a visualisation of the data on my
 Here you can find a list of the available functions within this package separated per module. 
 - **details**
     - `available companies` - shows the complete list of companies that are available for fundamental data
-    gathering. This is an extensive list with well over 13.000 companies.
+    gathering including current price and the exchange the company is listed on. This is an extensive list with
+    well over 13.000 companies.
     - `profile` - gives information about, among other things, the industry, sector exchange
     and company description.
     - `quote` - provides actual information about the company which is, among other things, the day high,
@@ -76,7 +77,7 @@ entreprise_value = fa.enterprise(ticker)
 ratings = fa.rating(ticker)
 
 # Obtain DCFs over time
-dcf_annual = fa.discounted_cash_flow(ticker, period="annual")
+dcf_annually = fa.discounted_cash_flow(ticker, period="annual")
 dcf_quarterly = fa.discounted_cash_flow(ticker, period="quarter")
 
 # Collect the Balance Sheet statements
@@ -110,7 +111,12 @@ stock_data_detailed = fa.stock_data_detailed(ticker, begin="2000-01-01", end="20
 
 ```
 
-With this data you can do a full fledged analysis of the selected company, in this case Apple. However, by writing
-a for-loop one can quickly loop over a large selection of companies and collect a bulk of data. Therefore, by 
-entering a specific sector (for example, all tickers of the Semi-Conducter industry) you can quickly quantify
-the sector and look for key performers. 
+With this data you can do a complete analysis of the selected company, in this case Apple. However, by looping
+over a large selection of companies you are able to collect a bulk of data. Therefore, by  entering a specific sector
+(for example, all tickers of the Semi-Conducter industry) you can quickly quantify the sector and look for
+key performers.
+
+To find companies belonging to a specific sector or industry, please have a look at the JSON files
+[here](https://github.com/JerBouma/FundamentalsQuantifier/tree/master/data). Alternatively, you can have a 
+look at the [Fundamentals Quantifier](https://fundamentals-quantifier.herokuapp.com/), a website that I have written
+to visually compare any selection of companies.

@@ -7,15 +7,15 @@ def available_companies():
     """
     Description
     ----
-    Gives all tickers, company names and stock exchange that are available
-    for retrieval of financial statements, ratios and extended stock data.
-    General stock data can be retrieved for any company or financial instrument.
+    Gives all tickers, company names, current price and stock exchange that are available
+    for retrieval for financial statements, ratios and extended stock data. General stock
+    data can be retrieved for any company or financial instrument.
 
     Output
     ----
     data (dataframe)
         Data with the ticker as the index and the company name, price and
-        stock exchange in the column.
+        stock exchange in the columns.
     """
     response = urlopen("https://financialmodelingprep.com/api/v3/company/stock/list")
     data = response.read().decode("utf-8")

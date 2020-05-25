@@ -25,6 +25,8 @@ Here you can find a list of the available functions within this package separate
     neutral or a (strong) sell.
     - `discounted_cash_flow` - calculates the discounted cash flow of a company over time including the
     DCF of today.
+    - `earnings_calendar` - displays information about earnings date of a large selection of symbols this year
+    including the expected PE ratio.
 - **financial_statement**
     - `income_statement` - collects a complete income statement over time. This can be either quarterly
     or annually. It is limited to 10 years (or 40 quarters).
@@ -54,60 +56,73 @@ Here you can find a list of the available functions within this package separate
     * Alternatively, download this repository.
 2. (within Python) `import FundamentalAnalysis as fa`
 
+To be able to use this package you need an API Key from FinancialModellingPrep. Follow the following instructions to
+obtain a _free_ API Key. Note that these keys are limited to 250 requests per account. There is no time limit.
+1. Go to [FinancialModellingPrep's API](https://financialmodelingprep.com/developer/docs/)
+2. Under "Get your Free API Key Today!" click on "Get my API KEY here"
+3. Sign-up to the website and select the Free Plan
+4. Obtain the API Key as found [here](https://financialmodelingprep.com/developer/docs/)
+4. Start using this package.
+
+When you run out of requests (250), you have to upgrade to a Premium version or create a new account. Note that I am
+in no way affiliated with FinancialModellingPrep and will never be.
+
 ## Example
 
 ```
 import FundamentalAnalysis as fa
 
 ticker = "AAPL"
+api_key = "YOUR API KEY HERE"
 
 # Show the available companies
-companies = fa.available_companies()
+companies = fa.available_companies(api_key)
 
 # Collect general company information
-profile = fa.profile(ticker)
+profile = fa.profile(ticker, api_key)
 
 # Collect recent company quotes
-quotes = fa.quote(ticker)
+quotes = fa.quote(ticker, api_key)
 
 # Collect market cap and enterprise value
-entreprise_value = fa.enterprise(ticker)
+entreprise_value = fa.enterprise(ticker, api_key)
 
 # Show recommendations of Analysts
-ratings = fa.rating(ticker)
+ratings = fa.rating(ticker, api_key)
 
 # Obtain DCFs over time
-dcf_annually = fa.discounted_cash_flow(ticker, period="annual")
-dcf_quarterly = fa.discounted_cash_flow(ticker, period="quarter")
+dcf_annually = fa.discounted_cash_flow(ticker, api_key, period="annual")
+dcf_quarterly = fa.discounted_cash_flow(ticker, api_key, period="quarter")
 
 # Collect the Balance Sheet statements
-balance_sheet_annually = fa.balance_sheet_statement(ticker, period="annual")
-balance_sheet_quarterly = fa.balance_sheet_statement(ticker, period="quarter")
+balance_sheet_annually = fa.balance_sheet_statement(ticker, api_key, period="annual")
+balance_sheet_quarterly = fa.balance_sheet_statement(ticker, api_key, period="quarter")
 
 # Collect the Income Statements
-income_statement_annually = fa.income_statement(ticker, period="annual")
-income_statement_quarterly = fa.income_statement(ticker, period="quarter")
+income_statement_annually = fa.income_statement(ticker, api_key, period="annual")
+income_statement_quarterly = fa.income_statement(ticker, api_key, period="quarter")
 
 # Collect the Cash Flow Statements
-cash_flow_statement_annually = fa.cash_flow_statement(ticker, period="annual")
-cash_flow_statement_quarterly = fa.cash_flow_statement(ticker, period="quarter")
+cash_flow_statement_annually = fa.cash_flow_statement(ticker, api_key, period="annual")
+cash_flow_statement_quarterly = fa.cash_flow_statement(ticker, api_key, period="quarter")
 
 # Show Key Metrics
-key_metrics_annually = fa.key_metrics(ticker, period="annual")
-key_metrics_quarterly = fa.key_metrics(ticker, period="quarter")
+key_metrics_annually = fa.key_metrics(ticker, api_key, period="annual")
+key_metrics_quarterly = fa.key_metrics(ticker, api_key, period="quarter")
 
 # Show a large set of in-depth ratios
-financial_ratios = fa.financial_ratios(ticker)
+financial_ratios_annually = fa.financial_ratios(ticker, api_key, period="annual")
+financial_ratios_quarterly = fa.financial_ratios(ticker, api_key, period="quarter")
 
 # Show the growth of the company
-growth_annually = fa.financial_statement_growth(ticker, period="annual")
-growth_quarterly = fa.financial_statement_growth(ticker, period="quarter")
+growth_annually = fa.financial_statement_growth(ticker, api_key, period="annual")
+growth_quarterly = fa.financial_statement_growth(ticker, api_key, period="quarter")
 
 # Download general stock data
 stock_data = fa.stock_data(ticker, period="ytd", interval="1d")
 
 # Download detailed stock data
-stock_data_detailed = fa.stock_data_detailed(ticker, begin="2000-01-01", end="2020-01-01")
+stock_data_detailed = fa.stock_data_detailed(ticker, api_key, begin="2000-01-01", end="2020-01-01")
 
 ```
 

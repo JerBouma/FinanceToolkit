@@ -210,15 +210,13 @@ def earnings_calendar(api_key):
     """
     Description
     ----
-    Gives information about the discounted cash flow (DCF) of a company which includes
-    i.a. the (current) stock price and DCF and over time.
+    Gives information about the earnings date over the upcoming months including
+    the expected PE.
 
     Input
     ----
-    ticker (string)
-        The company ticker (for example: "UBER")
-    period (string)
-        Data period, this can be "annual" or "quarter".
+    api_key (string)
+        The API Key obtained from https://financialmodelingprep.com/developer/docs/
 
     Output
     ----

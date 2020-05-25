@@ -24,10 +24,10 @@ def key_metrics(ticker, api_key, period="annual"):
     data (dataframe)
         Data with variables in rows and the period in columns.
     """
-    response = urlopen("https://financialmodelingprep.com/api/v3/company-key-metrics/" +
+    response = urlopen("https://financialmodelingprep.com/api/v3/key-metrics/" +
                        ticker + "?period=" + period + "&apikey=" + api_key)
     data = response.read().decode("utf-8")
-    data_json = json.loads(data)['metrics']
+    data_json = json.loads(data)
 
     data_formatted = {}
     for data in data_json:
@@ -36,6 +36,8 @@ def key_metrics(ticker, api_key, period="annual"):
         else:
             date = data['date'][:4]
         del data['date']
+        del data['symbol']
+
         data_formatted[date] = data
 
     return pd.DataFrame(data_formatted)
@@ -103,10 +105,10 @@ def financial_statement_growth(ticker, api_key, period="annual"):
     data (dataframe)
         Data with variables in rows and the period in columns.
     """
-    response = urlopen("https://financialmodelingprep.com/api/v3/financial-statement-growth/" +
+    response = urlopen("https://financialmodelingprep.com/api/v3/financial-growth/" +
                        ticker + "?period=" + period + "&apikey=" + api_key)
     data = response.read().decode("utf-8")
-    data_json = json.loads(data)['growth']
+    data_json = json.loads(data)
 
     data_formatted = {}
     for data in data_json:
@@ -115,6 +117,8 @@ def financial_statement_growth(ticker, api_key, period="annual"):
         else:
             date = data['date'][:4]
         del data['date']
+        del data['symbol']
+
         data_formatted[date] = data
 
     return pd.DataFrame(data_formatted)

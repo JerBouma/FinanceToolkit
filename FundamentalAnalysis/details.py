@@ -22,9 +22,9 @@ def available_companies(api_key):
         Data with the ticker as the index and the company name, price and
         stock exchange in the columns.
     """
-    response = urlopen("https://financialmodelingprep.com/api/v3/company/stock/list?apikey=" + api_key)
+    response = urlopen("https://financialmodelingprep.com/api/v3/stock/list?apikey=" + api_key)
     data = response.read().decode("utf-8")
-    data_json = json.loads(data)['symbolsList']
+    data_json = json.loads(data)
 
     df = pd.DataFrame(data_json)
     df.loc[df["name"].isna(), "name"] = df["symbol"]
@@ -52,9 +52,9 @@ def profile(ticker, api_key):
     data (dataframe)
         Data with variables in rows and the period in columns.
     """
-    response = urlopen("https://financialmodelingprep.com/api/v3/company/profile/" + ticker + "?apikey=" + api_key)
+    response = urlopen("https://financialmodelingprep.com/api/v3/profile/" + ticker + "?apikey=" + api_key)
     data = response.read().decode("utf-8")
-    data_formatted = pd.DataFrame(json.loads(data)['profile'], index=['profile']).T
+    data_formatted = pd.DataFrame(json.loads(data)).T
 
     return data_formatted
 
@@ -80,7 +80,7 @@ def quote(ticker, api_key):
     """
     response = urlopen("https://financialmodelingprep.com/api/v3/quote/" + ticker + "?apikey=" + api_key)
     data = response.read().decode("utf-8")
-    data_formatted = pd.DataFrame(json.loads(data)[0], index=["quote"]).T
+    data_formatted = pd.DataFrame(json.loads(data)[0]).T
 
     return data_formatted
 
@@ -106,10 +106,10 @@ def enterprise(ticker, api_key, period="annual"):
     data (dataframe)
         Data with variables in rows and the period in columns.
     """
-    response = urlopen("https://financialmodelingprep.com/api/v3/enterprise-value/" +
+    response = urlopen("https://financialmodelingprep.com/api/v3/enterprise-values/" +
                        ticker + "?period=" + period + "&apikey=" + api_key)
     data = response.read().decode("utf-8")
-    data_json = json.loads(data)['enterpriseValues']
+    data_json = json.loads(data)
 
     data_formatted = {}
     for data in data_json:
@@ -172,10 +172,10 @@ def discounted_cash_flow(ticker, api_key, period="annual"):
     data (dataframe)
         Data with variables in rows and the period in columns.
     """
-    response = urlopen("https://financialmodelingprep.com/api/v3/company/discounted-cash-flow/" +
+    response = urlopen("https://financialmodelingprep.com/api/v3/discounted-cash-flow/" +
                        ticker + "?period=" + period + "&apikey=" + api_key)
     data = response.read().decode("utf-8")
-    data_json_current = json.loads(data)
+    data_json_current = json.loads(data)[0]
 
     try:
         del data_json_current['symbol']
@@ -183,10 +183,10 @@ def discounted_cash_flow(ticker, api_key, period="annual"):
     except KeyError:
         pass
 
-    response = urlopen("https://financialmodelingprep.com/api/v3/company/historical-discounted-cash-flow/" +
+    response = urlopen("https://financialmodelingprep.com/api/v3/historical-discounted-cash-flow/" +
                        ticker + "?period=" + period + "&apikey=" + api_key)
     data = response.read().decode("utf-8")
-    data_json = json.loads(data)['historicalDCF']
+    data_json = json.loads(data)[0]['historicalDCF']
 
     data_formatted = {}
 

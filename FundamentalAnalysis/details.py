@@ -3,7 +3,7 @@ import json
 import pandas as pd
 
 
-def available_companies():
+def available_companies(api_key):
     """
     Description
     ----
@@ -11,13 +11,18 @@ def available_companies():
     for retrieval for financial statements, ratios and extended stock data. General stock
     data can be retrieved for any company or financial instrument.
 
+    Input
+    ----
+    api_key (string)
+        The API Key obtained from https://financialmodelingprep.com/developer/docs/
+
     Output
     ----
     data (dataframe)
         Data with the ticker as the index and the company name, price and
         stock exchange in the columns.
     """
-    response = urlopen("https://financialmodelingprep.com/api/v3/company/stock/list")
+    response = urlopen("https://financialmodelingprep.com/api/v3/company/stock/list?apikey=" + api_key)
     data = response.read().decode("utf-8")
     data_json = json.loads(data)['symbolsList']
 
@@ -28,7 +33,7 @@ def available_companies():
     return df
 
 
-def profile(ticker):
+def profile(ticker, api_key):
     """
     Description
     ----
@@ -39,20 +44,22 @@ def profile(ticker):
     ----
     ticker (string)
         The company ticker (for example: "AAPL")
+    api_key (string)
+        The API Key obtained from https://financialmodelingprep.com/developer/docs/
 
     Output
     ----
     data (dataframe)
         Data with variables in rows and the period in columns.
     """
-    response = urlopen("https://financialmodelingprep.com/api/v3/company/profile/" + ticker)
+    response = urlopen("https://financialmodelingprep.com/api/v3/company/profile/" + ticker + "?apikey=" + api_key)
     data = response.read().decode("utf-8")
     data_formatted = pd.DataFrame(json.loads(data)['profile'], index=['profile']).T
 
     return data_formatted
 
 
-def quote(ticker):
+def quote(ticker, api_key):
     """
     Description
     ----
@@ -63,20 +70,22 @@ def quote(ticker):
     ----
     ticker (string)
         The company ticker (for example: "AMD")
+    api_key (string)
+        The API Key obtained from https://financialmodelingprep.com/developer/docs/
 
     Output
     ----
     data (dataframe)
         Data with variables in rows and the period in columns.
     """
-    response = urlopen("https://financialmodelingprep.com/api/v3/quote/" + ticker)
+    response = urlopen("https://financialmodelingprep.com/api/v3/quote/" + ticker + "?apikey=" + api_key)
     data = response.read().decode("utf-8")
     data_formatted = pd.DataFrame(json.loads(data)[0], index=["quote"]).T
 
     return data_formatted
 
 
-def enterprise(ticker, period="annual"):
+def enterprise(ticker, api_key, period="annual"):
     """
     Description
     ----
@@ -87,6 +96,8 @@ def enterprise(ticker, period="annual"):
     ----
     ticker (string)
         The company ticker (for example: "TSLA")
+    api_key (string)
+        The API Key obtained from https://financialmodelingprep.com/developer/docs/
     period (string)
         Data period, this can be "annual" or "quarter".
 
@@ -96,7 +107,7 @@ def enterprise(ticker, period="annual"):
         Data with variables in rows and the period in columns.
     """
     response = urlopen("https://financialmodelingprep.com/api/v3/enterprise-value/" +
-                       ticker + "?period=" + period)
+                       ticker + "?period=" + period + "&apikey=" + api_key)
     data = response.read().decode("utf-8")
     data_json = json.loads(data)['enterpriseValues']
 
@@ -112,7 +123,7 @@ def enterprise(ticker, period="annual"):
     return pd.DataFrame(data_formatted)
 
 
-def rating(ticker):
+def rating(ticker, api_key):
     """
      Description
      ----
@@ -122,7 +133,9 @@ def rating(ticker):
      Input
      ----
      ticker (string)
-         The company ticker (for example: "MSFT")
+        The company ticker (for example: "MSFT")
+     api_key (string)
+        The API Key obtained from https://financialmodelingprep.com/developer/docs/
 
      Output
      ----
@@ -130,7 +143,7 @@ def rating(ticker):
         Data with variables in rows and the period in columns..
      """
     response = urlopen("https://financialmodelingprep.com/api/v3/company/rating/" +
-                       ticker)
+                       ticker + "?apikey=" + api_key)
     data = response.read().decode("utf-8")
     data_json = json.loads(data)
     data_formatted = pd.DataFrame(data_json["ratingDetails"]).T
@@ -138,7 +151,7 @@ def rating(ticker):
     return data_formatted
 
 
-def discounted_cash_flow(ticker, period="annual"):
+def discounted_cash_flow(ticker, api_key, period="annual"):
     """
     Description
     ----
@@ -149,6 +162,8 @@ def discounted_cash_flow(ticker, period="annual"):
     ----
     ticker (string)
         The company ticker (for example: "UBER")
+    api_key (string)
+        The API Key obtained from https://financialmodelingprep.com/developer/docs/
     period (string)
         Data period, this can be "annual" or "quarter".
 
@@ -158,7 +173,7 @@ def discounted_cash_flow(ticker, period="annual"):
         Data with variables in rows and the period in columns.
     """
     response = urlopen("https://financialmodelingprep.com/api/v3/company/discounted-cash-flow/" +
-                       ticker + "?period=" + period)
+                       ticker + "?period=" + period + "&apikey=" + api_key)
     data = response.read().decode("utf-8")
     data_json_current = json.loads(data)
 
@@ -169,7 +184,7 @@ def discounted_cash_flow(ticker, period="annual"):
         pass
 
     response = urlopen("https://financialmodelingprep.com/api/v3/company/historical-discounted-cash-flow/" +
-                       ticker + "?period=" + period)
+                       ticker + "?period=" + period + "&apikey=" + api_key)
     data = response.read().decode("utf-8")
     data_json = json.loads(data)['historicalDCF']
 
@@ -189,3 +204,30 @@ def discounted_cash_flow(ticker, period="annual"):
         data_formatted[date] = data
 
     return pd.DataFrame(data_formatted)
+
+
+def earnings_calendar(api_key):
+    """
+    Description
+    ----
+    Gives information about the discounted cash flow (DCF) of a company which includes
+    i.a. the (current) stock price and DCF and over time.
+
+    Input
+    ----
+    ticker (string)
+        The company ticker (for example: "UBER")
+    period (string)
+        Data period, this can be "annual" or "quarter".
+
+    Output
+    ----
+    data (dataframe)
+        Data with variables in rows and the period in columns.
+    """
+    response = urlopen("https://financialmodelingprep.com/api/v3/earning_calendar/" +
+                       "?apikey=" + api_key)
+    data = response.read().decode("utf-8")
+    data_json_current = json.loads(data)
+
+    return pd.DataFrame(data_json_current).set_index("date")

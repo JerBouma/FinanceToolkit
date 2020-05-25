@@ -3,7 +3,7 @@ import json
 import pandas as pd
 
 
-def key_metrics(ticker, period="annual"):
+def key_metrics(ticker, api_key, period="annual"):
     """
     Description
     ----
@@ -14,6 +14,8 @@ def key_metrics(ticker, period="annual"):
     ----
     ticker (string)
         The company ticker (for example: "NFLX")
+    api_key (string)
+        The API Key obtained from https://financialmodelingprep.com/developer/docs/
     period (string)
         Data period, this can be "annual" or "quarter".
 
@@ -23,7 +25,7 @@ def key_metrics(ticker, period="annual"):
         Data with variables in rows and the period in columns.
     """
     response = urlopen("https://financialmodelingprep.com/api/v3/company-key-metrics/" +
-                       ticker + "?period=" + period)
+                       ticker + "?period=" + period + "&apikey=" + api_key)
     data = response.read().decode("utf-8")
     data_json = json.loads(data)['metrics']
 
@@ -39,7 +41,7 @@ def key_metrics(ticker, period="annual"):
     return pd.DataFrame(data_formatted)
 
 
-def financial_ratios(ticker):
+def financial_ratios(ticker, api_key, period="annual"):
     """
     Description
     ----
@@ -50,6 +52,8 @@ def financial_ratios(ticker):
     ----
     ticker (string)
         The company ticker (for example: "LYFT")
+    api_key (string)
+        The API Key obtained from https://financialmodelingprep.com/developer/docs/
     period (string)
         Data period, this can be "annual" or "quarter".
 
@@ -58,26 +62,26 @@ def financial_ratios(ticker):
     data (dataframe)
         Data with variables in rows and the period in columns.
     """
-    response = urlopen("https://financialmodelingprep.com/api/v3/financial-ratios/" +
-                       ticker)
+    response = urlopen("https://financialmodelingprep.com/api/v3/ratios/" +
+                       ticker + "?period=" + period + "&apikey=" + api_key)
     data = response.read().decode("utf-8")
-    data_json = json.loads(data)['ratios']
+    data_json = json.loads(data)
 
     data_formatted = {}
     for data in data_json:
-        date = data['date'][:4]
+        if period == "quarter":
+            date = data['date'][:7]
+        else:
+            date = data['date'][:4]
         del data['date']
-        ratio_data = {}
+        del data['symbol']
 
-        for key in data.keys():
-            ratio_data.update(data[key])
-
-        data_formatted[date] = ratio_data
+        data_formatted[date] = data
 
     return pd.DataFrame(data_formatted)
 
 
-def financial_statement_growth(ticker, period="annual"):
+def financial_statement_growth(ticker, api_key, period="annual"):
     """
     Description
     ----
@@ -89,6 +93,8 @@ def financial_statement_growth(ticker, period="annual"):
     ----
     ticker (string)
         The company ticker (for example: "WMT")
+    api_key (string)
+        The API Key obtained from https://financialmodelingprep.com/developer/docs/
     period (string)
         Data period, this can be "annual" or "quarter".
 
@@ -98,7 +104,7 @@ def financial_statement_growth(ticker, period="annual"):
         Data with variables in rows and the period in columns.
     """
     response = urlopen("https://financialmodelingprep.com/api/v3/financial-statement-growth/" +
-                       ticker + "?period=" + period)
+                       ticker + "?period=" + period + "&apikey=" + api_key)
     data = response.read().decode("utf-8")
     data_json = json.loads(data)['growth']
 

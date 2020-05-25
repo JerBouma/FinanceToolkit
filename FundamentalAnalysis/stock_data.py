@@ -75,7 +75,7 @@ def stock_data(ticker, period="max", interval="1d", start=None, end=None):
     return pd.DataFrame(indicators, index=dates)
 
 
-def stock_data_detailed(ticker, begin="1792-05-17", end=None):
+def stock_data_detailed(ticker, api_key, begin="1792-05-17", end=None):
     """
     Description
     ----
@@ -90,6 +90,8 @@ def stock_data_detailed(ticker, begin="1792-05-17", end=None):
     ----
     ticker (string)
         The company ticker (for example: "FIZZ")
+    api_key (string)
+        The API Key obtained from https://financialmodelingprep.com/developer/docs/
     begin (string)
         Begin date in the format %Y-%m-%d.
         Default is the beginning of the Stock Market: 1792-05-17.
@@ -103,7 +105,7 @@ def stock_data_detailed(ticker, begin="1792-05-17", end=None):
         Data with the date in the rows and the variables in the columns.
     """
     response = urlopen("https://financialmodelingprep.com/api/v3/historical-price-full/" +
-                       ticker + "?from=" + str(begin) + "&to=" + str(end))
+                       ticker + "?from=" + str(begin) + "&to=" + str(end) + "&apikey=" + api_key)
     data = response.read().decode("utf-8")
 
     try:

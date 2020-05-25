@@ -80,7 +80,7 @@ def quote(ticker, api_key):
     """
     response = urlopen("https://financialmodelingprep.com/api/v3/quote/" + ticker + "?apikey=" + api_key)
     data = response.read().decode("utf-8")
-    data_formatted = pd.DataFrame(json.loads(data)[0]).T
+    data_formatted = pd.DataFrame(json.loads(data)).T
 
     return data_formatted
 

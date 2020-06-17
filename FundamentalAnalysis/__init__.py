@@ -5,6 +5,7 @@ from .details import quote
 from .details import enterprise
 from .details import rating
 from .details import discounted_cash_flow
+from .details import earnings_calendar
 
 from .financial_statements import balance_sheet_statement
 from .financial_statements import income_statement

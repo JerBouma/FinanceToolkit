@@ -29,11 +29,11 @@ Here you can find a list of the available functions within this package separate
     including the expected PE ratio.
 - **financial_statement**
     - `income_statement` - collects a complete income statement over time. This can be either quarterly
-    or annually. It is limited to 10 years (or 40 quarters).
+    or annually.
     - `balance_sheet_statement` - collects a complete balance sheet statement over time. This can be either quarterly
-    or annually. It is limited to 10 years (or 40 quarters).
+    or annually.
     - `cash_flow_statement` - collects a complete cash flow statement over time. This can be either quarterly
-    or annually. It is limited to 10 years (or 40 quarters).
+    or annually.
 - **ratios**
     - `key_metrics` - lists the key metrics (in total 57 metrics) of a company over time (annual
     and quarterly). This includes, among other things, Return on Equity (ROE), Working Capital,
@@ -49,7 +49,8 @@ Here you can find a list of the available functions within this package separate
     - `stock_data_detailed` - collects an expansive amount of stock data (including Close, Adjusted Close,
      High, Low, Open, Volume, Unadjusted Volume, Absolute Change, Percentage Change, Volume Weighted
      Average Price (VWAP), Date Label and Change over Time). The data collection is limited to
-     the companies listed in the function `available companies`.
+     the companies listed in the function `available companies`. Use the `stock_data` function for information about
+     anything else. (ETFs, Mutual Funds, Options, Indices etc.)
 
 ## Installation
 1. `pip install FundamentalAnalysis`

@@ -106,20 +106,23 @@ def stock_data_detailed(ticker, api_key, begin="1792-05-17", end=None):
     """
     response = urlopen("https://financialmodelingprep.com/api/v3/historical-price-full/" +
                        ticker + "?from=" + str(begin) + "&to=" + str(end) + "&apikey=" + api_key)
-    data = response.read().decode("utf-8")
+    data = json.loads(response.read().decode("utf-8"))
+
+    if 'Error Message' in data:
+        raise ValueError(data['Error Message'])
 
     try:
-        data_json = json.loads(data)['historical']
+        data_json = data['historical']
     except KeyError:
         raise ValueError("No data available. Please note this function "
                          "only takes a specific selection of companies." + '\n' +
                          "See: FundamentalAnalysis.available_companies()")
 
     data_formatted = {}
-    for data in data_json:
-        date = data['date']
-        del data['date']
-        data_formatted[date] = data
+    for value in data_json:
+        date = value['date']
+        del value['date']
+        data_formatted[date] = value
     data_formatted = pd.DataFrame(data_formatted).T
 
     return data_formatted

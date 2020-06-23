@@ -23,10 +23,12 @@ def available_companies(api_key):
         stock exchange in the columns.
     """
     response = urlopen("https://financialmodelingprep.com/api/v3/stock/list?apikey=" + api_key)
-    data = response.read().decode("utf-8")
-    data_json = json.loads(data)
+    data = json.loads(response.read().decode("utf-8"))
 
-    df = pd.DataFrame(data_json)
+    if 'Error Message' in data:
+        raise ValueError(data['Error Message'])
+
+    df = pd.DataFrame(data)
     df.loc[df["name"].isna(), "name"] = df["symbol"]
     df = df.set_index("symbol")
 
@@ -53,8 +55,12 @@ def profile(ticker, api_key):
         Data with variables in rows and the period in columns.
     """
     response = urlopen("https://financialmodelingprep.com/api/v3/profile/" + ticker + "?apikey=" + api_key)
-    data = response.read().decode("utf-8")
-    data_formatted = pd.DataFrame(json.loads(data)).T
+    data = json.loads(response.read().decode("utf-8"))
+
+    if 'Error Message' in data:
+        raise ValueError(data['Error Message'])
+
+    data_formatted = pd.DataFrame(data).T
 
     return data_formatted
 
@@ -79,8 +85,12 @@ def quote(ticker, api_key):
         Data with variables in rows and the period in columns.
     """
     response = urlopen("https://financialmodelingprep.com/api/v3/quote/" + ticker + "?apikey=" + api_key)
-    data = response.read().decode("utf-8")
-    data_formatted = pd.DataFrame(json.loads(data)).T
+    data = json.loads(response.read().decode("utf-8"))
+
+    if 'Error Message' in data:
+        raise ValueError(data['Error Message'])
+
+    data_formatted = pd.DataFrame(data).T
 
     return data_formatted
 
@@ -110,6 +120,9 @@ def enterprise(ticker, api_key, period="annual"):
                        ticker + "?period=" + period + "&apikey=" + api_key)
     data = response.read().decode("utf-8")
     data_json = json.loads(data)
+
+    if 'Error Message' in data_json:
+        raise ValueError(data_json['Error Message'])
 
     data_formatted = {}
     for data in data_json:
@@ -146,6 +159,10 @@ def rating(ticker, api_key):
                        ticker + "?apikey=" + api_key)
     data = response.read().decode("utf-8")
     data_json = json.loads(data)
+
+    if 'Error Message' in data_json:
+        raise ValueError(data_json['Error Message'])
+
     data_formatted = pd.DataFrame(data_json["ratingDetails"]).T
 
     return data_formatted
@@ -174,8 +191,12 @@ def discounted_cash_flow(ticker, api_key, period="annual"):
     """
     response = urlopen("https://financialmodelingprep.com/api/v3/discounted-cash-flow/" +
                        ticker + "?period=" + period + "&apikey=" + api_key)
-    data = response.read().decode("utf-8")
-    data_json_current = json.loads(data)[0]
+    data = json.loads(response.read().decode("utf-8"))
+
+    if 'Error Message' in data:
+        raise ValueError(data['Error Message'])
+
+    data_json_current = data[0]
 
     try:
         del data_json_current['symbol']
@@ -185,8 +206,12 @@ def discounted_cash_flow(ticker, api_key, period="annual"):
 
     response = urlopen("https://financialmodelingprep.com/api/v3/historical-discounted-cash-flow/" +
                        ticker + "?period=" + period + "&apikey=" + api_key)
-    data = response.read().decode("utf-8")
-    data_json = json.loads(data)[0]['historicalDCF']
+    data = json.loads(response.read().decode("utf-8"))
+
+    if 'Error Message' in data:
+        raise ValueError(data['Error Message'])
+
+    data_json = data[0]['historicalDCF']
 
     data_formatted = {}
 
@@ -225,7 +250,9 @@ def earnings_calendar(api_key):
     """
     response = urlopen("https://financialmodelingprep.com/api/v3/earning_calendar/" +
                        "?apikey=" + api_key)
-    data = response.read().decode("utf-8")
-    data_json_current = json.loads(data)
+    data = json.loads(response.read().decode("utf-8"))
 
-    return pd.DataFrame(data_json_current).set_index("date")
+    if 'Error Message' in data:
+        raise ValueError(data['Error Message'])
+
+    return pd.DataFrame(data).set_index("date")

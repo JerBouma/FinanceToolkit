@@ -4,8 +4,8 @@ from FinancialModelingPrep and uses Yahoo Finance to obtain stock data for any f
 the user to do most of the essential fundamental analysis. It also gives the possibility to quickly compare
 multiple companies or do a sector analysis.
 
-See a visualisation of the data on my
-[Fundamentals Quantifier website](https://github.com/JerBouma/FundamentalsQuantifier).
+To find symbols of specific sectors and/or industries have a look at my [Finance Database](https://github.com/JerBouma/FinanceDatabase/tree/master/Methodology) or 
+see a visualisation of the data on my [Fundamentals Quantifier website](https://github.com/JerBouma/FundamentalsQuantifier).
 
 ![](images/FundamentalAnalysis.png)
 

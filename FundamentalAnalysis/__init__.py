@@ -17,3 +17,4 @@ from .ratios import financial_statement_growth
 
 from .stock_data import stock_data
 from .stock_data import stock_data_detailed
+from .stock_data import stock_dividend

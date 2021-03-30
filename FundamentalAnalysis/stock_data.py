@@ -127,6 +127,7 @@ def stock_data_detailed(ticker, api_key, begin="1792-05-17", end=None):
 
     return data_formatted
 
+
 def stock_dividend(ticker, api_key, begin="1792-05-17", end=None):
     """
     Description
@@ -140,7 +141,7 @@ def stock_dividend(ticker, api_key, begin="1792-05-17", end=None):
     Input
     ----
     ticker (string)
-        The company ticker (for example: "FIZZ")
+        The company ticker (for example: "TSLA")
     api_key (string)
         The API Key obtained from https://financialmodelingprep.com/developer/docs/
     begin (string)
@@ -158,8 +159,8 @@ def stock_dividend(ticker, api_key, begin="1792-05-17", end=None):
     if end is None:
         end = pd.Timestamp.today().strftime('%Y-%m-%d')
 
-    inputText = 'https://financialmodelingprep.com/api/v3/historical-price-full/stock_dividend/' + ticker + '?apikey=' + api_key
-    response = urlopen(inputText)
+    response = urlopen('https://financialmodelingprep.com/api/v3/historical-price-full/stock_dividend/'
+                       + ticker + '?apikey=' + api_key)
 
     data = json.loads(response.read().decode("utf-8"))
 
@@ -169,7 +170,7 @@ def stock_dividend(ticker, api_key, begin="1792-05-17", end=None):
     try:
         data_json = data['historical']
     except KeyError:
-        raise ValueError("No data available. Please note this function "
+        raise ValueError(f"No data available. Please note this function "
                          "only takes a specific selection of companies." + '\n' +
                          "See: FundamentalAnalysis.available_companies()")
 
@@ -180,9 +181,8 @@ def stock_dividend(ticker, api_key, begin="1792-05-17", end=None):
         data_formatted[date] = value
     data_formatted = pd.DataFrame(data_formatted).T
 
-    data_formatted = data_formatted.reset_index().rename(columns={'index': 'date'})
-    begin_bool = data_formatted['date'] > begin
-    end_bool = data_formatted['date'] < end
+    begin_bool = data_formatted.index > begin
+    end_bool = data_formatted.index < end
     data_formatted = data_formatted[begin_bool & end_bool]
 
     return data_formatted

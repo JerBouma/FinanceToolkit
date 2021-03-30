@@ -126,3 +126,63 @@ def stock_data_detailed(ticker, api_key, begin="1792-05-17", end=None):
     data_formatted = pd.DataFrame(data_formatted).T
 
     return data_formatted
+
+def stock_dividend(ticker, api_key, begin="1792-05-17", end=None):
+    """
+    Description
+    ----
+    Gives complete information about the company's dividend which includes adjusted dividend, dividend,
+    record date, payment date and declaration date over time.
+
+    This function only allows company tickers and is limited to the companies found
+    by calling available_companies() from the details module.
+
+    Input
+    ----
+    ticker (string)
+        The company ticker (for example: "FIZZ")
+    api_key (string)
+        The API Key obtained from https://financialmodelingprep.com/developer/docs/
+    begin (string)
+        Begin date in the format %Y-%m-%d.
+        Default is the beginning of the Stock Market: 1792-05-17.
+    end (string)
+        End date in the format %Y-%m-%d.
+        Default is the current date.
+
+    Output
+    ----
+    data (dataframe)
+        Data with the date in the rows and the variables in the columns.
+    """
+    if end is None:
+        end = pd.Timestamp.today().strftime('%Y-%m-%d')
+
+    inputText = 'https://financialmodelingprep.com/api/v3/historical-price-full/stock_dividend/' + ticker + '?apikey=' + api_key
+    response = urlopen(inputText)
+
+    data = json.loads(response.read().decode("utf-8"))
+
+    if 'Error Message' in data:
+        raise ValueError(data['Error Message'])
+
+    try:
+        data_json = data['historical']
+    except KeyError:
+        raise ValueError("No data available. Please note this function "
+                         "only takes a specific selection of companies." + '\n' +
+                         "See: FundamentalAnalysis.available_companies()")
+
+    data_formatted = {}
+    for value in data_json:
+        date = value['date']
+        del value['date']
+        data_formatted[date] = value
+    data_formatted = pd.DataFrame(data_formatted).T
+
+    data_formatted = data_formatted.reset_index().rename(columns={'index': 'date'})
+    begin_bool = data_formatted['date'] > begin
+    end_bool = data_formatted['date'] < end
+    data_formatted = data_formatted[begin_bool & end_bool]
+
+    return data_formatted

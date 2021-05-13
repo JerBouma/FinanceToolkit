@@ -4,7 +4,7 @@ import json
 import pandas as pd
 
 
-def income_statement(ticker, api_key, period="annual", as_reported=False):
+def income_statement(ticker, api_key, period="annual"):
     """
     Description
     ----
@@ -19,22 +19,15 @@ def income_statement(ticker, api_key, period="annual", as_reported=False):
         The API Key obtained from https://financialmodelingprep.com/developer/docs/
     period (string)
         Data period, this can be "annual" or "quarter".
-    as_reported (boolean)
-        Raw data without modifications.
 
     Output
     ----
     data (dataframe)
         Data with variables in rows and the period in columns.
     """
-    if as_reported:
-        URL = (f"https://financialmodelingprep.com/api/v3/income-statement-as-reported/{ticker}"
-               f"?period={period}&apikey={api_key}")
-    else:
-        URL = f"https://financialmodelingprep.com/api/v3/income-statement/{ticker}?period={period}&apikey={api_key}"
-
     try:
-        response = urlopen(URL)
+        response = urlopen("https://financialmodelingprep.com/api/v3/income-statement/" +
+                           ticker + "?period=" + period + "&apikey=" + api_key)
         data = json.loads(response.read().decode("utf-8"))
     except HTTPError:
         raise ValueError("This endpoint is only for premium members. Please visit the subscription page to upgrade the "
@@ -57,7 +50,7 @@ def income_statement(ticker, api_key, period="annual", as_reported=False):
     return pd.DataFrame(data_formatted)
 
 
-def balance_sheet_statement(ticker, api_key, period="annual", as_reported=False):
+def balance_sheet_statement(ticker, api_key, period="annual"):
     """
     Description
     ----
@@ -72,23 +65,15 @@ def balance_sheet_statement(ticker, api_key, period="annual", as_reported=False)
         The API Key obtained from https://financialmodelingprep.com/developer/docs/
     period (string)
         Data period, this can be "annual" or "quarter".
-    as_reported (boolean)
-        Raw data without modifications.
 
     Output
     ----
     data (dataframe)
         Data with variables in rows and the period in columns.
     """
-    if as_reported:
-        URL = (f"https://financialmodelingprep.com/api/v3/balance-sheet-statement-as-reported/{ticker}"
-               f"?period={period}&apikey={api_key}")
-    else:
-        URL = (f"https://financialmodelingprep.com/api/v3/balance-sheet-statement/{ticker}"
-               f"?period={period}&apikey={api_key}")
-
     try:
-        response = urlopen(URL)
+        response = urlopen("https://financialmodelingprep.com/api/v3/balance-sheet-statement/" +
+                       ticker + "?period=" + period + "&apikey=" + api_key)
         data = json.loads(response.read().decode("utf-8"))
     except HTTPError:
         raise ValueError("This endpoint is only for premium members. Please visit the subscription page to upgrade the "
@@ -111,7 +96,7 @@ def balance_sheet_statement(ticker, api_key, period="annual", as_reported=False)
     return pd.DataFrame(data_formatted)
 
 
-def cash_flow_statement(ticker, api_key, period="annual", as_reported=False):
+def cash_flow_statement(ticker, api_key, period="annual"):
     """
     Description
     ----
@@ -126,23 +111,15 @@ def cash_flow_statement(ticker, api_key, period="annual", as_reported=False):
         The API Key obtained from https://financialmodelingprep.com/developer/docs/
     period (string)
         Data period, this can be "annual" or "quarter".
-    as_reported (boolean)
-        Raw data without modifications.
 
     Output
     ----
     data (dataframe)
         Data with variables in rows and the period in columns.
     """
-    if as_reported:
-        URL = (f"https://financialmodelingprep.com/api/v3/cash-flow-statement-as-reported/{ticker}"
-               f"?period={period}&apikey={api_key}")
-    else:
-        URL = (f"https://financialmodelingprep.com/api/v3/cash-flow-statement/{ticker}"
-               f"?period={period}&apikey={api_key}")
-
     try:
-        response = urlopen(URL)
+        response = urlopen("https://financialmodelingprep.com/api/v3/cash-flow-statement/" +
+                       ticker + "?period=" + period + "&apikey=" + api_key)
         data = json.loads(response.read().decode("utf-8"))
     except HTTPError:
         raise ValueError("This endpoint is only for premium members. Please visit the subscription page to upgrade the "

@@ -1,5 +1,5 @@
 # Fundamental Analysis
-This package collects fundamentals and detailed company stock data from a large group of companies (20.000+)
+This package collects fundamentals and detailed company stock data from a large group of companies (13.000+)
 from FinancialModelingPrep and uses Yahoo Finance to obtain stock data for any financial instrument. It allows
 the user to do most of the essential fundamental analysis. It also gives the possibility to quickly compare
 multiple companies or do a sector analysis.
@@ -13,8 +13,8 @@ see a visualisation of the data on my [Fundamentals Quantifier website](https://
 Here you can find a list of the available functions within this package separated per module. 
 - **details**
     - `available companies` - shows the complete list of companies that are available for fundamental data
-    gathering including current price, and the exchange the company is listed on. This is an extensive list with
-    well over 20.000 companies.
+    gathering including current price and the exchange the company is listed on. This is an extensive list with
+    well over 13.000 companies.
     - `profile` - gives information about, among other things, the industry, sector exchange
     and company description.
     - `quote` - provides actual information about the company which is, among other things, the day high,
@@ -65,8 +65,8 @@ obtain a _free_ API Key. Note that these keys are limited to 250 requests per ac
 4. Obtain the API Key as found [here](https://financialmodelingprep.com/developer/docs/)
 4. Start using this package.
 
-When you run out of daily requests (250), you have to upgrade to a Premium version. Note that I am in no way 
-affiliated with FinancialModellingPrep and never will be.
+When you run out of requests (250), you have to upgrade to a Premium version or create a new account. Note that I am
+in no way affiliated with FinancialModellingPrep and will never be.
 
 ## Example
 

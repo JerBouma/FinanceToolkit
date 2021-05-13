@@ -46,7 +46,7 @@ def stock_data(ticker, period="max", interval="1d", start=None, end=None):
         parameters["period1"] = start_timestamp
         parameters["period2"] = end_timestamp
 
-    url = "https://query1.finance.yahoo.com/v8/finance/chart/" + ticker
+    url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}"
 
     try:
         data = requests.get(url=url, params=parameters)
@@ -102,8 +102,8 @@ def stock_data_detailed(ticker, api_key, begin="1792-05-17", end=None):
     data (dataframe)
         Data with the date in the rows and the variables in the columns.
     """
-    response = urlopen("https://financialmodelingprep.com/api/v3/historical-price-full/" +
-                       ticker + "?from=" + str(begin) + "&to=" + str(end) + "&apikey=" + api_key)
+    response = urlopen(f"https://financialmodelingprep.com/api/v3/historical-price-full/{ticker}"
+                       f"?from={str(begin)}&to={str(end)}&apikey={api_key}")
     data = json.loads(response.read().decode("utf-8"))
 
     if 'Error Message' in data:
@@ -156,8 +156,8 @@ def stock_dividend(ticker, api_key, begin="1792-05-17", end=None):
     if end is None:
         end = pd.Timestamp.today().strftime('%Y-%m-%d')
 
-    response = urlopen('https://financialmodelingprep.com/api/v3/historical-price-full/stock_dividend/'
-                       + ticker + '?apikey=' + api_key)
+    response = urlopen(f"https://financialmodelingprep.com/api/v3/historical-price-full/stock_dividend/{ticker}"
+                       f"?apikey={api_key}")
 
     data = json.loads(response.read().decode("utf-8"))
 

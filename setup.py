@@ -9,7 +9,7 @@ setuptools.setup(
     version="0.2.8",
     license="MIT",
     description="Fully-fledged Fundamental Analysis package capable of collecting 20 years of Company Profiles,\
-    Financial Statements, Ratios and Stock Data of 13.000+ companies.",
+    Financial Statements, Ratios and Stock Data of 20.000+ companies.",
     author="JerBouma",
     author_email="jer.bouma@gmail.com",
     url="https://github.com/JerBouma/FundamentalAnalysis",

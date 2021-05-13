@@ -24,7 +24,7 @@ def available_companies(api_key):
         stock exchange in the columns.
     """
     try:
-        response = urlopen("https://financialmodelingprep.com/api/v3/stock/list?apikey=" + api_key)
+        response = urlopen(f"https://financialmodelingprep.com/api/v3/stock/list?apikey={api_key}")
         data = json.loads(response.read().decode("utf-8"))
     except HTTPError:
         raise ValueError("This endpoint is only for premium members. Please visit the subscription page to upgrade the "
@@ -60,7 +60,7 @@ def profile(ticker, api_key):
         Data with variables in rows and the period in columns.
     """
     try:
-        response = urlopen("https://financialmodelingprep.com/api/v3/profile/" + ticker + "?apikey=" + api_key)
+        response = urlopen(f"https://financialmodelingprep.com/api/v3/profile/{ticker}?apikey={api_key}")
         data = json.loads(response.read().decode("utf-8"))
     except HTTPError:
         raise ValueError("This endpoint is only for premium members. Please visit the subscription page to upgrade the "
@@ -94,7 +94,7 @@ def quote(ticker, api_key):
         Data with variables in rows and the period in columns.
     """
     try:
-        response = urlopen("https://financialmodelingprep.com/api/v3/quote/" + ticker + "?apikey=" + api_key)
+        response = urlopen(f"https://financialmodelingprep.com/api/v3/quote/{ticker}?apikey={api_key}")
         data = json.loads(response.read().decode("utf-8"))
     except HTTPError:
         raise ValueError("This endpoint is only for premium members. Please visit the subscription page to upgrade the "
@@ -130,8 +130,8 @@ def enterprise(ticker, api_key, period="annual"):
         Data with variables in rows and the period in columns.
     """
     try:
-        response = urlopen("https://financialmodelingprep.com/api/v3/enterprise-values/" +
-                       ticker + "?period=" + period + "&apikey=" + api_key)
+        response = urlopen(f"https://financialmodelingprep.com/api/v3/enterprise-values/{ticker}"
+                           f"?period={period}&apikey={api_key}")
         data = response.read().decode("utf-8")
         data_json = json.loads(data)
     except HTTPError:
@@ -173,8 +173,7 @@ def rating(ticker, api_key):
         Data with variables in rows and the period in columns..
      """
     try:
-        response = urlopen("https://financialmodelingprep.com/api/v3/company/rating/" +
-                       ticker + "?apikey=" + api_key)
+        response = urlopen(f"https://financialmodelingprep.com/api/v3/historical-rating/{ticker}?apikey={api_key}")
         data = response.read().decode("utf-8")
         data_json = json.loads(data)
     except HTTPError:
@@ -184,7 +183,10 @@ def rating(ticker, api_key):
     if 'Error Message' in data_json:
         raise ValueError(data_json['Error Message'])
 
-    data_formatted = pd.DataFrame(data_json["ratingDetails"]).T
+    for value in data_json:
+        del value['symbol']
+
+    data_formatted = pd.DataFrame(data_json).set_index('date')
 
     return data_formatted
 
@@ -211,8 +213,8 @@ def discounted_cash_flow(ticker, api_key, period="annual"):
         Data with variables in rows and the period in columns.
     """
     try:
-        response = urlopen("https://financialmodelingprep.com/api/v3/discounted-cash-flow/" +
-                       ticker + "?period=" + period + "&apikey=" + api_key)
+        response = urlopen(f"https://financialmodelingprep.com/api/v3/discounted-cash-flow/{ticker}"
+                           f"?period={period}&apikey={api_key}")
         data = json.loads(response.read().decode("utf-8"))
     except HTTPError:
         raise ValueError("This endpoint is only for premium members. Please visit the subscription page to upgrade the "
@@ -230,8 +232,8 @@ def discounted_cash_flow(ticker, api_key, period="annual"):
         pass
 
     try:
-        response = urlopen("https://financialmodelingprep.com/api/v3/historical-discounted-cash-flow/" +
-                       ticker + "?period=" + period + "&apikey=" + api_key)
+        response = urlopen(f"https://financialmodelingprep.com/api/v3/historical-discounted-cash-flow/{ticker}"
+                           f"?period={period}&apikey={api_key}")
         data = json.loads(response.read().decode("utf-8"))
     except HTTPError:
         raise ValueError("This endpoint is only for premium members. Please visit the subscription page to upgrade the "
@@ -278,8 +280,7 @@ def earnings_calendar(api_key):
         Data with variables in rows and the period in columns.
     """
     try:
-        response = urlopen("https://financialmodelingprep.com/api/v3/earning_calendar/" +
-                       "?apikey=" + api_key)
+        response = urlopen(f"https://financialmodelingprep.com/api/v3/earning_calendar/?apikey={api_key}")
         data = json.loads(response.read().decode("utf-8"))
     except HTTPError:
         raise ValueError("This endpoint is only for premium members. Please visit the subscription page to upgrade the "

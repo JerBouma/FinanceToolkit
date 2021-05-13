@@ -23,8 +23,12 @@ def available_companies(api_key):
         Data with the ticker as the index and the company name, price and
         stock exchange in the columns.
     """
-    response = urlopen("https://financialmodelingprep.com/api/v3/stock/list?apikey=" + api_key)
-    data = json.loads(response.read().decode("utf-8"))
+    try:
+        response = urlopen("https://financialmodelingprep.com/api/v3/stock/list?apikey=" + api_key)
+        data = json.loads(response.read().decode("utf-8"))
+    except HTTPError:
+        raise ValueError("This endpoint is only for premium members. Please visit the subscription page to upgrade the "
+                         "plan (Starter or higher) at https://financialmodelingprep.com/developer/docs/pricing")
 
     if 'Error Message' in data:
         raise ValueError(data['Error Message'])
@@ -55,8 +59,12 @@ def profile(ticker, api_key):
     data (dataframe)
         Data with variables in rows and the period in columns.
     """
-    response = urlopen("https://financialmodelingprep.com/api/v3/profile/" + ticker + "?apikey=" + api_key)
-    data = json.loads(response.read().decode("utf-8"))
+    try:
+        response = urlopen("https://financialmodelingprep.com/api/v3/profile/" + ticker + "?apikey=" + api_key)
+        data = json.loads(response.read().decode("utf-8"))
+    except HTTPError:
+        raise ValueError("This endpoint is only for premium members. Please visit the subscription page to upgrade the "
+                         "plan (Starter or higher) at https://financialmodelingprep.com/developer/docs/pricing")
 
     if 'Error Message' in data:
         raise ValueError(data['Error Message'])
@@ -85,8 +93,12 @@ def quote(ticker, api_key):
     data (dataframe)
         Data with variables in rows and the period in columns.
     """
-    response = urlopen("https://financialmodelingprep.com/api/v3/quote/" + ticker + "?apikey=" + api_key)
-    data = json.loads(response.read().decode("utf-8"))
+    try:
+        response = urlopen("https://financialmodelingprep.com/api/v3/quote/" + ticker + "?apikey=" + api_key)
+        data = json.loads(response.read().decode("utf-8"))
+    except HTTPError:
+        raise ValueError("This endpoint is only for premium members. Please visit the subscription page to upgrade the "
+                         "plan (Starter or higher) at https://financialmodelingprep.com/developer/docs/pricing")
 
     if 'Error Message' in data:
         raise ValueError(data['Error Message'])
@@ -160,10 +172,14 @@ def rating(ticker, api_key):
      data (dataframe)
         Data with variables in rows and the period in columns..
      """
-    response = urlopen("https://financialmodelingprep.com/api/v3/company/rating/" +
+    try:
+        response = urlopen("https://financialmodelingprep.com/api/v3/company/rating/" +
                        ticker + "?apikey=" + api_key)
-    data = response.read().decode("utf-8")
-    data_json = json.loads(data)
+        data = response.read().decode("utf-8")
+        data_json = json.loads(data)
+    except HTTPError:
+        raise ValueError("This endpoint is only for premium members. Please visit the subscription page to upgrade the "
+                         "plan (Starter or higher) at https://financialmodelingprep.com/developer/docs/pricing")
 
     if 'Error Message' in data_json:
         raise ValueError(data_json['Error Message'])
@@ -261,9 +277,13 @@ def earnings_calendar(api_key):
     data (dataframe)
         Data with variables in rows and the period in columns.
     """
-    response = urlopen("https://financialmodelingprep.com/api/v3/earning_calendar/" +
+    try:
+        response = urlopen("https://financialmodelingprep.com/api/v3/earning_calendar/" +
                        "?apikey=" + api_key)
-    data = json.loads(response.read().decode("utf-8"))
+        data = json.loads(response.read().decode("utf-8"))
+    except HTTPError:
+        raise ValueError("This endpoint is only for premium members. Please visit the subscription page to upgrade the "
+                         "plan (Starter or higher) at https://financialmodelingprep.com/developer/docs/pricing")
 
     if 'Error Message' in data:
         raise ValueError(data['Error Message'])

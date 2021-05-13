@@ -52,10 +52,8 @@ def stock_data(ticker, period="max", interval="1d", start=None, end=None):
         data = requests.get(url=url, params=parameters)
         data_json = data.json()['chart']['result'][0]
     except TypeError:
-        raise TypeError("No data available. Please check if you have a "
-                        "valid period and/or interval." + '\n' +
-                        "Note that an interval less than 1h can only "
-                        "hold a period of 1mo or less.")
+        raise TypeError("No data available. Please check if you have a valid period and/or interval. \n"
+                        "Note that an interval less than 1h can only hold a period of 1mo or less.")
 
     timestamp = data_json['timestamp']
     dates = []
@@ -114,8 +112,7 @@ def stock_data_detailed(ticker, api_key, begin="1792-05-17", end=None):
     try:
         data_json = data['historical']
     except KeyError:
-        raise ValueError("No data available. Please note this function "
-                         "only takes a specific selection of companies." + '\n' +
+        raise ValueError("No data available. Please note this function only takes a specific selection of companies. \n"
                          "See: FundamentalAnalysis.available_companies()")
 
     data_formatted = {}
@@ -170,8 +167,7 @@ def stock_dividend(ticker, api_key, begin="1792-05-17", end=None):
     try:
         data_json = data['historical']
     except KeyError:
-        raise ValueError(f"No data available. Please note this function "
-                         "only takes a specific selection of companies." + '\n' +
+        raise ValueError("No data available. Please note this function only takes a specific selection of companies. \n"
                          "See: FundamentalAnalysis.available_companies()")
 
     data_formatted = {}

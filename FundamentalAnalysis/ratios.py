@@ -4,7 +4,7 @@ import json
 import pandas as pd
 
 
-def key_metrics(ticker, api_key, period="annual"):
+def key_metrics(ticker, api_key, period="annual", TTM=False):
     """
     Description
     ----
@@ -19,15 +19,21 @@ def key_metrics(ticker, api_key, period="annual"):
         The API Key obtained from https://financialmodelingprep.com/developer/docs/
     period (string)
         Data period, this can be "annual" or "quarter".
+    TTM (boolean)
+        Obtain the trailing twelve months (TTM) key metrics.
 
     Output
     ----
     data (dataframe)
         Data with variables in rows and the period in columns.
     """
+    if TTM:
+        URL = f"https://financialmodelingprep.com/api/v3/key-metrics-ttm/{ticker}?apikey={api_key}"
+    else:
+        URL = f"https://financialmodelingprep.com/api/v3/key-metrics/{ticker}?period={period}&apikey={api_key}"
+
     try:
-        response = urlopen("https://financialmodelingprep.com/api/v3/key-metrics/" +
-                       ticker + "?period=" + period + "&apikey=" + api_key)
+        response = urlopen(URL)
         data = json.loads(response.read().decode("utf-8"))
     except HTTPError:
         raise ValueError("This endpoint is only for premium members. Please visit the subscription page to upgrade the "
@@ -36,21 +42,24 @@ def key_metrics(ticker, api_key, period="annual"):
     if 'Error Message' in data:
         raise ValueError(data['Error Message'])
 
-    data_formatted = {}
-    for value in data:
-        if period == "quarter":
-            date = value['date'][:7]
-        else:
-            date = value['date'][:4]
-        del value['date']
-        del value['symbol']
+    if TTM:
+        data_formatted = pd.Series(data[0])
+    else:
+        data_formatted = {}
+        for value in data:
+            if period == "quarter":
+                date = value['date'][:7]
+            else:
+                date = value['date'][:4]
+            del value['date']
+            del value['symbol']
 
-        data_formatted[date] = value
+            data_formatted[date] = value
+        data_formatted = pd.DataFrame(data_formatted)
 
-    return pd.DataFrame(data_formatted)
+    return data_formatted
 
-
-def financial_ratios(ticker, api_key, period="annual"):
+def financial_ratios(ticker, api_key, period="annual", TTM=False):
     """
     Description
     ----
@@ -65,15 +74,21 @@ def financial_ratios(ticker, api_key, period="annual"):
         The API Key obtained from https://financialmodelingprep.com/developer/docs/
     period (string)
         Data period, this can be "annual" or "quarter".
+    TTM (boolean)
+        Obtain the trailing twelve months (TTM) ratios.
 
     Output
     ----
-    data (dataframe)
+    data (dataframe or series)
         Data with variables in rows and the period in columns.
     """
+    if TTM:
+        URL = f"https://financialmodelingprep.com/api/v3/ratios-ttm/{ticker}?apikey={api_key}"
+    else:
+        URL = f"https://financialmodelingprep.com/api/v3/ratios/{ticker}?period={period}&apikey={api_key}"
+
     try:
-        response = urlopen("https://financialmodelingprep.com/api/v3/ratios/" +
-                       ticker + "?period=" + period + "&apikey=" + api_key)
+        response = urlopen(URL)
         data = json.loads(response.read().decode("utf-8"))
     except HTTPError:
         raise ValueError("This endpoint is only for premium members. Please visit the subscription page to upgrade the "
@@ -82,18 +97,22 @@ def financial_ratios(ticker, api_key, period="annual"):
     if 'Error Message' in data:
         raise ValueError(data['Error Message'])
 
-    data_formatted = {}
-    for value in data:
-        if period == "quarter":
-            date = value['date'][:7]
-        else:
-            date = value['date'][:4]
-        del value['date']
-        del value['symbol']
+    if TTM:
+        data_formatted = pd.Series(data[0])
+    else:
+        data_formatted = {}
+        for value in data:
+            if period == "quarter":
+                date = value['date'][:7]
+            else:
+                date = value['date'][:4]
+            del value['date']
+            del value['symbol']
 
-        data_formatted[date] = value
+            data_formatted[date] = value
+        data_formatted = pd.DataFrame(data_formatted)
 
-    return pd.DataFrame(data_formatted)
+    return data_formatted
 
 
 def financial_statement_growth(ticker, api_key, period="annual"):
@@ -119,8 +138,8 @@ def financial_statement_growth(ticker, api_key, period="annual"):
         Data with variables in rows and the period in columns.
     """
     try:
-        response = urlopen("https://financialmodelingprep.com/api/v3/financial-growth/" +
-                       ticker + "?period=" + period + "&apikey=" + api_key)
+        response = urlopen(f"https://financialmodelingprep.com/api/v3/financial-growth/{ticker}"
+                           f"?period={period}&apikey={api_key}")
         data = json.loads(response.read().decode("utf-8"))
     except HTTPError:
         raise ValueError("This endpoint is only for premium members. Please visit the subscription page to upgrade the "

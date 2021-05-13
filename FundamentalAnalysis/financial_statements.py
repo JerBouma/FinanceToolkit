@@ -1,4 +1,5 @@
 from urllib.request import urlopen
+from urllib.error import HTTPError
 import json
 import pandas as pd
 
@@ -24,9 +25,13 @@ def income_statement(ticker, api_key, period="annual"):
     data (dataframe)
         Data with variables in rows and the period in columns.
     """
-    response = urlopen("https://financialmodelingprep.com/api/v3/income-statement/" +
-                       ticker + "?period=" + period + "&apikey=" + api_key)
-    data = json.loads(response.read().decode("utf-8"))
+    try:
+        response = urlopen("https://financialmodelingprep.com/api/v3/income-statement/" +
+                           ticker + "?period=" + period + "&apikey=" + api_key)
+        data = json.loads(response.read().decode("utf-8"))
+    except HTTPError:
+        raise ValueError("This endpoint is only for premium members. Please visit the subscription page to upgrade the "
+                         "plan (Starter or higher) at https://financialmodelingprep.com/developer/docs/pricing")
 
     if 'Error Message' in data:
         raise ValueError(data['Error Message'])
@@ -66,9 +71,13 @@ def balance_sheet_statement(ticker, api_key, period="annual"):
     data (dataframe)
         Data with variables in rows and the period in columns.
     """
-    response = urlopen("https://financialmodelingprep.com/api/v3/balance-sheet-statement/" +
+    try:
+        response = urlopen("https://financialmodelingprep.com/api/v3/balance-sheet-statement/" +
                        ticker + "?period=" + period + "&apikey=" + api_key)
-    data = json.loads(response.read().decode("utf-8"))
+        data = json.loads(response.read().decode("utf-8"))
+    except HTTPError:
+        raise ValueError("This endpoint is only for premium members. Please visit the subscription page to upgrade the "
+                         "plan (Starter or higher) at https://financialmodelingprep.com/developer/docs/pricing")
 
     if 'Error Message' in data:
         raise ValueError(data['Error Message'])
@@ -108,9 +117,13 @@ def cash_flow_statement(ticker, api_key, period="annual"):
     data (dataframe)
         Data with variables in rows and the period in columns.
     """
-    response = urlopen("https://financialmodelingprep.com/api/v3/cash-flow-statement/" +
+    try:
+        response = urlopen("https://financialmodelingprep.com/api/v3/cash-flow-statement/" +
                        ticker + "?period=" + period + "&apikey=" + api_key)
-    data = json.loads(response.read().decode("utf-8"))
+        data = json.loads(response.read().decode("utf-8"))
+    except HTTPError:
+        raise ValueError("This endpoint is only for premium members. Please visit the subscription page to upgrade the "
+                         "plan (Starter or higher) at https://financialmodelingprep.com/developer/docs/pricing")
 
     if 'Error Message' in data:
         raise ValueError(data['Error Message'])

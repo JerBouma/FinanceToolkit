@@ -4,7 +4,7 @@ import json
 import pandas as pd
 
 
-def key_metrics(ticker, api_key, period="annual", TTM=False):
+def key_metrics(ticker, api_key, period="annual", TTM=False, limit=0):
     """
     Description
     ----
@@ -21,6 +21,8 @@ def key_metrics(ticker, api_key, period="annual", TTM=False):
         Data period, this can be "annual" or "quarter".
     TTM (boolean)
         Obtain the trailing twelve months (TTM) key metrics.
+    limit (integer)
+        The limit for the years of data
 
     Output
     ----
@@ -28,9 +30,9 @@ def key_metrics(ticker, api_key, period="annual", TTM=False):
         Data with variables in rows and the period in columns.
     """
     if TTM:
-        URL = f"https://financialmodelingprep.com/api/v3/key-metrics-ttm/{ticker}?apikey={api_key}"
+        URL = f"https://financialmodelingprep.com/api/v3/key-metrics-ttm/{ticker}?limit={limit}&apikey={api_key}"
     else:
-        URL = f"https://financialmodelingprep.com/api/v3/key-metrics/{ticker}?period={period}&apikey={api_key}"
+        URL = f"https://financialmodelingprep.com/api/v3/key-metrics/{ticker}?period={period}&limit={limit}&apikey={api_key}"
 
     try:
         response = urlopen(URL)

@@ -108,7 +108,7 @@ def quote(ticker, api_key):
     return data_formatted
 
 
-def enterprise(ticker, api_key, period="annual"):
+def enterprise(ticker, api_key, period="annual", limit=0):
     """
     Description
     ----
@@ -123,6 +123,8 @@ def enterprise(ticker, api_key, period="annual"):
         The API Key obtained from https://financialmodelingprep.com/developer/docs/
     period (string)
         Data period, this can be "annual" or "quarter".
+    limit (integer)
+        The limit for the years of data
 
     Output
     ----
@@ -131,7 +133,7 @@ def enterprise(ticker, api_key, period="annual"):
     """
     try:
         response = urlopen(f"https://financialmodelingprep.com/api/v3/enterprise-values/{ticker}"
-                           f"?period={period}&apikey={api_key}")
+                           f"?period={period}&limit={limit}&apikey={api_key}")
         data = response.read().decode("utf-8")
         data_json = json.loads(data)
     except HTTPError:
@@ -191,7 +193,7 @@ def rating(ticker, api_key):
     return data_formatted
 
 
-def discounted_cash_flow(ticker, api_key, period="annual"):
+def discounted_cash_flow(ticker, api_key, period="annual", limit=0):
     """
     Description
     ----
@@ -206,6 +208,8 @@ def discounted_cash_flow(ticker, api_key, period="annual"):
         The API Key obtained from https://financialmodelingprep.com/developer/docs/
     period (string)
         Data period, this can be "annual" or "quarter".
+    limit (integer)
+        The limit for the years of data
 
     Output
     ----
@@ -214,7 +218,7 @@ def discounted_cash_flow(ticker, api_key, period="annual"):
     """
     try:
         response = urlopen(f"https://financialmodelingprep.com/api/v3/discounted-cash-flow/{ticker}"
-                           f"?period={period}&apikey={api_key}")
+                           f"?period={period}&limit={limit}&apikey={api_key}")
         data = json.loads(response.read().decode("utf-8"))
     except HTTPError:
         raise ValueError("This endpoint is only for premium members. Please visit the subscription page to upgrade the "

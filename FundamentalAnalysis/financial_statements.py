@@ -4,7 +4,7 @@ import json
 import pandas as pd
 
 
-def income_statement(ticker, api_key, period="annual", as_reported=False):
+def income_statement(ticker, api_key, period="annual", as_reported=False, limit=0):
     """
     Description
     ----
@@ -21,6 +21,8 @@ def income_statement(ticker, api_key, period="annual", as_reported=False):
         Data period, this can be "annual" or "quarter".
     as_reported (boolean)
         Raw data without modifications.
+    limit (integer)
+        The limit for the years of data
 
     Output
     ----
@@ -29,9 +31,10 @@ def income_statement(ticker, api_key, period="annual", as_reported=False):
     """
     if as_reported:
         URL = (f"https://financialmodelingprep.com/api/v3/income-statement-as-reported/{ticker}"
-               f"?period={period}&apikey={api_key}")
+               f"?period={period}&limit={limit}&apikey={api_key}")
     else:
-        URL = f"https://financialmodelingprep.com/api/v3/income-statement/{ticker}?period={period}&apikey={api_key}"
+        URL = (f"https://financialmodelingprep.com/api/v3/income-statement/{ticker}"
+               f"?period={period}&limit={limit}&apikey={api_key}")
 
     try:
         response = urlopen(URL)
@@ -57,7 +60,7 @@ def income_statement(ticker, api_key, period="annual", as_reported=False):
     return pd.DataFrame(data_formatted)
 
 
-def balance_sheet_statement(ticker, api_key, period="annual", as_reported=False):
+def balance_sheet_statement(ticker, api_key, period="annual", as_reported=False, limit=0):
     """
     Description
     ----
@@ -74,6 +77,8 @@ def balance_sheet_statement(ticker, api_key, period="annual", as_reported=False)
         Data period, this can be "annual" or "quarter".
     as_reported (boolean)
         Raw data without modifications.
+    limit (integer)
+        The limit for the years of data
 
     Output
     ----
@@ -82,10 +87,10 @@ def balance_sheet_statement(ticker, api_key, period="annual", as_reported=False)
     """
     if as_reported:
         URL = (f"https://financialmodelingprep.com/api/v3/balance-sheet-statement-as-reported/{ticker}"
-               f"?period={period}&apikey={api_key}")
+               f"?period={period}&limit={limit}&apikey={api_key}")
     else:
         URL = (f"https://financialmodelingprep.com/api/v3/balance-sheet-statement/{ticker}"
-               f"?period={period}&apikey={api_key}")
+               f"?period={period}&limit={limit}&apikey={api_key}")
 
     try:
         response = urlopen(URL)
@@ -111,7 +116,7 @@ def balance_sheet_statement(ticker, api_key, period="annual", as_reported=False)
     return pd.DataFrame(data_formatted)
 
 
-def cash_flow_statement(ticker, api_key, period="annual", as_reported=False):
+def cash_flow_statement(ticker, api_key, period="annual", as_reported=False, limit=0):
     """
     Description
     ----
@@ -128,6 +133,8 @@ def cash_flow_statement(ticker, api_key, period="annual", as_reported=False):
         Data period, this can be "annual" or "quarter".
     as_reported (boolean)
         Raw data without modifications.
+    limit (integer)
+        The limit for the years of data
 
     Output
     ----
@@ -136,10 +143,10 @@ def cash_flow_statement(ticker, api_key, period="annual", as_reported=False):
     """
     if as_reported:
         URL = (f"https://financialmodelingprep.com/api/v3/cash-flow-statement-as-reported/{ticker}"
-               f"?period={period}&apikey={api_key}")
+               f"?period={period}&limit={limit}&apikey={api_key}")
     else:
         URL = (f"https://financialmodelingprep.com/api/v3/cash-flow-statement/{ticker}"
-               f"?period={period}&apikey={api_key}")
+               f"?period={period}&limit={limit}&apikey={api_key}")
 
     try:
         response = urlopen(URL)

@@ -61,7 +61,8 @@ def key_metrics(ticker, api_key, period="annual", TTM=False, limit=0):
 
     return data_formatted
 
-def financial_ratios(ticker, api_key, period="annual", TTM=False):
+
+def financial_ratios(ticker, api_key, period="annual", TTM=False, limit=0):
     """
     Description
     ----
@@ -78,6 +79,8 @@ def financial_ratios(ticker, api_key, period="annual", TTM=False):
         Data period, this can be "annual" or "quarter".
     TTM (boolean)
         Obtain the trailing twelve months (TTM) ratios.
+    limit (integer)
+        The limit for the years of data
 
     Output
     ----
@@ -85,9 +88,9 @@ def financial_ratios(ticker, api_key, period="annual", TTM=False):
         Data with variables in rows and the period in columns.
     """
     if TTM:
-        URL = f"https://financialmodelingprep.com/api/v3/ratios-ttm/{ticker}?apikey={api_key}"
+        URL = f"https://financialmodelingprep.com/api/v3/ratios-ttm/{ticker}?limit={limit}&apikey={api_key}"
     else:
-        URL = f"https://financialmodelingprep.com/api/v3/ratios/{ticker}?period={period}&apikey={api_key}"
+        URL = f"https://financialmodelingprep.com/api/v3/ratios/{ticker}?period={period}&limit={limit}&apikey={api_key}"
 
     try:
         response = urlopen(URL)
@@ -117,7 +120,7 @@ def financial_ratios(ticker, api_key, period="annual", TTM=False):
     return data_formatted
 
 
-def financial_statement_growth(ticker, api_key, period="annual"):
+def financial_statement_growth(ticker, api_key, period="annual", limit=0):
     """
     Description
     ----
@@ -133,6 +136,8 @@ def financial_statement_growth(ticker, api_key, period="annual"):
         The API Key obtained from https://financialmodelingprep.com/developer/docs/
     period (string)
         Data period, this can be "annual" or "quarter".
+    limit (integer)
+        The limit for the years of data
 
     Output
     ----
@@ -141,7 +146,7 @@ def financial_statement_growth(ticker, api_key, period="annual"):
     """
     try:
         response = urlopen(f"https://financialmodelingprep.com/api/v3/financial-growth/{ticker}"
-                           f"?period={period}&apikey={api_key}")
+                           f"?period={period}&limit={limit}&apikey={api_key}")
         data = json.loads(response.read().decode("utf-8"))
     except HTTPError:
         raise ValueError("This endpoint is only for premium members. Please visit the subscription page to upgrade the "

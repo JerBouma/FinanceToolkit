@@ -10,10 +10,10 @@ see a visualisation of the data on my [Fundamentals Quantifier website](https://
 ![](images/FundamentalAnalysis.png)
 
 [![](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-Donate-brightgreen?logo=buymeacoffee)](https://www.buymeacoffee.com/jerbouma)
-[![](https://img.shields.io/github/issues/jerbouma/fundamentalanalysis)](https://github.com/JerBouma/FinanceDatabase/issues)
-[![](https://img.shields.io/github/issues-pr/JerBouma/fundamentalanalysis?color=yellow)](https://github.com/JerBouma/FinanceDatabase/pulls)
-[![](https://img.shields.io/pypi/v/fundamentalanalysis)](https://pypi.org/project/FinanceDatabase/)
-[![](https://img.shields.io/pypi/dm/fundamentalanalysis)](https://pypi.org/project/FinanceDatabase/)
+[![](https://img.shields.io/github/issues/jerbouma/fundamentalanalysis)](https://github.com/JerBouma/FundamentalAnalysis/issues)
+[![](https://img.shields.io/github/issues-pr/JerBouma/fundamentalanalysis?color=yellow)](https://github.com/JerBouma/FundamentalAnalysis/pulls)
+[![](https://img.shields.io/pypi/v/fundamentalanalysis)](https://pypi.org/project/FundamentalAnalysis/)
+[![](https://img.shields.io/pypi/dm/fundamentalanalysis)](https://pypi.org/project/FundamentalAnalysis/)
 
 ## Functions
 Here you can find a list of the available functions within this package separated per module. 

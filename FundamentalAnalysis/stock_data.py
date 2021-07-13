@@ -46,10 +46,16 @@ def stock_data(ticker, period="max", interval="1d", start=None, end=None):
         parameters["period1"] = start_timestamp
         parameters["period2"] = end_timestamp
 
-    url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}"
+    url = "https://query1.finance.yahoo.com/v8/finance/chart/{ticker}"
 
     try:
-        data = requests.get(url=url, params=parameters)
+        header = {'Connection': 'keep-alive',
+                  'Expires': '-1',
+                  'Upgrade-Insecure-Requests': '1',
+                  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; WOW64) \
+                                     AppleWebKit/537.36 (KHTML, like Gecko) Chrome/54.0.2840.99 Safari/537.36'
+                  }
+        data = requests.get(url=url, params=parameters, headers=header)
         data_json = data.json()['chart']['result'][0]
     except TypeError:
         raise TypeError("No data available. Please check if you have a valid period and/or interval. \n"

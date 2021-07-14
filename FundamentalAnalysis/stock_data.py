@@ -46,7 +46,7 @@ def stock_data(ticker, period="max", interval="1d", start=None, end=None):
         parameters["period1"] = start_timestamp
         parameters["period2"] = end_timestamp
 
-    url = "https://query1.finance.yahoo.com/v8/finance/chart/{ticker}"
+    url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}"
 
     try:
         header = {'Connection': 'keep-alive',

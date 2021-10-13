@@ -18,3 +18,7 @@ from .ratios import financial_statement_growth
 from .stock_data import stock_data
 from .stock_data import stock_data_detailed
 from .stock_data import stock_dividend
+
+import ssl
+
+ssl._create_default_https_context = ssl._create_unverified_context

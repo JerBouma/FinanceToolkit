@@ -59,6 +59,7 @@ Here you can find a list of the available functions within this package separate
      Average Price (VWAP), Date Label and Change over Time). The data collection is limited to
      the companies listed in the function `available_companies`. Use the `stock_data` function for information about
      anything else. (ETFs, Mutual Funds, Options, Indices etc.)
+    - `stock_dividend` - gives complete information about the company's dividend which includes adjusted dividend, dividend, record date, payment date and declaration date over time. This function only allows company tickers and is limited to the companies found by calling `available_companies` from the details module.
 
 ## Installation
 
@@ -133,6 +134,9 @@ stock_data = fa.stock_data(ticker, period="ytd", interval="1d")
 
 # Download detailed stock data
 stock_data_detailed = fa.stock_data_detailed(ticker, api_key, begin="2000-01-01", end="2020-01-01")
+
+# Download dividend history
+dividends = stock_dividend(ticker, api_key, begin="2000-01-01", end="2020-01-01")
 
 ```
 

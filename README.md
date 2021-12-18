@@ -136,7 +136,7 @@ stock_data = fa.stock_data(ticker, period="ytd", interval="1d")
 stock_data_detailed = fa.stock_data_detailed(ticker, api_key, begin="2000-01-01", end="2020-01-01")
 
 # Download dividend history
-dividends = stock_dividend(ticker, api_key, begin="2000-01-01", end="2020-01-01")
+dividends = fa.stock_dividend(ticker, api_key, begin="2000-01-01", end="2020-01-01")
 
 ```
 

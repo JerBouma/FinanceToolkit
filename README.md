@@ -79,11 +79,12 @@ When you run out of daily requests (250), you have to upgrade to a Premium versi
 affiliated with FinancialModellingPrep and never will be.
 
 ## Example
+To collect all annual data about a company, in this case MSFT, you can run the following code:
 
 ```python
 import FundamentalAnalysis as fa
 
-ticker = "AAPL"
+ticker = "MSFT"
 api_key = "YOUR API KEY HERE"
 
 # Show the available companies
@@ -103,31 +104,24 @@ ratings = fa.rating(ticker, api_key)
 
 # Obtain DCFs over time
 dcf_annually = fa.discounted_cash_flow(ticker, api_key, period="annual")
-dcf_quarterly = fa.discounted_cash_flow(ticker, api_key, period="quarter")
 
 # Collect the Balance Sheet statements
 balance_sheet_annually = fa.balance_sheet_statement(ticker, api_key, period="annual")
-balance_sheet_quarterly = fa.balance_sheet_statement(ticker, api_key, period="quarter")
 
 # Collect the Income Statements
 income_statement_annually = fa.income_statement(ticker, api_key, period="annual")
-income_statement_quarterly = fa.income_statement(ticker, api_key, period="quarter")
 
 # Collect the Cash Flow Statements
 cash_flow_statement_annually = fa.cash_flow_statement(ticker, api_key, period="annual")
-cash_flow_statement_quarterly = fa.cash_flow_statement(ticker, api_key, period="quarter")
 
 # Show Key Metrics
 key_metrics_annually = fa.key_metrics(ticker, api_key, period="annual")
-key_metrics_quarterly = fa.key_metrics(ticker, api_key, period="quarter")
 
 # Show a large set of in-depth ratios
 financial_ratios_annually = fa.financial_ratios(ticker, api_key, period="annual")
-financial_ratios_quarterly = fa.financial_ratios(ticker, api_key, period="quarter")
 
 # Show the growth of the company
 growth_annually = fa.financial_statement_growth(ticker, api_key, period="annual")
-growth_quarterly = fa.financial_statement_growth(ticker, api_key, period="quarter")
 
 # Download general stock data
 stock_data = fa.stock_data(ticker, period="ytd", interval="1d")
@@ -139,16 +133,44 @@ stock_data_detailed = fa.stock_data_detailed(ticker, api_key, begin="2000-01-01"
 dividends = fa.stock_dividend(ticker, api_key, begin="2000-01-01", end="2020-01-01")
 
 ```
+Note that quarterly data is not available with a free API key. You should therefore not be able to run this code below without a subscription.
 
-With this data you can do a complete analysis of the selected company, in this case Apple. However, by looping
+```python
+import FundamentalAnalysis as fa
+
+ticker = "MSFT"
+api_key = "YOUR API KEY HERE"
+
+# Obtain DCFs over time
+dcf_quarterly = fa.discounted_cash_flow(ticker, api_key, period="quarter")
+
+# Collect the Balance Sheet statements
+balance_sheet_quarterly = fa.balance_sheet_statement(ticker, api_key, period="quarter")
+
+# Collect the Income Statements
+income_statement_quarterly = fa.income_statement(ticker, api_key, period="quarter")
+
+# Collect the Cash Flow Statements
+cash_flow_statement_quarterly = fa.cash_flow_statement(ticker, api_key, period="quarter")
+
+# Show Key Metrics
+key_metrics_quarterly = fa.key_metrics(ticker, api_key, period="quarter")
+
+# Show a large set of in-depth ratios
+financial_ratios_quarterly = fa.financial_ratios(ticker, api_key, period="quarter")
+
+# Show the growth of the company
+growth_quarterly = fa.financial_statement_growth(ticker, api_key, period="quarter")
+
+```
+
+With this data you can do a complete analysis of the selected company, in this case Microsoft. However, by looping
 over a large selection of companies you are able to collect a bulk of data. Therefore, by  entering a specific sector
 (for example, all tickers of the Semi-Conducter industry) you can quickly quantify the sector and look for
 key performers.
 
 To find companies belonging to a specific sector or industry, please have a look at the JSON files
-[here](https://github.com/JerBouma/FundamentalsQuantifier/tree/master/data). Alternatively, you can have a
-look at the [Fundamentals Quantifier](https://fundamentals-quantifier.herokuapp.com/), a website that I have written
-to visually compare any selection of companies.
+[here](https://github.com/JerBouma/FundamentalsQuantifier/tree/master/data) or use the [Finance Database](https://github.com/JerBouma/FinanceDatabase). Alternatively, you can have a look at the [Fundamentals Quantifier](https://fundamentals-quantifier.herokuapp.com/), a website that I have written to visually compare any selection of companies.
 
 ## Contribution
 

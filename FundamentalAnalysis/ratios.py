@@ -3,6 +3,18 @@ from urllib.error import HTTPError
 import json
 import pandas as pd
 
+def format_data(passed_data, time_span):
+    data_formatted = {}
+    for value in data:
+        if period == "quarter":
+            date = value['date'][:7]
+        else:
+            date = value['date'][:4]
+        del value['date']
+        del value['symbol']
+
+        data_formatted[date] = value
+    return data_formatted
 
 def key_metrics(ticker, api_key, period="annual", TTM=False, limit=0):
     """
@@ -47,16 +59,7 @@ def key_metrics(ticker, api_key, period="annual", TTM=False, limit=0):
     if TTM:
         data_formatted = pd.Series(data[0])
     else:
-        data_formatted = {}
-        for value in data:
-            if period == "quarter":
-                date = value['date'][:7]
-            else:
-                date = value['date'][:4]
-            del value['date']
-            del value['symbol']
-
-            data_formatted[date] = value
+        data_formatted = format_data(data, period)
         data_formatted = pd.DataFrame(data_formatted)
 
     return data_formatted
@@ -105,16 +108,7 @@ def financial_ratios(ticker, api_key, period="annual", TTM=False, limit=0):
     if TTM:
         data_formatted = pd.Series(data[0])
     else:
-        data_formatted = {}
-        for value in data:
-            if period == "quarter":
-                date = value['date'][:7]
-            else:
-                date = value['date'][:4]
-            del value['date']
-            del value['symbol']
-
-            data_formatted[date] = value
+        data_formatted = format_data(data, period)
         data_formatted = pd.DataFrame(data_formatted)
 
     return data_formatted
@@ -155,15 +149,6 @@ def financial_statement_growth(ticker, api_key, period="annual", limit=0):
     if 'Error Message' in data:
         raise ValueError(data['Error Message'])
 
-    data_formatted = {}
-    for value in data:
-        if period == "quarter":
-            date = value['date'][:7]
-        else:
-            date = value['date'][:4]
-        del value['date']
-        del value['symbol']
-
-        data_formatted[date] = value
+    data_formatted = format_data(data, period)
 
     return pd.DataFrame(data_formatted)

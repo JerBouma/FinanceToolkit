@@ -217,7 +217,7 @@ def discounted_cash_flow(ticker, api_key, period="annual", limit=0):
         Data with variables in rows and the period in columns.
     """
     try:
-        response = urlopen(f"https://financialmodelingprep.com/api/v3/discounted-cash-flow/{ticker}"
+        response = urlopen(f"https://financialmodelingprep.com/api/v3/discounted-cash-flow-statement/{ticker}"
                            f"?period={period}&limit={limit}&apikey={api_key}")
         data = json.loads(response.read().decode("utf-8"))
     except HTTPError:
@@ -236,7 +236,7 @@ def discounted_cash_flow(ticker, api_key, period="annual", limit=0):
         pass
 
     try:
-        response = urlopen(f"https://financialmodelingprep.com/api/v3/historical-discounted-cash-flow/{ticker}"
+        response = urlopen(f"https://financialmodelingprep.com/api/v3/historical-discounted-cash-flow-statement/{ticker}"
                            f"?period={period}&apikey={api_key}")
         data = json.loads(response.read().decode("utf-8"))
     except HTTPError:

@@ -119,7 +119,7 @@ def stock_data_detailed(ticker, api_key, begin="1792-05-17", end=None):
         data_json = data['historical']
     except KeyError:
         raise ValueError("No data available. Please note this function only takes a specific selection of companies. \n"
-                         "See: FundamentalAnalysis.available_companies()")
+                         "See: fundamentalanalysis.available_companies()")
 
     data_formatted = {}
     for value in data_json:
@@ -174,7 +174,7 @@ def stock_dividend(ticker, api_key, begin="1792-05-17", end=None):
         data_json = data['historical']
     except KeyError:
         raise ValueError("No data available. Please note this function only takes a specific selection of companies. \n"
-                         "See: FundamentalAnalysis.available_companies()")
+                         "See: fundamentalanalysis.available_companies()")
 
     data_formatted = {}
     for value in data_json:

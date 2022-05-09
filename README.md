@@ -63,9 +63,9 @@ Here you can find a list of the available functions within this package separate
 
 ## Installation
 
-1. `pip install FundamentalAnalysis`
+1. `pip install fundamentalanalysis`
     * Alternatively, download this repository.
-2. (within Python) `import FundamentalAnalysis as fa`
+2. (within Python) `import fundamentalanalysis as fa`
 
 To be able to use this package you need an API Key from FinancialModellingPrep. Follow the following instructions to
 obtain a _free_ API Key. Note that these keys are limited to 250 requests per account. There is no time limit.
@@ -82,7 +82,7 @@ affiliated with FinancialModellingPrep and never will be.
 To collect all annual data about a company, in this case MSFT, you can run the following code:
 
 ```python
-import FundamentalAnalysis as fa
+import fundamentalanalysis as fa
 
 ticker = "MSFT"
 api_key = "YOUR API KEY HERE"
@@ -136,7 +136,7 @@ dividends = fa.stock_dividend(ticker, api_key, begin="2000-01-01", end="2020-01-
 Note that quarterly data is not available with a free API key. You should therefore not be able to run this code below without a subscription.
 
 ```python
-import FundamentalAnalysis as fa
+import fundamentalanalysis as fa
 
 ticker = "MSFT"
 api_key = "YOUR API KEY HERE"

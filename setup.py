@@ -4,9 +4,9 @@ with open("README.md", "r") as fh:
     long_description = fh.read()
 
 setuptools.setup(
-    name="FundamentalAnalysis",
-    packages=["FundamentalAnalysis"],
-    version="0.2.13",
+    name="fundamentalanalysis",
+    packages=["fundamentalanalysis"],
+    version="0.2.14",
     license="MIT",
     description="Fully-fledged Fundamental Analysis package capable of collecting 20 years of Company Profiles,\
     Financial Statements, Ratios and Stock Data of 20.000+ companies.",

@@ -236,17 +236,31 @@ def discounted_cash_flow(ticker, api_key, period="annual", limit=0):
         pass
 
     try:
-        response = urlopen(f"https://financialmodelingprep.com/api/v3/historical-discounted-cash-flow/{ticker}"
-                           f"?period={period}&apikey={api_key}")
+        response = urlopen(f"https://financialmodelingprep.com/api/v3/"
+                           f"historical-discounted-cash-flow/{ticker}?period={period}&apikey={api_key}")
         data = json.loads(response.read().decode("utf-8"))
+        data_json = data[0]['historicalDCF']
     except HTTPError:
         raise ValueError("This endpoint is only for premium members. Please visit the subscription page to upgrade the "
                          "plan (Starter or higher) at https://financialmodelingprep.com/developer/docs/pricing")
+    except KeyError:
+        try:
+            response = urlopen(f"https://financialmodelingprep.com/api/v3/"
+                               f"historical-discounted-cash-flow-statement/{ticker}?period={period}&apikey={api_key}")
+            data = json.loads(response.read().decode("utf-8"))
+            data_json = data[0]
+            print("Hey!")
+        except HTTPError:
+            raise ValueError(
+                "This endpoint is only for premium members. Please visit the subscription page to upgrade the "
+                "plan (Starter or higher) at https://financialmodelingprep.com/developer/docs/pricing")
+        except IndexError:
+            raise ValueError(
+                f"No information available for the ticker {ticker}. Please check if this ticker is actually a stock "
+                f"with the available_companies function.")
 
     if 'Error Message' in data:
         raise ValueError(data['Error Message'])
-
-    data_json = data[0]['historicalDCF']
 
     data_formatted = {}
 

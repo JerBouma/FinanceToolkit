@@ -249,7 +249,6 @@ def discounted_cash_flow(ticker, api_key, period="annual", limit=0):
                                f"historical-discounted-cash-flow-statement/{ticker}?period={period}&apikey={api_key}")
             data = json.loads(response.read().decode("utf-8"))
             data_json = data[0]
-            print("Hey!")
         except HTTPError:
             raise ValueError(
                 "This endpoint is only for premium members. Please visit the subscription page to upgrade the "

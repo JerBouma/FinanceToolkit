@@ -8,6 +8,10 @@ multiple companies or do a sector analysis.
 To find symbols of specific sectors and/or industries have a look at my [Finance Database](https://github.com/JerBouma/FinanceDatabase) or
 see a visualisation of the data on my [Fundamentals Quantifier website](https://github.com/JerBouma/FundamentalsQuantifier).
 
+| Disclaimer regarding affiliation with Financial Modelling Prep |
+|:--|
+| Please note that **I am in no way affiliated with the data provider of this package which is Financial Modelling Prep.** When you notice that data is inaccurate or have any other issue related to the data, note that I simply provide the means to access this data and I am not responsible for the accuracy of the data itself. However, if you have questions regarding the retrieval of data or have suggestions feel free to contact me. |
+
 ![FundamentalAnalysis](https://raw.githubusercontent.com/JerBouma/FundamentalAnalysis/master/images/FundamentalAnalysis.png)
 
 [![BuyMeACoffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-Donate-brightgreen?logo=buymeacoffee)](https://www.buymeacoffee.com/jerbouma)

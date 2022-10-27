@@ -51,8 +51,7 @@ def income_statement(ticker, api_key, period="annual", as_reported=False, limit=
         if period == "quarter":
             date = value['date'][:7]
         else:
-            date = value['date'][:4]
-        del value['date']
+            date = int( value['calendarYear'] )
         del value['symbol']
 
         data_formatted[date] = value
@@ -107,8 +106,7 @@ def balance_sheet_statement(ticker, api_key, period="annual", as_reported=False,
         if period == "quarter":
             date = value['date'][:7]
         else:
-            date = value['date'][:4]
-        del value['date']
+            date = int( value['calendarYear'] )
         del value['symbol']
 
         data_formatted[date] = value
@@ -163,8 +161,7 @@ def cash_flow_statement(ticker, api_key, period="annual", as_reported=False, lim
         if period == "quarter":
             date = value['date'][:7]
         else:
-            date = value['date'][:4]
-        del value['date']
+            date = int( value['calendarYear'] )
         del value['symbol']
 
         data_formatted[date] = value

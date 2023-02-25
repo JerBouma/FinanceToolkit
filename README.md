@@ -173,7 +173,7 @@ over a large selection of companies you are able to collect a bulk of data. Ther
 key performers.
 
 To find companies belonging to a specific sector or industry, please have a look at the JSON files
-[here](https://github.com/JerBouma/FundamentalsQuantifier/tree/master/data) or use the [Finance Database](https://github.com/JerBouma/FinanceDatabase). Alternatively, you can have a look at the [Fundamentals Quantifier](https://fundamentals-quantifier.herokuapp.com/), a website that I have written to visually compare any selection of companies.
+[here](https://github.com/JerBouma/FundamentalsQuantifier/tree/master/data) or use the [Finance Database](https://github.com/JerBouma/FinanceDatabase).
 
 ## Contribution
 

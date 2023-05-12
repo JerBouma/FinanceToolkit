@@ -1,4 +1,4 @@
-[IMAGE]()
+![FinancialToolkit](https://github.com/JerBouma/FinancialToolkitAlpha/assets/46355364/a0f5e7af-d8d6-4ce8-9e71-47376baa35f2)
 
 [![BuyMeACoffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-Donate-brightgreen?logo=buymeacoffee)](https://www.buymeacoffee.com/jerbouma)
 [![Issues](https://img.shields.io/github/issues/jerbouma/fundamentalanalysis)](https://github.com/JerBouma/FundamentalAnalysis/issues)

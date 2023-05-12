@@ -1,0 +1,51 @@
+[tool.poetry]
+name = "financialtoolkit"
+version = "0.50"
+description = "Transparent and Efficient Financial Toolkit"
+license = "MIT"
+authors = ["Jeroen Bouma"]
+packages = [
+    { include = "financialtoolkit" },
+]
+include = ['normalization/*.csv']
+readme = "README.md"
+repository = "https://github.com/JerBouma/FinancialToolkit"
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Financial and Insurance Industry",
+    "Topic :: Office/Business :: Financial :: Investment",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+]
+
+[tool.poetry.dependencies]
+python = "^3.7"
+pandas = "^1.5.0"
+
+[build-system]
+requires = ["setuptools<65.5.0", "poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.ruff]
+line-length = 122
+select = ["E", "W", "F", "Q", "W", "S", "UP", "I", "PD", "SIM", "PLC", "PLE", "PLR", "PLW"]
+ignore = ["S105", "S106", "S107", "PLR0913", "PLR0912"]
+
+[tool.pylint]
+max-line-length = 122
+disable = ["R0913", "W1514", "R0911", "R0912", "R0915", "R0801", "W0221", "C0103"]
+
+[tool.ruff.isort]
+combine-as-imports = true
+force-wrap-aliases = true
+
+[tool.isort]
+profile = "black"
+line_length = 122
+skip_gitignore = true
+combine_as_imports = true
+
+[tool.codespell]
+ignore-words-list = 'ZAR,zar,profund,BASF,basf,applicatio,Ser,Mone,VIE, ist'
+skip = '*.json,./.git,*.csv,pyproject.toml'

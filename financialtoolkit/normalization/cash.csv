@@ -1,0 +1,31 @@
+FinancialModelingPrep,Custom,Generic
+netIncome,Net income,Net Income
+depreciationAndAmortization,Depreciation and amortization,Depreciation and Amortization
+deferredIncomeTax,Deferred income tax,Deferred Income Tax
+stockBasedCompensation,Stock based compensation,Stock Based Compensation
+changeInWorkingCapital,Change in working capital,Change in Working Capital
+accountsReceivables,Accounts receivables,Accounts Receivables
+inventory,Inventory,Inventory
+accountsPayables,Accounts payables,Accounts Payables
+otherWorkingCapital,Other working capital,Other Working Capital
+otherNonCashItems,Other non cash items,Other Non Cash Items
+netCashProvidedByOperatingActivities,Net cash provided by operating activities,Cash Flow from Operations
+investmentsInPropertyPlantAndEquipment,Investments in property plant and equipment,"Proprety, Plant and Equipment"
+acquisitionsNet,Acquisitions net,Acquisitions
+purchasesOfInvestments,Purchases of investments,Purchases of Investments
+salesMaturitiesOfInvestments,Sales maturities of investments,Sales of Investments
+otherInvestingActivites,Other investing activites,Other Investing Activities
+netCashUsedForInvestingActivites,Net cash used for investing activites,Cash Flow from Investing
+debtRepayment,Debt repayment,Debt Repayment
+commonStockIssued,Common stock issued,Common Stock Issued
+commonStockRepurchased,Common stock repurchased,Common Stock Purchased
+dividendsPaid,Dividends paid,Dividends Paid
+otherFinancingActivites,Other financing activites,Other Financing Activities
+netCashUsedProvidedByFinancingActivities,Net cash used provided by financing activities,Cash Flow from Financing
+effectOfForexChangesOnCash,Effect of forex changes on cash,Forex Changes on Cash
+netChangeInCash,Net change in cash,Net Change in Cash
+cashAtEndOfPeriod,Cash at end of period,Cash End of Period
+cashAtBeginningOfPeriod,Cash at beginning of period,Cash Beginning of Period
+operatingCashFlow,Operating cash flow,Operating Cash Flow
+capitalExpenditure,Capital expenditure,Capital Expenditure
+freeCashFlow,Free cash flow,Free Cash Flow

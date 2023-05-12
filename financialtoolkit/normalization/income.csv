@@ -1,0 +1,29 @@
+FinancialModelingPrep,Custom,Generic
+revenue,Revenue,Revenue
+costOfRevenue,Cost of revenue,Cost of Goods Sold
+grossProfit,Gross profit,Gross Profit
+grossProfitRatio,Gross profit ratio,Gross Profit Ratio
+researchAndDevelopmentExpenses,Research and development expenses,Research and Development Expenses
+generalAndAdministrativeExpenses,General and administrative expenses,General and Administrative Expenses
+sellingAndMarketingExpenses,Selling and marketing expenses,Selling and Marketing Expenses
+sellingGeneralAndAdministrativeExpenses,Selling general and administrative expenses,"Selling, General and Administrative Expenses"
+otherExpenses,Other expenses,Other Expenses
+operatingExpenses,Operating expenses,Operating Expenses
+costAndExpenses,Cost and expenses,Cost and Expenses
+interestIncome,Interest income,Interest Income
+interestExpense,Interest expense,Interest Expense
+depreciationAndAmortization,Depreciation and amortization,Depreciation and Amortization
+ebitda,Ebitda,EBITDA
+ebitdaratio,Ebitdaratio,EBITDA Ratio
+operatingIncome,Operating income,Operating Income
+operatingIncomeRatio,Operating income ratio,Operating Income Ratio
+totalOtherIncomeExpensesNet,Total other income expenses net,Total Other Income
+incomeBeforeTax,Income before tax,Income Before Tax
+incomeBeforeTaxRatio,Income before tax ratio,Income Before Tax Ratio
+incomeTaxExpense,Income tax expense,Income Tax Expense
+netIncome,Net income,Net Income
+netIncomeRatio,Net income ratio,Net Income Ratio
+eps,Eps,EPS
+epsdiluted,Epsdiluted,EPS Diluted
+weightedAverageShsOut,Weighted average shs out,Weighted Average Shares
+weightedAverageShsOutDil,Weighted average shs out dil,Weighted Average Shares Diluted

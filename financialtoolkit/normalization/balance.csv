@@ -1,0 +1,44 @@
+FinancialModelingPrep,Custom,Generic
+cashAndCashEquivalents,Cash and cash equivalents,Cash and Cash Equivalents
+shortTermInvestments,Short term investments,Short Term Investments
+cashAndShortTermInvestments,Cash and short term investments,Cash and Short Term Investments
+netReceivables,Net receivables,Accounts Receivable
+inventory,Inventory,Inventory
+otherCurrentAssets,Other current assets,Other Current Assets
+totalCurrentAssets,Total current assets,Current Assets
+propertyPlantEquipmentNet,Property plant equipment net,"Property, Plant and Equipment"
+longTermInvestments,Long term investments,Long Term Investments
+taxAssets,Intangible assets,Tax Assets
+goodwill,Goodwill,Goodwill
+intangibleAssets,Goodwill and intangible assets,Intangible Assets
+otherNonCurrentAssets,Other non current assets,Other Fixed Assets
+totalNonCurrentAssets,Total non current assets,Fixed Assets
+otherAssets,Other assets,Other Assets
+totalAssets,Total assets,Total Assets
+accountPayables,Account payables,Accounts Payable
+shortTermDebt,Short term debt,Short Term Debt
+taxPayables,Tax payables,Tax Payables
+deferredRevenue,Deferred revenue,Deferred Revenue
+otherCurrentLiabilities,Other current liabilities,Other Current Liabilities
+totalCurrentLiabilities,Total current liabilities,Total Current Liabilities
+longTermDebt,Long term debt,Long Term Debt
+deferredRevenueNonCurrent,Deferred revenue non current,Deferred Revenue Non Current
+deferredTaxLiabilitiesNonCurrent,Deferred tax liabilities non current,Deferred Tax Liabilities
+otherNonCurrentLiabilities,Other non current liabilities,Other Non Current Liabilities
+totalNonCurrentLiabilities,Total non current liabilities,Total Non Current Liabilities
+otherLiabilities,Other liabilities,Other Liabilities
+capitalLeaseObligations,Capital lease obligations,Capital Lease Obligations
+totalLiabilities,Total liabilities,Total Liabilities
+preferredStock,Preferred stock,Preferred Stock
+commonStock,Common stock,Common Stock
+retainedEarnings,Retained earnings,Retained Earnings
+accumulatedOtherComprehensiveIncomeLoss,Accumulated other comprehensive income loss,Accumulated Other Comprehensive Income
+othertotalStockholdersEquity,Othertotal stockholders equity,Other Total Shareholder Equity
+totalStockholdersEquity,Total stockholders equity,Total Shareholder Equity
+totalEquity,Total equity,Total Equity
+totalLiabilitiesAndStockholdersEquity,Total liabilities and stockholders equity,Total Liabilities and Shareholder Equity
+minorityInterest,Minority interest,Minority Interest
+totalLiabilitiesAndTotalEquity,Total liabilities and total equity,Total Liabilities and Equity
+totalInvestments,Total investments,Total Investments
+totalDebt,Total debt,Total Debt
+netDebt,Net debt,Net Debt

@@ -1,0 +1,418 @@
+"""Valuation Module"""
+__docformat__ = "numpy"
+
+import pandas as pd
+
+
+def get_earnings_per_share(
+    net_income: float | pd.Series,
+    preferred_dividends: float | pd.Series,
+    average_outstanding_shares: float | pd.Series,
+) -> float | pd.Series:
+    """
+    Calculate the earnings per share (EPS), a valuation ratio that measures the
+    amount of net income earned per share of outstanding common stock.
+
+    Args:
+        net_income (float or pd.Series): Net income of the company.
+        preferred_dividends (float or pd.Series): Preferred dividends of the company.
+        average_outstanding_shares (float or pd.Series): Average outstanding shares of the company.
+
+    Returns:
+        float | pd.Series: The EPS value.
+    """
+    return (net_income - preferred_dividends) / average_outstanding_shares
+
+
+def get_revenue_per_share(
+    total_revenue: float | pd.Series, shares_outstanding: float | pd.Series
+) -> float | pd.Series:
+    """
+    Calculate the revenue per share, a valuation ratio that measures the amount of
+    revenue generated per outstanding share of a company's stock.
+
+    Args:
+        total_revenue (float or pd.Series): Total revenue of the company.
+        shares_outstanding (float or pd.Series): Total number of outstanding shares of the company.
+
+    Returns:
+        float | pd.Series: The revenue per share value.
+    """
+    return total_revenue / shares_outstanding
+
+
+def get_price_earnings_ratio(
+    stock_price: float | pd.Series, earnings_per_share: float | pd.Series
+) -> float | pd.Series:
+    """
+    Calculate the price earnings ratio (P/E), a valuation ratio that compares a company's
+    stock price to its earnings per share.
+
+    Args:
+        stock_price (float or pd.Series): Stock price of the company.
+        earnings_per_share (float or pd.Series): Earnings per share of the company.
+
+    Returns:
+        float | pd.Series: The P/E ratio value.
+    """
+    return stock_price / earnings_per_share
+
+
+def get_earnings_per_share_growth(earnings_per_share: pd.Series) -> float | pd.Series:
+    """
+    Calculate the earnings per share growth.
+
+    Args:
+        net_income (pd.Series): The net income of the company.
+
+    Returns:
+        pd.Series: The growth rate of the company's earnings.
+    """
+    return earnings_per_share.pct_change(periods=1)
+
+
+def get_price_to_earnings_growth_ratio(
+    price_earnings: float | pd.Series, earnings_per_share_growth: float | pd.Series
+) -> float | pd.Series:
+    """
+    Calculate the price earnings to growth (PEG) ratio, a valuation metric that measures the ratio
+    of the price-to-earnings ratio to earnings growth rate.
+
+    Args:
+        price_earnings (float or pd.Series): The company's price-to-earnings ratio.
+        earnings_growth (float or pd.Series): The earnings per share growth rate of the company.
+
+    Returns:
+        float | pd.Series: The PEG ratio value.
+    """
+    return price_earnings / (earnings_per_share_growth * 100)
+
+
+def get_book_value_per_share(
+    total_equity: float | pd.Series,
+    preferred_equity: float | pd.Series,
+    common_shares_outstanding: float | pd.Series,
+) -> float | pd.Series:
+    """
+    Calculate the book value per share, a valuation ratio that measures the amount of
+    common equity value per share outstanding.
+
+    Args:
+        total_equity (float or pd.Series): Total equity of the company.
+        preferred_equity (float or pd.Series): Preferred equity of the company.
+        common_shares_outstanding (float or pd.Series): Common shares outstanding of the company.
+
+    Returns:
+        float | pd.Series: The book value per share value.
+    """
+    return (total_equity - preferred_equity) / common_shares_outstanding
+
+
+def get_price_to_book_ratio(
+    price_per_share: float | pd.Series, book_value_per_share: float | pd.Series
+) -> float | pd.Series:
+    """
+    Calculate the price to book ratio, a valuation ratio that compares a company's market
+    price to its book value per share.
+
+    Args:
+        price_per_share (float or pd.Series): Price per share of the company.
+        book_value_per_share (float or pd.Series): Book value per share of the company.
+
+    Returns:
+        float | pd.Series: The price to book ratio value.
+    """
+    return price_per_share / book_value_per_share
+
+
+def get_interest_debt_per_share(
+    interest_expense: float | pd.Series,
+    total_debt: float | pd.Series,
+    shares_outstanding: float | pd.Series,
+) -> float | pd.Series:
+    """
+    Calculate the interest debt per share, a valuation ratio that measures the
+    amount of interest expense incurred per outstanding share of a company's stock.
+
+    Args:
+        interest_expense (float or pd.Series): Interest expense of the company.
+        total_debt (float or pd.Series): Total debt of the company.
+        shares_outstanding (float or pd.Series): Total number of outstanding shares of the company.
+
+    Returns:
+        float | pd.Series: The interest debt per share value.
+    """
+    return (interest_expense / total_debt) * shares_outstanding
+
+
+def get_capex_per_share(
+    capital_expenditures: float | pd.Series, shares_outstanding: float | pd.Series
+) -> float | pd.Series:
+    """
+    Calculate the capex per share, a valuation ratio that measures the amount of
+    capital expenditures made per outstanding share of a company's stock.
+
+    Args:
+        capital_expenditures (float or pd.Series): Total capital expenditures made by the company.
+        shares_outstanding (float or pd.Series): Total number of outstanding shares of the company.
+
+    Returns:
+        float | pd.Series: The capex per share value.
+    """
+    return capital_expenditures / shares_outstanding
+
+
+def get_dividend_yield(
+    dividend_per_share: float | pd.Series, stock_price: float | pd.Series
+) -> float | pd.Series:
+    """
+    Calculate the dividend yield ratio, a valuation ratio that measures the amount of
+    dividends distributed per share of stock relative to the stock's price.
+
+    Args:
+        dividend_per_share (float or pd.Series): Dividend per share of the company.
+        stock_price (float or pd.Series): Stock price of the company.
+
+    Returns:
+        float | pd.Series: The dividend yield percentage value.
+    """
+    return dividend_per_share / stock_price * 100
+
+
+def get_price_to_cash_flow_ratio(
+    price_per_share: float | pd.Series, cash_flow_per_share: float | pd.Series
+) -> float | pd.Series:
+    """
+    Calculate the price to cash flow ratio, a valuation ratio that compares a company's market
+    price to its cash flow per share.
+
+    Args:
+        price_per_share (float or pd.Series): Price per share of the company.
+        cash_flow_per_share (float or pd.Series): Cash flow per share of the company.
+
+    Returns:
+        float | pd.Series: The price to cash flow ratio value.
+    """
+    return price_per_share / cash_flow_per_share
+
+
+def get_price_to_free_cash_flow_ratio(
+    price_per_share: float | pd.Series, free_cash_flow_per_share: float | pd.Series
+) -> float | pd.Series:
+    """
+    Calculate the price to free cash flow ratio, a valuation ratio that compares a company's market
+    price to its free cash flow per share.
+
+    Args:
+        price_per_share (float or pd.Series): Price per share of the company.
+        free_cash_flow_per_share (float or pd.Series): Free cash flow per share of the company.
+
+    Returns:
+        float | pd.Series: The price to free cash flow ratio value.
+    """
+    return price_per_share / free_cash_flow_per_share
+
+
+def get_ev_to_sales_ratio(
+    enterprise_value: float | pd.Series, total_revenue: float | pd.Series
+) -> float | pd.Series:
+    """
+    Calculate the EV to sales ratio, a valuation ratio that compares a company's enterprise value
+    (EV) to its total revenue.
+
+    Args:
+        enterprise_value (float or pd.Series): Enterprise value of the company.
+        total_revenue (float or pd.Series): Total revenue of the company.
+
+    Returns:
+        float | pd.Series: The EV to sales ratio value.
+    """
+    return enterprise_value / total_revenue
+
+
+def get_enterprise_value(
+    market_cap: float | pd.Series,
+    total_debt: float | pd.Series,
+    minority_interest: float | pd.Series,
+    preferred_equity: float | pd.Series,
+    cash_and_equivalents: float | pd.Series,
+) -> float | pd.Series:
+    """
+    Calculates the Enterprise Value (EV) of a company. The Enterprise Value (EV)
+    is a measure of a company's total value, often used as a more comprehensive
+    alternative to market capitalization. It is calculated as the sum of a company's
+    market capitalization, outstanding debt, minority interest, and
+    preferred equity, minus the cash and cash equivalents.
+
+    Note: All the inputs must be in the same currency and unit for accurate calculations.
+
+    Args:
+        market_cap (float or pd.Series): The market capitalization of the company.
+        total_debt (float or pd.Series): The total debt of the company.
+        minority_interest (float or pd.Series): The value of minority interest in the company.
+        preferred_equity (float or pd.Series): The value of the preferred equity in the company.
+        cash_and_equivalents (float or pd.Series): The value of cash and cash equivalents of the company.
+
+    Returns:
+        float | pd.Series: The Enterprise Value (EV) of the company.
+    """
+    return (
+        market_cap
+        + total_debt
+        + minority_interest
+        + preferred_equity
+        - cash_and_equivalents
+    )
+
+
+def get_ev_to_ebitda_ratio(
+    enterprise_value: float | pd.Series, ebitda: float | pd.Series
+) -> float | pd.Series:
+    """
+    Calculates the enterprise value over EBITDA ratio, which is a valuation ratio
+    that measures a company's total value (including debt and equity) relative to its
+    EBITDA.
+
+    Args:
+        enterprise_value (float or pd.Series): The total value of a company (market capitalization
+            plus debt minus cash and cash equivalents).
+        ebitda (float or pd.Series): Earnings before interest, taxes, depreciation, and amortization
+            of the company.
+
+    Returns:
+        float | pd.Series: The enterprise value over EBITDA ratio.
+    """
+    return enterprise_value / ebitda
+
+
+def get_ev_to_operating_cashflow_ratio(
+    enterprise_value: float | pd.Series, operating_cashflow: float | pd.Series
+) -> float | pd.Series:
+    """
+    Calculates the enterprise value over operating cash flow ratio, which is a valuation ratio
+    that measures a company's total value (including debt and equity) relative to its
+    operating cash flow.
+
+    Args:
+        enterprise_value (float or pd.Series): The total value of a company (market capitalization
+            plus debt minus cash and cash equivalents).
+        operating_cashflow (float or pd.Series): The cash generated by the company's operations.
+
+    Returns:
+        float | pd.Series: The enterprise value over operating cash flow ratio.
+    """
+    return enterprise_value / operating_cashflow
+
+
+def get_earnings_yield(
+    earnings_per_share: float | pd.Series, market_price_per_share: float | pd.Series
+) -> float | pd.Series:
+    """
+    Calculates the earnings yield ratio, which measures the earnings per share relative
+    to the market price per share.
+
+    Args:
+        earnings_per_share (float or pd.Series): Earnings per share of the company.
+        market_price_per_share (float or pd.Series): Market price per share of the company.
+
+    Returns:
+        float | pd.Series: The earnings yield ratio.
+    """
+    return earnings_per_share / market_price_per_share
+
+
+def get_payout_ratio(
+    dividends: float | pd.Series, earnings: float | pd.Series
+) -> float | pd.Series:
+    """
+    Calculates the payout ratio, which measures the proportion of earnings paid out as
+    dividends to shareholders.
+
+    Args:
+        dividends (float or pd.Series): Dividends paid by the company.
+        earnings (float or pd.Series): Earnings of the company.
+
+    Returns:
+        float | pd.Series: The payout ratio.
+    """
+    return dividends / earnings
+
+
+def get_tangible_asset_value(
+    total_assets: float | pd.Series,
+    total_liabilities: float | pd.Series,
+    goodwill: float | pd.Series,
+) -> float | pd.Series:
+    """
+    Calculate the tangible asset value, which represents the total value of a company's assets
+    that can be used to generate revenue.
+
+    Args:
+        total_assets (float or pd.Series): The total assets of the company.
+        total_liabilities (float or pd.Series): The total liabilities of the company.
+        goodwill (float or pd.Series): The goodwill of the company.
+
+    Returns:
+        float | pd.Series: The tangible asset value.
+    """
+    return total_assets - total_liabilities - goodwill
+
+
+def get_net_current_asset_value(
+    total_current_assets: float | pd.Series,
+    total_current_liabilities: float | pd.Series,
+) -> float | pd.Series:
+    """
+    Calculate the net current asset value, which is the total value of a company's current assets
+    minus its current liabilities.
+
+    Args:
+        total_current_assets (float or pd.Series): The current assets of the company.
+        total_current_liabilities (float or pd.Series): The current liabilities of the company.
+
+    Returns:
+        float | pd.Series: The net current asset value.
+    """
+    return total_current_assets - total_current_liabilities
+
+
+def get_enterprise_value_multiplier(
+    enterprise_value: float | pd.Series,
+    earnings_before_interest_and_taxes: float | pd.Series,
+) -> float | pd.Series:
+    """
+    Calculate the enterprise value multiplier, a financial ratio that measures the total value of a
+    company's operations (including debt and equity) relative to its earnings before interest and taxes.
+
+    Args:
+        enterprise_value (float or pd.Series): The total value of a company's operations.
+        earnings_before_interest_and_taxes (float or pd.Series): The company's earnings before interest and taxes.
+
+    Returns:
+        float | pd.Series: The enterprise value multiplier value.
+    """
+    return enterprise_value / earnings_before_interest_and_taxes
+
+
+def get_price_fair_value(
+    price: float | pd.Series,
+    earnings_per_share: float | pd.Series,
+    growth_rate: float | pd.Series,
+    discount_rate: float | pd.Series,
+) -> float | pd.Series:
+    """
+    Calculate the fair value of a stock, a valuation metric that estimates the intrinsic value of a
+    company's stock based on its earnings per share, growth rate, and discount rate.
+
+    Args:
+        price (float or pd.Series): The current price of the stock.
+        earnings_per_share (float or pd.Series): The company's earnings per share.
+        growth_rate (float or pd.Series): The expected growth rate of the company's earnings.
+        discount_rate (float or pd.Series): The required rate of return on the stock.
+
+    Returns:
+        float | pd.Series: The fair value of the stock.
+    """
+    return (
+        earnings_per_share * ((1 + growth_rate) / (discount_rate - growth_rate)) - price
+    )

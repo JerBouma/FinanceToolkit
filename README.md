@@ -12,22 +12,6 @@ For example, Microsoft's Price-to-Earnings (PE) ratio on the 6th of May, 2023 is
 
 **This is why I designed the FinancialToolkit**, this is an open-source financial toolkit in which all relevant financial ratios, indicators and performance measurements are written down in the most simplistic way allowing for complete transparency of the calculation method. This allows you to not have to rely on metrics from other providers and, given a financial statement, allow for efficient manual calculations. This leads to one uniform method of calculation being applied that is available and understood by everyone.
 
-This package has two paths that can be explored further:
-
-## [The Analyzer 🔍](#the-analyzer)
-
-Making use of the `Analyzer` class that allows for any amount of companies to be analyzed and has the option to collect data from FinancialModelingPrep or by using custom financial statements which are then normalized to be able to calculate efficiency, liquidity, profitability, solvency and valuation metrics in an instant. With the custom input, this package offers support for virtually any platform including Bloomberg, Eikon Refinitiv, OpenBB or any data provider like Polygon, YCharts and AlphaVantage. 
-
-**This path is recommended for those looking to find a tool that collects data and provides the calculations for further analysis while benefiting from the open source and transparent nature of the package.**
-
-
-## [The Toolkit 🛠️](#the-toolkit)
-
-Making use of the extensive collection of ratios, indicators and performance measurements (50+) by directly calling functions like `price_to_earnings_ratio`, `extended_dupont_analysis`, `debt_to_assets_ratio`, `sortino_ratio` and `tracking_error` which tend to accept any input, let it be a float, an array or DataFrame. This allows the package to truly be used as a toolkit, as you are in need of certain models and metric calculations, you call the function directly and input the relevant variables.
-
-**This path is recommended for those looking to delve deeper into the calculations as part of their own models or research being able to rely on validated methods allowing for efficiency.**
-___
-
 The Financial Toolkit is complimented very well with the [Finance Database 🌎](https://github.com/JerBouma/FinanceDatabase), a database that features 300.000+ symbols containing Equities, ETFs, Funds, Indices, Currencies, Cryptocurrencies and Money Markets. By utilising both, it is possible to do a fully-fledged competitive analysis with the tickers found from the FinanceDatabase inputted into the FinancialToolkit.
 
 ---
@@ -44,9 +28,9 @@ To install the FinancialToolkit it simply requires the following:
 
 Note the following:
 
-- **Technical indicators are on purpose not included within this package as I find that [ta-lib](https://ta-lib.org/) does an excellent job in providing these.** I recommend using their package alongside the FinancialToolkit.
-- **I've not included any portfolio optimization techniques as I believe that [Riskfolio-lib](https://riskfolio-lib.readthedocs.io/en/latest/index.html) should be used for this purpose.** The author has spend countless of hours on desiging this package and is therefore a true domain export in this area. The FinancialToolkit does however compliment well with this package through providing key metrics to perform portfolio attribution.
-- **I've used merely one source as a data provider because I believe that platforms like [OpenBB](https://openbb.co/) do an excellent job at data aggregation.** With the 'Custom' option, you are able to combine OpenBB with the FinancialToolkit to collect data and perform the necessary calculations efficiently.
+- **Technical indicators are on purpose only limited included within this package as I find that [ta-lib](https://ta-lib.org/) does an excellent job in providing these.** I recommend using their package alongside the FinancialToolkit.
+- **I've not included any portfolio attribution or optimization techniques as I believe that [Riskfolio-lib](https://riskfolio-lib.readthedocs.io/en/latest/index.html) should be used for this purpose.** The author has spend countless of hours on desiging this package and is therefore a true domain expert in this area. The FinancialToolkit does, however, compliment well with this package through providing key metrics to perform portfolio attribution.
+- **I've used merely one source as a data provider because I believe that platforms like [OpenBB](https://openbb.co/) do an excellent job at data aggregation.** With the option to provide your own financial statements, you are able to combine OpenBB with the FinancialToolkit to collect data and perform the necessary calculations efficiently.
 - **I am in no way affiliated FinancialModelingprep and never will be.** I have chosen their source as I find it to be the most transparent and reliable. When you notice that data is inaccurate or have any other issue related to the data, note that I simply provide the means to access this data and I am not responsible for the accuracy of the data itself. For this, use [their contact form](https://site.financialmodelingprep.com/contact) or provide the data yourself.
 
 **To be able to use the functionality of FinancialModelingPrep you need an API Key from their website.** Use the following instructions to obtain a _free_ API Key. Note that these keys are limited to 250 requests per day but the premium plans are kept at a low cost in case you do run out of the limit or have a need for access to more data.

@@ -1,0 +1,45 @@
+FinancialModelingPrep,Generic
+cashAndCashEquivalents,Cash and Cash Equivalents
+shortTermInvestments,Short Term Investments
+cashAndShortTermInvestments,Cash and Short Term Investments
+netReceivables,Accounts Receivable
+inventory,Inventory
+otherCurrentAssets,Other Current Assets
+totalCurrentAssets,Current Assets
+propertyPlantEquipmentNet,"Property, Plant and Equipment"
+longTermInvestments,Long Term Investments
+taxAssets,Tax Assets
+goodwill,Goodwill
+intangibleAssets,Intangible Assets
+otherNonCurrentAssets,Other Fixed Assets
+totalNonCurrentAssets,Fixed Assets
+otherAssets,Other Assets
+totalAssets,Total Assets
+accountPayables,Accounts Payable
+shortTermDebt,Short Term Debt
+taxPayables,Tax Payables
+deferredRevenue,Deferred Revenue
+otherCurrentLiabilities,Other Current Liabilities
+totalCurrentLiabilities,Total Current Liabilities
+longTermDebt,Long Term Debt
+deferredRevenueNonCurrent,Deferred Revenue Non Current
+deferredTaxLiabilitiesNonCurrent,Deferred Tax Liabilities
+otherNonCurrentLiabilities,Other Non Current Liabilities
+totalNonCurrentLiabilities,Total Non Current Liabilities
+otherLiabilities,Other Liabilities
+capitalLeaseObligations,Capital Lease Obligations
+totalDebt,Total Debt
+netDebt,Net Debt
+totalInvestments,Total Investments
+totalLiabilities,Total Liabilities
+preferredStock,Preferred Stock
+commonStock,Common Stock
+retainedEarnings,Retained Earnings
+accumulatedOtherComprehensiveIncomeLoss,Accumulated Other Comprehensive Income
+othertotalStockholdersEquity,Other Total Shareholder Equity
+,Minority Interest
+totalStockholdersEquity,Total Shareholder Equity
+totalEquity,Total Equity
+totalLiabilitiesAndStockholdersEquity,Total Liabilities and Shareholder Equity
+minorityInterest,Minority Interest
+totalLiabilitiesAndTotalEquity,Total Liabilities and Equity

@@ -41,7 +41,8 @@ def get_debt_to_equity_ratio(
 
 
 def get_interest_coverage_ratio(
-    earnings_before_interest_taxes_depreciation_amortization: float | pd.Series,
+    operating_income: float | pd.Series,
+    depreciation_and_amortization: float | pd.Series,
     interest_expense: float | pd.Series,
 ) -> float | pd.Series:
     """
@@ -49,15 +50,14 @@ def get_interest_coverage_ratio(
     ability to pay its interest expenses on outstanding debt.
 
     Args:
-        earnings_before_interest_taxes_depreciation_amortization (float or pd.Series):
-            Earnings before interest, taxes, depreciation, and amortization (EBITDA)
-            of the company.
+        operating_income (float or pd.Series): Operating income of the company.
+        depreciation_and_amortization (float or pd.Series): Depreciation and amortization of the company.
         interest_expense (float or pd.Series): Total interest expense of the company.
 
     Returns:
         float | pd.Series: The interest coverage ratio value.
     """
-    return earnings_before_interest_taxes_depreciation_amortization / interest_expense
+    return (operating_income + depreciation_and_amortization) / interest_expense
 
 
 def get_debt_service_coverage_ratio(
@@ -114,27 +114,28 @@ def get_free_cash_flow_yield(
 
 
 def get_net_debt_to_ebitda_ratio(
-    net_debt: float | pd.Series, ebitda: float | pd.Series
+    operating_income: float | pd.Series,
+    depreciation_and_amortization: float | pd.Series,
+    net_debt: float | pd.Series,
 ) -> float | pd.Series:
     """
     Calculates the net debt to EBITDA ratio, which measures the net debt of the company
     relative to its EBITDA.
 
     Args:
+        operating_income (float or pd.Series): Operating income of the company.
+        depreciation_and_amortization (float or pd.Series): Depreciation and amortization of the company.
         net_debt (float or pd.Series): Net debt of the company.
-        ebitda (float or pd.Series): Earnings before interest, taxes, depreciation, and amortization
-            of the company.
 
     Returns:
         float | pd.Series: The net debt to EBITDA ratio.
     """
-    return net_debt / ebitda
+    return net_debt / (operating_income + depreciation_and_amortization)
 
 
 def get_cash_flow_coverage_ratio(
     operating_cash_flow: float | pd.Series,
-    interest_expense: float | pd.Series,
-    current_maturities_of_long_term_debt: float | pd.Series,
+    total_debt: float | pd.Series,
 ) -> float | pd.Series:
     """
     Calculate the cash flow coverage ratio, a solvency ratio that measures a company's ability to pay off its debt
@@ -142,15 +143,12 @@ def get_cash_flow_coverage_ratio(
 
     Args:
         operating_cash_flow (float or pd.Series): Operating cash flow of the company.
-        interest_expense (float or pd.Series): Interest expense of the company.
-        current_maturities_of_long_term_debt (float or pd.Series): Current maturities of long-term debt of the company.
+        total_debt (float or pd.Series): Total debt of the company.
 
     Returns:
         float | pd.Series: The cash flow coverage ratio value.
     """
-    return operating_cash_flow / (
-        interest_expense + current_maturities_of_long_term_debt
-    )
+    return operating_cash_flow / total_debt
 
 
 def get_capex_coverage_ratio(

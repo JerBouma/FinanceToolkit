@@ -1,0 +1,32 @@
+FinancialModelingPrep,Generic
+netIncome,Net Income
+depreciationAndAmortization,Depreciation and Amortization
+deferredIncomeTax,Deferred Income Tax
+stockBasedCompensation,Stock Based Compensation
+changeInWorkingCapital,Change in Working Capital
+accountsReceivables,Accounts Receivables
+inventory,Inventory
+accountsPayables,Accounts Payables
+otherWorkingCapital,Other Working Capital
+otherNonCashItems,Other Non Cash Items
+netCashProvidedByOperatingActivities,Cash Flow from Operations
+investmentsInPropertyPlantAndEquipment,"Proprety, Plant and Equipment"
+acquisitionsNet,Acquisitions
+purchasesOfInvestments,Purchases of Investments
+salesMaturitiesOfInvestments,Sales of Investments
+otherInvestingActivites,Other Investing Activities
+netCashUsedForInvestingActivites,Cash Flow from Investing
+debtRepayment,Debt Repayment
+commonStockIssued,Common Stock Issued
+commonStockRepurchased,Common Stock Purchased
+dividendsPaid,Dividends Paid
+,Preferred Dividends Paid
+otherFinancingActivites,Other Financing Activities
+netCashUsedProvidedByFinancingActivities,Cash Flow from Financing
+effectOfForexChangesOnCash,Forex Changes on Cash
+netChangeInCash,Net Change in Cash
+cashAtEndOfPeriod,Cash End of Period
+cashAtBeginningOfPeriod,Cash Beginning of Period
+operatingCashFlow,Operating Cash Flow
+capitalExpenditure,Capital Expenditure
+freeCashFlow,Free Cash Flow

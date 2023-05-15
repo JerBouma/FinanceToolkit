@@ -23,6 +23,19 @@ classifiers = [
 python = "^3.7"
 pandas = "^1.5.0"
 
+[tool.poetry.group.dev.dependencies]
+pytest = "^6.2.2"
+pylint = "2.17.0"
+codespell = "^2.2.4"
+black = "^23.1.0"
+bandit = "^1.7.0"
+pytest-mock = "^3.6.1"
+pytest-recording = "^0.12.0"
+pytest-cov = "^3.0.0"
+ruff = "^0.0.256"
+pytest-timeout = "^2.1.0"
+pytest-recorder = "^0.2.1"
+
 [build-system]
 requires = ["setuptools<65.5.0", "poetry-core>=1.0.0"]
 build-backend = "poetry.core.masonry.api"

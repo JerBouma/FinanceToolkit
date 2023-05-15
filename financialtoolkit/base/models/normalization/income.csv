@@ -1,0 +1,29 @@
+FinancialModelingPrep,Generic
+revenue,Revenue
+costOfRevenue,Cost of Goods Sold
+grossProfit,Gross Profit
+grossProfitRatio,Gross Profit Ratio
+researchAndDevelopmentExpenses,Research and Development Expenses
+generalAndAdministrativeExpenses,General and Administrative Expenses
+sellingAndMarketingExpenses,Selling and Marketing Expenses
+sellingGeneralAndAdministrativeExpenses,"Selling, General and Administrative Expenses"
+otherExpenses,Other Expenses
+operatingExpenses,Operating Expenses
+costAndExpenses,Cost and Expenses
+interestIncome,Interest Income
+interestExpense,Interest Expense
+depreciationAndAmortization,Depreciation and Amortization
+ebitda,EBITDA
+ebitdaratio,EBITDA Ratio
+operatingIncome,Operating Income
+operatingIncomeRatio,Operating Income Ratio
+totalOtherIncomeExpensesNet,Total Other Income
+incomeBeforeTax,Income Before Tax
+incomeBeforeTaxRatio,Income Before Tax Ratio
+incomeTaxExpense,Income Tax Expense
+netIncome,Net Income
+netIncomeRatio,Net Income Ratio
+eps,EPS
+epsdiluted,EPS Diluted
+weightedAverageShsOut,Weighted Average Shares
+weightedAverageShsOutDil,Weighted Average Shares Diluted

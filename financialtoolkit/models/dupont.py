@@ -51,7 +51,7 @@ def get_dupont_analysis(
     return pd.DataFrame.from_dict(components, orient="index")
 
 
-def get_extended_dupont_analyis(
+def get_extended_dupont_analysis(
     income_before_tax: float | pd.Series,
     operating_income: float | pd.Series,
     net_income: float | pd.Series,

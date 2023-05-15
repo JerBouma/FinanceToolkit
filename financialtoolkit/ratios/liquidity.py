@@ -112,7 +112,7 @@ def get_operating_cash_flow_ratio(
 
 
 def get_operating_cash_flow_sales_ratio(
-    operating_cash_flow: float | pd.Series, sales: float | pd.Series
+    operating_cash_flow: float | pd.Series, revenue: float | pd.Series
 ) -> float | pd.Series:
     """
     Calculate the operating cash flow to sales ratio, a liquidity ratio that measures the ability of a company to generate
@@ -120,12 +120,12 @@ def get_operating_cash_flow_sales_ratio(
 
     Args:
         operating_cash_flow (float or pd.Series): Operating cash flow of the company.
-        sales (float or pd.Series): Sales of the company.
+        revenue (float or pd.Series): Sales of the company.
 
     Returns:
         float | pd.Series: The operating cash flow to sales ratio value.
     """
-    return operating_cash_flow / sales
+    return operating_cash_flow / revenue
 
 
 def get_short_term_coverage_ratio(

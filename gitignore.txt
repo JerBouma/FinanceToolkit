@@ -6,7 +6,6 @@ __pycache__/
 build/
 dist/
 PyPi Build/
-Tests/*.html
 .DS_Store
 *.ipynb
 

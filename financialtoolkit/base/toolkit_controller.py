@@ -39,9 +39,10 @@ class Toolkit:
         self,
         tickers,
         api_key: str = "",
-        balance: pd.DataFrame() = pd.DataFrame(),
-        income: pd.DataFrame() = pd.DataFrame(),
-        cash: pd.DataFrame() = pd.DataFrame(),
+        historical: pd.DataFrame = pd.DataFrame(),
+        balance: pd.DataFrame = pd.DataFrame(),
+        income: pd.DataFrame = pd.DataFrame(),
+        cash: pd.DataFrame = pd.DataFrame(),
         format_location: str = "",
     ):
         """
@@ -72,10 +73,16 @@ class Toolkit:
             self._rating: pd.DataFrame = pd.DataFrame()
 
         # Initialization of Historical Variables
-        self._daily_historical_data: pd.DataFrame = pd.DataFrame()
+        self._daily_historical_data: pd.DataFrame = (
+            historical if not historical.empty else pd.DataFrame()
+        )
         self._weekly_historical_data: pd.DataFrame = pd.DataFrame()
         self._monthly_historical_data: pd.DataFrame = pd.DataFrame()
-        self._yearly_historical_data: pd.DataFrame = pd.DataFrame()
+        self._yearly_historical_data: pd.DataFrame = (
+            _convert_daily_to_yearly(self._daily_historical_data)
+            if not historical.empty
+            else pd.DataFrame()
+        )
 
         # Initialization of Normalization Variables
         self._balance_sheet_statement_generic: pd.DataFrame = _read_normalization_file(
@@ -300,18 +307,36 @@ class Toolkit:
             self._daily_historical_data = _get_historical_data(
                 self._tickers, start, end, interval="1d"
             )
+
+            if len(self._tickers) == 1:
+                return self._daily_historical_data.xs(
+                    self._tickers[0], level=1, axis="columns"
+                )
+
             return self._daily_historical_data
 
         if period == "weekly":
             self._weekly_historical_data = _get_historical_data(
                 self._tickers, start, end, interval="1wk"
             )
+
+            if len(self._tickers) == 1:
+                return self._weekly_historical_data.xs(
+                    self._tickers[0], level=1, axis="columns"
+                )
+
             return self._weekly_historical_data
 
         if period == "monthly":
             self._monthly_historical_data = _get_historical_data(
                 self._tickers, start, end, interval="1mo"
             )
+
+            if len(self._tickers) == 1:
+                return self._monthly_historical_data.xs(
+                    self._tickers[0], level=1, axis="columns"
+                )
+
             return self._monthly_historical_data
 
         if period == "yearly":
@@ -323,6 +348,12 @@ class Toolkit:
             self._yearly_historical_data = _convert_daily_to_yearly(
                 self._daily_historical_data
             )
+
+            if len(self._tickers) == 1:
+                return self._yearly_historical_data.xs(
+                    self._tickers[0], level=1, axis="columns"
+                )
+
             return self._yearly_historical_data
 
         raise ValueError(
@@ -360,7 +391,7 @@ class Toolkit:
             )
 
         if len(self._tickers) == 1:
-            return self._balance_sheet_statement[self._tickers[0]]
+            return self._balance_sheet_statement.loc[self._tickers[0]]
 
         return self._balance_sheet_statement
 
@@ -395,7 +426,7 @@ class Toolkit:
             )
 
         if len(self._tickers) == 1:
-            return self._income_statement[self._tickers[0]]
+            return self._income_statement.loc[self._tickers[0]]
 
         return self._income_statement
 
@@ -430,7 +461,7 @@ class Toolkit:
             )
 
         if len(self._tickers) == 1:
-            return self._cash_flow_statement[self._tickers[0]]
+            return self._cash_flow_statement.loc[self._tickers[0]]
 
         return self._cash_flow_statement
 

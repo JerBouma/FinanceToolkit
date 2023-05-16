@@ -39,7 +39,7 @@ def get_operating_margin(
 
 
 def get_net_profit_margin(
-    net_income: float | pd.Series, total_revenue: float | pd.Series
+    net_income: float | pd.Series, revenue: float | pd.Series
 ) -> float | pd.Series:
     """
     Calculate the net profit margin, a profitability ratio that measures the percentage
@@ -47,12 +47,12 @@ def get_net_profit_margin(
 
     Args:
         net_income (float or pd.Series): Net income of the company.
-        total_revenue (float or pd.Series): Total revenue of the company.
+        revenue (float or pd.Series): Revenue of the company.
 
     Returns:
         float | pd.Series: The net profit margin value as a percentage.
     """
-    return net_income / total_revenue
+    return net_income / revenue
 
 
 def get_interest_burden_ratio(
@@ -93,7 +93,7 @@ def get_income_before_tax_profit_margin(
 
 
 def get_effective_tax_rate(
-    income_tax_expense: float | pd.Series, pretax_income: float | pd.Series
+    income_tax_expense: float | pd.Series, income_before_tax: float | pd.Series
 ) -> float | pd.Series:
     """
     Calculate the effective tax rate, a financial ratio that measures the percentage of pretax income
@@ -101,12 +101,12 @@ def get_effective_tax_rate(
 
     Args:
         income_tax_expense (float or pd.Series): The amount of income tax paid by the company.
-        pretax_income (float or pd.Series): The company's income before taxes.
+        income_before_tax (float or pd.Series): The company's income before taxes.
 
     Returns:
         float | pd.Series: The effective tax rate value.
     """
-    return income_tax_expense / pretax_income
+    return income_tax_expense / income_before_tax
 
 
 def get_return_on_assets(
@@ -146,7 +146,9 @@ def get_return_on_equity(
 def get_return_on_invested_capital(
     net_income: float | pd.Series,
     dividends: float | pd.Series,
-    invested_capital: float | pd.Series,
+    effective_tax_rate: float | pd.Series,
+    total_equity: float | pd.Series,
+    total_debt: float | pd.Series,
 ) -> float | pd.Series:
     """
     Calculate the return on invested capital, a financial ratio that measures the company's return on
@@ -155,12 +157,14 @@ def get_return_on_invested_capital(
     Args:
         net_income (float or pd.Series): The company's net income.
         dividends (float or pd.Series): The dividends paid by the company.
-        invested_capital (float or pd.Series): The total capital invested in the company.
+        effective_tax_rate (float or pd.Series): The effective tax rate of the company.
+        total_equity (float or pd.Series): The total equity of the company.
+        total_debt (float or pd.Series): The total debt of the company.
 
     Returns:
         float | pd.Series: The return on invested capital value.
     """
-    return (net_income - dividends) / invested_capital
+    return ((net_income - dividends) * (1 - effective_tax_rate)) / (total_equity + total_debt)
 
 
 def get_income_quality_ratio(

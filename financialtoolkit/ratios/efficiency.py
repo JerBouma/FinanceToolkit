@@ -1,11 +1,11 @@
-"""Effiicency Module"""
+"""Efficncy Module"""
 __docformat__ = "numpy"
 
 import pandas as pd
 
 
 def get_asset_turnover_ratio(
-    sales: float | pd.Series, total_assets: float | pd.Series
+    sales: float | pd.Series, total_assets_begin: float | pd.Series, total_assets_end
 ) -> float | pd.Series:
     """
     Calculate the asset turnover ratio, an efficiency ratio that measures how
@@ -13,16 +13,17 @@ def get_asset_turnover_ratio(
 
     Args:
         sales (float or pd.Series): Total sales of the company.
-        total_assets (float or pd.Series): Total assets of the company.
+        total_assets_begin (float or pd.Series): Total assets at the beginning of the period.
+        total_assets_end (float or pd.Series): Total assets at the end of the period.
 
     Returns:
         float | pd.Series: The asset turnover ratio value.
     """
-    return sales / total_assets
+    return sales / ((total_assets_begin + total_assets_end) / 2)
 
 
 def get_inventory_turnover_ratio(
-    cost_of_goods_sold: float | pd.Series, average_inventory: float | pd.Series
+    cost_of_goods_sold: float | pd.Series, inventory_begin: float | pd.Series, inventory_end: float | pd.Series
 ) -> float | pd.Series:
     """
     Calculate the inventory turnover ratio, an efficiency ratio that measures
@@ -30,16 +31,18 @@ def get_inventory_turnover_ratio(
 
     Args:
         cost_of_goods_sold (float or pd.Series): Total cost of goods sold of the company.
-        average_inventory (float or pd.Series): Average inventory of the company.
+        beginning_inventory (float or pd.Series): Beginning inventory of the company.
+        ending_inventory (float or pd.Series): Ending inventory of the company.
 
     Returns:
         float | pd.Series: The inventory turnover ratio value.
     """
-    return cost_of_goods_sold / average_inventory
+    return cost_of_goods_sold / ((inventory_begin + inventory_end) / 2)
 
 
 def get_days_of_inventory_outstanding(
-    average_inventory: float | pd.Series,
+    inventory_begin: float | pd.Series,
+    inventory_end: float | pd.Series,
     cost_of_goods_sold: float | pd.Series,
     days: int = 365,
 ) -> float | pd.Series:
@@ -48,17 +51,19 @@ def get_days_of_inventory_outstanding(
     how long it takes a company to sell its inventory.
 
     Args:
-        average_inventory (float or pd.Series): Average inventory of the company.
+        inventory_begin (float or pd.Series): Beginning inventory of the company.
+        inventory_end (float or pd.Series): Ending inventory of the company.
         cost_of_goods_sold (float or pd.Series): Total cost of goods sold of the company.
+        days (int, optional): Number of days in the year. Defaults to 365.
 
     Returns:
         float | pd.Series: The days sales in inventory ratio value.
     """
-    return days * average_inventory / cost_of_goods_sold
+    return ((inventory_begin + inventory_end) / 2) / cost_of_goods_sold * days
 
 
 def get_days_of_sales_outstanding(
-    accounts_receivable: float | pd.Series, revenue: float | pd.Series, days: int = 365
+    accounts_receivable_begin: float | pd.Series, accounts_receivable_end: float | pd.Series, net_credit_sales: float | pd.Series, days: int = 365
 ) -> float | pd.Series:
     """
     Calculate the days of sales outstanding, an efficiency ratio that measures
@@ -66,14 +71,15 @@ def get_days_of_sales_outstanding(
     credit sales.
 
     Args:
-        accounts_receivable (float or pd.Series): Accounts receivable of the company.
-        revenue (float or pd.Series): Revenue of the company.
+        accounts_receivable_begin (float or pd.Series): Beginning accounts receivable of the company.
+        accounts_receivable_end (float or pd.Series): Ending accounts receivable of the company.
+        net_credit_sales (float or pd.Series): Net credit sales of the company.
         days (int, optional): Number of days in the year. Defaults to 365.
 
     Returns:
         float | pd.Series: The days of sales outstanding value.
     """
-    return (accounts_receivable / revenue) * days
+    return ((accounts_receivable_begin + accounts_receivable_end) / 2) / net_credit_sales * days
 
 
 def get_operating_cycle(
@@ -95,25 +101,27 @@ def get_operating_cycle(
 
 
 def get_accounts_payables_turnover_ratio(
-    costs_of_goods_sold: float | pd.Series, average_accounts_payable: float | pd.Series
+    cost_of_goods_sold: float | pd.Series, accounts_payable_begin: float | pd.Series, accounts_payable_end: float | pd.Series
 ) -> float | pd.Series:
     """
     Calculate the accounts payable turnover ratio is an efficiency ratio that measures how
     quickly a company pays its suppliers.
 
     Args:
-        costs_of_goods_sold (float or pd.Series): Total Costs of Goods Sold of the company.
-        average_accounts_payable (float or pd.Series): Average accounts payable of the company.
+        cost_of_goods_sold (float or pd.Series): Total Costs of Goods Sold of the company.
+        accounts_payable_begin (float or pd.Series): Beginning accounts payable of the company.
+        accounts_payable_end (float or pd.Series): Ending accounts payable of the company.
 
     Returns:
         float | pd.Series: The payables turnover ratio value.
     """
-    return costs_of_goods_sold / average_accounts_payable
+    return cost_of_goods_sold / ((accounts_payable_begin + accounts_payable_end) / 2)
 
 
 def get_days_of_accounts_payable_outstanding(
-    costs_of_goods_sold: float | pd.Series,
-    average_accounts_payable: float | pd.Series,
+    cost_of_goods_sold: float | pd.Series,
+    accounts_payable_begin: float | pd.Series,
+    accounts_payable_end: float | pd.Series  ,
     days: int = 365,
 ) -> float | pd.Series:
     """
@@ -121,14 +129,15 @@ def get_days_of_accounts_payable_outstanding(
     number of days it takes a company to pay its suppliers.
 
     Args:
-        costs_of_goods_sold (float or pd.Series): Total Costs of Goods Sold of the company.
-        average_accounts_payable (float or pd.Series): Average accounts payable of the company.
+        cost_of_goods_sold (float or pd.Series): Total Costs of Goods Sold of the company.
+        accounts_payable_begin (float or pd.Series): Beginning accounts payable of the company.
+        accounts_payable_end (float or pd.Series): Ending accounts payable of the company.
         days (int, optional): Number of days in the year. Defaults to 365.
 
     Returns:
         float | pd.Series: The days payables outstanding value.
     """
-    return average_accounts_payable * days / costs_of_goods_sold
+    return ((accounts_payable_begin + accounts_payable_end) / 2) / cost_of_goods_sold * days
 
 
 def get_cash_conversion_cycle(
@@ -153,7 +162,7 @@ def get_cash_conversion_cycle(
 
 
 def get_receivables_turnover(
-    account_receivables: float | pd.Series, revenue: float | pd.Series
+    accounts_receivable_begin: float | pd.Series, accounts_receivable_end: float | pd.Series, net_credit_sales: float | pd.Series
 ) -> float | pd.Series:
     """
     Calculate the receivables turnover, a ratio that measures how efficiently a
@@ -167,7 +176,7 @@ def get_receivables_turnover(
     Returns:
         float | pd.Series: The receivables turnover value.
     """
-    return account_receivables / revenue
+    return ((accounts_receivable_begin + accounts_receivable_end) / 2) / net_credit_sales
 
 
 def get_sga_to_revenue_ratio(
@@ -188,17 +197,18 @@ def get_sga_to_revenue_ratio(
 
 
 def get_fixed_asset_turnover(
-    revenue: float | pd.Series, net_fixed_assets: float | pd.Series
+    net_sales: float | pd.Series, net_fixed_assets_begin: float | pd.Series, net_fixed_assets_end: float | pd.Series
 ) -> float | pd.Series:
     """
     Calculate the Fixed Asset Turnover ratio, an efficiency ratio that
     measures how efficiently a company uses its fixed assets to generate sales.
 
     Args:
-        revenue (float or pd.Series): Total sales of the company.
-        net_fixed_assets (float or pd.Series): Net fixed assets of the company.
+        net_sales (float or pd.Series): Total sales of the company.
+        net_fixed_assets_begin (float or pd.Series): Net fixed assets of the company.
+        net_fixed_assets_end (float or pd.Series): Net fixed assets of the company.
 
     Returns:
         float | pd.Series: The Fixed Asset Turnover ratio value.
     """
-    return revenue / net_fixed_assets
+    return net_sales / ((net_fixed_assets_begin + net_fixed_assets_end) / 2)

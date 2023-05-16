@@ -81,11 +81,8 @@ def get_historical_data(
 
     historical_data = pd.concat(historical_data_dict, axis=1)
 
-    if len(ticker_list) == 1:
-        historical_data = historical_data[ticker_list[0]]
-    else:
-        historical_data.columns = historical_data.columns.swaplevel(0, 1)
-        historical_data = historical_data.sort_index(axis=1)
+    historical_data.columns = historical_data.columns.swaplevel(0, 1)
+    historical_data = historical_data.sort_index(axis=1)
 
     if yearly:
         historical_data = convert_daily_to_yearly(historical_data)
@@ -105,6 +102,7 @@ def convert_daily_to_yearly(daily_historical_data: pd.DataFrame):
         The index of the DataFrame is the date of the data and the columns are a multi-index
         with the ticker symbol(s) as the first level and the OHLC data as the second level.
     """
+    daily_historical_data.index.name = "Date"
     daily_historical_data = daily_historical_data.reset_index()
     dates = pd.to_datetime(daily_historical_data.Date).dt.to_period("Y")
     yearly_historical_data = daily_historical_data.groupby(dates).transform("last")

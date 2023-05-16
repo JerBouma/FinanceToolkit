@@ -3,7 +3,6 @@ __docformat__ = "numpy"
 
 import pandas as pd
 
-from financialtoolkit.base.models import ratios_model
 from financialtoolkit.ratios import (
     efficiency,
     liquidity,
@@ -35,31 +34,290 @@ class Ratios:
         self._cash_flow_statement = cash
 
         # Initialization of Fundamentals Variables
+        self._all_ratios: pd.DataFrame = pd.DataFrame()
         self._efficiency_ratios: pd.DataFrame = pd.DataFrame()
         self._liquidity_ratios: pd.DataFrame = pd.DataFrame()
         self._profitability_ratios: pd.DataFrame = pd.DataFrame()
         self._solvency_ratios: pd.DataFrame = pd.DataFrame()
         self._valuation_ratios: pd.DataFrame = pd.DataFrame()
 
-    def get_efficiency_ratios(self):
+    def collect_all_ratios(
+        self, include_dividends: bool = False, diluted: bool = True, days: int = 365
+    ):
         """
-        Retrieves the cash flow statement financial data for the company(s) from the specified source.
-
-        Args:
-            quarter (bool, optional): Flag to retrieve quarterly or annual data. Defaults to False.
-
-        Returns:
-            pd.DataFrame: A pandas DataFrame with the retrieved cash flow statement data.
+        Calculates all Ratios based on the data provided.
         """
         if self._efficiency_ratios.empty:
-            self._efficiency_ratios = ratios_model.get_efficiency_ratios(
-                self._tickers, self._balance_sheet_statement, self._income_statement
+            self.collect_efficiency_ratios(days=days)
+        if self._liquidity_ratios.empty:
+            self.collect_liquidity_ratios()
+        if self._profitability_ratios.empty:
+            self.collect_profitability_ratios()
+        if self._solvency_ratios.empty:
+            self.collect_solvency_ratios(diluted=diluted)
+        if self._valuation_ratios.empty:
+            self.collect_valuation_ratios(
+                include_dividends=include_dividends, diluted=diluted
+            )
+
+        self._all_ratios = pd.concat(
+            [
+                self._efficiency_ratios,
+                self._liquidity_ratios,
+                self._profitability_ratios,
+                self._solvency_ratios,
+                self._valuation_ratios,
+            ]
+        )
+
+        return self._all_ratios
+
+    def collect_efficiency_ratios(self, days: int = 365):
+        """
+        Calculates all Efficiency Ratios based on the data provided.
+        """
+        if self._efficiency_ratios.empty:
+            efficiency_ratios: dict = {}
+
+            efficiency_ratios[
+                "Days of Inventory Outstanding (DIO)"
+            ] = self.get_days_of_inventory_outstanding(days=days)
+            efficiency_ratios[
+                "Days of Sales Outstanding (DSO)"
+            ] = self.get_days_of_sales_outstanding(days=days)
+            efficiency_ratios["Operating Cycle (CC)"] = self.get_operating_cycle()
+            efficiency_ratios[
+                "Days of Accounts Payable Outstanding (DPO)"
+            ] = self.get_days_of_accounts_payable_outstanding(days=days)
+            efficiency_ratios[
+                "Cash Conversion Cycle (CCC)"
+            ] = self.get_cash_conversion_cycle(days=days)
+            efficiency_ratios["Receivables Turnover"] = self.get_receivables_turnover()
+            efficiency_ratios[
+                "Inventory Turnover Ratio"
+            ] = self.get_inventory_turnover_ratio()
+            efficiency_ratios[
+                "Accounts Payable Turnover Ratio"
+            ] = self.get_accounts_payables_turnover_ratio()
+            efficiency_ratios["SGA-to-Revenue Ratio"] = self.get_sga_to_revenue_ratio()
+            efficiency_ratios["Fixed Asset Turnover"] = self.get_fixed_asset_turnover()
+            efficiency_ratios["Asset Turnover Ratio"] = self.get_asset_turnover_ratio()
+
+            self._efficiency_ratios = (
+                pd.concat(efficiency_ratios)
+                .swaplevel(0, 1)
+                .sort_index(level=0, sort_remaining=False)
             )
 
         if len(self._tickers) == 1:
             return self._efficiency_ratios.loc[self._tickers[0]]
 
         return self._efficiency_ratios
+
+    def collect_liquidity_ratios(self):
+        """
+        Calculates all Liquidity Ratios based on the data provided.
+        """
+        if self._liquidity_ratios.empty:
+            liquidity_ratios: dict = {}
+
+            liquidity_ratios["Current Ratio"] = self.get_current_ratio()
+            liquidity_ratios["Quick Ratio"] = self.get_quick_ratio()
+            liquidity_ratios["Cash Ratio"] = self.get_cash_ratio()
+            liquidity_ratios["Working Capital"] = self.get_working_capital()
+            liquidity_ratios[
+                "Operating Cash Flow Ratio"
+            ] = self.get_operating_cash_flow_ratio()
+            liquidity_ratios[
+                "Operating Cash Flow to Sales Ratio"
+            ] = self.get_operating_cash_flow_sales_ratio()
+            liquidity_ratios[
+                "Short Term Coverage Ratio"
+            ] = self.get_short_term_coverage_ratio()
+
+            self._liquidity_ratios = (
+                pd.concat(liquidity_ratios)
+                .swaplevel(0, 1)
+                .sort_index(level=0, sort_remaining=False)
+            )
+
+        if len(self._tickers) == 1:
+            return self._liquidity_ratios.loc[self._tickers[0]]
+
+        return self._liquidity_ratios
+
+    def collect_profitability_ratios(self):
+        """
+        Calculates all Profitability Ratios based on the data provided.
+        """
+        if self._profitability_ratios.empty:
+            profitability_ratios: dict = {}
+
+            profitability_ratios["Gross Margin"] = self.get_gross_margin()
+            profitability_ratios["Operating Margin"] = self.get_operating_margin()
+            profitability_ratios["Net Profit Margin"] = self.get_net_profit_margin()
+            profitability_ratios[
+                "Interest Burden Ratio"
+            ] = self.get_interest_burden_ratio()
+            profitability_ratios[
+                "Income Before Tax Profit Margin"
+            ] = self.get_income_before_tax_profit_margin()
+            profitability_ratios["Effective Tax Rate"] = self.get_effective_tax_rate()
+            profitability_ratios["Return on Assets (ROA)"] = self.get_return_on_assets()
+            profitability_ratios["Return on Equity (ROE)"] = self.get_return_on_equity()
+            profitability_ratios[
+                "Return on Invested Capital (ROIC)"
+            ] = self.get_return_on_invested_capital()
+            profitability_ratios[
+                "Return on Capital Employed (ROCE)"
+            ] = self.get_return_on_capital_employed()
+            profitability_ratios[
+                "Return on Tangible Assets"
+            ] = self.get_return_on_tangible_assets()
+            profitability_ratios[
+                "Income Quality Ratio"
+            ] = self.get_income_quality_ratio()
+            profitability_ratios["Net Income per EBT"] = self.get_net_income_per_ebt()
+            profitability_ratios[
+                "Free Cash Flow to Operating Cash Flow Ratio"
+            ] = self.get_free_cash_flow_operating_cash_flow_ratio()
+            profitability_ratios["EBT to EBIT Ratio"] = self.get_EBT_to_EBIT()
+            profitability_ratios["EBIT to Revenue"] = self.get_EBIT_to_revenue()
+
+            self._profitability_ratios = (
+                pd.concat(profitability_ratios)
+                .swaplevel(0, 1)
+                .sort_index(level=0, sort_remaining=False)
+            )
+
+        if len(self._tickers) == 1:
+            return self._profitability_ratios.loc[self._tickers[0]]
+
+        return self._profitability_ratios
+
+    def collect_solvency_ratios(self, diluted: bool = True):
+        """
+        Calculates all Solvency Ratios based on the data provided.
+        """
+        if self._solvency_ratios.empty:
+            solvency_ratios: dict = {}
+
+            solvency_ratios["Debt-to-Assets Ratio"] = self.get_debt_to_assets_ratio()
+            solvency_ratios["Debt-to-Equity Ratio"] = self.get_debt_to_equity_ratio()
+            solvency_ratios[
+                "Interest Coverage Ratio"
+            ] = self.get_interest_coverage_ratio()
+            solvency_ratios[
+                "Debt Service Coverage Ratio"
+            ] = self.get_debt_service_coverage_ratio()
+            solvency_ratios["Financial Leverage"] = self.get_financial_leverage()
+            solvency_ratios["Free Cash Flow Yield"] = self.get_free_cash_flow_yield(
+                diluted=diluted
+            )
+            solvency_ratios[
+                "Net-Debt to EBITDA Ratio"
+            ] = self.get_net_debt_to_ebitda_ratio()
+            solvency_ratios["Cash Flow Coverage Ratio"] = self.get_free_cash_flow_yield(
+                diluted=diluted
+            )
+            solvency_ratios["CAPEX Coverage Ratio"] = self.get_capex_coverage_ratio()
+            solvency_ratios[
+                "Dividend CAPEX Coverage Ratio"
+            ] = self.get_capex_dividend_coverage_ratio()
+
+            self._solvency_ratios = (
+                pd.concat(solvency_ratios)
+                .swaplevel(0, 1)
+                .sort_index(level=0, sort_remaining=False)
+            )
+
+        if len(self._tickers) == 1:
+            return self._solvency_ratios.loc[self._tickers[0]]
+
+        return self._solvency_ratios
+
+    def collect_valuation_ratios(
+        self, include_dividends: bool = False, diluted: bool = True
+    ):
+        """
+        Calculates all Valuation Ratios based on the data provided.
+        """
+        if self._valuation_ratios.empty:
+            valuation_ratios: dict = {}
+
+            valuation_ratios["Earnings per Share (EPS)"] = self.get_earnings_per_share(
+                include_dividends=include_dividends, diluted=diluted
+            )
+            valuation_ratios["Revenue per Share (RPS)"] = self.get_revenue_per_share(
+                diluted=diluted
+            )
+            valuation_ratios["Price-to-Earnings (PE)"] = self.get_price_earnings_ratio(
+                include_dividends=include_dividends, diluted=diluted
+            )
+            valuation_ratios[
+                "Earnings per Share Growth"
+            ] = self.get_earnings_per_share_growth(
+                include_dividends=include_dividends, diluted=diluted
+            )
+            valuation_ratios[
+                "Price-to-Earnings-Growth (PEG)"
+            ] = self.get_price_to_earnings_growth_ratio(
+                include_dividends=include_dividends, diluted=diluted
+            )
+            valuation_ratios["Book Value per Share"] = self.get_book_value_per_share(
+                diluted=diluted
+            )
+            valuation_ratios["Price-to-Book (PB)"] = self.get_price_to_book_ratio(
+                diluted=diluted
+            )
+            valuation_ratios[
+                "Interest Debt per Share"
+            ] = self.get_interest_debt_per_share(diluted=diluted)
+            valuation_ratios["CAPEX per Share"] = self.get_capex_per_share(
+                diluted=diluted
+            )
+            valuation_ratios["Earnings Yield"] = self.get_earnings_yield(
+                include_dividends=include_dividends, diluted=diluted
+            )
+            valuation_ratios["Payout Ratio"] = self.get_payout_ratio()
+            valuation_ratios["Dividend Yield"] = self.get_dividend_yield(
+                diluted=diluted
+            )
+            valuation_ratios[
+                "Price-to-Cash-Flow (P/CF)"
+            ] = self.get_price_to_cash_flow_ratio(diluted=diluted)
+            valuation_ratios[
+                "Price-to-Free-Cash-Flow (P/FCF)"
+            ] = self.get_price_to_free_cash_flow_ratio(diluted=diluted)
+            valuation_ratios["Market Cap"] = self.get_market_cap(diluted=diluted)
+            valuation_ratios["Enterprise Value"] = self.get_enterprise_value(
+                diluted=diluted
+            )
+            valuation_ratios["EV-to-Sales"] = self.get_ev_to_sales_ratio(
+                diluted=diluted
+            )
+            valuation_ratios["EV-to-EBIT"] = self.get_ev_to_ebit(diluted=diluted)
+            valuation_ratios["EV-to-EBITDA"] = self.get_ev_to_ebitda_ratio(
+                diluted=diluted
+            )
+            valuation_ratios[
+                "EV-to-Operating-Cash-Flow"
+            ] = self.get_ev_to_operating_cashflow_ratio(diluted=diluted)
+            valuation_ratios["Tangible Asset Value"] = self.get_tangible_asset_value()
+            valuation_ratios[
+                "Net Current Asset Value"
+            ] = self.get_net_current_asset_value()
+
+            self._valuation_ratios = (
+                pd.concat(valuation_ratios)
+                .swaplevel(0, 1)
+                .sort_index(level=0, sort_remaining=False)
+            )
+
+        if len(self._tickers) == 1:
+            return self._valuation_ratios.loc[self._tickers[0]]
+
+        return self._valuation_ratios
 
     def get_asset_turnover_ratio(self):
         """
@@ -68,6 +326,7 @@ class Ratios:
         """
         return efficiency.get_asset_turnover_ratio(
             self._income_statement.loc[:, "Revenue", :],
+            self._balance_sheet_statement.loc[:, "Total Assets", :].shift(axis=1),
             self._balance_sheet_statement.loc[:, "Total Assets", :],
         )
 
@@ -78,7 +337,8 @@ class Ratios:
         """
         return efficiency.get_inventory_turnover_ratio(
             self._income_statement.loc[:, "Cost of Goods Sold", :],
-            self._balance_sheet_statement.loc[:, "Inventory", :],
+            self._balance_sheet_statement.loc[:, "Inventory", :].shift(axis=1),
+            self._balance_sheet_statement.loc[:, "Inventory", :]
         )
 
     def get_days_of_inventory_outstanding(self, days: int = 365):
@@ -87,6 +347,7 @@ class Ratios:
         how long it takes a company to sell its inventory.
         """
         return efficiency.get_days_of_inventory_outstanding(
+            self._balance_sheet_statement.loc[:, "Inventory", :].shift(axis=1),
             self._balance_sheet_statement.loc[:, "Inventory", :],
             self._income_statement.loc[:, "Cost of Goods Sold", :],
             days,
@@ -98,7 +359,8 @@ class Ratios:
         the average number of days it takes a company to collect payment on its
         credit sales.
         """
-        return efficiency.get_days_of_sales_outstanding(
+        return efficiency.get_days_of_sales_outstanding( 
+            self._balance_sheet_statement.loc[:, "Accounts Receivable", :].shift(axis=1),
             self._balance_sheet_statement.loc[:, "Accounts Receivable", :],
             self._income_statement.loc[:, "Revenue", :],
             days,
@@ -110,29 +372,19 @@ class Ratios:
         number of days it takes a company to turn its inventory into cash.
         """
         days_of_inventory = efficiency.get_days_of_inventory_outstanding(
+            self._balance_sheet_statement.loc[:, "Inventory", :].shift(axis=1),
             self._balance_sheet_statement.loc[:, "Inventory", :],
             self._income_statement.loc[:, "Cost of Goods Sold", :],
             days,
         )
-
-        days_of_sales = efficiency.get_days_of_sales_outstanding(
+        days_of_sales = efficiency.get_days_of_sales_outstanding( 
+            self._balance_sheet_statement.loc[:, "Accounts Receivable", :].shift(axis=1),
             self._balance_sheet_statement.loc[:, "Accounts Receivable", :],
             self._income_statement.loc[:, "Revenue", :],
             days,
         )
 
         return efficiency.get_operating_cycle(days_of_inventory, days_of_sales)
-
-    def get_days_of_accounts_payable_outstanding(self, days: int = 365):
-        """
-        Calculate the days payables outstanding, an efficiency ratio that measures the
-        number of days it takes a company to pay its suppliers.
-        """
-        return efficiency.get_days_of_accounts_payable_outstanding(
-            self._income_statement.loc[:, "Cost of Goods Sold", :],
-            self._balance_sheet_statement.loc[:, "Accounts Payable", :],
-            days,
-        )
 
     def get_accounts_payables_turnover_ratio(self):
         """
@@ -141,7 +393,20 @@ class Ratios:
         """
         return efficiency.get_accounts_payables_turnover_ratio(
             self._income_statement.loc[:, "Cost of Goods Sold", :],
+            self._balance_sheet_statement.loc[:, "Accounts Payable", :].shift(axis=1),
             self._balance_sheet_statement.loc[:, "Accounts Payable", :],
+        )
+        
+    def get_days_of_accounts_payable_outstanding(self, days: int = 365):
+        """
+        Calculate the days payables outstanding, an efficiency ratio that measures the
+        number of days it takes a company to pay its suppliers.
+        """
+        return efficiency.get_days_of_accounts_payable_outstanding(
+            self._income_statement.loc[:, "Cost of Goods Sold", :],
+            self._balance_sheet_statement.loc[:, "Accounts Payable", :].shift(axis=1),
+            self._balance_sheet_statement.loc[:, "Accounts Payable", :],
+            days,
         )
 
     def get_cash_conversion_cycle(self, days: int = 365):
@@ -151,12 +416,13 @@ class Ratios:
         its accounts payable.
         """
         days_of_inventory = efficiency.get_days_of_inventory_outstanding(
+            self._balance_sheet_statement.loc[:, "Inventory", :].shift(axis=1),
             self._balance_sheet_statement.loc[:, "Inventory", :],
             self._income_statement.loc[:, "Cost of Goods Sold", :],
             days,
         )
-
-        days_of_sales = efficiency.get_days_of_sales_outstanding(
+        days_of_sales = efficiency.get_days_of_sales_outstanding( 
+            self._balance_sheet_statement.loc[:, "Accounts Receivable", :].shift(axis=1),
             self._balance_sheet_statement.loc[:, "Accounts Receivable", :],
             self._income_statement.loc[:, "Revenue", :],
             days,
@@ -164,6 +430,7 @@ class Ratios:
 
         days_of_payables = efficiency.get_days_of_accounts_payable_outstanding(
             self._income_statement.loc[:, "Cost of Goods Sold", :],
+            self._balance_sheet_statement.loc[:, "Accounts Payable", :].shift(axis=1),
             self._balance_sheet_statement.loc[:, "Accounts Payable", :],
             days,
         )
@@ -179,6 +446,7 @@ class Ratios:
         the amount of sales generated.
         """
         return efficiency.get_receivables_turnover(
+            self._balance_sheet_statement.loc[:, "Accounts Receivable", :].shift(axis=1),
             self._balance_sheet_statement.loc[:, "Accounts Receivable", :],
             self._income_statement.loc[:, "Revenue", :],
         )
@@ -202,31 +470,9 @@ class Ratios:
         """
         return efficiency.get_fixed_asset_turnover(
             self._income_statement.loc[:, "Revenue", :],
-            self._balance_sheet_statement.loc[:, "Total Fixed Assets", :],
+            self._balance_sheet_statement.loc[:, "Fixed Assets", :].shift(axis=1),
+            self._balance_sheet_statement.loc[:, "Fixed Assets", :],
         )
-
-    def get_liquidity_ratios(self):
-        """
-        Retrieves the cash flow statement financial data for the company(s) from the specified source.
-
-        Args:
-            quarter (bool, optional): Flag to retrieve quarterly or annual data. Defaults to False.
-
-        Returns:
-            pd.DataFrame: A pandas DataFrame with the retrieved cash flow statement data.
-        """
-        if self._liquidity_ratios.empty:
-            self._liquidity_ratios = ratios_model.get_liquidity_ratios(
-                self._tickers,
-                self._balance_sheet_statement,
-                self._income_statement,
-                self._cash_flow_statement,
-            )
-
-        if len(self._tickers) == 1:
-            return self._liquidity_ratios.loc[self._tickers[0]]
-
-        return self._liquidity_ratios
 
     def get_current_ratio(self):
         """
@@ -234,8 +480,8 @@ class Ratios:
         to pay off its short-term liabilities with its current assets.
         """
         return liquidity.get_current_ratio(
-            self._balance_sheet_statement.loc[:, "Current Assets", :],
-            self._balance_sheet_statement.loc[:, "Current Liabilities", :],
+            self._balance_sheet_statement.loc[:, "Total Current Assets", :],
+            self._balance_sheet_statement.loc[:, "Total Current Liabilities", :],
         )
 
     def get_quick_ratio(self):
@@ -246,9 +492,10 @@ class Ratios:
         This ratio is also referred to as the Acid Test Ratio.
         """
         return liquidity.get_quick_ratio(
-            self._balance_sheet_statement.loc[:, "Current Assets", :],
-            self._balance_sheet_statement.loc[:, "Inventory", :],
-            self._balance_sheet_statement.loc[:, "Current Liabilities", :],
+            self._balance_sheet_statement.loc[:, "Cash and Cash Equivalents", :],
+            self._balance_sheet_statement.loc[:, "Short Term Investments", :],
+            self._balance_sheet_statement.loc[:, "Accounts Receivable", :],
+            self._balance_sheet_statement.loc[:, "Total Current Liabilities", :],
         )
 
     def get_cash_ratio(self):
@@ -258,7 +505,8 @@ class Ratios:
         """
         return liquidity.get_cash_ratio(
             self._balance_sheet_statement.loc[:, "Cash and Cash Equivalents", :],
-            self._balance_sheet_statement.loc[:, "Current Liabilities", :],
+            self._balance_sheet_statement.loc[:, "Short Term Investments", :],
+            self._balance_sheet_statement.loc[:, "Total Current Liabilities", :],
         )
 
     def get_working_capital(self):
@@ -267,18 +515,8 @@ class Ratios:
         and current liabilities.
         """
         return liquidity.get_working_capital(
-            self._balance_sheet_statement.loc[:, "Current Assets", :],
-            self._balance_sheet_statement.loc[:, "Current Liabilities", :],
-        )
-
-    def get_working_capital_ratio(self):
-        """
-        Calculate the working capital ratio, a liquidity ratio that measures a company's
-        ability to pay off its current liabilities with its current assets.
-        """
-        return liquidity.get_working_capital_ratio(
-            self._balance_sheet_statement.loc[:, "Current Assets", :],
-            self._balance_sheet_statement.loc[:, "Current Liabilities", :],
+            self._balance_sheet_statement.loc[:, "Total Current Assets", :],
+            self._balance_sheet_statement.loc[:, "Total Current Liabilities", :],
         )
 
     def get_operating_cash_flow_ratio(self):
@@ -288,7 +526,7 @@ class Ratios:
         """
         return liquidity.get_operating_cash_flow_ratio(
             self._cash_flow_statement.loc[:, "Cash Flow from Operations", :],
-            self._balance_sheet_statement.loc[:, "Current Liabilities", :],
+            self._balance_sheet_statement.loc[:, "Total Current Liabilities", :],
         )
 
     def get_operating_cash_flow_sales_ratio(self):
@@ -312,29 +550,6 @@ class Ratios:
             self._balance_sheet_statement.loc[:, "Inventory", :],
             self._balance_sheet_statement.loc[:, "Accounts Payable", :],
         )
-
-    def get_profitability_ratios(self):
-        """
-        Retrieves the cash flow statement financial data for the company(s) from the specified source.
-
-        Args:
-            quarter (bool, optional): Flag to retrieve quarterly or annual data. Defaults to False.
-
-        Returns:
-            pd.DataFrame: A pandas DataFrame with the retrieved cash flow statement data.
-        """
-        if self._profitability_ratios.empty:
-            self._profitability_ratios = ratios_model.get_profitability_ratios(
-                self._tickers,
-                self._balance_sheet_statement,
-                self._income_statement,
-                self._cash_flow_statement,
-            )
-
-        if len(self._tickers) == 1:
-            return self._profitability_ratios.loc[self._tickers[0]]
-
-        return self._profitability_ratios
 
     def get_gross_margin(self):
         """
@@ -424,11 +639,14 @@ class Ratios:
         Calculate the return on invested capital, a financial ratio that measures
         the company's return on the capital invested in it, including both equity and debt.
         """
+        effective_tax_rate = self.get_effective_tax_rate()
+        
         return profitability.get_return_on_invested_capital(
             self._income_statement.loc[:, "Net Income", :],
             self._cash_flow_statement.loc[:, "Dividends Paid", :],
-            self._balance_sheet_statement.loc[:, "Total Equity", :]
-            + self._balance_sheet_statement.loc[:, "Total Debt", :],
+            effective_tax_rate,
+            self._balance_sheet_statement.loc[:, "Total Equity", :],
+            self._balance_sheet_statement.loc[:, "Total Debt", :],
         )
 
     def get_income_quality_ratio(self):
@@ -462,7 +680,7 @@ class Ratios:
         return profitability.get_return_on_capital_employed(
             self._income_statement.loc[:, "Net Income", :],
             self._income_statement.loc[:, "Interest Expense", :],
-            self._income_statement.loc[:, "Tax Expense", :],
+            self._income_statement.loc[:, "Income Tax Expense", :],
             self._balance_sheet_statement.loc[:, "Total Assets", :],
             self._balance_sheet_statement.loc[:, "Total Current Liabilities", :],
         )
@@ -526,28 +744,6 @@ class Ratios:
             self._income_statement.loc[:, "Revenue", :],
         )
 
-    def get_solvency_ratios(self):
-        """
-        Retrieves the cash flow statement financial data for the company(s) from the specified source.
-
-        Args:
-            quarter (bool, optional): Flag to retrieve quarterly or annual data. Defaults to False.
-
-        Returns:
-            pd.DataFrame: A pandas DataFrame with the retrieved cash flow statement data.
-        """
-        if self._solvency_ratios.empty:
-            self._solvency_ratios = ratios_model.get_solvency_ratios(
-                self._tickers,
-                self._balance_sheet_statement,
-                self._income_statement,
-            )
-
-        if len(self._tickers) == 1:
-            return self._solvency_ratios.loc[self._tickers[0]]
-
-        return self._solvency_ratios
-
     def get_debt_to_assets_ratio(self):
         """
         Calculate the debt to assets ratio, a solvency ratio that measures the proportion
@@ -591,6 +787,16 @@ class Ratios:
             self._balance_sheet_statement.loc[:, "Total Equity", :],
         )
 
+    def get_debt_service_coverage_ratio(self):
+        """
+        Calculate the debt service coverage ratio, a solvency ratio that measures a company's
+        ability to service its debt with its net operating income.
+        """
+        return solvency.get_debt_service_coverage_ratio(
+            self._income_statement.loc[:, "Operating Income", :],
+            self._balance_sheet_statement.loc[:, "Total Current Liabilities", :],
+        )
+
     def get_free_cash_flow_yield(self, diluted: bool = True):
         """
         Calculates the free cash flow yield ratio, which measures the free cash flow
@@ -600,13 +806,13 @@ class Ratios:
         begin, end = str(years[0]), str(years[-1])
 
         share_prices = self._yearly_historical_data.loc[
-            begin:end, "Adj Close", :
+            begin:end, "Adj Close"
         ].T.to_numpy()
 
         average_shares = (
-            self._balance_sheet_statement.loc[:, "Weighted Average Shares Diluted", :]
+            self._income_statement.loc[:, "Weighted Average Shares Diluted", :]
             if diluted
-            else self._balance_sheet_statement.loc[:, "Weighted Average Shares", :]
+            else self._income_statement.loc[:, "Weighted Average Shares", :]
         )
 
         market_cap = valuation.get_market_cap(share_prices, average_shares)
@@ -660,30 +866,6 @@ class Ratios:
             self._cash_flow_statement.loc[:, "Dividends Paid", :],
         )
 
-    def get_valuation_ratios(self):
-        """
-        Retrieves the cash flow statement financial data for the company(s) from the specified source.
-
-        Args:
-            quarter (bool, optional): Flag to retrieve quarterly or annual data. Defaults to False.
-
-        Returns:
-            pd.DataFrame: A pandas DataFrame with the retrieved cash flow statement data.
-        """
-        if self._valuation_ratios.empty:
-            self._valuation_ratios = ratios_model.get_valuation_ratios(
-                self._tickers,
-                self._yearly_historical_data,
-                self._balance_sheet_statement,
-                self._income_statement,
-                self._cash_flow_statement,
-            )
-
-        if len(self._tickers) == 1:
-            return self._valuation_ratios.loc[self._tickers[0]]
-
-        return self._valuation_ratios
-
     def get_earnings_per_share(
         self, include_dividends: bool = False, diluted: bool = True
     ):
@@ -698,9 +880,9 @@ class Ratios:
         )
 
         average_shares = (
-            self._balance_sheet_statement.loc[:, "Weighted Average Shares Diluted", :]
+            self._income_statement.loc[:, "Weighted Average Shares Diluted", :]
             if diluted
-            else self._balance_sheet_statement.loc[:, "Weighted Average Shares", :]
+            else self._income_statement.loc[:, "Weighted Average Shares", :]
         )
 
         return valuation.get_earnings_per_share(
@@ -723,9 +905,9 @@ class Ratios:
         of revenue generated per outstanding share of a company's stock.
         """
         average_shares = (
-            self._balance_sheet_statement.loc[:, "Weighted Average Shares Diluted", :]
+            self._income_statement.loc[:, "Weighted Average Shares Diluted", :]
             if diluted
-            else self._balance_sheet_statement.loc[:, "Weighted Average Shares", :]
+            else self._income_statement.loc[:, "Weighted Average Shares", :]
         )
 
         return valuation.get_revenue_per_share(
@@ -745,7 +927,7 @@ class Ratios:
         begin, end = str(years[0]), str(years[-1])
 
         share_prices = self._yearly_historical_data.loc[
-            begin:end, "Adj Close", :
+            begin:end, "Adj Close"
         ].T.to_numpy()
 
         return valuation.get_price_earnings_ratio(share_prices, eps)
@@ -768,9 +950,9 @@ class Ratios:
         amount of common equity value per share outstanding.
         """
         average_shares = (
-            self._balance_sheet_statement.loc[:, "Weighted Average Shares Diluted", :]
+            self._income_statement.loc[:, "Weighted Average Shares Diluted", :]
             if diluted
-            else self._balance_sheet_statement.loc[:, "Weighted Average Shares", :]
+            else self._income_statement.loc[:, "Weighted Average Shares", :]
         )
 
         return valuation.get_book_value_per_share(
@@ -790,7 +972,7 @@ class Ratios:
         begin, end = str(years[0]), str(years[-1])
 
         share_prices = self._yearly_historical_data.loc[
-            begin:end, "Adj Close", :
+            begin:end, "Adj Close"
         ].T.to_numpy()
 
         return valuation.get_price_to_book_ratio(share_prices, book_value_per_share)
@@ -802,9 +984,9 @@ class Ratios:
         """
 
         average_shares = (
-            self._balance_sheet_statement.loc[:, "Weighted Average Shares Diluted", :]
+            self._income_statement.loc[:, "Weighted Average Shares Diluted", :]
             if diluted
-            else self._balance_sheet_statement.loc[:, "Weighted Average Shares", :]
+            else self._income_statement.loc[:, "Weighted Average Shares", :]
         )
 
         return valuation.get_interest_debt_per_share(
@@ -820,9 +1002,9 @@ class Ratios:
         """
 
         average_shares = (
-            self._balance_sheet_statement.loc[:, "Weighted Average Shares Diluted", :]
+            self._income_statement.loc[:, "Weighted Average Shares Diluted", :]
             if diluted
-            else self._balance_sheet_statement.loc[:, "Weighted Average Shares", :]
+            else self._income_statement.loc[:, "Weighted Average Shares", :]
         )
 
         return valuation.get_capex_per_share(
@@ -835,20 +1017,20 @@ class Ratios:
         amount of dividends distributed per share of stock relative to the stock's price.
         """
         average_shares = (
-            self._balance_sheet_statement.loc[:, "Weighted Average Shares Diluted", :]
+            self._income_statement.loc[:, "Weighted Average Shares Diluted", :]
             if diluted
-            else self._balance_sheet_statement.loc[:, "Weighted Average Shares", :]
+            else self._income_statement.loc[:, "Weighted Average Shares", :]
         )
 
         years = self._cash_flow_statement.columns
         begin, end = str(years[0]), str(years[-1])
 
         share_prices = self._yearly_historical_data.loc[
-            begin:end, "Adj Close", :
+            begin:end, "Adj Close"
         ].T.to_numpy()
 
         return valuation.get_dividend_yield(
-            self._cash_flow_statement.loc[:, "Dividends Paid", :],
+            abs(self._cash_flow_statement.loc[:, "Dividends Paid", :]),
             average_shares,
             share_prices,
         )
@@ -859,16 +1041,16 @@ class Ratios:
         company's market price to its operating cash flow per share.
         """
         average_shares = (
-            self._balance_sheet_statement.loc[:, "Weighted Average Shares Diluted", :]
+            self._income_statement.loc[:, "Weighted Average Shares Diluted", :]
             if diluted
-            else self._balance_sheet_statement.loc[:, "Weighted Average Shares", :]
+            else self._income_statement.loc[:, "Weighted Average Shares", :]
         )
 
         years = self._cash_flow_statement.columns
         begin, end = str(years[0]), str(years[-1])
 
         share_prices = self._yearly_historical_data.loc[
-            begin:end, "Adj Close", :
+            begin:end, "Adj Close"
         ].T.to_numpy()
 
         market_cap = share_prices * average_shares
@@ -883,16 +1065,16 @@ class Ratios:
         company's market price to its free cash flow per share.
         """
         average_shares = (
-            self._balance_sheet_statement.loc[:, "Weighted Average Shares Diluted", :]
+            self._income_statement.loc[:, "Weighted Average Shares Diluted", :]
             if diluted
-            else self._balance_sheet_statement.loc[:, "Weighted Average Shares", :]
+            else self._income_statement.loc[:, "Weighted Average Shares", :]
         )
 
         years = self._cash_flow_statement.columns
         begin, end = str(years[0]), str(years[-1])
 
         share_prices = self._yearly_historical_data.loc[
-            begin:end, "Adj Close", :
+            begin:end, "Adj Close"
         ].T.to_numpy()
 
         market_cap = valuation.get_market_cap(share_prices, average_shares)
@@ -908,16 +1090,16 @@ class Ratios:
         Note: All the inputs must be in the same currency and unit for accurate calculations.
         """
         average_shares = (
-            self._balance_sheet_statement.loc[:, "Weighted Average Shares Diluted", :]
+            self._income_statement.loc[:, "Weighted Average Shares Diluted", :]
             if diluted
-            else self._balance_sheet_statement.loc[:, "Weighted Average Shares", :]
+            else self._income_statement.loc[:, "Weighted Average Shares", :]
         )
 
         years = self._cash_flow_statement.columns
         begin, end = str(years[0]), str(years[-1])
 
         share_prices = self._yearly_historical_data.loc[
-            begin:end, "Adj Close", :
+            begin:end, "Adj Close"
         ].T.to_numpy()
 
         return valuation.get_market_cap(share_prices, average_shares)
@@ -933,16 +1115,16 @@ class Ratios:
         Note: All the inputs must be in the same currency and unit for accurate calculations.
         """
         average_shares = (
-            self._balance_sheet_statement.loc[:, "Weighted Average Shares Diluted", :]
+            self._income_statement.loc[:, "Weighted Average Shares Diluted", :]
             if diluted
-            else self._balance_sheet_statement.loc[:, "Weighted Average Shares", :]
+            else self._income_statement.loc[:, "Weighted Average Shares", :]
         )
 
         years = self._cash_flow_statement.columns
         begin, end = str(years[0]), str(years[-1])
 
         share_prices = self._yearly_historical_data.loc[
-            begin:end, "Adj Close", :
+            begin:end, "Adj Close"
         ].T.to_numpy()
 
         market_cap = valuation.get_market_cap(share_prices, average_shares)
@@ -1003,7 +1185,7 @@ class Ratios:
         begin, end = str(years[0]), str(years[-1])
 
         share_prices = self._yearly_historical_data.loc[
-            begin:end, "Adj Close", :
+            begin:end, "Adj Close"
         ].T.to_numpy()
 
         return valuation.get_earnings_yield(eps, share_prices)
@@ -1039,14 +1221,14 @@ class Ratios:
             self._balance_sheet_statement.loc[:, "Total Current Liabilities", :],
         )
 
-    def get_enterprise_value_multiplier(self, diluted: bool = True):
+    def get_ev_to_ebit(self, diluted: bool = True):
         """
         Calculate the net current asset value, which is the total value of a company's
         current assets minus its current liabilities.
         """
         enterprise_value = self.get_enterprise_value(diluted)
 
-        return valuation.get_enterprise_value_multiplier(
+        return valuation.get_ev_to_ebit(
             enterprise_value,
             self._income_statement.loc[:, "Net Income", :]
             + self._income_statement.loc[:, "Income Tax Expense", :]

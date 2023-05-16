@@ -61,7 +61,10 @@ def convert_financial_statements(
 
     for name in financial_statements.index.unique(level=1):
         try:
-            naming[name] = statement_format.loc[name]
+            if name in statement_format.to_numpy():
+                naming[name] = name
+            else:
+                naming[name] = statement_format.loc[name]
         except KeyError:
             continue
 

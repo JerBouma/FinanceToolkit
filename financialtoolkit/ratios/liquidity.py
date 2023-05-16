@@ -11,6 +11,8 @@ def get_current_ratio(
     Calculate the current ratio, a liquidity ratio that measures a company's ability
     to pay off its short-term liabilities with its current assets.
 
+    This can also be called the working capital ratio.
+
     Args:
         current_assets (float or pd.Series): Total current assets of the company.
         current_liabilities (float or pd.Series): Total current liabilities of the company.
@@ -22,8 +24,9 @@ def get_current_ratio(
 
 
 def get_quick_ratio(
-    current_assets: float | pd.Series,
-    inventory: float | pd.Series,
+    cash_and_equivalents: float | pd.Series,
+    accounts_receivable: float | pd.Series,
+    marketable_securities: float | pd.Series,
     current_liabilities: float | pd.Series,
 ) -> float | pd.Series:
     """
@@ -33,18 +36,19 @@ def get_quick_ratio(
     This ratio is also referred to as the Acid Test Ratio.
 
     Args:
-        current_assets (float or pd.Series): Total current assets of the company.
-        inventory (float or pd.Series): Total inventory of the company.
+        cash_and_equivalents (float or pd.Series): Total cash and cash equivalents of the company.
+        accounts_receivable (float or pd.Series): Total accounts receivable of the company.
+        marketable_securities (float or pd.Series): Total marketable securities of the company.
         current_liabilities (float or pd.Series): Total current liabilities of the company.
 
     Returns:
         float | pd.Series: The quick ratio value.
     """
-    return (current_assets - inventory) / current_liabilities
+    return (cash_and_equivalents + marketable_securities + accounts_receivable) / current_liabilities
 
 
 def get_cash_ratio(
-    cash_and_equivalents: float | pd.Series, current_liabilities: float | pd.Series
+    cash_and_equivalents: float | pd.Series, marketable_securities: float | pd.Series, current_liabilities: float | pd.Series
 ) -> float | pd.Series:
     """
     Calculate the cash ratio, a liquidity ratio that measures a company's ability
@@ -52,12 +56,13 @@ def get_cash_ratio(
 
     Args:
         cash_and_equivalents (float or pd.Series): Total cash and cash equivalents of the company.
+        marketable_securities (float or pd.Series): Total marketable securities of the company.
         current_liabilities (float or pd.Series): Total current liabilities of the company.
 
     Returns:
         float | pd.Series: The cash ratio value.
     """
-    return cash_and_equivalents / current_liabilities
+    return (cash_and_equivalents + marketable_securities) / current_liabilities
 
 
 def get_working_capital(
@@ -75,23 +80,6 @@ def get_working_capital(
         float | pd.Series: The working capital value.
     """
     return current_assets - current_liabilities
-
-
-def get_working_capital_ratio(
-    current_assets: float | pd.Series, current_liabilities: float | pd.Series
-) -> float | pd.Series:
-    """
-    Calculate the working capital ratio, a liquidity ratio that measures a company's
-    ability to pay off its current liabilities with its current assets.
-
-    Args:
-        current_assets (float or pd.Series): Current assets of the company.
-        current_liabilities (float or pd.Series): Current liabilities of the company.
-
-    Returns:
-        float | pd.Series: The working capital ratio value.
-    """
-    return current_assets / current_liabilities
 
 
 def get_operating_cash_flow_ratio(

@@ -61,7 +61,7 @@ def get_interest_coverage_ratio(
 
 
 def get_debt_service_coverage_ratio(
-    net_operating_income: float | pd.Series, current_liabilities: float | pd.Series
+    operating_income: float | pd.Series, current_liabilities: float | pd.Series
 ) -> float | pd.Series:
     """
     Calculate the debt service coverage ratio, a solvency ratio that measures a company's
@@ -74,7 +74,7 @@ def get_debt_service_coverage_ratio(
     Returns:
         float | pd.Series: The debt service coverage ratio value.
     """
-    return net_operating_income / current_liabilities
+    return operating_income / current_liabilities
 
 
 def get_financial_leverage(

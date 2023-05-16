@@ -58,7 +58,9 @@ def get_price_earnings_ratio(
     return stock_price / earnings_per_share
 
 
-def get_earnings_per_share_growth(earnings_per_share: pd.Series) -> float | pd.Series:
+def get_earnings_per_share_growth(
+    earnings_per_share: pd.Series | pd.DataFrame,
+) -> pd.Series | pd.DataFrame:
     """
     Calculate the earnings per share growth.
 
@@ -68,7 +70,12 @@ def get_earnings_per_share_growth(earnings_per_share: pd.Series) -> float | pd.S
     Returns:
         pd.Series: The growth rate of the company's earnings.
     """
-    return earnings_per_share.pct_change(periods=1)
+    if isinstance(earnings_per_share, pd.Series):
+        return earnings_per_share.pct_change()
+    if isinstance(earnings_per_share, pd.DataFrame):
+        return earnings_per_share.pct_change(axis="columns")
+
+    raise TypeError("earnings_per_share must be a pd.Series or pd.DataFrame object.")
 
 
 def get_price_to_earnings_growth_ratio(
@@ -240,7 +247,7 @@ def get_enterprise_value(
     total_debt: float | pd.Series,
     minority_interest: float | pd.Series,
     preferred_equity: float | pd.Series,
-    cash_and_equivalents: float | pd.Series,
+    cash_and_cash_equivalents: float | pd.Series,
 ) -> float | pd.Series:
     """
     Calculates the Enterprise Value (EV) of a company. The Enterprise Value (EV)
@@ -256,7 +263,7 @@ def get_enterprise_value(
         total_debt (float or pd.Series): The total debt of the company.
         minority_interest (float or pd.Series): The value of minority interest in the company.
         preferred_equity (float or pd.Series): The value of the preferred equity in the company.
-        cash_and_equivalents (float or pd.Series): The value of cash and cash equivalents of the company.
+        cash_and_cash_equivalents (float or pd.Series): The value of cash and cash equivalents of the company.
 
     Returns:
         float | pd.Series: The Enterprise Value (EV) of the company.
@@ -266,7 +273,7 @@ def get_enterprise_value(
         + total_debt
         + minority_interest
         + preferred_equity
-        - cash_and_equivalents
+        - cash_and_cash_equivalents
     )
 
 
@@ -359,7 +366,7 @@ def get_payout_ratio(
     Returns:
         float | pd.Series: The payout ratio.
     """
-    return dividends / net_income
+    return abs(dividends) / net_income
 
 
 def get_tangible_asset_value(
@@ -400,7 +407,7 @@ def get_net_current_asset_value(
     return total_current_assets - total_current_liabilities
 
 
-def get_enterprise_value_multiplier(
+def get_ev_to_ebit(
     enterprise_value: float | pd.Series,
     earnings_before_interest_and_taxes: float | pd.Series,
 ) -> float | pd.Series:

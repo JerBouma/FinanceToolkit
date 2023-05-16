@@ -1,6 +1,9 @@
+"""Price Tests""" ""
 import pandas as pd
 
 from financialtoolkit.historical import price
+
+# pylint: disable=missing-function-docstring
 
 
 def test_get_returns(recorder):

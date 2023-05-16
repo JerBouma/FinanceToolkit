@@ -28,6 +28,8 @@ EXTENSIONS_MATCHING: dict[str, list[type]] = {
     "txt": [str],
 }
 
+# pylint: skip-file
+
 
 class Record:
     @staticmethod

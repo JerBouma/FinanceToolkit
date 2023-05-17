@@ -25,10 +25,6 @@ from financialtoolkit.base.ratios_controller import Ratios
 
 # pylint: disable=too-many-instance-attributes
 
-# To-do list:
-# TODO: make the analyzer (Toolkit) the only option for users
-# TODO: explain the other method is still valid but not recommended
-
 
 class Toolkit:
     """

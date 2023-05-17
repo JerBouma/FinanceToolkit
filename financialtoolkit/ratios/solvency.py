@@ -77,23 +77,30 @@ def get_debt_service_coverage_ratio(
     return operating_income / current_liabilities
 
 
-def get_financial_leverage(
-    total_assets: float | pd.Series, total_equity: float | pd.Series
+def get_equity_multiplier(
+    total_assets_begin: float | pd.Series,
+    total_assets_end: float | pd.Series,
+    total_equity_begin: float | pd.Series,
+    total_equity_end: float | pd.Series,
 ) -> float | pd.Series:
     """
-    Calculate the financial leverage, a solvency ratio that measures the degree to which a company
+    Calculate the equity multiplier, a solvency ratio that measures the degree to which a company
     uses borrowed money (debt) to finance its operations and growth.
 
-    This is also referred to as the company equity multiplier.
+    This is also referred to as the company financial leverage.
 
     Args:
-        total_assets (float or pd.Series): Total assets of the company.
-        total_equity (float or pd.Series): Total equity of the company.
+        total_assets_begin (float or pd.Series): Total assets at the beginning of the period.
+        total_assets_end (float or pd.Series): Total assets at the end of the period.
+        total_equity_begin (float or pd.Series): Total equity at the beginning of the period.
+        total_equity_end (float or pd.Series): Total equity at the end of the period.
 
     Returns:
-        float | pd.Series: The financial leverage value.
+        float | pd.Series: The equity multiplier.
     """
-    return total_assets / total_equity
+    return ((total_assets_begin + total_assets_end) / 2) / (
+        (total_equity_begin + total_equity_end) / 2
+    )
 
 
 def get_free_cash_flow_yield(

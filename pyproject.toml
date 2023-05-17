@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "financialtoolkit"
-version = "0.50"
+version = "0.51"
 description = "Transparent and Efficient Financial Analysis"
 license = "MIT"
 authors = ["Jeroen Bouma"]
@@ -63,3 +63,8 @@ combine_as_imports = true
 [tool.codespell]
 ignore-words-list = 'ZAR,zar,profund,BASF,basf,applicatio,Ser,Mone,VIE, ist'
 skip = '*.json,./.git,*.csv,pyproject.toml'
+
+[tool.pytest.ini_options]
+filterwarnings = [
+    "ignore::pytest.PytestAssertRewriteWarning:",
+]

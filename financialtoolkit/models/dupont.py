@@ -13,8 +13,10 @@ from financialtoolkit.ratios import (
 def get_dupont_analysis(
     net_income: float | pd.Series,
     total_revenue: float | pd.Series,
-    total_assets: float | pd.Series,
-    total_equity: float | pd.Series,
+    total_assets_begin: float | pd.Series,
+    total_assets_end: float | pd.Series,
+    total_equity_begin: float | pd.Series,
+    total_equity_end: float | pd.Series,
 ) -> pd.DataFrame:
     """
     Perform a Dupont analysis to breakdown the return on equity (ROE) into its components.
@@ -22,8 +24,10 @@ def get_dupont_analysis(
     Args:
         net_income (float or pd.Series): Net profit of the company.
         total_revenue (float or pd.Series): Total revenue of the company.
-        total_assets (float or pd.Series): Total assets of the company.
-        total_equity (float or pd.Series): Total equity of the company.
+        total_assets_begin (float or pd.Series): Total assets of the company at the beginning of the period.
+        total_assets_end (float or pd.Series): Total assets of the company at the end of the period.
+        total_equity_begin (float or pd.Series): Total equity of the company at the beginning of the period.
+        total_equity_end (float or pd.Series): Total equity of the company at the end of the period.
 
     Returns:
         pd.DataFrame: A DataFrame containing the Dupont analysis components.
@@ -32,43 +36,59 @@ def get_dupont_analysis(
     profit_margin = _profitability.get_net_profit_margin(net_income, total_revenue)
 
     # Calculate the asset turnover
-    asset_turnover = _efficiency.get_asset_turnover_ratio(total_revenue, total_assets)
+    asset_turnover = _efficiency.get_asset_turnover_ratio(
+        total_revenue, total_assets_begin, total_assets_end
+    )
 
-    # Calculate the financial leverage
-    financial_leverage = _solvency.get_financial_leverage(total_assets, total_equity)
+    # Calculate the equity multiplier
+    equity_multiplier = _solvency.get_equity_multiplier(
+        total_assets_begin, total_assets_end, total_equity_begin, total_equity_end
+    )
 
     # Calculate the return on equity
-    return_on_equity = profit_margin * asset_turnover * financial_leverage
+    return_on_equity = profit_margin * asset_turnover * equity_multiplier
 
     # Create a dictionary with the Dupont analysis components
     components = {
         "Net Profit Margin": profit_margin,
         "Asset Turnover": asset_turnover,
-        "Financial Leverage": financial_leverage,
+        "Equity Multiplier": equity_multiplier,
         "Return on Equity": return_on_equity,
     }
+
+    if isinstance(return_on_equity, pd.DataFrame):
+        return (
+            pd.concat(components)
+            .swaplevel(1, 0)
+            .sort_index(level=0, sort_remaining=False)
+        )
 
     return pd.DataFrame.from_dict(components, orient="index")
 
 
 def get_extended_dupont_analysis(
-    income_before_tax: float | pd.Series,
     operating_income: float | pd.Series,
+    income_before_tax: float | pd.Series,
     net_income: float | pd.Series,
     total_revenue: float | pd.Series,
-    total_assets: float | pd.Series,
-    total_equity: float | pd.Series,
+    total_assets_begin: float | pd.Series,
+    total_assets_end: float | pd.Series,
+    total_equity_begin: float | pd.Series,
+    total_equity_end: float | pd.Series,
 ) -> pd.DataFrame:
     """
     Perform am Extended Dupont analysis to breakdown the return on equity (ROE) into its components.
 
     Args:
-        income_before_tax (float or pd.Series): Income before taxes of the company.
         operating_income (float or pd.Series): Operating income of the company.
+        interest_expense (float or pd.Series): Interest expense of the company.
+        income_before_tax (float or pd.Series): Income before taxes of the company.
         net_income (float or pd.Series): Net profit of the company.
         total_revenue (float or pd.Series): Total revenue of the company.
-        total_assets (float or pd.Series): Total assets of the company.
-        total_equity (float or pd.Series): Total equity of the company.
+        total_assets_begin (float or pd.Series): Total assets of the company at the beginning of the period.
+        total_assets_end (float or pd.Series): Total assets of the company at the end of the period.
+        total_equity_begin (float or pd.Series): Total equity of the company at the beginning of the period.
+        total_equity_end (float or pd.Series): Total equity of the company at the end of the period.
 
     Returns:
         pd.DataFrame: A DataFrame containing the Dupont analysis components.
@@ -85,14 +105,18 @@ def get_extended_dupont_analysis(
 
     # Calculate the operating profit margin
     operating_profit_margin = _profitability.get_operating_margin(
-        net_income, total_revenue
+        operating_income, total_revenue
     )
 
     # Calculate the asset turnover
-    asset_turnover = _efficiency.get_asset_turnover_ratio(total_revenue, total_assets)
+    asset_turnover = _efficiency.get_asset_turnover_ratio(
+        total_revenue, total_assets_begin, total_assets_end
+    )
 
-    # Calculate the financial leverage
-    financial_leverage = _solvency.get_financial_leverage(total_assets, total_equity)
+    # Calculate the equity multiplier
+    equity_multiplier = _solvency.get_equity_multiplier(
+        total_assets_begin, total_assets_end, total_equity_begin, total_equity_end
+    )
 
     # Calculate the return on equity
     return_on_equity = (
@@ -100,7 +124,7 @@ def get_extended_dupont_analysis(
         * tax_burden_ratio
         * operating_profit_margin
         * asset_turnover
-        * financial_leverage
+        * equity_multiplier
     )
 
     # Create a dictionary with the Dupont analysis components
@@ -109,8 +133,15 @@ def get_extended_dupont_analysis(
         "Tax Burden Ratio": tax_burden_ratio,
         "Operating Profit Margin": operating_profit_margin,
         "Asset Turnover": asset_turnover,
-        "Financial Leverage": financial_leverage,
+        "Equity Multiplier": equity_multiplier,
         "Return on Equity": return_on_equity,
     }
+
+    if isinstance(return_on_equity, pd.DataFrame):
+        return (
+            pd.concat(components)
+            .swaplevel(1, 0)
+            .sort_index(level=0, sort_remaining=False)
+        )
 
     return pd.DataFrame.from_dict(components, orient="index")

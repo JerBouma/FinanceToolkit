@@ -55,14 +55,34 @@ def get_net_profit_margin(
     return net_income / revenue
 
 
+def get_interest_coverage_ratio(
+    operating_income: float | pd.Series, interest_expense: float | pd.Series
+) -> float | pd.Series:
+    """
+    Compute the Interest Coverage Ratio, a metric that reveals a company's
+    ability to cover its interest expenses with its pre-tax profits.
+    This ratio measures how many times the operating income covers the
+    interest payments of operain required and is crucial in determining a
+    company's financial health.
+
+    Args:
+        operating_income (float or pd.Series): Operating income of the company.
+        interest_expense (float or pd.Series): Interest expense of the company.
+
+    Returns:
+        float | pd.Series: The Interest Coverage Ratio
+    """
+    return operating_income / interest_expense
+
+
 def get_interest_burden_ratio(
     income_before_tax: float | pd.Series, operating_income: float | pd.Series
 ) -> float | pd.Series:
     """
     Compute the Interest Burden Ratio, a metric that reveals a company's
     ability to cover its interest expenses with its pre-tax profits.
-    This ratio measures the proportion of pre-tax profits required to
-    pay for interest payments and is crucial in determining a
+    This ratio measures how many times the operating income covers the
+    interest payments of operain required and is crucial in determining a
     company's financial health.
 
     Args:
@@ -127,7 +147,9 @@ def get_return_on_assets(
 
 
 def get_return_on_equity(
-    net_income: float | pd.Series, total_equity: float | pd.Series
+    net_income: float | pd.Series,
+    total_equity_begin: float | pd.Series,
+    total_equity_end: float | pd.Series,
 ) -> float | pd.Series:
     """
     Calculate the return on equity (ROE), a profitability ratio that measures how
@@ -135,12 +157,13 @@ def get_return_on_equity(
 
     Args:
         net_income (float or pd.Series): Net income of the company.
-        total_equity (float or pd.Series): Total equity of the company.
+        total_equity_begin (float or pd.Series): Total equity at the beginning of the period.
+        total_equity_end (float or pd.Series): Total equity at the end of the period.
 
     Returns:
         float | pd.Series: The ROE percentage value.
     """
-    return net_income / total_equity
+    return net_income / ((total_equity_begin + total_equity_end) / 2)
 
 
 def get_return_on_invested_capital(
@@ -164,7 +187,9 @@ def get_return_on_invested_capital(
     Returns:
         float | pd.Series: The return on invested capital value.
     """
-    return ((net_income - dividends) * (1 - effective_tax_rate)) / (total_equity + total_debt)
+    return ((net_income - dividends) * (1 - effective_tax_rate)) / (
+        total_equity + total_debt
+    )
 
 
 def get_income_quality_ratio(

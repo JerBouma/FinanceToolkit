@@ -34,21 +34,18 @@ class Models:
         """
         Perform a Dupont analysis to breakdown the return on equity (ROE) into its components.
         """
-        dupont_analysis_dict: dict = {}
-
         if self._dupont_analysis.empty:
-            for ticker in self._tickers:
-                bst = self._balance_sheet_statement.loc[ticker]
-                ist = self._income_statement.loc[ticker]
+            self._dupont_analysis = get_dupont_analysis(
+                self._income_statement.loc[:, "Net Income", :],
+                self._income_statement.loc[:, "Revenue", :],
+                self._balance_sheet_statement.loc[:, "Total Assets", :].shift(axis=1),
+                self._balance_sheet_statement.loc[:, "Total Assets", :],
+                self._balance_sheet_statement.loc[:, "Total Equity", :].shift(axis=1),
+                self._balance_sheet_statement.loc[:, "Total Equity", :],
+            )
 
-                dupont_analysis_dict[ticker] = get_dupont_analysis(
-                    ist.loc["Net Income"],
-                    ist.loc["Revenue"],
-                    bst.loc["Total Assets"],
-                    bst.loc["Total Equity"],
-                )
-
-            self._dupont_analysis = pd.concat(dupont_analysis_dict, axis=0)
+        if len(self._tickers) == 1:
+            return self._dupont_analysis.droplevel(level=0)
 
         return self._dupont_analysis
 
@@ -56,25 +53,19 @@ class Models:
         """
         Perform am Extended Dupont analysis to breakdown the return on equity (ROE) into its components.
         """
-
-        extended_dupont_analysis_dict: dict = {}
-
         if self._extended_dupont_analysis.empty:
-            for ticker in self._tickers:
-                bst = self._balance_sheet_statement.loc[ticker]
-                ist = self._income_statement.loc[ticker]
-
-                extended_dupont_analysis_dict[ticker] = get_extended_dupont_analysis(
-                    ist.loc["Income Before Tax"],
-                    ist.loc["Operating Income"],
-                    ist.loc["Net Income"],
-                    ist.loc["Revenue"],
-                    bst.loc["Total Assets"],
-                    bst.loc["Total Equity"],
-                )
-
-            self._extended_dupont_analysis = pd.concat(
-                extended_dupont_analysis_dict, axis=0
+            self._extended_dupont_analysis = get_extended_dupont_analysis(
+                self._income_statement.loc[:, "Income Before Tax", :],
+                self._income_statement.loc[:, "Operating Income", :],
+                self._income_statement.loc[:, "Net Income", :],
+                self._income_statement.loc[:, "Revenue", :],
+                self._balance_sheet_statement.loc[:, "Total Assets", :].shift(axis=1),
+                self._balance_sheet_statement.loc[:, "Total Assets", :],
+                self._balance_sheet_statement.loc[:, "Total Equity", :].shift(axis=1),
+                self._balance_sheet_statement.loc[:, "Total Equity", :],
             )
+
+        if len(self._tickers) == 1:
+            return self._extended_dupont_analysis.droplevel(level=0)
 
         return self._extended_dupont_analysis

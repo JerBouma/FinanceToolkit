@@ -44,11 +44,15 @@ def get_quick_ratio(
     Returns:
         float | pd.Series: The quick ratio value.
     """
-    return (cash_and_equivalents + marketable_securities + accounts_receivable) / current_liabilities
+    return (
+        cash_and_equivalents + marketable_securities + accounts_receivable
+    ) / current_liabilities
 
 
 def get_cash_ratio(
-    cash_and_equivalents: float | pd.Series, marketable_securities: float | pd.Series, current_liabilities: float | pd.Series
+    cash_and_equivalents: float | pd.Series,
+    marketable_securities: float | pd.Series,
+    current_liabilities: float | pd.Series,
 ) -> float | pd.Series:
     """
     Calculate the cash ratio, a liquidity ratio that measures a company's ability

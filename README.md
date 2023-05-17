@@ -8,32 +8,40 @@
 
 While browsing a variety of websites, I kept finding that the same financial metric can greatly vary per source and so do the financial statements reported while little information is given how the metric was calculated.
 
-For example, Microsoft's Price-to-Earnings (PE) ratio on the 6th of May, 2023 is reported to be 28.93 (Stockopedia), 32.05 (Morningstar), 32.66 (Macrotrends), 33.09 (Finance Charts), 33.66 (Y Charts), 33.67 (Wall Street Journal), 33.80 (Yahoo Finance) and 34.4 (Companies Market Cap). All of these calculations are correct, however the method applied varies leading to different results. Therefore, collecting data from multiple sources can lead to wrong interpretation of the results given that one source could be applying a different calculation method than another.
+For example, Microsoft's Price-to-Earnings (PE) ratio on the 6th of May, 2023 is reported to be 28.93 (Stockopedia), 32.05 (Morningstar), 32.66 (Macrotrends), 33.09 (Finance Charts), 33.66 (Y Charts), 33.67 (Wall Street Journal), 33.80 (Yahoo Finance) and 34.4 (Companies Market Cap). All of these calculations are correct, however the method applied varies leading to different results. Therefore, collecting data from multiple sources can lead to wrong interpretation of the results given that one source could be applying a different calculation method than another. And that is, if it is even freely available. Often the calculation is hidden behind a paid subscription.
 
-**This is why I designed the FinancialToolkit**, this is an open-source financial toolkit in which all relevant financial ratios, indicators and performance measurements are written down in the most simplistic way allowing for complete transparency of the calculation method. This allows you to not have to rely on metrics from other providers and, given a financial statement, allow for efficient manual calculations. This leads to one uniform method of calculation being applied that is available and understood by everyone.
+**This is why I designed the FinancialToolkit**, this is an open-source financial toolkit in which all relevant financial ratios (50+), indicators and performance measurements are written down in the most simplistic way allowing for complete transparency of the calculation method. This allows you to not have to rely on metrics from other providers and, given a financial statement, allow for efficient manual calculations. This leads to one uniform method of calculation being applied that is available and understood by everyone.
 
 The Financial Toolkit is complimented very well with the [Finance Database 🌎](https://github.com/JerBouma/FinanceDatabase), a database that features 300.000+ symbols containing Equities, ETFs, Funds, Indices, Currencies, Cryptocurrencies and Money Markets. By utilising both, it is possible to do a fully-fledged competitive analysis with the tickers found from the FinanceDatabase inputted into the FinancialToolkit.
 
 ---
 
+# Table of Contents
+
+1. [Installation](#installation)
+2. [Basic Usage](#basic-usage)
+    1. [Quick Start](#quick-start)
+    3. [Collecting information from the database](#collecting-information-from-the-database)
+    3. [Searching the database extensively](#searching-the-database-extensively)
+    4. [Storing the database at a different location](#storing-the-database-at-a-different-location)
+3. [Examples](#examples)
+    1. [Companies in the Netherlands](#companies-in-the-netherlands)
+    2. [Technical Analysis of Biotech ETFs](#technical-analysis-of-biotech-etfs)
+    3. [Silicon Valley's Market Cap](#silicon-valleys-market-cap)
+4. [Questions & Answers](#questions--answers)
+6. [Contact](#contact)
+
 ## Installation
 
 To install the FinancialToolkit it simply requires the following:
 
- ```cli
- pip install financialtoolkit
- ````
+```cli
+pip install financialtoolkit
+````
  
- The dependencies of the package are on purpose *very slim* so that it will work well with any combination of packages and not result in conflicts.
+The dependencies of the package are on purpose *very slim* so that it will work well with any combination of packages and not result in conflicts. I've also been careful with my selection in which I leave out functionality like technical analysis in which [ta-lib](https://ta-lib.org/) does an excellent job as well as portfolio attribution and optimisation in which [Riskfolio-lib](https://riskfolio-lib.readthedocs.io/en/latest/index.html) shines and lastly allow for any source to be incorporated to allow for the incorporation of data sources from [OpenBB](https://openbb.co/).
 
-Note the following:
-
-- **Technical indicators are on purpose only limited included within this package as I find that [ta-lib](https://ta-lib.org/) does an excellent job in providing these.** I recommend using their package alongside the FinancialToolkit.
-- **I've not included any portfolio attribution or optimization techniques as I believe that [Riskfolio-lib](https://riskfolio-lib.readthedocs.io/en/latest/index.html) should be used for this purpose.** The author has spend countless of hours on desiging this package and is therefore a true domain expert in this area. The FinancialToolkit does, however, compliment well with this package through providing key metrics to perform portfolio attribution.
-- **I've used merely one source as a data provider because I believe that platforms like [OpenBB](https://openbb.co/) do an excellent job at data aggregation.** With the option to provide your own financial statements, you are able to combine OpenBB with the FinancialToolkit to collect data and perform the necessary calculations efficiently.
-- **I am in no way affiliated FinancialModelingprep and never will be.** I have chosen their source as I find it to be the most transparent and reliable. When you notice that data is inaccurate or have any other issue related to the data, note that I simply provide the means to access this data and I am not responsible for the accuracy of the data itself. For this, use [their contact form](https://site.financialmodelingprep.com/contact) or provide the data yourself.
-
-**To be able to use the functionality of FinancialModelingPrep you need an API Key from their website.** Use the following instructions to obtain a _free_ API Key. Note that these keys are limited to 250 requests per day but the premium plans are kept at a low cost in case you do run out of the limit or have a need for access to more data.
+To be able to get started, you need to obtain an API Key from FinancialModelingPrep. Use the following instructions to obtain a _free_ API Key. Note that these keys are limited to 250 requests per day but the premium plans are kept at a low cost in case you do run out of the limit or have a need for access to more data. **It is possible to use your own set of financial statements and not rely on FinancialModelingPrep, please have a look LINK_TO_PARAGRAPH.**
 
 1. Go to [FinancialModellingPrep's API](https://financialmodelingprep.com/developer/docs/)
 2. Under "Get your Free API Key Today!" click on "Get my API KEY here"
@@ -41,18 +49,17 @@ Note the following:
 4. Obtain the API Key as found [here](https://financialmodelingprep.com/developer/docs/)
 5. Start using this package.
 
-## Examples
+Note that I am in no way affiliated FinancialModelingprep and never will be. I have chosen their source as I find it to be the most transparent and reliable. When you notice that data is inaccurate or have any other issue related to the data, note that I simply provide the means to access this data and I am not responsible for the accuracy of the data itself. For this, use [their contact form](https://site.financialmodelingprep.com/contact) or provide the data yourself. 
 
-Find more information about the Jupyter Notebooks that includes examples below.
+## Basic Usage
 
-### The Analyzer
+This section explains in detail how the Financial Toolkit can utilitised effectively. Also see the Jupyter Notebook in which you can run the examples also demonstrated here. You can find this document [here](https://github.com/JerBouma/FinanceDatabase/blob/main/examples.ipynb).
 
-After installing the FinancialToolkit the Analyzer class can be used as follows:
 
-```
-from financialtoolkit.analyzer import Analyzer
+````python
+from financialtoolkit import Toolkit
 
-companies = Analyzer(['AAPL', 'MSFT'], api_key="FMP_KEY")
+companies = Toolkit(['AAPL', 'MSFT'], api_key="FMP_KEY")
 
 # an Enterprise example
 enterprise = companies.get_enterprise()
@@ -64,26 +71,93 @@ historical_data = companies.get_historical_data(start='2000-01-01', end='2020-01
 balance_sheet_statement = companies.get_balance_sheet_statement()
 
 # a Ratios example
-profitability_ratios = companies.get_profitability_ratios()
+profitability_ratios = companies.ratios.collect_profitability_ratios()
 
-# Show the profitability ratios
-profitability_ratios
+# Show the profitability ratios for Apple
+profitability_ratios.loc['AAPL]
+````
+
+This returns the following output for `profitability_ratios.loc['AAPL]`. Ommitting `.loc['AAPL']` will return the result for both AAPL and MSFT.
+
+
+|                                             |     2018 |     2019 |     2020 |     2021 |     2022 |
+|:--------------------------------------------|---------:|---------:|---------:|---------:|---------:|
+| Gross Margin                                | 0.383437 | 0.378178 | 0.382332 | 0.417794 | 0.433096 |
+| Operating Margin                            | 0.26694  | 0.24572  | 0.241473 | 0.297824 | 0.302887 |
+| Net Profit Margin                           | 0.224142 | 0.212381 | 0.209136 | 0.258818 | 0.253096 |
+| Interest Burden Ratio                       | 1.02828  | 1.02827  | 1.01211  | 1.00237  | 0.997204 |
+| Income Before Tax Profit Margin             | 0.274489 | 0.252666 | 0.244398 | 0.298529 | 0.30204  |
+| Effective Tax Rate                          | 0.183422 | 0.159438 | 0.144282 | 0.133023 | 0.162045 |
+| Return on Assets (ROA)                      | 0.162775 | 0.16323  | 0.177256 | 0.269742 | 0.282924 |
+| Return on Equity (ROE)                      | 0.555601 | 0.610645 | 0.878664 | 1.50071  | 1.96959  |
+| Return on Invested Capital (ROIC)           | 0.269858 | 0.293721 | 0.344126 | 0.503852 | 0.562645 |
+| Return on Capital Employed (ROCE)           | 0.305968 | 0.297739 | 0.320207 | 0.495972 | 0.613937 |
+| Return on Tangible Assets                   | 0.555601 | 0.610645 | 0.878664 | 1.50071  | 1.96959  |
+| Income Quality Ratio                        | 1.30073  | 1.25581  | 1.4052   | 1.09884  | 1.22392  |
+| Net Income per EBT                          | 0.816578 | 0.840562 | 0.855718 | 0.866977 | 0.837955 |
+| Free Cash Flow to Operating Cash Flow Ratio | 0.828073 | 0.848756 | 0.909401 | 0.893452 | 0.912338 |
+| EBT to EBIT Ratio                           | 0.957448 | 0.948408 | 0.958936 | 0.976353 | 0.975982 |
+| EBIT to Revenue                             | 0.286688 | 0.26641  | 0.254864 | 0.305759 | 0.309473 |
+
+It also possible to call any ratio or model directly as shown below.
+
+```python
+import pandas as pd
+import numpy as np
+
+from financialtoolkit.models import dupont
+
+years = [2018, 2019, 2020, 2021, 2022]
+
+dupont.get_dupont_analysis(
+    net_income=pd.Series(
+        [59531000000, 55256000000, 57411000000, 94680000000, 99803000000], index=years
+    ),
+    total_revenue=pd.Series(
+        [265595000000, 260174000000, 274515000000, 365817000000, 394328000000],
+        index=years,
+    ),
+    total_assets_begin=pd.Series(
+        [np.nan, 365725000000, 338516000000, 323888000000, 351002000000],
+        index=years,
+    ),
+    total_assets_end=pd.Series(
+        [365725000000, 338516000000, 323888000000, 351002000000, 352755000000],
+        index=years,
+    ),
+    total_equity_begin=pd.Series(
+        [np.nan, 107147000000, 90488000000, 65339000000, 63090000000], index=years
+    ),
+    total_equity_end=pd.Series(
+        [107147000000, 90488000000, 65339000000, 63090000000, 50672000000], index=years
+    ),
+)
 ```
 
-Which returns the following output for the `profitability_ratios` variable:
+This returns the following table which closely resembles a proper Dupont analysis for Apple at their given reporting dates in October:
 
-|                |   Gross Margin |   Operating Margin |   Net Profit Margin |   Pre Tax Profit |   Effective Tax Rate |   Return on Assets (ROA) |   Return on Equity (ROE) |   Return on Invested Capital (ROIC) |   Return on Tangible Assets (ROTA) |   Return on Capital Employed (ROCE) |   Income Quality Ratio |
-|:---------------|---------------:|-------------------:|--------------------:|-----------------:|---------------------:|-------------------------:|-------------------------:|------------------------------------:|-----------------------------------:|------------------------------------:|-----------------------:|
-| AAPL, 2018 |       0.383437 |           0.26694  |            0.224142 |         0.274489 |             0.183422 |                0.162775  |                 0.555601 |                            0.330474 |                           0.555601 |                            0.305968 |                1.30073 |
-| AAPL, 2019 |       0.378178 |           0.24572  |            0.212381 |         0.252666 |             0.159438 |                0.16323   |                 0.610645 |                            0.349435 |                           0.610645 |                            0.297739 |                1.25581 |
-| AAPL, 2020 |       0.382332 |           0.241473 |            0.209136 |         0.244398 |             0.144282 |                0.177256  |                 0.878664 |                            0.402149 |                           0.878664 |                            0.320207 |                1.4052  |
-| AAPL, 2021 |       0.417794 |           0.297824 |            0.258818 |         0.298529 |             0.133023 |                0.269742  |                 1.50071  |                            0.58116  |                           1.50071  |                            0.495972 |                1.09884 |
-| AAPL, 2022 |       0.433096 |           0.302887 |            0.253096 |         0.30204  |             0.162045 |                0.282924  |                 1.96959  |                            0.67145  |                           1.96959  |                            0.613937 |                1.22392 |
-| MSFT, 2018 |       0.652474 |           0.317669 |            0.150154 |         0.3305   |             0.545676 |                0.0640183 |                 0.200331 |                            0.177905 |                           0.221938 |                            0.195683 |                2.64824 |
-| MSFT, 2019 |       0.65902  |           0.34137  |            0.311817 |         0.347163 |             0.101813 |                0.136937  |                 0.383465 |                            0.293593 |                           0.414887 |                            0.213571 |                1.32989 |
-| MSFT, 2020 |       0.67781  |           0.370304 |            0.309625 |         0.370842 |             0.165077 |                0.146961  |                 0.374298 |                            0.313879 |                           0.397974 |                            0.242912 |                1.37023 |
-| MSFT, 2021 |       0.689258 |           0.415949 |            0.364517 |         0.423005 |             0.138266 |                0.183568  |                 0.431522 |                            0.370857 |                           0.456606 |                            0.299639 |                1.25247 |
-| MSFT, 2022 |       0.684017 |           0.420553 |            0.366863 |         0.422232 |             0.131134 |                0.19937   |                 0.436755 |                            0.398895 |                           0.46854  |                            0.317985 |                1.22405 |
+|                   |       2018 |     2019 |     2020 |     2021 |     2022 |
+|:------------------|-----------:|---------:|---------:|---------:|---------:|
+| Net Profit Margin |   0.224142 | 0.212381 | 0.209136 | 0.258818 | 0.253096 |
+| Asset Turnover    | nan        | 0.738878 | 0.828845 | 1.08408  | 1.12064  |
+| Equity Multiplier | nan        | 3.56334  | 4.25089  | 5.25497  | 6.18622  |
+| Return on Equity  | nan        | 0.559172 | 0.736856 | 1.47443  | 1.75459  |
+
+## Examples
+
+Find more information about the Jupyter Notebooks that includes examples below.
+
+### The Analyzer
+
+After installing the FinancialToolkit the Analyzer class can be used as follows:
+
+```
+
+```
+
+
+
+
 
 
 Within the related Jupyter Notebook, the class as found in the analyzer module (`from financialtoolkit.analyzer import Analyzer`) is used to rapidly collect financial data and calculate the relevant financial metrics. Within this class it is possible to find:

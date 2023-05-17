@@ -102,6 +102,7 @@ class Ratios:
             efficiency_ratios["SGA-to-Revenue Ratio"] = self.get_sga_to_revenue_ratio()
             efficiency_ratios["Fixed Asset Turnover"] = self.get_fixed_asset_turnover()
             efficiency_ratios["Asset Turnover Ratio"] = self.get_asset_turnover_ratio()
+            efficiency_ratios["Operating Ratio"] = self.get_operating_ratio()
 
             self._efficiency_ratios = (
                 pd.concat(efficiency_ratios)
@@ -157,8 +158,8 @@ class Ratios:
             profitability_ratios["Operating Margin"] = self.get_operating_margin()
             profitability_ratios["Net Profit Margin"] = self.get_net_profit_margin()
             profitability_ratios[
-                "Interest Burden Ratio"
-            ] = self.get_interest_burden_ratio()
+                "Interest Coverage Ratio"
+            ] = self.get_interest_coverage_ratio()
             profitability_ratios[
                 "Income Before Tax Profit Margin"
             ] = self.get_income_before_tax_profit_margin()
@@ -210,7 +211,7 @@ class Ratios:
             solvency_ratios[
                 "Debt Service Coverage Ratio"
             ] = self.get_debt_service_coverage_ratio()
-            solvency_ratios["Financial Leverage"] = self.get_financial_leverage()
+            solvency_ratios["Equity Multiplier"] = self.get_equity_multiplier()
             solvency_ratios["Free Cash Flow Yield"] = self.get_free_cash_flow_yield(
                 diluted=diluted
             )
@@ -338,7 +339,7 @@ class Ratios:
         return efficiency.get_inventory_turnover_ratio(
             self._income_statement.loc[:, "Cost of Goods Sold", :],
             self._balance_sheet_statement.loc[:, "Inventory", :].shift(axis=1),
-            self._balance_sheet_statement.loc[:, "Inventory", :]
+            self._balance_sheet_statement.loc[:, "Inventory", :],
         )
 
     def get_days_of_inventory_outstanding(self, days: int = 365):
@@ -359,8 +360,10 @@ class Ratios:
         the average number of days it takes a company to collect payment on its
         credit sales.
         """
-        return efficiency.get_days_of_sales_outstanding( 
-            self._balance_sheet_statement.loc[:, "Accounts Receivable", :].shift(axis=1),
+        return efficiency.get_days_of_sales_outstanding(
+            self._balance_sheet_statement.loc[:, "Accounts Receivable", :].shift(
+                axis=1
+            ),
             self._balance_sheet_statement.loc[:, "Accounts Receivable", :],
             self._income_statement.loc[:, "Revenue", :],
             days,
@@ -377,8 +380,10 @@ class Ratios:
             self._income_statement.loc[:, "Cost of Goods Sold", :],
             days,
         )
-        days_of_sales = efficiency.get_days_of_sales_outstanding( 
-            self._balance_sheet_statement.loc[:, "Accounts Receivable", :].shift(axis=1),
+        days_of_sales = efficiency.get_days_of_sales_outstanding(
+            self._balance_sheet_statement.loc[:, "Accounts Receivable", :].shift(
+                axis=1
+            ),
             self._balance_sheet_statement.loc[:, "Accounts Receivable", :],
             self._income_statement.loc[:, "Revenue", :],
             days,
@@ -396,7 +401,7 @@ class Ratios:
             self._balance_sheet_statement.loc[:, "Accounts Payable", :].shift(axis=1),
             self._balance_sheet_statement.loc[:, "Accounts Payable", :],
         )
-        
+
     def get_days_of_accounts_payable_outstanding(self, days: int = 365):
         """
         Calculate the days payables outstanding, an efficiency ratio that measures the
@@ -421,8 +426,10 @@ class Ratios:
             self._income_statement.loc[:, "Cost of Goods Sold", :],
             days,
         )
-        days_of_sales = efficiency.get_days_of_sales_outstanding( 
-            self._balance_sheet_statement.loc[:, "Accounts Receivable", :].shift(axis=1),
+        days_of_sales = efficiency.get_days_of_sales_outstanding(
+            self._balance_sheet_statement.loc[:, "Accounts Receivable", :].shift(
+                axis=1
+            ),
             self._balance_sheet_statement.loc[:, "Accounts Receivable", :],
             self._income_statement.loc[:, "Revenue", :],
             days,
@@ -446,7 +453,9 @@ class Ratios:
         the amount of sales generated.
         """
         return efficiency.get_receivables_turnover(
-            self._balance_sheet_statement.loc[:, "Accounts Receivable", :].shift(axis=1),
+            self._balance_sheet_statement.loc[:, "Accounts Receivable", :].shift(
+                axis=1
+            ),
             self._balance_sheet_statement.loc[:, "Accounts Receivable", :],
             self._income_statement.loc[:, "Revenue", :],
         )
@@ -472,6 +481,17 @@ class Ratios:
             self._income_statement.loc[:, "Revenue", :],
             self._balance_sheet_statement.loc[:, "Fixed Assets", :].shift(axis=1),
             self._balance_sheet_statement.loc[:, "Fixed Assets", :],
+        )
+
+    def get_operating_ratio(self):
+        """
+        Calculate the operating ratio, a financial metric that measures the efficiency
+        of a company's operations by comparing its operating expenses to its revenue.
+        """
+        return efficiency.get_operating_ratio(
+            self._income_statement.loc[:, "Operating Expenses", :],
+            self._income_statement.loc[:, "Cost of Goods Sold", :],
+            self._income_statement.loc[:, "Revenue", :],
         )
 
     def get_current_ratio(self):
@@ -583,15 +603,15 @@ class Ratios:
 
     def get_interest_burden_ratio(self):
         """
-        Compute the Interest Burden Ratio, a metric that reveals a company's
+        Compute the Interest Coverage Ratio, a metric that reveals a company's
         ability to cover its interest expenses with its pre-tax profits.
         This ratio measures the proportion of pre-tax profits required to
         pay for interest payments and is crucial in determining a
         company's financial health.
         """
         return profitability.get_interest_burden_ratio(
-            self._income_statement.loc[:, "Income Before Tax", :],
             self._income_statement.loc[:, "Operating Income", :],
+            self._income_statement.loc[:, "Interest Expense", :],
         )
 
     def get_income_before_tax_profit_margin(self):
@@ -631,6 +651,7 @@ class Ratios:
         """
         return profitability.get_return_on_equity(
             self._income_statement.loc[:, "Net Income", :],
+            self._balance_sheet_statement.loc[:, "Total Equity", :].shift(axis=1),
             self._balance_sheet_statement.loc[:, "Total Equity", :],
         )
 
@@ -640,7 +661,7 @@ class Ratios:
         the company's return on the capital invested in it, including both equity and debt.
         """
         effective_tax_rate = self.get_effective_tax_rate()
-        
+
         return profitability.get_return_on_invested_capital(
             self._income_statement.loc[:, "Net Income", :],
             self._cash_flow_statement.loc[:, "Dividends Paid", :],
@@ -777,13 +798,15 @@ class Ratios:
             self._income_statement.loc[:, "Interest Expense", :],
         )
 
-    def get_financial_leverage(self):
+    def get_equity_multiplier(self):
         """
-        Calculate the financial leverage, a solvency ratio that measures the degree to which
+        Calculate the equity multiplier, a solvency ratio that measures the degree to which
         a company uses borrowed money (debt) to finance its operations and growth.
         """
-        return solvency.get_financial_leverage(
+        return solvency.get_equity_multiplier(
+            self._balance_sheet_statement.loc[:, "Total Assets", :].shift(axis=1),
             self._balance_sheet_statement.loc[:, "Total Assets", :],
+            self._balance_sheet_statement.loc[:, "Total Equity", :].shift(axis=1),
             self._balance_sheet_statement.loc[:, "Total Equity", :],
         )
 

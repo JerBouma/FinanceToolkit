@@ -3,11 +3,14 @@ __pycache__/
 *.py[cod]
 *$py.class
 .idea
+dist
 build/
 dist/
 PyPi Build/
 .DS_Store
 *.ipynb
+!examples/*.ipynb
+.ipynb_checkpoints
 
 # C extensions
 *.so

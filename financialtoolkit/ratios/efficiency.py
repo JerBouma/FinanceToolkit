@@ -23,7 +23,9 @@ def get_asset_turnover_ratio(
 
 
 def get_inventory_turnover_ratio(
-    cost_of_goods_sold: float | pd.Series, inventory_begin: float | pd.Series, inventory_end: float | pd.Series
+    cost_of_goods_sold: float | pd.Series,
+    inventory_begin: float | pd.Series,
+    inventory_end: float | pd.Series,
 ) -> float | pd.Series:
     """
     Calculate the inventory turnover ratio, an efficiency ratio that measures
@@ -63,7 +65,10 @@ def get_days_of_inventory_outstanding(
 
 
 def get_days_of_sales_outstanding(
-    accounts_receivable_begin: float | pd.Series, accounts_receivable_end: float | pd.Series, net_credit_sales: float | pd.Series, days: int = 365
+    accounts_receivable_begin: float | pd.Series,
+    accounts_receivable_end: float | pd.Series,
+    net_credit_sales: float | pd.Series,
+    days: int = 365,
 ) -> float | pd.Series:
     """
     Calculate the days of sales outstanding, an efficiency ratio that measures
@@ -79,7 +84,11 @@ def get_days_of_sales_outstanding(
     Returns:
         float | pd.Series: The days of sales outstanding value.
     """
-    return ((accounts_receivable_begin + accounts_receivable_end) / 2) / net_credit_sales * days
+    return (
+        ((accounts_receivable_begin + accounts_receivable_end) / 2)
+        / net_credit_sales
+        * days
+    )
 
 
 def get_operating_cycle(
@@ -101,7 +110,9 @@ def get_operating_cycle(
 
 
 def get_accounts_payables_turnover_ratio(
-    cost_of_goods_sold: float | pd.Series, accounts_payable_begin: float | pd.Series, accounts_payable_end: float | pd.Series
+    cost_of_goods_sold: float | pd.Series,
+    accounts_payable_begin: float | pd.Series,
+    accounts_payable_end: float | pd.Series,
 ) -> float | pd.Series:
     """
     Calculate the accounts payable turnover ratio is an efficiency ratio that measures how
@@ -121,7 +132,7 @@ def get_accounts_payables_turnover_ratio(
 def get_days_of_accounts_payable_outstanding(
     cost_of_goods_sold: float | pd.Series,
     accounts_payable_begin: float | pd.Series,
-    accounts_payable_end: float | pd.Series  ,
+    accounts_payable_end: float | pd.Series,
     days: int = 365,
 ) -> float | pd.Series:
     """
@@ -137,7 +148,11 @@ def get_days_of_accounts_payable_outstanding(
     Returns:
         float | pd.Series: The days payables outstanding value.
     """
-    return ((accounts_payable_begin + accounts_payable_end) / 2) / cost_of_goods_sold * days
+    return (
+        ((accounts_payable_begin + accounts_payable_end) / 2)
+        / cost_of_goods_sold
+        * days
+    )
 
 
 def get_cash_conversion_cycle(
@@ -162,7 +177,9 @@ def get_cash_conversion_cycle(
 
 
 def get_receivables_turnover(
-    accounts_receivable_begin: float | pd.Series, accounts_receivable_end: float | pd.Series, net_credit_sales: float | pd.Series
+    accounts_receivable_begin: float | pd.Series,
+    accounts_receivable_end: float | pd.Series,
+    net_credit_sales: float | pd.Series,
 ) -> float | pd.Series:
     """
     Calculate the receivables turnover, a ratio that measures how efficiently a
@@ -176,7 +193,9 @@ def get_receivables_turnover(
     Returns:
         float | pd.Series: The receivables turnover value.
     """
-    return ((accounts_receivable_begin + accounts_receivable_end) / 2) / net_credit_sales
+    return (
+        (accounts_receivable_begin + accounts_receivable_end) / 2
+    ) / net_credit_sales
 
 
 def get_sga_to_revenue_ratio(
@@ -197,7 +216,9 @@ def get_sga_to_revenue_ratio(
 
 
 def get_fixed_asset_turnover(
-    net_sales: float | pd.Series, net_fixed_assets_begin: float | pd.Series, net_fixed_assets_end: float | pd.Series
+    net_sales: float | pd.Series,
+    net_fixed_assets_begin: float | pd.Series,
+    net_fixed_assets_end: float | pd.Series,
 ) -> float | pd.Series:
     """
     Calculate the Fixed Asset Turnover ratio, an efficiency ratio that
@@ -212,3 +233,23 @@ def get_fixed_asset_turnover(
         float | pd.Series: The Fixed Asset Turnover ratio value.
     """
     return net_sales / ((net_fixed_assets_begin + net_fixed_assets_end) / 2)
+
+
+def get_operating_ratio(
+    operating_expenses: float | pd.Series,
+    cost_of_goods_sold: float | pd.Series,
+    revenue: float | pd.Series,
+) -> float | pd.Series:
+    """
+    Calculate the operating ratio, a financial metric that measures the efficiency
+    of a company's operations by comparing its operating expenses to its revenue.
+
+    Args:
+        operating_expenses (float or pd.Series): Total operating expenses of the company.
+        cost_of_goods_sold (float or pd.Series): Total cost of goods sold of the company.
+        revenue (float or pd.Series): Total revenue of the company.
+
+    Returns:
+        float or pd.Series: The operating ratio value.
+    """
+    return (operating_expenses + cost_of_goods_sold) / revenue

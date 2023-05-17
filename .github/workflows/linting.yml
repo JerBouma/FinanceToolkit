@@ -1,0 +1,40 @@
+name: General Linting
+
+on:
+  pull_request:
+    types: [opened, synchronize, edited]
+  push:
+    branches:
+      - 'main'
+
+jobs:
+  code-linting:
+    name: General Code Linting
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Setup Python 3.9
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.9"
+          architecture: x64
+
+      - run: |
+          pip install bandit black codespell safety pylint==2.15.2 packaging==22 ruff==0.0.243
+          pip install types-pytz types-requests types-termcolor types-tabulate types-PyYAML types-python-dateutil types-setuptools types-six
+          pip install financedatabase pandas yfinance ta fundamentalanalysis matplotlib
+      - run: black --diff --check financialtoolkit
+      - run: codespell
+      - run: ruff financialtoolkit
+      - run: pylint financialtoolkit
+
+  markdown-link-check:
+    name: Markdown Linting
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+        name: Check out the code
+      - name: Lint Code Base
+        uses: docker://avtodev/markdown-lint:v1

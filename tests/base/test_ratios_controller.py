@@ -25,12 +25,36 @@ ratios_module = toolkit.ratios
 # pylint: disable=missing-function-docstring
 
 
-def test_get_efficiency_ratios(recorder):
-    recorder.capture(ratios_module.get_efficiency_ratios())
+def test_collect_all_ratios(recorder):
+    recorder.capture(ratios_module.collect_all_ratios())
+
+
+def test_collect_efficiency_ratios(recorder):
+    recorder.capture(ratios_module.collect_efficiency_ratios())
+
+
+def test_collect_solvency_ratios(recorder):
+    recorder.capture(ratios_module.collect_solvency_ratios())
+
+
+def test_collect_liquidity_ratios(recorder):
+    recorder.capture(ratios_module.collect_liquidity_ratios())
+
+
+def test_collect_profitability_ratios(recorder):
+    recorder.capture(ratios_module.collect_profitability_ratios())
+
+
+def test_collect_valuation_ratios(recorder):
+    recorder.capture(ratios_module.collect_valuation_ratios())
 
 
 def test_get_asset_turnover_ratio(recorder):
     recorder.capture(ratios_module.get_asset_turnover_ratio())
+
+
+def test_get_operating_ratio(recorder):
+    recorder.capture(ratios_module.get_operating_ratio())
 
 
 def test_get_inventory_turnover_ratio(recorder):
@@ -73,10 +97,6 @@ def test_get_fixed_asset_turnover(recorder):
     recorder.capture(ratios_module.get_fixed_asset_turnover())
 
 
-def test_get_liquidity_ratios(recorder):
-    recorder.capture(ratios_module.get_liquidity_ratios())
-
-
 def test_get_current_ratio(recorder):
     recorder.capture(ratios_module.get_current_ratio())
 
@@ -103,10 +123,6 @@ def test_get_operating_cash_flow_sales_ratio(recorder):
 
 def test_get_short_term_coverage_ratio(recorder):
     recorder.capture(ratios_module.get_short_term_coverage_ratio())
-
-
-def test_get_profitability_ratios(recorder):
-    recorder.capture(ratios_module.get_profitability_ratios())
 
 
 def test_get_gross_margin(recorder):
@@ -161,8 +177,8 @@ def test_get_tax_burden_ratio(recorder):
     recorder.capture(ratios_module.get_tax_burden_ratio())
 
 
-def test_get_interest_burden_ratio(recorder):
-    recorder.capture(ratios_module.get_interest_burden_ratio())
+def test_get_interest_coverage_ratio(recorder):
+    recorder.capture(ratios_module.get_interest_coverage_ratio())
 
 
 def test_get_EBT_to_EBIT(recorder):
@@ -173,10 +189,6 @@ def test_get_EBIT_to_revenue(recorder):
     recorder.capture(ratios_module.get_EBIT_to_revenue())
 
 
-def test_get_solvency_ratios(recorder):
-    recorder.capture(ratios_module.get_solvency_ratios())
-
-
 def test_get_debt_to_assets_ratio(recorder):
     recorder.capture(ratios_module.get_debt_to_assets_ratio())
 
@@ -185,12 +197,12 @@ def test_get_debt_to_equity_ratio(recorder):
     recorder.capture(ratios_module.get_debt_to_equity_ratio())
 
 
-def test_get_interest_coverage_ratio(recorder):
-    recorder.capture(ratios_module.get_interest_coverage_ratio())
+def test_get_interest_burden_ratio(recorder):
+    recorder.capture(ratios_module.get_interest_burden_ratio())
 
 
-def test_get_financial_leverage(recorder):
-    recorder.capture(ratios_module.get_financial_leverage())
+def test_get_equity_multiplier(recorder):
+    recorder.capture(ratios_module.get_equity_multiplier())
 
 
 def test_get_free_cash_flow_yield(recorder):
@@ -211,10 +223,6 @@ def test_get_capex_coverage_ratio(recorder):
 
 def test_get_capex_dividend_coverage_ratio(recorder):
     recorder.capture(ratios_module.get_capex_dividend_coverage_ratio())
-
-
-def test_get_valuation_ratios(recorder):
-    recorder.capture(ratios_module.get_valuation_ratios())
 
 
 def test_get_earnings_per_share(recorder):
@@ -299,7 +307,3 @@ def test_get_tangible_asset_value(recorder):
 
 def test_get_net_current_asset_value(recorder):
     recorder.capture(ratios_module.get_net_current_asset_value())
-
-
-def test_get_enterprise_value_multiplier(recorder):
-    recorder.capture(ratios_module.get_enterprise_value_multiplier())

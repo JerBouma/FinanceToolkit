@@ -201,12 +201,3 @@ def test_get_net_current_asset_value(recorder):
             total_current_liabilities=pd.Series([50, 30, 80, 20, 50]),
         )
     )
-
-
-def test_get_enterprise_value_multiplier(recorder):
-    recorder.capture(
-        valuation.get_enterprise_value_multiplier(
-            enterprise_value=pd.Series([1000, 1200, 800, 500, 300]),
-            earnings_before_interest_and_taxes=pd.Series([50, 15, 80, 20, 50]),
-        )
-    )

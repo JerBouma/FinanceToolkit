@@ -43,11 +43,13 @@ def test_get_debt_service_coverage_ratio(recorder):
     )
 
 
-def test_get_financial_leverage(recorder):
+def test_get_equity_multiplier(recorder):
     recorder.capture(
-        solvency.get_financial_leverage(
-            total_assets=pd.Series([200, 210, 220, 230, 280]),
-            total_equity=pd.Series([150, 130, 120, 100, 50]),
+        solvency.get_equity_multiplier(
+            total_assets_begin=pd.Series([100, 110, 120, 130, 180]),
+            total_assets_end=pd.Series([200, 210, 220, 230, 280]),
+            total_equity_begin=pd.Series([150, 130, 120, 100, 50]),
+            total_equity_end=pd.Series([250, 120, 200, 200, 150]),
         )
     )
 

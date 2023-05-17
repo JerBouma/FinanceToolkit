@@ -18,8 +18,9 @@ def test_get_current_ratio(recorder):
 def test_get_quick_ratio(recorder):
     recorder.capture(
         liquidity.get_quick_ratio(
-            current_assets=pd.Series([100, 110, 120, 130, 80]),
-            inventory=pd.Series([30, 20, 30, 20, 40]),
+            cash_and_equivalents=pd.Series([100, 110, 120, 130, 80]),
+            accounts_receivable=pd.Series([30, 20, 30, 20, 40]),
+            marketable_securities=pd.Series([30, 10, 30, 20, 40]),
             current_liabilities=pd.Series([130, 120, 110, 150, 100]),
         )
     )
@@ -29,6 +30,7 @@ def test_get_cash_ratio(recorder):
     recorder.capture(
         liquidity.get_cash_ratio(
             cash_and_equivalents=pd.Series([100, 110, 120, 130, 80]),
+            marketable_securities=pd.Series([30, 20, 30, 20, 40]),
             current_liabilities=pd.Series([130, 120, 110, 150, 100]),
         )
     )

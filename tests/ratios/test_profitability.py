@@ -32,11 +32,11 @@ def test_get_net_profit_margin(recorder):
     )
 
 
-def test_get_interest_burden_ratio(recorder):
+def test_get_interest_coverage_ratio(recorder):
     recorder.capture(
-        profitability.get_interest_burden_ratio(
-            income_before_tax=pd.Series([60, 50, 40, 30, 50]),
-            operating_income=pd.Series([80, 60, 70, 80, 90]),
+        profitability.get_interest_coverage_ratio(
+            operating_income=pd.Series([60, 50, 40, 30, 50]),
+            interest_expense=pd.Series([80, 60, 70, 80, 90]),
         )
     )
 
@@ -72,7 +72,8 @@ def test_get_return_on_equity(recorder):
     recorder.capture(
         profitability.get_return_on_equity(
             net_income=pd.Series([80, 40, 40, 30, 20]),
-            total_equity=pd.Series([130, 200, 210, 200, 150]),
+            total_equity_begin=pd.Series([130, 200, 210, 200, 150]),
+            total_equity_end=pd.Series([250, 400, 410, 400, 350]),
         )
     )
 
@@ -82,7 +83,9 @@ def test_get_return_on_invested_capital(recorder):
         profitability.get_return_on_invested_capital(
             net_income=pd.Series([80, 40, 40, 30, 20]),
             dividends=pd.Series([4, 3, 2, 1, 10]),
-            invested_capital=pd.Series([130, 200, 210, 200, 150]),
+            effective_tax_rate=pd.Series([0.2, 0.2, 0.2, 0.2, 0.2]),
+            total_equity=pd.Series([130, 200, 210, 200, 150]),
+            total_debt=pd.Series([130, 200, 210, 200, 150]),
         )
     )
 

@@ -28,7 +28,7 @@ from financialtoolkit.base.ratios_controller import Ratios
 
 class Toolkit:
     """
-    Toolkit Class
+    Toolkit class for the Financial Toolkit package.
     """
 
     def __init__(
@@ -47,10 +47,11 @@ class Toolkit:
         Args:
         tickers (str or list): A string or a list of strings containing the company ticker(s).
         api_key (str): An API key from FinancialModelingPrep.
-        source (str): The source of the data. Either FinancialModelingPrep or Custom.
-        balance_sheet_format_location (str): The location of the balance sheet format file.
-        income_statement_format_location (str): The location of the income statement format file.
-        cash_flow_statement_format_location (str): The location of the cash flow statement format file.
+        historical (pd.DataFrame): A DataFrame containing historical data.
+        balance (pd.DataFrame): A DataFrame containing balance sheet data.
+        income (pd.DataFrame): A DataFrame containing income statement data.
+        cash (pd.DataFrame): A DataFrame containing cash flow statement data.
+        format_location (str): A string containing the location of the normalization files.
         """
         if isinstance(tickers, str):
             self._tickers = [tickers]

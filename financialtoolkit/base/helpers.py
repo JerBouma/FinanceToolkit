@@ -10,7 +10,7 @@ def combine_dataframes(tickers: str | list[str], *args) -> pd.DataFrame:
     e.g. the balance sheet statement, into a single dataframe.
 
     Args:
-        **args: A dictionary of the different financial statements.
+        **args: A dictionary of the same type of financial statement from multiple companies.
 
     Returns:
         pd.DataFrame: A pandas DataFrame with the combined financial statements.

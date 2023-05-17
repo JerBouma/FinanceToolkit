@@ -16,7 +16,7 @@ from financialtoolkit.ratios import (
 
 class Ratios:
     """
-    Ratios Module
+    Ratios Controller Class
     """
 
     def __init__(

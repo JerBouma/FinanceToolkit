@@ -11,7 +11,7 @@ from financialtoolkit.models.dupont import (
 
 class Models:
     """
-    Models Module
+    Models Controller Class
     """
 
     def __init__(

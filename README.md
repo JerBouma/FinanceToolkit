@@ -134,13 +134,13 @@ companies.get_normalization_files()
 
 This copies over three files, `balance.csv`, `income.csv` and `cash.csv` which will contain a structure like the following:
 
-IMAGE_HERE
+![Normalization Format](https://github.com/JerBouma/FinancialToolkitAlpha/assets/46355364/3d79681d-35c0-4628-b9a1-bb11eb951630)
 
 By replacing the first column with the names from your dataset (e.g. replace `cashAndCashEquivalents` with `Cash` if this is how it is called in your dataset), it will automatically normalize the dataset when you initialize the Financial Toolkit. Note that the DataFrame needs to be a multi-index in case you use multiple tickers structured as `Ticker x Financial Statement Item x Periods`.
 
 As an example:
 
-DATASET_IMAGE_HERE
+![Dataset Example](https://github.com/JerBouma/FinancialToolkitAlpha/assets/46355364/5c09c85c-aa10-41c6-bc3d-0a7f78a1b448)
 
 If you have individual DataFrames for each company, you can do the following which will return the DataFrame structure that is required:
 
@@ -168,7 +168,7 @@ companies.ratios.collect_all_ratios()
 
 This will return all financial ratios that can be collected based on the provided data and the format.
 
-IMAGE_OF_RATIOS
+![Output of Result](https://github.com/JerBouma/FinancialToolkitAlpha/assets/46355364/4b13ae0d-bf44-4da7-9827-fcd441c4eebb)
 
 ## Calling Functions Directly
 

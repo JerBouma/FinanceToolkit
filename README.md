@@ -134,7 +134,7 @@ companies.get_normalization_files()
 
 This copies over three files, `balance.csv`, `income.csv` and `cash.csv` which will contain a structure like the following:
 
-![Normalization Format](https://github.com/JerBouma/FinancialToolkitAlpha/assets/46355364/3d79681d-35c0-4628-b9a1-bb11eb951630)
+![Normalization Format](https://github.com/JerBouma/FinancialToolkitAlpha/assets/46355364/917f607c-8e8d-4fdf-9711-961817c3fe48)
 
 By replacing the first column with the names from your dataset (e.g. replace `cashAndCashEquivalents` with `Cash` if this is how it is called in your dataset), it will automatically normalize the dataset when you initialize the Financial Toolkit. Note that the DataFrame needs to be a multi-index in case you use multiple tickers structured as `Ticker x Financial Statement Item x Periods`.
 

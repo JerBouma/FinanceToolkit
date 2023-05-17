@@ -31,7 +31,7 @@ The Financial Toolkit is complimented very well with the [Finance Database 🌎]
 4. [Questions & Answers](#questions--answers)
 6. [Contact](#contact)
 
-## Installation
+# Installation
 
 To install the FinancialToolkit it simply requires the following:
 
@@ -51,10 +51,28 @@ To be able to get started, you need to obtain an API Key from FinancialModelingP
 
 Note that I am in no way affiliated FinancialModelingprep and never will be. I have chosen their source as I find it to be the most transparent and reliable. When you notice that data is inaccurate or have any other issue related to the data, note that I simply provide the means to access this data and I am not responsible for the accuracy of the data itself. For this, use [their contact form](https://site.financialmodelingprep.com/contact) or provide the data yourself. 
 
-## Basic Usage
+# Basic Usage
 
-This section explains in detail how the Financial Toolkit can utilitised effectively. Also see the Jupyter Notebook in which you can run the examples also demonstrated here. You can find this document [here](https://github.com/JerBouma/FinanceDatabase/blob/main/examples.ipynb).
+This section explains in detail how the Financial Toolkit can utilitised effectively. Also see the Jupyter Notebook in which you can run the examples also demonstrated here.
 
+___ 
+
+<b><div align="center">Find a variety of How-To Guides for the FinancialToolkit <a href="https://github.com/JerBouma/FinanceDatabase/blob/main/examples.ipynb">here</a>.</div></b>
+___
+
+Within this package the following things are included:
+
+- Company profiles (`profile`), including country, sector, ISIN and general characteristics (from FinancialModelingPrep)
+- Company quotes (`quote`), including 52 week highs and lows, volume metrics and current shares outstanding (from FinancialModelingPrep)
+- Market cap and enterprise values (`enterprise`), including every intermediate step (from FinancialModelingPrep)
+- Company ratings (`rating`), based on key indicators like PE and DE ratios (from FinancialModelingPrep)
+- Historical market data (`historical_data`), which can be retrieved on a daily, weekly, monthly and yearly basis (from Yahoo Finance)
+- Balance Sheet Statements (`balance_sheet_statement`), Income Statements (`income_statement`) and Cash Flow Statements (`cash_flow_statement`), obtainable from FinancialModelingPrep or the source of your choosing through custom input. These functions are accompanied with a normalization function so that for any source, the same ratio analysis can be performed. Please see this Jupyter Notebook that explains how to use a custom source.
+- Efficiency ratios (`efficiency_ratios`), liquidity ratios (`liquidity_ratios`), profitability ratios (`profitability_ratios`), solvency ratios (`solvency_ratios`) and valuation ratios (`valuation_ratios`) functionality that automatically calculates the most important ratios based on the inputted balance sheet, income and cash flow statements.
+
+## Basic Example 
+
+A basic example of how to initialise the Financial Toolkit is shown below.
 
 ````python
 from financialtoolkit import Toolkit
@@ -77,7 +95,7 @@ profitability_ratios = companies.ratios.collect_profitability_ratios()
 profitability_ratios.loc['AAPL]
 ````
 
-This returns the following output for `profitability_ratios.loc['AAPL]`. Ommitting `.loc['AAPL']` will return the result for both AAPL and MSFT.
+This returns the following output for `profitability_ratios.loc['AAPL]`. Omitting `.loc['AAPL']` will return the result for both AAPL and MSFT.
 
 
 |                                             |     2018 |     2019 |     2020 |     2021 |     2022 |
@@ -99,7 +117,62 @@ This returns the following output for `profitability_ratios.loc['AAPL]`. Ommitti
 | EBT to EBIT Ratio                           | 0.957448 | 0.948408 | 0.958936 | 0.976353 | 0.975982 |
 | EBIT to Revenue                             | 0.286688 | 0.26641  | 0.254864 | 0.305759 | 0.309473 |
 
-It also possible to call any ratio or model directly as shown below.
+## Working with other Datasets
+
+The Financial Toolkit shines in its ability to leverage custom datasets from any data provider as well. This makes it possible to work with your preferred data and not be limited to the data source the Financial Toolkit currently provides. A detailed example can be found [here]() but to get started see the code below.
+
+```python
+
+from financialtoolkit import Toolkit
+
+# Initialize the Financial Toolkit
+companies = Toolkit(['AAPL', 'MSFT'])
+
+# Copy the normalization files
+companies.get_normalization_files()
+```
+
+This copies over three files, `balance.csv`, `income.csv` and `cash.csv` which will contain a structure like the following:
+
+IMAGE_HERE
+
+By replacing the first column with the names from your dataset (e.g. replace `cashAndCashEquivalents` with `Cash` if this is how it is called in your dataset), it will automatically normalize the dataset when you initialize the Financial Toolkit. Note that the DataFrame needs to be a multi-index in case you use multiple tickers structured as `Ticker x Financial Statement Item x Periods`.
+
+As an example:
+
+DATASET_IMAGE_HERE
+
+If you have individual DataFrames for each company, you can do the following which will return the DataFrame structure that is required:
+
+```python
+from financialtoolkit.base import helpers
+
+balance_grouped = helpers.combine_dataframes(['AAPL', 'MSFT'], balance_apple, balance_msft)
+```
+
+Once all of this is set-up you can feed this information to the Toolkit and use the Toolkit as normally.
+
+```python
+
+# Initialize the Toolkit
+companies = Toolkit(
+    tickers=['AAPL', 'MSFT'],
+    balance=balance_grouped,
+    income=income_grouped,
+    cash=cash_grouped,
+    format_location="FOLDER_PATH")
+
+# Return all Ratios
+companies.ratios.collect_all_ratios()
+```
+
+This will return all financial ratios that can be collected based on the provided data and the format.
+
+IMAGE_OF_RATIOS
+
+## Calling Functions Directly
+
+It also possible to call any ratio or model directly as shown below. This allows access to 50+ ratios with custom data.
 
 ```python
 import pandas as pd
@@ -142,104 +215,6 @@ This returns the following table which closely resembles a proper Dupont analysi
 | Asset Turnover    | nan        | 0.738878 | 0.828845 | 1.08408  | 1.12064  |
 | Equity Multiplier | nan        | 3.56334  | 4.25089  | 5.25497  | 6.18622  |
 | Return on Equity  | nan        | 0.559172 | 0.736856 | 1.47443  | 1.75459  |
-
-## Examples
-
-Find more information about the Jupyter Notebooks that includes examples below.
-
-### The Analyzer
-
-After installing the FinancialToolkit the Analyzer class can be used as follows:
-
-```
-
-```
-
-
-
-
-
-
-Within the related Jupyter Notebook, the class as found in the analyzer module (`from financialtoolkit.analyzer import Analyzer`) is used to rapidly collect financial data and calculate the relevant financial metrics. Within this class it is possible to find:
-
-- Company profiles (`profile`), including country, sector, ISIN and general characteristics (from FinancialModelingPrep)
-- Company quotes (`quote`), including 52 week highs and lows, volume metrics and current shares outstanding (from FinancialModelingPrep)
-- Market cap and enterprise values (`enterprise`), including every intermediate step (from FinancialModelingPrep)
-- Company ratings (`rating`), based on key indicators like PE and DE ratios (from FinancialModelingPrep)
-- Historical market data (`historical_data`), which can be retrieved on a daily, weekly, monthly and yearly basis (from Yahoo Finance)
-- Balance Sheet Statements (`balance_sheet_statement`), Income Statements (`income_statement`) and Cash Flow Statements (`cash_flow_statement`), obtainable from FinancialModelingPrep or the source of your choosing through custom input. These functions are accompanied with a normalization function so that for any source, the same ratio analysis can be performed. Please see the [normalization](/normalization/) folder for the files if using a custom source.
-- Efficiency ratios (`efficiency_ratios`), liquidity ratios (`liquidity_ratios`), profitability ratios (`profitability_ratios`), solvency ratios (`solvency_ratios`) and valuation ratios (`valuation_ratios`) functionality that automatically calculates the most important ratios based on the inputted balance sheet, income and cash flow statements.
-
-___ 
-
-<b><div align="center">Find code examples for the Analyzer functionality of the FinancialToolkit <a href="https://github.com/JerBouma/FinanceDatabase/blob/main/examples.ipynb">here</a>.</div></b>
-___
-
-### The Toolkit
-
-After installing the FinancialToolkit access the related functionality with the following:
-
-```
-import numpy as np 
-import pandas as pd
-
-from financialtoolkit.ratios import efficiency, liquidity, profitability, solvency, valuation
-from financialtoolkit.portfolio import portfolio
-from financialtoolkit.historical import historical
-from financialtoolkit.models import dupont
-
-# Note: this requires your own data to be inputted, this example has dummy data.
-
-# a Portfolio example
-tracking_error = portfolio.tracking_error(
-    portfolio_returns=np.array([0.05, 0.10, 0.01]),
-    benchmark_returns=np.array([0.04, 0.09, 0.02])
-) 
-
-# a Historical example
-sharpe_ratio = historical.sharpe_ratio(
-    returns=np.array([0.10, 0.5, 0.075]),
-    risk_free_rate=0.01
-)
-
-# a Model example
-years = [2018, 2019, 2020, 2021, 2022]
-dupont_analysis = dupont.get_dupont_analysis(
-    net_income=pd.Series([59531000000, 55256000000, 57411000000, 94680000000, 99803000000], index=years),
-    total_revenue=pd.Series([265595000000, 260174000000, 274515000000, 365817000000, 394328000000], index=years),
-    total_assets=pd.Series([365725000000, 338516000000, 323888000000, 351002000000, 352755000000], index=years),
-    total_equity=pd.Series([107147000000, 90488000000, 65339000000, 63090000000, 50672000000], index=years)
-)
-
-# Show the Dupont Analysis
-dupont_analysis
-```
-
-This returns the following table which closely resembles the proper Dupont analysis for Apple at their given reporting dates in October:
-
-|                    |     2018 |     2019 |     2020 |     2021 |     2022 |
-|:-------------------|---------:|---------:|---------:|---------:|---------:|
-| Net Profit Margin  | 0.224142 | 0.212381 | 0.209136 | 0.258818 | 0.253096 |
-| Asset Turnover     | 0.726215 | 0.768572 | 0.847562 | 1.04221  | 1.11785  |
-| Financial Leverage | 3.4133   | 3.741    | 4.95704  | 5.56351  | 6.96154  |
-| Return on Equity   | 0.555601 | 0.610645 | 0.878664 | 1.50071  | 1.96959  |
-
-With the related Jupyter Notebook, the vast collection of ratios, indicators and performance measurements are explored. This demonstrates the value of being able to call a function that does the calculation for you instead of needing to manually perform each step of the calculation. This includes:
-
-- Efficiency ratios (`from financialtoolkit.ratios import efficiency`), which includes asset turnover ratio, days of sales outstanding, operating and cash conversion cycles and more.
-- Liquidity ratios (`from financialtoolkit.ratios import liquidity`), which includes current ratio, quick ratio, working capital ratio, short term coverage ratio and more.
-- Profitability ratios (`from financialtoolkit.ratios import profitability`), which include net profit margin, effective tax rate, return on assets (ROA), return on equity (ROE), return on capital employed (ROCE) and more.
-- Solvency ratios (`from financialtoolkit.ratios import solvency`), which includes debt to assets ratio (debt ratio), interest coverage ratio, financial leverage, free cash flow yield and more.
-- Valuation ratios (`from financialtoolkit.ratios import valuation`), which includes earnings per share (EPS), price to book ratio (PB), dividend yield, earnings yield, payout ratio and more.
-- Variety of models (`from financialtoolkit.models import dupont`), which aggregate ratios and similar statistics to perform well-known methods and models like the Dupont analysis.
-- Historical market data (`from financialtoolkit.historical import historical`), which includes the collection of historical data, returns and volatility calculations, sharpe ratio, sortino ratio and more.
-- Portfolio performance metrics (`from financialtoolkit.portfolio import portfolio`), which include tracking error, profit factor, jensens alpha and more.
-
-___
-
-<b><div align="center">Find code examples for the Toolkit functionality of the FinancialToolkit <a href="https://github.com/JerBouma/FinanceDatabase/blob/main/examples.ipynb">here</a>.</div></b>
-___
-
 
 # Contact
 If you have any questions about the FinancialToolkit or would like to share with me what you have been working on, feel free to reach out to me via:

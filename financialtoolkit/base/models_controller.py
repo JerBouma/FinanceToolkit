@@ -49,7 +49,7 @@ class Models:
 
         return self._dupont_analysis
 
-    def get_extended_dupont_analyis(self) -> pd.DataFrame:
+    def get_extended_dupont_analysis(self) -> pd.DataFrame:
         """
         Perform am Extended Dupont analysis to breakdown the return on equity (ROE) into its components.
         """

@@ -20,14 +20,9 @@ The Financial Toolkit is complimented very well with the [Finance Database 🌎]
 
 1. [Installation](#installation)
 2. [Basic Usage](#basic-usage)
-    1. [Quick Start](#quick-start)
-    3. [Collecting information from the database](#collecting-information-from-the-database)
-    3. [Searching the database extensively](#searching-the-database-extensively)
-    4. [Storing the database at a different location](#storing-the-database-at-a-different-location)
-3. [Examples](#examples)
-    1. [Companies in the Netherlands](#companies-in-the-netherlands)
-    2. [Technical Analysis of Biotech ETFs](#technical-analysis-of-biotech-etfs)
-    3. [Silicon Valley's Market Cap](#silicon-valleys-market-cap)
+    1. [Using the Financial Toolkit](#using-the-financial-toolkit)
+    2. [Working with other Datasets](#working-with-other-datasets)
+    3. [Calling Functions Directly](#calling-functions-directly)
 4. [Questions & Answers](#questions--answers)
 6. [Contact](#contact)
 
@@ -69,8 +64,9 @@ Within this package the following things are included:
 - Historical market data (`historical_data`), which can be retrieved on a daily, weekly, monthly and yearly basis (from Yahoo Finance)
 - Balance Sheet Statements (`balance_sheet_statement`), Income Statements (`income_statement`) and Cash Flow Statements (`cash_flow_statement`), obtainable from FinancialModelingPrep or the source of your choosing through custom input. These functions are accompanied with a normalization function so that for any source, the same ratio analysis can be performed. Please see this Jupyter Notebook that explains how to use a custom source.
 - Efficiency ratios (`efficiency_ratios`), liquidity ratios (`liquidity_ratios`), profitability ratios (`profitability_ratios`), solvency ratios (`solvency_ratios`) and valuation ratios (`valuation_ratios`) functionality that automatically calculates the most important ratios based on the inputted balance sheet, income and cash flow statements.
+- Models (`models`) like DUPONT analysis that can be used to perform in-depth financial analysis through a single function.
 
-## Basic Example 
+## Using the Financial Toolkit
 
 A basic example of how to initialise the Financial Toolkit is shown below.
 
@@ -122,7 +118,6 @@ This returns the following output for `profitability_ratios.loc['AAPL]`. Omittin
 The Financial Toolkit shines in its ability to leverage custom datasets from any data provider as well. This makes it possible to work with your preferred data and not be limited to the data source the Financial Toolkit currently provides. A detailed example can be found [here]() but to get started see the code below.
 
 ```python
-
 from financialtoolkit import Toolkit
 
 # Initialize the Financial Toolkit
@@ -222,6 +217,6 @@ If you have any questions about the FinancialToolkit or would like to share with
 - **LinkedIn:** https://www.linkedin.com/in/boumajeroen/
 -  **Email:** jer.bouma@gmail.com
 
-f you'd like to support my efforts, either help me out by contributing to the package or [Buy me a Coffee](https://www.buymeacoffee.com/jerbouma).
+If you'd like to support my efforts, either help me out by contributing to the package or [Buy me a Coffee](https://www.buymeacoffee.com/jerbouma).
 
 [![Star History Chart](https://api.star-history.com/svg?repos=JerBouma/FinancialToolkit&type=Date)](https://star-history.com/#JerBouma/FinancialToolkit&Date)

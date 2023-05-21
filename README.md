@@ -21,8 +21,8 @@ The Financial Toolkit is complimented very well with the [Finance Database 🌎]
 1. [Installation](#installation)
 2. [Basic Usage](#basic-usage)
     1. [Using the Financial Toolkit](#using-the-financial-toolkit)
-    2. [Working with other Datasets](#working-with-other-datasets)
-    3. [Calling Functions Directly](#calling-functions-directly)
+    2. [Calling Functions Directly](#calling-functions-directly)
+    3. [Working with other Datasets](#working-with-other-datasets)
 4. [Questions & Answers](#questions--answers)
 6. [Contact](#contact)
 
@@ -33,6 +33,12 @@ To install the FinancialToolkit it simply requires the following:
 ```cli
 pip install financialtoolkit
 ````
+
+Then within Python use:
+
+```python
+from financialtoolkit import Toolkit
+```
  
 The dependencies of the package are on purpose *very slim* so that it will work well with any combination of packages and not result in conflicts. I've also been careful with my selection in which I leave out functionality like technical analysis in which [ta-lib](https://ta-lib.org/) does an excellent job as well as portfolio attribution and optimisation in which [Riskfolio-lib](https://riskfolio-lib.readthedocs.io/en/latest/index.html) shines and lastly allow for any source to be incorporated to allow for the incorporation of data sources from [OpenBB](https://openbb.co/).
 
@@ -52,7 +58,7 @@ This section explains in detail how the Financial Toolkit can utilitised effecti
 
 ___ 
 
-<b><div align="center">Find a variety of How-To Guides for the FinancialToolkit <a href="https://github.com/JerBouma/FinanceDatabase/blob/main/examples.ipynb">here</a>.</div></b>
+<b><div align="center">Find a variety of How-To Guides for the FinancialToolkit <a href="/examples">here</a>.</div></b>
 ___
 
 Within this package the following things are included:
@@ -113,9 +119,55 @@ This returns the following output for `profitability_ratios.loc['AAPL]`. Omittin
 | EBT to EBIT Ratio                           | 0.957448 | 0.948408 | 0.958936 | 0.976353 | 0.975982 |
 | EBIT to Revenue                             | 0.286688 | 0.26641  | 0.254864 | 0.305759 | 0.309473 |
 
+## Calling Functions Directly
+
+It also possible to call any ratio or model directly as shown below. This allows access to 50+ ratios with custom data.
+
+```python
+import pandas as pd
+import numpy as np
+
+from financialtoolkit.models import dupont
+
+years = [2018, 2019, 2020, 2021, 2022]
+
+dupont.get_dupont_analysis(
+    net_income=pd.Series(
+        [59531000000, 55256000000, 57411000000, 94680000000, 99803000000], index=years
+    ),
+    total_revenue=pd.Series(
+        [265595000000, 260174000000, 274515000000, 365817000000, 394328000000],
+        index=years,
+    ),
+    total_assets_begin=pd.Series(
+        [np.nan, 365725000000, 338516000000, 323888000000, 351002000000],
+        index=years,
+    ),
+    total_assets_end=pd.Series(
+        [365725000000, 338516000000, 323888000000, 351002000000, 352755000000],
+        index=years,
+    ),
+    total_equity_begin=pd.Series(
+        [np.nan, 107147000000, 90488000000, 65339000000, 63090000000], index=years
+    ),
+    total_equity_end=pd.Series(
+        [107147000000, 90488000000, 65339000000, 63090000000, 50672000000], index=years
+    ),
+)
+```
+
+This returns the following table which closely resembles a proper Dupont analysis for Apple at their given reporting dates in October:
+
+|                   |       2018 |     2019 |     2020 |     2021 |     2022 |
+|:------------------|-----------:|---------:|---------:|---------:|---------:|
+| Net Profit Margin |   0.224142 | 0.212381 | 0.209136 | 0.258818 | 0.253096 |
+| Asset Turnover    | nan        | 0.738878 | 0.828845 | 1.08408  | 1.12064  |
+| Equity Multiplier | nan        | 3.56334  | 4.25089  | 5.25497  | 6.18622  |
+| Return on Equity  | nan        | 0.559172 | 0.736856 | 1.47443  | 1.75459  |
+
 ## Working with other Datasets
 
-The Financial Toolkit shines in its ability to leverage custom datasets from any data provider as well. This makes it possible to work with your preferred data and not be limited to the data source the Financial Toolkit currently provides. A detailed example can be found [here]() but to get started see the code below.
+The Financial Toolkit shines in its ability to leverage custom datasets from any data provider as well. This makes it possible to work with your preferred data and not be limited to the data source the Financial Toolkit currently provides. A detailed example can be found [here](/examples/Financial%20Toolkit%20-%203.%20Using%20External%20Datasets.ipynb) but to get started see the code below.
 
 ```python
 from financialtoolkit import Toolkit
@@ -164,52 +216,6 @@ companies.ratios.collect_all_ratios()
 This will return all financial ratios that can be collected based on the provided data and the format.
 
 ![Output of Result](https://github.com/JerBouma/FinancialToolkitAlpha/assets/46355364/4b13ae0d-bf44-4da7-9827-fcd441c4eebb)
-
-## Calling Functions Directly
-
-It also possible to call any ratio or model directly as shown below. This allows access to 50+ ratios with custom data.
-
-```python
-import pandas as pd
-import numpy as np
-
-from financialtoolkit.models import dupont
-
-years = [2018, 2019, 2020, 2021, 2022]
-
-dupont.get_dupont_analysis(
-    net_income=pd.Series(
-        [59531000000, 55256000000, 57411000000, 94680000000, 99803000000], index=years
-    ),
-    total_revenue=pd.Series(
-        [265595000000, 260174000000, 274515000000, 365817000000, 394328000000],
-        index=years,
-    ),
-    total_assets_begin=pd.Series(
-        [np.nan, 365725000000, 338516000000, 323888000000, 351002000000],
-        index=years,
-    ),
-    total_assets_end=pd.Series(
-        [365725000000, 338516000000, 323888000000, 351002000000, 352755000000],
-        index=years,
-    ),
-    total_equity_begin=pd.Series(
-        [np.nan, 107147000000, 90488000000, 65339000000, 63090000000], index=years
-    ),
-    total_equity_end=pd.Series(
-        [107147000000, 90488000000, 65339000000, 63090000000, 50672000000], index=years
-    ),
-)
-```
-
-This returns the following table which closely resembles a proper Dupont analysis for Apple at their given reporting dates in October:
-
-|                   |       2018 |     2019 |     2020 |     2021 |     2022 |
-|:------------------|-----------:|---------:|---------:|---------:|---------:|
-| Net Profit Margin |   0.224142 | 0.212381 | 0.209136 | 0.258818 | 0.253096 |
-| Asset Turnover    | nan        | 0.738878 | 0.828845 | 1.08408  | 1.12064  |
-| Equity Multiplier | nan        | 3.56334  | 4.25089  | 5.25497  | 6.18622  |
-| Return on Equity  | nan        | 0.559172 | 0.736856 | 1.47443  | 1.75459  |
 
 # Contact
 If you have any questions about the FinancialToolkit or would like to share with me what you have been working on, feel free to reach out to me via:

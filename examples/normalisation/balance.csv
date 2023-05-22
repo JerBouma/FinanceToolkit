@@ -1,0 +1,45 @@
+Balance,Generic
+Cash and cash equivalents,Cash and Cash Equivalents
+Other short-term investments,Short Term Investments
+Total cash,Cash and Short Term Investments
+Net receivables,Accounts Receivable
+Inventory,Inventory
+Other current assets,Other Current Assets
+Total current assets,Total Current Assets
+"Net property, plant and equipment","Property, Plant and Equipment"
+Equity and other investments,Long Term Investments
+,Tax Assets
+Goodwill,Goodwill
+Intangible assets,Intangible Assets
+Other long-term assets,Other Fixed Assets
+Total non-current assets,Fixed Assets
+,Other Assets
+Total assets,Total Assets
+Accounts payable,Accounts Payable
+Current debt,Short Term Debt
+Taxes payable,Tax Payables
+Deferred revenues,Deferred Revenue
+Other current liabilities,Other Current Liabilities
+Total current liabilities,Total Current Liabilities
+Long-term debt,Long Term Debt
+,Deferred Revenue Non Current
+Deferred tax liabilities,Deferred Tax Liabilities
+Other long-term liabilities,Other Non Current Liabilities
+Total non-current liabilities,Total Non Current Liabilities
+otherLiabilities,Other Liabilities
+capitalLeaseObligations,Capital Lease Obligations
+,Total Debt
+,Net Debt
+,Total Investments
+Total liabilities,Total Liabilities
+,Preferred Stock
+Common stock,Common Stock
+Retained earnings,Retained Earnings
+Accumulated other comprehensive income,Accumulated Other Comprehensive Income
+,Other Total Shareholder Equity
+,Minority Interest
+,Total Shareholder Equity
+Total stockholders' equity,Total Equity
+Total liabilities and stockholders' equity,Total Liabilities and Shareholder Equity
+,Minority Interest
+,Total Liabilities and Equity

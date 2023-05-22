@@ -6,6 +6,8 @@ __pycache__/
 .ipynb_checkpoints/
 *.ipynb
 !examples/
+.DS_Store
+dist/
 
 # C extensions
 *.so

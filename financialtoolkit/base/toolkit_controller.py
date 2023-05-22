@@ -40,6 +40,7 @@ class Toolkit:
         income: pd.DataFrame = pd.DataFrame(),
         cash: pd.DataFrame = pd.DataFrame(),
         format_location: str = "",
+        reverse_dates: bool = False,
     ):
         """
         Initializes an Toolkit object with a ticker or a list of tickers.
@@ -52,6 +53,7 @@ class Toolkit:
         income (pd.DataFrame): A DataFrame containing income statement data.
         cash (pd.DataFrame): A DataFrame containing cash flow statement data.
         format_location (str): A string containing the location of the normalization files.
+        reverse_dates (bool): A boolean indicating whether to reverse the dates in the financial statements.
         """
         if isinstance(tickers, str):
             self._tickers = [tickers]
@@ -95,18 +97,22 @@ class Toolkit:
         # Initialization of Financial Statements
         self._balance_sheet_statement: pd.DataFrame = (
             _convert_financial_statements(
-                balance, self._balance_sheet_statement_generic
+                balance, self._balance_sheet_statement_generic, reverse_dates
             )
             if not balance.empty
             else pd.DataFrame()
         )
         self._income_statement: pd.DataFrame = (
-            _convert_financial_statements(income, self._income_statement_generic)
+            _convert_financial_statements(
+                income, self._income_statement_generic, reverse_dates
+            )
             if not income.empty
             else pd.DataFrame()
         )
         self._cash_flow_statement: pd.DataFrame = (
-            _convert_financial_statements(cash, self._cash_flow_statement_generic)
+            _convert_financial_statements(
+                cash, self._cash_flow_statement_generic, reverse_dates
+            )
             if not cash.empty
             else pd.DataFrame()
         )

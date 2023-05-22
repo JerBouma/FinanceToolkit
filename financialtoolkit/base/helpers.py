@@ -17,5 +17,30 @@ def combine_dataframes(tickers: str | list[str], *args) -> pd.DataFrame:
     """
     ticker_list = tickers if isinstance(tickers, list) else [tickers]
     combined = zip(ticker_list, args)
+    combined_df = pd.concat(dict(combined), axis=0)
 
-    return pd.concat(dict(combined), axis=0)
+    return combined_df.sort_index(level=0, sort_remaining=False)
+
+
+def handle_errors(func):
+    def wrapper(*args, **kwargs):
+        try:
+            return func(*args, **kwargs)
+        except KeyError as e:
+            function_name = func.__name__
+            print(
+                "There is an index name missing in the provided financial statements. "
+                f"This is {e}. This is required for the function ({function_name}) "
+                "to run. Please fill this column to be able to calculate the ratios."
+            )
+            return pd.Series()
+        except ValueError as e:
+            function_name = func.__name__
+            print(
+                f"An error occurred while trying to run the function "
+                f"{function_name}. This is {e}. Usually this is due to incomplete "
+                "financial statements. "
+            )
+            return pd.Series()
+
+    return wrapper

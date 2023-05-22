@@ -3,6 +3,7 @@ __docformat__ = "numpy"
 
 import pandas as pd
 
+from financialtoolkit.base.helpers import handle_errors
 from financialtoolkit.models.dupont import (
     get_dupont_analysis,
     get_extended_dupont_analysis,
@@ -30,6 +31,7 @@ class Models:
         self._dupont_analysis: pd.DataFrame = pd.DataFrame()
         self._extended_dupont_analysis: pd.DataFrame = pd.DataFrame()
 
+    @handle_errors
     def get_dupont_analysis(self) -> pd.DataFrame:
         """
         Perform a Dupont analysis to breakdown the return on equity (ROE) into its components.
@@ -49,6 +51,7 @@ class Models:
 
         return self._dupont_analysis
 
+    @handle_errors
     def get_extended_dupont_analysis(self) -> pd.DataFrame:
         """
         Perform am Extended Dupont analysis to breakdown the return on equity (ROE) into its components.

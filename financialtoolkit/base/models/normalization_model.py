@@ -75,7 +75,7 @@ def convert_financial_statements(
     if reverse_dates:
         financial_statements = financial_statements[financial_statements.columns[::-1]]
 
-    return financial_statements
+    return financial_statements.sort_index(level=0, sort_remaining=False)
 
 
 def copy_normalization_files(
@@ -102,6 +102,4 @@ def copy_normalization_files(
                 __name__, f"normalization/{statement}.csv"
             ).name
 
-        shutil.copyfile(file_location, Path(save_location, "balance.csv"))
-        shutil.copyfile(file_location, Path(save_location, "income.csv"))
-        shutil.copyfile(file_location, Path(save_location, "cash.csv"))
+        shutil.copyfile(file_location, Path(save_location, f"{statement}.csv"))

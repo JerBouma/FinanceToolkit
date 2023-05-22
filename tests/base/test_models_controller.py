@@ -25,5 +25,5 @@ def test_get_dupont_analysis(recorder):
     recorder.capture(models_module.get_dupont_analysis())
 
 
-def test_get_extended_dupont_analyis(recorder):
-    recorder.capture(models_module.get_extended_dupont_analyis())
+def test_get_extended_dupont_analysis(recorder):
+    recorder.capture(models_module.get_extended_dupont_analysis())

@@ -28,7 +28,13 @@ from financialtoolkit.base.ratios_controller import Ratios
 
 class Toolkit:
     """
-    Toolkit class for the Financial Toolkit package.
+    The Financial Toolkit is an open-source financial toolkit in which
+    all relevant financial ratios (50+), indicators and performance measurements
+    are written down in the most simplistic way allowing for complete transparency
+    of the calculation method. This allows you to not have to rely on metrics
+    from other providers and, given a financial statement, allow for efficient manual
+    calculations. This leads to one uniform method of calculation being applied that
+    is available and understood by everyone.
     """
 
     def __init__(

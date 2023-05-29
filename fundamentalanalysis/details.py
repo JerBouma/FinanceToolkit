@@ -155,7 +155,7 @@ def enterprise(ticker, api_key, period="annual", limit=0):
     return pd.DataFrame(data_formatted)
 
 
-def rating(ticker, api_key):
+def rating(ticker, api_key, limit=0):
     """
      Description
      ----
@@ -168,6 +168,8 @@ def rating(ticker, api_key):
         The company ticker (for example: "MSFT")
      api_key (string)
         The API Key obtained from https://financialmodelingprep.com/developer/docs/
+     limit (integer)
+        The limit of records to obtain
 
      Output
      ----
@@ -175,7 +177,7 @@ def rating(ticker, api_key):
         Data with variables in rows and the period in columns..
      """
     try:
-        response = urlopen(f"https://financialmodelingprep.com/api/v3/historical-rating/{ticker}?apikey={api_key}")
+        response = urlopen(f"https://financialmodelingprep.com/api/v3/historical-rating/{ticker}?limit={limit}&apikey={api_key}")
         data = response.read().decode("utf-8")
         data_json = json.loads(data)
     except HTTPError:

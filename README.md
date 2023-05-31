@@ -1,4 +1,4 @@
-![Finance Toolkit](https://github.com/JerBouma/FinanceToolkit/assets/46355364/d0461a5a-2a74-400e-9a7f-68946656bf0d)
+![FinanceToolkitCropped](https://github.com/JerBouma/FinanceToolkit/assets/46355364/198d47bd-e1b3-492d-acc4-5d9f02d1d009)
 
 [![BuyMeACoffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-Donate-brightgreen?logo=buymeacoffee)](https://www.buymeacoffee.com/jerbouma)
 [![Issues](https://img.shields.io/github/issues/jerbouma/FinanceToolkit)](https://github.com/JerBouma/FinanceToolkit/issues)

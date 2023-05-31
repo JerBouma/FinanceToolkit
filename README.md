@@ -23,7 +23,6 @@ The Financial Toolkit is complimented very well with the [Finance Database 🌎]
     1. [Using the Financial Toolkit](#using-the-financial-toolkit)
     2. [Working with other Datasets](#working-with-other-datasets)
     3. [Calling Functions Directly](#calling-functions-directly)
-(#working-with-other-datasets)
 4. [Questions & Answers](#questions--answers)
 6. [Contact](#contact)
 

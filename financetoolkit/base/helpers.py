@@ -36,6 +36,7 @@ def handle_errors(func):
         KeyError: If an index name is missing in the provided financial statements.
         ValueError: If an error occurs while running the function, typically due to incomplete financial statements.
     """
+
     def wrapper(*args, **kwargs):
         try:
             return func(*args, **kwargs)

@@ -57,7 +57,7 @@ skip_gitignore = true
 combine_as_imports = true
 
 [tool.codespell]
-ignore-words-list = 'ZAR,zar,profund,BASF,basf,applicatio,Ser,Mone,VIE,wew,ist,TrE,Ue'
+ignore-words-list = 'zar,profund,basf,applicatio,ser,mone,vie,wew,ist,tre,ue'
 skip = '*.json,./.git,pyproject.toml'
 
 [tool.pytest.ini_options]

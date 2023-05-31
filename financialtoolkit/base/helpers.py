@@ -23,6 +23,19 @@ def combine_dataframes(tickers: str | list[str], *args) -> pd.DataFrame:
 
 
 def handle_errors(func):
+    """
+    Decorator to handle specific errors that may occur in a function and provide informative messages.
+
+    Args:
+        func (function): The function to be decorated.
+
+    Returns:
+        function: The decorated function.
+
+    Raises:
+        KeyError: If an index name is missing in the provided financial statements.
+        ValueError: If an error occurs while running the function, typically due to incomplete financial statements.
+    """
     def wrapper(*args, **kwargs):
         try:
             return func(*args, **kwargs)

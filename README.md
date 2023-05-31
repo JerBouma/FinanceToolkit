@@ -14,7 +14,7 @@ For example, Microsoft's Price-to-Earnings (PE) ratio on the 6th of May, 2023 is
 
 The Financial Toolkit is complimented very well with the [Finance Database 🌎](https://github.com/JerBouma/FinanceDatabase), a database that features 300.000+ symbols containing Equities, ETFs, Funds, Indices, Currencies, Cryptocurrencies and Money Markets. By utilising both, it is possible to do a fully-fledged competitive analysis with the tickers found from the FinanceDatabase inputted into the FinancialToolkit.
 
-**Disclaimer:** this package used to be called 'FundamentalAnalysis' but has since been renamed. This is a major update to the existent package which also justified a rename.
+**Disclaimer:** this package used to be called 'FundamentalAnalysis' but has since been renamed. This is a major update to the existent package which also justified a rename. The old package does remain available.
 
 ---
 

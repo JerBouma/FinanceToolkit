@@ -1,11 +1,9 @@
 ![FinanceToolkitCropped](https://github.com/JerBouma/FinanceToolkit/assets/46355364/198d47bd-e1b3-492d-acc4-5d9f02d1d009)
 
 [![BuyMeACoffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-Donate-brightgreen?logo=buymeacoffee)](https://www.buymeacoffee.com/jerbouma)
-[![Issues](https://img.shields.io/github/issues/jerbouma/FinanceToolkit)](https://github.com/JerBouma/FinanceToolkit/issues)
-[![Pull Requests](https://img.shields.io/github/issues-pr/JerBouma/FinanceToolkit?color=yellow)](https://github.com/JerBouma/FinanceToolkit/pulls)
+[![Website](https://img.shields.io/badge/Website-Learn%20more%20about%20me%20here!-brightgreen?logo=ReadMe)](https://jeroenbouma.com/)
 [![PYPI Version](https://img.shields.io/pypi/v/FinanceToolkit)](https://pypi.org/project/FinanceToolkit/)
 [![PYPI Downloads](https://img.shields.io/pypi/dm/FinanceToolkit)](https://pypi.org/project/FinanceToolkit/)
-[![Website](https://img.shields.io/badge/Website-Learn%20more%20about%20me%20here!-brightgreen?logo=ReadMe)](https://jeroenbouma.com/)
 
 While browsing a variety of websites, I kept finding that the same financial metric can greatly vary per source and so do the financial statements reported while little information is given how the metric was calculated.
 

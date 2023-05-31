@@ -21,7 +21,7 @@ The Financial Toolkit is complimented very well with the [Finance Database 🌎]
 1. [Installation](#installation)
 2. [Basic Usage](#basic-usage)
     1. [Using the Financial Toolkit](#using-the-financial-toolkit)
-    2. [Working with other Datasets]
+    2. [Working with other Datasets](#working-with-other-datasets)
     3. [Calling Functions Directly](#calling-functions-directly)
 (#working-with-other-datasets)
 4. [Questions & Answers](#questions--answers)

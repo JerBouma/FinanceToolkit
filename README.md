@@ -1,10 +1,10 @@
 ![FinancialToolkit](https://github.com/JerBouma/FinancialToolkitAlpha/assets/46355364/a0f5e7af-d8d6-4ce8-9e71-47376baa35f2)
 
 [![BuyMeACoffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-Donate-brightgreen?logo=buymeacoffee)](https://www.buymeacoffee.com/jerbouma)
-[![Issues](https://img.shields.io/github/issues/jerbouma/fundamentalanalysis)](https://github.com/JerBouma/FundamentalAnalysis/issues)
-[![Pull Requests](https://img.shields.io/github/issues-pr/JerBouma/fundamentalanalysis?color=yellow)](https://github.com/JerBouma/FundamentalAnalysis/pulls)
-[![PYPI Version](https://img.shields.io/pypi/v/fundamentalanalysis)](https://pypi.org/project/FundamentalAnalysis/)
-[![PYPI Downloads](https://img.shields.io/pypi/dm/fundamentalanalysis)](https://pypi.org/project/FundamentalAnalysis/)
+[![Issues](https://img.shields.io/github/issues/jerbouma/FinancialToolkit)](https://github.com/JerBouma/FinancialToolkit/issues)
+[![Pull Requests](https://img.shields.io/github/issues-pr/JerBouma/FinancialToolkit?color=yellow)](https://github.com/JerBouma/FinancialToolkit/pulls)
+[![PYPI Version](https://img.shields.io/pypi/v/FinancialToolkit)](https://pypi.org/project/FinancialToolkit/)
+[![PYPI Downloads](https://img.shields.io/pypi/dm/FinancialToolkit)](https://pypi.org/project/FinancialToolkit/)
 
 While browsing a variety of websites, I kept finding that the same financial metric can greatly vary per source and so do the financial statements reported while little information is given how the metric was calculated.
 
@@ -60,7 +60,7 @@ This section explains in detail how the Financial Toolkit can utilitised effecti
 
 ___ 
 
-<b><div align="center">Find a variety of How-To Guides for the FinancialToolkit <a href="/examples">here</a>.</div></b>
+<b><div align="center">Find a variety of How-To Guides for the FinancialToolkit <a href="https://github.com/JerBouma/FinancialToolkit/tree/main/examples">here</a>.</div></b>
 ___
 
 Within this package the following things are included:
@@ -76,7 +76,7 @@ Within this package the following things are included:
 
 ## Using the Financial Toolkit
 
-A basic example of how to initialise the Financial Toolkit is shown below, also see [this notebook](/examples/Financial%20Toolkit%20-%201.%20Getting%20Started.ipynb) for a detailed Getting Started guide as well as [this notebook](/examples/Financial%20Toolkit%20-%202.%20Combining%20the%20Financial%20Toolkit%20with%20the%20Finance%20Database.ipynb) that includes the [Finance Database 🌎](https://github.com/JerBouma/FinanceDatabase) and a proper financial analysis.
+A basic example of how to initialise the Financial Toolkit is shown below, also see [this notebook](https://github.com/JerBouma/FinancialToolkit/blob/main/examples/Financial%20Toolkit%20-%201.%20Getting%20Started.ipynb) for a detailed Getting Started guide as well as [this notebook](https://github.com/JerBouma/FinancialToolkit/blob/main/examples/Financial%20Toolkit%20-%202.%20Combining%20the%20Financial%20Toolkit%20with%20the%20Finance%20Database.ipynb) that includes the [Finance Database 🌎](https://github.com/JerBouma/FinanceDatabase) and a proper financial analysis.
 
 ````python
 from financialtoolkit import Toolkit
@@ -123,7 +123,7 @@ This returns the following output for `profitability_ratios.loc['AAPL]`. Omittin
 
 ## Working with other Datasets
 
-The Financial Toolkit shines in its ability to leverage custom datasets from any data provider as well. This makes it possible to work with your preferred data and not be limited to the data source the Financial Toolkit currently provides. A detailed example can be found [here](/examples/Financial%20Toolkit%20-%203.%20Using%20External%20Datasets.ipynb) but to get started see the code below.
+The Financial Toolkit shines in its ability to leverage custom datasets from any data provider as well. This makes it possible to work with your preferred data and not be limited to the data source the Financial Toolkit currently provides. A detailed example can be found [here](https://github.com/JerBouma/FinancialToolkit/blob/main/examples/Financial%20Toolkit%20-%203.%20Using%20External%20Datasets%20(OpenBB).ipynb) but to get started see the code below.
 
 ```python
 from financialtoolkit import Toolkit
@@ -176,7 +176,7 @@ This will return all financial ratios that can be collected based on the provide
 
 ## Calling Functions Directly
 
-It also possible to call any ratio or model directly as shown below. This allows access to 50+ ratios with custom data. Also see [this notebook](/examples/Financial%20Toolkit%20-%204.%20Calling%20Functions%20Directly.ipynb).
+It also possible to call any ratio or model directly as shown below. This allows access to 50+ ratios with custom data. Also see [this notebook](https://github.com/JerBouma/FinancialToolkit/blob/main/examples/Financial%20Toolkit%20-%204.%20Calling%20Functions%20Directly.ipynb).
 
 ```python
 import pandas as pd

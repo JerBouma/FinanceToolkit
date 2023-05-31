@@ -1,4 +1,4 @@
-![FinancialToolkit](https://github.com/JerBouma/FinancialToolkitAlpha/assets/46355364/a0f5e7af-d8d6-4ce8-9e71-47376baa35f2)
+![Financial Toolkit](https://github.com/JerBouma/FinancialToolkit/assets/46355364/46986065-f6dd-45f3-a873-516a18ee0b61)
 
 [![BuyMeACoffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-Donate-brightgreen?logo=buymeacoffee)](https://www.buymeacoffee.com/jerbouma)
 [![Issues](https://img.shields.io/github/issues/jerbouma/FinancialToolkit)](https://github.com/JerBouma/FinancialToolkit/issues)
@@ -134,16 +134,15 @@ companies = Toolkit(['AAPL', 'MSFT'])
 # Copy the normalization files
 companies.get_normalization_files()
 ```
-
 This copies over three files, `balance.csv`, `income.csv` and `cash.csv` which will contain a structure like the following:
 
-![Normalization Format](https://github.com/JerBouma/FinancialToolkitAlpha/assets/46355364/917f607c-8e8d-4fdf-9711-961817c3fe48)
+![Normalization Format](https://github.com/JerBouma/FinancialToolkit/assets/46355364/ea4ebf87-1a27-4c40-a1fb-40d0eb0634bc)
 
 By replacing the first column with the names from your dataset (e.g. replace `cashAndCashEquivalents` with `Cash` if this is how it is called in your dataset), it will automatically normalize the dataset when you initialize the Financial Toolkit. Note that the DataFrame needs to be a multi-index in case you use multiple tickers structured as `Ticker x Financial Statement Item x Periods`.
 
 As an example:
 
-![Dataset Example](https://github.com/JerBouma/FinancialToolkitAlpha/assets/46355364/5c09c85c-aa10-41c6-bc3d-0a7f78a1b448)
+![Dataset Example](https://github.com/JerBouma/FinancialToolkit/assets/46355364/fe0e3db0-3e88-41d2-a355-5f68110fdcf3)
 
 If you have individual DataFrames for each company, you can do the following which will return the DataFrame structure that is required:
 
@@ -172,7 +171,7 @@ companies.ratios.collect_all_ratios()
 
 This will return all financial ratios that can be collected based on the provided data and the format.
 
-![Output of Result](https://github.com/JerBouma/FinancialToolkitAlpha/assets/46355364/4b13ae0d-bf44-4da7-9827-fcd441c4eebb)
+![Output of Result](https://github.com/JerBouma/FinancialToolkit/assets/46355364/2a995430-b8d8-4236-892c-edb47042d6af)
 
 ## Calling Functions Directly
 

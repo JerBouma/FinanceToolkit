@@ -3,7 +3,7 @@ __docformat__ = "numpy"
 
 import pandas as pd
 
-from financialtoolkit.ratios import (
+from financetoolkit.ratios import (
     efficiency as _efficiency,
     profitability as _profitability,
     solvency as _solvency,

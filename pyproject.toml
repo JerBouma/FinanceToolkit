@@ -1,15 +1,15 @@
 [tool.poetry]
-name = "financialtoolkit"
+name = "financetoolkit"
 version = "1.0.0"
 description = "Transparent and Efficient Financial Analysis"
 license = "MIT"
 authors = ["Jeroen Bouma"]
 packages = [
-    { include = "financialtoolkit" },
+    { include = "financetoolkit" },
 ]
 include = ['normalization/*.csv']
 readme = "README.md"
-repository = "https://github.com/JerBouma/FinancialToolkit"
+repository = "https://github.com/JerBouma/FinanceToolkit"
 classifiers = [
     "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Financial and Insurance Industry",

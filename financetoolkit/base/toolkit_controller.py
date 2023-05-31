@@ -4,31 +4,31 @@ __docformat__ = "numpy"
 
 import pandas as pd
 
-from financialtoolkit.base.models.fundamentals_model import (
+from financetoolkit.base.models.fundamentals_model import (
     get_enterprise as _get_enterprise,
     get_financial_statements as _get_financial_statements,
     get_profile as _get_profile,
     get_quote as _get_quote,
     get_rating as _get_rating,
 )
-from financialtoolkit.base.models.historical_model import (
+from financetoolkit.base.models.historical_model import (
     convert_daily_to_yearly as _convert_daily_to_yearly,
     get_historical_data as _get_historical_data,
 )
-from financialtoolkit.base.models.normalization_model import (
+from financetoolkit.base.models.normalization_model import (
     convert_financial_statements as _convert_financial_statements,
     copy_normalization_files as _copy_normalization_files,
     read_normalization_file as _read_normalization_file,
 )
-from financialtoolkit.base.models_controller import Models
-from financialtoolkit.base.ratios_controller import Ratios
+from financetoolkit.base.models_controller import Models
+from financetoolkit.base.ratios_controller import Ratios
 
 # pylint: disable=too-many-instance-attributes
 
 
 class Toolkit:
     """
-    The Financial Toolkit is an open-source financial toolkit in which
+    The Finance Toolkit is an open-source toolkit in which
     all relevant financial ratios (50+), indicators and performance measurements
     are written down in the most simplistic way allowing for complete transparency
     of the calculation method. This allows you to not have to rely on metrics

@@ -1,7 +1,7 @@
 """Solvency Ratios Tests""" ""
 import pandas as pd
 
-from financialtoolkit.ratios import solvency
+from financetoolkit.ratios import solvency
 
 # pylint: disable=missing-function-docstring
 

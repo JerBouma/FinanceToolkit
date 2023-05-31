@@ -1,7 +1,7 @@
 """Dupont Model Tests""" ""
 import pandas as pd
 
-from financialtoolkit.models import dupont
+from financetoolkit.models import dupont
 
 # pylint: disable=missing-function-docstring
 

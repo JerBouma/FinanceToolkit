@@ -3,8 +3,8 @@ __docformat__ = "numpy"
 
 import pandas as pd
 
-from financialtoolkit.base.helpers import handle_errors
-from financialtoolkit.models.dupont import (
+from financetoolkit.base.helpers import handle_errors
+from financetoolkit.models.dupont import (
     get_dupont_analysis,
     get_extended_dupont_analysis,
 )

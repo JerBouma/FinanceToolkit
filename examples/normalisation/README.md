@@ -1,1 +1,1 @@
-These normalisation files are used as part of the "Financial Toolkit - 3. Using External Datasets" notebook.
+These normalisation files are used as part of the "Finance Toolkit - 3. Using External Datasets" notebook.

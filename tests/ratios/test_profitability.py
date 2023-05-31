@@ -1,7 +1,7 @@
 """Profitability Ratios Tests""" ""
 import pandas as pd
 
-from financialtoolkit.ratios import profitability
+from financetoolkit.ratios import profitability
 
 
 # pylint: disable=missing-function-docstring

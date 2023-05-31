@@ -1,7 +1,7 @@
 """Valuation Ratios Tests""" ""
 import pandas as pd
 
-from financialtoolkit.ratios import valuation
+from financetoolkit.ratios import valuation
 
 # pylint: disable=missing-function-docstring
 

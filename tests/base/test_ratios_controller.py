@@ -1,7 +1,7 @@
 """Ratios Controller Tests""" ""
 import pandas as pd
 
-from financialtoolkit import Toolkit
+from financetoolkit import Toolkit
 
 balance_dataset = pd.read_csv(
     "tests/base/datasets/balance_dataset.csv", index_col=[0, 1]

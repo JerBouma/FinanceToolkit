@@ -1,7 +1,7 @@
 """Models Controller Tests""" ""
 import pandas as pd
 
-from financialtoolkit import Toolkit
+from financetoolkit import Toolkit
 
 # pylint: disable=missing-function-docstring
 

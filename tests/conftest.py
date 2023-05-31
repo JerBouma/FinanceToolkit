@@ -17,7 +17,7 @@ Credits go out to the original author of this code snippet:
     https://github.com/OpenBB-finance
 
 This is a modified version of the original code snippet
-to fit the needs of the financialtoolkit.
+to fit the needs of the financetoolkit.
 """
 
 DISPLAY_LIMIT: int = 500

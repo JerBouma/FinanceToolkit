@@ -1,7 +1,7 @@
 """Efficiency Ratios Tests""" ""
 import pandas as pd
 
-from financialtoolkit.ratios import efficiency
+from financetoolkit.ratios import efficiency
 
 # pylint: disable=missing-function-docstring
 

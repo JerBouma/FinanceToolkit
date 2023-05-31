@@ -1,7 +1,7 @@
 """Liquidity Ratios Tests""" ""
 import pandas as pd
 
-from financialtoolkit.ratios import liquidity
+from financetoolkit.ratios import liquidity
 
 # pylint: disable=missing-function-docstring
 

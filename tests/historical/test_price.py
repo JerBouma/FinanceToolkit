@@ -1,7 +1,7 @@
 """Price Tests""" ""
 import pandas as pd
 
-from financialtoolkit.historical import price
+from financetoolkit.historical import price
 
 # pylint: disable=missing-function-docstring
 

@@ -4,7 +4,7 @@ __docformat__ = "numpy"
 
 import pandas as pd
 
-from financialtoolkit.base.models.normalization_model import (
+from financetoolkit.base.models.normalization_model import (
     convert_financial_statements,
 )
 

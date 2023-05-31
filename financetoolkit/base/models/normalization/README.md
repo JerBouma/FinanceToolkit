@@ -1,7 +1,7 @@
 These files can be downloaded by clicking [here](). Set these up by defining the paths within the `Analyzer` module as follows:
 
 ```python
-from financialtoolkit.analyzer import Analyzer
+from financetoolkit.analyzer import Analyzer
 
 companies = Analyzer(
     tickers=['AAPL', 'MSFT'],

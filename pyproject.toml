@@ -44,7 +44,7 @@ exclude = ["conftest.py"]
 
 [tool.pylint]
 max-line-length = 122
-disable = ["R0913", "W1514", "R0911", "R0912", "R0915", "R0801", "W0221", "C0103"]
+disable = ["R0913", "W1514", "R0911", "R0912", "R0915", "R0801", "W0221", "C0103", "E1131"]
 
 [tool.ruff.isort]
 combine-as-imports = true

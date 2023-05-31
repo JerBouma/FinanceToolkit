@@ -1,18 +1,18 @@
-![Financial Toolkit](https://github.com/JerBouma/FinancialToolkit/assets/46355364/46986065-f6dd-45f3-a873-516a18ee0b61)
+![Finance Toolkit](https://github.com/JerBouma/FinanceToolkit/assets/46355364/46986065-f6dd-45f3-a873-516a18ee0b61)
 
 [![BuyMeACoffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-Donate-brightgreen?logo=buymeacoffee)](https://www.buymeacoffee.com/jerbouma)
-[![Issues](https://img.shields.io/github/issues/jerbouma/FinancialToolkit)](https://github.com/JerBouma/FinancialToolkit/issues)
-[![Pull Requests](https://img.shields.io/github/issues-pr/JerBouma/FinancialToolkit?color=yellow)](https://github.com/JerBouma/FinancialToolkit/pulls)
-[![PYPI Version](https://img.shields.io/pypi/v/FinancialToolkit)](https://pypi.org/project/FinancialToolkit/)
-[![PYPI Downloads](https://img.shields.io/pypi/dm/FinancialToolkit)](https://pypi.org/project/FinancialToolkit/)
+[![Issues](https://img.shields.io/github/issues/jerbouma/FinanceToolkit)](https://github.com/JerBouma/FinanceToolkit/issues)
+[![Pull Requests](https://img.shields.io/github/issues-pr/JerBouma/FinanceToolkit?color=yellow)](https://github.com/JerBouma/FinanceToolkit/pulls)
+[![PYPI Version](https://img.shields.io/pypi/v/FinanceToolkit)](https://pypi.org/project/FinanceToolkit/)
+[![PYPI Downloads](https://img.shields.io/pypi/dm/FinanceToolkit)](https://pypi.org/project/FinanceToolkit/)
 
 While browsing a variety of websites, I kept finding that the same financial metric can greatly vary per source and so do the financial statements reported while little information is given how the metric was calculated.
 
 For example, Microsoft's Price-to-Earnings (PE) ratio on the 6th of May, 2023 is reported to be 28.93 (Stockopedia), 32.05 (Morningstar), 32.66 (Macrotrends), 33.09 (Finance Charts), 33.66 (Y Charts), 33.67 (Wall Street Journal), 33.80 (Yahoo Finance) and 34.4 (Companies Market Cap). All of these calculations are correct, however the method applied varies leading to different results. Therefore, collecting data from multiple sources can lead to wrong interpretation of the results given that one source could be applying a different calculation method than another. And that is, if it is even freely available. Often the calculation is hidden behind a paid subscription.
 
-**This is why I designed the FinancialToolkit**, this is an open-source financial toolkit in which all relevant financial ratios (50+), indicators and performance measurements are written down in the most simplistic way allowing for complete transparency of the calculation method. This allows you to not have to rely on metrics from other providers and, given a financial statement, allow for efficient manual calculations. This leads to one uniform method of calculation being applied that is available and understood by everyone.
+**This is why I designed the FinanceToolkit**, this is an open-source toolkit in which all relevant financial ratios (50+), indicators and performance measurements are written down in the most simplistic way allowing for complete transparency of the calculation method. This allows you to not have to rely on metrics from other providers and, given a financial statement, allow for efficient manual calculations. This leads to one uniform method of calculation being applied that is available and understood by everyone.
 
-The Financial Toolkit is complimented very well with the [Finance Database 🌎](https://github.com/JerBouma/FinanceDatabase), a database that features 300.000+ symbols containing Equities, ETFs, Funds, Indices, Currencies, Cryptocurrencies and Money Markets. By utilising both, it is possible to do a fully-fledged competitive analysis with the tickers found from the FinanceDatabase inputted into the FinancialToolkit.
+The Finance Toolkit is complimented very well with the [Finance Database 🌎](https://github.com/JerBouma/FinanceDatabase), a database that features 300.000+ symbols containing Equities, ETFs, Funds, Indices, Currencies, Cryptocurrencies and Money Markets. By utilising both, it is possible to do a fully-fledged competitive analysis with the tickers found from the FinanceDatabase inputted into the FinanceToolkit.
 
 **Disclaimer:** this package used to be called 'FundamentalAnalysis' but has since been renamed. This is a major update to the existent package which also justified a rename. The old package does remain available.
 
@@ -22,7 +22,7 @@ The Financial Toolkit is complimented very well with the [Finance Database 🌎]
 
 1. [Installation](#installation)
 2. [Basic Usage](#basic-usage)
-    1. [Using the Financial Toolkit](#using-the-financial-toolkit)
+    1. [Using the Finance Toolkit](#using-the-finance-toolkit)
     2. [Working with other Datasets](#working-with-other-datasets)
     3. [Calling Functions Directly](#calling-functions-directly)
 4. [Questions & Answers](#questions--answers)
@@ -30,16 +30,16 @@ The Financial Toolkit is complimented very well with the [Finance Database 🌎]
 
 # Installation
 
-To install the FinancialToolkit it simply requires the following:
+To install the FinanceToolkit it simply requires the following:
 
 ```
-pip install financialtoolkit
+pip install financetoolkit
 ````
 
 Then within Python use:
 
 ```python
-from financialtoolkit import Toolkit
+from financetoolkit import Toolkit
 ```
  
 The dependencies of the package are on purpose *very slim* so that it will work well with any combination of packages and not result in conflicts. I've also been careful with my selection in which I leave out functionality like technical analysis in which [ta-lib](https://ta-lib.org/) does an excellent job as well as portfolio attribution and optimisation in which [Riskfolio-lib](https://riskfolio-lib.readthedocs.io/en/latest/index.html) shines and lastly allow for any source to be incorporated to allow for the incorporation of data sources from [OpenBB](https://openbb.co/).
@@ -56,11 +56,11 @@ Note that I am in no way affiliated FinancialModelingprep and never will be. I h
 
 # Basic Usage
 
-This section explains in detail how the Financial Toolkit can utilitised effectively. Also see the Jupyter Notebook in which you can run the examples also demonstrated here.
+This section explains in detail how the Finance Toolkit can utilitised effectively. Also see the Jupyter Notebook in which you can run the examples also demonstrated here.
 
 ___ 
 
-<b><div align="center">Find a variety of How-To Guides for the FinancialToolkit <a href="https://github.com/JerBouma/FinancialToolkit/tree/main/examples">here</a>.</div></b>
+<b><div align="center">Find a variety of How-To Guides for the FinanceToolkit <a href="https://github.com/JerBouma/FinanceToolkit/tree/main/examples">here</a>.</div></b>
 ___
 
 Within this package the following things are included:
@@ -74,12 +74,12 @@ Within this package the following things are included:
 - Efficiency ratios (`efficiency_ratios`), liquidity ratios (`liquidity_ratios`), profitability ratios (`profitability_ratios`), solvency ratios (`solvency_ratios`) and valuation ratios (`valuation_ratios`) functionality that automatically calculates the most important ratios based on the inputted balance sheet, income and cash flow statements.
 - Models (`models`) like DUPONT analysis that can be used to perform in-depth financial analysis through a single function.
 
-## Using the Financial Toolkit
+## Using the Finance Toolkit
 
-A basic example of how to initialise the Financial Toolkit is shown below, also see [this notebook](https://github.com/JerBouma/FinancialToolkit/blob/main/examples/Financial%20Toolkit%20-%201.%20Getting%20Started.ipynb) for a detailed Getting Started guide as well as [this notebook](https://github.com/JerBouma/FinancialToolkit/blob/main/examples/Financial%20Toolkit%20-%202.%20Combining%20the%20Financial%20Toolkit%20with%20the%20Finance%20Database.ipynb) that includes the [Finance Database 🌎](https://github.com/JerBouma/FinanceDatabase) and a proper financial analysis.
+A basic example of how to initialise the Finance Toolkit is shown below, also see [this notebook](https://github.com/JerBouma/FinanceToolkit/blob/main/examples/Finance%20Toolkit%20-%201.%20Getting%20Started.ipynb) for a detailed Getting Started guide as well as [this notebook](https://github.com/JerBouma/FinanceToolkit/blob/main/examples/Finance%20Toolkit%20-%202.%20Combining%20the%Finance%20Toolkit%20with%20the%20Finance%20Database.ipynb) that includes the [Finance Database 🌎](https://github.com/JerBouma/FinanceDatabase) and a proper financial analysis.
 
 ````python
-from financialtoolkit import Toolkit
+from financetoolkit import Toolkit
 
 companies = Toolkit(['AAPL', 'MSFT'], api_key="FMP_KEY")
 
@@ -123,12 +123,12 @@ This returns the following output for `profitability_ratios.loc['AAPL]`. Omittin
 
 ## Working with other Datasets
 
-The Financial Toolkit shines in its ability to leverage custom datasets from any data provider as well. This makes it possible to work with your preferred data and not be limited to the data source the Financial Toolkit currently provides. A detailed example can be found [here](https://github.com/JerBouma/FinancialToolkit/blob/main/examples/Financial%20Toolkit%20-%203.%20Using%20External%20Datasets%20(OpenBB).ipynb) but to get started see the code below.
+The Finance Toolkit shines in its ability to leverage custom datasets from any data provider as well. This makes it possible to work with your preferred data and not be limited to the data source the Finance Toolkit currently provides. A detailed example can be found [here](https://github.com/JerBouma/FinanceToolkit/blob/main/examples/Finance%20Toolkit%20-%203.%20Using%20External%20Datasets%20(OpenBB).ipynb) but to get started see the code below.
 
 ```python
-from financialtoolkit import Toolkit
+from financetoolkit import Toolkit
 
-# Initialize the Financial Toolkit
+# Initialize the Finance Toolkit
 companies = Toolkit(['AAPL', 'MSFT'])
 
 # Copy the normalization files
@@ -136,18 +136,18 @@ companies.get_normalization_files()
 ```
 This copies over three files, `balance.csv`, `income.csv` and `cash.csv` which will contain a structure like the following:
 
-![Normalization Format](https://github.com/JerBouma/FinancialToolkit/assets/46355364/ea4ebf87-1a27-4c40-a1fb-40d0eb0634bc)
+![Normalization Format](https://github.com/JerBouma/FinanceToolkit/assets/46355364/ea4ebf87-1a27-4c40-a1fb-40d0eb0634bc)
 
-By replacing the first column with the names from your dataset (e.g. replace `cashAndCashEquivalents` with `Cash` if this is how it is called in your dataset), it will automatically normalize the dataset when you initialize the Financial Toolkit. Note that the DataFrame needs to be a multi-index in case you use multiple tickers structured as `Ticker x Financial Statement Item x Periods`.
+By replacing the first column with the names from your dataset (e.g. replace `cashAndCashEquivalents` with `Cash` if this is how it is called in your dataset), it will automatically normalize the dataset when you initialize the Finance Toolkit. Note that the DataFrame needs to be a multi-index in case you use multiple tickers structured as `Ticker x Financial Statement Item x Periods`.
 
 As an example:
 
-![Dataset Example](https://github.com/JerBouma/FinancialToolkit/assets/46355364/fe0e3db0-3e88-41d2-a355-5f68110fdcf3)
+![Dataset Example](https://github.com/JerBouma/FinanceToolkit/assets/46355364/fe0e3db0-3e88-41d2-a355-5f68110fdcf3)
 
 If you have individual DataFrames for each company, you can do the following which will return the DataFrame structure that is required:
 
 ```python
-from financialtoolkit.base import helpers
+from financetoolkit.base import helpers
 
 balance_grouped = helpers.combine_dataframes(['AAPL', 'MSFT'], balance_apple, balance_msft)
 ```
@@ -171,17 +171,17 @@ companies.ratios.collect_all_ratios()
 
 This will return all financial ratios that can be collected based on the provided data and the format.
 
-![Output of Result](https://github.com/JerBouma/FinancialToolkit/assets/46355364/2a995430-b8d8-4236-892c-edb47042d6af)
+![Output of Result](https://github.com/JerBouma/FinanceToolkit/assets/46355364/2a995430-b8d8-4236-892c-edb47042d6af)
 
 ## Calling Functions Directly
 
-It also possible to call any ratio or model directly as shown below. This allows access to 50+ ratios with custom data. Also see [this notebook](https://github.com/JerBouma/FinancialToolkit/blob/main/examples/Financial%20Toolkit%20-%204.%20Calling%20Functions%20Directly.ipynb).
+It also possible to call any ratio or model directly as shown below. This allows access to 50+ ratios with custom data. Also see [this notebook](https://github.com/JerBouma/FinanceToolkit/blob/main/examples/Finance%20Toolkit%20-%204.%20Calling%20Functions%20Directly.ipynb).
 
 ```python
 import pandas as pd
 import numpy as np
 
-from financialtoolkit.models import dupont
+from financetoolkit.models import dupont
 
 years = [2018, 2019, 2020, 2021, 2022]
 
@@ -220,11 +220,11 @@ This returns the following table which closely resembles a proper Dupont analysi
 | Return on Equity  | nan        | 0.559172 | 0.736856 | 1.47443  | 1.75459  |
 
 # Contact
-If you have any questions about the FinancialToolkit or would like to share with me what you have been working on, feel free to reach out to me via:
+If you have any questions about the FinanceToolkit or would like to share with me what you have been working on, feel free to reach out to me via:
 
 - **LinkedIn:** https://www.linkedin.com/in/boumajeroen/
 -  **Email:** jer.bouma@gmail.com
 
 If you'd like to support my efforts, either help me out by contributing to the package or [Buy me a Coffee](https://www.buymeacoffee.com/jerbouma).
 
-[![Star History Chart](https://api.star-history.com/svg?repos=JerBouma/FinancialToolkit&type=Date)](https://star-history.com/#JerBouma/FinancialToolkit&Date)
+[![Star History Chart](https://api.star-history.com/svg?repos=JerBouma/FinanceToolkit&type=Date)](https://star-history.com/#JerBouma/FinanceToolkit&Date)

@@ -94,7 +94,7 @@ balance_sheet_statement = companies.get_balance_sheet_statement()
 profitability_ratios = companies.ratios.collect_profitability_ratios()
 
 # Show the profitability ratios for Apple
-profitability_ratios.loc['AAPL]
+profitability_ratios.loc['AAPL']
 ````
 
 This returns the following output for `profitability_ratios.loc['AAPL]`. Omitting `.loc['AAPL']` will return the result for both AAPL and MSFT.

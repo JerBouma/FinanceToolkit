@@ -24,7 +24,6 @@ jobs:
         uses: snok/install-poetry@v1
       - run: |
           poetry install
-          pip install financedatabase financetoolkit -U
       - run: poetry run black --diff --check financetoolkit
       - run: poetry run codespell
       - run: poetry run ruff financetoolkit

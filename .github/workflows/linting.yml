@@ -25,10 +25,10 @@ jobs:
       - run: |
           poetry install
           pip install financedatabase financetoolkit -U
-      - run: black --diff --check financetoolkit
-      - run: codespell
-      - run: ruff financetoolkit
-      - run: pylint financetoolkit
+      - run: poetry run black --diff --check financetoolkit
+      - run: poetry run codespell
+      - run: poetry run ruff financetoolkit
+      - run: poetry run pylint financetoolkit
 
   markdown-link-check:
     name: Markdown Linting

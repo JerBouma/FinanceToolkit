@@ -20,7 +20,8 @@ jobs:
         with:
           python-version: "3.9"
           architecture: x64
-
+      - name: Install Poetry
+        uses: snok/install-poetry@v1
       - run: |
           poetry install
           pip install financedatabase financetoolkit -U

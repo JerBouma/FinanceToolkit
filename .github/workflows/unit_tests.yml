@@ -21,7 +21,7 @@ jobs:
         run: |  
           python -m pip install --upgrade pip  
           poetry install
-          pip install finance-toolkit -U
+          pip install financetoolkit -U
       - name: Test with pytest  
         run: |  
           poetry run coverage run -m pytest  -v -s  

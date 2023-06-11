@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "financetoolkit"
-version = "1.0.0"
+version = "1.0.2"
 description = "Transparent and Efficient Financial Analysis"
 license = "MIT"
 authors = ["Jeroen Bouma"]
@@ -9,6 +9,7 @@ packages = [
 ]
 include = ['normalization/*.csv']
 readme = "README.md"
+homepage = "https://www.jeroenbouma.com/"
 repository = "https://github.com/JerBouma/FinanceToolkit"
 classifiers = [
     "Development Status :: 5 - Production/Stable",
@@ -18,6 +19,10 @@ classifiers = [
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
 ]
+
+[tool.poetry.dependencies]
+pandas = "^2.0.0"
+python = "^3.10"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^6.2.2"

@@ -70,14 +70,20 @@ def get_historical_data(
     else:
         yearly = False
 
+    corrupt_tickers = []
     for ticker in ticker_list:
-        url = (
-            f"https://query1.finance.yahoo.com/v7/finance/download/{ticker}?"
-            f"interval={interval}&period1={start_timestamp}&period2={end_timestamp}"
-            "&events=history&includeAdjustedClose=true"
-        )
-
-        historical_data_dict[ticker] = pd.read_csv(url, index_col="Date")
+        try:
+            url = (
+                f"https://query1.finance.yahoo.com/v7/finance/download/{ticker}?"
+                f"interval={interval}&period1={start_timestamp}&period2={end_timestamp}"
+                "&events=history&includeAdjustedClose=true"
+            )
+            historical_data_dict[ticker] = pd.read_csv(url, index_col="Date")
+        except:
+            corrupt_tickers.append(ticker)
+            continue
+    
+    print(f"Removed {corrupt_tickers} from the tickers list.")
 
     historical_data = pd.concat(historical_data_dict, axis=1)
 
@@ -87,7 +93,7 @@ def get_historical_data(
     if yearly:
         historical_data = convert_daily_to_yearly(historical_data)
 
-    return historical_data
+    return historical_data, corrupt_tickers
 
 
 def convert_daily_to_yearly(daily_historical_data: pd.DataFrame):

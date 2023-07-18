@@ -313,7 +313,7 @@ class Toolkit:
             pandas.DataFrame: The historical data for the specified tickers.
         """
         if period == "daily":
-            self._daily_historical_data = _get_historical_data(
+            self._daily_historical_data, corrupted_tickers = _get_historical_data(
                 self._tickers, start, end, interval="1d"
             )
 
@@ -325,7 +325,7 @@ class Toolkit:
             return self._daily_historical_data
 
         if period == "weekly":
-            self._weekly_historical_data = _get_historical_data(
+            self._weekly_historical_data, corrupted_tickers = _get_historical_data(
                 self._tickers, start, end, interval="1wk"
             )
 
@@ -337,7 +337,7 @@ class Toolkit:
             return self._weekly_historical_data
 
         if period == "monthly":
-            self._monthly_historical_data = _get_historical_data(
+            self._monthly_historical_data, corrupted_tickers = _get_historical_data(
                 self._tickers, start, end, interval="1mo"
             )
 
@@ -350,7 +350,7 @@ class Toolkit:
 
         if period == "yearly":
             if self._daily_historical_data.empty:
-                self._daily_historical_data = _get_historical_data(
+                self._daily_historical_data, corrupted_tickers = _get_historical_data(
                     self._tickers, start, end, interval="1d"
                 )
 
@@ -364,6 +364,10 @@ class Toolkit:
                 )
 
             return self._yearly_historical_data
+
+        for corrupt_tickers in corrupted_tickers:
+            #Remove the corrupted tickers from self._tickers
+            self._tickers.remove(corrupt_tickers)
 
         raise ValueError(
             "Please choose from daily, weekly, monthly or yearly as period."

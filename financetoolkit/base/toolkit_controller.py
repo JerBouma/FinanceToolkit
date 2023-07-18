@@ -47,6 +47,7 @@ class Toolkit:
         cash: pd.DataFrame = pd.DataFrame(),
         format_location: str = "",
         reverse_dates: bool = False,
+        quarters: bool = False,
     ):
         """
         Initializes an Toolkit object with a ticker or a list of tickers.
@@ -60,6 +61,7 @@ class Toolkit:
         cash (pd.DataFrame): A DataFrame containing cash flow statement data.
         format_location (str): A string containing the location of the normalization files.
         reverse_dates (bool): A boolean indicating whether to reverse the dates in the financial statements.
+        quarters (bool): A boolean indicating whether to retrieve quarterly or annual data.
         """
         if isinstance(tickers, str):
             self._tickers = [tickers]
@@ -67,6 +69,8 @@ class Toolkit:
             self._tickers = tickers
         else:
             raise TypeError("Tickers must be a string or a list of strings.")
+
+        self.quarters = quarters
 
         self._api_key = api_key
 
@@ -144,13 +148,13 @@ class Toolkit:
             self.get_historical_data(period="yearly")
         if self._balance_sheet_statement.empty:
             empty_data.append("Balance Sheet Statement")
-            self.get_balance_sheet_statement()
+            self.get_balance_sheet_statement(quarter=self.quarters)
         if self._income_statement.empty:
             empty_data.append("Income Statement")
-            self.get_income_statement()
+            self.get_income_statement(quarter=self.quarters)
         if self._cash_flow_statement.empty:
             empty_data.append("Cash Flow Statement")
-            self.get_cash_flow_statement()
+            self.get_cash_flow_statement(quarter=self.quarters)
 
         if empty_data:
             print(

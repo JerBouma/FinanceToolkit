@@ -39,11 +39,6 @@ repos:
         "types_or": [python, pyi]
         args: ["--ignore-missing-imports", "--scripts-are-modules"]
         require_serial: true
-  - repo: https://github.com/kynan/nbstripout
-    rev: 0.6.1
-    hooks:
-      - id: nbstripout
-        name: Strip notebooks output
   - repo: local
     hooks:
       - id: pylint

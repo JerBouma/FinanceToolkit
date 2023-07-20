@@ -279,7 +279,6 @@ def get_enterprise(
         enterprise_value_dict[ticker] = enterprise_values
 
     enterprise_dataframe = pd.concat(enterprise_value_dict, axis=0).dropna()
-    enterprise_dataframe = enterprise_dataframe.melt().pivot_table(1)
 
     if len(ticker_list) == 1:
         enterprise_dataframe = enterprise_dataframe.loc[ticker_list[0]]
@@ -350,7 +349,6 @@ def get_rating(tickers: list[str] | str, api_key: str, limit: int = 100):
         ratings_dict[ticker] = ratings
 
     ratings_dataframe = pd.concat(ratings_dict, axis=0).dropna()
-    ratings_dataframe = ratings_dataframe.melt().pivot_table(1)
 
     if len(ticker_list) == 1:
         ratings_dataframe = ratings_dataframe.loc[ticker_list[0]]

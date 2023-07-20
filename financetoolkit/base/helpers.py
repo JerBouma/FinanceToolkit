@@ -4,20 +4,20 @@ __docformat__ = "numpy"
 import pandas as pd
 
 
-def combine_dataframes(tickers: str | list[str], *args) -> pd.DataFrame:
+def combine_dataframes(dataset_dictionary: dict[str, pd.DataFrame]) -> pd.DataFrame:
     """
     Combine the dataframes from different companies of the same financial statement,
     e.g. the balance sheet statement, into a single dataframe.
 
     Args:
-        **args: A dictionary of the same type of financial statement from multiple companies.
+        dataset_dictionary (dict[str, pd.DataFrame]): A dictionary containing the
+        dataframes for each company. It should have the structure key: ticker,
+        value: dataframe.
 
     Returns:
         pd.DataFrame: A pandas DataFrame with the combined financial statements.
     """
-    ticker_list = tickers if isinstance(tickers, list) else [tickers]
-    combined = zip(ticker_list, args)
-    combined_df = pd.concat(dict(combined), axis=0)
+    combined_df = pd.concat(dict(dataset_dictionary), axis=0)
 
     return combined_df.sort_index(level=0, sort_remaining=False)
 

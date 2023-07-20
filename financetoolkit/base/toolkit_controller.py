@@ -405,6 +405,8 @@ class Toolkit:
                     if ticker not in self._invalid_tickers
                 ]
 
+            self._daily_historical_data = self._daily_historical_data.sort_index()
+
             if len(self._tickers) == 1:
                 return self._daily_historical_data.xs(
                     self._tickers[0], level=1, axis="columns"
@@ -424,6 +426,8 @@ class Toolkit:
                     if ticker not in self._invalid_tickers
                 ]
 
+            self._weekly_historical_data = self._weekly_historical_data.sort_index()
+
             if len(self._tickers) == 1:
                 return self._weekly_historical_data.xs(
                     self._tickers[0], level=1, axis="columns"
@@ -442,6 +446,8 @@ class Toolkit:
                     for ticker in self._tickers
                     if ticker not in self._invalid_tickers
                 ]
+
+            self._monthly_historical_data = self._monthly_historical_data.sort_index()
 
             if len(self._tickers) == 1:
                 return self._monthly_historical_data.xs(
@@ -468,6 +474,10 @@ class Toolkit:
                     if ticker not in self._invalid_tickers
                 ]
 
+            self._quarterly_historical_data = (
+                self._quarterly_historical_data.sort_index()
+            )
+
             if len(self._tickers) == 1:
                 return self._quarterly_historical_data.xs(
                     self._tickers[0], level=1, axis="columns"
@@ -492,6 +502,8 @@ class Toolkit:
                     for ticker in self._tickers
                     if ticker not in self._invalid_tickers
                 ]
+
+            self._yearly_historical_data = self._yearly_historical_data.sort_index()
 
             if len(self._tickers) == 1:
                 return self._yearly_historical_data.xs(

@@ -38,11 +38,13 @@ def equal_length(dataset1: pd.Series, dataset2: pd.Series) -> pd.Series:
             int(dataset1.columns[0]) - 1, int(dataset2.columns[0]) - 1, -1
         ):
             dataset1.insert(0, value, 0.0)
+        dataset1 = dataset1.sort_index()
     elif int(dataset1.columns[0]) < int(dataset2.columns[0]):
         for value in range(
             int(dataset2.columns[0]) - 1, int(dataset1.columns[0]) - 1, -1
         ):
             dataset2.insert(0, value, 0.0)
+        dataset2 = dataset2.sort_index()
 
     return dataset1, dataset2
 

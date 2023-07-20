@@ -26,7 +26,7 @@ repos:
           [
             "--ignore-words-list=VAI,MIS,shs,gard,te,commun,ro,zar,vie,hel,jewl,zlot,ba,buil,coo,ether,hist,hsi,mape,navagation,operatio,pres,ser,yeld,shold,ist,varian,datas,ake,creat,statics,ket,toke,certi,buidl,ot",
             "--quiet-level=2",
-            "--skip=./tests,.git,*.css,*.csv,*.html,*.ini,*.ipynb,*.js,*.json,*.lock,*.scss,*.txt,*.yaml,build/pyinstaller/*",
+            "--skip=./tests,.git,*.css,*.csv,*.html,*.ini,*.ipynb,*.js,*.json,*.lock,*.scss,*.txt,*.yaml,build/pyinstaller/*,pyproject.toml",
             "-x=.github/workflows/linting.yml"
           ]
   - repo: local

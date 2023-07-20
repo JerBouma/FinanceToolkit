@@ -80,7 +80,7 @@ def convert_financial_statements(
 
 def copy_normalization_files(
     format_location: str = "",
-    save_location: str = Path(Path.home(), "Downloads"),
+    save_location: str | Path = Path(Path.home(), "Downloads"),
 ):
     """
     This function copies the normalization files as found inside the environment and saves them

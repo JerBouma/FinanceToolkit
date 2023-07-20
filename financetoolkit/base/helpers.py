@@ -22,6 +22,31 @@ def combine_dataframes(tickers: str | list[str], *args) -> pd.DataFrame:
     return combined_df.sort_index(level=0, sort_remaining=False)
 
 
+def equal_length(dataset1: pd.Series, dataset2: pd.Series) -> pd.Series:
+    """
+    Equalize the length of two datasets by adding zeros to the beginning of the shorter dataset.
+
+    Args:
+        dataset1 (pd.Series): The first dataset to be equalized.
+        dataset2 (pd.Series): The second dataset to be equalized.
+
+    Returns:
+        pd.Series, pd.Series: The equalized datasets.
+    """
+    if int(dataset1.columns[0]) > int(dataset2.columns[0]):
+        for value in range(
+            int(dataset1.columns[0]) - 1, int(dataset2.columns[0]) - 1, -1
+        ):
+            dataset1.insert(0, value, 0.0)
+    elif int(dataset1.columns[0]) < int(dataset2.columns[0]):
+        for value in range(
+            int(dataset2.columns[0]) - 1, int(dataset1.columns[0]) - 1, -1
+        ):
+            dataset2.insert(0, value, 0.0)
+
+    return dataset1, dataset2
+
+
 def handle_errors(func):
     """
     Decorator to handle specific errors that may occur in a function and provide informative messages.
@@ -54,6 +79,13 @@ def handle_errors(func):
                 f"An error occurred while trying to run the function "
                 f"{function_name}. This is {e}. Usually this is due to incomplete "
                 "financial statements. "
+            )
+            return pd.Series()
+        except ZeroDivisionError as e:
+            function_name = func.__name__
+            print(
+                f"An error occurred while trying to run the function "
+                f"{function_name}. This is {e}. This is due to a division by zero."
             )
             return pd.Series()
 

@@ -2,14 +2,15 @@
 __docformat__ = "numpy"
 
 from datetime import datetime, timedelta
+from urllib.error import HTTPError
 
 import pandas as pd
 
 
 def get_historical_data(
     tickers: list[str] | str,
-    start: str = None,
-    end: str = None,
+    start: str | None = None,
+    end: str | None = None,
     interval: str = "1d",
 ):
     """
@@ -70,6 +71,7 @@ def get_historical_data(
     else:
         yearly = False
 
+    invalid_tickers = []
     for ticker in ticker_list:
         url = (
             f"https://query1.finance.yahoo.com/v7/finance/download/{ticker}?"
@@ -77,17 +79,24 @@ def get_historical_data(
             "&events=history&includeAdjustedClose=true"
         )
 
-        historical_data_dict[ticker] = pd.read_csv(url, index_col="Date")
+        try:
+            historical_data_dict[ticker] = pd.read_csv(url, index_col="Date")
+        except HTTPError:
+            print(f"No historical data found for {ticker}")
+            invalid_tickers.append(ticker)
+            continue
 
-    historical_data = pd.concat(historical_data_dict, axis=1)
+    if historical_data_dict:
+        historical_data = pd.concat(historical_data_dict, axis=1)
+        historical_data.columns = historical_data.columns.swaplevel(0, 1)
+        historical_data = historical_data.sort_index(axis=1)
 
-    historical_data.columns = historical_data.columns.swaplevel(0, 1)
-    historical_data = historical_data.sort_index(axis=1)
+        if yearly:
+            historical_data = convert_daily_to_yearly(historical_data)
 
-    if yearly:
-        historical_data = convert_daily_to_yearly(historical_data)
+        return historical_data, invalid_tickers
 
-    return historical_data
+    return pd.DataFrame(), invalid_tickers
 
 
 def convert_daily_to_yearly(daily_historical_data: pd.DataFrame):
@@ -108,5 +117,35 @@ def convert_daily_to_yearly(daily_historical_data: pd.DataFrame):
     yearly_historical_data = daily_historical_data.groupby(dates).transform("last")
     yearly_historical_data["Date"] = yearly_historical_data["Date"].str[:4]
     yearly_historical_data = yearly_historical_data.drop_duplicates().set_index("Date")
+    yearly_historical_data.index = pd.PeriodIndex(
+        yearly_historical_data.index, freq="Y"
+    )
 
     return yearly_historical_data
+
+
+def convert_daily_to_quarterly(daily_historical_data: pd.DataFrame):
+    """
+    Converts daily historical data to quarterly historical data.
+
+    Args:
+        daily_historical_data (pd.DataFrame): A DataFrame containing daily historical data.
+
+    Returns:
+        pd.DataFrame: A pandas DataFrame object containing the yearly historical stock data.
+        The index of the DataFrame is the date of the data and the columns are a multi-index
+        with the ticker symbol(s) as the first level and the OHLC data as the second level.
+    """
+    daily_historical_data.index.name = "Date"
+    daily_historical_data = daily_historical_data.reset_index()
+    dates = pd.to_datetime(daily_historical_data.Date).dt.to_period("Q")
+    quarterly_historical_data = daily_historical_data.groupby(dates).transform("last")
+    quarterly_historical_data["Date"] = quarterly_historical_data["Date"].str[:7]
+    quarterly_historical_data = quarterly_historical_data.drop_duplicates().set_index(
+        "Date"
+    )
+    quarterly_historical_data.index = pd.PeriodIndex(
+        quarterly_historical_data.index, freq="M"
+    )
+
+    return quarterly_historical_data

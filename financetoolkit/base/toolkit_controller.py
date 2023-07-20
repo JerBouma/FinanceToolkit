@@ -12,6 +12,7 @@ from financetoolkit.base.models.fundamentals_model import (
     get_rating as _get_rating,
 )
 from financetoolkit.base.models.historical_model import (
+    convert_daily_to_quarterly as _convert_daily_to_quarterly,
     convert_daily_to_yearly as _convert_daily_to_yearly,
     get_historical_data as _get_historical_data,
 )
@@ -45,8 +46,10 @@ class Toolkit:
         balance: pd.DataFrame = pd.DataFrame(),
         income: pd.DataFrame = pd.DataFrame(),
         cash: pd.DataFrame = pd.DataFrame(),
+        quarterly: bool = False,
         format_location: str = "",
         reverse_dates: bool = False,
+        remove_invalid_tickers: bool = True,
     ):
         """
         Initializes an Toolkit object with a ticker or a list of tickers.
@@ -62,13 +65,16 @@ class Toolkit:
         reverse_dates (bool): A boolean indicating whether to reverse the dates in the financial statements.
         """
         if isinstance(tickers, str):
-            self._tickers = [tickers]
+            self._tickers = [tickers.upper()]
         elif isinstance(tickers, list):
-            self._tickers = tickers
+            self._tickers = [ticker.upper() for ticker in tickers]
         else:
             raise TypeError("Tickers must be a string or a list of strings.")
 
         self._api_key = api_key
+        self._quarterly = quarterly
+        self._remove_invalid_tickers = remove_invalid_tickers
+        self._invalid_tickers: list = []
 
         if self._api_key:
             # Initialization of FinancialModelingPrep Variables
@@ -83,6 +89,11 @@ class Toolkit:
         )
         self._weekly_historical_data: pd.DataFrame = pd.DataFrame()
         self._monthly_historical_data: pd.DataFrame = pd.DataFrame()
+        self._quarterly_historical_data: pd.DataFrame = (
+            _convert_daily_to_quarterly(self._daily_historical_data)
+            if not historical.empty
+            else pd.DataFrame()
+        )
         self._yearly_historical_data: pd.DataFrame = (
             _convert_daily_to_yearly(self._daily_historical_data)
             if not historical.empty
@@ -124,7 +135,7 @@ class Toolkit:
         )
 
     @property
-    def ratios(self):
+    def ratios(self) -> Ratios:
         """
         Gives access to financial ratios.
         """
@@ -140,8 +151,6 @@ class Toolkit:
                 "and cash flow statements or an API key from FinancialModelPrep "
                 "within the Toolkit class."
             )
-        if self._yearly_historical_data.empty:
-            self.get_historical_data(period="yearly")
         if self._balance_sheet_statement.empty:
             empty_data.append("Balance Sheet Statement")
             self.get_balance_sheet_statement()
@@ -152,6 +161,33 @@ class Toolkit:
             empty_data.append("Cash Flow Statement")
             self.get_cash_flow_statement()
 
+        if (
+            self._balance_sheet_statement.empty
+            and self._income_statement.empty
+            and self._cash_flow_statement.empty
+        ):
+            raise ValueError(
+                "The datasets could not be populated and therefore the Ratios class cannot be initialized."
+            )
+
+        start = f"{self._balance_sheet_statement.columns[0].year - 5}-01-01"
+        end = f"{self._balance_sheet_statement.columns[-1].year + 5}-01-01"
+
+        if self._quarterly:
+            if (
+                self._quarterly_historical_data.empty
+                and not self._balance_sheet_statement.empty
+            ):
+                self.get_historical_data(period="quarterly", start=start, end=end)
+        elif not self._quarterly:
+            if (
+                self._yearly_historical_data.empty
+                and not self._balance_sheet_statement.empty
+            ):
+                self.get_historical_data(period="yearly", start=start, end=end)
+        else:
+            raise ValueError("Invalid value for the quarterly parameter.")
+
         if empty_data:
             print(
                 "The following data was not provided within the Toolkit class and "
@@ -160,14 +196,16 @@ class Toolkit:
 
         return Ratios(
             self._tickers,
-            self._yearly_historical_data,
+            self._quarterly_historical_data
+            if self._quarterly
+            else self._yearly_historical_data,
             self._balance_sheet_statement,
             self._income_statement,
             self._cash_flow_statement,
         )
 
     @property
-    def models(self):
+    def models(self) -> Models:
         """
         Gives access to financial models.
         """
@@ -193,6 +231,15 @@ class Toolkit:
         if self._cash_flow_statement.empty:
             empty_data.append("Cash Flow Statement")
             self.get_cash_flow_statement()
+
+        if (
+            self._balance_sheet_statement.empty
+            and self._income_statement.empty
+            and self._cash_flow_statement.empty
+        ):
+            raise ValueError(
+                "The datasets could not be populated and therefore the Models class cannot be initialized."
+            )
 
         if empty_data:
             print(
@@ -223,7 +270,16 @@ class Toolkit:
             )
 
         if self._profile.empty:
-            self._profile = _get_profile(self._tickers, self._api_key)
+            self._profile, self._invalid_tickers = _get_profile(
+                self._tickers, self._api_key
+            )
+
+        if self._remove_invalid_tickers:
+            self._tickers = [
+                ticker
+                for ticker in self._tickers
+                if ticker not in self._invalid_tickers
+            ]
 
         return self._profile
 
@@ -243,11 +299,20 @@ class Toolkit:
             )
 
         if self._quote.empty:
-            self._quote = _get_quote(self._tickers, self._api_key)
+            self._quote, self._invalid_tickers = _get_quote(
+                self._tickers, self._api_key
+            )
+
+        if self._remove_invalid_tickers:
+            self._tickers = [
+                ticker
+                for ticker in self._tickers
+                if ticker not in self._invalid_tickers
+            ]
 
         return self._quote
 
-    def get_enterprise(self, quarter: str = False, limit: str = 100):
+    def get_enterprise(self, limit: int = 100):
         """
         Returns a pandas dataframe containing the enterprise value information for the specified tickers.
 
@@ -267,9 +332,16 @@ class Toolkit:
             )
 
         if self._enterprise.empty:
-            self._enterprise = _get_enterprise(
-                self._tickers, self._api_key, quarter, limit
+            self._enterprise, self._invalid_tickers = _get_enterprise(
+                self._tickers, self._api_key, self._quarterly, limit
             )
+
+        if self._remove_invalid_tickers:
+            self._tickers = [
+                ticker
+                for ticker in self._tickers
+                if ticker not in self._invalid_tickers
+            ]
 
         return self._enterprise
 
@@ -292,7 +364,16 @@ class Toolkit:
             )
 
         if self._rating.empty:
-            self._rating = _get_rating(self._tickers, self._api_key, limit)
+            self._rating, self._invalid_tickers = _get_rating(
+                self._tickers, self._api_key, limit
+            )
+
+        if self._remove_invalid_tickers:
+            self._tickers = [
+                ticker
+                for ticker in self._tickers
+                if ticker not in self._invalid_tickers
+            ]
 
         return self._rating
 
@@ -313,9 +394,16 @@ class Toolkit:
             pandas.DataFrame: The historical data for the specified tickers.
         """
         if period == "daily":
-            self._daily_historical_data = _get_historical_data(
+            self._daily_historical_data, self._invalid_tickers = _get_historical_data(
                 self._tickers, start, end, interval="1d"
             )
+
+            if self._remove_invalid_tickers:
+                self._tickers = [
+                    ticker
+                    for ticker in self._tickers
+                    if ticker not in self._invalid_tickers
+                ]
 
             if len(self._tickers) == 1:
                 return self._daily_historical_data.xs(
@@ -325,9 +413,16 @@ class Toolkit:
             return self._daily_historical_data
 
         if period == "weekly":
-            self._weekly_historical_data = _get_historical_data(
+            self._weekly_historical_data, self._invalid_tickers = _get_historical_data(
                 self._tickers, start, end, interval="1wk"
             )
+
+            if self._remove_invalid_tickers:
+                self._tickers = [
+                    ticker
+                    for ticker in self._tickers
+                    if ticker not in self._invalid_tickers
+                ]
 
             if len(self._tickers) == 1:
                 return self._weekly_historical_data.xs(
@@ -337,9 +432,16 @@ class Toolkit:
             return self._weekly_historical_data
 
         if period == "monthly":
-            self._monthly_historical_data = _get_historical_data(
+            self._monthly_historical_data, self._invalid_tickers = _get_historical_data(
                 self._tickers, start, end, interval="1mo"
             )
+
+            if self._remove_invalid_tickers:
+                self._tickers = [
+                    ticker
+                    for ticker in self._tickers
+                    if ticker not in self._invalid_tickers
+                ]
 
             if len(self._tickers) == 1:
                 return self._monthly_historical_data.xs(
@@ -348,15 +450,48 @@ class Toolkit:
 
             return self._monthly_historical_data
 
+        if period == "quarterly":
+            if self._daily_historical_data.empty:
+                (
+                    self._daily_historical_data,
+                    self._invalid_tickers,
+                ) = _get_historical_data(self._tickers, start, end, interval="1d")
+
+            self._quarterly_historical_data = _convert_daily_to_quarterly(
+                self._daily_historical_data
+            )
+
+            if self._remove_invalid_tickers:
+                self._tickers = [
+                    ticker
+                    for ticker in self._tickers
+                    if ticker not in self._invalid_tickers
+                ]
+
+            if len(self._tickers) == 1:
+                return self._quarterly_historical_data.xs(
+                    self._tickers[0], level=1, axis="columns"
+                )
+
+            return self._quarterly_historical_data
+
         if period == "yearly":
             if self._daily_historical_data.empty:
-                self._daily_historical_data = _get_historical_data(
-                    self._tickers, start, end, interval="1d"
-                )
+                (
+                    self._daily_historical_data,
+                    self._invalid_tickers,
+                ) = _get_historical_data(self._tickers, start, end, interval="1d")
 
             self._yearly_historical_data = _convert_daily_to_yearly(
                 self._daily_historical_data
             )
+
+            if self._remove_invalid_tickers:
+                self._tickers = [
+                    ticker
+                    for ticker in self._tickers
+                    if ticker not in self._invalid_tickers
+                ]
 
             if len(self._tickers) == 1:
                 return self._yearly_historical_data.xs(
@@ -366,12 +501,11 @@ class Toolkit:
             return self._yearly_historical_data
 
         raise ValueError(
-            "Please choose from daily, weekly, monthly or yearly as period."
+            "Please choose from daily, weekly, monthly, quarterly or yearly as period."
         )
 
     def get_balance_sheet_statement(
         self,
-        quarter=False,
         limit: int = 100,
         overwrite: bool = False,
     ):
@@ -390,14 +524,24 @@ class Toolkit:
             )
 
         if self._balance_sheet_statement.empty or overwrite:
-            self._balance_sheet_statement = _get_financial_statements(
+            (
+                self._balance_sheet_statement,
+                self._invalid_tickers,
+            ) = _get_financial_statements(
                 self._tickers,
                 "balance",
                 self._api_key,
-                quarter,
+                self._quarterly,
                 limit,
                 self._balance_sheet_statement_generic,
             )
+
+        if self._remove_invalid_tickers:
+            self._tickers = [
+                ticker
+                for ticker in self._tickers
+                if ticker not in self._invalid_tickers
+            ]
 
         if len(self._tickers) == 1:
             return self._balance_sheet_statement.loc[self._tickers[0]]
@@ -406,7 +550,6 @@ class Toolkit:
 
     def get_income_statement(
         self,
-        quarter=False,
         limit: int = 100,
         overwrite: bool = False,
     ):
@@ -425,14 +568,21 @@ class Toolkit:
             )
 
         if self._income_statement.empty or overwrite:
-            self._income_statement = _get_financial_statements(
+            self._income_statement, self._invalid_tickers = _get_financial_statements(
                 self._tickers,
                 "income",
                 self._api_key,
-                quarter,
+                self._quarterly,
                 limit,
                 self._income_statement_generic,
             )
+
+        if self._remove_invalid_tickers:
+            self._tickers = [
+                ticker
+                for ticker in self._tickers
+                if ticker not in self._invalid_tickers
+            ]
 
         if len(self._tickers) == 1:
             return self._income_statement.loc[self._tickers[0]]
@@ -441,7 +591,6 @@ class Toolkit:
 
     def get_cash_flow_statement(
         self,
-        quarter=False,
         limit: int = 100,
         overwrite: bool = False,
     ):
@@ -460,14 +609,24 @@ class Toolkit:
             )
 
         if self._cash_flow_statement.empty or overwrite:
-            self._cash_flow_statement = _get_financial_statements(
+            (
+                self._cash_flow_statement,
+                self._invalid_tickers,
+            ) = _get_financial_statements(
                 self._tickers,
                 "cashflow",
                 self._api_key,
-                quarter,
+                self._quarterly,
                 limit,
                 self._cash_flow_statement_generic,
             )
+
+        if self._remove_invalid_tickers:
+            self._tickers = [
+                ticker
+                for ticker in self._tickers
+                if ticker not in self._invalid_tickers
+            ]
 
         if len(self._tickers) == 1:
             return self._cash_flow_statement.loc[self._tickers[0]]

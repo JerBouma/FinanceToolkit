@@ -2,6 +2,7 @@
 __docformat__ = "numpy"
 
 
+import numpy as np
 import pandas as pd
 
 from financetoolkit.base.models.normalization_model import (
@@ -66,7 +67,7 @@ def get_financial_statements(
     period = "quarter" if quarter else "annual"
 
     financial_statement_dict: dict = {}
-
+    invalid_tickers = []
     for ticker in ticker_list:
         try:
             financial_statement = pd.read_json(
@@ -76,7 +77,12 @@ def get_financial_statements(
         except Exception as error:
             raise ValueError(error) from error
 
-        financial_statement = financial_statement.drop("symbol", axis=1)
+        try:
+            financial_statement = financial_statement.drop("symbol", axis=1)
+        except KeyError:
+            print(f"No financial statement data found for {ticker}")
+            invalid_tickers.append(ticker)
+            continue
 
         if quarter:
             financial_statement["date"] = pd.to_datetime(
@@ -91,13 +97,34 @@ def get_financial_statements(
 
         financial_statement_dict[ticker] = financial_statement
 
-    financial_statement_total = pd.concat(financial_statement_dict, axis=0)
+    if financial_statement_dict:
+        financial_statement_total = pd.concat(financial_statement_dict, axis=0)
 
-    financial_statement_total = convert_financial_statements(
-        financial_statement_total, statement_format, True
-    )
+        financial_statement_total = convert_financial_statements(
+            financial_statement_total, statement_format, True
+        )
 
-    return financial_statement_total
+        try:
+            financial_statement_total = financial_statement_total.astype(np.float64)
+        except ValueError as error:
+            print(
+                f"Not able to convert DataFrame to float64 due to {error}. This could result in"
+                "issues when values are zero and is prodominently relevant for "
+                "ratio calculations."
+            )
+
+        if quarter:
+            financial_statement_total.columns = pd.PeriodIndex(
+                financial_statement_total.columns, freq="M"
+            )
+        else:
+            financial_statement_total.columns = pd.PeriodIndex(
+                financial_statement_total.columns, freq="Y"
+            )
+
+        return financial_statement_total, invalid_tickers
+
+    return pd.DataFrame(), invalid_tickers
 
 
 def get_profile(tickers: list[str] | str, api_key: str):
@@ -126,15 +153,19 @@ def get_profile(tickers: list[str] | str, api_key: str):
 
     profile_dataframe: pd.DataFrame = pd.DataFrame()
 
+    invalid_tickers = []
     for ticker in ticker_list:
         try:
             profile_dataframe[ticker] = pd.read_json(
                 f"https://financialmodelingprep.com/api/v3/profile/{ticker}?apikey={api_key}"
             ).T
+        except ValueError:
+            print(f"No historical data found for {ticker}")
+            invalid_tickers.append(ticker)
         except Exception as error:
             raise ValueError(error) from error
 
-    return profile_dataframe
+    return profile_dataframe, invalid_tickers
 
 
 def get_quote(tickers: list[str] | str, api_key: str):
@@ -163,15 +194,19 @@ def get_quote(tickers: list[str] | str, api_key: str):
 
     quote_dataframe: pd.DataFrame = pd.DataFrame()
 
+    invalid_tickers = []
     for ticker in ticker_list:
         try:
             quote_dataframe[ticker] = pd.read_json(
                 f"https://financialmodelingprep.com/api/v3/quote/{ticker}?apikey={api_key}"
             ).T
+        except ValueError:
+            print(f"No historical data found for {ticker}")
+            invalid_tickers.append(ticker)
         except Exception as error:
             raise ValueError(error) from error
 
-    return quote_dataframe
+    return quote_dataframe, invalid_tickers
 
 
 def get_enterprise(
@@ -208,6 +243,7 @@ def get_enterprise(
 
     period = "quarter" if quarter else "annual"
 
+    invalid_tickers = []
     for ticker in ticker_list:
         try:
             enterprise_values = pd.read_json(
@@ -217,9 +253,15 @@ def get_enterprise(
         except Exception as error:
             raise ValueError(error) from error
 
-        enterprise_values = enterprise_values.drop("symbol", axis=1).sort_values(
-            by="date", ascending=True
-        )
+        try:
+            enterprise_values = enterprise_values.drop("symbol", axis=1).sort_values(
+                by="date", ascending=True
+            )
+        except KeyError:
+            print(f"No historical data found for {ticker}.")
+            invalid_tickers.append(ticker)
+            continue
+
         enterprise_values["date"] = pd.to_datetime(enterprise_values["date"]).dt.year
         enterprise_values = enterprise_values.set_index("date")
 
@@ -237,11 +279,12 @@ def get_enterprise(
         enterprise_value_dict[ticker] = enterprise_values
 
     enterprise_dataframe = pd.concat(enterprise_value_dict, axis=0).dropna()
+    enterprise_dataframe = enterprise_dataframe.melt().pivot_table(1)
 
     if len(ticker_list) == 1:
         enterprise_dataframe = enterprise_dataframe.loc[ticker_list[0]]
 
-    return enterprise_dataframe
+    return enterprise_dataframe, invalid_tickers
 
 
 def get_rating(tickers: list[str] | str, api_key: str, limit: int = 100):
@@ -269,12 +312,15 @@ def get_rating(tickers: list[str] | str, api_key: str, limit: int = 100):
         raise ValueError(f"Type for the tickers ({type(tickers)}) variable is invalid.")
 
     ratings_dict = {}
-
+    invalid_tickers = []
     for ticker in ticker_list:
         try:
             ratings = pd.read_json(
                 f"https://financialmodelingprep.com/api/v3/historical-rating/{ticker}?limit={limit}&apikey={api_key}"
             )
+        except ValueError:
+            print(f"No historical data found for {ticker}")
+            invalid_tickers.append(ticker)
         except Exception as error:
             raise ValueError(error) from error
 
@@ -304,8 +350,9 @@ def get_rating(tickers: list[str] | str, api_key: str, limit: int = 100):
         ratings_dict[ticker] = ratings
 
     ratings_dataframe = pd.concat(ratings_dict, axis=0).dropna()
+    ratings_dataframe = ratings_dataframe.melt().pivot_table(1)
 
     if len(ticker_list) == 1:
         ratings_dataframe = ratings_dataframe.loc[ticker_list[0]]
 
-    return ratings_dataframe
+    return ratings_dataframe, invalid_tickers

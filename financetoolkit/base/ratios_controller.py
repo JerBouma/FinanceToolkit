@@ -29,10 +29,10 @@ class Ratios:
         cash: pd.DataFrame,
     ):
         self._tickers = tickers
-        self._yearly_historical_data = historical
-        self._balance_sheet_statement = balance
-        self._income_statement = income
-        self._cash_flow_statement = cash
+        self._historical_data: pd.DataFrame = historical
+        self._balance_sheet_statement: pd.DataFrame = balance
+        self._income_statement: pd.DataFrame = income
+        self._cash_flow_statement: pd.DataFrame = cash
 
         # Initialization of Fundamentals Variables
         self._all_ratios: pd.DataFrame = pd.DataFrame()
@@ -117,7 +117,7 @@ class Ratios:
 
         return self._efficiency_ratios
 
-    def collect_liquidity_ratios(self):
+    def collect_liquidity_ratios(self) -> pd.DataFrame:
         """
         Calculates all Liquidity Ratios based on the data provided.
         """
@@ -150,7 +150,7 @@ class Ratios:
 
         return self._liquidity_ratios
 
-    def collect_profitability_ratios(self):
+    def collect_profitability_ratios(self) -> pd.DataFrame:
         """
         Calculates all Profitability Ratios based on the data provided.
         """
@@ -876,9 +876,7 @@ class Ratios:
         years = self._balance_sheet_statement.columns
         begin, end = str(years[0]), str(years[-1])
 
-        share_prices = self._yearly_historical_data.loc[
-            begin:end, "Adj Close"
-        ].T.to_numpy()
+        share_prices = self._historical_data.loc[begin:end, "Adj Close"].T  # type: ignore
 
         average_shares = (
             self._income_statement.loc[:, "Weighted Average Shares Diluted", :]
@@ -1005,9 +1003,7 @@ class Ratios:
         years = eps.columns
         begin, end = str(years[0]), str(years[-1])
 
-        share_prices = self._yearly_historical_data.loc[
-            begin:end, "Adj Close"
-        ].T.to_numpy()
+        share_prices = self._historical_data.loc[begin:end, "Adj Close"].T  # type: ignore
 
         return valuation.get_price_earnings_ratio(share_prices, eps)
 
@@ -1053,9 +1049,7 @@ class Ratios:
         years = book_value_per_share.columns
         begin, end = str(years[0]), str(years[-1])
 
-        share_prices = self._yearly_historical_data.loc[
-            begin:end, "Adj Close"
-        ].T.to_numpy()
+        share_prices = self._historical_data.loc[begin:end, "Adj Close"].T  # type: ignore
 
         return valuation.get_price_to_book_ratio(share_prices, book_value_per_share)
 
@@ -1110,9 +1104,7 @@ class Ratios:
         years = self._cash_flow_statement.columns
         begin, end = str(years[0]), str(years[-1])
 
-        share_prices = self._yearly_historical_data.loc[
-            begin:end, "Adj Close"
-        ].T.to_numpy()
+        share_prices = self._historical_data.loc[begin:end, "Adj Close"].T  # type: ignore
 
         return valuation.get_dividend_yield(
             abs(self._cash_flow_statement.loc[:, "Dividends Paid", :]),
@@ -1135,11 +1127,9 @@ class Ratios:
         years = self._cash_flow_statement.columns
         begin, end = str(years[0]), str(years[-1])
 
-        share_prices = self._yearly_historical_data.loc[
-            begin:end, "Adj Close"
-        ].T.to_numpy()
+        share_prices = self._historical_data.loc[begin:end, "Adj Close"].T  # type: ignore
 
-        market_cap = share_prices * average_shares
+        market_cap = valuation.get_market_cap(share_prices, average_shares)
 
         return valuation.get_price_to_cash_flow_ratio(
             market_cap, self._cash_flow_statement.loc[:, "Cash Flow from Operations", :]
@@ -1160,9 +1150,7 @@ class Ratios:
         years = self._cash_flow_statement.columns
         begin, end = str(years[0]), str(years[-1])
 
-        share_prices = self._yearly_historical_data.loc[
-            begin:end, "Adj Close"
-        ].T.to_numpy()
+        share_prices = self._historical_data.loc[begin:end, "Adj Close"].T  # type: ignore
 
         market_cap = valuation.get_market_cap(share_prices, average_shares)
 
@@ -1186,9 +1174,7 @@ class Ratios:
         years = self._cash_flow_statement.columns
         begin, end = str(years[0]), str(years[-1])
 
-        share_prices = self._yearly_historical_data.loc[
-            begin:end, "Adj Close"
-        ].T.to_numpy()
+        share_prices = self._historical_data.loc[begin:end, "Adj Close"].T  # type: ignore
 
         return valuation.get_market_cap(share_prices, average_shares)
 
@@ -1212,9 +1198,7 @@ class Ratios:
         years = self._cash_flow_statement.columns
         begin, end = str(years[0]), str(years[-1])
 
-        share_prices = self._yearly_historical_data.loc[
-            begin:end, "Adj Close"
-        ].T.to_numpy()
+        share_prices = self._historical_data.loc[begin:end, "Adj Close"].T  # type: ignore
 
         market_cap = valuation.get_market_cap(share_prices, average_shares)
 
@@ -1277,9 +1261,7 @@ class Ratios:
         years = eps.columns
         begin, end = str(years[0]), str(years[-1])
 
-        share_prices = self._yearly_historical_data.loc[
-            begin:end, "Adj Close"
-        ].T.to_numpy()
+        share_prices = self._historical_data.loc[begin:end, "Adj Close"].T  # type: ignore
 
         return valuation.get_earnings_yield(eps, share_prices)
 

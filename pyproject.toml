@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "financetoolkit"
-version = "1.1.0"
+version = "1.1.1"
 description = "Transparent and Efficient Financial Analysis"
 license = "MIT"
 authors = ["Jeroen Bouma"]
@@ -46,7 +46,7 @@ build-backend = "poetry.core.masonry.api"
 [tool.ruff]
 line-length = 122
 select = ["E", "W", "F", "Q", "W", "S", "UP", "I", "PD", "SIM", "PLC", "PLE", "PLR", "PLW"]
-ignore = ["S105", "S106", "S107", "PLR0913", "PLR0912", "PLR0911"]
+ignore = ["S105", "S106", "S107", "PLR0913", "PLR0912", "PLR0911","PLR0915"]
 exclude = ["conftest.py"]
 
 [tool.pylint]
@@ -64,7 +64,7 @@ skip_gitignore = true
 combine_as_imports = true
 
 [tool.codespell]
-ignore-words-list = 'zar,profund,basf,applicatio,ser,mone,vie,wew,ist,tre,ue,nd,fo'
+ignore-words-list = 'zar,profund,basf,applicatio,ser,mone,vie,wew,ist,tre,ue,nd,fo,nWe,nwe,0t,Ot,ot'
 skip = '*.json,./.git,pyproject.toml,poetry.lock'
 
 [tool.pytest.ini_options]

@@ -149,7 +149,7 @@ If you have individual DataFrames for each company, you can do the following whi
 ```python
 from financetoolkit.base import helpers
 
-balance_grouped = helpers.combine_dataframes(['AAPL', 'MSFT'], balance_apple, balance_msft)
+balance_grouped = helpers.combine_dataframes({'AAPL': balance_apple, 'MSFT': balance_msft})
 ```
 
 Once all of this is set-up you can feed this information to the Toolkit and use the Toolkit as normally.

@@ -3,11 +3,9 @@ import pandas as pd
 
 from financetoolkit import Toolkit
 
-balance_dataset = pd.read_csv(
-    "tests/base/datasets/balance_dataset.csv", index_col=[0, 1]
-)
-income_dataset = pd.read_csv("tests/base/datasets/income_dataset.csv", index_col=[0, 1])
-cash_dataset = pd.read_csv("tests/base/datasets/cash_dataset.csv", index_col=[0, 1])
+balance_dataset = pd.read_pickle("tests/base/datasets/balance_dataset.pickle")
+income_dataset = pd.read_pickle("tests/base/datasets/income_dataset.pickle")
+cash_dataset = pd.read_pickle("tests/base/datasets/cash_dataset.pickle")
 
 # pylint: disable=missing-function-docstring
 

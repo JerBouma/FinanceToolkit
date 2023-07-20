@@ -2,6 +2,8 @@
 __docformat__ = "numpy"
 
 
+from urllib.error import HTTPError
+
 import numpy as np
 import pandas as pd
 
@@ -74,6 +76,14 @@ def get_financial_statements(
                 f"https://financialmodelingprep.com/api/v3/{location}/"
                 f"{ticker}?period={period}&apikey={api_key}&limit={limit}"
             )
+        except HTTPError:
+            print(
+                f"No financial statement data found for {ticker}. "
+                "This is usually due to data not available with "
+                "your current FMP plan."
+            )
+            invalid_tickers.append(ticker)
+            continue
         except Exception as error:
             raise ValueError(error) from error
 

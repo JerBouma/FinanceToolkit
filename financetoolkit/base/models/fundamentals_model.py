@@ -6,6 +6,7 @@ from urllib.error import HTTPError
 
 import numpy as np
 import pandas as pd
+import requests
 
 from financetoolkit.base.models.normalization_model import (
     convert_financial_statements,
@@ -19,6 +20,8 @@ def get_financial_statements(
     statement: str = "",
     api_key: str = "",
     quarter: bool = False,
+    start_date: str | None = None,
+    end_date: str | None = None,
     limit: int = 100,
     statement_format: pd.DataFrame = pd.DataFrame(),
 ):
@@ -31,6 +34,8 @@ def get_financial_statements(
         statement (str): The type of financial statement to retrieve. Can be "balance", "income", or "cash-flow".
         api_key (str): API key for the financial data provider.
         quarter (bool): Whether to retrieve quarterly data. Defaults to False (annual data).
+        start_date (str): The start date to filter data with.
+        end_date (str): The end date to filter data with.
         statement_format (pd.DataFrame): Optional DataFrame containing the names of the financial
             statement line items to include in the output. Rows should contain the original name
             of the line item, and columns should contain the desired name for that line item.
@@ -72,20 +77,16 @@ def get_financial_statements(
     invalid_tickers = []
     for ticker in ticker_list:
         try:
-            financial_statement = pd.read_json(
+            response = requests.get(
                 f"https://financialmodelingprep.com/api/v3/{location}/"
                 f"{ticker}?period={period}&apikey={api_key}&limit={limit}"
             )
-        except HTTPError:
-            print(
-                f"No financial statement data found for {ticker}. "
-                "This is usually due to data not available with "
-                "your current FMP plan."
-            )
+            response.raise_for_status()
+            financial_statement = pd.read_json(response.text)
+        except requests.exceptions.HTTPError as error:
+            print(f"{response.json()['Error Message']} (ticker: {ticker})")
             invalid_tickers.append(ticker)
             continue
-        except Exception as error:
-            raise ValueError(error) from error
 
         try:
             financial_statement = financial_statement.drop("symbol", axis=1)
@@ -119,9 +120,15 @@ def get_financial_statements(
         except ValueError as error:
             print(
                 f"Not able to convert DataFrame to float64 due to {error}. This could result in"
-                "issues when values are zero and is prodominently relevant for "
+                "issues when values are zero and is predominently relevant for "
                 "ratio calculations."
             )
+        
+        financial_statement_total = financial_statement_total.sort_index(axis=1).truncate(
+            before=start_date,
+            after=end_date,
+            axis=1
+        )
 
         if quarter:
             financial_statement_total.columns = pd.PeriodIndex(
@@ -220,7 +227,7 @@ def get_quote(tickers: list[str] | str, api_key: str):
 
 
 def get_enterprise(
-    tickers: list[str] | str, api_key: str, quarter: bool = False, limit: int = 100
+    tickers: list[str] | str, api_key: str, start_date: str | None = None, end_date: str | None = None, quarter: bool = False, limit: int = 100
 ):
     """
     Description
@@ -256,12 +263,16 @@ def get_enterprise(
     invalid_tickers = []
     for ticker in ticker_list:
         try:
-            enterprise_values = pd.read_json(
+            response = requests.get(
                 f"https://financialmodelingprep.com/api/v3/enterprise-values/{ticker}"
                 f"?period={period}&limit={limit}&apikey={api_key}"
             )
-        except Exception as error:
-            raise ValueError(error) from error
+            response.raise_for_status()
+            enterprise_values = pd.read_json(response.text)
+        except requests.exceptions.HTTPError as error:
+            print(f"{response.json()['Error Message']} (ticker: {ticker})")
+            invalid_tickers.append(ticker)
+            continue
 
         try:
             enterprise_values = enterprise_values.drop("symbol", axis=1).sort_values(
@@ -271,8 +282,12 @@ def get_enterprise(
             print(f"No historical data found for {ticker}.")
             invalid_tickers.append(ticker)
             continue
-
-        enterprise_values["date"] = pd.to_datetime(enterprise_values["date"]).dt.year
+        
+        if quarter:
+             enterprise_values["date"] = pd.PeriodIndex(enterprise_values['date'], freq="M")
+        else:
+             enterprise_values["date"] = pd.PeriodIndex(enterprise_values['date'], freq="Y")
+        
         enterprise_values = enterprise_values.set_index("date")
 
         enterprise_values = enterprise_values.rename(
@@ -287,13 +302,16 @@ def get_enterprise(
         )
 
         enterprise_value_dict[ticker] = enterprise_values
+        
+    if enterprise_value_dict:
+        enterprise_dataframe = pd.concat(enterprise_value_dict, axis=0).dropna()
 
-    enterprise_dataframe = pd.concat(enterprise_value_dict, axis=0).dropna()
+        if len(ticker_list) == 1:
+            enterprise_dataframe = enterprise_dataframe.loc[ticker_list[0]]
 
-    if len(ticker_list) == 1:
-        enterprise_dataframe = enterprise_dataframe.loc[ticker_list[0]]
-
-    return enterprise_dataframe, invalid_tickers
+        return enterprise_dataframe, invalid_tickers
+    
+    return pd.DataFrame(), invalid_tickers   
 
 
 def get_rating(tickers: list[str] | str, api_key: str, limit: int = 100):

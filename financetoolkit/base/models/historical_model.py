@@ -66,10 +66,9 @@ def get_historical_data(
     historical_data_dict: dict = {}
 
     if interval == "yearly":
-        yearly = True
         interval = "1d"
-    else:
-        yearly = False
+    elif interval == "quarterly":
+        interval = "1d"
 
     invalid_tickers = []
     for ticker in ticker_list:
@@ -78,7 +77,6 @@ def get_historical_data(
             f"interval={interval}&period1={start_timestamp}&period2={end_timestamp}"
             "&events=history&includeAdjustedClose=true"
         )
-
         try:
             historical_data_dict[ticker] = pd.read_csv(url, index_col="Date")
         except HTTPError:
@@ -90,9 +88,6 @@ def get_historical_data(
         historical_data = pd.concat(historical_data_dict, axis=1)
         historical_data.columns = historical_data.columns.swaplevel(0, 1)
         historical_data = historical_data.sort_index(axis=1)
-
-        if yearly:
-            historical_data = convert_daily_to_yearly(historical_data)
 
         return historical_data, invalid_tickers
 

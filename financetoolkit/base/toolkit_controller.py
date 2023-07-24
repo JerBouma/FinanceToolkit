@@ -3,6 +3,7 @@ __docformat__ = "numpy"
 
 
 import pandas as pd
+import re
 
 from financetoolkit.base.models.fundamentals_model import (
     get_enterprise as _get_enterprise,
@@ -40,12 +41,14 @@ class Toolkit:
 
     def __init__(
         self,
-        tickers,
+        tickers: list | str,
         api_key: str = "",
         historical: pd.DataFrame = pd.DataFrame(),
         balance: pd.DataFrame = pd.DataFrame(),
         income: pd.DataFrame = pd.DataFrame(),
         cash: pd.DataFrame = pd.DataFrame(),
+        start_date: str | None = None,
+        end_date: str | None = None,
         quarterly: bool = False,
         format_location: str = "",
         reverse_dates: bool = False,
@@ -70,8 +73,19 @@ class Toolkit:
             self._tickers = [ticker.upper() for ticker in tickers]
         else:
             raise TypeError("Tickers must be a string or a list of strings.")
+        
+        if start_date:
+            if re.match(r'^\d{4}-\d{2}-\d{2}$', start_date) is None:
+                raise ValueError("Please input a valid start date (%Y-%m-%d) like '2010-01-01'")
+        if end_date:
+            if re.match(r'^\d{4}-\d{2}-\d{2}$', end_date) is None:
+                raise ValueError("Please input a valid end date (%Y-%m-%d) like '2020-01-01'")
+        if start_date and end_date and start_date > end_date:
+            raise ValueError(f"Please ensure the start date {start_date} is before the end date {end_date}")
 
         self._api_key = api_key
+        self._start_date = start_date
+        self._end_date = end_date
         self._quarterly = quarterly
         self._remove_invalid_tickers = remove_invalid_tickers
         self._invalid_tickers: list = []
@@ -169,22 +183,24 @@ class Toolkit:
             raise ValueError(
                 "The datasets could not be populated and therefore the Ratios class cannot be initialized."
             )
-
-        start = f"{self._balance_sheet_statement.columns[0].year - 5}-01-01"
-        end = f"{self._balance_sheet_statement.columns[-1].year + 5}-01-01"
+            
+        if not self._start_date:
+            self._start_date = f"{self._balance_sheet_statement.columns[0].year - 5}-01-01"
+        if not self._end_date:
+            self._end_date = f"{self._balance_sheet_statement.columns[-1].year + 5}-01-01"
 
         if self._quarterly:
             if (
                 self._quarterly_historical_data.empty
                 and not self._balance_sheet_statement.empty
             ):
-                self.get_historical_data(period="quarterly", start=start, end=end)
+                self.get_historical_data(period="quarterly")
         elif not self._quarterly:
             if (
                 self._yearly_historical_data.empty
                 and not self._balance_sheet_statement.empty
             ):
-                self.get_historical_data(period="yearly", start=start, end=end)
+                self.get_historical_data(period="yearly")
         else:
             raise ValueError("Invalid value for the quarterly parameter.")
 
@@ -333,7 +349,7 @@ class Toolkit:
 
         if self._enterprise.empty:
             self._enterprise, self._invalid_tickers = _get_enterprise(
-                self._tickers, self._api_key, self._quarterly, limit
+                self._tickers, self._api_key, self._start_date, self._end_date, self._quarterly, limit
             )
 
         if self._remove_invalid_tickers:
@@ -377,7 +393,7 @@ class Toolkit:
 
         return self._rating
 
-    def get_historical_data(self, start=None, end=None, period: str = "daily"):
+    def get_historical_data(self, period: str = "daily"):
         """
         Returns a pandas dataframe containing the historical data for the specified tickers.
 
@@ -395,7 +411,7 @@ class Toolkit:
         """
         if period == "daily":
             self._daily_historical_data, self._invalid_tickers = _get_historical_data(
-                self._tickers, start, end, interval="1d"
+                self._tickers, self._start_date, self._end_date, interval="1d"
             )
 
             if self._remove_invalid_tickers:
@@ -416,7 +432,7 @@ class Toolkit:
 
         if period == "weekly":
             self._weekly_historical_data, self._invalid_tickers = _get_historical_data(
-                self._tickers, start, end, interval="1wk"
+                self._tickers, self._start_date, self._end_date, interval="1wk"
             )
 
             if self._remove_invalid_tickers:
@@ -437,7 +453,7 @@ class Toolkit:
 
         if period == "monthly":
             self._monthly_historical_data, self._invalid_tickers = _get_historical_data(
-                self._tickers, start, end, interval="1mo"
+                self._tickers, self._start_date, self._end_date, interval="1mo"
             )
 
             if self._remove_invalid_tickers:
@@ -461,7 +477,7 @@ class Toolkit:
                 (
                     self._daily_historical_data,
                     self._invalid_tickers,
-                ) = _get_historical_data(self._tickers, start, end, interval="1d")
+                ) = _get_historical_data(self._tickers, self._start_date, self._end_date, interval="1d")
 
             self._quarterly_historical_data = _convert_daily_to_quarterly(
                 self._daily_historical_data
@@ -473,10 +489,6 @@ class Toolkit:
                     for ticker in self._tickers
                     if ticker not in self._invalid_tickers
                 ]
-
-            self._quarterly_historical_data = (
-                self._quarterly_historical_data.sort_index()
-            )
 
             if len(self._tickers) == 1:
                 return self._quarterly_historical_data.xs(
@@ -490,7 +502,7 @@ class Toolkit:
                 (
                     self._daily_historical_data,
                     self._invalid_tickers,
-                ) = _get_historical_data(self._tickers, start, end, interval="1d")
+                ) = _get_historical_data(self._tickers,self._start_date, self._end_date, interval="1d")
 
             self._yearly_historical_data = _convert_daily_to_yearly(
                 self._daily_historical_data
@@ -525,7 +537,7 @@ class Toolkit:
         Retrieves the balance sheet statement financial data for the company(s) from the specified source.
 
         Args:
-            quarter (bool, optional): Flag to retrieve quarterly or annual data. Defaults to False.
+            limit (int): Defines the maximum years or quarters to obtain.
 
         Returns:
             pd.DataFrame: A pandas DataFrame with the retrieved balance sheet statement data.
@@ -544,6 +556,8 @@ class Toolkit:
                 "balance",
                 self._api_key,
                 self._quarterly,
+                self._start_date,
+                self._end_date,
                 limit,
                 self._balance_sheet_statement_generic,
             )
@@ -569,7 +583,7 @@ class Toolkit:
         Retrieves the income statement financial data for the company(s) from the specified source.
 
         Args:
-            quarter (bool, optional): Flag to retrieve quarterly or annual data. Defaults to False.
+            limit (int): Defines the maximum years or quarters to obtain.
 
         Returns:
             pd.DataFrame: A pandas DataFrame with the retrieved income statement data.
@@ -585,6 +599,8 @@ class Toolkit:
                 "income",
                 self._api_key,
                 self._quarterly,
+                self._start_date,
+                self._end_date,
                 limit,
                 self._income_statement_generic,
             )
@@ -610,7 +626,7 @@ class Toolkit:
         Retrieves the cash flow statement financial data for the company(s) from the specified source.
 
         Args:
-            quarter (bool, optional): Flag to retrieve quarterly or annual data. Defaults to False.
+            limit (int): Defines the maximum years or quarters to obtain.
 
         Returns:
             pd.DataFrame: A pandas DataFrame with the retrieved cash flow statement data.
@@ -629,6 +645,8 @@ class Toolkit:
                 "cashflow",
                 self._api_key,
                 self._quarterly,
+                self._start_date,
+                self._end_date,
                 limit,
                 self._cash_flow_statement_generic,
             )

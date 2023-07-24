@@ -81,13 +81,13 @@ A basic example of how to initialise the Finance Toolkit is shown below, also se
 ````python
 from financetoolkit import Toolkit
 
-companies = Toolkit(['AAPL', 'MSFT'], api_key="FMP_KEY")
+companies = Toolkit(['AAPL', 'MSFT'], api_key="FMP_KEY", start_date='2017-12-31')
 
 # an Enterprise example
 enterprise = companies.get_enterprise()
 
 # a Historical example
-historical_data = companies.get_historical_data(start='2000-01-01', end='2020-01-01')
+historical_data = companies.get_historical_data()
 
 # a Financial Statement example
 balance_sheet_statement = companies.get_balance_sheet_statement()

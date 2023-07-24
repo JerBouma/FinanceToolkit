@@ -2,8 +2,6 @@
 __docformat__ = "numpy"
 
 
-from urllib.error import HTTPError
-
 import numpy as np
 import pandas as pd
 import requests
@@ -12,7 +10,7 @@ from financetoolkit.base.models.normalization_model import (
     convert_financial_statements,
 )
 
-# pylint: disable=no-member
+# pylint: disable=no-member,too-many-locals
 
 
 def get_financial_statements(
@@ -79,11 +77,12 @@ def get_financial_statements(
         try:
             response = requests.get(
                 f"https://financialmodelingprep.com/api/v3/{location}/"
-                f"{ticker}?period={period}&apikey={api_key}&limit={limit}"
+                f"{ticker}?period={period}&apikey={api_key}&limit={limit}",
+                timeout=60,
             )
             response.raise_for_status()
             financial_statement = pd.read_json(response.text)
-        except requests.exceptions.HTTPError as error:
+        except requests.exceptions.HTTPError:
             print(f"{response.json()['Error Message']} (ticker: {ticker})")
             invalid_tickers.append(ticker)
             continue
@@ -123,12 +122,10 @@ def get_financial_statements(
                 "issues when values are zero and is predominently relevant for "
                 "ratio calculations."
             )
-        
-        financial_statement_total = financial_statement_total.sort_index(axis=1).truncate(
-            before=start_date,
-            after=end_date,
+
+        financial_statement_total = financial_statement_total.sort_index(
             axis=1
-        )
+        ).truncate(before=start_date, after=end_date, axis=1)
 
         if quarter:
             financial_statement_total.columns = pd.PeriodIndex(
@@ -227,7 +224,10 @@ def get_quote(tickers: list[str] | str, api_key: str):
 
 
 def get_enterprise(
-    tickers: list[str] | str, api_key: str, start_date: str | None = None, end_date: str | None = None, quarter: bool = False, limit: int = 100
+    tickers: list[str] | str,
+    api_key: str,
+    quarter: bool = False,
+    limit: int = 100,
 ):
     """
     Description
@@ -265,11 +265,12 @@ def get_enterprise(
         try:
             response = requests.get(
                 f"https://financialmodelingprep.com/api/v3/enterprise-values/{ticker}"
-                f"?period={period}&limit={limit}&apikey={api_key}"
+                f"?period={period}&limit={limit}&apikey={api_key}",
+                timeout=60,
             )
             response.raise_for_status()
             enterprise_values = pd.read_json(response.text)
-        except requests.exceptions.HTTPError as error:
+        except requests.exceptions.HTTPError:
             print(f"{response.json()['Error Message']} (ticker: {ticker})")
             invalid_tickers.append(ticker)
             continue
@@ -282,12 +283,16 @@ def get_enterprise(
             print(f"No historical data found for {ticker}.")
             invalid_tickers.append(ticker)
             continue
-        
+
         if quarter:
-             enterprise_values["date"] = pd.PeriodIndex(enterprise_values['date'], freq="M")
+            enterprise_values["date"] = pd.PeriodIndex(
+                enterprise_values["date"], freq="M"
+            )
         else:
-             enterprise_values["date"] = pd.PeriodIndex(enterprise_values['date'], freq="Y")
-        
+            enterprise_values["date"] = pd.PeriodIndex(
+                enterprise_values["date"], freq="Y"
+            )
+
         enterprise_values = enterprise_values.set_index("date")
 
         enterprise_values = enterprise_values.rename(
@@ -302,7 +307,7 @@ def get_enterprise(
         )
 
         enterprise_value_dict[ticker] = enterprise_values
-        
+
     if enterprise_value_dict:
         enterprise_dataframe = pd.concat(enterprise_value_dict, axis=0).dropna()
 
@@ -310,8 +315,8 @@ def get_enterprise(
             enterprise_dataframe = enterprise_dataframe.loc[ticker_list[0]]
 
         return enterprise_dataframe, invalid_tickers
-    
-    return pd.DataFrame(), invalid_tickers   
+
+    return pd.DataFrame(), invalid_tickers
 
 
 def get_rating(tickers: list[str] | str, api_key: str, limit: int = 100):

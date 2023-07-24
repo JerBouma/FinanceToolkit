@@ -2,8 +2,9 @@
 __docformat__ = "numpy"
 
 
-import pandas as pd
 import re
+
+import pandas as pd
 
 from financetoolkit.base.models.fundamentals_model import (
     get_enterprise as _get_enterprise,
@@ -73,15 +74,19 @@ class Toolkit:
             self._tickers = [ticker.upper() for ticker in tickers]
         else:
             raise TypeError("Tickers must be a string or a list of strings.")
-        
-        if start_date:
-            if re.match(r'^\d{4}-\d{2}-\d{2}$', start_date) is None:
-                raise ValueError("Please input a valid start date (%Y-%m-%d) like '2010-01-01'")
-        if end_date:
-            if re.match(r'^\d{4}-\d{2}-\d{2}$', end_date) is None:
-                raise ValueError("Please input a valid end date (%Y-%m-%d) like '2020-01-01'")
+
+        if start_date and re.match(r"^\d{4}-\d{2}-\d{2}$", start_date) is None:
+            raise ValueError(
+                "Please input a valid start date (%Y-%m-%d) like '2010-01-01'"
+            )
+        if end_date and re.match(r"^\d{4}-\d{2}-\d{2}$", end_date) is None:
+            raise ValueError(
+                "Please input a valid end date (%Y-%m-%d) like '2020-01-01'"
+            )
         if start_date and end_date and start_date > end_date:
-            raise ValueError(f"Please ensure the start date {start_date} is before the end date {end_date}")
+            raise ValueError(
+                f"Please ensure the start date {start_date} is before the end date {end_date}"
+            )
 
         self._api_key = api_key
         self._start_date = start_date
@@ -183,11 +188,15 @@ class Toolkit:
             raise ValueError(
                 "The datasets could not be populated and therefore the Ratios class cannot be initialized."
             )
-            
+
         if not self._start_date:
-            self._start_date = f"{self._balance_sheet_statement.columns[0].year - 5}-01-01"
+            self._start_date = (
+                f"{self._balance_sheet_statement.columns[0].year - 5}-01-01"
+            )
         if not self._end_date:
-            self._end_date = f"{self._balance_sheet_statement.columns[-1].year + 5}-01-01"
+            self._end_date = (
+                f"{self._balance_sheet_statement.columns[-1].year + 5}-01-01"
+            )
 
         if self._quarterly:
             if (
@@ -349,7 +358,10 @@ class Toolkit:
 
         if self._enterprise.empty:
             self._enterprise, self._invalid_tickers = _get_enterprise(
-                self._tickers, self._api_key, self._start_date, self._end_date, self._quarterly, limit
+                self._tickers,
+                self._api_key,
+                self._quarterly,
+                limit,
             )
 
         if self._remove_invalid_tickers:
@@ -477,7 +489,9 @@ class Toolkit:
                 (
                     self._daily_historical_data,
                     self._invalid_tickers,
-                ) = _get_historical_data(self._tickers, self._start_date, self._end_date, interval="1d")
+                ) = _get_historical_data(
+                    self._tickers, self._start_date, self._end_date, interval="1d"
+                )
 
             self._quarterly_historical_data = _convert_daily_to_quarterly(
                 self._daily_historical_data
@@ -502,7 +516,9 @@ class Toolkit:
                 (
                     self._daily_historical_data,
                     self._invalid_tickers,
-                ) = _get_historical_data(self._tickers,self._start_date, self._end_date, interval="1d")
+                ) = _get_historical_data(
+                    self._tickers, self._start_date, self._end_date, interval="1d"
+                )
 
             self._yearly_historical_data = _convert_daily_to_yearly(
                 self._daily_historical_data

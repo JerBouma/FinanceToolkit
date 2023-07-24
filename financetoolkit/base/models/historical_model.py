@@ -65,9 +65,7 @@ def get_historical_data(
 
     historical_data_dict: dict = {}
 
-    if interval == "yearly":
-        interval = "1d"
-    elif interval == "quarterly":
+    if interval in ["yearly", "quarterly"]:
         interval = "1d"
 
     invalid_tickers = []

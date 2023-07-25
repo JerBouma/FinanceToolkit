@@ -10,7 +10,7 @@ accountsPayables,Accounts Payables
 otherWorkingCapital,Other Working Capital
 otherNonCashItems,Other Non Cash Items
 netCashProvidedByOperatingActivities,Cash Flow from Operations
-investmentsInPropertyPlantAndEquipment,"Property, Plant and Equipment"
+"investmentsInPropertyPlantAndEquipment,""Property, Plant and Equipment"""
 acquisitionsNet,Acquisitions
 purchasesOfInvestments,Purchases of Investments
 salesMaturitiesOfInvestments,Sales of Investments
@@ -30,3 +30,4 @@ cashAtBeginningOfPeriod,Cash Beginning of Period
 operatingCashFlow,Operating Cash Flow
 capitalExpenditure,Capital Expenditure
 freeCashFlow,Free Cash Flow
+fillingDate,Filing Date Cash

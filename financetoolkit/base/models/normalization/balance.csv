@@ -6,7 +6,7 @@ netReceivables,Accounts Receivable
 inventory,Inventory
 otherCurrentAssets,Other Current Assets
 totalCurrentAssets,Total Current Assets
-propertyPlantEquipmentNet,"Property, Plant and Equipment"
+"propertyPlantEquipmentNet,""Property, Plant and Equipment"""
 longTermInvestments,Long Term Investments
 taxAssets,Tax Assets
 goodwill,Goodwill
@@ -43,3 +43,4 @@ totalEquity,Total Equity
 totalLiabilitiesAndStockholdersEquity,Total Liabilities and Shareholder Equity
 minorityInterest,Minority Interest
 totalLiabilitiesAndTotalEquity,Total Liabilities and Equity
+fillingDate,Filing Date Balance

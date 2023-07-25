@@ -6,7 +6,7 @@ grossProfitRatio,Gross Profit Ratio
 researchAndDevelopmentExpenses,Research and Development Expenses
 generalAndAdministrativeExpenses,General and Administrative Expenses
 sellingAndMarketingExpenses,Selling and Marketing Expenses
-sellingGeneralAndAdministrativeExpenses,"Selling, General and Administrative Expenses"
+"sellingGeneralAndAdministrativeExpenses,""Selling, General and Administrative Expenses"""
 otherExpenses,Other Expenses
 operatingExpenses,Operating Expenses
 costAndExpenses,Cost and Expenses
@@ -27,3 +27,4 @@ eps,EPS
 epsdiluted,EPS Diluted
 weightedAverageShsOut,Weighted Average Shares
 weightedAverageShsOutDil,Weighted Average Shares Diluted
+fillingDate,Filing Date Income

@@ -82,6 +82,7 @@ def get_financial_statements(
             )
             response.raise_for_status()
             financial_statement = pd.read_json(response.text)
+
         except requests.exceptions.HTTPError:
             print(f"{response.json()['Error Message']} (ticker: {ticker})")
             invalid_tickers.append(ticker)
@@ -93,16 +94,17 @@ def get_financial_statements(
             print(f"No financial statement data found for {ticker}")
             invalid_tickers.append(ticker)
             continue
-
+        
         if quarter:
-            financial_statement["date"] = pd.to_datetime(
-                financial_statement["date"]
-            ).dt.to_period("M")
+            #financial_statement["date"] = pd.to_datetime(financial_statement["date"]).dt.to_period("M") pd.to_datetime(financial_statement["calendarYear"]).dt.year.astype(str) 
+            #financial_statement["date"] = financial_statement["calendarYear"].astype(str) + "-" + financial_statement["period"]
+            financial_statement["date"] = pd.to_datetime(financial_statement["date"]).dt.to_period("Q")
         else:
             financial_statement["date"] = pd.to_datetime(
-                financial_statement["date"]
+                financial_statement["calendarYear"]
             ).dt.year
-
+        
+        financial_statement["fillingDate"] = pd.to_datetime(financial_statement["fillingDate"]).apply(lambda x: x.toordinal())
         financial_statement = financial_statement.set_index("date").T
 
         financial_statement_dict[ticker] = financial_statement
@@ -115,7 +117,7 @@ def get_financial_statements(
         )
 
         try:
-            financial_statement_total = financial_statement_total.astype(np.float64)
+            financial_statement_total = financial_statement_total.astype(np.float64)         
         except ValueError as error:
             print(
                 f"Not able to convert DataFrame to float64 due to {error}. This could result in"
@@ -128,9 +130,7 @@ def get_financial_statements(
         ).truncate(before=start_date, after=end_date, axis=1)
 
         if quarter:
-            financial_statement_total.columns = pd.PeriodIndex(
-                financial_statement_total.columns, freq="M"
-            )
+            financial_statement_total.columns = pd.PeriodIndex(financial_statement_total.columns, freq="Q")
         else:
             financial_statement_total.columns = pd.PeriodIndex(
                 financial_statement_total.columns, freq="Y"

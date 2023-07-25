@@ -67,7 +67,7 @@ def convert_financial_statements(
                 naming[name] = statement_format.loc[name]
         except KeyError:
             continue
-
+    
     # Select only the columns it could trace back to the format
     financial_statements = financial_statements.loc[:, list(naming.keys()), :]
     financial_statements = financial_statements.rename(index=naming)

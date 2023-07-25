@@ -203,7 +203,8 @@ class Toolkit:
                 self._quarterly_historical_data.empty
                 and not self._balance_sheet_statement.empty
             ):
-                self.get_historical_data(period="quarterly")
+                #self.get_historical_data(period="quarterly")
+                self.get_historical_data(period="monthly")
         elif not self._quarterly:
             if (
                 self._yearly_historical_data.empty
@@ -221,7 +222,7 @@ class Toolkit:
 
         return Ratios(
             self._tickers,
-            self._quarterly_historical_data
+            self._monthly_historical_data
             if self._quarterly
             else self._yearly_historical_data,
             self._balance_sheet_statement,

@@ -117,8 +117,6 @@ def get_free_cash_flow_yield(
     Returns:
         float | pd.Series: The free cash flow yield ratio.
     """
-
-    free_cash_flow.columns = free_cash_flow.columns.to_timestamp().to_period('M')
     return free_cash_flow / market_capitalization
 
 

@@ -877,28 +877,13 @@ class Ratios:
         years = self._balance_sheet_statement.columns
         begin, end = str(years[0]), str(years[-1])
 
-        #Checks if the data is quarterly
-        if begin.find('Q') != -1:
-            #years = self._balance_sheet_statement.columns.to_timestamp().to_period('M')
-            #begin, end = str(years[0]), str(years[-1])
-            begin = str(pd.to_datetime(begin).to_period('M'))
-            end = str(pd.to_datetime(end).to_period('M'))
-            convert_shares = True      
-
         share_prices = self._historical_data.loc[begin:end, "Adj Close"].T  # type: ignore
-        
+
         average_shares = (
             self._income_statement.loc[:, "Weighted Average Shares Diluted", :]
             if diluted
             else self._income_statement.loc[:, "Weighted Average Shares", :]
         )
-
-        #Turn the index of share_prices into a period index
-        share_prices.columns = pd.to_datetime(share_prices.columns).to_period('M')
-
-        #average_shares.iloc[0].index = pd.to_datetime(average_shares.iloc[0].index.astype(str)).to_period('M')
-        if convert_shares == True:
-            average_shares.columns = average_shares.columns.to_timestamp().to_period('M')
 
         market_cap = valuation.get_market_cap(share_prices, average_shares)
 

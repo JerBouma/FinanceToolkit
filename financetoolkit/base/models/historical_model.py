@@ -138,7 +138,7 @@ def convert_daily_to_quarterly(daily_historical_data: pd.DataFrame):
         "Date"
     )
     quarterly_historical_data.index = pd.PeriodIndex(
-        quarterly_historical_data.index, freq="M"
+        quarterly_historical_data.index, freq="Q"
     )
 
     return quarterly_historical_data

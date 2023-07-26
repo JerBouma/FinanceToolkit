@@ -873,6 +873,7 @@ class Ratios:
         Calculates the free cash flow yield ratio, which measures the free cash flow
         relative to the market capitalization of the company.
         """
+
         years = self._balance_sheet_statement.columns
         begin, end = str(years[0]), str(years[-1])
 

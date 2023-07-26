@@ -82,6 +82,7 @@ def get_financial_statements(
             )
             response.raise_for_status()
             financial_statement = pd.read_json(response.text)
+
         except requests.exceptions.HTTPError:
             print(f"{response.json()['Error Message']} (ticker: {ticker})")
             invalid_tickers.append(ticker)
@@ -97,13 +98,21 @@ def get_financial_statements(
         if quarter:
             financial_statement["date"] = pd.to_datetime(
                 financial_statement["date"]
-            ).dt.to_period("M")
+            ).dt.to_period("Q")
         else:
             financial_statement["date"] = pd.to_datetime(
-                financial_statement["date"]
-            ).dt.year
+                financial_statement["calendarYear"].astype(str)
+            ).dt.to_period("Y")
 
         financial_statement = financial_statement.set_index("date").T
+
+        if financial_statement.columns.duplicated().any():
+            print(
+                f"Duplicate columns in the {statement} financial statement for {ticker}. Omitting the oldest column."
+            )
+            financial_statement = financial_statement.loc[
+                :, ~financial_statement.columns.duplicated()
+            ]
 
         financial_statement_dict[ticker] = financial_statement
 
@@ -129,7 +138,7 @@ def get_financial_statements(
 
         if quarter:
             financial_statement_total.columns = pd.PeriodIndex(
-                financial_statement_total.columns, freq="M"
+                financial_statement_total.columns, freq="Q"
             )
         else:
             financial_statement_total.columns = pd.PeriodIndex(
@@ -137,7 +146,6 @@ def get_financial_statements(
             )
 
         return financial_statement_total, invalid_tickers
-
     return pd.DataFrame(), invalid_tickers
 
 

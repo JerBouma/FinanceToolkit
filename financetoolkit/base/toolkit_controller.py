@@ -594,6 +594,7 @@ class Toolkit:
         self,
         limit: int = 100,
         overwrite: bool = False,
+        filing_date_save_directory: str = "",
     ):
         """
         Retrieves the income statement financial data for the company(s) from the specified source.
@@ -619,6 +620,7 @@ class Toolkit:
                 self._end_date,
                 limit,
                 self._income_statement_generic,
+                filing_date_save_directory,
             )
 
         if self._remove_invalid_tickers:

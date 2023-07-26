@@ -1,16 +1,16 @@
 Cash,Generic
-netIncome,Net Income
-depreciationAndAmortization,Depreciation and Amortization
+netIncome,Net Income CF
+depreciationAndAmortization,Depreciation and Amortization CF
 deferredIncomeTax,Deferred Income Tax
 stockBasedCompensation,Stock Based Compensation
 changeInWorkingCapital,Change in Working Capital
 accountsReceivables,Accounts Receivables
-inventory,Inventory
+inventory,Inventory CF
 accountsPayables,Accounts Payables
 otherWorkingCapital,Other Working Capital
 otherNonCashItems,Other Non Cash Items
 netCashProvidedByOperatingActivities,Cash Flow from Operations
-investmentsInPropertyPlantAndEquipment,"Property, Plant and Equipment"
+"investmentsInPropertyPlantAndEquipment,""Property, Plant and Equipment CF"""
 acquisitionsNet,Acquisitions
 purchasesOfInvestments,Purchases of Investments
 salesMaturitiesOfInvestments,Sales of Investments
@@ -20,7 +20,7 @@ debtRepayment,Debt Repayment
 commonStockIssued,Common Stock Issued
 commonStockRepurchased,Common Stock Purchased
 dividendsPaid,Dividends Paid
-,Preferred Dividends Paid
+preferedDividendsPaid,Preferred Dividends Paid
 otherFinancingActivites,Other Financing Activities
 netCashUsedProvidedByFinancingActivities,Cash Flow from Financing
 effectOfForexChangesOnCash,Forex Changes on Cash

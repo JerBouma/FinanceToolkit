@@ -161,9 +161,6 @@ class Ratios:
             profitability_ratios["Operating Margin"] = self.get_operating_margin()
             profitability_ratios["Net Profit Margin"] = self.get_net_profit_margin()
             profitability_ratios[
-                "Interest Coverage Ratio"
-            ] = self.get_interest_coverage_ratio()
-            profitability_ratios[
                 "Income Before Tax Profit Margin"
             ] = self.get_income_before_tax_profit_margin()
             profitability_ratios["Effective Tax Rate"] = self.get_effective_tax_rate()

@@ -22,7 +22,6 @@ def get_financial_statements(
     end_date: str | None = None,
     limit: int = 100,
     statement_format: pd.DataFrame = pd.DataFrame(),
-    filing_date_save_directory: str = "",
 ):
     """
     Retrieves financial statements (balance, income, or cash flow statements) for one or multiple companies,

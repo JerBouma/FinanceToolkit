@@ -74,7 +74,6 @@ def get_financial_statements(
 
     financial_statement_dict: dict = {}
     invalid_tickers = []
-    filing_date = pd.DataFrame()
     for ticker in ticker_list:
         try:
             response = requests.get(
@@ -118,12 +117,6 @@ def get_financial_statements(
 
         financial_statement_dict[ticker] = financial_statement
 
-        df_filing = pd.DataFrame(financial_statement.loc["fillingDate"])
-        df_filing = df_filing.T
-        df_filing.index = [ticker]
-
-        filing_date = pd.concat([filing_date, df_filing], axis=0)
-
     if financial_statement_dict:
         financial_statement_total = pd.concat(financial_statement_dict, axis=0)
 
@@ -153,11 +146,7 @@ def get_financial_statements(
                 financial_statement_total.columns, freq="Y"
             )
 
-        if filing_date_save_directory != "":
-            filing_date.to_excel(filing_date_save_directory)
         return financial_statement_total, invalid_tickers
-    if filing_date_save_directory != "":
-        filing_date.to_excel(filing_date_save_directory)
     return pd.DataFrame(), invalid_tickers
 
 

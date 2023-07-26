@@ -22,6 +22,7 @@ def get_financial_statements(
     end_date: str | None = None,
     limit: int = 100,
     statement_format: pd.DataFrame = pd.DataFrame(),
+    filing_date_save_directory: str = "",
 ):
     """
     Retrieves financial statements (balance, income, or cash flow statements) for one or multiple companies,
@@ -73,6 +74,7 @@ def get_financial_statements(
 
     financial_statement_dict: dict = {}
     invalid_tickers = []
+    filing_date = pd.DataFrame()
     for ticker in ticker_list:
         try:
             response = requests.get(
@@ -105,6 +107,12 @@ def get_financial_statements(
             ).dt.to_period("Y")
 
         financial_statement = financial_statement.set_index("date").T
+
+        df_filing = pd.DataFrame(financial_statement.loc["fillingDate"])
+        df_filing = df_filing.T
+        df_filing.index = [ticker]
+
+        filing_date = pd.concat([filing_date, df_filing], axis=0)
 
         if financial_statement.columns.duplicated().any():
             print(
@@ -145,8 +153,11 @@ def get_financial_statements(
                 financial_statement_total.columns, freq="Y"
             )
 
+        if filing_date_save_directory != "":
+            filing_date.to_excel(filing_date_save_directory)
         return financial_statement_total, invalid_tickers
-
+    if filing_date_save_directory != "":
+        filing_date.to_excel(filing_date_save_directory)
     return pd.DataFrame(), invalid_tickers
 
 

@@ -20,9 +20,9 @@ def read_normalization_file(statement: str, format_location: str = ""):
     Returns:
         A pandas Series containing the line items for the desired statement.
     """
-    if statement not in ["balance", "income", "cash"]:
+    if statement not in ["balance", "income", "cash", "statistics"]:
         raise ValueError(
-            "Please provide a valid statement type (balance, income, or cash)."
+            "Please provide a valid statement type (balance, income, cash or statistics)."
         )
 
     if format_location:

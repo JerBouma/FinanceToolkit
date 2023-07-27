@@ -22,6 +22,7 @@ def get_financial_statements(
     end_date: str | None = None,
     limit: int = 100,
     statement_format: pd.DataFrame = pd.DataFrame(),
+    statistics_format: pd.DataFrame = pd.DataFrame(),
 ):
     """
     Retrieves financial statements (balance, income, or cash flow statements) for one or multiple companies,
@@ -119,6 +120,10 @@ def get_financial_statements(
     if financial_statement_dict:
         financial_statement_total = pd.concat(financial_statement_dict, axis=0)
 
+        financial_statement_statistics = convert_financial_statements(
+            financial_statement_total, statistics_format, True
+        )
+
         financial_statement_total = convert_financial_statements(
             financial_statement_total, statement_format, True
         )
@@ -132,21 +137,36 @@ def get_financial_statements(
                 "ratio calculations."
             )
 
+        financial_statement_statistics = financial_statement_statistics.sort_index(
+            axis=1
+        ).truncate(before=start_date, after=end_date, axis=1)
+
         financial_statement_total = financial_statement_total.sort_index(
             axis=1
         ).truncate(before=start_date, after=end_date, axis=1)
 
         if quarter:
+            financial_statement_statistics.columns = pd.PeriodIndex(
+                financial_statement_statistics.columns, freq="Q"
+            )
             financial_statement_total.columns = pd.PeriodIndex(
                 financial_statement_total.columns, freq="Q"
             )
         else:
+            financial_statement_statistics.columns = pd.PeriodIndex(
+                financial_statement_statistics.columns, freq="Y"
+            )
             financial_statement_total.columns = pd.PeriodIndex(
                 financial_statement_total.columns, freq="Y"
             )
 
-        return financial_statement_total, invalid_tickers
-    return pd.DataFrame(), invalid_tickers
+        return (
+            financial_statement_total,
+            financial_statement_statistics,
+            invalid_tickers,
+        )
+
+    return pd.DataFrame(), pd.DataFrame(), invalid_tickers
 
 
 def get_profile(tickers: list[str] | str, api_key: str):

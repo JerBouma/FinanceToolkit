@@ -130,6 +130,10 @@ class Toolkit:
             "cash", format_location
         )
 
+        self._statistics_statement_generic: pd.DataFrame = _read_normalization_file(
+            "statistics", format_location
+        )
+
         # Initialization of Financial Statements
         self._balance_sheet_statement: pd.DataFrame = (
             _convert_financial_statements(
@@ -152,6 +156,7 @@ class Toolkit:
             if not cash.empty
             else pd.DataFrame()
         )
+        self._statistics_statement: pd.DataFrame = pd.DataFrame()
 
     @property
     def ratios(self) -> Ratios:
@@ -413,7 +418,8 @@ class Toolkit:
             start (str): The start date for the historical data. Defaults to None.
             end (str): The end date for the historical data. Defaults to None.
             period (str): The interval at which the historical data should be
-            returned - daily, weekly, monthly, or yearly. Defaults to "daily".
+            returned - daily, weekly, monthly, quarterly, or yearly.
+            Defaults to "daily".
 
         Raises:
             ValueError: If an invalid value is specified for period.
@@ -554,6 +560,7 @@ class Toolkit:
 
         Args:
             limit (int): Defines the maximum years or quarters to obtain.
+            overwrite (bool): Defines whether to overwrite the existing data.
 
         Returns:
             pd.DataFrame: A pandas DataFrame with the retrieved balance sheet statement data.
@@ -566,6 +573,7 @@ class Toolkit:
         if self._balance_sheet_statement.empty or overwrite:
             (
                 self._balance_sheet_statement,
+                self._statistics_statement,
                 self._invalid_tickers,
             ) = _get_financial_statements(
                 self._tickers,
@@ -576,6 +584,7 @@ class Toolkit:
                 self._end_date,
                 limit,
                 self._balance_sheet_statement_generic,
+                self._statistics_statement_generic,
             )
 
         if self._remove_invalid_tickers:
@@ -600,6 +609,7 @@ class Toolkit:
 
         Args:
             limit (int): Defines the maximum years or quarters to obtain.
+            overwrite (bool): Defines whether to overwrite the existing data.
 
         Returns:
             pd.DataFrame: A pandas DataFrame with the retrieved income statement data.
@@ -610,7 +620,11 @@ class Toolkit:
             )
 
         if self._income_statement.empty or overwrite:
-            self._income_statement, self._invalid_tickers = _get_financial_statements(
+            (
+                self._income_statement,
+                self._statistics_statement,
+                self._invalid_tickers,
+            ) = _get_financial_statements(
                 self._tickers,
                 "income",
                 self._api_key,
@@ -619,6 +633,7 @@ class Toolkit:
                 self._end_date,
                 limit,
                 self._income_statement_generic,
+                self._statistics_statement_generic,
             )
 
         if self._remove_invalid_tickers:
@@ -643,6 +658,7 @@ class Toolkit:
 
         Args:
             limit (int): Defines the maximum years or quarters to obtain.
+            overwrite (bool): Defines whether to overwrite the existing data.
 
         Returns:
             pd.DataFrame: A pandas DataFrame with the retrieved cash flow statement data.
@@ -655,6 +671,7 @@ class Toolkit:
         if self._cash_flow_statement.empty or overwrite:
             (
                 self._cash_flow_statement,
+                self._statistics_statement,
                 self._invalid_tickers,
             ) = _get_financial_statements(
                 self._tickers,
@@ -665,6 +682,7 @@ class Toolkit:
                 self._end_date,
                 limit,
                 self._cash_flow_statement_generic,
+                self._statistics_statement_generic,
             )
 
         if self._remove_invalid_tickers:
@@ -678,6 +696,58 @@ class Toolkit:
             return self._cash_flow_statement.loc[self._tickers[0]]
 
         return self._cash_flow_statement
+
+    def get_statistics_statement(
+        self,
+        limit: int = 100,
+        overwrite: bool = False,
+    ):
+        """
+        Retrieves the balance, cash and income statistics for the company(s) from the specified source.
+
+        Note that this also obtains the balance sheet statement at the same time given that it's the same
+        API call. This is done to reduce the number of API calls to FinancialModelingPrep.
+
+        Args:
+            limit (int): Defines the maximum years or quarters to obtain.
+            overwrite (bool): Defines whether to overwrite the existing data.
+
+        Returns:
+            pd.DataFrame: A pandas DataFrame with the retrieved statistics statement data.
+        """
+        if not self._api_key and self._statistics_statement.empty:
+            raise ValueError(
+                "Please define an API key from FinancialModelingPrep to use this functionality."
+            )
+
+        if self._statistics_statement.empty or overwrite:
+            (
+                self._balance_sheet_statement,
+                self._statistics_statement,
+                self._invalid_tickers,
+            ) = _get_financial_statements(
+                self._tickers,
+                "balance",
+                self._api_key,
+                self._quarterly,
+                self._start_date,
+                self._end_date,
+                limit,
+                self._balance_sheet_statement_generic,
+                self._statistics_statement_generic,
+            )
+
+        if self._remove_invalid_tickers:
+            self._tickers = [
+                ticker
+                for ticker in self._tickers
+                if ticker not in self._invalid_tickers
+            ]
+
+        if len(self._tickers) == 1:
+            return self._statistics_statement.loc[self._tickers[0]]
+
+        return self._statistics_statement
 
     def get_normalization_files(self, path: str = ""):
         """

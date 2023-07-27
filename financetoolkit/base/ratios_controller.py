@@ -210,9 +210,6 @@ class Ratios:
             solvency_ratios["Debt-to-Assets Ratio"] = self.get_debt_to_assets_ratio()
             solvency_ratios["Debt-to-Equity Ratio"] = self.get_debt_to_equity_ratio()
             solvency_ratios[
-                "Interest Coverage Ratio"
-            ] = self.get_interest_coverage_ratio()
-            solvency_ratios[
                 "Debt Service Coverage Ratio"
             ] = self.get_debt_service_coverage_ratio()
             solvency_ratios["Equity Multiplier"] = self.get_equity_multiplier()

@@ -4,6 +4,8 @@ __docformat__ = "numpy"
 
 import re
 
+import operator
+
 import pandas as pd
 
 from financetoolkit.base.models.fundamentals_model import (
@@ -157,6 +159,7 @@ class Toolkit:
             else pd.DataFrame()
         )
         self._statistics_statement: pd.DataFrame = pd.DataFrame()
+        self._custom_ratios: pd.DataFrame = pd.DataFrame()
 
     @property
     def ratios(self) -> Ratios:
@@ -748,6 +751,76 @@ class Toolkit:
             return self._statistics_statement.loc[self._tickers[0]]
 
         return self._statistics_statement
+    
+    def get_custom_ratios(
+        self,
+        limit: int = 100,
+        overwrite: bool = False,
+        custom_ratios: dict = {},
+    ):
+
+        empty_data: list = []
+        if not self._api_key and (
+            self._balance_sheet_statement.empty
+            or self._income_statement.empty
+            or self._cash_flow_statement.empty
+        ):
+            raise ValueError(
+                "The ratios property requires manual addition of balance, income "
+                "and cash flow statements or an API key from FinancialModelPrep "
+                "within the Toolkit class."
+            )
+
+        if self._balance_sheet_statement.empty:
+            empty_data.append("Balance Sheet Statement")
+            self.get_balance_sheet_statement()
+        if self._income_statement.empty:
+            empty_data.append("Income Statement")
+            self.get_income_statement()
+        if self._cash_flow_statement.empty:
+            empty_data.append("Cash Flow Statement")
+            self.get_cash_flow_statement()
+
+        if (
+            self._balance_sheet_statement.empty
+            and self._income_statement.empty
+            and self._cash_flow_statement.empty
+        ):
+            raise ValueError(
+                "The datasets could not be populated and therefore the Custom Ratios class cannot be initialized."
+            )
+
+        if empty_data:
+            print(
+                "The following data was not provided within the Toolkit class and "
+                f"thus was retrieved from FinancialModelingPrep: {', '.join(empty_data)}."
+            )
+        
+        self._all_ratios = self.ratios.collect_all_ratios()
+
+        total_financials = pd.concat([self._balance_sheet_statement, self._income_statement, self._cash_flow_statement, self._all_ratios], axis=0)
+
+        operations = {'+': operator.add, '-': operator.sub, '*': operator.mul, '/': operator.truediv, "-": operator.sub, "^": operator.pow}
+        
+        for k, v in custom_ratios.items():
+            for i in total_financials.index.levels[0]:
+                #Identify the mathematical operator in v split the string at that operator into split_1 and split_2
+                operator_use =  re.findall('[+\-*^/]', v)[0]
+
+                split_1 = v.split(operator_use)[0]
+                split_2 = v.split(operator_use)[1]
+
+                #The reason for appending it all to the total_financials dataframe is to allow the user to make more complex custom ratios using previous custom ratios in their calculation of a new custom ratio.
+                total_financials.loc[(i, k), :] = operations[operator_use](total_financials.loc[(i, split_1), :].values[0], total_financials.loc[(i, split_2), :].values[0])
+
+        #Drop every row that is not a custom ratio
+        custom_ratios_df = total_financials.drop(total_financials.index[~total_financials.index.get_level_values(1).isin(custom_ratios.keys())])
+        custom_ratios_df.sort_index(axis=0, inplace=True)
+            
+        return custom_ratios_df
+
+
+
 
     def get_normalization_files(self, path: str = ""):
         """

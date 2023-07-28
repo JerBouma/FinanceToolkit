@@ -790,30 +790,6 @@ class Toolkit:
                 "The datasets could not be populated and therefore the Custom Ratios class cannot be initialized."
             )
 
-        if not self._start_date:
-            self._start_date = (
-                f"{self._balance_sheet_statement.columns[0].year - 5}-01-01"
-            )
-        if not self._end_date:
-            self._end_date = (
-                f"{self._balance_sheet_statement.columns[-1].year + 5}-01-01"
-            )
-
-        if self._quarterly:
-            if (
-                self._quarterly_historical_data.empty
-                and not self._balance_sheet_statement.empty
-            ):
-                self.get_historical_data(period="quarterly")
-        elif not self._quarterly:
-            if (
-                self._yearly_historical_data.empty
-                and not self._balance_sheet_statement.empty
-            ):
-                self.get_historical_data(period="yearly")
-        else:
-            raise ValueError("Invalid value for the quarterly parameter.")
-
         if empty_data:
             print(
                 "The following data was not provided within the Toolkit class and "

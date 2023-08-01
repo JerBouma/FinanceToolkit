@@ -117,7 +117,7 @@ def get_financial_statements(
 
         if financial_statement.columns.duplicated().any():
             # This happens in the rare case that a company has two financial statements for the same period.
-            # Browsing through the datas has shown that these financial statements are also equal therefore
+            # Browsing through the data has shown that these financial statements are also equal therefore
             # one of the columns can be dropped.
             financial_statement = financial_statement.loc[
                 :, ~financial_statement.columns.duplicated()

@@ -128,7 +128,7 @@ The Finance Toolkit has an abundance of financial ratios, however it could be th
 
 Define how each custom ratio needs to be calculated. This follows the structure `Name of Ratio`: `Financial Statement Item * Financial Statement Item`. Note that you adhere to the normalization files naming. This can be viewed relatively easy by initializing the Toolkit and running for example `get_balance_sheet_statement`.
 
-```
+```python
 custom_ratios = {
     'WC / Net Income': 'Working Capital/Net Income',
     'Net Income / Total Assets': 'Net Income/Total Assets',
@@ -140,7 +140,7 @@ custom_ratios = {
 
 Initializing the Finance Toolkit. Make sure to set the parameter `custom_ratios` with the above dictionary. Note that `quarterly=True` doesn't work without a Premium plan.
 
-```
+```python
 from financetoolkit import Toolkit
 
 # Initialize the Finance Toolkit

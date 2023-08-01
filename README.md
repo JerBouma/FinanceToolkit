@@ -124,7 +124,7 @@ This returns the following output for `profitability_ratios.loc['AAPL]`. Omittin
 
 ## Defining Custom Ratios
 
-The Finance Toolkit has an abundance of financial ratios, however it could be that you are looking for a specific ratio that is currently not provided. First and foremost, I encourage to [create a Pull Request](https://github.com/JerBouma/FinanceToolkit/pulls) to add these ratios in but there is also an option to add custom ratios as follows. This feature was designed by [sword134](https://github.com/sword134). Find a Notebook example [here](https://raw.githubusercontent.com/JerBouma/FinanceToolkit/main/examples/Finance%20Toolkit%20-%203.%20Defining%20Custom%20Ratios.ipynb?_sm_au_=iHVkJQJNZVqVMqksjHt2JKQJVT1MW).
+The Finance Toolkit has an abundance of financial ratios, however it could be that you are looking for a specific ratio that is currently not provided. First and foremost, I encourage to [create a Pull Request](https://github.com/JerBouma/FinanceToolkit/pulls) to add these ratios in but there is also an option to add custom ratios as follows. This feature was designed by [sword134](https://github.com/sword134). Find a Notebook example [here](https://github.com/JerBouma/FinanceToolkit/blob/main/examples/Finance%20Toolkit%20-%203.%20Defining%20Custom%20Ratios.ipynb).
 
 Define how each custom ratio needs to be calculated. This follows the structure `Name of Ratio`: `Financial Statement Item * Financial Statement Item`. Note that you adhere to the normalization files naming. This can be viewed relatively easy by initializing the Toolkit and running for example `get_balance_sheet_statement`.
 

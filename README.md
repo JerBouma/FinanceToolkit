@@ -130,11 +130,11 @@ Define how each custom ratio needs to be calculated. This follows the structure 
 
 ```python
 custom_ratios = {
-    'WC / Net Income': 'Working Capital/Net Income',
-    'Net Income / Total Assets': 'Net Income/Total Assets',
-    'Current Assets Inventory': 'Total Current Assets-Inventory',
-    'Quick Ratio Current': 'Current Assets Inventory/Total Current Liabilities',
-    'Quick Ratio Total': 'Current Assets Inventory/Total Liabilities'
+    'WC / Net Income': 'Working Capital / Net Income',
+    'Net Income / Total Assets': 'Net Income / Total Assets',
+    'Current Assets Inventory': 'Total Current Assets - Inventory',
+    'Quick Ratio Current': 'Current Assets Inventory / Total Current Liabilities',
+    'Quick Ratio Total': 'Current Assets Inventory / Total Liabilities'
 }
 ```
 

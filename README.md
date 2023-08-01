@@ -16,7 +16,7 @@ For example, Microsoft's Price-to-Earnings (PE) ratio on the 6th of May, 2023 is
 The Finance Toolkit is complimented very well with the [Finance Database 🌎](https://github.com/JerBouma/FinanceDatabase), a database that features 300.000+ symbols containing Equities, ETFs, Funds, Indices, Currencies, Cryptocurrencies and Money Markets. By utilising both, it is possible to do a fully-fledged competitive analysis with the tickers found from the FinanceDatabase inputted into the FinanceToolkit.
 
 <p align="center">
-    <img src="examples/Finance Toolkit - 5. Video Demo.gif" alt="Finance Toolkit Illustration" width="100%" onerror='this.style.display = "none"'/>
+    <img src="examples/Finance Toolkit - 6. Video Demo.gif" alt="Finance Toolkit Illustration" width="100%" onerror='this.style.display = "none"'/>
 </p>
 
 ---
@@ -26,8 +26,9 @@ The Finance Toolkit is complimented very well with the [Finance Database 🌎](h
 1. [Installation](#installation)
 2. [Basic Usage](#basic-usage)
     1. [Using the Finance Toolkit](#using-the-finance-toolkit)
-    2. [Working with other Datasets](#working-with-other-datasets)
+    2. [Defining Custom Ratios](#defining-custom-ratios)
     3. [Calling Functions Directly](#calling-functions-directly)
+    4. [Working with other Datasets](#working-with-other-datasets)
 3. [Contact](#contact)
 
 # Installation
@@ -43,15 +44,14 @@ Then within Python use:
 ```python
 from financetoolkit import Toolkit
 ```
-To be able to get started, you need to obtain an API Key from FinancialModelingPrep. Use the following instructions to obtain a _free_ API Key. Note that these keys are limited to 250 requests per day but the premium plans are kept at a low cost in case you do run out of the limit or have a need for access to more data. **It is possible to use your own set of financial statements and not rely on FinancialModelingPrep, please have a look [here](#working-with-other-datasets).**
+To be able to get started, you need to obtain an API Key from FinancialModelingPrep. This is used to gain access to 30+ years of financial statement both annually and quarterly. Note that the Free plan is limited to 250 requests each day, 5 years of data and only features companies listed on US exchanges.
 
-1. Go to [FinancialModellingPrep's API](https://financialmodelingprep.com/developer/docs/)
-2. Under "Get your Free API Key Today!" click on "Get my API KEY here"
-3. Sign-up to the website and select the Free Plan
-4. Obtain the API Key as found [here](https://financialmodelingprep.com/developer/docs/)
-5. Start using this package.
+___ 
 
-Note that I am in no way affiliated FinancialModelingprep and never will be. I have chosen their source as I find it to be the most transparent and reliable. When you notice that data is inaccurate or have any other issue related to the data, note that I simply provide the means to access this data and I am not responsible for the accuracy of the data itself. For this, use [their contact form](https://site.financialmodelingprep.com/contact) or provide the data yourself. 
+<b><div align="center">Obtain an API Key from FinancialModelingPrep <a href="https://site.financialmodelingprep.com/developer/docs/pricing/jeroen/">here</a>.</div></b>
+___
+
+Through the link you are able to subscribe for the free plan and also premium plans at a *15% discount*. This is an affiliate link and thus supports the project at the same time. I have chosen FinancialModelingPrep as a source as I find it to be the most transparent, reliable and at an affordable price. When you notice that data is inaccurate or have any other issue related to the data, note that I simply provide the means to access this data and I am not responsible for the accuracy of the data itself. For this, use [their contact form](https://site.financialmodelingprep.com/contact) or provide the data yourself. 
 
 # Basic Usage
 
@@ -69,11 +69,11 @@ Within this package the following things are included:
 - Market cap and enterprise values (`enterprise`), including every intermediate step (from FinancialModelingPrep)
 - Company ratings (`rating`), based on key indicators like PE and DE ratios (from FinancialModelingPrep)
 - Historical market data (`historical_data`), which can be retrieved on a daily, weekly, monthly and yearly basis (from Yahoo Finance)
-- Balance Sheet Statements (`balance_sheet_statement`), Income Statements (`income_statement`) and Cash Flow Statements (`cash_flow_statement`), obtainable from FinancialModelingPrep or the source of your choosing through custom input. These functions are accompanied with a normalization function so that for any source, the same ratio analysis can be performed. Please see this Jupyter Notebook that explains how to use a custom source.
-- Efficiency ratios (`efficiency_ratios`), liquidity ratios (`liquidity_ratios`), profitability ratios (`profitability_ratios`), solvency ratios (`solvency_ratios`) and valuation ratios (`valuation_ratios`) functionality that automatically calculates the most important ratios based on the inputted balance sheet, income and cash flow statements.
+- Balance Sheet Statements (`balance_sheet_statement`), Income Statements (`income_statement`), Cash Flow Statements (`cash_flow_statement`) and Statistics Statement (`statistics_statement`), obtainable from FinancialModelingPrep or the source of your choosing through custom input. These functions are accompanied with a normalization function so that for any source, the same ratio analysis can be performed. Please see this Jupyter Notebook that explains how to use a custom source.
+- Efficiency ratios (`efficiency_ratios`), liquidity ratios (`liquidity_ratios`), profitability ratios (`profitability_ratios`), solvency ratios (`solvency_ratios`) and valuation ratios (`valuation_ratios`) functionality that automatically calculates the most important ratios based on the inputted balance sheet, income and cash flow statements. Next to that, it is also possible to input your own custom ratios (`custom_ratios`).
 - Models (`models`) like DUPONT analysis that can be used to perform in-depth financial analysis through a single function.
 
-The dependencies of the package are on purpose *very slim* so that it will work well with any combination of packages and not result in conflicts. I've also been careful with my selection in which I leave out functionality like technical analysis in which [ta-lib](https://ta-lib.org/) does an excellent job as well as portfolio attribution and optimisation in which [Riskfolio-lib](https://riskfolio-lib.readthedocs.io/en/latest/index.html) shines and lastly allow for any source to be incorporated to allow for the incorporation of data sources from [OpenBB](https://openbb.co/).
+The dependencies of the package are on purpose *very slim* so that it will work well with any combination of packages and not result in conflicts. I've also been careful with my selection in which I leave out functionality like technical analysis in which [ta-lib](https://ta-lib.org/) does an excellent job as well as portfolio attribution and optimisation in which [Riskfolio-lib](https://riskfolio-lib.readthedocs.io/en/latest/index.html) shines.
 
 ## Using the Finance Toolkit
 
@@ -122,9 +122,95 @@ This returns the following output for `profitability_ratios.loc['AAPL]`. Omittin
 | EBT to EBIT Ratio                           | 0.957448 | 0.948408 | 0.958936 | 0.976353 | 0.975982 |
 | EBIT to Revenue                             | 0.286688 | 0.26641  | 0.254864 | 0.305759 | 0.309473 |
 
+## Defining Custom Ratios
+
+The Finance Toolkit has an abundance of financial ratios, however it could be that you are looking for a specific ratio that is currently not provided. First and foremost, I encourage to [create a Pull Request](https://github.com/JerBouma/FinanceToolkit/pulls) to add these ratios in but there is also an option to add custom ratios as follows.
+
+Define how each custom ratio needs to be calculated. This follows the structure `Name of Ratio`: `Financial Statement Item * Financial Statement Item`. Note that you adhere to the normalization files naming. This can be viewed relatively easy by initializing the Toolkit and running for example `get_balance_sheet_statement`.
+
+```
+custom_ratios = {
+    'WC / Net Income': 'Working Capital/Net Income',
+    'Net Income / Total Assets': 'Net Income/Total Assets',
+    'Current Assets Inventory': 'Total Current Assets-Inventory',
+    'Quick Ratio Current': 'Current Assets Inventory/Total Current Liabilities',
+    'Quick Ratio Total': 'Current Assets Inventory/Total Liabilities'
+}
+```
+
+Initializing the Finance Toolkit. Make sure to set the parameter `custom_ratios` with the above dictionary. Note that `quarterly=True` doesn't work without a Premium plan.
+
+```
+from financetoolkit import Toolkit
+
+# Initialize the Finance Toolkit
+companies = Toolkit(
+    ["AAPL", "MSFT", "GOOGL", "AMZN"], api_key=API_KEY, start_date="2022-08-10",
+    custom_ratios=custom_ratios, quarterly=True
+)
+```
+
+By then running `ratios.collect_custom_ratios` it automatically calculates the given ratios. Note the ratios 'Quick Ratio Current' and 'Quick Ratio Total' which rely on an earlier defined ratio ('Current Assets Inventory'). This is an example of how you can create a custom ratio based on another custom ratio.
+
+Below you can find the custom ratios from GOOGL which has been selected with `.loc['GOOGL]`. The Notebook shows the full output.
+
+|                           |      2022Q3 |      2022Q4 |     2023Q1 |      2023Q2 |
+|:--------------------------|------------:|------------:|-----------:|------------:|
+| Current Assets Inventory  | 1.62953e+11 | 1.62125e+11 | 1.5967e+11 | 1.66557e+11 |
+| Net Income / Total Assets | 0.0388271   | 0.037299    | 0.0407344  | 0.0479527   |
+| Quick Ratio Current       | 2.46977     | 2.33947     | 2.31896    | 2.14334     |
+| Quick Ratio Total         | 1.55744     | 1.48575     | 1.4703     | 1.43704     |
+| WC / Net Income           | 7.19842     | 7.00932     | 6.1877     | 4.95857     |
+
+## Calling Functions Directly
+
+It also possible to call any ratio or model directly as shown below. This allows access to 50+ ratios with custom data. Also see [this notebook](https://github.com/JerBouma/FinanceToolkit/blob/main/examples/Finance%20Toolkit%20-%205.%20Calling%20Functions%20Directly.ipynb).
+
+```python
+import pandas as pd
+import numpy as np
+
+from financetoolkit.models import dupont
+
+years = [2018, 2019, 2020, 2021, 2022]
+
+dupont.get_dupont_analysis(
+    net_income=pd.Series(
+        [59531000000, 55256000000, 57411000000, 94680000000, 99803000000], index=years
+    ),
+    total_revenue=pd.Series(
+        [265595000000, 260174000000, 274515000000, 365817000000, 394328000000],
+        index=years,
+    ),
+    total_assets_begin=pd.Series(
+        [np.nan, 365725000000, 338516000000, 323888000000, 351002000000],
+        index=years,
+    ),
+    total_assets_end=pd.Series(
+        [365725000000, 338516000000, 323888000000, 351002000000, 352755000000],
+        index=years,
+    ),
+    total_equity_begin=pd.Series(
+        [np.nan, 107147000000, 90488000000, 65339000000, 63090000000], index=years
+    ),
+    total_equity_end=pd.Series(
+        [107147000000, 90488000000, 65339000000, 63090000000, 50672000000], index=years
+    ),
+)
+```
+
+This returns the following table which closely resembles a proper Dupont analysis for Apple at their given reporting dates in October:
+
+|                   |       2018 |     2019 |     2020 |     2021 |     2022 |
+|:------------------|-----------:|---------:|---------:|---------:|---------:|
+| Net Profit Margin |   0.224142 | 0.212381 | 0.209136 | 0.258818 | 0.253096 |
+| Asset Turnover    | nan        | 0.738878 | 0.828845 | 1.08408  | 1.12064  |
+| Equity Multiplier | nan        | 3.56334  | 4.25089  | 5.25497  | 6.18622  |
+| Return on Equity  | nan        | 0.559172 | 0.736856 | 1.47443  | 1.75459  |
+
 ## Working with other Datasets
 
-The Finance Toolkit shines in its ability to leverage custom datasets from any data provider as well. This makes it possible to work with your preferred data and not be limited to the data source the Finance Toolkit currently provides. A detailed example can be found [here](https://github.com/JerBouma/FinanceToolkit/blob/main/examples/Finance%20Toolkit%20-%203.%20Using%20External%20Datasets%20(OpenBB).ipynb) but to get started see the code below.
+The Finance Toolkit has the ability to leverage custom datasets from any data provider as well. This makes it possible to work with your preferred data and not be limited to the data source the Finance Toolkit currently provides. A detailed example can be found [here](https://github.com/JerBouma/FinanceToolkit/blob/main/examples/Finance%20Toolkit%20-%204.%20Using%20External%20Datasets%20(OpenBB).ipynb) but to get started see the code below.
 
 ```python
 from financetoolkit import Toolkit
@@ -173,52 +259,6 @@ companies.ratios.collect_all_ratios()
 This will return all financial ratios that can be collected based on the provided data and the format.
 
 ![Output of Result](https://github.com/JerBouma/FinanceToolkit/assets/46355364/2a995430-b8d8-4236-892c-edb47042d6af)
-
-## Calling Functions Directly
-
-It also possible to call any ratio or model directly as shown below. This allows access to 50+ ratios with custom data. Also see [this notebook](https://github.com/JerBouma/FinanceToolkit/blob/main/examples/Finance%20Toolkit%20-%204.%20Calling%20Functions%20Directly.ipynb).
-
-```python
-import pandas as pd
-import numpy as np
-
-from financetoolkit.models import dupont
-
-years = [2018, 2019, 2020, 2021, 2022]
-
-dupont.get_dupont_analysis(
-    net_income=pd.Series(
-        [59531000000, 55256000000, 57411000000, 94680000000, 99803000000], index=years
-    ),
-    total_revenue=pd.Series(
-        [265595000000, 260174000000, 274515000000, 365817000000, 394328000000],
-        index=years,
-    ),
-    total_assets_begin=pd.Series(
-        [np.nan, 365725000000, 338516000000, 323888000000, 351002000000],
-        index=years,
-    ),
-    total_assets_end=pd.Series(
-        [365725000000, 338516000000, 323888000000, 351002000000, 352755000000],
-        index=years,
-    ),
-    total_equity_begin=pd.Series(
-        [np.nan, 107147000000, 90488000000, 65339000000, 63090000000], index=years
-    ),
-    total_equity_end=pd.Series(
-        [107147000000, 90488000000, 65339000000, 63090000000, 50672000000], index=years
-    ),
-)
-```
-
-This returns the following table which closely resembles a proper Dupont analysis for Apple at their given reporting dates in October:
-
-|                   |       2018 |     2019 |     2020 |     2021 |     2022 |
-|:------------------|-----------:|---------:|---------:|---------:|---------:|
-| Net Profit Margin |   0.224142 | 0.212381 | 0.209136 | 0.258818 | 0.253096 |
-| Asset Turnover    | nan        | 0.738878 | 0.828845 | 1.08408  | 1.12064  |
-| Equity Multiplier | nan        | 3.56334  | 4.25089  | 5.25497  | 6.18622  |
-| Return on Equity  | nan        | 0.559172 | 0.736856 | 1.47443  | 1.75459  |
 
 # Contact
 If you have any questions about the FinanceToolkit or would like to share with me what you have been working on, feel free to reach out to me via:

@@ -1,6 +1,9 @@
 """Ratios Module"""
 __docformat__ = "numpy"
 
+import operator
+import re
+
 import pandas as pd
 
 from financetoolkit.base.helpers import handle_errors
@@ -27,12 +30,15 @@ class Ratios:
         balance: pd.DataFrame,
         income: pd.DataFrame,
         cash: pd.DataFrame,
+        custom_ratios: dict | None = None,
     ):
         self._tickers = tickers
         self._historical_data: pd.DataFrame = historical
         self._balance_sheet_statement: pd.DataFrame = balance
         self._income_statement: pd.DataFrame = income
         self._cash_flow_statement: pd.DataFrame = cash
+        self._custom_ratios: dict | None = custom_ratios
+        self._custom_ratios_df: pd.DataFrame = pd.DataFrame()
 
         # Initialization of Fundamentals Variables
         self._all_ratios: pd.DataFrame = pd.DataFrame()
@@ -322,6 +328,73 @@ class Ratios:
             return self._valuation_ratios.loc[self._tickers[0]]
 
         return self._valuation_ratios
+
+    @handle_errors
+    def collect_custom_ratios(self):
+        """
+        Calculates all Custom Ratios based on the data provided.
+        """
+        if not self._custom_ratios:
+            print(
+                "Please define custom ratios through the Toolkit initialization. "
+                "See https://github.com/JerBouma/FinanceToolkit how to do this."
+            )
+
+        if self._custom_ratios_df.empty and self._custom_ratios:
+            if self._all_ratios.empty:
+                self._all_ratios = self.collect_all_ratios()
+
+            custom_ratios_df = pd.DataFrame(
+                index=pd.MultiIndex.from_product(
+                    [self._tickers, self._custom_ratios.keys()]
+                ),
+                columns=self._balance_sheet_statement.columns,
+            )
+
+            total_financials = pd.concat(
+                [
+                    self._balance_sheet_statement,
+                    self._income_statement,
+                    self._cash_flow_statement,
+                    self._all_ratios,
+                    custom_ratios_df,
+                ],
+                axis=0,
+            )
+
+            operations = {
+                "+": operator.add,
+                "-": operator.sub,
+                "*": operator.mul,
+                "/": operator.truediv,
+                "^": operator.pow,
+            }
+
+            for name, formula in self._custom_ratios.items():
+                operator_use = re.findall("[+\\-*^/]", formula)[0]
+
+                split_1, split_2 = formula.split(operator_use)
+                calculation = operations[operator_use]
+
+                result_dataframe = calculation(
+                    total_financials.loc[:, split_1, :],
+                    total_financials.loc[:, split_2, :],
+                )
+
+                for company in self._tickers:
+                    total_financials.loc[company, name, :] = result_dataframe.loc[
+                        company
+                    ].to_numpy(0)
+
+            self._custom_ratios_df = total_financials.loc[
+                :, list(self._custom_ratios.keys()), :
+            ]
+            self._custom_ratios_df = self._custom_ratios_df.sort_index(axis=0)
+
+        if len(self._tickers) == 1:
+            return self._custom_ratios_df.loc[self._tickers[0]]
+
+        return self._custom_ratios_df
 
     @handle_errors
     def get_asset_turnover_ratio(self):

@@ -48,6 +48,7 @@ class Toolkit:
         balance: pd.DataFrame = pd.DataFrame(),
         income: pd.DataFrame = pd.DataFrame(),
         cash: pd.DataFrame = pd.DataFrame(),
+        custom_ratios: dict | None = None,
         start_date: str | None = None,
         end_date: str | None = None,
         quarterly: bool = False,
@@ -157,6 +158,7 @@ class Toolkit:
             else pd.DataFrame()
         )
         self._statistics_statement: pd.DataFrame = pd.DataFrame()
+        self._custom_ratios: dict | None = custom_ratios
 
     @property
     def ratios(self) -> Ratios:
@@ -232,6 +234,7 @@ class Toolkit:
             self._balance_sheet_statement,
             self._income_statement,
             self._cash_flow_statement,
+            self._custom_ratios,
         )
 
     @property

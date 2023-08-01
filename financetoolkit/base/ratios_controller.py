@@ -329,8 +329,8 @@ class Ratios:
 
         return self._valuation_ratios
 
-    @handle_errors
-    def collect_custom_ratios(self):
+    # @handle_errors
+    def collect_custom_ratios(self, overwrite: bool = False):
         """
         Calculates all Custom Ratios based on the data provided.
         """
@@ -340,7 +340,7 @@ class Ratios:
                 "See https://github.com/JerBouma/FinanceToolkit how to do this."
             )
 
-        if self._custom_ratios_df.empty and self._custom_ratios:
+        if self._custom_ratios and (self._custom_ratios_df.empty or overwrite):
             if self._all_ratios.empty:
                 self._all_ratios = self.collect_all_ratios()
 
@@ -361,6 +361,10 @@ class Ratios:
                 ],
                 axis=0,
             )
+
+            total_financials = total_financials[
+                ~total_financials.index.duplicated(keep="first")
+            ]
 
             operations = {
                 "+": operator.add,
@@ -384,7 +388,7 @@ class Ratios:
                 for company in self._tickers:
                     total_financials.loc[company, name, :] = result_dataframe.loc[
                         company
-                    ].to_numpy(0)
+                    ].to_numpy()
 
             self._custom_ratios_df = total_financials.loc[
                 :, list(self._custom_ratios.keys()), :

@@ -85,9 +85,17 @@ def get_financial_statements(
             financial_statement = pd.read_json(response.text)
 
         except requests.exceptions.HTTPError:
-            print(f"{response.json()['Error Message']} (ticker: {ticker})")
-            invalid_tickers.append(ticker)
-            continue
+            if (
+                "not available under your current subscription"
+                in response.json()["Error Message"]
+            ):
+                print(
+                    f"The requested data for {ticker} is part of the Premium Subscription from "
+                    "FinancialModelingPrep. If you wish to access this data, consider upgrading "
+                    "your plan.\nYou can get 15% off by using the following affiliate link which "
+                    "also supports the project: https://site.financialmodelingprep.com/developer/docs/pricing/jeroen/"
+                )
+            break
 
         try:
             financial_statement = financial_statement.drop("symbol", axis=1)
@@ -108,9 +116,9 @@ def get_financial_statements(
         financial_statement = financial_statement.set_index("date").T
 
         if financial_statement.columns.duplicated().any():
-            print(
-                f"Duplicate columns in the {statement} financial statement for {ticker}. Omitting the oldest column."
-            )
+            # This happens in the rare case that a company has two financial statements for the same period.
+            # Browsing through the datas has shown that these financial statements are also equal therefore
+            # one of the columns can be dropped.
             financial_statement = financial_statement.loc[
                 :, ~financial_statement.columns.duplicated()
             ]
@@ -202,7 +210,7 @@ def get_profile(tickers: list[str] | str, api_key: str):
                 f"https://financialmodelingprep.com/api/v3/profile/{ticker}?apikey={api_key}"
             ).T
         except ValueError:
-            print(f"No historical data found for {ticker}")
+            print(f"No profile data found for {ticker}")
             invalid_tickers.append(ticker)
         except Exception as error:
             raise ValueError(error) from error
@@ -243,7 +251,7 @@ def get_quote(tickers: list[str] | str, api_key: str):
                 f"https://financialmodelingprep.com/api/v3/quote/{ticker}?apikey={api_key}"
             ).T
         except ValueError:
-            print(f"No historical data found for {ticker}")
+            print(f"No quote data found for {ticker}")
             invalid_tickers.append(ticker)
         except Exception as error:
             raise ValueError(error) from error
@@ -299,16 +307,24 @@ def get_enterprise(
             response.raise_for_status()
             enterprise_values = pd.read_json(response.text)
         except requests.exceptions.HTTPError:
-            print(f"{response.json()['Error Message']} (ticker: {ticker})")
-            invalid_tickers.append(ticker)
-            continue
+            if (
+                "not available under your current subscription"
+                in response.json()["Error Message"]
+            ):
+                print(
+                    f"The requested data for {ticker} is part of the Premium Subscription from "
+                    "FinancialModelingPrep. If you wish to access this data, consider upgrading "
+                    "your plan.\nYou can get 15% off by using the following affiliate link which "
+                    "also supports the project: https://site.financialmodelingprep.com/developer/docs/pricing/jeroen/"
+                )
+            break
 
         try:
             enterprise_values = enterprise_values.drop("symbol", axis=1).sort_values(
                 by="date", ascending=True
             )
         except KeyError:
-            print(f"No historical data found for {ticker}.")
+            print(f"No enterprise data found for {ticker}.")
             invalid_tickers.append(ticker)
             continue
 
@@ -379,12 +395,20 @@ def get_rating(tickers: list[str] | str, api_key: str, limit: int = 100):
                 f"https://financialmodelingprep.com/api/v3/historical-rating/{ticker}?limit={limit}&apikey={api_key}"
             )
         except ValueError:
-            print(f"No historical data found for {ticker}")
+            print(f"No rating data found for {ticker}")
             invalid_tickers.append(ticker)
         except Exception as error:
             raise ValueError(error) from error
 
-        ratings = ratings.drop("symbol", axis=1).sort_values(by="date", ascending=True)
+        try:
+            ratings = ratings.drop("symbol", axis=1).sort_values(
+                by="date", ascending=True
+            )
+        except KeyError:
+            print(f"No rating data found for {ticker}")
+            invalid_tickers.append(ticker)
+            continue
+
         ratings = ratings.set_index("date")
 
         ratings = ratings.rename(

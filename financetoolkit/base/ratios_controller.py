@@ -329,7 +329,7 @@ class Ratios:
 
         return self._valuation_ratios
 
-    # @handle_errors
+    @handle_errors
     def collect_custom_ratios(self, overwrite: bool = False):
         """
         Calculates all Custom Ratios based on the data provided.

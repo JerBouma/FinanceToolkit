@@ -384,7 +384,7 @@ class Ratios:
                 for company in self._tickers:
                     total_financials.loc[company, name, :] = result_dataframe.loc[
                         company
-                    ].to_numpy(0)
+                    ].to_numpy()
 
             self._custom_ratios_df = total_financials.loc[
                 :, list(self._custom_ratios.keys()), :

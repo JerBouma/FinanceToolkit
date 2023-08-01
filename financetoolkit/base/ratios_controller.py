@@ -381,8 +381,8 @@ class Ratios:
                 calculation = operations[operator_use]
 
                 result_dataframe = calculation(
-                    total_financials.loc[:, split_1, :],
-                    total_financials.loc[:, split_2, :],
+                    total_financials.loc[:, split_1.strip(), :],
+                    total_financials.loc[:, split_2.strip(), :],
                 )
 
                 for company in self._tickers:

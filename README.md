@@ -61,7 +61,7 @@ This section explains in detail how the Finance Toolkit can utilitised effective
 
 ___ 
 
-<b><div align="center">Find a variety of How-To Guides for the FinanceToolkit <a href="https://github.com/JerBouma/FinanceToolkit/tree/main/examples">here</a>.</div></b>
+<b><div align="center">Find a variety of How-To Guides for the FinanceToolkit <a href="https://www.jeroenbouma.com/projects/financetoolkit#how-to-guides-for-the-financetoolkit">here</a>.</div></b>
 ___
 
 Within this package the following things are included:
@@ -79,7 +79,7 @@ The dependencies of the package are on purpose *very slim* so that it will work 
 
 ## Using the Finance Toolkit
 
-A basic example of how to initialise the Finance Toolkit is shown below, also see [this notebook](https://github.com/JerBouma/FinanceToolkit/blob/main/examples/Finance%20Toolkit%20-%201.%20Getting%20Started.ipynb) for a detailed Getting Started guide as well as [this notebook](https://github.com/JerBouma/FinanceToolkit/blob/main/examples/Finance%20Toolkit%20-%202.%20Combining%20the%20Finance%20Toolkit%20with%20the%20Finance%20Database.ipynb) that includes the [Finance Database 🌎](https://github.com/JerBouma/FinanceDatabase) and a proper financial analysis.
+A basic example of how to initialise the Finance Toolkit is shown below, also see [this notebook](https://www.jeroenbouma.com/projects/financetoolkit/getting-started) for a detailed Getting Started guide as well as [this notebook](https://www.jeroenbouma.com/projects/financetoolkit/finance-database) that includes the [Finance Database 🌎](https://www.jeroenbouma.com/projects/financedatabase) and a proper financial analysis.
 
 ````python
 from financetoolkit import Toolkit
@@ -126,7 +126,7 @@ This returns the following output for `profitability_ratios.loc['AAPL]`. Omittin
 
 ## Defining Custom Ratios
 
-The Finance Toolkit has an abundance of financial ratios, however it could be that you are looking for a specific ratio that is currently not provided. First and foremost, I encourage to [create a Pull Request](https://github.com/JerBouma/FinanceToolkit/pulls) to add these ratios in but there is also an option to add custom ratios as follows. This feature was designed by [sword134](https://github.com/sword134). Find a Notebook example [here](https://github.com/JerBouma/FinanceToolkit/blob/main/examples/Finance%20Toolkit%20-%203.%20Defining%20Custom%20Ratios.ipynb).
+The Finance Toolkit has an abundance of financial ratios, however it could be that you are looking for a specific ratio that is currently not provided. First and foremost, I encourage to [create a Pull Request](https://github.com/JerBouma/FinanceToolkit/pulls) to add these ratios in but there is also an option to add custom ratios as follows. This feature was designed by [sword134](https://github.com/sword134). Find a Notebook example [here](https://www.jeroenbouma.com/projects/financetoolkit/custom-ratios).
 
 Define how each custom ratio needs to be calculated. This follows the structure `Name of Ratio`: `Financial Statement Item * Financial Statement Item`. Note that you adhere to the normalization files naming. This can be viewed relatively easy by initializing the Toolkit and running for example `get_balance_sheet_statement`.
 
@@ -154,7 +154,7 @@ companies = Toolkit(
 
 By then running `ratios.collect_custom_ratios` it automatically calculates the given ratios. Note the ratios 'Quick Ratio Current' and 'Quick Ratio Total' which rely on an earlier defined ratio ('Current Assets Inventory'). This is an example of how you can create a custom ratio based on another custom ratio.
 
-Below you can find the custom ratios from GOOGL which has been selected with `.loc['GOOGL]`. The Notebook as found [here](https://github.com/JerBouma/FinanceToolkit/blob/main/examples/Finance%20Toolkit%20-%203.%20Defining%20Custom%20Ratios.ipynb) shows the full output.
+Below you can find the custom ratios from GOOGL which has been selected with `.loc['GOOGL]`. The Notebook as found [here](https://www.jeroenbouma.com/projects/financetoolkit/getting-started) shows the full output.
 
 |                           |      2022Q3 |      2022Q4 |     2023Q1 |      2023Q2 |
 |:--------------------------|------------:|------------:|-----------:|------------:|
@@ -166,7 +166,7 @@ Below you can find the custom ratios from GOOGL which has been selected with `.l
 
 ## Calling Functions Directly
 
-It also possible to call any ratio or model directly as shown below. This allows access to 50+ ratios with custom data. Also see [this notebook](https://github.com/JerBouma/FinanceToolkit/blob/main/examples/Finance%20Toolkit%20-%204.%20Calling%20Functions%20Directly.ipynb).
+It also possible to call any ratio or model directly as shown below. This allows access to 50+ ratios with custom data. Also see [this notebook](https://www.jeroenbouma.com/projects/financetoolkit/functional-toolkit).
 
 ```python
 import pandas as pd
@@ -212,7 +212,7 @@ This returns the following table which closely resembles a proper Dupont analysi
 
 ## Working with other Datasets
 
-The Finance Toolkit has the ability to leverage custom datasets from any data provider as well. This makes it possible to work with your preferred data and not be limited to the data source the Finance Toolkit currently provides. A detailed example can be found [here](https://github.com/JerBouma/FinanceToolkit/blob/main/examples/Finance%20Toolkit%20-%205.%20Using%20External%20Datasets.ipynb) but to get started see the code below.
+The Finance Toolkit has the ability to leverage custom datasets from any data provider as well. This makes it possible to work with your preferred data and not be limited to the data source the Finance Toolkit currently provides. A detailed example can be found [here](https://www.jeroenbouma.com/projects/financetoolkit/external-datasets) but to get started see the code below.
 
 ```python
 from financetoolkit import Toolkit

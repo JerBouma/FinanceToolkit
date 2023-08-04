@@ -1,5 +1,5 @@
 """Historical Module"""
-__docformat__ = "numpy"
+__docformat__ = "google"
 
 from datetime import datetime, timedelta
 from urllib.error import HTTPError

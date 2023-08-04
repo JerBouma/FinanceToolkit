@@ -1,5 +1,5 @@
 """Fundamentals Module"""
-__docformat__ = "numpy"
+__docformat__ = "google"
 
 
 import numpy as np

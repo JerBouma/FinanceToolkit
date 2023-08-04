@@ -1,5 +1,5 @@
 """Solvency Module"""
-__docformat__ = "numpy"
+__docformat__ = "google"
 
 import pandas as pd
 

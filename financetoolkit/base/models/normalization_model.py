@@ -1,5 +1,5 @@
 """Normalization Module"""
-__docformat__ = "numpy"
+__docformat__ = "google"
 
 import shutil
 from pathlib import Path

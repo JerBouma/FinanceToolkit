@@ -176,6 +176,7 @@ class Toolkit:
 
         # Enter the Ratios property and obtain all ratios
         toolkit.ratios.collect_all_ratios()
+        ```
         """
         empty_data: list = []
 

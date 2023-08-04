@@ -164,6 +164,18 @@ class Toolkit:
     def ratios(self) -> Ratios:
         """
         Gives access to financial ratios.
+
+        As an example:
+
+        ```python
+
+        from finance_toolkit import Toolkit
+
+        # Initialize the Toolkit
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+
+        # Enter the Ratios property and obtain all ratios
+        toolkit.ratios.collect_all_ratios()
         """
         empty_data: list = []
 

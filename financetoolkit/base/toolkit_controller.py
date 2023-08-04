@@ -167,8 +167,7 @@ class Toolkit:
 
         As an example:
 
-        ```python
-
+        <code>
         from finance_toolkit import Toolkit
 
         # Initialize the Toolkit
@@ -176,7 +175,7 @@ class Toolkit:
 
         # Enter the Ratios property and obtain all ratios
         toolkit.ratios.collect_all_ratios()
-        ```
+        </code>
         """
         empty_data: list = []
 

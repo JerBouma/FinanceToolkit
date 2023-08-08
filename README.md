@@ -61,7 +61,7 @@ This section explains in detail how the Finance Toolkit can utilitised effective
 
 ___ 
 
-<b><div align="center">Find a variety of How-To Guides for the FinanceToolkit <a href="https://www.jeroenbouma.com/projects/financetoolkit#how-to-guides-for-the-financetoolkit">here</a>.</div></b>
+<b><div align="center">Find a variety of How-To Guides including Code Documentation for the FinanceToolkit <a href="https://www.jeroenbouma.com/projects/financetoolkit#how-to-guides-for-the-financetoolkit">here</a>.</div></b>
 ___
 
 Within this package the following things are included:

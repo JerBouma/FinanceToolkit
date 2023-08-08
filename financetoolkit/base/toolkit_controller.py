@@ -64,8 +64,7 @@ class Toolkit:
         define the start and end date to specify a specific range. Another options is to define the
         custom ratios you want to calculate. This can be done by passing a dictionary.
 
-        See for more information on all of this, the
-        following link: https://www.jeroenbouma.com/projects/financetoolkit#how-to-guides-for-the-financetoolkit
+        See for more information on all of this, the following link: https://www.jeroenbouma.com/projects/financetoolkit#how-to-guides-for-the-financetoolkit
 
         Args:
         tickers (str or list): A string or a list of strings containing the company ticker(s).
@@ -186,6 +185,8 @@ class Toolkit:
         efficiency and valuation. Each ratio is calculated using the data
         from the Toolkit module.
 
+        Also see the following link for more information on all of this: https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios
+
         As an example:
 
         ```python
@@ -298,6 +299,8 @@ class Toolkit:
         Gives access to the Models module. The Models module is meant to execute
         well-known models such as DUPONT and the Discounted Cash Flow (DCF) model.
         These models are also directly related to the data retrieved from the Toolkit module.
+
+        Also see the following link for more information on all of this: https://www.jeroenbouma.com/projects/financetoolkit/docs/models
 
         As an example:
 

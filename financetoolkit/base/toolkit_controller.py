@@ -58,11 +58,7 @@ class Toolkit:
         remove_invalid_tickers: bool = True,
     ):
         """
-        Initializes an Toolkit object with a ticker or a list of tickers. The way the Toolkit is
-        initialized will define how the data is collected. For example, if you enable the
-        quarterly flag, you will be able to collect quarterly data. Next to that, you can
-        define the start and end date to specify a specific range. Another options is to define the
-        custom ratios you want to calculate. This can be done by passing a dictionary.
+        Initializes an Toolkit object with a ticker or a list of tickers. The way the Toolkit is initialized will define how the data is collected. For example, if you enable the quarterly flag, you will be able to collect quarterly data. Next to that, you can define the start and end date to specify a specific range. Another options is to define the custom ratios you want to calculate. This can be done by passing a dictionary.
 
         See for more information on all of this, the following link: https://www.jeroenbouma.com/projects/financetoolkit#how-to-guides-for-the-financetoolkit
 
@@ -179,11 +175,7 @@ class Toolkit:
     @property
     def ratios(self) -> Ratios:
         """
-        This gives access to the Ratios module. The Ratios Module contains
-        over 50+ ratios that can be used to analyse companies. These ratios
-        are divided into 5 categories: profitability, liquidity, solvency,
-        efficiency and valuation. Each ratio is calculated using the data
-        from the Toolkit module.
+        This gives access to the Ratios module. The Ratios Module contains over 50+ ratios that can be used to analyse companies. These ratios are divided into 5 categories: profitability, liquidity, solvency, efficiency and valuation. Each ratio is calculated using the data from the Toolkit module.
 
         Also see the following link for more information on all of this: https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios
 
@@ -296,9 +288,7 @@ class Toolkit:
     @property
     def models(self) -> Models:
         """
-        Gives access to the Models module. The Models module is meant to execute
-        well-known models such as DUPONT and the Discounted Cash Flow (DCF) model.
-        These models are also directly related to the data retrieved from the Toolkit module.
+        Gives access to the Models module. The Models module is meant to execute well-known models such as DUPONT and the Discounted Cash Flow (DCF) model. These models are also directly related to the data retrieved from the Toolkit module.
 
         Also see the following link for more information on all of this: https://www.jeroenbouma.com/projects/financetoolkit/docs/models
 

@@ -92,6 +92,15 @@ def test_get_capex_per_share(recorder):
 def test_get_dividend_yield(recorder):
     recorder.capture(
         valuation.get_dividend_yield(
+            dividends=pd.Series([0.3, 0.31, 0.5, 0.25, 0.4]),
+            stock_price=pd.Series([100, 130, 200, 160, 200]),
+        )
+    )
+
+
+def test_get_weighted_dividend_yield(recorder):
+    recorder.capture(
+        valuation.get_weighted_dividend_yield(
             dividends_paid=pd.Series([10, 10, 23, 15, 0]),
             shares_outstanding=pd.Series([1000, 500, 300, 160, 300]),
             stock_price=pd.Series([100, 130, 200, 160, 200]),

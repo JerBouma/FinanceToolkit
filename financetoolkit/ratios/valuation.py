@@ -170,8 +170,7 @@ def get_capex_per_share(
 
 
 def get_dividend_yield(
-    dividends_paid: float | pd.Series,
-    shares_outstanding: float | pd.Series,
+    dividends: float | pd.Series,
     stock_price: float | pd.Series,
 ) -> float | pd.Series:
     """
@@ -179,12 +178,34 @@ def get_dividend_yield(
     dividends distributed per share of stock relative to the stock's price.
 
     Args:
-        dividends_paid (float or pd.Series): Dividend per share of the company.
-        shares_outstanding (float or pd.Series): Total number of outstanding shares of the company.
+        dividends (float or pd.Series): Dividend paid out by the company.
         stock_price (float or pd.Series): Stock price of the company.
 
     Returns:
         float | pd.Series: The dividend yield percentage value.
+    """
+    return dividends / stock_price
+
+
+def get_weighted_dividend_yield(
+    dividends_paid: float | pd.Series,
+    shares_outstanding: float | pd.Series,
+    stock_price: float | pd.Series,
+) -> float | pd.Series:
+    """
+    Calculate the weighted dividend yield ratio, a valuation ratio that measures the amount of
+    dividends distributed per share of stock relative to the stock's price.
+
+    This dividend yield differs from the dividend yield ratio in that it takes into account the
+    (diluted) weighted average shares and actual dividends paid as found in the cash flow statement.
+
+    Args:
+        dividends_paid (float or pd.Series): Dividends Paid as reported in the Cash Flow Statement.
+        shares_outstanding (float or pd.Series): Total number of outstanding shares of the company.
+        stock_price (float or pd.Series): Stock price of the company.
+
+    Returns:
+        float | pd.Series: The weighted dividend yield percentage value.
     """
     return (dividends_paid / shares_outstanding) / stock_price
 

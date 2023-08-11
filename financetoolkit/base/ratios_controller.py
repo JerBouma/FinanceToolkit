@@ -352,9 +352,10 @@ class Ratios:
                 include_dividends=include_dividends, diluted=diluted
             )
             valuation_ratios["Payout Ratio"] = self.get_payout_ratio()
-            valuation_ratios["Dividend Yield"] = self.get_dividend_yield(
-                diluted=diluted
-            )
+            valuation_ratios["Dividend Yield"] = self.get_dividend_yield()
+            valuation_ratios[
+                "Weighted Dividend Yield"
+            ] = self.get_weighted_dividend_yield(diluted=diluted)
             valuation_ratios[
                 "Price-to-Cash-Flow (P/CF)"
             ] = self.get_price_to_cash_flow_ratio(diluted=diluted)
@@ -1797,7 +1798,7 @@ class Ratios:
         )
 
     @handle_errors
-    def get_dividend_yield(self, diluted: bool = True):
+    def get_dividend_yield(self):
         """
         Calculate the dividend yield ratio, a valuation ratio that measures the
         amount of dividends distributed per share of stock relative to the stock's price.
@@ -1812,6 +1813,36 @@ class Ratios:
         toolkit.ratios.get_dividend_yield()
         ```
         """
+        years = self._cash_flow_statement.columns
+        begin, end = str(years[0]), str(years[-1])
+
+        share_prices = self._historical_data.loc[begin:end, "Adj Close"].T  # type: ignore
+        dividends = self._historical_data.loc[begin:end, "Dividends"].T
+
+        return valuation.get_dividend_yield(
+            dividends,
+            share_prices,
+        )
+
+    @handle_errors
+    def get_weighted_dividend_yield(self, diluted: bool = True):
+        """
+        Calculate the dividend yield ratio, a valuation ratio that measures the
+        amount of dividends distributed per share of stock relative to the stock's price.
+
+        This dividend yield differs from the dividend yield ratio in that it takes into account the
+        (diluted) weighted average shares and actual dividends paid as found in the cash flow statement.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+
+        toolkit.ratios.get_weighted_dividend_yield()
+        ```
+        """
         average_shares = (
             self._income_statement.loc[:, "Weighted Average Shares Diluted", :]
             if diluted
@@ -1823,7 +1854,7 @@ class Ratios:
 
         share_prices = self._historical_data.loc[begin:end, "Adj Close"].T  # type: ignore
 
-        return valuation.get_dividend_yield(
+        return valuation.get_weighted_dividend_yield(
             abs(self._cash_flow_statement.loc[:, "Dividends Paid", :]),
             average_shares,
             share_prices,

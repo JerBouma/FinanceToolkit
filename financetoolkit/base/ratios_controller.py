@@ -32,6 +32,9 @@ class Ratios:
         cash: pd.DataFrame,
         custom_ratios: dict | None = None,
     ):
+        """
+        Initializes the Ratios Controller Class.
+        """
         self._tickers = tickers
         self._historical_data: pd.DataFrame = historical
         self._balance_sheet_statement: pd.DataFrame = balance
@@ -53,6 +56,16 @@ class Ratios:
     ):
         """
         Calculates all Ratios based on the data provided.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+
+        toolkit.ratios.collect_all_ratios()
+        ```
         """
         if self._efficiency_ratios.empty:
             self.collect_efficiency_ratios(days=days)

@@ -22,6 +22,9 @@ class Models:
         income: pd.DataFrame,
         cash: pd.DataFrame,
     ):
+        """
+        Initializes the Models Controller Class.
+        """
         self._tickers = tickers
         self._balance_sheet_statement = balance
         self._income_statement = income

@@ -82,6 +82,16 @@ class Ratios:
     def collect_efficiency_ratios(self, days: int = 365):
         """
         Calculates all Efficiency Ratios based on the data provided.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+
+        toolkit.ratios.collect_efficiency_ratios()
+        ```
         """
         if self._efficiency_ratios.empty:
             efficiency_ratios: dict = {}
@@ -126,6 +136,16 @@ class Ratios:
     def collect_liquidity_ratios(self) -> pd.DataFrame:
         """
         Calculates all Liquidity Ratios based on the data provided.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+
+        toolkit.ratios.collect_liquidity_ratios()
+        ```
         """
         if self._liquidity_ratios.empty:
             liquidity_ratios: dict = {}
@@ -159,6 +179,16 @@ class Ratios:
     def collect_profitability_ratios(self) -> pd.DataFrame:
         """
         Calculates all Profitability Ratios based on the data provided.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+
+        toolkit.ratios.collect_profitability_ratios()
+        ```
         """
         if self._profitability_ratios.empty:
             profitability_ratios: dict = {}
@@ -209,6 +239,16 @@ class Ratios:
     def collect_solvency_ratios(self, diluted: bool = True):
         """
         Calculates all Solvency Ratios based on the data provided.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+
+        toolkit.ratios.collect_solvency_ratios()
+        ```
         """
         if self._solvency_ratios.empty:
             solvency_ratios: dict = {}
@@ -250,6 +290,16 @@ class Ratios:
     ):
         """
         Calculates all Valuation Ratios based on the data provided.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+
+        toolkit.ratios.collect_valuation_ratios()
+        ```
         """
         if self._valuation_ratios.empty:
             valuation_ratios: dict = {}
@@ -333,6 +383,27 @@ class Ratios:
     def collect_custom_ratios(self, overwrite: bool = False):
         """
         Calculates all Custom Ratios based on the data provided.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        custom_ratios = {
+            'WC / Net Income': 'Working Capital / Net Income',
+            'Net Income / Total Assets': 'Net Income / Total Assets',
+            'Current Assets Inventory': 'Total Current Assets - Inventory',
+            'Quick Ratio Current': 'Current Assets Inventory / Total Current Liabilities',
+            'Quick Ratio Total': 'Current Assets Inventory / Total Liabilities'
+        }
+
+        companies = Toolkit(
+            ["AAPL", "MSFT", "GOOGL", "AMZN"], api_key=API_KEY, start_date="2000-01-01",
+            custom_ratios=custom_ratios, quarterly=True
+        )
+
+        companies.ratios.collect_custom_ratios()
+        ```
         """
         if not self._custom_ratios:
             print(
@@ -405,6 +476,16 @@ class Ratios:
         """
         Calculate the asset turnover ratio, an efficiency ratio that measures how
         efficiently a company uses its assets to generate sales.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+
+        toolkit.ratios.get_asset_turnover_ratio()
+        ```
         """
         return efficiency.get_asset_turnover_ratio(
             self._income_statement.loc[:, "Revenue", :],
@@ -417,6 +498,16 @@ class Ratios:
         """
         Calculate the inventory turnover ratio, an efficiency ratio that measures
         how quickly a company sells its inventory.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+
+        toolkit.ratios.get_inventory_turnover_ratio()
+        ```
         """
         return efficiency.get_inventory_turnover_ratio(
             self._income_statement.loc[:, "Cost of Goods Sold", :],
@@ -429,6 +520,16 @@ class Ratios:
         """
         Calculate the days sales in inventory ratio, an efficiency ratio that measures
         how long it takes a company to sell its inventory.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+
+        toolkit.ratios.get_days_of_inventory_outstanding()
+        ```
         """
         return efficiency.get_days_of_inventory_outstanding(
             self._balance_sheet_statement.loc[:, "Inventory", :].shift(axis=1),
@@ -443,6 +544,16 @@ class Ratios:
         Calculate the days of sales outstanding, an efficiency ratio that measures
         the average number of days it takes a company to collect payment on its
         credit sales.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+
+        toolkit.ratios.get_days_of_sales_outstanding()
+        ```
         """
         return efficiency.get_days_of_sales_outstanding(
             self._balance_sheet_statement.loc[:, "Accounts Receivable", :].shift(
@@ -458,6 +569,16 @@ class Ratios:
         """
         Calculate the operating cycle, an efficiency ratio that measures the average
         number of days it takes a company to turn its inventory into cash.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+
+        toolkit.ratios.get_operating_cycle()
+        ```
         """
         days_of_inventory = efficiency.get_days_of_inventory_outstanding(
             self._balance_sheet_statement.loc[:, "Inventory", :].shift(axis=1),
@@ -481,6 +602,16 @@ class Ratios:
         """
         Calculate the accounts payable turnover ratio is an efficiency ratio that measures how
         quickly a company pays its suppliers.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+
+        toolkit.ratios.get_accounts_payables_turnover_ratio()
+        ```
         """
         return efficiency.get_accounts_payables_turnover_ratio(
             self._income_statement.loc[:, "Cost of Goods Sold", :],
@@ -493,6 +624,16 @@ class Ratios:
         """
         Calculate the days payables outstanding, an efficiency ratio that measures the
         number of days it takes a company to pay its suppliers.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+
+        toolkit.ratios.get_days_of_accounts_payable_outstanding()
+        ```
         """
         return efficiency.get_days_of_accounts_payable_outstanding(
             self._income_statement.loc[:, "Cost of Goods Sold", :],
@@ -507,6 +648,16 @@ class Ratios:
         Calculate the Cash Conversion Cycle, which measures the amount of time it takes for a company to convert
         its investments in inventory and accounts receivable into cash, while considering the time it takes to pay
         its accounts payable.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+
+        toolkit.ratios.get_cash_conversion_cycle()
+        ```
         """
         days_of_inventory = efficiency.get_days_of_inventory_outstanding(
             self._balance_sheet_statement.loc[:, "Inventory", :].shift(axis=1),
@@ -540,6 +691,16 @@ class Ratios:
         Calculate the receivables turnover, a ratio that measures how efficiently a
         company uses its assets by comparing the amount of credit extended to customers to
         the amount of sales generated.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+
+        toolkit.ratios.get_receivables_turnover()
+        ```
         """
         return efficiency.get_receivables_turnover(
             self._balance_sheet_statement.loc[:, "Accounts Receivable", :].shift(
@@ -554,6 +715,16 @@ class Ratios:
         """
         Calculates the sales, general, and administrative (SG&A) expenses to revenue ratio,
         which measures the SG&A expenses relative to the revenue of the company.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+
+        toolkit.ratios.get_sga_to_revenue_ratio()
+        ```
         """
         return efficiency.get_sga_to_revenue_ratio(
             self._income_statement.loc[
@@ -567,6 +738,16 @@ class Ratios:
         """
         Calculate the Fixed Asset Turnover ratio, an efficiency ratio that
         measures how efficiently a company uses its fixed assets to generate sales.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+
+        toolkit.ratios.get_fixed_asset_turnover()
+        ```
         """
         return efficiency.get_fixed_asset_turnover(
             self._income_statement.loc[:, "Revenue", :],
@@ -579,6 +760,16 @@ class Ratios:
         """
         Calculate the operating ratio, a financial metric that measures the efficiency
         of a company's operations by comparing its operating expenses to its revenue.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+
+        toolkit.ratios.get_operating_ratio()
+        ```
         """
         return efficiency.get_operating_ratio(
             self._income_statement.loc[:, "Operating Expenses", :],
@@ -591,6 +782,16 @@ class Ratios:
         """
         Calculate the current ratio, a liquidity ratio that measures a company's ability
         to pay off its short-term liabilities with its current assets.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+
+        toolkit.ratios.get_current_ratio()
+        ```
         """
         return liquidity.get_current_ratio(
             self._balance_sheet_statement.loc[:, "Total Current Assets", :],
@@ -604,6 +805,16 @@ class Ratios:
         measure of liquidity that excludes inventory from current assets.
 
         This ratio is also referred to as the Acid Test Ratio.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+
+        toolkit.ratios.get_quick_ratio()
+        ```
         """
         return liquidity.get_quick_ratio(
             self._balance_sheet_statement.loc[:, "Cash and Cash Equivalents", :],
@@ -617,6 +828,16 @@ class Ratios:
         """
         Calculate the cash ratio, a liquidity ratio that measures a company's ability
         to pay off its short-term liabilities with its cash and cash equivalents.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+
+        toolkit.ratios.get_cash_ratio()
+        ```
         """
         return liquidity.get_cash_ratio(
             self._balance_sheet_statement.loc[:, "Cash and Cash Equivalents", :],
@@ -629,6 +850,16 @@ class Ratios:
         """
         Calculate the working capital, which is the difference between a company's current assets
         and current liabilities.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+
+        toolkit.ratios.get_working_capital()
+        ```
         """
         return liquidity.get_working_capital(
             self._balance_sheet_statement.loc[:, "Total Current Assets", :],
@@ -640,6 +871,16 @@ class Ratios:
         """
         Calculate the operating cash flow ratio, a liquidity ratio that measures a company's
         ability to pay off its current liabilities with its operating cash flow.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+
+        toolkit.ratios.get_operating_cash_flow_ratio()
+        ```
         """
         return liquidity.get_operating_cash_flow_ratio(
             self._cash_flow_statement.loc[:, "Cash Flow from Operations", :],
@@ -651,6 +892,16 @@ class Ratios:
         """
         Calculate the operating cash flow to sales ratio, a liquidity ratio that
         measures the ability of a company to generate cash from its sales.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+
+        toolkit.ratios.get_operating_cash_flow_sales_ratio()
+        ```
         """
         return liquidity.get_operating_cash_flow_sales_ratio(
             self._cash_flow_statement.loc[:, "Cash Flow from Operations", :],
@@ -662,6 +913,16 @@ class Ratios:
         """
         Calculate the short term coverage ratio, a liquidity ratio that measures a
         company's ability to pay off its short-term obligations with its operating cash flow.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+
+        toolkit.ratios.get_short_term_coverage_ratio()
+        ```
         """
         return liquidity.get_short_term_coverage_ratio(
             self._cash_flow_statement.loc[:, "Cash Flow from Operations", :],
@@ -675,6 +936,16 @@ class Ratios:
         """
         Calculate the gross margin, a profitability ratio that measures the percentage of
         revenue that exceeds the cost of goods sold.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+
+        toolkit.ratios.get_gross_margin()
+        ```
         """
         return profitability.get_gross_margin(
             self._income_statement.loc[:, "Revenue", :],
@@ -686,6 +957,16 @@ class Ratios:
         """
         Calculate the operating margin, a profitability ratio that measures the percentage of
         revenue that remains after deducting operating expenses.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+
+        toolkit.ratios.get_operating_margin()
+        ```
         """
         return profitability.get_operating_margin(
             self._income_statement.loc[:, "Operating Income", :],
@@ -697,6 +978,16 @@ class Ratios:
         """
         Calculate the net profit margin, a profitability ratio that measures the percentage
         of profit a company earns per dollar of revenue.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+
+        toolkit.ratios.get_net_profit_margin()
+        ```
         """
         return profitability.get_net_profit_margin(
             self._income_statement.loc[:, "Net Income", :],
@@ -711,6 +1002,16 @@ class Ratios:
         This ratio measures the proportion of pre-tax profits required to
         pay for interest payments and is crucial in determining a
         company's financial health.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+
+        toolkit.ratios.get_interest_burden_ratio()
+        ```
         """
         return profitability.get_interest_burden_ratio(
             self._income_statement.loc[:, "Operating Income", :],
@@ -722,6 +1023,16 @@ class Ratios:
         """
         Calculate the Pretax Profit Margin, which is the ratio of a company's pre-tax profit to
         its revenue, indicating how much profit a company makes before paying taxes on its earnings.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+
+        toolkit.ratios.get_income_before_tax_profit_margin()
+        ```
         """
         return profitability.get_income_before_tax_profit_margin(
             self._income_statement.loc[:, "Income Before Tax", :],
@@ -733,6 +1044,16 @@ class Ratios:
         """
         Calculate the effective tax rate, a financial ratio that measures the
         percentage of pretax income that is paid as taxes.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+
+        toolkit.ratios.get_effective_tax_rate()
+        ```
         """
         return profitability.get_effective_tax_rate(
             self._income_statement.loc[:, "Income Tax Expense", :],
@@ -744,6 +1065,16 @@ class Ratios:
         """
         Calculate the return on assets (ROA), a profitability ratio that measures how
         efficiently a company uses its assets to generate profits.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+
+        toolkit.ratios.get_return_on_assets()
+        ```
         """
         return profitability.get_return_on_assets(
             self._income_statement.loc[:, "Net Income", :],
@@ -755,6 +1086,16 @@ class Ratios:
         """
         Calculate the return on equity (ROE), a profitability ratio that measures how
         efficiently a company generates profits using its shareholders' equity.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+
+        toolkit.ratios.get_return_on_equity()
+        ```
         """
         return profitability.get_return_on_equity(
             self._income_statement.loc[:, "Net Income", :],
@@ -767,6 +1108,16 @@ class Ratios:
         """
         Calculate the return on invested capital, a financial ratio that measures
         the company's return on the capital invested in it, including both equity and debt.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+
+        toolkit.ratios.get_return_on_invested_capital()
+        ```
         """
         effective_tax_rate = self.get_effective_tax_rate()
 
@@ -783,6 +1134,16 @@ class Ratios:
         """
         Calculates the income quality ratio, which measures the cash flow from operating
         activities relative to the net income of the company.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+
+        toolkit.ratios.get_income_quality_ratio()
+        ```
         """
         return profitability.get_income_quality_ratio(
             self._cash_flow_statement.loc[:, "Cash Flow from Operations", :],
@@ -794,6 +1155,16 @@ class Ratios:
         """
         Calculate the return on tangible assets, which measures the amount of profit
         generated by a company's tangible assets.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+
+        toolkit.ratios.get_return_on_tangible_assets()
+        ```
         """
         return profitability.get_return_on_tangible_assets(
             self._income_statement.loc[:, "Net Income", :],
@@ -808,6 +1179,16 @@ class Ratios:
         Calculate the return on capital employed (ROCE), a profitability ratio that
         measures the amount of return a company generates from the capital it has
         invested in the business.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+
+        toolkit.ratios.get_return_on_capital_employed()
+        ```
         """
         return profitability.get_return_on_capital_employed(
             self._income_statement.loc[:, "Net Income", :],
@@ -822,6 +1203,16 @@ class Ratios:
         """
         Calculate the net income per earnings before taxes (EBT), a profitability ratio that
         measures the net income generated for each dollar of EBT.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+
+        toolkit.ratios.get_net_income_per_ebt()
+        ```
         """
         return profitability.get_net_income_per_ebt(
             self._income_statement.loc[:, "Net Income", :],
@@ -833,6 +1224,16 @@ class Ratios:
         """
         Calculate the free cash flow to operating cash flow ratio, a profitability ratio that
         measures the amount of free cash flow a company generates for every dollar of operating cash flow.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+
+        toolkit.ratios.get_free_cash_flow_operating_cash_flow_ratio()
+        ```
         """
         return profitability.get_free_cash_flow_operating_cash_flow_ratio(
             self._cash_flow_statement.loc[:, "Free Cash Flow", :],
@@ -845,6 +1246,16 @@ class Ratios:
         Calculate the tax burden ratio, which is the ratio of a company's
         net income to its income before tax, indicating how much of a
         company's income is retained after taxes.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+
+        toolkit.ratios.get_tax_burden_ratio()
+        ```
         """
         return profitability.get_tax_burden_ratio(
             self._income_statement.loc[:, "Net Income", :],
@@ -857,6 +1268,16 @@ class Ratios:
         Calculate the EBT to EBIT, which is the ratio of a company's earnings before tax to its
         earnings before interest and taxes, indicating how much of a company's earnings are
         generated before paying interest on debt.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+
+        toolkit.ratios.get_EBT_to_EBIT()
+        ```
         """
         return profitability.get_EBT_to_EBIT(
             self._income_statement.loc[:, "Net Income", :]
@@ -873,6 +1294,16 @@ class Ratios:
         before interest and taxes to its revenue, indicating how much profit a
         company generates from its operations before paying interest on debt
         and taxes on its earnings.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+
+        toolkit.ratios.get_EBIT_to_revenue()
+        ```
         """
         return profitability.get_EBT_to_EBIT(
             self._income_statement.loc[:, "Net Income", :]
@@ -888,6 +1319,16 @@ class Ratios:
         of a company's assets that are financed by debt.
 
         This ratio is also known as the debt ratio.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+
+        toolkit.ratios.get_debt_to_assets_ratio()
+        ```
         """
         return solvency.get_debt_to_assets_ratio(
             self._balance_sheet_statement.loc[:, "Total Debt", :],
@@ -899,6 +1340,16 @@ class Ratios:
         """
         Calculate the debt to equity ratio, a solvency ratio that measures the
         proportion of a company's equity that is financed by debt.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+
+        toolkit.ratios.get_debt_to_equity_ratio()
+        ```
         """
         return solvency.get_debt_to_equity_ratio(
             self._balance_sheet_statement.loc[:, "Total Debt", :],
@@ -910,6 +1361,16 @@ class Ratios:
         """
         Calculate the interest coverage ratio, a solvency ratio that measures a company's
         ability to pay its interest expenses on outstanding debt.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+
+        toolkit.ratios.get_interest_coverage_ratio()
+        ```
         """
         return solvency.get_interest_coverage_ratio(
             self._income_statement.loc[:, "Operating Income", :],
@@ -922,6 +1383,16 @@ class Ratios:
         """
         Calculate the equity multiplier, a solvency ratio that measures the degree to which
         a company uses borrowed money (debt) to finance its operations and growth.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+
+        toolkit.ratios.get_equity_multiplier()
+        ```
         """
         return solvency.get_equity_multiplier(
             self._balance_sheet_statement.loc[:, "Total Assets", :].shift(axis=1),
@@ -935,6 +1406,16 @@ class Ratios:
         """
         Calculate the debt service coverage ratio, a solvency ratio that measures a company's
         ability to service its debt with its net operating income.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+
+        toolkit.ratios.get_debt_service_coverage_ratio()
+        ```
         """
         return solvency.get_debt_service_coverage_ratio(
             self._income_statement.loc[:, "Operating Income", :],
@@ -946,6 +1427,16 @@ class Ratios:
         """
         Calculates the free cash flow yield ratio, which measures the free cash flow
         relative to the market capitalization of the company.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+
+        toolkit.ratios.get_free_cash_flow_yield()
+        ```
         """
 
         years = self._balance_sheet_statement.columns
@@ -971,6 +1462,16 @@ class Ratios:
         """
         Calculates the net debt to EBITDA ratio, which measures the net debt of the company
         relative to its EBITDA.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+
+        toolkit.ratios.get_net_debt_to_ebitda_ratio()
+        ```
         """
         return solvency.get_net_debt_to_ebitda_ratio(
             self._income_statement.loc[:, "Operating Income", :],
@@ -983,6 +1484,16 @@ class Ratios:
         """
         Calculate the cash flow coverage ratio, a solvency ratio that measures a company's
         ability to pay off its debt with its operating cash flow.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+
+        toolkit.ratios.get_cash_flow_coverage_ratio()
+        ```
         """
         return solvency.get_cash_flow_coverage_ratio(
             self._cash_flow_statement.loc[:, "Cash Flow from Operations", :],
@@ -995,6 +1506,16 @@ class Ratios:
         Calculate the capital expenditure coverage ratio, a solvency ratio that
         measures a company's ability to cover its capital expenditures with its
         cash flow from operations.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+
+        toolkit.ratios.get_capex_coverage_ratio()
+        ```
         """
         return solvency.get_capex_coverage_ratio(
             self._cash_flow_statement.loc[:, "Cash Flow from Operations", :],
@@ -1007,6 +1528,16 @@ class Ratios:
         Calculate the dividend paid and capex coverage ratio, a solvency ratio that
         measures a company's ability to cover both its capital expenditures and
         dividend payments with its cash flow from operations.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+
+        toolkit.ratios.get_capex_dividend_coverage_ratio()
+        ```
         """
         return solvency.get_dividend_capex_coverage_ratio(
             self._cash_flow_statement.loc[:, "Cash Flow from Operations", :],
@@ -1021,6 +1552,16 @@ class Ratios:
         """
         Calculate the earnings per share (EPS), a valuation ratio that measures the
         amount of net income earned per share of outstanding common stock.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+
+        toolkit.ratios.get_earnings_per_share()
+        ```
         """
         dividends = (
             self._cash_flow_statement.loc[:, "Preferred Dividends Paid", :]
@@ -1044,6 +1585,16 @@ class Ratios:
     ):
         """
         Calculate the earnings per share growth.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+
+        toolkit.ratios.get_earnings_per_share_growth()
+        ```
         """
         eps = self.get_earnings_per_share(include_dividends, diluted)
 
@@ -1054,6 +1605,16 @@ class Ratios:
         """
         Calculate the revenue per share, a valuation ratio that measures the amount
         of revenue generated per outstanding share of a company's stock.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+
+        toolkit.ratios.get_revenue_per_share()
+        ```
         """
         average_shares = (
             self._income_statement.loc[:, "Weighted Average Shares Diluted", :]
@@ -1072,6 +1633,16 @@ class Ratios:
         """
         Calculate the price earnings ratio (P/E), a valuation ratio that compares a
         company's stock price to its earnings per share.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+
+        toolkit.ratios.get_price_earnings_ratio()
+        ```
         """
         eps = self.get_earnings_per_share(include_dividends, diluted)
 
@@ -1089,6 +1660,16 @@ class Ratios:
         """
         Calculate the price earnings to growth (PEG) ratio, a valuation metric that
         measures the ratio of the price-to-earnings ratio to earnings growth rate.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+
+        toolkit.ratios.get_price_to_earnings_growth_ratio()
+        ```
         """
         eps_growth = self.get_earnings_per_share(include_dividends, diluted)
         price_earnings = self.get_price_earnings_ratio(include_dividends, diluted)
@@ -1100,6 +1681,16 @@ class Ratios:
         """
         Calculate the book value per share, a valuation ratio that measures the
         amount of common equity value per share outstanding.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+
+        toolkit.ratios.get_book_value_per_share()
+        ```
         """
         average_shares = (
             self._income_statement.loc[:, "Weighted Average Shares Diluted", :]
@@ -1118,6 +1709,16 @@ class Ratios:
         """
         Calculate the price to book ratio, a valuation ratio that compares a
         company's market price to its book value per share.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+
+        toolkit.ratios.get_price_to_book_ratio()
+        ```
         """
         book_value_per_share = self.get_book_value_per_share(diluted)
 
@@ -1133,8 +1734,17 @@ class Ratios:
         """
         Calculate the interest debt per share, a valuation ratio that measures the
         amount of interest expense incurred per outstanding share of a company's stock.
-        """
 
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+
+        toolkit.ratios.get_interest_debt_per_share()
+        ```
+        """
         average_shares = (
             self._income_statement.loc[:, "Weighted Average Shares Diluted", :]
             if diluted
@@ -1152,8 +1762,17 @@ class Ratios:
         """
         Calculate the capex per share, a valuation ratio that measures the amount of
         capital expenditures made per outstanding share of a company's stock.
-        """
 
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+
+        toolkit.ratios.get_capex_per_share()
+        ```
+        """
         average_shares = (
             self._income_statement.loc[:, "Weighted Average Shares Diluted", :]
             if diluted
@@ -1169,6 +1788,16 @@ class Ratios:
         """
         Calculate the dividend yield ratio, a valuation ratio that measures the
         amount of dividends distributed per share of stock relative to the stock's price.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+
+        toolkit.ratios.get_dividend_yield()
+        ```
         """
         average_shares = (
             self._income_statement.loc[:, "Weighted Average Shares Diluted", :]
@@ -1192,6 +1821,16 @@ class Ratios:
         """
         Calculate the price to cash flow ratio, a valuation ratio that compares a
         company's market price to its operating cash flow per share.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+
+        toolkit.ratios.get_price_to_cash_flow_ratio()
+        ```
         """
         average_shares = (
             self._income_statement.loc[:, "Weighted Average Shares Diluted", :]
@@ -1215,6 +1854,16 @@ class Ratios:
         """
         Calculate the price to free cash flow ratio, a valuation ratio that compares a
         company's market price to its free cash flow per share.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+
+        toolkit.ratios.get_price_to_free_cash_flow_ratio()
+        ```
         """
         average_shares = (
             self._income_statement.loc[:, "Weighted Average Shares Diluted", :]
@@ -1239,6 +1888,16 @@ class Ratios:
         Calculates the market capitalization of the company.
 
         Note: All the inputs must be in the same currency and unit for accurate calculations.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+
+        toolkit.ratios.get_market_cap()
+        ```
         """
         average_shares = (
             self._income_statement.loc[:, "Weighted Average Shares Diluted", :]
@@ -1263,6 +1922,16 @@ class Ratios:
         preferred equity, minus the cash and cash equivalents.
 
         Note: All the inputs must be in the same currency and unit for accurate calculations.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+
+        toolkit.ratios.get_enterprise_value()
+        ```
         """
         average_shares = (
             self._income_statement.loc[:, "Weighted Average Shares Diluted", :]
@@ -1290,6 +1959,16 @@ class Ratios:
         """
         Calculate the EV to sales ratio, a valuation ratio that compares a company's
         enterprise value (EV) to its total revenue.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+
+        toolkit.ratios.get_ev_to_sales_ratio()
+        ```
         """
         enterprise_value = self.get_enterprise_value(diluted)
 
@@ -1302,6 +1981,16 @@ class Ratios:
         """
         Calculates the enterprise value over EBITDA ratio, which is a valuation ratio that
         measures a company's total value (including debt and equity) relative to its EBITDA.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+
+        toolkit.ratios.get_ev_to_ebitda_ratio()
+        ```
         """
         enterprise_value = self.get_enterprise_value(diluted)
 
@@ -1317,6 +2006,16 @@ class Ratios:
         Calculates the enterprise value over operating cash flow ratio, which is a valuation
         ratio that measures a company's total value (including debt and equity) relative
         to its operating cash flow.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+
+        toolkit.ratios.get_ev_to_operating_cashflow_ratio()
+        ```
         """
         enterprise_value = self.get_enterprise_value(diluted)
 
@@ -1330,6 +2029,16 @@ class Ratios:
         """
         Calculates the earnings yield ratio, which measures the earnings per share
         relative to the market price per share.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+
+        toolkit.ratios.get_earnings_yield()
+        ```
         """
         eps = self.get_earnings_per_share(include_dividends, diluted)
 
@@ -1345,6 +2054,16 @@ class Ratios:
         """
         Calculates the (dividend) payout ratio, which measures the proportion of earnings
         paid out as dividends to shareholders.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+
+        toolkit.ratios.get_payout_ratio()
+        ```
         """
         return valuation.get_payout_ratio(
             self._cash_flow_statement.loc[:, "Dividends Paid", :],
@@ -1356,6 +2075,16 @@ class Ratios:
         """
         Calculate the tangible asset value, which represents the total value of a company's
         assets that can be used to generate revenue.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+
+        toolkit.ratios.get_tangible_asset_value()
+        ```
         """
         return valuation.get_tangible_asset_value(
             self._balance_sheet_statement.loc[:, "Total Assets", :],
@@ -1368,6 +2097,16 @@ class Ratios:
         """
         Calculate the net current asset value, which is the total value of a company's
         current assets minus its current liabilities.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+
+        toolkit.ratios.get_net_current_asset_value()
+        ```
         """
         return valuation.get_net_current_asset_value(
             self._balance_sheet_statement.loc[:, "Total Current Assets", :],
@@ -1379,6 +2118,16 @@ class Ratios:
         """
         Calculate the net current asset value, which is the total value of a company's
         current assets minus its current liabilities.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+
+        toolkit.ratios.get_ev_to_ebit()
+        ```
         """
         enterprise_value = self.get_enterprise_value(diluted)
 

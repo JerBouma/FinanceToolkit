@@ -35,6 +35,16 @@ class Models:
     def get_dupont_analysis(self) -> pd.DataFrame:
         """
         Perform a Dupont analysis to breakdown the return on equity (ROE) into its components.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+
+        toolkit.models.get_dupont_analysis()
+        ```
         """
         if self._dupont_analysis.empty:
             self._dupont_analysis = get_dupont_analysis(
@@ -55,6 +65,16 @@ class Models:
     def get_extended_dupont_analysis(self) -> pd.DataFrame:
         """
         Perform am Extended Dupont analysis to breakdown the return on equity (ROE) into its components.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+
+        toolkit.models.get_extended_dupont_analysis()
+        ```
         """
         if self._extended_dupont_analysis.empty:
             self._extended_dupont_analysis = get_extended_dupont_analysis(

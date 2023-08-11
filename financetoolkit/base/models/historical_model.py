@@ -70,16 +70,36 @@ def get_historical_data(
 
     invalid_tickers = []
     for ticker in ticker_list:
-        url = (
+        historical_data_url = (
             f"https://query1.finance.yahoo.com/v7/finance/download/{ticker}?"
             f"interval={interval}&period1={start_timestamp}&period2={end_timestamp}"
             "&events=history&includeAdjustedClose=true"
         )
+
+        dividend_url = (
+            f"https://query1.finance.yahoo.com/v7/finance/download/{ticker}?"
+            f"interval={interval}&period1={start_timestamp}&period2={end_timestamp}"
+            "&events=div&includeAdjustedClose=true"
+        )
+
         try:
-            historical_data_dict[ticker] = pd.read_csv(url, index_col="Date")
+            historical_data_dict[ticker] = pd.read_csv(
+                historical_data_url, index_col="Date"
+            )
         except HTTPError:
             print(f"No historical data found for {ticker}")
             invalid_tickers.append(ticker)
+            continue
+
+        try:
+            historical_data_dict[ticker]["Dividends"] = pd.read_csv(
+                dividend_url, index_col="Date"
+            )["Dividends"]
+            historical_data_dict[ticker]["Dividends"] = historical_data_dict[ticker][
+                "Dividends"
+            ].fillna(0)
+        except HTTPError:
+            print(f"No dividend data found for {ticker}")
             continue
 
     if historical_data_dict:
@@ -108,6 +128,12 @@ def convert_daily_to_yearly(daily_historical_data: pd.DataFrame):
     daily_historical_data = daily_historical_data.reset_index()
     dates = pd.to_datetime(daily_historical_data.Date).dt.to_period("Y")
     yearly_historical_data = daily_historical_data.groupby(dates).transform("last")
+
+    if "Dividends" in yearly_historical_data:
+        yearly_historical_data["Dividends"] = (
+            daily_historical_data["Dividends"].groupby(dates).transform("sum")
+        )
+
     yearly_historical_data["Date"] = yearly_historical_data["Date"].str[:4]
     yearly_historical_data = yearly_historical_data.drop_duplicates().set_index("Date")
     yearly_historical_data.index = pd.PeriodIndex(
@@ -133,6 +159,12 @@ def convert_daily_to_quarterly(daily_historical_data: pd.DataFrame):
     daily_historical_data = daily_historical_data.reset_index()
     dates = pd.to_datetime(daily_historical_data.Date).dt.to_period("Q")
     quarterly_historical_data = daily_historical_data.groupby(dates).transform("last")
+
+    if "Dividends" in quarterly_historical_data:
+        quarterly_historical_data["Dividends"] = (
+            daily_historical_data["Dividends"].groupby(dates).transform("sum")
+        )
+
     quarterly_historical_data["Date"] = quarterly_historical_data["Date"].str[:7]
     quarterly_historical_data = quarterly_historical_data.drop_duplicates().set_index(
         "Date"

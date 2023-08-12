@@ -6,12 +6,15 @@ from urllib.error import HTTPError
 
 import pandas as pd
 
+# pylint: disable=too-many-locals
+
 
 def get_historical_data(
     tickers: list[str] | str,
     start: str | None = None,
     end: str | None = None,
     interval: str = "1d",
+    return_column: str = "Adj Close",
 ):
     """
     Retrieves historical stock data for the given ticker(s) from Yahoo! Finance API for a specified period.
@@ -101,6 +104,10 @@ def get_historical_data(
         except HTTPError:
             print(f"No dividend data found for {ticker}")
             continue
+
+        historical_data_dict[ticker]["Return"] = historical_data_dict[ticker][
+            return_column
+        ].pct_change()
 
     if historical_data_dict:
         historical_data = pd.concat(historical_data_dict, axis=1)

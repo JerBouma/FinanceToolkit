@@ -5,10 +5,10 @@ import pandas as pd
 
 
 def get_earnings_per_share(
-    net_income: float | pd.Series,
-    preferred_dividends: float | pd.Series,
-    average_outstanding_shares: float | pd.Series,
-) -> float | pd.Series:
+    net_income: pd.Series,
+    preferred_dividends: pd.Series,
+    average_outstanding_shares: pd.Series,
+) -> pd.Series:
     """
     Calculate the earnings per share (EPS), a valuation ratio that measures the
     amount of net income earned per share of outstanding common stock.
@@ -25,8 +25,8 @@ def get_earnings_per_share(
 
 
 def get_revenue_per_share(
-    total_revenue: float | pd.Series, shares_outstanding: float | pd.Series
-) -> float | pd.Series:
+    total_revenue: pd.Series, shares_outstanding: pd.Series
+) -> pd.Series:
     """
     Calculate the revenue per share, a valuation ratio that measures the amount of
     revenue generated per outstanding share of a company's stock.
@@ -42,8 +42,8 @@ def get_revenue_per_share(
 
 
 def get_price_earnings_ratio(
-    stock_price: float | pd.Series, earnings_per_share: float | pd.Series
-) -> float | pd.Series:
+    stock_price: pd.Series, earnings_per_share: pd.Series
+) -> pd.Series:
     """
     Calculate the price earnings ratio (P/E), a valuation ratio that compares a company's
     stock price to its earnings per share.
@@ -79,8 +79,8 @@ def get_earnings_per_share_growth(
 
 
 def get_price_to_earnings_growth_ratio(
-    price_earnings: float | pd.Series, earnings_per_share_growth: float | pd.Series
-) -> float | pd.Series:
+    price_earnings: pd.Series, earnings_per_share_growth: pd.Series
+) -> pd.Series:
     """
     Calculate the price earnings to growth (PEG) ratio, a valuation metric that measures the ratio
     of the price-to-earnings ratio to earnings growth rate.
@@ -96,10 +96,10 @@ def get_price_to_earnings_growth_ratio(
 
 
 def get_book_value_per_share(
-    total_shareholder_equity: float | pd.Series,
-    preferred_equity: float | pd.Series,
-    common_shares_outstanding: float | pd.Series,
-) -> float | pd.Series:
+    total_shareholder_equity: pd.Series,
+    preferred_equity: pd.Series,
+    common_shares_outstanding: pd.Series,
+) -> pd.Series:
     """
     Calculate the book value per share, a valuation ratio that measures the amount of
     common equity value per share outstanding.
@@ -116,8 +116,8 @@ def get_book_value_per_share(
 
 
 def get_price_to_book_ratio(
-    price_per_share: float | pd.Series, book_value_per_share: float | pd.Series
-) -> float | pd.Series:
+    price_per_share: pd.Series, book_value_per_share: pd.Series
+) -> pd.Series:
     """
     Calculate the price to book ratio, a valuation ratio that compares a company's market
     price to its book value per share.
@@ -133,10 +133,10 @@ def get_price_to_book_ratio(
 
 
 def get_interest_debt_per_share(
-    interest_expense: float | pd.Series,
-    total_debt: float | pd.Series,
-    shares_outstanding: float | pd.Series,
-) -> float | pd.Series:
+    interest_expense: pd.Series,
+    total_debt: pd.Series,
+    shares_outstanding: pd.Series,
+) -> pd.Series:
     """
     Calculate the interest debt per share, a valuation ratio that measures the
     amount of interest expense incurred per outstanding share of a company's stock.
@@ -153,8 +153,8 @@ def get_interest_debt_per_share(
 
 
 def get_capex_per_share(
-    capital_expenditures: float | pd.Series, shares_outstanding: float | pd.Series
-) -> float | pd.Series:
+    capital_expenditures: pd.Series, shares_outstanding: pd.Series
+) -> pd.Series:
     """
     Calculate the capex per share, a valuation ratio that measures the amount of
     capital expenditures made per outstanding share of a company's stock.
@@ -170,9 +170,9 @@ def get_capex_per_share(
 
 
 def get_dividend_yield(
-    dividends: float | pd.Series,
-    stock_price: float | pd.Series,
-) -> float | pd.Series:
+    dividends: pd.Series,
+    stock_price: pd.Series,
+) -> pd.Series:
     """
     Calculate the dividend yield ratio, a valuation ratio that measures the amount of
     dividends distributed per share of stock relative to the stock's price.
@@ -188,10 +188,10 @@ def get_dividend_yield(
 
 
 def get_weighted_dividend_yield(
-    dividends_paid: float | pd.Series,
-    shares_outstanding: float | pd.Series,
-    stock_price: float | pd.Series,
-) -> float | pd.Series:
+    dividends_paid: pd.Series,
+    shares_outstanding: pd.Series,
+    stock_price: pd.Series,
+) -> pd.Series:
     """
     Calculate the weighted dividend yield ratio, a valuation ratio that measures the amount of
     dividends distributed per share of stock relative to the stock's price.
@@ -211,8 +211,8 @@ def get_weighted_dividend_yield(
 
 
 def get_price_to_cash_flow_ratio(
-    market_cap: float | pd.Series, operations_cash_flow: float | pd.Series
-) -> float | pd.Series:
+    market_cap: pd.Series, operations_cash_flow: pd.Series
+) -> pd.Series:
     """
     Calculate the price to cash flow ratio, a valuation ratio that compares a company's market
     price to its cash flow per share.
@@ -228,8 +228,8 @@ def get_price_to_cash_flow_ratio(
 
 
 def get_price_to_free_cash_flow_ratio(
-    market_cap: float | pd.Series, free_cash_flow: float | pd.Series
-) -> float | pd.Series:
+    market_cap: pd.Series, free_cash_flow: pd.Series
+) -> pd.Series:
     """
     Calculate the price to free cash flow ratio, a valuation ratio that compares a company's market
     price to its free cash flow per share.
@@ -245,9 +245,9 @@ def get_price_to_free_cash_flow_ratio(
 
 
 def get_market_cap(
-    share_price: float | pd.Series,
-    total_shares_outstanding: float | pd.Series,
-) -> float | pd.Series:
+    share_price: pd.Series,
+    total_shares_outstanding: pd.Series,
+) -> pd.Series:
     """
     Calculates the market capitalization of the company.
 
@@ -264,12 +264,12 @@ def get_market_cap(
 
 
 def get_enterprise_value(
-    market_cap: float | pd.Series,
-    total_debt: float | pd.Series,
-    minority_interest: float | pd.Series,
-    preferred_equity: float | pd.Series,
-    cash_and_cash_equivalents: float | pd.Series,
-) -> float | pd.Series:
+    market_cap: pd.Series,
+    total_debt: pd.Series,
+    minority_interest: pd.Series,
+    preferred_equity: pd.Series,
+    cash_and_cash_equivalents: pd.Series,
+) -> pd.Series:
     """
     Calculates the Enterprise Value (EV) of a company. The Enterprise Value (EV)
     is a measure of a company's total value, often used as a more comprehensive
@@ -299,8 +299,8 @@ def get_enterprise_value(
 
 
 def get_ev_to_sales_ratio(
-    enterprise_value: float | pd.Series, total_revenue: float | pd.Series
-) -> float | pd.Series:
+    enterprise_value: pd.Series, total_revenue: pd.Series
+) -> pd.Series:
     """
     Calculate the EV to sales ratio, a valuation ratio that compares a company's enterprise value
     (EV) to its total revenue.
@@ -316,10 +316,10 @@ def get_ev_to_sales_ratio(
 
 
 def get_ev_to_ebitda_ratio(
-    enterprise_value: float | pd.Series,
-    operating_income: float | pd.Series,
-    depreciation_and_amortization: float | pd.Series,
-) -> float | pd.Series:
+    enterprise_value: pd.Series,
+    operating_income: pd.Series,
+    depreciation_and_amortization: pd.Series,
+) -> pd.Series:
     """
     Calculates the enterprise value over EBITDA ratio, which is a valuation ratio
     that measures a company's total value (including debt and equity) relative to its
@@ -338,8 +338,8 @@ def get_ev_to_ebitda_ratio(
 
 
 def get_ev_to_operating_cashflow_ratio(
-    enterprise_value: float | pd.Series, operating_cashflow: float | pd.Series
-) -> float | pd.Series:
+    enterprise_value: pd.Series, operating_cashflow: pd.Series
+) -> pd.Series:
     """
     Calculates the enterprise value over operating cash flow ratio, which is a valuation ratio
     that measures a company's total value (including debt and equity) relative to its
@@ -357,8 +357,8 @@ def get_ev_to_operating_cashflow_ratio(
 
 
 def get_earnings_yield(
-    earnings_per_share: float | pd.Series, market_price_per_share: float | pd.Series
-) -> float | pd.Series:
+    earnings_per_share: pd.Series, market_price_per_share: pd.Series
+) -> pd.Series:
     """
     Calculates the earnings yield ratio, which measures the earnings per share relative
     to the market price per share.
@@ -373,9 +373,7 @@ def get_earnings_yield(
     return earnings_per_share / market_price_per_share
 
 
-def get_payout_ratio(
-    dividends: float | pd.Series, net_income: float | pd.Series
-) -> float | pd.Series:
+def get_payout_ratio(dividends: pd.Series, net_income: pd.Series) -> pd.Series:
     """
     Calculates the payout ratio, which measures the proportion of net income paid out as
     dividends to shareholders.
@@ -391,10 +389,10 @@ def get_payout_ratio(
 
 
 def get_tangible_asset_value(
-    total_assets: float | pd.Series,
-    total_liabilities: float | pd.Series,
-    goodwill: float | pd.Series,
-) -> float | pd.Series:
+    total_assets: pd.Series,
+    total_liabilities: pd.Series,
+    goodwill: pd.Series,
+) -> pd.Series:
     """
     Calculate the tangible asset value, which represents the total value of a company's assets
     that can be used to generate revenue.
@@ -411,9 +409,9 @@ def get_tangible_asset_value(
 
 
 def get_net_current_asset_value(
-    total_current_assets: float | pd.Series,
-    total_current_liabilities: float | pd.Series,
-) -> float | pd.Series:
+    total_current_assets: pd.Series,
+    total_current_liabilities: pd.Series,
+) -> pd.Series:
     """
     Calculate the net current asset value, which is the total value of a company's current assets
     minus its current liabilities.
@@ -429,9 +427,9 @@ def get_net_current_asset_value(
 
 
 def get_ev_to_ebit(
-    enterprise_value: float | pd.Series,
-    earnings_before_interest_and_taxes: float | pd.Series,
-) -> float | pd.Series:
+    enterprise_value: pd.Series,
+    earnings_before_interest_and_taxes: pd.Series,
+) -> pd.Series:
     """
     Calculate the enterprise value multiplier, a financial ratio that measures the total value of a
     company's operations (including debt and equity) relative to its earnings before interest and taxes.

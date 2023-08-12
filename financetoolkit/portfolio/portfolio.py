@@ -21,7 +21,7 @@ def get_tracking_error(
     return np.std(portfolio_returns - benchmark_returns)
 
 
-def get_payoff_ratio(returns: pd.Series) -> float | pd.Series:
+def get_payoff_ratio(returns: pd.Series) -> pd.Series:
     """
     Calculate the Payoff Ratio, a ratio that measures the ability of a trading strategy
     to generate profits relative to its losses.
@@ -57,7 +57,7 @@ def get_profit_factor(returns: pd.Series) -> pd.Series:
 def get_jensens_alpha(
     returns: pd.Series,
     benchmark_returns: pd.Series,
-    risk_free_rate: float | pd.Series = 0.0,
+    risk_free_rate: pd.Series = 0.0,
 ) -> pd.Series:
     """
     Calculates the Jensen's alpha for the given returns series relative to the given benchmark returns series.
@@ -164,7 +164,7 @@ def get_calmar_ratio(returns: pd.Series) -> pd.Series:
 
 
 def get_kelly_criterion(
-    win_probability: float | pd.Series, win_loss_ratio: float | pd.Series
+    win_probability: pd.Series, win_loss_ratio: pd.Series
 ) -> pd.Series:
     """
     Calculates the Kelly criterion for the given win and loss probabilities.

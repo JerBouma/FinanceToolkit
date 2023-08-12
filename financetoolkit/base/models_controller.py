@@ -3,11 +3,13 @@ __docformat__ = "google"
 
 import pandas as pd
 
-from financetoolkit.base.helpers import handle_errors
+from financetoolkit.base.helpers import calculate_growth, handle_errors
 from financetoolkit.models.dupont import (
     get_dupont_analysis,
     get_extended_dupont_analysis,
 )
+
+# pylint: disable=too-many-instance-attributes
 
 
 class Models:
@@ -32,10 +34,18 @@ class Models:
 
         # Initialization of Model Variables
         self._dupont_analysis: pd.DataFrame = pd.DataFrame()
+        self._dupont_analysis_growth: pd.DataFrame = pd.DataFrame()
         self._extended_dupont_analysis: pd.DataFrame = pd.DataFrame()
+        self._extended_dupont_analysis_growth: pd.DataFrame = pd.DataFrame()
 
     @handle_errors
-    def get_dupont_analysis(self) -> pd.DataFrame:
+    def get_dupont_analysis(
+        self,
+        rounding: int = 4,
+        growth: bool = False,
+        lag: int | str = 1,
+        overwrite: bool = False,
+    ) -> pd.DataFrame:
         """
         Perform a Dupont analysis to breakdown the return on equity (ROE) into its components.
 
@@ -49,7 +59,7 @@ class Models:
         toolkit.models.get_dupont_analysis()
         ```
         """
-        if self._dupont_analysis.empty:
+        if self._dupont_analysis.empty or overwrite:
             self._dupont_analysis = get_dupont_analysis(
                 self._income_statement.loc[:, "Net Income", :],
                 self._income_statement.loc[:, "Revenue", :],
@@ -59,13 +69,28 @@ class Models:
                 self._balance_sheet_statement.loc[:, "Total Equity", :],
             )
 
-        if len(self._tickers) == 1:
-            return self._dupont_analysis.droplevel(level=0)
+        if (self._dupont_analysis_growth.empty or overwrite) and growth:
+            self._dupont_analysis_growth = calculate_growth(
+                self._dupont_analysis, lag=lag, rounding=rounding
+            )
 
-        return self._dupont_analysis
+        if len(self._tickers) == 1:
+            return (
+                self._dupont_analysis_growth.droplevel(level=0)
+                if growth
+                else self._dupont_analysis.droplevel(level=0)
+            )
+
+        return self._dupont_analysis_growth if growth else self._dupont_analysis
 
     @handle_errors
-    def get_extended_dupont_analysis(self) -> pd.DataFrame:
+    def get_extended_dupont_analysis(
+        self,
+        rounding: int = 4,
+        growth: bool = False,
+        lag: int | str = 1,
+        overwrite: bool = False,
+    ) -> pd.DataFrame:
         """
         Perform am Extended Dupont analysis to breakdown the return on equity (ROE) into its components.
 
@@ -79,7 +104,7 @@ class Models:
         toolkit.models.get_extended_dupont_analysis()
         ```
         """
-        if self._extended_dupont_analysis.empty:
+        if self._extended_dupont_analysis.empty or overwrite:
             self._extended_dupont_analysis = get_extended_dupont_analysis(
                 self._income_statement.loc[:, "Income Before Tax", :],
                 self._income_statement.loc[:, "Operating Income", :],
@@ -91,7 +116,20 @@ class Models:
                 self._balance_sheet_statement.loc[:, "Total Equity", :],
             )
 
-        if len(self._tickers) == 1:
-            return self._extended_dupont_analysis.droplevel(level=0)
+        if (self._extended_dupont_analysis_growth.empty or overwrite) and growth:
+            self._extended_dupont_analysis_growth = calculate_growth(
+                self._extended_dupont_analysis, lag=lag, rounding=rounding
+            )
 
-        return self._extended_dupont_analysis
+        if len(self._tickers) == 1:
+            return (
+                self._extended_dupont_analysis_growth.droplevel(level=0)
+                if growth
+                else self._extended_dupont_analysis.droplevel(level=0)
+            )
+
+        return (
+            self._extended_dupont_analysis_growth
+            if growth
+            else self._extended_dupont_analysis
+        )

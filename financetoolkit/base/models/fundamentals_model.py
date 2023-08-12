@@ -21,6 +21,7 @@ def get_financial_statements(
     start_date: str | None = None,
     end_date: str | None = None,
     limit: int = 100,
+    rounding: int = 4,
     statement_format: pd.DataFrame = pd.DataFrame(),
     statistics_format: pd.DataFrame = pd.DataFrame(),
 ):
@@ -152,6 +153,8 @@ def get_financial_statements(
         financial_statement_total = financial_statement_total.sort_index(
             axis=1
         ).truncate(before=start_date, after=end_date, axis=1)
+
+        financial_statement_total = financial_statement_total.round(rounding)
 
         if quarter:
             financial_statement_statistics.columns = pd.PeriodIndex(

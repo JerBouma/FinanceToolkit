@@ -11,12 +11,12 @@ from financetoolkit.ratios import (
 
 
 def get_dupont_analysis(
-    net_income: float | pd.Series,
-    total_revenue: float | pd.Series,
-    total_assets_begin: float | pd.Series,
-    total_assets_end: float | pd.Series,
-    total_equity_begin: float | pd.Series,
-    total_equity_end: float | pd.Series,
+    net_income: pd.Series,
+    total_revenue: pd.Series,
+    total_assets_begin: pd.Series,
+    total_assets_end: pd.Series,
+    total_equity_begin: pd.Series,
+    total_equity_end: pd.Series,
 ) -> pd.DataFrame:
     """
     Perform a Dupont analysis to breakdown the return on equity (ROE) into its components.
@@ -67,14 +67,14 @@ def get_dupont_analysis(
 
 
 def get_extended_dupont_analysis(
-    operating_income: float | pd.Series,
-    income_before_tax: float | pd.Series,
-    net_income: float | pd.Series,
-    total_revenue: float | pd.Series,
-    total_assets_begin: float | pd.Series,
-    total_assets_end: float | pd.Series,
-    total_equity_begin: float | pd.Series,
-    total_equity_end: float | pd.Series,
+    operating_income: pd.Series,
+    income_before_tax: pd.Series,
+    net_income: pd.Series,
+    total_revenue: pd.Series,
+    total_assets_begin: pd.Series,
+    total_assets_end: pd.Series,
+    total_equity_begin: pd.Series,
+    total_equity_end: pd.Series,
 ) -> pd.DataFrame:
     """
     Perform am Extended Dupont analysis to breakdown the return on equity (ROE) into its components.

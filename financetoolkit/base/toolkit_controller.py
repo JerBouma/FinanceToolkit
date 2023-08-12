@@ -6,6 +6,7 @@ import re
 
 import pandas as pd
 
+from financetoolkit.base.helpers import calculate_growth as _calculate_growth
 from financetoolkit.base.models.fundamentals_model import (
     get_enterprise as _get_enterprise,
     get_financial_statements as _get_financial_statements,
@@ -155,6 +156,8 @@ class Toolkit:
             if not balance.empty
             else pd.DataFrame()
         )
+        self._balance_sheet_statement_growth: pd.DataFrame = pd.DataFrame()
+
         self._income_statement: pd.DataFrame = (
             _convert_financial_statements(
                 income, self._income_statement_generic, reverse_dates
@@ -162,6 +165,8 @@ class Toolkit:
             if not income.empty
             else pd.DataFrame()
         )
+        self._income_statement_growth: pd.DataFrame = pd.DataFrame()
+
         self._cash_flow_statement: pd.DataFrame = (
             _convert_financial_statements(
                 cash, self._cash_flow_statement_generic, reverse_dates
@@ -169,6 +174,8 @@ class Toolkit:
             if not cash.empty
             else pd.DataFrame()
         )
+        self._cash_flow_statement_growth: pd.DataFrame = pd.DataFrame()
+
         self._statistics_statement: pd.DataFrame = pd.DataFrame()
         self._custom_ratios: dict | None = custom_ratios
 
@@ -618,7 +625,9 @@ class Toolkit:
 
         return self._rating
 
-    def get_historical_data(self, period: str = "daily"):
+    def get_historical_data(
+        self, period: str = "daily", return_column: str = "Adj Close"
+    ):
         """
         Returns a pandas dataframe containing the historical data for the specified tickers.
 
@@ -664,7 +673,11 @@ class Toolkit:
         """
         if period == "daily":
             self._daily_historical_data, self._invalid_tickers = _get_historical_data(
-                self._tickers, self._start_date, self._end_date, interval="1d"
+                self._tickers,
+                self._start_date,
+                self._end_date,
+                interval="1d",
+                return_column=return_column,
             )
 
             if self._remove_invalid_tickers:
@@ -685,7 +698,11 @@ class Toolkit:
 
         if period == "weekly":
             self._weekly_historical_data, self._invalid_tickers = _get_historical_data(
-                self._tickers, self._start_date, self._end_date, interval="1wk"
+                self._tickers,
+                self._start_date,
+                self._end_date,
+                interval="1wk",
+                return_column=return_column,
             )
 
             if self._remove_invalid_tickers:
@@ -706,7 +723,11 @@ class Toolkit:
 
         if period == "monthly":
             self._monthly_historical_data, self._invalid_tickers = _get_historical_data(
-                self._tickers, self._start_date, self._end_date, interval="1mo"
+                self._tickers,
+                self._start_date,
+                self._end_date,
+                interval="1mo",
+                return_column=return_column,
             )
 
             if self._remove_invalid_tickers:
@@ -731,7 +752,11 @@ class Toolkit:
                     self._daily_historical_data,
                     self._invalid_tickers,
                 ) = _get_historical_data(
-                    self._tickers, self._start_date, self._end_date, interval="1d"
+                    self._tickers,
+                    self._start_date,
+                    self._end_date,
+                    interval="1d",
+                    return_column=return_column,
                 )
 
             self._quarterly_historical_data = _convert_daily_to_quarterly(
@@ -758,7 +783,11 @@ class Toolkit:
                     self._daily_historical_data,
                     self._invalid_tickers,
                 ) = _get_historical_data(
-                    self._tickers, self._start_date, self._end_date, interval="1d"
+                    self._tickers,
+                    self._start_date,
+                    self._end_date,
+                    interval="1d",
+                    return_column=return_column,
                 )
 
             self._yearly_historical_data = _convert_daily_to_yearly(
@@ -789,6 +818,9 @@ class Toolkit:
         self,
         limit: int = 100,
         overwrite: bool = False,
+        rounding: int = 4,
+        growth: bool = False,
+        lag: int | str = 1,
     ):
         """
         Retrieves the balance sheet statement financial data for the company(s) from the specified source.
@@ -796,6 +828,9 @@ class Toolkit:
         Args:
             limit (int): Defines the maximum years or quarters to obtain.
             overwrite (bool): Defines whether to overwrite the existing data.
+            rounding (int): Defines the number of decimal places to round the data to.
+            growth (bool): Defines whether to return the growth of the data.
+            lag (int | str): Defines the number of periods to lag the growth data by.
 
         Returns:
             pd.DataFrame: A pandas DataFrame with the retrieved balance sheet statement data.
@@ -878,6 +913,7 @@ class Toolkit:
                 self._start_date,
                 self._end_date,
                 limit,
+                rounding,
                 self._balance_sheet_statement_generic,
                 self._statistics_statement_generic,
             )
@@ -889,15 +925,31 @@ class Toolkit:
                 if ticker not in self._invalid_tickers
             ]
 
-        if len(self._tickers) == 1:
-            return self._balance_sheet_statement.loc[self._tickers[0]]
+        if (self._balance_sheet_statement_growth.empty or overwrite) and growth:
+            self._balance_sheet_statement_growth = _calculate_growth(
+                self._balance_sheet_statement, lag=lag, rounding=rounding
+            )
 
-        return self._balance_sheet_statement
+        if len(self._tickers) == 1:
+            return (
+                self._balance_sheet_statement_growth.loc[self._tickers[0]]
+                if growth
+                else self._balance_sheet_statement.loc[self._tickers[0]]
+            )
+
+        return (
+            self._balance_sheet_statement_growth
+            if growth
+            else self._balance_sheet_statement
+        )
 
     def get_income_statement(
         self,
         limit: int = 100,
         overwrite: bool = False,
+        rounding: int = 4,
+        growth: bool = False,
+        lag: int | str = 1,
     ):
         """
         Retrieves the income statement financial data for the company(s) from the specified source.
@@ -905,6 +957,9 @@ class Toolkit:
         Args:
             limit (int): Defines the maximum years or quarters to obtain.
             overwrite (bool): Defines whether to overwrite the existing data.
+            rounding (int): Defines the number of decimal places to round the data to.
+            growth (bool): Defines whether to return the growth of the data.
+            lag (int | str): Defines the number of periods to lag the growth data by.
 
         Returns:
             pd.DataFrame: A pandas DataFrame with the retrieved income statement data.
@@ -972,6 +1027,7 @@ class Toolkit:
                 self._start_date,
                 self._end_date,
                 limit,
+                rounding,
                 self._income_statement_generic,
                 self._statistics_statement_generic,
             )
@@ -983,15 +1039,27 @@ class Toolkit:
                 if ticker not in self._invalid_tickers
             ]
 
-        if len(self._tickers) == 1:
-            return self._income_statement.loc[self._tickers[0]]
+        if (self._income_statement_growth.empty or overwrite) and growth:
+            self._income_statement_growth = _calculate_growth(
+                self._income_statement, lag=lag, rounding=rounding
+            )
 
-        return self._income_statement
+        if len(self._tickers) == 1:
+            return (
+                self._income_statement_growth.loc[self._tickers[0]]
+                if growth
+                else self._income_statement.loc[self._tickers[0]]
+            )
+
+        return self._income_statement_growth if growth else self._income_statement
 
     def get_cash_flow_statement(
         self,
         limit: int = 100,
         overwrite: bool = False,
+        rounding: int = 4,
+        growth: bool = False,
+        lag: int | str = 1,
     ):
         """
         Retrieves the cash flow statement financial data for the company(s) from the specified source.
@@ -999,6 +1067,9 @@ class Toolkit:
         Args:
             limit (int): Defines the maximum years or quarters to obtain.
             overwrite (bool): Defines whether to overwrite the existing data.
+            rounding (int): Defines the number of decimal places to round the data to.
+            growth (bool): Defines whether to return the growth of the data.
+            lag (int | str): Defines the number of periods to lag the growth data by.
 
         Returns:
             pd.DataFrame: A pandas DataFrame with the retrieved cash flow statement data.
@@ -1068,6 +1139,7 @@ class Toolkit:
                 self._start_date,
                 self._end_date,
                 limit,
+                rounding,
                 self._cash_flow_statement_generic,
                 self._statistics_statement_generic,
             )
@@ -1079,10 +1151,19 @@ class Toolkit:
                 if ticker not in self._invalid_tickers
             ]
 
-        if len(self._tickers) == 1:
-            return self._cash_flow_statement.loc[self._tickers[0]]
+        if (self._cash_flow_statement_growth.empty or overwrite) and growth:
+            self._cash_flow_statement_growth = _calculate_growth(
+                self._cash_flow_statement, lag=lag, rounding=rounding
+            )
 
-        return self._cash_flow_statement
+        if len(self._tickers) == 1:
+            return (
+                self._cash_flow_statement_growth.loc[self._tickers[0]]
+                if growth
+                else self._cash_flow_statement.loc[self._tickers[0]]
+            )
+
+        return self._cash_flow_statement_growth if growth else self._cash_flow_statement
 
     def get_statistics_statement(
         self,

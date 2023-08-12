@@ -30,9 +30,7 @@ def get_volatility(returns: pd.Series) -> pd.Series:
     return returns.std()
 
 
-def get_sharpe_ratio(
-    returns: pd.Series, risk_free_rate: float | pd.Series
-) -> pd.Series:
+def get_sharpe_ratio(returns: pd.Series, risk_free_rate: pd.Series) -> pd.Series:
     """
     Calculate the Sharpe ratio of returns over a rolling window.
 
@@ -48,9 +46,7 @@ def get_sharpe_ratio(
     return excess_returns / returns.std()
 
 
-def get_sortino_ratio(
-    returns: pd.Series, risk_free_rate: float | pd.Series
-) -> pd.Series:
+def get_sortino_ratio(returns: pd.Series, risk_free_rate: pd.Series) -> pd.Series:
     """
     Calculate the Sortino ratio of returns over a rolling window.
 

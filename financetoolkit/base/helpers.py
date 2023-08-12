@@ -49,6 +49,22 @@ def equal_length(dataset1: pd.Series, dataset2: pd.Series) -> pd.Series:
     return dataset1, dataset2
 
 
+def calculate_growth(
+    dataset: pd.Series | pd.DataFrame, lag: int | str = 1, rounding: int = 4
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculates growth for a given dataset. Defaults to a lag of 1 (i.e. 1 year or 1 quarter).
+
+    Args:
+        dataset (pd.Series | pd.DataFrame): the dataset to calculate the growth values for.
+        lag (int | str): the lag to use for the calculation. Defaults to 1.
+
+    Returns:
+        pd.Series | pd.DataFrame: _description_
+    """
+    return dataset.pct_change(periods=lag, axis="columns").round(rounding)
+
+
 def handle_errors(func):
     """
     Decorator to handle specific errors that may occur in a function and provide informative messages.

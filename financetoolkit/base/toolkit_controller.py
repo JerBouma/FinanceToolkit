@@ -8,7 +8,6 @@ import pandas as pd
 
 from financetoolkit.base.helpers import calculate_growth as _calculate_growth
 from financetoolkit.base.models.fundamentals_model import (
-    get_enterprise as _get_enterprise,
     get_financial_statements as _get_financial_statements,
     get_profile as _get_profile,
     get_quote as _get_quote,
@@ -354,6 +353,30 @@ class Toolkit:
                 "The datasets could not be populated and therefore the Models class cannot be initialized."
             )
 
+        if not self._start_date:
+            self._start_date = (
+                f"{self._balance_sheet_statement.columns[0].year - 5}-01-01"
+            )
+        if not self._end_date:
+            self._end_date = (
+                f"{self._balance_sheet_statement.columns[-1].year + 5}-01-01"
+            )
+
+        if self._quarterly:
+            if (
+                self._quarterly_historical_data.empty
+                and not self._balance_sheet_statement.empty
+            ):
+                self.get_historical_data(period="quarterly")
+        elif not self._quarterly:
+            if (
+                self._yearly_historical_data.empty
+                and not self._balance_sheet_statement.empty
+            ):
+                self.get_historical_data(period="yearly")
+        else:
+            raise ValueError("Invalid value for the quarterly parameter.")
+
         if empty_data:
             print(
                 "The following data was not provided within the Toolkit class and "
@@ -362,6 +385,9 @@ class Toolkit:
 
         return Models(
             self._tickers,
+            self._quarterly_historical_data
+            if self._quarterly
+            else self._yearly_historical_data,
             self._balance_sheet_statement,
             self._income_statement,
             self._cash_flow_statement,
@@ -511,64 +537,6 @@ class Toolkit:
             ]
 
         return self._quote
-
-    def get_enterprise(self, limit: int = 100):
-        """
-        Returns a pandas dataframe containing the enterprise value information for the specified tickers.
-
-        Args:
-            quarter (str): The quarter for which the enterprise value is required. Defaults to False.
-            limit (str): The number of results to return. Defaults to 100.
-
-        Raises:
-            ValueError: If an API key is not defined for FinancialModelingPrep.
-
-        Returns:
-            pandas.DataFrame: The enterprise value information for the specified tickers.
-
-        As an example:
-
-        ```python
-        from financetoolkit import Toolkit
-
-        toolkit = Toolkit(["MU", "MSFT"], api_key=FMP_KEY)
-
-        enterprise = toolkit.get_enterprise()
-
-        enterprise.loc['MSFT'].tail()
-        ```
-
-        Which returns:
-
-        | date   |   Stock Price |   Number of Shares |   Market Capitalization |   Cash and Cash Equivalents |   Total Debt |   Enterprise Value |
-        |:-------|--------------:|-------------------:|------------------------:|----------------------------:|-------------:|-------------------:|
-        | 2019   |        135.68 |          7.673e+09 |             1.04107e+12 |                  1.1356e+10 |   7.8366e+10 |        1.10808e+12 |
-        | 2020   |        203.51 |          7.61e+09  |             1.54871e+12 |                  1.3576e+10 |   7.0998e+10 |        1.60613e+12 |
-        | 2021   |        270.9  |          7.547e+09 |             2.04448e+12 |                  1.4224e+10 |   6.7775e+10 |        2.09803e+12 |
-        | 2022   |        256.83 |          7.496e+09 |             1.9252e+12  |                  1.3931e+10 |   6.127e+10  |        1.97254e+12 |
-        | 2023   |        340.54 |          7.446e+09 |             2.53566e+12 |                  3.4704e+10 |   5.9965e+10 |        2.56092e+12 |
-        """
-        if not self._api_key:
-            return print(
-                "Please define an API key from FinancialModelingPrep to use this functionality."
-            )
-
-        if self._enterprise.empty:
-            self._enterprise, self._invalid_tickers = _get_enterprise(
-                self._tickers,
-                self._api_key,
-                self._quarterly,
-                limit,
-            )
-
-        if self._remove_invalid_tickers:
-            self._tickers = [
-                ticker
-                for ticker in self._tickers
-                if ticker not in self._invalid_tickers
-            ]
-
-        return self._enterprise
 
     def get_rating(self, limit: int = 100):
         """

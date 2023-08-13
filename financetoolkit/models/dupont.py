@@ -3,11 +3,7 @@ __docformat__ = "google"
 
 import pandas as pd
 
-from financetoolkit.ratios import (
-    efficiency as _efficiency,
-    profitability as _profitability,
-    solvency as _solvency,
-)
+from financetoolkit.ratios import efficiency, profitability, solvency
 
 
 def get_dupont_analysis(
@@ -33,15 +29,15 @@ def get_dupont_analysis(
         pd.DataFrame: A DataFrame containing the Dupont analysis components.
     """
     # Calculate the net profit margin
-    profit_margin = _profitability.get_net_profit_margin(net_income, total_revenue)
+    profit_margin = profitability.get_net_profit_margin(net_income, total_revenue)
 
     # Calculate the asset turnover
-    asset_turnover = _efficiency.get_asset_turnover_ratio(
+    asset_turnover = efficiency.get_asset_turnover_ratio(
         total_revenue, total_assets_begin, total_assets_end
     )
 
     # Calculate the equity multiplier
-    equity_multiplier = _solvency.get_equity_multiplier(
+    equity_multiplier = solvency.get_equity_multiplier(
         total_assets_begin, total_assets_end, total_equity_begin, total_equity_end
     )
 
@@ -94,27 +90,25 @@ def get_extended_dupont_analysis(
         pd.DataFrame: A DataFrame containing the Dupont analysis components.
     """
     # Calculate the interest burden ratio
-    interest_burden_ratio = _profitability.get_interest_burden_ratio(
+    interest_burden_ratio = profitability.get_interest_burden_ratio(
         income_before_tax, operating_income
     )
 
     # Calculate the tax burden ratio
-    tax_burden_ratio = _profitability.get_tax_burden_ratio(
-        net_income, income_before_tax
-    )
+    tax_burden_ratio = profitability.get_tax_burden_ratio(net_income, income_before_tax)
 
     # Calculate the operating profit margin
-    operating_profit_margin = _profitability.get_operating_margin(
+    operating_profit_margin = profitability.get_operating_margin(
         operating_income, total_revenue
     )
 
     # Calculate the asset turnover
-    asset_turnover = _efficiency.get_asset_turnover_ratio(
+    asset_turnover = efficiency.get_asset_turnover_ratio(
         total_revenue, total_assets_begin, total_assets_end
     )
 
     # Calculate the equity multiplier
-    equity_multiplier = _solvency.get_equity_multiplier(
+    equity_multiplier = solvency.get_equity_multiplier(
         total_assets_begin, total_assets_end, total_equity_begin, total_equity_end
     )
 

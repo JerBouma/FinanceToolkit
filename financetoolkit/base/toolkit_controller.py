@@ -925,7 +925,7 @@ class Toolkit:
                 if ticker not in self._invalid_tickers
             ]
 
-        if (self._balance_sheet_statement_growth.empty or overwrite) and growth:
+        if growth:
             self._balance_sheet_statement_growth = _calculate_growth(
                 self._balance_sheet_statement, lag=lag, rounding=rounding
             )
@@ -1039,7 +1039,7 @@ class Toolkit:
                 if ticker not in self._invalid_tickers
             ]
 
-        if (self._income_statement_growth.empty or overwrite) and growth:
+        if growth:
             self._income_statement_growth = _calculate_growth(
                 self._income_statement, lag=lag, rounding=rounding
             )
@@ -1151,7 +1151,7 @@ class Toolkit:
                 if ticker not in self._invalid_tickers
             ]
 
-        if (self._cash_flow_statement_growth.empty or overwrite) and growth:
+        if growth:
             self._cash_flow_statement_growth = _calculate_growth(
                 self._cash_flow_statement, lag=lag, rounding=rounding
             )

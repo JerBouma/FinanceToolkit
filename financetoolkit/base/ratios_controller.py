@@ -40,7 +40,9 @@ class Ratios:
         self._balance_sheet_statement: pd.DataFrame = balance
         self._income_statement: pd.DataFrame = income
         self._cash_flow_statement: pd.DataFrame = cash
-        self._custom_ratios_dict: dict | None = custom_ratios_dict
+        self._custom_ratios_dict: dict = (
+            custom_ratios_dict if custom_ratios_dict else {}
+        )
         self._custom_ratios: pd.DataFrame = pd.DataFrame()
         self._custom_ratios_growth: pd.DataFrame = pd.DataFrame()
 
@@ -66,7 +68,6 @@ class Ratios:
         rounding: int = 4,
         growth: bool = False,
         lag: int | list[int] = 1,
-        overwrite: bool = False,
     ):
         """
         Calculates all Ratios based on the data provided.
@@ -90,26 +91,15 @@ class Ratios:
         toolkit.ratios.collect_all_ratios()
         ```
         """
-        if self._efficiency_ratios.empty or overwrite:
-            self.collect_efficiency_ratios(days=days)
-        if self._liquidity_ratios.empty or overwrite:
-            self.collect_liquidity_ratios()
-        if self._profitability_ratios.empty or overwrite:
-            self.collect_profitability_ratios()
-        if self._solvency_ratios.empty or overwrite:
-            self.collect_solvency_ratios(diluted=diluted)
-        if self._valuation_ratios.empty or overwrite:
-            self.collect_valuation_ratios(
-                include_dividends=include_dividends, diluted=diluted
-            )
-
         self._all_ratios = pd.concat(
             [
-                self._efficiency_ratios,
-                self._liquidity_ratios,
-                self._profitability_ratios,
-                self._solvency_ratios,
-                self._valuation_ratios,
+                self.collect_efficiency_ratios(days=days),
+                self.collect_liquidity_ratios(),
+                self.collect_profitability_ratios(),
+                self.collect_solvency_ratios(diluted=diluted),
+                self.collect_valuation_ratios(
+                    include_dividends=include_dividends, diluted=diluted
+                ),
             ]
         )
 
@@ -128,7 +118,6 @@ class Ratios:
         rounding: int = 4,
         growth: bool = False,
         lag: int | list[int] = 1,
-        overwrite: bool = False,
     ):
         """
         Calculates all Efficiency Ratios based on the data provided.
@@ -150,44 +139,43 @@ class Ratios:
         toolkit.ratios.collect_efficiency_ratios()
         ```
         """
-        if self._efficiency_ratios.empty or overwrite:
-            efficiency_ratios: dict = {}
+        efficiency_ratios: dict = {}
 
-            efficiency_ratios[
-                "Days of Inventory Outstanding (DIO)"
-            ] = self.get_days_of_inventory_outstanding(days=days)
-            efficiency_ratios[
-                "Days of Sales Outstanding (DSO)"
-            ] = self.get_days_of_sales_outstanding(days=days)
-            efficiency_ratios["Operating Cycle (CC)"] = self.get_operating_cycle()
-            efficiency_ratios[
-                "Days of Accounts Payable Outstanding (DPO)"
-            ] = self.get_days_of_accounts_payable_outstanding(days=days)
-            efficiency_ratios[
-                "Cash Conversion Cycle (CCC)"
-            ] = self.get_cash_conversion_cycle(days=days)
-            efficiency_ratios["Receivables Turnover"] = self.get_receivables_turnover()
-            efficiency_ratios[
-                "Inventory Turnover Ratio"
-            ] = self.get_inventory_turnover_ratio()
-            efficiency_ratios[
-                "Accounts Payable Turnover Ratio"
-            ] = self.get_accounts_payables_turnover_ratio()
-            efficiency_ratios["SGA-to-Revenue Ratio"] = self.get_sga_to_revenue_ratio()
-            efficiency_ratios["Fixed Asset Turnover"] = self.get_fixed_asset_turnover()
-            efficiency_ratios["Asset Turnover Ratio"] = self.get_asset_turnover_ratio()
-            efficiency_ratios["Operating Ratio"] = self.get_operating_ratio()
+        efficiency_ratios[
+            "Days of Inventory Outstanding (DIO)"
+        ] = self.get_days_of_inventory_outstanding(days=days)
+        efficiency_ratios[
+            "Days of Sales Outstanding (DSO)"
+        ] = self.get_days_of_sales_outstanding(days=days)
+        efficiency_ratios["Operating Cycle (CC)"] = self.get_operating_cycle()
+        efficiency_ratios[
+            "Days of Accounts Payable Outstanding (DPO)"
+        ] = self.get_days_of_accounts_payable_outstanding(days=days)
+        efficiency_ratios[
+            "Cash Conversion Cycle (CCC)"
+        ] = self.get_cash_conversion_cycle(days=days)
+        efficiency_ratios["Receivables Turnover"] = self.get_receivables_turnover()
+        efficiency_ratios[
+            "Inventory Turnover Ratio"
+        ] = self.get_inventory_turnover_ratio()
+        efficiency_ratios[
+            "Accounts Payable Turnover Ratio"
+        ] = self.get_accounts_payables_turnover_ratio()
+        efficiency_ratios["SGA-to-Revenue Ratio"] = self.get_sga_to_revenue_ratio()
+        efficiency_ratios["Fixed Asset Turnover"] = self.get_fixed_asset_turnover()
+        efficiency_ratios["Asset Turnover Ratio"] = self.get_asset_turnover_ratio()
+        efficiency_ratios["Operating Ratio"] = self.get_operating_ratio()
 
-            self._efficiency_ratios = (
-                pd.concat(efficiency_ratios)
-                .swaplevel(0, 1)
-                .sort_index(level=0, sort_remaining=False)
-                .dropna(axis="columns", how="all")
-            )
+        self._efficiency_ratios = (
+            pd.concat(efficiency_ratios)
+            .swaplevel(0, 1)
+            .sort_index(level=0, sort_remaining=False)
+            .dropna(axis="columns", how="all")
+        )
 
-            self._efficiency_ratios = self._efficiency_ratios.round(rounding)
+        self._efficiency_ratios = self._efficiency_ratios.round(rounding)
 
-        if (self._efficiency_ratios_growth.empty or overwrite) and growth:
+        if growth:
             self._efficiency_ratios_growth = calculate_growth(
                 self._efficiency_ratios, lag=lag, rounding=rounding
             )
@@ -206,7 +194,6 @@ class Ratios:
         rounding: int = 4,
         growth: bool = False,
         lag: int | list[int] = 1,
-        overwrite: bool = False,
     ) -> pd.DataFrame:
         """
         Calculates all Liquidity Ratios based on the data provided.
@@ -227,33 +214,32 @@ class Ratios:
         toolkit.ratios.collect_liquidity_ratios()
         ```
         """
-        if self._liquidity_ratios.empty or overwrite:
-            liquidity_ratios: dict = {}
+        liquidity_ratios: dict = {}
 
-            liquidity_ratios["Current Ratio"] = self.get_current_ratio()
-            liquidity_ratios["Quick Ratio"] = self.get_quick_ratio()
-            liquidity_ratios["Cash Ratio"] = self.get_cash_ratio()
-            liquidity_ratios["Working Capital"] = self.get_working_capital()
-            liquidity_ratios[
-                "Operating Cash Flow Ratio"
-            ] = self.get_operating_cash_flow_ratio()
-            liquidity_ratios[
-                "Operating Cash Flow to Sales Ratio"
-            ] = self.get_operating_cash_flow_sales_ratio()
-            liquidity_ratios[
-                "Short Term Coverage Ratio"
-            ] = self.get_short_term_coverage_ratio()
+        liquidity_ratios["Current Ratio"] = self.get_current_ratio()
+        liquidity_ratios["Quick Ratio"] = self.get_quick_ratio()
+        liquidity_ratios["Cash Ratio"] = self.get_cash_ratio()
+        liquidity_ratios["Working Capital"] = self.get_working_capital()
+        liquidity_ratios[
+            "Operating Cash Flow Ratio"
+        ] = self.get_operating_cash_flow_ratio()
+        liquidity_ratios[
+            "Operating Cash Flow to Sales Ratio"
+        ] = self.get_operating_cash_flow_sales_ratio()
+        liquidity_ratios[
+            "Short Term Coverage Ratio"
+        ] = self.get_short_term_coverage_ratio()
 
-            self._liquidity_ratios = (
-                pd.concat(liquidity_ratios)
-                .swaplevel(0, 1)
-                .sort_index(level=0, sort_remaining=False)
-                .dropna(axis="columns", how="all")
-            )
+        self._liquidity_ratios = (
+            pd.concat(liquidity_ratios)
+            .swaplevel(0, 1)
+            .sort_index(level=0, sort_remaining=False)
+            .dropna(axis="columns", how="all")
+        )
 
-            self._liquidity_ratios = self._liquidity_ratios.round(rounding)
+        self._liquidity_ratios = self._liquidity_ratios.round(rounding)
 
-        if (self._liquidity_ratios_growth.empty or overwrite) and growth:
+        if growth:
             self._liquidity_ratios_growth = calculate_growth(
                 self._liquidity_ratios, lag=lag, rounding=rounding
             )
@@ -272,7 +258,6 @@ class Ratios:
         rounding: int = 4,
         growth: bool = False,
         lag: int | list[int] = 1,
-        overwrite: bool = False,
     ) -> pd.DataFrame:
         """
         Calculates all Profitability Ratios based on the data provided.
@@ -293,50 +278,47 @@ class Ratios:
         toolkit.ratios.collect_profitability_ratios()
         ```
         """
-        if self._profitability_ratios.empty or overwrite:
-            profitability_ratios: dict = {}
+        profitability_ratios: dict = {}
 
-            profitability_ratios["Gross Margin"] = self.get_gross_margin()
-            profitability_ratios["Operating Margin"] = self.get_operating_margin()
-            profitability_ratios["Net Profit Margin"] = self.get_net_profit_margin()
-            profitability_ratios[
-                "Interest Coverage Ratio"
-            ] = self.get_interest_coverage_ratio()
-            profitability_ratios[
-                "Income Before Tax Profit Margin"
-            ] = self.get_income_before_tax_profit_margin()
-            profitability_ratios["Effective Tax Rate"] = self.get_effective_tax_rate()
-            profitability_ratios["Return on Assets (ROA)"] = self.get_return_on_assets()
-            profitability_ratios["Return on Equity (ROE)"] = self.get_return_on_equity()
-            profitability_ratios[
-                "Return on Invested Capital (ROIC)"
-            ] = self.get_return_on_invested_capital()
-            profitability_ratios[
-                "Return on Capital Employed (ROCE)"
-            ] = self.get_return_on_capital_employed()
-            profitability_ratios[
-                "Return on Tangible Assets"
-            ] = self.get_return_on_tangible_assets()
-            profitability_ratios[
-                "Income Quality Ratio"
-            ] = self.get_income_quality_ratio()
-            profitability_ratios["Net Income per EBT"] = self.get_net_income_per_ebt()
-            profitability_ratios[
-                "Free Cash Flow to Operating Cash Flow Ratio"
-            ] = self.get_free_cash_flow_operating_cash_flow_ratio()
-            profitability_ratios["EBT to EBIT Ratio"] = self.get_EBT_to_EBIT()
-            profitability_ratios["EBIT to Revenue"] = self.get_EBIT_to_revenue()
+        profitability_ratios["Gross Margin"] = self.get_gross_margin()
+        profitability_ratios["Operating Margin"] = self.get_operating_margin()
+        profitability_ratios["Net Profit Margin"] = self.get_net_profit_margin()
+        profitability_ratios[
+            "Interest Coverage Ratio"
+        ] = self.get_interest_coverage_ratio()
+        profitability_ratios[
+            "Income Before Tax Profit Margin"
+        ] = self.get_income_before_tax_profit_margin()
+        profitability_ratios["Effective Tax Rate"] = self.get_effective_tax_rate()
+        profitability_ratios["Return on Assets (ROA)"] = self.get_return_on_assets()
+        profitability_ratios["Return on Equity (ROE)"] = self.get_return_on_equity()
+        profitability_ratios[
+            "Return on Invested Capital (ROIC)"
+        ] = self.get_return_on_invested_capital()
+        profitability_ratios[
+            "Return on Capital Employed (ROCE)"
+        ] = self.get_return_on_capital_employed()
+        profitability_ratios[
+            "Return on Tangible Assets"
+        ] = self.get_return_on_tangible_assets()
+        profitability_ratios["Income Quality Ratio"] = self.get_income_quality_ratio()
+        profitability_ratios["Net Income per EBT"] = self.get_net_income_per_ebt()
+        profitability_ratios[
+            "Free Cash Flow to Operating Cash Flow Ratio"
+        ] = self.get_free_cash_flow_operating_cash_flow_ratio()
+        profitability_ratios["EBT to EBIT Ratio"] = self.get_EBT_to_EBIT()
+        profitability_ratios["EBIT to Revenue"] = self.get_EBIT_to_revenue()
 
-            self._profitability_ratios = (
-                pd.concat(profitability_ratios)
-                .swaplevel(0, 1)
-                .sort_index(level=0, sort_remaining=False)
-                .dropna(axis="columns", how="all")
-            )
+        self._profitability_ratios = (
+            pd.concat(profitability_ratios)
+            .swaplevel(0, 1)
+            .sort_index(level=0, sort_remaining=False)
+            .dropna(axis="columns", how="all")
+        )
 
-            self._profitability_ratios = self._profitability_ratios.round(rounding)
+        self._profitability_ratios = self._profitability_ratios.round(rounding)
 
-        if (self._profitability_ratios_growth.empty or overwrite) and growth:
+        if growth:
             self._profitability_ratios_growth = calculate_growth(
                 self._profitability_ratios, lag=lag, rounding=rounding
             )
@@ -358,7 +340,6 @@ class Ratios:
         rounding: int = 4,
         growth: bool = False,
         lag: int | list[int] = 1,
-        overwrite: bool = False,
     ):
         """
         Calculates all Solvency Ratios based on the data provided.
@@ -380,39 +361,38 @@ class Ratios:
         toolkit.ratios.collect_solvency_ratios()
         ```
         """
-        if self._solvency_ratios.empty or overwrite:
-            solvency_ratios: dict = {}
+        solvency_ratios: dict = {}
 
-            solvency_ratios["Debt-to-Assets Ratio"] = self.get_debt_to_assets_ratio()
-            solvency_ratios["Debt-to-Equity Ratio"] = self.get_debt_to_equity_ratio()
-            solvency_ratios[
-                "Debt Service Coverage Ratio"
-            ] = self.get_debt_service_coverage_ratio()
-            solvency_ratios["Equity Multiplier"] = self.get_equity_multiplier()
-            solvency_ratios["Free Cash Flow Yield"] = self.get_free_cash_flow_yield(
-                diluted=diluted
-            )
-            solvency_ratios[
-                "Net-Debt to EBITDA Ratio"
-            ] = self.get_net_debt_to_ebitda_ratio()
-            solvency_ratios["Cash Flow Coverage Ratio"] = self.get_free_cash_flow_yield(
-                diluted=diluted
-            )
-            solvency_ratios["CAPEX Coverage Ratio"] = self.get_capex_coverage_ratio()
-            solvency_ratios[
-                "Dividend CAPEX Coverage Ratio"
-            ] = self.get_capex_dividend_coverage_ratio()
+        solvency_ratios["Debt-to-Assets Ratio"] = self.get_debt_to_assets_ratio()
+        solvency_ratios["Debt-to-Equity Ratio"] = self.get_debt_to_equity_ratio()
+        solvency_ratios[
+            "Debt Service Coverage Ratio"
+        ] = self.get_debt_service_coverage_ratio()
+        solvency_ratios["Equity Multiplier"] = self.get_equity_multiplier()
+        solvency_ratios["Free Cash Flow Yield"] = self.get_free_cash_flow_yield(
+            diluted=diluted
+        )
+        solvency_ratios[
+            "Net-Debt to EBITDA Ratio"
+        ] = self.get_net_debt_to_ebitda_ratio()
+        solvency_ratios["Cash Flow Coverage Ratio"] = self.get_free_cash_flow_yield(
+            diluted=diluted
+        )
+        solvency_ratios["CAPEX Coverage Ratio"] = self.get_capex_coverage_ratio()
+        solvency_ratios[
+            "Dividend CAPEX Coverage Ratio"
+        ] = self.get_capex_dividend_coverage_ratio()
 
-            self._solvency_ratios = (
-                pd.concat(solvency_ratios)
-                .swaplevel(0, 1)
-                .sort_index(level=0, sort_remaining=False)
-                .dropna(axis="columns", how="all")
-            )
+        self._solvency_ratios = (
+            pd.concat(solvency_ratios)
+            .swaplevel(0, 1)
+            .sort_index(level=0, sort_remaining=False)
+            .dropna(axis="columns", how="all")
+        )
 
-            self._solvency_ratios = self._solvency_ratios.round(rounding)
+        self._solvency_ratios = self._solvency_ratios.round(rounding)
 
-        if (self._solvency_ratios_growth.empty or overwrite) and growth:
+        if growth:
             self._solvency_ratios_growth = calculate_growth(
                 self._solvency_ratios, lag=lag, rounding=rounding
             )
@@ -433,7 +413,6 @@ class Ratios:
         rounding: int = 4,
         growth: bool = False,
         lag: int | list[int] = 1,
-        overwrite: bool = False,
     ):
         """
         Calculates all Valuation Ratios based on the data provided.
@@ -456,83 +435,74 @@ class Ratios:
         toolkit.ratios.collect_valuation_ratios()
         ```
         """
-        if self._valuation_ratios.empty or overwrite:
-            valuation_ratios: dict = {}
+        valuation_ratios: dict = {}
 
-            valuation_ratios["Earnings per Share (EPS)"] = self.get_earnings_per_share(
-                include_dividends=include_dividends, diluted=diluted
-            )
-            valuation_ratios["Revenue per Share (RPS)"] = self.get_revenue_per_share(
-                diluted=diluted
-            )
-            valuation_ratios["Price-to-Earnings (PE)"] = self.get_price_earnings_ratio(
-                include_dividends=include_dividends, diluted=diluted
-            )
-            valuation_ratios[
-                "Earnings per Share Growth"
-            ] = self.get_earnings_per_share_growth(
-                include_dividends=include_dividends, diluted=diluted
-            )
-            valuation_ratios[
-                "Price-to-Earnings-Growth (PEG)"
-            ] = self.get_price_to_earnings_growth_ratio(
-                include_dividends=include_dividends, diluted=diluted
-            )
-            valuation_ratios["Book Value per Share"] = self.get_book_value_per_share(
-                diluted=diluted
-            )
-            valuation_ratios["Price-to-Book (PB)"] = self.get_price_to_book_ratio(
-                diluted=diluted
-            )
-            valuation_ratios[
-                "Interest Debt per Share"
-            ] = self.get_interest_debt_per_share(diluted=diluted)
-            valuation_ratios["CAPEX per Share"] = self.get_capex_per_share(
-                diluted=diluted
-            )
-            valuation_ratios["Earnings Yield"] = self.get_earnings_yield(
-                include_dividends=include_dividends, diluted=diluted
-            )
-            valuation_ratios["Payout Ratio"] = self.get_payout_ratio()
-            valuation_ratios["Dividend Yield"] = self.get_dividend_yield()
-            valuation_ratios[
-                "Weighted Dividend Yield"
-            ] = self.get_weighted_dividend_yield(diluted=diluted)
-            valuation_ratios[
-                "Price-to-Cash-Flow (P/CF)"
-            ] = self.get_price_to_cash_flow_ratio(diluted=diluted)
-            valuation_ratios[
-                "Price-to-Free-Cash-Flow (P/FCF)"
-            ] = self.get_price_to_free_cash_flow_ratio(diluted=diluted)
-            valuation_ratios["Market Cap"] = self.get_market_cap(diluted=diluted)
-            valuation_ratios["Enterprise Value"] = self.get_enterprise_value(
-                diluted=diluted
-            )
-            valuation_ratios["EV-to-Sales"] = self.get_ev_to_sales_ratio(
-                diluted=diluted
-            )
-            valuation_ratios["EV-to-EBIT"] = self.get_ev_to_ebit(diluted=diluted)
-            valuation_ratios["EV-to-EBITDA"] = self.get_ev_to_ebitda_ratio(
-                diluted=diluted
-            )
-            valuation_ratios[
-                "EV-to-Operating-Cash-Flow"
-            ] = self.get_ev_to_operating_cashflow_ratio(diluted=diluted)
-            valuation_ratios["Tangible Asset Value"] = self.get_tangible_asset_value()
-            valuation_ratios[
-                "Net Current Asset Value"
-            ] = self.get_net_current_asset_value()
+        valuation_ratios["Earnings per Share (EPS)"] = self.get_earnings_per_share(
+            include_dividends=include_dividends, diluted=diluted
+        )
+        valuation_ratios["Revenue per Share (RPS)"] = self.get_revenue_per_share(
+            diluted=diluted
+        )
+        valuation_ratios["Price-to-Earnings (PE)"] = self.get_price_earnings_ratio(
+            include_dividends=include_dividends, diluted=diluted
+        )
+        valuation_ratios[
+            "Earnings per Share Growth"
+        ] = self.get_earnings_per_share_growth(
+            include_dividends=include_dividends, diluted=diluted
+        )
+        valuation_ratios[
+            "Price-to-Earnings-Growth (PEG)"
+        ] = self.get_price_to_earnings_growth_ratio(
+            include_dividends=include_dividends, diluted=diluted
+        )
+        valuation_ratios["Book Value per Share"] = self.get_book_value_per_share(
+            diluted=diluted
+        )
+        valuation_ratios["Price-to-Book (PB)"] = self.get_price_to_book_ratio(
+            diluted=diluted
+        )
+        valuation_ratios["Interest Debt per Share"] = self.get_interest_debt_per_share(
+            diluted=diluted
+        )
+        valuation_ratios["CAPEX per Share"] = self.get_capex_per_share(diluted=diluted)
+        valuation_ratios["Earnings Yield"] = self.get_earnings_yield(
+            include_dividends=include_dividends, diluted=diluted
+        )
+        valuation_ratios["Payout Ratio"] = self.get_payout_ratio()
+        valuation_ratios["Dividend Yield"] = self.get_dividend_yield()
+        valuation_ratios["Weighted Dividend Yield"] = self.get_weighted_dividend_yield(
+            diluted=diluted
+        )
+        valuation_ratios[
+            "Price-to-Cash-Flow (P/CF)"
+        ] = self.get_price_to_cash_flow_ratio(diluted=diluted)
+        valuation_ratios[
+            "Price-to-Free-Cash-Flow (P/FCF)"
+        ] = self.get_price_to_free_cash_flow_ratio(diluted=diluted)
+        valuation_ratios["Market Cap"] = self.get_market_cap(diluted=diluted)
+        valuation_ratios["Enterprise Value"] = self.get_enterprise_value(
+            diluted=diluted
+        )
+        valuation_ratios["EV-to-Sales"] = self.get_ev_to_sales_ratio(diluted=diluted)
+        valuation_ratios["EV-to-EBIT"] = self.get_ev_to_ebit(diluted=diluted)
+        valuation_ratios["EV-to-EBITDA"] = self.get_ev_to_ebitda_ratio(diluted=diluted)
+        valuation_ratios[
+            "EV-to-Operating-Cash-Flow"
+        ] = self.get_ev_to_operating_cashflow_ratio(diluted=diluted)
+        valuation_ratios["Tangible Asset Value"] = self.get_tangible_asset_value()
+        valuation_ratios["Net Current Asset Value"] = self.get_net_current_asset_value()
 
-            self._valuation_ratios = (
-                pd.concat(valuation_ratios)
-                .swaplevel(0, 1)
-                .sort_index(level=0, sort_remaining=False)
-                .dropna(axis="columns", how="all")
-            )
+        self._valuation_ratios = (
+            pd.concat(valuation_ratios)
+            .swaplevel(0, 1)
+            .sort_index(level=0, sort_remaining=False)
+            .dropna(axis="columns", how="all")
+        )
 
-            self._valuation_ratios = self._valuation_ratios.round(rounding)
+        self._valuation_ratios = self._valuation_ratios.round(rounding)
 
-        if (self._valuation_ratios_growth.empty or overwrite) and growth:
+        if growth:
             self._valuation_ratios_growth = calculate_growth(
                 self._valuation_ratios, lag=lag, rounding=rounding
             )
@@ -552,7 +522,6 @@ class Ratios:
         rounding: int = 4,
         growth: bool = False,
         lag: int | list[int] = 1,
-        overwrite: bool = False,
     ):
         """
         Calculates all Custom Ratios based on the data provided.
@@ -590,55 +559,54 @@ class Ratios:
                 "See https://github.com/JerBouma/FinanceToolkit how to do this."
             )
 
-        if self._custom_ratios_dict and (self._custom_ratios.empty or overwrite):
-            if self._all_ratios.empty:
-                self._all_ratios = self.collect_all_ratios()
+        if self._all_ratios.empty:
+            self._all_ratios = self.collect_all_ratios()
 
-            custom_ratios = pd.DataFrame(
-                index=pd.MultiIndex.from_product(
-                    [self._tickers, self._custom_ratios_dict.keys()]
-                ),
-                columns=self._balance_sheet_statement.columns,
+        custom_ratios = pd.DataFrame(
+            index=pd.MultiIndex.from_product(
+                [self._tickers, self._custom_ratios_dict.keys()]
+            ),
+            columns=self._balance_sheet_statement.columns,
+        )
+
+        total_financials = pd.concat(
+            [
+                self._balance_sheet_statement,
+                self._income_statement,
+                self._cash_flow_statement,
+                self._all_ratios,
+                custom_ratios,
+            ],
+            axis=0,
+        )
+
+        total_financials = total_financials[
+            ~total_financials.index.duplicated(keep="first")
+        ]
+
+        operations = {
+            "+": operator.add,
+            "-": operator.sub,
+            "*": operator.mul,
+            "/": operator.truediv,
+            "^": operator.pow,
+        }
+
+        for name, formula in self._custom_ratios_dict.items():
+            operator_use = re.findall("[+\\-*^/]", formula)[0]
+
+            split_1, split_2 = formula.split(operator_use)
+            calculation = operations[operator_use]
+
+            result_dataframe = calculation(
+                total_financials.loc[:, split_1.strip(), :],
+                total_financials.loc[:, split_2.strip(), :],
             )
 
-            total_financials = pd.concat(
-                [
-                    self._balance_sheet_statement,
-                    self._income_statement,
-                    self._cash_flow_statement,
-                    self._all_ratios,
-                    custom_ratios,
-                ],
-                axis=0,
-            )
-
-            total_financials = total_financials[
-                ~total_financials.index.duplicated(keep="first")
-            ]
-
-            operations = {
-                "+": operator.add,
-                "-": operator.sub,
-                "*": operator.mul,
-                "/": operator.truediv,
-                "^": operator.pow,
-            }
-
-            for name, formula in self._custom_ratios_dict.items():
-                operator_use = re.findall("[+\\-*^/]", formula)[0]
-
-                split_1, split_2 = formula.split(operator_use)
-                calculation = operations[operator_use]
-
-                result_dataframe = calculation(
-                    total_financials.loc[:, split_1.strip(), :],
-                    total_financials.loc[:, split_2.strip(), :],
-                )
-
-                for company in self._tickers:
-                    total_financials.loc[company, name, :] = result_dataframe.loc[
-                        company
-                    ].to_numpy()
+            for company in self._tickers:
+                total_financials.loc[company, name, :] = result_dataframe.loc[
+                    company
+                ].to_numpy()
 
             self._custom_ratios = total_financials.loc[
                 :, list(self._custom_ratios_dict.keys()), :
@@ -647,7 +615,7 @@ class Ratios:
 
             self._custom_ratios = self._custom_ratios.round(rounding)
 
-        if (self._custom_ratios_growth.empty or overwrite) and growth:
+        if growth:
             self._custom_ratios_growth = calculate_growth(
                 self._custom_ratios, lag=lag, rounding=rounding
             )

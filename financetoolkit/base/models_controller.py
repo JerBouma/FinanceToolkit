@@ -178,8 +178,17 @@ class Models:
 
         Returns:
             pd.DataFrame: the Enterprise Value breakdown.
-        """
 
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+
+        toolkit.models.get_enterprise_value_breakdown()
+        ```
+        """
         average_shares = (
             self._income_statement.loc[:, "Weighted Average Shares Diluted", :]
             if diluted

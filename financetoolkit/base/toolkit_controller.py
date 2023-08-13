@@ -820,7 +820,7 @@ class Toolkit:
         overwrite: bool = False,
         rounding: int = 4,
         growth: bool = False,
-        lag: int | str = 1,
+        lag: int | list[int] = 1,
     ):
         """
         Retrieves the balance sheet statement financial data for the company(s) from the specified source.
@@ -949,7 +949,7 @@ class Toolkit:
         overwrite: bool = False,
         rounding: int = 4,
         growth: bool = False,
-        lag: int | str = 1,
+        lag: int | list[int] = 1,
     ):
         """
         Retrieves the income statement financial data for the company(s) from the specified source.
@@ -1059,7 +1059,7 @@ class Toolkit:
         overwrite: bool = False,
         rounding: int = 4,
         growth: bool = False,
-        lag: int | str = 1,
+        lag: int | list[int] = 1,
     ):
         """
         Retrieves the cash flow statement financial data for the company(s) from the specified source.

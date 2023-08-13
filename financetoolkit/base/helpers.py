@@ -50,7 +50,7 @@ def equal_length(dataset1: pd.Series, dataset2: pd.Series) -> pd.Series:
 
 
 def calculate_growth(
-    dataset: pd.Series | pd.DataFrame, lag: int | str = 1, rounding: int = 4
+    dataset: pd.Series | pd.DataFrame, lag: int | list[int] = 1, rounding: int = 4
 ) -> pd.Series | pd.DataFrame:
     """
     Calculates growth for a given dataset. Defaults to a lag of 1 (i.e. 1 year or 1 quarter).
@@ -62,6 +62,30 @@ def calculate_growth(
     Returns:
         pd.Series | pd.DataFrame: _description_
     """
+    if isinstance(lag, list):
+        new_index = []
+        lag_dict = {f"Lag {lag_value}": lag_value for lag_value in lag}
+
+        for old_index in dataset.index:
+            for lag_value in lag_dict:
+                new_index.append(
+                    (*old_index, lag_value)
+                    if isinstance(old_index, tuple)
+                    else (old_index, lag_value)
+                )
+
+        dataset_lag = dataset.reindex(pd.MultiIndex.from_tuples(new_index))
+
+        for new_index in dataset_lag.index:
+            lag_key = new_index[-1]
+            other_indices = new_index[:-1]
+
+            dataset_lag.loc[new_index] = dataset.loc[other_indices].pct_change(
+                periods=lag_dict[lag_key]  # type: ignore
+            )
+
+        return dataset_lag.round(rounding)
+
     return dataset.pct_change(periods=lag, axis="columns").round(rounding)
 
 

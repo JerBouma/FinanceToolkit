@@ -43,7 +43,7 @@ class Models:
         self,
         rounding: int = 4,
         growth: bool = False,
-        lag: int | str = 1,
+        lag: int | list[int] = 1,
         overwrite: bool = False,
     ) -> pd.DataFrame:
         """
@@ -88,7 +88,7 @@ class Models:
         self,
         rounding: int = 4,
         growth: bool = False,
-        lag: int | str = 1,
+        lag: int | list[int] = 1,
         overwrite: bool = False,
     ) -> pd.DataFrame:
         """

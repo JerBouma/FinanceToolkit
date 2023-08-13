@@ -65,7 +65,7 @@ class Ratios:
         days: int = 365,
         rounding: int = 4,
         growth: bool = False,
-        lag: int | str = 1,
+        lag: int | list[int] = 1,
         overwrite: bool = False,
     ):
         """
@@ -127,7 +127,7 @@ class Ratios:
         days: int = 365,
         rounding: int = 4,
         growth: bool = False,
-        lag: int | str = 1,
+        lag: int | list[int] = 1,
         overwrite: bool = False,
     ):
         """
@@ -205,7 +205,7 @@ class Ratios:
         self,
         rounding: int = 4,
         growth: bool = False,
-        lag: int | str = 1,
+        lag: int | list[int] = 1,
         overwrite: bool = False,
     ) -> pd.DataFrame:
         """
@@ -271,7 +271,7 @@ class Ratios:
         self,
         rounding: int = 4,
         growth: bool = False,
-        lag: int | str = 1,
+        lag: int | list[int] = 1,
         overwrite: bool = False,
     ) -> pd.DataFrame:
         """
@@ -357,7 +357,7 @@ class Ratios:
         diluted: bool = True,
         rounding: int = 4,
         growth: bool = False,
-        lag: int | str = 1,
+        lag: int | list[int] = 1,
         overwrite: bool = False,
     ):
         """
@@ -432,7 +432,7 @@ class Ratios:
         diluted: bool = True,
         rounding: int = 4,
         growth: bool = False,
-        lag: int | str = 1,
+        lag: int | list[int] = 1,
         overwrite: bool = False,
     ):
         """
@@ -551,7 +551,7 @@ class Ratios:
         self,
         rounding: int = 4,
         growth: bool = False,
-        lag: int | str = 1,
+        lag: int | list[int] = 1,
         overwrite: bool = False,
     ):
         """
@@ -663,7 +663,7 @@ class Ratios:
 
     @handle_errors
     def get_asset_turnover_ratio(
-        self, rounding: int = 4, growth: bool = False, lag: int | str = 1
+        self, rounding: int = 4, growth: bool = False, lag: int | list[int] = 1
     ):
         """
         Calculate the asset turnover ratio, an efficiency ratio that measures how
@@ -697,7 +697,7 @@ class Ratios:
 
     @handle_errors
     def get_inventory_turnover_ratio(
-        self, rounding: int = 4, growth: bool = False, lag: int | str = 1
+        self, rounding: int = 4, growth: bool = False, lag: int | list[int] = 1
     ):
         """
         Calculate the inventory turnover ratio, an efficiency ratio that measures
@@ -737,7 +737,7 @@ class Ratios:
         days: int = 365,
         rounding: int = 4,
         growth: bool = False,
-        lag: int | str = 1,
+        lag: int | list[int] = 1,
     ):
         """
         Calculate the days sales in inventory ratio, an efficiency ratio that measures
@@ -779,7 +779,7 @@ class Ratios:
         days: int = 365,
         rounding: int = 4,
         growth: bool = False,
-        lag: int | str = 1,
+        lag: int | list[int] = 1,
     ):
         """
         Calculate the days of sales outstanding, an efficiency ratio that measures
@@ -824,7 +824,7 @@ class Ratios:
         days: int = 365,
         rounding: int = 4,
         growth: bool = False,
-        lag: int | str = 1,
+        lag: int | list[int] = 1,
     ):
         """
         Calculate the operating cycle, an efficiency ratio that measures the average
@@ -872,7 +872,7 @@ class Ratios:
 
     @handle_errors
     def get_accounts_payables_turnover_ratio(
-        self, rounding: int = 4, growth: bool = False, lag: int | str = 1
+        self, rounding: int = 4, growth: bool = False, lag: int | list[int] = 1
     ):
         """
         Calculate the accounts payable turnover ratio is an efficiency ratio that measures how
@@ -916,7 +916,7 @@ class Ratios:
         days: int = 365,
         rounding: int = 4,
         growth: bool = False,
-        lag: int | str = 1,
+        lag: int | list[int] = 1,
     ):
         """
         Calculate the days payables outstanding, an efficiency ratio that measures the
@@ -962,7 +962,7 @@ class Ratios:
         days: int = 365,
         rounding: int = 4,
         growth: bool = False,
-        lag: int | str = 1,
+        lag: int | list[int] = 1,
     ):
         """
         Calculate the Cash Conversion Cycle, which measures the amount of time it takes for a company to convert
@@ -1018,7 +1018,7 @@ class Ratios:
 
     @handle_errors
     def get_receivables_turnover(
-        self, rounding: int = 4, growth: bool = False, lag: int | str = 1
+        self, rounding: int = 4, growth: bool = False, lag: int | list[int] = 1
     ):
         """
         Calculate the receivables turnover, a ratio that measures how efficiently a
@@ -1054,7 +1054,7 @@ class Ratios:
 
     @handle_errors
     def get_sga_to_revenue_ratio(
-        self, rounding: int = 4, growth: bool = False, lag: int | str = 1
+        self, rounding: int = 4, growth: bool = False, lag: int | list[int] = 1
     ):
         """
         Calculates the sales, general, and administrative (SG&A) expenses to revenue ratio,
@@ -1088,7 +1088,7 @@ class Ratios:
 
     @handle_errors
     def get_fixed_asset_turnover(
-        self, rounding: int = 4, growth: bool = False, lag: int | str = 1
+        self, rounding: int = 4, growth: bool = False, lag: int | list[int] = 1
     ):
         """
         Calculate the Fixed Asset Turnover ratio, an efficiency ratio that
@@ -1121,7 +1121,7 @@ class Ratios:
 
     @handle_errors
     def get_operating_ratio(
-        self, rounding: int = 4, growth: bool = False, lag: int | str = 1
+        self, rounding: int = 4, growth: bool = False, lag: int | list[int] = 1
     ):
         """
         Calculate the operating ratio, a financial metric that measures the efficiency
@@ -1154,7 +1154,7 @@ class Ratios:
 
     @handle_errors
     def get_current_ratio(
-        self, rounding: int = 4, growth: bool = False, lag: int | str = 1
+        self, rounding: int = 4, growth: bool = False, lag: int | list[int] = 1
     ):
         """
         Calculate the current ratio, a liquidity ratio that measures a company's ability
@@ -1186,7 +1186,7 @@ class Ratios:
 
     @handle_errors
     def get_quick_ratio(
-        self, rounding: int = 4, growth: bool = False, lag: int | str = 1
+        self, rounding: int = 4, growth: bool = False, lag: int | list[int] = 1
     ):
         """
         Calculate the quick ratio (also known as the acid-test ratio), a more stringent
@@ -1222,7 +1222,7 @@ class Ratios:
 
     @handle_errors
     def get_cash_ratio(
-        self, rounding: int = 4, growth: bool = False, lag: int | str = 1
+        self, rounding: int = 4, growth: bool = False, lag: int | list[int] = 1
     ):
         """
         Calculate the cash ratio, a liquidity ratio that measures a company's ability
@@ -1255,7 +1255,7 @@ class Ratios:
 
     @handle_errors
     def get_working_capital(
-        self, rounding: int = 4, growth: bool = False, lag: int | str = 1
+        self, rounding: int = 4, growth: bool = False, lag: int | list[int] = 1
     ):
         """
         Calculate the working capital, which is the difference between a company's current assets
@@ -1287,7 +1287,7 @@ class Ratios:
 
     @handle_errors
     def get_operating_cash_flow_ratio(
-        self, rounding: int = 4, growth: bool = False, lag: int | str = 1
+        self, rounding: int = 4, growth: bool = False, lag: int | list[int] = 1
     ):
         """
         Calculate the operating cash flow ratio, a liquidity ratio that measures a company's
@@ -1322,7 +1322,7 @@ class Ratios:
 
     @handle_errors
     def get_operating_cash_flow_sales_ratio(
-        self, rounding: int = 4, growth: bool = False, lag: int | str = 1
+        self, rounding: int = 4, growth: bool = False, lag: int | list[int] = 1
     ):
         """
         Calculate the operating cash flow to sales ratio, a liquidity ratio that
@@ -1357,7 +1357,7 @@ class Ratios:
 
     @handle_errors
     def get_short_term_coverage_ratio(
-        self, rounding: int = 4, growth: bool = False, lag: int | str = 1
+        self, rounding: int = 4, growth: bool = False, lag: int | list[int] = 1
     ):
         """
         Calculate the short term coverage ratio, a liquidity ratio that measures a
@@ -1394,7 +1394,7 @@ class Ratios:
 
     @handle_errors
     def get_gross_margin(
-        self, rounding: int = 4, growth: bool = False, lag: int | str = 1
+        self, rounding: int = 4, growth: bool = False, lag: int | list[int] = 1
     ):
         """
         Calculate the gross margin, a profitability ratio that measures the percentage of
@@ -1427,7 +1427,7 @@ class Ratios:
 
     @handle_errors
     def get_operating_margin(
-        self, rounding: int = 4, growth: bool = False, lag: int | str = 1
+        self, rounding: int = 4, growth: bool = False, lag: int | list[int] = 1
     ):
         """
         Calculate the operating margin, a profitability ratio that measures the percentage of
@@ -1460,7 +1460,7 @@ class Ratios:
 
     @handle_errors
     def get_net_profit_margin(
-        self, rounding: int = 4, growth: bool = False, lag: int | str = 1
+        self, rounding: int = 4, growth: bool = False, lag: int | list[int] = 1
     ):
         """
         Calculate the net profit margin, a profitability ratio that measures the percentage
@@ -1493,7 +1493,7 @@ class Ratios:
 
     @handle_errors
     def get_interest_burden_ratio(
-        self, rounding: int = 4, growth: bool = False, lag: int | str = 1
+        self, rounding: int = 4, growth: bool = False, lag: int | list[int] = 1
     ):
         """
         Compute the Interest Coverage Ratio, a metric that reveals a company's
@@ -1529,7 +1529,7 @@ class Ratios:
 
     @handle_errors
     def get_income_before_tax_profit_margin(
-        self, rounding: int = 4, growth: bool = False, lag: int | str = 1
+        self, rounding: int = 4, growth: bool = False, lag: int | list[int] = 1
     ):
         """
         Calculate the Pretax Profit Margin, which is the ratio of a company's pre-tax profit to
@@ -1566,7 +1566,7 @@ class Ratios:
 
     @handle_errors
     def get_effective_tax_rate(
-        self, rounding: int = 4, growth: bool = False, lag: int | str = 1
+        self, rounding: int = 4, growth: bool = False, lag: int | list[int] = 1
     ):
         """
         Calculate the effective tax rate, a financial ratio that measures the
@@ -1599,7 +1599,7 @@ class Ratios:
 
     @handle_errors
     def get_return_on_assets(
-        self, rounding: int = 4, growth: bool = False, lag: int | str = 1
+        self, rounding: int = 4, growth: bool = False, lag: int | list[int] = 1
     ):
         """
         Calculate the return on assets (ROA), a profitability ratio that measures how
@@ -1632,7 +1632,7 @@ class Ratios:
 
     @handle_errors
     def get_return_on_equity(
-        self, rounding: int = 4, growth: bool = False, lag: int | str = 1
+        self, rounding: int = 4, growth: bool = False, lag: int | list[int] = 1
     ):
         """
         Calculate the return on equity (ROE), a profitability ratio that measures how
@@ -1666,7 +1666,7 @@ class Ratios:
 
     @handle_errors
     def get_return_on_invested_capital(
-        self, rounding: int = 4, growth: bool = False, lag: int | str = 1
+        self, rounding: int = 4, growth: bool = False, lag: int | list[int] = 1
     ):
         """
         Calculate the return on invested capital, a financial ratio that measures
@@ -1706,7 +1706,7 @@ class Ratios:
 
     @handle_errors
     def get_income_quality_ratio(
-        self, rounding: int = 4, growth: bool = False, lag: int | str = 1
+        self, rounding: int = 4, growth: bool = False, lag: int | list[int] = 1
     ):
         """
         Calculates the income quality ratio, which measures the cash flow from operating
@@ -1738,7 +1738,7 @@ class Ratios:
 
     @handle_errors
     def get_return_on_tangible_assets(
-        self, rounding: int = 4, growth: bool = False, lag: int | str = 1
+        self, rounding: int = 4, growth: bool = False, lag: int | list[int] = 1
     ):
         """
         Calculate the return on tangible assets, which measures the amount of profit
@@ -1775,7 +1775,7 @@ class Ratios:
 
     @handle_errors
     def get_return_on_capital_employed(
-        self, rounding: int = 4, growth: bool = False, lag: int | str = 1
+        self, rounding: int = 4, growth: bool = False, lag: int | list[int] = 1
     ):
         """
         Calculate the return on capital employed (ROCE), a profitability ratio that
@@ -1814,7 +1814,7 @@ class Ratios:
 
     @handle_errors
     def get_net_income_per_ebt(
-        self, rounding: int = 4, growth: bool = False, lag: int | str = 1
+        self, rounding: int = 4, growth: bool = False, lag: int | list[int] = 1
     ):
         """
         Calculate the net income per earnings before taxes (EBT), a profitability ratio that
@@ -1847,7 +1847,7 @@ class Ratios:
 
     @handle_errors
     def get_free_cash_flow_operating_cash_flow_ratio(
-        self, rounding: int = 4, growth: bool = False, lag: int | str = 1
+        self, rounding: int = 4, growth: bool = False, lag: int | list[int] = 1
     ):
         """
         Calculate the free cash flow to operating cash flow ratio, a profitability ratio that
@@ -1883,7 +1883,7 @@ class Ratios:
 
     @handle_errors
     def get_tax_burden_ratio(
-        self, rounding: int = 4, growth: bool = False, lag: int | str = 1
+        self, rounding: int = 4, growth: bool = False, lag: int | list[int] = 1
     ):
         """
         Calculate the tax burden ratio, which is the ratio of a company's
@@ -1915,7 +1915,7 @@ class Ratios:
 
     @handle_errors
     def get_EBT_to_EBIT(
-        self, rounding: int = 4, growth: bool = False, lag: int | str = 1
+        self, rounding: int = 4, growth: bool = False, lag: int | list[int] = 1
     ):
         """
         Calculate the EBT to EBIT, which is the ratio of a company's earnings before tax to its
@@ -1949,7 +1949,7 @@ class Ratios:
 
     @handle_errors
     def get_EBIT_to_revenue(
-        self, rounding: int = 4, growth: bool = False, lag: int | str = 1
+        self, rounding: int = 4, growth: bool = False, lag: int | list[int] = 1
     ):
         """
         Calculate the EBIT per Revenue, which is the ratio of a company's earnings
@@ -1986,7 +1986,7 @@ class Ratios:
 
     @handle_errors
     def get_debt_to_assets_ratio(
-        self, rounding: int = 4, growth: bool = False, lag: int | str = 1
+        self, rounding: int = 4, growth: bool = False, lag: int | list[int] = 1
     ):
         """
         Calculate the debt to assets ratio, a solvency ratio that measures the proportion
@@ -2021,7 +2021,7 @@ class Ratios:
 
     @handle_errors
     def get_debt_to_equity_ratio(
-        self, rounding: int = 4, growth: bool = False, lag: int | str = 1
+        self, rounding: int = 4, growth: bool = False, lag: int | list[int] = 1
     ):
         """
         Calculate the debt to equity ratio, a solvency ratio that measures the
@@ -2053,7 +2053,7 @@ class Ratios:
 
     @handle_errors
     def get_interest_coverage_ratio(
-        self, rounding: int = 4, growth: bool = False, lag: int | str = 1
+        self, rounding: int = 4, growth: bool = False, lag: int | list[int] = 1
     ):
         """
         Calculate the interest coverage ratio, a solvency ratio that measures a company's
@@ -2087,7 +2087,7 @@ class Ratios:
 
     @handle_errors
     def get_equity_multiplier(
-        self, rounding: int = 4, growth: bool = False, lag: int | str = 1
+        self, rounding: int = 4, growth: bool = False, lag: int | list[int] = 1
     ):
         """
         Calculate the equity multiplier, a solvency ratio that measures the degree to which
@@ -2122,7 +2122,7 @@ class Ratios:
 
     @handle_errors
     def get_debt_service_coverage_ratio(
-        self, rounding: int = 4, growth: bool = False, lag: int | str = 1
+        self, rounding: int = 4, growth: bool = False, lag: int | list[int] = 1
     ):
         """
         Calculate the debt service coverage ratio, a solvency ratio that measures a company's
@@ -2161,7 +2161,7 @@ class Ratios:
         diluted: bool = True,
         rounding: int = 4,
         growth: bool = False,
-        lag: int | str = 1,
+        lag: int | list[int] = 1,
     ):
         """
         Calculates the free cash flow yield ratio, which measures the free cash flow
@@ -2208,7 +2208,7 @@ class Ratios:
 
     @handle_errors
     def get_net_debt_to_ebitda_ratio(
-        self, rounding: int = 4, growth: bool = False, lag: int | str = 1
+        self, rounding: int = 4, growth: bool = False, lag: int | list[int] = 1
     ):
         """
         Calculates the net debt to EBITDA ratio, which measures the net debt of the company
@@ -2244,7 +2244,7 @@ class Ratios:
 
     @handle_errors
     def get_cash_flow_coverage_ratio(
-        self, rounding: int = 4, growth: bool = False, lag: int | str = 1
+        self, rounding: int = 4, growth: bool = False, lag: int | list[int] = 1
     ):
         """
         Calculate the cash flow coverage ratio, a solvency ratio that measures a company's
@@ -2279,7 +2279,7 @@ class Ratios:
 
     @handle_errors
     def get_capex_coverage_ratio(
-        self, rounding: int = 4, growth: bool = False, lag: int | str = 1
+        self, rounding: int = 4, growth: bool = False, lag: int | list[int] = 1
     ):
         """
         Calculate the capital expenditure coverage ratio, a solvency ratio that
@@ -2313,7 +2313,7 @@ class Ratios:
 
     @handle_errors
     def get_capex_dividend_coverage_ratio(
-        self, rounding: int = 4, growth: bool = False, lag: int | str = 1
+        self, rounding: int = 4, growth: bool = False, lag: int | list[int] = 1
     ):
         """
         Calculate the dividend paid and capex coverage ratio, a solvency ratio that
@@ -2355,7 +2355,7 @@ class Ratios:
         diluted: bool = True,
         rounding: int = 4,
         growth: bool = False,
-        lag: int | str = 1,
+        lag: int | list[int] = 1,
     ):
         """
         Calculate the earnings per share (EPS), a valuation ratio that measures the
@@ -2404,7 +2404,7 @@ class Ratios:
         diluted: bool = True,
         rounding: int = 4,
         growth: bool = False,
-        lag: int | str = 1,
+        lag: int | list[int] = 1,
     ):
         """
         Calculate the earnings per share growth.
@@ -2443,7 +2443,7 @@ class Ratios:
         diluted: bool = True,
         rounding: int = 4,
         growth: bool = False,
-        lag: int | str = 1,
+        lag: int | list[int] = 1,
     ):
         """
         Calculate the revenue per share, a valuation ratio that measures the amount
@@ -2487,7 +2487,7 @@ class Ratios:
         diluted: bool = True,
         rounding: int = 4,
         growth: bool = False,
-        lag: int | str = 1,
+        lag: int | list[int] = 1,
     ):
         """
         Calculate the price earnings ratio (P/E), a valuation ratio that compares a
@@ -2531,7 +2531,7 @@ class Ratios:
         diluted: bool = True,
         rounding: int = 4,
         growth: bool = False,
-        lag: int | str = 1,
+        lag: int | list[int] = 1,
     ):
         """
         Calculate the price earnings to growth (PEG) ratio, a valuation metric that
@@ -2574,7 +2574,7 @@ class Ratios:
         diluted: bool = True,
         rounding: int = 4,
         growth: bool = False,
-        lag: int | str = 1,
+        lag: int | list[int] = 1,
     ):
         """
         Calculate the book value per share, a valuation ratio that measures the
@@ -2619,7 +2619,7 @@ class Ratios:
         diluted: bool = True,
         rounding: int = 4,
         growth: bool = False,
-        lag: int | str = 1,
+        lag: int | list[int] = 1,
     ):
         """
         Calculate the price to book ratio, a valuation ratio that compares a
@@ -2663,7 +2663,7 @@ class Ratios:
         diluted: bool = True,
         rounding: int = 4,
         growth: bool = False,
-        lag: int | str = 1,
+        lag: int | list[int] = 1,
     ):
         """
         Calculate the interest debt per share, a valuation ratio that measures the
@@ -2708,7 +2708,7 @@ class Ratios:
         diluted: bool = True,
         rounding: int = 4,
         growth: bool = False,
-        lag: int | str = 1,
+        lag: int | list[int] = 1,
     ):
         """
         Calculate the capex per share, a valuation ratio that measures the amount of
@@ -2747,7 +2747,7 @@ class Ratios:
 
     @handle_errors
     def get_dividend_yield(
-        self, rounding: int = 4, growth: bool = False, lag: int | str = 1
+        self, rounding: int = 4, growth: bool = False, lag: int | list[int] = 1
     ):
         """
         Calculate the dividend yield ratio, a valuation ratio that measures the
@@ -2790,7 +2790,7 @@ class Ratios:
         diluted: bool = True,
         rounding: int = 4,
         growth: bool = False,
-        lag: int | str = 1,
+        lag: int | list[int] = 1,
     ):
         """
         Calculate the dividend yield ratio, a valuation ratio that measures the
@@ -2843,7 +2843,7 @@ class Ratios:
         diluted: bool = True,
         rounding: int = 4,
         growth: bool = False,
-        lag: int | str = 1,
+        lag: int | list[int] = 1,
     ):
         """
         Calculate the price to cash flow ratio, a valuation ratio that compares a
@@ -2895,7 +2895,7 @@ class Ratios:
         diluted: bool = True,
         rounding: int = 4,
         growth: bool = False,
-        lag: int | str = 1,
+        lag: int | list[int] = 1,
     ):
         """
         Calculate the price to free cash flow ratio, a valuation ratio that compares a
@@ -2947,7 +2947,7 @@ class Ratios:
         diluted: bool = True,
         rounding: int = 4,
         growth: bool = False,
-        lag: int | str = 1,
+        lag: int | list[int] = 1,
     ):
         """
         Calculates the market capitalization of the company.
@@ -2994,7 +2994,7 @@ class Ratios:
         diluted: bool = True,
         rounding: int = 4,
         growth: bool = False,
-        lag: int | str = 1,
+        lag: int | list[int] = 1,
     ):
         """
         Calculates the Enterprise Value (EV) of a company. The Enterprise Value (EV)
@@ -3053,7 +3053,7 @@ class Ratios:
         diluted: bool = True,
         rounding: int = 4,
         growth: bool = False,
-        lag: int | str = 1,
+        lag: int | list[int] = 1,
     ):
         """
         Calculate the EV to sales ratio, a valuation ratio that compares a company's
@@ -3092,7 +3092,7 @@ class Ratios:
         diluted: bool = True,
         rounding: int = 4,
         growth: bool = False,
-        lag: int | str = 1,
+        lag: int | list[int] = 1,
     ):
         """
         Calculates the enterprise value over EBITDA ratio, which is a valuation ratio that
@@ -3133,7 +3133,7 @@ class Ratios:
         diluted: bool = True,
         rounding: int = 4,
         growth: bool = False,
-        lag: int | str = 1,
+        lag: int | list[int] = 1,
     ):
         """
         Calculates the enterprise value over operating cash flow ratio, which is a valuation
@@ -3177,7 +3177,7 @@ class Ratios:
         diluted: bool = True,
         rounding: int = 4,
         growth: bool = False,
-        lag: int | str = 1,
+        lag: int | list[int] = 1,
     ):
         """
         Calculates the earnings yield ratio, which measures the earnings per share
@@ -3216,7 +3216,7 @@ class Ratios:
 
     @handle_errors
     def get_payout_ratio(
-        self, rounding: int = 4, growth: bool = False, lag: int | str = 1
+        self, rounding: int = 4, growth: bool = False, lag: int | list[int] = 1
     ):
         """
         Calculates the (dividend) payout ratio, which measures the proportion of earnings
@@ -3249,7 +3249,7 @@ class Ratios:
 
     @handle_errors
     def get_tangible_asset_value(
-        self, rounding: int = 4, growth: bool = False, lag: int | str = 1
+        self, rounding: int = 4, growth: bool = False, lag: int | list[int] = 1
     ):
         """
         Calculate the tangible asset value, which represents the total value of a company's
@@ -3283,7 +3283,7 @@ class Ratios:
 
     @handle_errors
     def get_net_current_asset_value(
-        self, rounding: int = 4, growth: bool = False, lag: int | str = 1
+        self, rounding: int = 4, growth: bool = False, lag: int | list[int] = 1
     ):
         """
         Calculate the net current asset value, which is the total value of a company's
@@ -3320,7 +3320,7 @@ class Ratios:
         diluted: bool = True,
         rounding: int = 4,
         growth: bool = False,
-        lag: int | str = 1,
+        lag: int | list[int] = 1,
     ):
         """
         Calculate the net current asset value, which is the total value of a company's

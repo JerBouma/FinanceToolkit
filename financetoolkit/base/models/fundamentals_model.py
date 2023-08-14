@@ -2,15 +2,20 @@
 __docformat__ = "google"
 
 
+import time
+
 import numpy as np
 import pandas as pd
 import requests
+
+# pylint: disable=no-member,too-many-locals
+from tqdm import tqdm
 
 from financetoolkit.base.models.normalization_model import (
     convert_financial_statements,
 )
 
-# pylint: disable=no-member,too-many-locals
+PROGRESS_BAR_LIMIT = 3
 
 
 def get_financial_statements(
@@ -24,6 +29,7 @@ def get_financial_statements(
     rounding: int = 4,
     statement_format: pd.DataFrame = pd.DataFrame(),
     statistics_format: pd.DataFrame = pd.DataFrame(),
+    sleep_timer: bool = False,
 ):
     """
     Retrieves financial statements (balance, income, or cash flow statements) for one or multiple companies,
@@ -39,6 +45,8 @@ def get_financial_statements(
         statement_format (pd.DataFrame): Optional DataFrame containing the names of the financial
             statement line items to include in the output. Rows should contain the original name
             of the line item, and columns should contain the desired name for that line item.
+        sleep_timer (bool): Whether to set a sleep timer when the rate limit is reached. Note that this only works
+        if you have a Premium subscription (Starter or higher) from FinancialModelingPrep. Defaults to False.
 
     Returns:
         pd.DataFrame: A DataFrame containing the financial statement data. If only one ticker is provided, the
@@ -75,28 +83,19 @@ def get_financial_statements(
 
     financial_statement_dict: dict = {}
     invalid_tickers = []
-    for ticker in ticker_list:
-        try:
-            response = requests.get(
-                f"https://financialmodelingprep.com/api/v3/{location}/"
-                f"{ticker}?period={period}&apikey={api_key}&limit={limit}",
-                timeout=60,
-            )
-            response.raise_for_status()
-            financial_statement = pd.read_json(response.text)
-
-        except requests.exceptions.HTTPError:
-            if (
-                "not available under your current subscription"
-                in response.json()["Error Message"]
-            ):
-                print(
-                    f"The requested data for {ticker} is part of the Premium Subscription from "
-                    "FinancialModelingPrep. If you wish to access this data, consider upgrading "
-                    "your plan.\nYou can get 15% off by using the following affiliate link which "
-                    "also supports the project: https://site.financialmodelingprep.com/developer/docs/pricing/jeroen/"
-                )
-            break
+    for ticker in (
+        tqdm(ticker_list, desc=f"Obtaining {statement} data")
+        if len(ticker_list) > PROGRESS_BAR_LIMIT
+        else ticker_list
+    ):
+        financial_statement = get_financial_statement_data(
+            ticker=ticker,
+            location=location,
+            period=period,
+            api_key=api_key,
+            limit=limit,
+            sleep_timer=sleep_timer,
+        )
 
         try:
             financial_statement = financial_statement.drop("symbol", axis=1)
@@ -118,7 +117,7 @@ def get_financial_statements(
 
         if financial_statement.columns.duplicated().any():
             # This happens in the rare case that a company has two financial statements for the same period.
-            # Browsing through the data has shown that these financial statements are also equal therefore
+            # Browsing through the data has shown that these financial statements are equal therefore
             # one of the columns can be dropped.
             financial_statement = financial_statement.loc[
                 :, ~financial_statement.columns.duplicated()
@@ -178,6 +177,87 @@ def get_financial_statements(
         )
 
     return pd.DataFrame(), pd.DataFrame(), invalid_tickers
+
+
+def get_financial_statement_data(
+    ticker: str,
+    location: str,
+    period: str,
+    api_key: str,
+    limit: int,
+    sleep_timer: bool = False,
+) -> pd.DataFrame:
+    """
+    Collects the financial statement data from the FinancialModelingPrep API. This is a
+    separate function to properly segregate the different types of errors that can occur.
+
+    Args:
+        ticker (str): The company ticker (for example: "AAPL")
+        location (str): The location of the financial statement (for example: "balance-sheet-statement")
+        period (str): The period of the financial statement (for example: "annual")
+        api_key (str): The API Key obtained from FinancialModelingPrep
+        limit (int): The limit for the years of data
+        sleep_timer (bool): Whether to set a sleep timer when the rate limit is reached. Note that this only works
+        if you have a Premium subscription (Starter or higher) from FinancialModelingPrep. Defaults to False.
+
+    Returns:
+        pd.DataFrame: A DataFrame containing the financial statement data.
+    """
+    while True:
+        try:
+            response = requests.get(
+                f"https://financialmodelingprep.com/api/v3/{location}/"
+                f"{ticker}?period={period}&apikey={api_key}&limit={limit}",
+                timeout=60,
+            )
+            response.raise_for_status()
+            financial_statement = pd.read_json(response.text)
+
+            return financial_statement
+
+        except requests.exceptions.HTTPError:
+            if (
+                "not available under your current subscription"
+                in response.json()["Error Message"]
+            ):
+                print(
+                    f"The requested data for {ticker} is part of the Premium Subscription from "
+                    "FinancialModelingPrep. If you wish to access this data, consider upgrading "
+                    "your plan.\nYou can get 15% off by using the following affiliate link which "
+                    "also supports the project: https://site.financialmodelingprep.com/developer/docs/pricing/jeroen/"
+                )
+                return pd.DataFrame()
+
+            if "Limit Reach" in response.json()["Error Message"]:
+                print(
+                    "You have reached the rate limit of your subscription, set sleep_timer in the Toolkit class "
+                    "to True to continue collecting data (Premium only). If you use the Free plan, consider upgrading "
+                    "your plan.\nYou can get 15% off by using the following affiliate link which also supports the "
+                    "project: https://site.financialmodelingprep.com/developer/docs/pricing/jeroen/"
+                )
+
+                if sleep_timer:
+                    time.sleep(60)
+                else:
+                    return pd.DataFrame()
+            if (
+                "Free plan is limited to US stocks only"
+                in response.json()["Error Message"]
+            ):
+                print(
+                    f"The Free plan is limited to US stocks only (therefore, {ticker} is unavailable), consider "
+                    "upgrading your plan to Starter or higher.\nYou can get 15% off by using the following affiliate "
+                    "link which also supports the project: "
+                    "https://site.financialmodelingprep.com/developer/docs/pricing/jeroen/"
+                )
+                return pd.DataFrame()
+
+            print(
+                "This is an undefined error, please report to the author at https://github.com/JerBouma/FinanceToolkit"
+                f"\n{response.json()['Error Message']}"
+            )
+
+            return pd.DataFrame()
 
 
 def get_profile(tickers: list[str] | str, api_key: str):

@@ -56,11 +56,12 @@ class Toolkit:
         format_location: str = "",
         reverse_dates: bool = False,
         remove_invalid_tickers: bool = True,
+        sleep_timer: bool = False,
     ):
         """
         Initializes an Toolkit object with a ticker or a list of tickers. The way the Toolkit is initialized will define how the data is collected. For example, if you enable the quarterly flag, you will be able to collect quarterly data. Next to that, you can define the start and end date to specify a specific range. Another options is to define the custom ratios you want to calculate. This can be done by passing a dictionary.
 
-        See for more information on all of this, the following link: https://www.jeroenbouma.com/projects/financetoolkit#how-to-guides-for-the-financetoolkit
+        See for more information on all of this, the following link: https://www.jeroenbouma.com/projects/financetoolkit
 
         Args:
         tickers (str or list): A string or a list of strings containing the company ticker(s).
@@ -69,8 +70,15 @@ class Toolkit:
         balance (pd.DataFrame): A DataFrame containing balance sheet data.
         income (pd.DataFrame): A DataFrame containing income statement data.
         cash (pd.DataFrame): A DataFrame containing cash flow statement data.
+        custom_ratios (dict): A dictionary containing custom ratios.
+        start_date (str): A string containing the start date of the data.
+        end_date (str): A string containing the end date of the data.
+        quarterly (bool): A boolean indicating whether to collect quarterly data.
         format_location (str): A string containing the location of the normalization files.
         reverse_dates (bool): A boolean indicating whether to reverse the dates in the financial statements.
+        remove_invalid_tickers (bool): A boolean indicating whether to remove invalid tickers.
+        sleep_timer (bool): Whether to set a sleep timer when the rate limit is reached. Note that this only works
+        if you have a Premium subscription (Starter or higher) from FinancialModelingPrep. Defaults to False.
 
         As an example:
 
@@ -107,6 +115,7 @@ class Toolkit:
         self._quarterly = quarterly
         self._remove_invalid_tickers = remove_invalid_tickers
         self._invalid_tickers: list = []
+        self._sleep_timer = sleep_timer
 
         if self._api_key:
             # Initialization of FinancialModelingPrep Variables
@@ -884,6 +893,7 @@ class Toolkit:
                 rounding,
                 self._balance_sheet_statement_generic,
                 self._statistics_statement_generic,
+                self._sleep_timer,
             )
 
         if self._remove_invalid_tickers:
@@ -998,6 +1008,7 @@ class Toolkit:
                 rounding,
                 self._income_statement_generic,
                 self._statistics_statement_generic,
+                self._sleep_timer,
             )
 
         if self._remove_invalid_tickers:
@@ -1110,6 +1121,7 @@ class Toolkit:
                 rounding,
                 self._cash_flow_statement_generic,
                 self._statistics_statement_generic,
+                self._sleep_timer,
             )
 
         if self._remove_invalid_tickers:
@@ -1195,6 +1207,7 @@ class Toolkit:
                 limit,
                 self._balance_sheet_statement_generic,
                 self._statistics_statement_generic,
+                self._sleep_timer,
             )
 
         if self._remove_invalid_tickers:

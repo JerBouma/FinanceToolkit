@@ -15,7 +15,7 @@ from financetoolkit.base.models.normalization_model import (
     convert_financial_statements,
 )
 
-PROGRESS_BAR_LIMIT = 3
+PROGRESS_BAR_LIMIT = 10
 
 
 def get_financial_statements(
@@ -30,6 +30,7 @@ def get_financial_statements(
     statement_format: pd.DataFrame = pd.DataFrame(),
     statistics_format: pd.DataFrame = pd.DataFrame(),
     sleep_timer: bool = False,
+    progress_bar: bool = True,
 ):
     """
     Retrieves financial statements (balance, income, or cash flow statements) for one or multiple companies,
@@ -47,6 +48,7 @@ def get_financial_statements(
             of the line item, and columns should contain the desired name for that line item.
         sleep_timer (bool): Whether to set a sleep timer when the rate limit is reached. Note that this only works
         if you have a Premium subscription (Starter or higher) from FinancialModelingPrep. Defaults to False.
+        progress_bar (bool): Whether to show a progress bar when retrieving data over 10 tickers. Defaults to True.
 
     Returns:
         pd.DataFrame: A DataFrame containing the financial statement data. If only one ticker is provided, the
@@ -85,7 +87,7 @@ def get_financial_statements(
     invalid_tickers = []
     for ticker in (
         tqdm(ticker_list, desc=f"Obtaining {statement} data")
-        if len(ticker_list) > PROGRESS_BAR_LIMIT
+        if ((len(ticker_list) > PROGRESS_BAR_LIMIT) & (progress_bar))
         else ticker_list
     ):
         financial_statement = get_financial_statement_data(
@@ -96,6 +98,10 @@ def get_financial_statements(
             limit=limit,
             sleep_timer=sleep_timer,
         )
+
+        if "ERROR_MESSAGE" in financial_statement:
+            invalid_tickers.append(ticker)
+            continue
 
         try:
             financial_statement = financial_statement.drop("symbol", axis=1)
@@ -226,7 +232,7 @@ def get_financial_statement_data(
                     "your plan.\nYou can get 15% off by using the following affiliate link which "
                     "also supports the project: https://site.financialmodelingprep.com/developer/docs/pricing/jeroen/"
                 )
-                return pd.DataFrame()
+                return pd.DataFrame(columns=["ERROR_MESSAGE"])
 
             if "Limit Reach" in response.json()["Error Message"]:
                 print(
@@ -239,7 +245,7 @@ def get_financial_statement_data(
                 if sleep_timer:
                     time.sleep(60)
                 else:
-                    return pd.DataFrame()
+                    return pd.DataFrame(columns=["ERROR_MESSAGE"])
             if (
                 "Free plan is limited to US stocks only"
                 in response.json()["Error Message"]
@@ -250,14 +256,14 @@ def get_financial_statement_data(
                     "link which also supports the project: "
                     "https://site.financialmodelingprep.com/developer/docs/pricing/jeroen/"
                 )
-                return pd.DataFrame()
+                return pd.DataFrame(columns=["ERROR_MESSAGE"])
 
             print(
                 "This is an undefined error, please report to the author at https://github.com/JerBouma/FinanceToolkit"
                 f"\n{response.json()['Error Message']}"
             )
 
-            return pd.DataFrame()
+            return pd.DataFrame(columns=["ERROR_MESSAGE"])
 
 
 def get_profile(tickers: list[str] | str, api_key: str):

@@ -26,7 +26,7 @@ from financetoolkit.base.models.normalization_model import (
 from financetoolkit.base.models_controller import Models
 from financetoolkit.base.ratios_controller import Ratios
 
-# pylint: disable=too-many-instance-attributes,too-many-lines,line-too-long
+# pylint: disable=too-many-instance-attributes,too-many-lines,line-too-long,too-many-locals
 # ruff: noqa: E501
 
 
@@ -57,6 +57,7 @@ class Toolkit:
         reverse_dates: bool = False,
         remove_invalid_tickers: bool = True,
         sleep_timer: bool = False,
+        progress_bar: bool = True,
     ):
         """
         Initializes an Toolkit object with a ticker or a list of tickers. The way the Toolkit is initialized will define how the data is collected. For example, if you enable the quarterly flag, you will be able to collect quarterly data. Next to that, you can define the start and end date to specify a specific range. Another options is to define the custom ratios you want to calculate. This can be done by passing a dictionary.
@@ -79,6 +80,7 @@ class Toolkit:
         remove_invalid_tickers (bool): A boolean indicating whether to remove invalid tickers.
         sleep_timer (bool): Whether to set a sleep timer when the rate limit is reached. Note that this only works
         if you have a Premium subscription (Starter or higher) from FinancialModelingPrep. Defaults to False.
+        progress_bar (bool): Whether to enable the progress bar when ticker amount is over 10. Defaults to True.
 
         As an example:
 
@@ -116,6 +118,7 @@ class Toolkit:
         self._remove_invalid_tickers = remove_invalid_tickers
         self._invalid_tickers: list = []
         self._sleep_timer = sleep_timer
+        self._progress_bar = progress_bar
 
         if self._api_key:
             # Initialization of FinancialModelingPrep Variables
@@ -894,6 +897,7 @@ class Toolkit:
                 self._balance_sheet_statement_generic,
                 self._statistics_statement_generic,
                 self._sleep_timer,
+                self._progress_bar,
             )
 
         if self._remove_invalid_tickers:
@@ -1009,6 +1013,7 @@ class Toolkit:
                 self._income_statement_generic,
                 self._statistics_statement_generic,
                 self._sleep_timer,
+                self._progress_bar,
             )
 
         if self._remove_invalid_tickers:
@@ -1122,6 +1127,7 @@ class Toolkit:
                 self._cash_flow_statement_generic,
                 self._statistics_statement_generic,
                 self._sleep_timer,
+                self._progress_bar,
             )
 
         if self._remove_invalid_tickers:
@@ -1208,6 +1214,7 @@ class Toolkit:
                 self._balance_sheet_statement_generic,
                 self._statistics_statement_generic,
                 self._sleep_timer,
+                self._progress_bar,
             )
 
         if self._remove_invalid_tickers:

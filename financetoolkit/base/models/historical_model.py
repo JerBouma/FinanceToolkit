@@ -140,6 +140,10 @@ def convert_daily_to_yearly(daily_historical_data: pd.DataFrame):
         yearly_historical_data["Dividends"] = (
             daily_historical_data["Dividends"].groupby(dates).transform("sum")
         )
+    if "Return" in yearly_historical_data:
+        yearly_historical_data["Return"] = (
+            daily_historical_data["Return"].groupby(dates).transform("sum")
+        )
 
     yearly_historical_data["Date"] = yearly_historical_data["Date"].str[:4]
     yearly_historical_data = yearly_historical_data.drop_duplicates().set_index("Date")
@@ -170,6 +174,10 @@ def convert_daily_to_quarterly(daily_historical_data: pd.DataFrame):
     if "Dividends" in quarterly_historical_data:
         quarterly_historical_data["Dividends"] = (
             daily_historical_data["Dividends"].groupby(dates).transform("sum")
+        )
+    if "Return" in quarterly_historical_data:
+        quarterly_historical_data["Return"] = (
+            daily_historical_data["Return"].groupby(dates).transform("sum")
         )
 
     quarterly_historical_data["Date"] = quarterly_historical_data["Date"].str[:7]

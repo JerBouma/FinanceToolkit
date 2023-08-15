@@ -87,7 +87,7 @@ def get_financial_statements(
     invalid_tickers = []
     for ticker in (
         tqdm(ticker_list, desc=f"Obtaining {statement} data")
-        if ((len(ticker_list) > PROGRESS_BAR_LIMIT) & (progress_bar))
+        if (len(ticker_list) > PROGRESS_BAR_LIMIT) & progress_bar
         else ticker_list
     ):
         financial_statement = get_financial_statement_data(

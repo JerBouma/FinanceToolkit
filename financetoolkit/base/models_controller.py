@@ -43,6 +43,8 @@ class Models:
         self._enterprise_value_breakdown: pd.DataFrame = pd.DataFrame()
         self._enterprise_value_breakdown_growth: pd.DataFrame = pd.DataFrame()
 
+        pd.options.display.float_format = "{:.4f}".format
+
     @handle_errors
     def get_dupont_analysis(
         self,

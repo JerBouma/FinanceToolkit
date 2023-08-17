@@ -8,6 +8,7 @@ import pandas as pd
 
 from financetoolkit.base.helpers import calculate_growth as _calculate_growth
 from financetoolkit.base.models.fundamentals_model import (
+    get_analyst_estimates as _get_analyst_estimates,
     get_financial_statements as _get_financial_statements,
     get_profile as _get_profile,
     get_quote as _get_quote,
@@ -126,6 +127,8 @@ class Toolkit:
             self._quote: pd.DataFrame = pd.DataFrame()
             self._enterprise: pd.DataFrame = pd.DataFrame()
             self._rating: pd.DataFrame = pd.DataFrame()
+            self._analyst_estimates: pd.DataFrame = pd.DataFrame()
+            self._analyst_estimates_growth: pd.DataFrame = pd.DataFrame()
 
         # Initialization of Historical Variables
         self._daily_historical_data: pd.DataFrame = (
@@ -467,7 +470,9 @@ class Toolkit:
         """
         if not self._api_key:
             return print(
-                "Please define an API key from FinancialModelingPrep to use this functionality."
+                "The requested data requires the api_key parameter to be set, consider obtaining a key with the following link: https://financialmodelingprep.com/developer/docs/pricing/jeroen/"
+                "\nThe free plan allows for 250 requests per day, a limit of 5 years and has no quarterly data. Consider upgrading "
+                "your plan. You can get 15% off by using the above affiliate link which also supports the project."
             )
 
         if self._profile.empty:
@@ -533,13 +538,17 @@ class Toolkit:
         """
         if not self._api_key:
             return print(
-                "Please define an API key from FinancialModelingPrep to use this functionality."
+                "The requested data requires the api_key parameter to be set, consider obtaining a key with the following link: https://financialmodelingprep.com/developer/docs/pricing/jeroen/"
+                "\nThe free plan allows for 250 requests per day, a limit of 5 years and has no quarterly data. Consider upgrading "
+                "your plan. You can get 15% off by using the above affiliate link which also supports the project."
             )
 
         if self._quote.empty:
             self._quote, self._invalid_tickers = _get_quote(
                 self._tickers, self._api_key
             )
+
+        pd.options.display.float_format = "{:.2f}".format
 
         if self._remove_invalid_tickers:
             self._tickers = [
@@ -588,7 +597,9 @@ class Toolkit:
         """
         if not self._api_key:
             return print(
-                "Please define an API key from FinancialModelingPrep to use this functionality."
+                "The requested data requires the api_key parameter to be set, consider obtaining a key with the following link: https://financialmodelingprep.com/developer/docs/pricing/jeroen/"
+                "\nThe free plan allows for 250 requests per day, a limit of 5 years and has no quarterly data. Consider upgrading "
+                "your plan. You can get 15% off by using the above affiliate link which also supports the project."
             )
 
         if self._rating.empty:
@@ -604,6 +615,113 @@ class Toolkit:
             ]
 
         return self._rating
+
+    def get_analyst_estimates(
+        self,
+        limit: int = 100,
+        overwrite: bool = False,
+        rounding: int = 4,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+    ):
+        """
+        Obtain analyst estimates regarding revenues, EBITDA, EBIT, Net Income
+        SGA Expenses and EPS. The number of analysts are also reported.
+
+        Note that this information requires a Premium FMP subscription.
+
+        Args:
+            limit (int): Defines the maximum years or quarters to obtain.
+            overwrite (bool): Defines whether to overwrite the existing data.
+            rounding (int): Defines the number of decimal places to round the data to.
+            growth (bool): Defines whether to return the growth of the data.
+            lag (int | str): Defines the number of periods to lag the growth data by.
+
+        Returns:
+            pandas.DataFrame: The analyst estimates for the specified tickers.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["AAPL", "MSFT", "GOOGL", "AMZN"], api_key=FMP_KEY, start_date="2021-05-01", quarterly=False
+        )
+
+        analyst_estimates = toolkit.get_analyst_estimates()
+
+        analyst_estimates.loc['AAPL']
+        ```
+
+        Which returns:
+
+        |                               |         2021 |         2022 |         2023 |         2024 |
+        |:------------------------------|-------------:|-------------:|-------------:|-------------:|
+        | Estimated Revenue Low         |  2.98738e+11 |  3.07919e+11 |  3.3871e+11  |  2.93633e+11 |
+        | Estimated Revenue High        |  4.48107e+11 |  4.61878e+11 |  5.08066e+11 |  4.4045e+11  |
+        | Estimated Revenue Average     |  3.73422e+11 |  3.84898e+11 |  4.23388e+11 |  3.67042e+11 |
+        | Estimated EBITDA Low          |  8.50991e+10 |  1.00742e+11 |  1.10816e+11 |  1.07415e+11 |
+        | Estimated EBITDA High         |  1.27649e+11 |  1.51113e+11 |  1.66224e+11 |  1.61122e+11 |
+        | Estimated EBITDA Average      |  1.06374e+11 |  1.25928e+11 |  1.3852e+11  |  1.34269e+11 |
+        | Estimated EBIT Low            |  7.62213e+10 |  9.05428e+10 |  9.9597e+10  |  9.81566e+10 |
+        | Estimated EBIT High           |  1.14332e+11 |  1.35814e+11 |  1.49396e+11 |  1.47235e+11 |
+        | Estimated EBIT Average        |  9.52766e+10 |  1.13178e+11 |  1.24496e+11 |  1.22696e+11 |
+        | Estimated Net Income Low      |  6.54258e+10 |  7.62265e+10 |  8.38492e+10 |  8.23371e+10 |
+        | Estimated Net Income High     |  9.81387e+10 |  1.1434e+11  |  1.25774e+11 |  1.23506e+11 |
+        | Estimated Net Income Average  |  8.17822e+10 |  9.52832e+10 |  1.04811e+11 |  1.02921e+11 |
+        | Estimated SGA Expense Low     |  1.48491e+10 |  1.85317e+10 |  2.03848e+10 |  2.04857e+10 |
+        | Estimated SGA Expense High    |  2.22737e+10 |  2.77975e+10 |  3.05772e+10 |  3.07286e+10 |
+        | Estimated SGA Expense Average |  1.85614e+10 |  2.31646e+10 |  2.5481e+10  |  2.56072e+10 |
+        | Estimated EPS Average         |  4.26        |  5.465       |  6.01        |  6.2612      |
+        | Estimated EPS High            |  5.12        |  6.56        |  7.21        |  7.5135      |
+        | Estimated EPS Low             |  3.4         |  4.37        |  4.81        |  5.009       |
+        | Number of Analysts            | 14           | 16           | 12           | 10           |
+        """
+        if not self._api_key:
+            return print(
+                "The requested data requires the api_key parameter to be set, consider obtaining a key with the following link: https://financialmodelingprep.com/developer/docs/pricing/jeroen/"
+                "\nThis functionality also requires a Premium subscription. You can get 15% off by using the above affiliate link which also supports the project."
+            )
+        if self._analyst_estimates.empty or overwrite:
+            (
+                self._analyst_estimates,
+                self._invalid_tickers,
+            ) = _get_analyst_estimates(
+                self._tickers,
+                self._api_key,
+                self._quarterly,
+                self._start_date,
+                self._end_date,
+                limit,
+                rounding,
+                self._sleep_timer,
+                self._progress_bar,
+            )
+
+        if self._remove_invalid_tickers:
+            self._tickers = [
+                ticker
+                for ticker in self._tickers
+                if ticker not in self._invalid_tickers
+            ]
+
+        if growth:
+            pd.options.display.float_format = "{:.4f}".format
+            self._analyst_estimates_growth = _calculate_growth(
+                self._analyst_estimates, lag=lag, rounding=rounding
+            )
+        else:
+            pd.options.display.float_format = "{:.2f}".format
+
+        if len(self._tickers) == 1:
+            return (
+                self._analyst_estimates_growth.loc[self._tickers[0]]
+                if growth
+                else self._analyst_estimates.loc[self._tickers[0]]
+            )
+
+        return self._analyst_estimates_growth if growth else self._analyst_estimates
 
     def get_historical_data(
         self, period: str = "daily", return_column: str = "Adj Close"
@@ -908,9 +1026,12 @@ class Toolkit:
             ]
 
         if growth:
+            pd.options.display.float_format = "{:.4f}".format
             self._balance_sheet_statement_growth = _calculate_growth(
                 self._balance_sheet_statement, lag=lag, rounding=rounding
             )
+        else:
+            pd.options.display.float_format = "{:.2f}".format
 
         if len(self._tickers) == 1:
             return (
@@ -1024,9 +1145,12 @@ class Toolkit:
             ]
 
         if growth:
+            pd.options.display.float_format = "{:.4f}".format
             self._income_statement_growth = _calculate_growth(
                 self._income_statement, lag=lag, rounding=rounding
             )
+        else:
+            pd.options.display.float_format = "{:.2f}".format
 
         if len(self._tickers) == 1:
             return (
@@ -1138,9 +1262,12 @@ class Toolkit:
             ]
 
         if growth:
+            pd.options.display.float_format = "{:.4f}".format
             self._cash_flow_statement_growth = _calculate_growth(
                 self._cash_flow_statement, lag=lag, rounding=rounding
             )
+        else:
+            pd.options.display.float_format = "{:.2f}".format
 
         if len(self._tickers) == 1:
             return (

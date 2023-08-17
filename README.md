@@ -90,9 +90,6 @@ from financetoolkit import Toolkit
 
 companies = Toolkit(['AAPL', 'MSFT'], api_key="FMP_KEY", start_date='2017-12-31')
 
-# an Enterprise example
-enterprise = companies.get_enterprise()
-
 # a Historical example
 historical_data = companies.get_historical_data()
 
@@ -101,6 +98,9 @@ balance_sheet_statement = companies.get_balance_sheet_statement()
 
 # a Ratios example
 profitability_ratios = companies.ratios.collect_profitability_ratios()
+
+# a Models example
+extended_dupont_analysis = companies.models.get_extended_dupont_analysis()
 
 # Show the profitability ratios for Apple
 profitability_ratios.loc['AAPL']

@@ -109,6 +109,10 @@ def get_historical_data(
             return_column
         ].pct_change()
 
+        historical_data_dict[ticker]["Cumulative Return"] = (
+            1 + historical_data_dict[ticker]["Return"]
+        ).cumprod() - 1
+
     if historical_data_dict:
         historical_data = pd.concat(historical_data_dict, axis=1)
         historical_data.columns = historical_data.columns.swaplevel(0, 1)
@@ -154,6 +158,11 @@ def convert_daily_to_yearly(daily_historical_data: pd.DataFrame):
             - 1
         )
 
+    if "Cumulative Return" in yearly_historical_data:
+        yearly_historical_data["Cumulative Return"] = (
+            1 + yearly_historical_data["Return"]
+        ).cumprod() - 1
+
     return yearly_historical_data
 
 
@@ -193,5 +202,10 @@ def convert_daily_to_quarterly(daily_historical_data: pd.DataFrame):
             / quarterly_historical_data["Adj Close"].shift()
             - 1
         )
+
+    if "Cumulative Return" in quarterly_historical_data:
+        quarterly_historical_data["Cumulative Return"] = (
+            1 + quarterly_historical_data["Return"]
+        ).cumprod() - 1
 
     return quarterly_historical_data

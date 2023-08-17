@@ -9,7 +9,13 @@ import pandas as pd
 import requests
 
 # pylint: disable=no-member,too-many-locals
-from tqdm import tqdm
+
+try:
+    from tqdm import tqdm
+
+    ENABLE_TQDM = True
+except ImportError:
+    ENABLE_TQDM = False
 
 from financetoolkit.base.models.normalization_model import (
     convert_financial_statements,
@@ -85,11 +91,14 @@ def get_financial_statements(
 
     financial_statement_dict: dict = {}
     invalid_tickers = []
-    for ticker in (
+
+    ticker_list_iterator = (
         tqdm(ticker_list, desc=f"Obtaining {statement} data")
-        if (len(ticker_list) > PROGRESS_BAR_LIMIT) & progress_bar
+        if ENABLE_TQDM & progress_bar
         else ticker_list
-    ):
+    )
+
+    for ticker in ticker_list_iterator:
         financial_statement = get_financial_statement_data(
             ticker=ticker,
             location=location,
@@ -352,11 +361,14 @@ def get_analyst_estimates(
 
     analyst_estimates_dict: dict = {}
     invalid_tickers = []
-    for ticker in (
+
+    ticker_list_iterator = (
         tqdm(ticker_list, desc="Obtaining analyst estimates")
-        if (len(ticker_list) > PROGRESS_BAR_LIMIT) & progress_bar
+        if ENABLE_TQDM & progress_bar
         else ticker_list
-    ):
+    )
+
+    for ticker in ticker_list_iterator:
         analyst_estimates = get_analyst_estimates_data(
             ticker=ticker,
             period=period,

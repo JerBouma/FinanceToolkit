@@ -278,28 +278,41 @@ def get_analyst_estimates(
     progress_bar: bool = True,
 ):
     """
-    Retrieves financial statements (balance, income, or cash flow statements) for one or multiple companies,
-    and returns a DataFrame containing the data.
+    Retrieves analyst estimates for one or multiple companies, and returns a DataFrame containing the data.
+
+    This data contains the following estimates:
+        - Estimated Revenue Low
+        - Estimated Revenue High
+        - Estimated Revenue Average
+        - Estimated EBITDA Low
+        - Estimated EBITDA High
+        - Estimated EBITDA Average
+        - Estimated EBIT Low
+        - Estimated EBIT High
+        - Estimated EBIT Average
+        - Estimated Net Income Low
+        - Estimated Net Income High
+        - Estimated Net Income Average
+        - Estimated SGA Expense Low
+        - Estimated SGA Expense High
+        - Estimated SGA Expense Average
+        - Estimated EPS Low
+        - Estimated EPS High
+        - Estimated EPS Average
+        - Number of Analysts
 
     Args:
         tickers (List[str]): List of company tickers.
-        statement (str): The type of financial statement to retrieve. Can be "balance", "income", or "cash-flow".
         api_key (str): API key for the financial data provider.
         quarter (bool): Whether to retrieve quarterly data. Defaults to False (annual data).
         start_date (str): The start date to filter data with.
         end_date (str): The end date to filter data with.
-        statement_format (pd.DataFrame): Optional DataFrame containing the names of the financial
-            statement line items to include in the output. Rows should contain the original name
-            of the line item, and columns should contain the desired name for that line item.
         sleep_timer (bool): Whether to set a sleep timer when the rate limit is reached. Note that this only works
         if you have a Premium subscription (Starter or higher) from FinancialModelingPrep. Defaults to False.
         progress_bar (bool): Whether to show a progress bar when retrieving data over 10 tickers. Defaults to True.
 
     Returns:
-        pd.DataFrame: A DataFrame containing the financial statement data. If only one ticker is provided, the
-                      returned DataFrame will have a single column containing the data for that ticker. If multiple
-                      tickers are provided, the returned DataFrame will have multiple columns, one for each ticker,
-                      with the ticker symbol as the column name.
+        pd.DataFrame: A DataFrame containing the analyst estimates for all provided tickers.
     """
     naming: dict = {
         "estimatedRevenueLow": "Estimated Revenue Low",
@@ -438,20 +451,19 @@ def get_analyst_estimates_data(
     sleep_timer: bool = False,
 ) -> pd.DataFrame:
     """
-    Collects the financial statement data from the FinancialModelingPrep API. This is a
+    Collects the analyst estimates data from the FinancialModelingPrep API. This is a
     separate function to properly segregate the different types of errors that can occur.
 
     Args:
         ticker (str): The company ticker (for example: "AAPL")
-        location (str): The location of the financial statement (for example: "balance-sheet-statement")
-        period (str): The period of the financial statement (for example: "annual")
+        period (str): The period (for example: "annual")
         api_key (str): The API Key obtained from FinancialModelingPrep
         limit (int): The limit for the years of data
         sleep_timer (bool): Whether to set a sleep timer when the rate limit is reached. Note that this only works
         if you have a Premium subscription (Starter or higher) from FinancialModelingPrep. Defaults to False.
 
     Returns:
-        pd.DataFrame: A DataFrame containing the financial statement data.
+        pd.DataFrame: A DataFrame containing the analyst estimates data.
     """
     while True:
         try:

@@ -9,10 +9,12 @@ import pandas as pd
 from financetoolkit.base.helpers import calculate_growth as _calculate_growth
 from financetoolkit.base.models.fundamentals_model import (
     get_analyst_estimates as _get_analyst_estimates,
+    get_earnings_calendar as _get_earnings_calendar,
     get_financial_statements as _get_financial_statements,
     get_profile as _get_profile,
     get_quote as _get_quote,
     get_rating as _get_rating,
+    get_revenue_segmentation as _get_revenue_segmentation,
 )
 from financetoolkit.base.models.historical_model import (
     convert_daily_to_quarterly as _convert_daily_to_quarterly,
@@ -27,7 +29,7 @@ from financetoolkit.base.models.normalization_model import (
 from financetoolkit.base.models_controller import Models
 from financetoolkit.base.ratios_controller import Ratios
 
-# pylint: disable=too-many-instance-attributes,too-many-lines,line-too-long,too-many-locals
+# pylint: disable=too-many-instance-attributes,too-many-lines,line-too-long,too-many-locals,too-many-function-args
 # ruff: noqa: E501
 
 
@@ -129,6 +131,11 @@ class Toolkit:
             self._rating: pd.DataFrame = pd.DataFrame()
             self._analyst_estimates: pd.DataFrame = pd.DataFrame()
             self._analyst_estimates_growth: pd.DataFrame = pd.DataFrame()
+            self._earnings_calendar: pd.DataFrame = pd.DataFrame()
+            self._revenue_geographic_segmentation: pd.DataFrame = pd.DataFrame()
+            self._revenue_geographic_segmentation_growth: pd.DataFrame = pd.DataFrame()
+            self._revenue_product_segmentation: pd.DataFrame = pd.DataFrame()
+            self._revenue_product_segmentation_growth: pd.DataFrame = pd.DataFrame()
 
         # Initialization of Historical Variables
         self._daily_historical_data: pd.DataFrame = (
@@ -430,43 +437,37 @@ class Toolkit:
 
         Which returns:
 
-        |                   | MSFT                                                   | AAPL                                                   |
-        |:------------------|:-------------------------------------------------------|:-------------------------------------------------------|
-        | symbol            | MSFT                                                   | AAPL                                                   |
-        | price             | 323.538                                                | 178.185                                                |
-        | beta              | 0.903706                                               | 1.286802                                               |
-        | volAvg            | 28691370                                               | 56642391                                               |
-        | mktCap            | 2405663496324                                          | 2802618483625                                          |
-        | lastDiv           | 2.7199999999999998                                     | 0.96                                                   |
-        | range             | 213.43-366.78                                          | 124.17-198.23                                          |
-        | changes           | -6.572                                                 | -0.665                                                 |
-        | companyName       | Microsoft Corporation                                  | Apple Inc.                                             |
-        | currency          | USD                                                    | USD                                                    |
-        | cik               | 789019                                                 | 320193                                                 |
-        | isin              | US5949181045                                           | US0378331005                                           |
-        | cusip             | 594918104                                              | 37833100                                               |
-        | exchange          | NASDAQ Global Select                                   | NASDAQ Global Select                                   |
-        | exchangeShortName | NASDAQ                                                 | NASDAQ                                                 |
-        | industry          | Software—Infrastructure                                | Consumer Electronics                                   |
-        | website           | https://www.microsoft.com                              | https://www.apple.com                                  |
-        | ceo               | Mr. Satya  Nadella                                     | Mr. Timothy D. Cook                                    |
-        | sector            | Technology                                             | Technology                                             |
-        | country           | US                                                     | US                                                     |
-        | fullTimeEmployees | 221000                                                 | 164000                                                 |
-        | phone             | 425 882 8080                                           | 408 996 1010                                           |
-        | address           | One Microsoft Way                                      | One Apple Park Way                                     |
-        | city              | Redmond                                                | Cupertino                                              |
-        | state             | WA                                                     | CA                                                     |
-        | zip               | 98052-6399                                             | 95014                                                  |
-        | dcfDiff           | 4.56584                                                | 4.15176                                                |
-        | dcf               | 243.594                                                | 150.082                                                |
-        | image             | https://financialmodelingprep.com/image-stock/MSFT.png | https://financialmodelingprep.com/image-stock/AAPL.png |
-        | ipoDate           | 1986-03-13                                             | 1980-12-12                                             |
-        | defaultImage      | False                                                  | False                                                  |
-        | isEtf             | False                                                  | False                                                  |
-        | isActivelyTrading | True                                                   | True                                                   |
-        | isAdr             | False                                                  | False                                                  |
-        | isFund            | False                                                  | False                                                  |
+        |                       | MSFT                      | AAPL                  |
+        |:----------------------|:--------------------------|:----------------------|
+        | Symbol                | MSFT                      | AAPL                  |
+        | Price                 | 316.48                    | 174.49                |
+        | Beta                  | 0.903706                  | 1.286802              |
+        | Average Volume        | 28153120                  | 57348456              |
+        | Market Capitalization | 2353183809372             | 2744500935588         |
+        | Last Dividend         | 2.7199999999999998        | 0.96                  |
+        | Range                 | 213.43-366.78             | 124.17-198.23         |
+        | Changes               | -0.4                      | 0.49                  |
+        | Company Name          | Microsoft Corporation     | Apple Inc.            |
+        | Currency              | USD                       | USD                   |
+        | CIK                   | 789019                    | 320193                |
+        | ISIN                  | US5949181045              | US0378331005          |
+        | CUSIP                 | 594918104                 | 37833100              |
+        | Exchange              | NASDAQ Global Select      | NASDAQ Global Select  |
+        | Exchange Short Name   | NASDAQ                    | NASDAQ                |
+        | Industry              | Software—Infrastructure   | Consumer Electronics  |
+        | Website               | https://www.microsoft.com | https://www.apple.com |
+        | CEO                   | Mr. Satya  Nadella        | Mr. Timothy D. Cook   |
+        | Sector                | Technology                | Technology            |
+        | Country               | US                        | US                    |
+        | Full Time Employees   | 221000                    | 164000                |
+        | Phone                 | 425 882 8080              | 408 996 1010          |
+        | Address               | One Microsoft Way         | One Apple Park Way    |
+        | City                  | Redmond                   | Cupertino             |
+        | State                 | WA                        | CA                    |
+        | ZIP Code              | 98052-6399                | 95014                 |
+        | DCF Difference        | 4.56584                   | 4.15176               |
+        | DCF                   | 243.594                   | 150.082               |
+        | IPO Date              | 1986-03-13                | 1980-12-12            |
         """
         if not self._api_key:
             return print(
@@ -511,30 +512,30 @@ class Toolkit:
 
         Which returns:
 
-        |                      | TSLA                         | AAPL                         |
-        |:---------------------|:-----------------------------|:-----------------------------|
-        | symbol               | TSLA                         | AAPL                         |
-        | name                 | Tesla, Inc.                  | Apple Inc.                   |
-        | price                | 249.35                       | 178.23                       |
-        | changesPercentage    | -0.8352                      | -0.3467                      |
-        | change               | -2.1                         | -0.62                        |
-        | dayLow               | 245.02                       | 177.58                       |
-        | dayHigh              | 250.91                       | 179.74                       |
-        | yearHigh             | 314.66666                    | 198.23                       |
-        | yearLow              | 101.81                       | 124.17                       |
-        | marketCap            | 790314801062                 | 2803326275144                |
-        | priceAvg50           | 254.011                      | 187.227                      |
-        | priceAvg200          | 195.875                      | 160.1889                     |
-        | exchange             | NASDAQ                       | NASDAQ                       |
-        | volume               | 44241191                     | 29828689                     |
-        | avgVolume            | 134442424                    | 56642391                     |
-        | open                 | 247.45                       | 179.69                       |
-        | previousClose        | 251.45                       | 178.85                       |
-        | eps                  | 3.08                         | 5.89                         |
-        | pe                   | 80.96                        | 30.26                        |
-        | earningsAnnouncement | 2023-10-17T00:00:00.000+0000 | 2023-10-25T00:00:00.000+0000 |
-        | sharesOutstanding    | 3169499904                   | 15728700416                  |
-        | timestamp            | 2023-08-08 15:19:10          | 2023-08-08 15:19:10          |
+        |                        | TSLA                         | AAPL                         |
+        |:-----------------------|:-----------------------------|:-----------------------------|
+        | Symbol                 | TSLA                         | AAPL                         |
+        | Name                   | Tesla, Inc.                  | Apple Inc.                   |
+        | Price                  | 215.49                       | 174.49                       |
+        | Changes Percentage     | -1.7015                      | 0.2816                       |
+        | Change                 | -3.73                        | 0.49                         |
+        | Day Low                | 212.36                       | 171.96                       |
+        | Day High               | 217.58                       | 175.1                        |
+        | Year High              | 313.8                        | 198.23                       |
+        | Year Low               | 101.81                       | 124.17                       |
+        | Market Capitalization  | 682995534313                 | 2744500935588                |
+        | Price Average 50 Days  | 258.915                      | 187.129                      |
+        | Price Average 200 Days | 196.52345                    | 161.4698                     |
+        | Exchange               | NASDAQ                       | NASDAQ                       |
+        | Volume                 | 136276584                    | 61172150                     |
+        | Average Volume         | 133110158                    | 57348456                     |
+        | Open                   | 214.12                       | 172.3                        |
+        | Previous Close         | 219.22                       | 174                          |
+        | EPS                    | 3.08                         | 5.89                         |
+        | PE                     | 69.96                        | 29.62                        |
+        | Earnings Announcement  | 2023-10-17T20:00:00.000+0000 | 2023-10-25T10:59:00.000+0000 |
+        | Shares Outstanding     | 3169499904                   | 15728700416                  |
+        | Timestamp              | 2023-08-18 20:00:00          | 2023-08-18 20:00:01          |
         """
         if not self._api_key:
             return print(
@@ -559,7 +560,7 @@ class Toolkit:
 
         return self._quote
 
-    def get_rating(self, limit: int = 100):
+    def get_rating(self):
         """
         Returns a pandas dataframe containing the stock rating information for the specified tickers.
 
@@ -604,7 +605,7 @@ class Toolkit:
 
         if self._rating.empty:
             self._rating, self._invalid_tickers = _get_rating(
-                self._tickers, self._api_key, limit
+                self._tickers, self._api_key
             )
 
         if self._remove_invalid_tickers:
@@ -618,7 +619,6 @@ class Toolkit:
 
     def get_analyst_estimates(
         self,
-        limit: int = 100,
         overwrite: bool = False,
         rounding: int = 4,
         growth: bool = False,
@@ -680,8 +680,10 @@ class Toolkit:
         """
         if not self._api_key:
             return print(
-                "The requested data requires the api_key parameter to be set, consider obtaining a key with the following link: https://financialmodelingprep.com/developer/docs/pricing/jeroen/"
-                "\nThis functionality also requires a Premium subscription. You can get 15% off by using the above affiliate link which also supports the project."
+                "The requested data requires the api_key parameter to be set, consider obtaining "
+                "a key with the following link: https://financialmodelingprep.com/developer/docs/pricing/jeroen/"
+                "\nThis functionality also requires a Premium subscription. You can get 15% off by "
+                "using the above affiliate link which also supports the project."
             )
         if self._analyst_estimates.empty or overwrite:
             (
@@ -693,7 +695,6 @@ class Toolkit:
                 self._quarterly,
                 self._start_date,
                 self._end_date,
-                limit,
                 rounding,
                 self._sleep_timer,
                 self._progress_bar,
@@ -707,12 +708,9 @@ class Toolkit:
             ]
 
         if growth:
-            pd.options.display.float_format = "{:.4f}".format
             self._analyst_estimates_growth = _calculate_growth(
                 self._analyst_estimates, lag=lag, rounding=rounding
             )
-        else:
-            pd.options.display.float_format = "{:.2f}".format
 
         if len(self._tickers) == 1:
             return (
@@ -722,6 +720,226 @@ class Toolkit:
             )
 
         return self._analyst_estimates_growth if growth else self._analyst_estimates
+
+    def get_earnings_calendar(self, actual_dates: bool = True, overwrite: bool = False):
+        """
+        Obtain Earnings Calendars for any range of companies. You have the option to
+        obtain the actual dates or to convert to the corresponding quarters.
+
+        Note that this information requires a Premium FMP subscription.
+
+        Args:
+            actual_dates (bool): Defines whether to return the actual dates or the corresponding quarters.
+            overwrite (bool): Defines whether to overwrite the existing data.
+
+        Returns:
+            pd.DataFrame: The earnings calendar for the specified tickers.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["AAPL", "MSFT", "GOOGL", "AMZN"], api_key=FMP_KEY, start_date="2022-08-01", quarterly=False
+        )
+
+        earning_calendar = toolkit.get_earnings_calendar()
+
+        earning_calendar.loc['AMZN']
+        ```
+
+        Which returns:
+
+        | date                |    EPS |   Estimated EPS |       Revenue |   Estimated Revenue | Fiscal Date Ending   | Time   |
+        |:--------------------|-------:|----------------:|--------------:|--------------------:|:---------------------|:-------|
+        | 2022-10-27 00:00:00 |   0.17 |            0.22 |   1.27101e+11 |       nan           | 2022-09-30           | amc    |
+        | 2023-02-02 00:00:00 |   0.25 |            0.18 |   1.49204e+11 |         1.5515e+11  | 2022-12-31           | amc    |
+        | 2023-04-27 00:00:00 |   0.31 |            0.21 |   1.27358e+11 |         1.24551e+11 | 2023-03-31           | amc    |
+        | 2023-08-03 00:00:00 |   0.65 |            0.35 |   1.34383e+11 |         1.19573e+11 | 2023-06-30           | amc    |
+        | 2023-10-25 00:00:00 | nan    |            0.56 | nan           |         1.41407e+11 | 2023-09-30           | amc    |
+        | 2024-01-31 00:00:00 | nan    |          nan    | nan           |       nan           | 2023-12-30           | amc    |
+        | 2024-04-25 00:00:00 | nan    |          nan    | nan           |       nan           | 2024-03-30           | amc    |
+        | 2024-08-01 00:00:00 | nan    |          nan    | nan           |       nan           | 2024-06-30           | amc    |
+        """
+        if not self._api_key:
+            return print(
+                "The requested data requires the api_key parameter to be set, consider obtaining a key with the "
+                "following link: https://financialmodelingprep.com/developer/docs/pricing/jeroen/"
+                "\nThis functionality also requires a Premium subscription. You can get 15% off by using "
+                "the above affiliate link which also supports the project."
+            )
+        if self._earnings_calendar.empty or overwrite:
+            (
+                self._earnings_calendar,
+                self._invalid_tickers,
+            ) = _get_earnings_calendar(
+                self._tickers,
+                self._api_key,
+                self._start_date,
+                self._end_date,
+                actual_dates,
+                self._sleep_timer,
+                self._progress_bar,
+            )
+
+        if self._remove_invalid_tickers:
+            self._tickers = [
+                ticker
+                for ticker in self._tickers
+                if ticker not in self._invalid_tickers
+            ]
+
+        if len(self._tickers) == 1:
+            return self._earnings_calendar.loc[self._tickers[0]]
+
+        return self._earnings_calendar
+
+    def get_revenue_geographic_segmentation(self, overwrite: bool = False):
+        """
+        Obtain revenue by geographic segmentation (e.g. United States, Europe, Asia).
+
+        Note that this information requires a Premium FMP subscription.
+
+        Args:
+            overwrite (bool): Defines whether to overwrite the existing data.
+
+        Returns:
+            pd.DataFrame: The revenue by geographic segmentation for the specified tickers.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["AAPL", "MSFT", "GOOGL", "AMZN"], api_key=FMP_KEY, start_date="2021-05-01", quarterly=False
+        )
+
+        geographic_segmentation = toolkit.get_revenue_geographic_segmentation()
+
+        geographic_segmentation.loc['AAPL']
+        ```
+
+        Which returns:
+
+        |              |       2020 |       2021 |       2022 |       2023 |
+        |:-------------|-----------:|-----------:|-----------:|-----------:|
+        | Americas     | 4.631e+10  | 5.1496e+10 | 4.9278e+10 | 3.5383e+10 |
+        | Asia Pacific | 8.225e+09  | 9.81e+09   | 9.535e+09  | 5.63e+09   |
+        | China        | 2.1313e+10 | 2.5783e+10 | 2.3905e+10 | 1.5758e+10 |
+        | Europe       | 2.7306e+10 | 2.9749e+10 | 2.7681e+10 | 2.0205e+10 |
+        | Japan        | 8.285e+09  | 7.107e+09  | 6.755e+09  | 4.821e+09  |
+
+        """
+        if not self._api_key:
+            return print(
+                "The requested data requires the api_key parameter to be set, consider obtaining a key with the "
+                "following link: https://financialmodelingprep.com/developer/docs/pricing/jeroen/"
+                "\nThis functionality also requires a Professional or Enterprise subscription. You can get 15% off by using "
+                "the above affiliate link which also supports the project."
+            )
+        if self._revenue_geographic_segmentation.empty or overwrite:
+            (
+                self._revenue_geographic_segmentation,
+                self._invalid_tickers,
+            ) = _get_revenue_segmentation(
+                self._tickers,
+                "geographic",
+                self._api_key,
+                self._quarterly,
+                self._start_date,
+                self._end_date,
+                self._sleep_timer,
+                self._progress_bar,
+            )
+
+        if self._remove_invalid_tickers:
+            self._tickers = [
+                ticker
+                for ticker in self._tickers
+                if ticker not in self._invalid_tickers
+            ]
+
+        if len(self._tickers) == 1:
+            return self._revenue_geographic_segmentation.loc[self._tickers[0]]
+
+        return self._revenue_geographic_segmentation
+
+    def get_revenue_product_segmentation(self, overwrite: bool = False):
+        """
+        Obtain revenue by product segmentation (e.g. iPad, Advertisement, Windows).
+
+        Note that this information requires a Premium FMP subscription.
+
+        Args:
+            overwrite (bool): Defines whether to overwrite the existing data.
+
+        Returns:
+            pd.DataFrame: The revenue by product segmentation for the specified tickers.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["AAPL", "MSFT", "GOOGL", "AMZN"], api_key=FMP_KEY, start_date="2021-05-01", quarterly=False
+        )
+
+        product_segmentation = toolkit.get_revenue_product_segmentation()
+
+        product_segmentation.loc['MSFT']
+        ```
+
+        Which returns:
+
+        |                                    |     2022Q2 |     2022Q3 |     2022Q4 |     2023Q1 |      2023Q2 |
+        |:-----------------------------------|-----------:|-----------:|-----------:|-----------:|------------:|
+        | Devices                            | 1.581e+09  | 1.448e+09  | 1.43e+09   | 1.282e+09  |  1.361e+09  |
+        | Enterprise Services                | 1.902e+09  | 1.876e+09  | 1.862e+09  | 2.007e+09  |  1.977e+09  |
+        | Gaming                             | 3.455e+09  | 3.61e+09   | 4.758e+09  | 3.607e+09  |  3.491e+09  |
+        | Linked In Corporation              | 3.712e+09  | 3.663e+09  | 3.876e+09  | 3.697e+09  |  3.909e+09  |
+        | Office Products And Cloud Services | 1.1639e+10 | 1.1548e+10 | 1.1837e+10 | 1.2438e+10 |  1.2905e+10 |
+        | Other Products And Services        | 1.403e+09  | 1.348e+09  | 1.359e+09  | 1.428e+09  | -3.924e+09  |
+        | Search And News Advertising        | 2.926e+09  | 2.928e+09  | 3.223e+09  | 3.045e+09  |  3.012e+09  |
+        | Server Products And Cloud Services | 1.8839e+10 | 1.8388e+10 | 1.9594e+10 | 2.0025e+10 |  2.1963e+10 |
+        | Windows                            | 6.408e+09  | 5.313e+09  | 4.808e+09  | 5.328e+09  |  6.058e+09  |
+
+        """
+        if not self._api_key:
+            return print(
+                "The requested data requires the api_key parameter to be set, consider obtaining a key with the "
+                "following link: https://financialmodelingprep.com/developer/docs/pricing/jeroen/"
+                "\nThis functionality also requires a Professional or Enterprise subscription. You can get 15% off by using "
+                "the above affiliate link which also supports the project."
+            )
+        if self._revenue_product_segmentation.empty or overwrite:
+            (
+                self._revenue_product_segmentation,
+                self._invalid_tickers,
+            ) = _get_revenue_segmentation(
+                self._tickers,
+                "product",
+                self._api_key,
+                self._quarterly,
+                self._start_date,
+                self._end_date,
+                self._sleep_timer,
+                self._progress_bar,
+            )
+
+        if self._remove_invalid_tickers:
+            self._tickers = [
+                ticker
+                for ticker in self._tickers
+                if ticker not in self._invalid_tickers
+            ]
+
+        if len(self._tickers) == 1:
+            return self._revenue_product_segmentation.loc[self._tickers[0]]
+
+        return self._revenue_product_segmentation
 
     def get_historical_data(
         self, period: str = "daily", return_column: str = "Adj Close"
@@ -754,20 +972,19 @@ class Toolkit:
 
         Which returns:
 
-        | Date   |   Adj Close |    Close |     High |      Low |     Open |      Volume |
-        |:-------|------------:|---------:|---------:|---------:|---------:|------------:|
-        | 2013   |     17.6127 |  20.0364 |  20.0457 |  19.7857 |  19.7918 | 2.23084e+08 |
-        | 2014   |     24.7674 |  27.595  |  28.2825 |  27.5525 |  28.205  | 1.65614e+08 |
-        | 2015   |     24.0209 |  26.315  |  26.7575 |  26.205  |  26.7525 | 1.63649e+08 |
-        | 2016   |     27.0189 |  28.955  |  29.3    |  28.8575 |  29.1625 | 1.22345e+08 |
-        | 2017   |     40.1134 |  42.3075 |  42.6475 |  42.305  |  42.63   | 1.04e+08    |
-        | 2018   |     37.9512 |  39.435  |  39.84   |  39.12   |  39.6325 | 1.40014e+08 |
-        | 2019   |     71.7117 |  73.4125 |  73.42   |  72.38   |  72.4825 | 1.00806e+08 |
-        | 2020   |    130.735  | 132.69   | 134.74   | 131.72   | 134.08   | 9.91166e+07 |
-        | 2021   |    176.033  | 177.57   | 179.23   | 177.26   | 178.09   | 6.40623e+07 |
-        | 2022   |    129.553  | 129.93   | 129.95   | 127.43   | 128.41   | 7.70342e+07 |
-        | 2023   |    178.1    | 178.1    | 179.74   | 177.58   | 179.69   | 3.03427e+07 |
-
+        | Date   |   Adj Close |    Close |   Cumulative Return |   Dividends |     High |      Low |     Open |      Return |      Volume |
+        |:-------|------------:|---------:|--------------------:|------------:|---------:|---------:|---------:|------------:|------------:|
+        | 2013   |     17.5889 |  20.0364 |          nan        |    0.108929 |  20.0457 |  19.7857 |  19.7918 | nan         | 2.23084e+08 |
+        | 2014   |     24.734  |  27.595  |            0.406225 |    0.461429 |  28.2825 |  27.5525 |  28.205  |   0.406225  | 1.65614e+08 |
+        | 2015   |     23.9886 |  26.315  |            0.363845 |    0.5075   |  26.7575 |  26.205  |  26.7525 |  -0.0301371 | 1.63649e+08 |
+        | 2016   |     26.9824 |  28.955  |            0.534059 |    0.5575   |  29.3    |  28.8575 |  29.1625 |   0.124804  | 1.22345e+08 |
+        | 2017   |     40.0593 |  42.3075 |            1.27753  |    0.615    |  42.6475 |  42.305  |  42.63   |   0.484643  | 1.04e+08    |
+        | 2018   |     37.9    |  39.435  |            1.15477  |    0.705    |  39.84   |  39.12   |  39.6325 |  -0.0539018 | 1.40014e+08 |
+        | 2019   |     71.615  |  73.4125 |            3.0716   |    0.76     |  73.42   |  72.38   |  72.4825 |   0.889578  | 1.00806e+08 |
+        | 2020   |    130.559  | 132.69   |            6.4228   |    0.8075   | 134.74   | 131.72   | 134.08   |   0.823067  | 9.91166e+07 |
+        | 2021   |    175.795  | 177.57   |            8.99467  |    0.865    | 179.23   | 177.26   | 178.09   |   0.346482  | 6.40623e+07 |
+        | 2022   |    129.378  | 129.93   |            6.35566  |    0.91     | 129.95   | 127.43   | 128.41   |  -0.264042  | 7.70342e+07 |
+        | 2023   |    174.49   | 174.49   |            8.92046  |    0.71     | 175.1    | 171.96   | 172.3    |   0.348684  | 6.11142e+07 |
         """
         if period == "daily":
             self._daily_historical_data, self._invalid_tickers = _get_historical_data(
@@ -914,7 +1131,6 @@ class Toolkit:
 
     def get_balance_sheet_statement(
         self,
-        limit: int = 100,
         overwrite: bool = False,
         rounding: int = 4,
         growth: bool = False,
@@ -1010,7 +1226,6 @@ class Toolkit:
                 self._quarterly,
                 self._start_date,
                 self._end_date,
-                limit,
                 rounding,
                 self._balance_sheet_statement_generic,
                 self._statistics_statement_generic,
@@ -1026,12 +1241,9 @@ class Toolkit:
             ]
 
         if growth:
-            pd.options.display.float_format = "{:.4f}".format
             self._balance_sheet_statement_growth = _calculate_growth(
                 self._balance_sheet_statement, lag=lag, rounding=rounding
             )
-        else:
-            pd.options.display.float_format = "{:.2f}".format
 
         if len(self._tickers) == 1:
             return (
@@ -1048,7 +1260,6 @@ class Toolkit:
 
     def get_income_statement(
         self,
-        limit: int = 100,
         overwrite: bool = False,
         rounding: int = 4,
         growth: bool = False,
@@ -1129,7 +1340,6 @@ class Toolkit:
                 self._quarterly,
                 self._start_date,
                 self._end_date,
-                limit,
                 rounding,
                 self._income_statement_generic,
                 self._statistics_statement_generic,
@@ -1145,12 +1355,9 @@ class Toolkit:
             ]
 
         if growth:
-            pd.options.display.float_format = "{:.4f}".format
             self._income_statement_growth = _calculate_growth(
                 self._income_statement, lag=lag, rounding=rounding
             )
-        else:
-            pd.options.display.float_format = "{:.2f}".format
 
         if len(self._tickers) == 1:
             return (
@@ -1163,7 +1370,6 @@ class Toolkit:
 
     def get_cash_flow_statement(
         self,
-        limit: int = 100,
         overwrite: bool = False,
         rounding: int = 4,
         growth: bool = False,
@@ -1246,7 +1452,6 @@ class Toolkit:
                 self._quarterly,
                 self._start_date,
                 self._end_date,
-                limit,
                 rounding,
                 self._cash_flow_statement_generic,
                 self._statistics_statement_generic,
@@ -1262,12 +1467,9 @@ class Toolkit:
             ]
 
         if growth:
-            pd.options.display.float_format = "{:.4f}".format
             self._cash_flow_statement_growth = _calculate_growth(
                 self._cash_flow_statement, lag=lag, rounding=rounding
             )
-        else:
-            pd.options.display.float_format = "{:.2f}".format
 
         if len(self._tickers) == 1:
             return (
@@ -1280,7 +1482,6 @@ class Toolkit:
 
     def get_statistics_statement(
         self,
-        limit: int = 100,
         overwrite: bool = False,
     ):
         """
@@ -1337,7 +1538,6 @@ class Toolkit:
                 self._quarterly,
                 self._start_date,
                 self._end_date,
-                limit,
                 self._balance_sheet_statement_generic,
                 self._statistics_statement_generic,
                 self._sleep_timer,

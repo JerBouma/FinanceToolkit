@@ -21,7 +21,83 @@ from financetoolkit.base.models.normalization_model import (
     convert_financial_statements,
 )
 
-PROGRESS_BAR_LIMIT = 10
+
+def get_financial_data(
+    ticker: str,
+    url: str,
+    sleep_timer: bool = False,
+    subscription_type: str = "Premium",
+    raw: bool = False,
+) -> pd.DataFrame:
+    """
+    Collects the financial data from the FinancialModelingPrep API. This is a
+    separate function to properly segregate the different types of errors that can occur.
+
+    Args:
+        ticker (str): The company ticker (for example: "AAPL")
+        url (str): The url to retrieve the data from.
+        sleep_timer (bool): Whether to set a sleep timer when the rate limit is reached. Note that this only works
+        if you have a Premium subscription (Starter or higher) from FinancialModelingPrep. Defaults to False.
+        raw (bool): Whether to return the raw JSON data. Defaults to False.
+
+    Returns:
+        pd.DataFrame: A DataFrame containing the financial data.
+    """
+    while True:
+        try:
+            response = requests.get(url, timeout=60)
+            response.raise_for_status()
+
+            if raw:
+                return response.json()
+
+            financial_data = pd.read_json(response.text)
+
+            return financial_data
+
+        except requests.exceptions.HTTPError:
+            if (
+                "not available under your current subscription"
+                in response.json()["Error Message"]
+            ):
+                print(
+                    f"The requested data for {ticker} is part of the {subscription_type} Subscription from "
+                    "FinancialModelingPrep. If you wish to access this data, consider upgrading "
+                    "your plan.\nYou can get 15% off by using the following affiliate link which "
+                    "also supports the project: https://site.financialmodelingprep.com/developer/docs/pricing/jeroen/"
+                )
+                return pd.DataFrame(columns=["ERROR_MESSAGE"])
+
+            if "Limit Reach" in response.json()["Error Message"]:
+                print(
+                    "You have reached the rate limit of your subscription, set sleep_timer in the Toolkit class "
+                    "to True to continue collecting data (Premium only). If you use the Free plan, consider upgrading "
+                    "your plan.\nYou can get 15% off by using the following affiliate link which also supports the "
+                    "project: https://site.financialmodelingprep.com/developer/docs/pricing/jeroen/"
+                )
+
+                if sleep_timer:
+                    time.sleep(60)
+                else:
+                    return pd.DataFrame(columns=["ERROR_MESSAGE"])
+            if (
+                "Free plan is limited to US stocks only"
+                in response.json()["Error Message"]
+            ):
+                print(
+                    f"The Free plan is limited to US stocks only (therefore, {ticker} is unavailable), consider "
+                    "upgrading your plan to Starter or higher.\nYou can get 15% off by using the following affiliate "
+                    "link which also supports the project: "
+                    "https://site.financialmodelingprep.com/developer/docs/pricing/jeroen/"
+                )
+                return pd.DataFrame(columns=["ERROR_MESSAGE"])
+
+            print(
+                "This is an undefined error, please report to the author at https://github.com/JerBouma/FinanceToolkit"
+                f"\n{response.json()['Error Message']}"
+            )
+
+            return pd.DataFrame(columns=["ERROR_MESSAGE"])
 
 
 def get_financial_statements(
@@ -31,13 +107,12 @@ def get_financial_statements(
     quarter: bool = False,
     start_date: str | None = None,
     end_date: str | None = None,
-    limit: int = 100,
     rounding: int = 4,
     statement_format: pd.DataFrame = pd.DataFrame(),
     statistics_format: pd.DataFrame = pd.DataFrame(),
     sleep_timer: bool = False,
     progress_bar: bool = True,
-):
+) -> pd.DataFrame:
     """
     Retrieves financial statements (balance, income, or cash flow statements) for one or multiple companies,
     and returns a DataFrame containing the data.
@@ -99,12 +174,13 @@ def get_financial_statements(
     )
 
     for ticker in ticker_list_iterator:
-        financial_statement = get_financial_statement_data(
+        url = (
+            f"https://financialmodelingprep.com/api/v3/{location}/"
+            f"{ticker}?period={period}&apikey={api_key}"
+        )
+        financial_statement = get_financial_data(
             ticker=ticker,
-            location=location,
-            period=period,
-            api_key=api_key,
-            limit=limit,
+            url=url,
             sleep_timer=sleep_timer,
         )
 
@@ -194,85 +270,181 @@ def get_financial_statements(
     return pd.DataFrame(), pd.DataFrame(), invalid_tickers
 
 
-def get_financial_statement_data(
-    ticker: str,
-    location: str,
-    period: str,
-    api_key: str,
-    limit: int,
+def get_revenue_segmentation(
+    tickers: str | list[str],
+    method: str = "",
+    api_key: str = "",
+    quarter: bool = False,
+    start_date: str | None = None,
+    end_date: str | None = None,
     sleep_timer: bool = False,
+    progress_bar: bool = True,
 ) -> pd.DataFrame:
     """
-    Collects the financial statement data from the FinancialModelingPrep API. This is a
-    separate function to properly segregate the different types of errors that can occur.
+    Retrieves financial statements (balance, income, or cash flow statements) for one or multiple companies,
+    and returns a DataFrame containing the data.
 
     Args:
-        ticker (str): The company ticker (for example: "AAPL")
-        location (str): The location of the financial statement (for example: "balance-sheet-statement")
-        period (str): The period of the financial statement (for example: "annual")
-        api_key (str): The API Key obtained from FinancialModelingPrep
-        limit (int): The limit for the years of data
+        tickers (List[str]): List of company tickers.
+        statement (str): The type of financial statement to retrieve. Can be "balance", "income", or "cash-flow".
+        api_key (str): API key for the financial data provider.
+        quarter (bool): Whether to retrieve quarterly data. Defaults to False (annual data).
+        start_date (str): The start date to filter data with.
+        end_date (str): The end date to filter data with.
+        statement_format (pd.DataFrame): Optional DataFrame containing the names of the financial
+            statement line items to include in the output. Rows should contain the original name
+            of the line item, and columns should contain the desired name for that line item.
         sleep_timer (bool): Whether to set a sleep timer when the rate limit is reached. Note that this only works
         if you have a Premium subscription (Starter or higher) from FinancialModelingPrep. Defaults to False.
+        progress_bar (bool): Whether to show a progress bar when retrieving data over 10 tickers. Defaults to True.
 
     Returns:
-        pd.DataFrame: A DataFrame containing the financial statement data.
+        pd.DataFrame: A DataFrame containing the financial statement data. If only one ticker is provided, the
+                      returned DataFrame will have a single column containing the data for that ticker. If multiple
+                      tickers are provided, the returned DataFrame will have multiple columns, one for each ticker,
+                      with the ticker symbol as the column name.
     """
-    while True:
+    if isinstance(tickers, str):
+        ticker_list = [tickers]
+    elif isinstance(tickers, list):
+        ticker_list = tickers
+    else:
+        raise ValueError(f"Type for the tickers ({type(tickers)}) variable is invalid.")
+
+    if method == "geographic":
+        location = "revenue-geographic-segmentation"
+        naming = {
+            "U S": "United States",
+            "U": "United States",
+            "C N": "China",
+            "N O": "North America",
+            "Non Us": "Non-US",
+            "Americas Segment": "Americas",
+            "Europe Segment": "Europe",
+            "Greater China Segment": "China",
+            "Japan Segment": "Japan",
+            "Rest of Asia Pacific Segment": "Asia Pacific",
+            "Asia-Pacific": "Asia Pacific",
+            "J P": "Japan",
+            "North America Segment": "North America",
+            "TAIWAN, PROVINCE OF CHINA": "Taiwan",
+            "Segment, Geographical, Rest of the World, Excluding United States and United Kingdom": "Rest Of The World",
+            "D E": "Germany",
+        }
+    elif method == "product":
+        location = "revenue-product-segmentation"
+        naming = {}
+    else:
+        raise ValueError(
+            "Please choose either 'balance', 'income', or "
+            "cashflow' for the statement parameter."
+        )
+
+    if not api_key:
+        raise ValueError(
+            "Please enter an API key from FinancialModelingPrep. "
+            "For more information, look here: https://site.financialmodelingprep.com/developer/docs/pricing/jeroen/"
+        )
+
+    period = "quarter" if quarter else "annual"
+
+    revenue_segmentation_dict: dict = {}
+    invalid_tickers = []
+
+    ticker_list_iterator = (
+        tqdm(ticker_list, desc=f"Obtaining {method} segmentation data")
+        if ENABLE_TQDM & progress_bar
+        else ticker_list
+    )
+
+    for ticker in ticker_list_iterator:
+        url = (
+            f"https://financialmodelingprep.com/api/v4/{location}"
+            f"?symbol={ticker}&period={period}&structure=flat&apikey={api_key}"
+        )
+        revenue_segmentation_json = get_financial_data(
+            ticker=ticker,
+            url=url,
+            sleep_timer=sleep_timer,
+            subscription_type="Professional or Enterprise",
+            raw=True,
+        )
+
+        if "ERROR_MESSAGE" in revenue_segmentation_json:
+            invalid_tickers.append(ticker)
+            continue
+
+        revenue_segmentation = pd.DataFrame()
+
+        for period_data in revenue_segmentation_json:
+            revenue_segmentation = pd.concat(
+                [revenue_segmentation, pd.DataFrame(period_data)], axis=1
+            )
+
+        if quarter:
+            revenue_segmentation.columns = pd.PeriodIndex(
+                revenue_segmentation.columns, freq="Q"
+            )
+        else:
+            revenue_segmentation.columns = pd.PeriodIndex(
+                revenue_segmentation.columns, freq="Y"
+            )
+
+        if revenue_segmentation.columns.duplicated().any():
+            # This happens in the rare case that a company has two financial statements for the same period.
+            # Browsing through the data has shown that these financial statements are equal therefore
+            # one of the columns can be dropped.
+            revenue_segmentation = revenue_segmentation.loc[
+                :, ~revenue_segmentation.columns.duplicated()
+            ]
+
+        revenue_segmentation = revenue_segmentation.rename(index=naming)
+        revenue_segmentation.index = [
+            index.lower().title() for index in revenue_segmentation.index
+        ]
+
+        # This groups items that have the same naming convention
+        revenue_segmentation = revenue_segmentation.groupby(level=0).sum()
+
+        revenue_segmentation_dict[ticker] = revenue_segmentation
+
+    if revenue_segmentation_dict:
+        revenue_segmentation_total = pd.concat(revenue_segmentation_dict, axis=0)
+
         try:
-            response = requests.get(
-                f"https://financialmodelingprep.com/api/v3/{location}/"
-                f"{ticker}?period={period}&apikey={api_key}&limit={limit}",
-                timeout=60,
-            )
-            response.raise_for_status()
-            financial_statement = pd.read_json(response.text)
-
-            return financial_statement
-
-        except requests.exceptions.HTTPError:
-            if (
-                "not available under your current subscription"
-                in response.json()["Error Message"]
-            ):
-                print(
-                    f"The requested data for {ticker} is part of the Premium Subscription from "
-                    "FinancialModelingPrep. If you wish to access this data, consider upgrading "
-                    "your plan.\nYou can get 15% off by using the following affiliate link which "
-                    "also supports the project: https://site.financialmodelingprep.com/developer/docs/pricing/jeroen/"
-                )
-                return pd.DataFrame(columns=["ERROR_MESSAGE"])
-
-            if "Limit Reach" in response.json()["Error Message"]:
-                print(
-                    "You have reached the rate limit of your subscription, set sleep_timer in the Toolkit class "
-                    "to True to continue collecting data (Premium only). If you use the Free plan, consider upgrading "
-                    "your plan.\nYou can get 15% off by using the following affiliate link which also supports the "
-                    "project: https://site.financialmodelingprep.com/developer/docs/pricing/jeroen/"
-                )
-
-                if sleep_timer:
-                    time.sleep(60)
-                else:
-                    return pd.DataFrame(columns=["ERROR_MESSAGE"])
-            if (
-                "Free plan is limited to US stocks only"
-                in response.json()["Error Message"]
-            ):
-                print(
-                    f"The Free plan is limited to US stocks only (therefore, {ticker} is unavailable), consider "
-                    "upgrading your plan to Starter or higher.\nYou can get 15% off by using the following affiliate "
-                    "link which also supports the project: "
-                    "https://site.financialmodelingprep.com/developer/docs/pricing/jeroen/"
-                )
-                return pd.DataFrame(columns=["ERROR_MESSAGE"])
-
+            revenue_segmentation_total = revenue_segmentation_total.astype(np.float64)
+        except ValueError as error:
             print(
-                "This is an undefined error, please report to the author at https://github.com/JerBouma/FinanceToolkit"
-                f"\n{response.json()['Error Message']}"
+                f"Not able to convert DataFrame to float64 due to {error}. This could result in"
+                "issues when values are zero and is predominently relevant for "
+                "ratio calculations."
             )
 
-            return pd.DataFrame(columns=["ERROR_MESSAGE"])
+        revenue_segmentation_total = revenue_segmentation_total.sort_index(
+            axis=1
+        ).truncate(before=start_date, after=end_date, axis=1)
+
+        if quarter:
+            revenue_segmentation_total.columns = pd.PeriodIndex(
+                revenue_segmentation_total.columns, freq="Q"
+            )
+        else:
+            revenue_segmentation_total.columns = pd.PeriodIndex(
+                revenue_segmentation_total.columns, freq="Y"
+            )
+
+        # Check whether the rows sum to zero, if so with the current start and end date there is no data
+        # for those rows and thus they can be dropped out of the dataset to clean it up
+        revenue_segmentation_total = revenue_segmentation_total[
+            revenue_segmentation_total.sum(axis=1) != 0
+        ]
+
+        return (
+            revenue_segmentation_total,
+            invalid_tickers,
+        )
+
+    return pd.DataFrame(), invalid_tickers
 
 
 def get_analyst_estimates(
@@ -281,11 +453,10 @@ def get_analyst_estimates(
     quarter: bool = False,
     start_date: str | None = None,
     end_date: str | None = None,
-    limit: int = 100,
     rounding: int = 4,
     sleep_timer: bool = False,
     progress_bar: bool = True,
-):
+) -> pd.DataFrame:
     """
     Retrieves analyst estimates for one or multiple companies, and returns a DataFrame containing the data.
 
@@ -369,12 +540,12 @@ def get_analyst_estimates(
     )
 
     for ticker in ticker_list_iterator:
-        analyst_estimates = get_analyst_estimates_data(
-            ticker=ticker,
-            period=period,
-            api_key=api_key,
-            limit=limit,
-            sleep_timer=sleep_timer,
+        url = (
+            "https://financialmodelingprep.com/api/v3/analyst-estimates/"
+            f"{ticker}?period={period}&apikey={api_key}"
+        )
+        analyst_estimates = get_financial_data(
+            ticker=ticker, url=url, sleep_timer=sleep_timer
         )
 
         if "ERROR_MESSAGE" in analyst_estimates:
@@ -455,101 +626,16 @@ def get_analyst_estimates(
     return pd.DataFrame(), invalid_tickers
 
 
-def get_analyst_estimates_data(
-    ticker: str,
-    period: str,
-    api_key: str,
-    limit: int,
-    sleep_timer: bool = False,
-) -> pd.DataFrame:
+def get_profile(tickers: list[str] | str, api_key: str) -> pd.DataFrame:
     """
-    Collects the analyst estimates data from the FinancialModelingPrep API. This is a
-    separate function to properly segregate the different types of errors that can occur.
+    Gives information about the profile of a company which includes i.a. beta, company description, industry and sector.
 
     Args:
-        ticker (str): The company ticker (for example: "AAPL")
-        period (str): The period (for example: "annual")
-        api_key (str): The API Key obtained from FinancialModelingPrep
-        limit (int): The limit for the years of data
-        sleep_timer (bool): Whether to set a sleep timer when the rate limit is reached. Note that this only works
-        if you have a Premium subscription (Starter or higher) from FinancialModelingPrep. Defaults to False.
+        ticker (list or string): the company ticker (for example: "AAPL")
+        api_key (string): the API Key obtained from https://site.financialmodelingprep.com/developer/docs/pricing/jeroen/
 
     Returns:
-        pd.DataFrame: A DataFrame containing the analyst estimates data.
-    """
-    while True:
-        try:
-            response = requests.get(
-                f"https://financialmodelingprep.com/api/v3/analyst-estimates/"
-                f"{ticker}?period={period}&apikey={api_key}&limit={limit}",
-                timeout=60,
-            )
-            response.raise_for_status()
-            analyst_estimates = pd.read_json(response.text)
-
-            return analyst_estimates
-
-        except requests.exceptions.HTTPError:
-            if (
-                "not available under your current subscription"
-                in response.json()["Error Message"]
-            ):
-                print(
-                    f"The requested data for {ticker} is part of the Premium Subscription from "
-                    "FinancialModelingPrep. If you wish to access this data, consider upgrading "
-                    "your plan.\nYou can get 15% off by using the following affiliate link which "
-                    "also supports the project: https://site.financialmodelingprep.com/developer/docs/pricing/jeroen/"
-                )
-                return pd.DataFrame(columns=["ERROR_MESSAGE"])
-
-            if "Limit Reach" in response.json()["Error Message"]:
-                print(
-                    "You have reached the rate limit of your subscription, set sleep_timer in the Toolkit class "
-                    "to True to continue collecting data (Premium only). If you use the Free plan, consider upgrading "
-                    "your plan.\nYou can get 15% off by using the following affiliate link which also supports the "
-                    "project: https://site.financialmodelingprep.com/developer/docs/pricing/jeroen/"
-                )
-
-                if sleep_timer:
-                    time.sleep(60)
-                else:
-                    return pd.DataFrame(columns=["ERROR_MESSAGE"])
-            if (
-                "Free plan is limited to US stocks only"
-                in response.json()["Error Message"]
-            ):
-                print(
-                    f"The Free plan is limited to US stocks only (therefore, {ticker} is unavailable), consider "
-                    "upgrading your plan to Starter or higher.\nYou can get 15% off by using the following affiliate "
-                    "link which also supports the project: "
-                    "https://site.financialmodelingprep.com/developer/docs/pricing/jeroen/"
-                )
-                return pd.DataFrame(columns=["ERROR_MESSAGE"])
-
-            print(
-                "This is an undefined error, please report to the author at https://github.com/JerBouma/FinanceToolkit"
-                f"\n{response.json()['Error Message']}"
-            )
-
-            return pd.DataFrame(columns=["ERROR_MESSAGE"])
-
-
-def get_profile(tickers: list[str] | str, api_key: str):
-    """
-    Description
-    ----
-    Gives information about the profile of a company which includes
-    i.a. beta, company description, industry and sector.
-    Input
-    ----
-    ticker (list or string)
-        The company ticker (for example: "AAPL")
-    api_key (string)
-        The API Key obtained from https://site.financialmodelingprep.com/developer/docs/pricing/jeroen/
-    Output
-    ----
-    data (dataframe)
-        Data with variables in rows and the period in columns.
+        pd.DataFrame: the profile data.
     """
 
     naming: dict = {
@@ -597,14 +683,11 @@ def get_profile(tickers: list[str] | str, api_key: str):
     invalid_tickers = []
     for ticker in ticker_list:
         try:
-            profile_dataframe[ticker] = pd.read_json(
-                f"https://financialmodelingprep.com/api/v3/profile/{ticker}?apikey={api_key}"
-            ).T
+            url = f"https://financialmodelingprep.com/api/v3/profile/{ticker}?apikey={api_key}"
+            profile_dataframe[ticker] = get_financial_data(ticker=ticker, url=url).T
         except ValueError:
             print(f"No profile data found for {ticker}")
             invalid_tickers.append(ticker)
-        except Exception as error:
-            raise ValueError(error) from error
 
     profile_dataframe = profile_dataframe.rename(index=naming)
     profile_dataframe = profile_dataframe.drop(
@@ -615,22 +698,17 @@ def get_profile(tickers: list[str] | str, api_key: str):
     return profile_dataframe, invalid_tickers
 
 
-def get_quote(tickers: list[str] | str, api_key: str):
+def get_quote(tickers: list[str] | str, api_key: str) -> pd.DataFrame:
     """
-    Description
-    ----
-    Gives information about the quote of a company which includes i.a.
-    high/low close prices, price-to-earning ratio and shares outstanding.
-    Input
-    ----
-    ticker (list or string)
-        The company ticker (for example: "AMD")
-    api_key (string)
-        The API Key obtained from https://site.financialmodelingprep.com/developer/docs/pricing/jeroen/
-    Output
-    ----
-    data (dataframe)
-        Data with variables in rows and the period in columns.
+    Gives information about the quote of a company which includes i.a. high/low close prices,
+    price-to-earning ratio and shares outstanding.
+
+    Args:
+        ticker (list or string): the company ticker (for example: "AMD")
+        api_key (string): the API Key obtained from https://site.financialmodelingprep.com/developer/docs/pricing/jeroen/
+
+    Returns:
+        pd.DataFrame: the quote data.
     """
     naming: dict = {
         "symbol": "Symbol",
@@ -669,9 +747,8 @@ def get_quote(tickers: list[str] | str, api_key: str):
     invalid_tickers = []
     for ticker in ticker_list:
         try:
-            quote_dataframe[ticker] = pd.read_json(
-                f"https://financialmodelingprep.com/api/v3/quote/{ticker}?apikey={api_key}"
-            ).T
+            url = f"https://financialmodelingprep.com/api/v3/quote/{ticker}?apikey={api_key}"
+            quote_dataframe[ticker] = get_financial_data(ticker=ticker, url=url).T
         except ValueError:
             print(f"No quote data found for {ticker}")
             invalid_tickers.append(ticker)
@@ -683,22 +760,17 @@ def get_quote(tickers: list[str] | str, api_key: str):
     return quote_dataframe, invalid_tickers
 
 
-def get_rating(tickers: list[str] | str, api_key: str, limit: int = 100):
+def get_rating(tickers: list[str] | str, api_key: str):
     """
-    Description
-    ----
-    Gives information about the rating of a company which includes i.a. the company
-    rating and recommendation as well as ratings based on a variety of ratios.
-    Input
-    ----
-    ticker (list or string)
-       The company ticker (for example: "MSFT")
-    api_key (string)
-       The API Key obtained from https://site.financialmodelingprep.com/developer/docs/pricing/jeroen/
-    Output
-    ----
-    data (dataframe)
-       Data with variables in rows and the period in columns..
+    Gives information about the rating of a company which includes i.a. the company rating and
+    recommendation as well as ratings based on a variety of ratios.
+
+    Args:
+        ticker (list or string): the company ticker (for example: "MSFT")
+        api_key (string): the API Key obtained from https://site.financialmodelingprep.com/developer/docs/pricing/jeroen/
+
+    Returns:
+        pd.DataFrame: the rating data.
     """
     if isinstance(tickers, str):
         ticker_list = [tickers]
@@ -711,9 +783,9 @@ def get_rating(tickers: list[str] | str, api_key: str, limit: int = 100):
     invalid_tickers = []
     for ticker in ticker_list:
         try:
-            ratings = pd.read_json(
-                f"https://financialmodelingprep.com/api/v3/historical-rating/{ticker}?limit={limit}&apikey={api_key}"
-            )
+            url = f"https://financialmodelingprep.com/api/v3/historical-rating/{ticker}?l&apikey={api_key}"
+            ratings = get_financial_data(ticker=ticker, url=url)
+
         except ValueError:
             print(f"No rating data found for {ticker}")
             invalid_tickers.append(ticker)
@@ -759,3 +831,116 @@ def get_rating(tickers: list[str] | str, api_key: str, limit: int = 100):
         ratings_dataframe = ratings_dataframe.loc[ticker_list[0]]
 
     return ratings_dataframe, invalid_tickers
+
+
+def get_earnings_calendar(
+    tickers: list[str] | str,
+    api_key: str,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    actual_dates: bool = True,
+    sleep_timer: bool = False,
+    progress_bar: bool = True,
+):
+    """
+    Obtains Earnings Calendar which shows the expected earnings and EPS for a company.
+
+    Args:
+        ticker (list or string): the company ticker (for example: "MSFT")
+        api_key (string): the API Key obtained from https://site.financialmodelingprep.com/developer/docs/pricing/jeroen/
+        start_date (str): The start date to filter data with.
+        end_date (str): The end date to filter data with.
+        actual_dates (bool): Whether to retrieve actual dates. Defaults to False (converted to quarterly). This is the
+        default because the actual date refers to the corresponding quarter.
+        sleep_timer (bool): Whether to set a sleep timer when the rate limit is reached. Note that this only works
+        if you have a Premium subscription (Starter or higher) from FinancialModelingPrep. Defaults to False.
+        progress_bar (bool): Whether to show a progress bar when retrieving data over 10 tickers. Defaults to True.
+
+    Returns:
+        pd.DataFrame: the rating data.
+    """
+    naming: dict = {
+        "eps": "EPS",
+        "epsEstimated": "Estimated EPS",
+        "revenue": "Revenue",
+        "revenueEstimated": "Estimated Revenue",
+        "fiscalDateEnding": "Fiscal Date Ending",
+        "time": "Time",
+    }
+
+    if isinstance(tickers, str):
+        ticker_list = [tickers]
+    elif isinstance(tickers, list):
+        ticker_list = tickers
+    else:
+        raise ValueError(f"Type for the tickers ({type(tickers)}) variable is invalid.")
+
+    if not api_key:
+        raise ValueError(
+            "Please enter an API key from FinancialModelingPrep. "
+            "For more information, look here: https://site.financialmodelingprep.com/developer/docs/pricing/jeroen/"
+        )
+
+    earnings_calendar_dict: dict = {}
+    invalid_tickers = []
+
+    ticker_list_iterator = (
+        tqdm(ticker_list, desc="Obtaining earnings calendars")
+        if (ENABLE_TQDM & progress_bar)
+        else ticker_list
+    )
+
+    for ticker in ticker_list_iterator:
+        url = (
+            "https://financialmodelingprep.com/api/v3/historical/earning_calendar/"
+            f"{ticker}?apikey={api_key}"
+        )
+        earnings_calendar = get_financial_data(
+            ticker=ticker, url=url, sleep_timer=sleep_timer
+        )
+
+        if "ERROR_MESSAGE" in earnings_calendar:
+            invalid_tickers.append(ticker)
+            continue
+
+        try:
+            earnings_calendar = earnings_calendar.drop("symbol", axis=1)
+        except KeyError:
+            print(f"No earnings calendar found for {ticker}")
+            invalid_tickers.append(ticker)
+            continue
+
+        earnings_calendar["date"] = (
+            pd.to_datetime(earnings_calendar["date"])
+            if actual_dates
+            else pd.to_datetime(earnings_calendar["date"]).dt.to_period("Q")
+        )
+
+        earnings_calendar = earnings_calendar.set_index("date").sort_index()
+
+        if earnings_calendar.columns.duplicated().any():
+            # This happens in the rare case that a company has two financial statements for the same period.
+            # Browsing through the data has shown that these financial statements are equal therefore
+            # one of the columns can be dropped.
+            earnings_calendar = earnings_calendar.loc[
+                :, ~earnings_calendar.columns.duplicated()
+            ]
+
+        earnings_calendar = earnings_calendar.drop(["updatedFromDate"], axis=1)
+        earnings_calendar = earnings_calendar.rename(columns=naming)
+
+        earnings_calendar = earnings_calendar.sort_index(axis=0).truncate(
+            before=start_date, after=end_date, axis=0
+        )
+
+        earnings_calendar_dict[ticker] = earnings_calendar[naming.values()]
+
+    if earnings_calendar_dict:
+        earnings_calendar_total = pd.concat(earnings_calendar_dict, axis=0)
+
+        return (
+            earnings_calendar_total,
+            invalid_tickers,
+        )
+
+    return pd.DataFrame(), invalid_tickers

@@ -60,8 +60,6 @@ class Ratios:
         self._valuation_ratios: pd.DataFrame = pd.DataFrame()
         self._valuation_ratios_growth: pd.DataFrame = pd.DataFrame()
 
-        pd.options.display.float_format = "{:.4f}".format
-
     def collect_all_ratios(
         self,
         include_dividends: bool = False,

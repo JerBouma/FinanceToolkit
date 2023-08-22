@@ -50,7 +50,10 @@ def equal_length(dataset1: pd.Series, dataset2: pd.Series) -> pd.Series:
 
 
 def calculate_growth(
-    dataset: pd.Series | pd.DataFrame, lag: int | list[int] = 1, rounding: int = 4
+    dataset: pd.Series | pd.DataFrame,
+    lag: int | list[int] = 1,
+    rounding: int = 4,
+    axis: str = "columns",
 ) -> pd.Series | pd.DataFrame:
     """
     Calculates growth for a given dataset. Defaults to a lag of 1 (i.e. 1 year or 1 quarter).
@@ -86,7 +89,7 @@ def calculate_growth(
 
         return dataset_lag.round(rounding)
 
-    return dataset.pct_change(periods=lag, axis="columns").round(rounding)
+    return dataset.pct_change(periods=lag, axis=axis).round(rounding)
 
 
 def handle_errors(func):

@@ -23,11 +23,21 @@ models_module = toolkit.models
 
 def test_get_dupont_analysis(recorder):
     recorder.capture(models_module.get_dupont_analysis())
+    recorder.capture(models_module.get_dupont_analysis(growth=True))
+    recorder.capture(models_module.get_dupont_analysis(growth=True, lag=[1, 2, 3]))
 
 
 def test_get_extended_dupont_analysis(recorder):
     recorder.capture(models_module.get_extended_dupont_analysis())
+    recorder.capture(models_module.get_extended_dupont_analysis(growth=True))
+    recorder.capture(
+        models_module.get_extended_dupont_analysis(growth=True, lag=[1, 2, 3])
+    )
 
 
 def get_enterprise_value_breakdown(recorder):
     recorder.capture(models_module.get_enterprise_value_breakdown())
+    recorder.capture(models_module.get_enterprise_value_breakdown(growth=True))
+    recorder.capture(
+        models_module.get_enterprise_value_breakdown(growth=True, lag=[1, 2, 3])
+    )

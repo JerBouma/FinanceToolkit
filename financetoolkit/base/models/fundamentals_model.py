@@ -92,6 +92,14 @@ def get_financial_data(
                 )
                 return pd.DataFrame(columns=["ERROR_MESSAGE"])
 
+            if "Invalid API KEY." in response.json()["Error Message"]:
+                print(
+                    "You have entered an invalid API key from FinancialModelingPrep. Obtain your API key for free "
+                    "and get 15% off the Premium plans by using the following affiliate link.\nThis also supports "
+                    "the project: https://site.financialmodelingprep.com/developer/docs/pricing/jeroen/"
+                )
+                return pd.DataFrame(columns=["ERROR_MESSAGE"])
+
             print(
                 "This is an undefined error, please report to the author at https://github.com/JerBouma/FinanceToolkit"
                 f"\n{response.json()['Error Message']}"
@@ -107,7 +115,7 @@ def get_financial_statements(
     quarter: bool = False,
     start_date: str | None = None,
     end_date: str | None = None,
-    rounding: int = 4,
+    rounding: int | None = 4,
     statement_format: pd.DataFrame = pd.DataFrame(),
     statistics_format: pd.DataFrame = pd.DataFrame(),
     sleep_timer: bool = False,
@@ -453,7 +461,7 @@ def get_analyst_estimates(
     quarter: bool = False,
     start_date: str | None = None,
     end_date: str | None = None,
-    rounding: int = 4,
+    rounding: int | None = 4,
     sleep_timer: bool = False,
     progress_bar: bool = True,
 ) -> pd.DataFrame:

@@ -175,7 +175,6 @@ def get_treasury_rates(
         "year30": "30 Year",
     }
 
-    # Additional data is collected to ensure return calculations are correct
     end_date = (
         datetime.strptime(end, "%Y-%m-%d") + timedelta(days=1 * 365)
         if end is not None
@@ -183,7 +182,6 @@ def get_treasury_rates(
     )
 
     if start is not None:
-        # Additional data is collected to ensure return calculations are correct
         start_date = datetime.strptime(start, "%Y-%m-%d") - timedelta(days=1 * 365)
 
         if start_date > end_date:
@@ -265,6 +263,8 @@ def convert_daily_to_yearly(
             - 1
         )
 
+        # Volatility is calculated as the daily volatility multiplied by the
+        # square root of the number of trading days (252)
         yearly_historical_data["Volatility"] = daily_historical_data["Return"].groupby(
             dates
         ).agg(np.std) * np.sqrt(252)
@@ -319,6 +319,8 @@ def convert_daily_to_quarterly(
             - 1
         )
 
+        # Volatility is calculated as the daily volatility multiplied by the
+        # square root of the number of trading days divided by 4 (252 / 4)
         quarterly_historical_data["Volatility"] = daily_historical_data[
             "Return"
         ].groupby(dates).agg(np.std) * np.sqrt(63)

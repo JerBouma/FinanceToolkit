@@ -69,23 +69,46 @@ def calculate_growth(
         new_index = []
         lag_dict = {f"Lag {lag_value}": lag_value for lag_value in lag}
 
-        for old_index in dataset.index:
-            for lag_value in lag_dict:
-                new_index.append(
-                    (*old_index, lag_value)
-                    if isinstance(old_index, tuple)
-                    else (old_index, lag_value)
+        if axis == "columns":
+            for old_index in dataset.index:
+                for lag_value in lag_dict:
+                    new_index.append(
+                        (*old_index, lag_value)
+                        if isinstance(old_index, tuple)
+                        else (old_index, lag_value)
+                    )
+
+            dataset_lag = dataset.reindex(index=pd.MultiIndex.from_tuples(new_index))
+
+            for new_index in dataset_lag.index:
+                lag_key = new_index[-1]
+                other_indices = new_index[:-1]
+
+                dataset_lag.loc[new_index] = (
+                    dataset.loc[other_indices]
+                    .pct_change(periods=lag_dict[lag_key])  # type: ignore
+                    .to_numpy()
                 )
+        else:
+            for old_index in dataset.columns:
+                for lag_value in lag_dict:
+                    new_index.append(
+                        (*old_index, lag_value)
+                        if isinstance(old_index, tuple)
+                        else (old_index, lag_value)
+                    )
 
-        dataset_lag = dataset.reindex(pd.MultiIndex.from_tuples(new_index))
+            dataset_lag = dataset.reindex(columns=pd.MultiIndex.from_tuples(new_index))
 
-        for new_index in dataset_lag.index:
-            lag_key = new_index[-1]
-            other_indices = new_index[:-1]
+            for new_index in dataset_lag.columns:
+                lag_key = new_index[-1]
+                other_indices = new_index[:-1]
 
-            dataset_lag.loc[new_index] = dataset.loc[other_indices].pct_change(
-                periods=lag_dict[lag_key]  # type: ignore
-            )
+                dataset_lag.loc[:, new_index] = (
+                    dataset.loc[:, other_indices]
+                    .pct_change(periods=lag_dict[lag_key])  # type: ignore
+                    .to_numpy()
+                )
 
         return dataset_lag.round(rounding)
 

@@ -25,6 +25,7 @@ class Models:
         balance: pd.DataFrame,
         income: pd.DataFrame,
         cash: pd.DataFrame,
+        rounding: int | None = 4,
     ):
         """
         Initializes the Models Controller Class.
@@ -34,6 +35,7 @@ class Models:
         self._balance_sheet_statement: pd.DataFrame = balance
         self._income_statement: pd.DataFrame = income
         self._cash_flow_statement: pd.DataFrame = cash
+        self._rounding = rounding
 
         # Initialization of Model Variables
         self._dupont_analysis: pd.DataFrame = pd.DataFrame()
@@ -42,11 +44,12 @@ class Models:
         self._extended_dupont_analysis_growth: pd.DataFrame = pd.DataFrame()
         self._enterprise_value_breakdown: pd.DataFrame = pd.DataFrame()
         self._enterprise_value_breakdown_growth: pd.DataFrame = pd.DataFrame()
+        self._weighted_average_cost_of_capital: pd.DataFrame = pd.DataFrame()
 
     @handle_errors
     def get_dupont_analysis(
         self,
-        rounding: int = 4,
+        rounding: int | None = 4,
         growth: bool = False,
         lag: int | list[int] = 1,
     ) -> pd.DataFrame:
@@ -79,10 +82,14 @@ class Models:
 
         if growth:
             self._dupont_analysis_growth = calculate_growth(
-                self._dupont_analysis, lag=lag, rounding=rounding
+                self._dupont_analysis,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
             )
 
-        self._dupont_analysis_growth = self._dupont_analysis_growth.round(rounding)
+        self._dupont_analysis = self._dupont_analysis.round(
+            rounding if rounding else self._rounding
+        )
 
         if len(self._tickers) == 1:
             return (
@@ -96,7 +103,7 @@ class Models:
     @handle_errors
     def get_extended_dupont_analysis(
         self,
-        rounding: int = 4,
+        rounding: int | None = 4,
         growth: bool = False,
         lag: int | list[int] = 1,
     ) -> pd.DataFrame:
@@ -131,10 +138,14 @@ class Models:
 
         if growth:
             self._extended_dupont_analysis_growth = calculate_growth(
-                self._extended_dupont_analysis, lag=lag, rounding=rounding
+                self._extended_dupont_analysis,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
             )
 
-        self._extended_dupont_analysis = self._extended_dupont_analysis.round(rounding)
+        self._extended_dupont_analysis = self._extended_dupont_analysis.round(
+            rounding if rounding else self._rounding
+        )
 
         if len(self._tickers) == 1:
             return (
@@ -152,7 +163,7 @@ class Models:
     def get_enterprise_value_breakdown(
         self,
         diluted: bool = True,
-        rounding: int = 4,
+        rounding: int | None = 4,
         growth: bool = False,
         lag: int | list[int] = 1,
     ) -> pd.DataFrame:
@@ -215,7 +226,9 @@ class Models:
 
         if growth:
             self._enterprise_value_breakdown_growth = calculate_growth(
-                self._enterprise_value_breakdown, lag=lag, rounding=rounding
+                self._enterprise_value_breakdown,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
             )
 
         self._enterprise_value_breakdown = self._enterprise_value_breakdown.round(

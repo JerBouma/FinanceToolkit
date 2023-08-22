@@ -4,7 +4,10 @@ __docformat__ = "google"
 from datetime import datetime, timedelta
 from urllib.error import HTTPError
 
+import numpy as np
 import pandas as pd
+
+from financetoolkit.base.models import fundamentals_model
 
 # pylint: disable=too-many-locals
 
@@ -26,6 +29,8 @@ def get_historical_data(
             in 'YYYY-MM-DD' format. Defaults to None.
         end (str, optional): A string representing the end date of the period to retrieve data for
             in 'YYYY-MM-DD' format. Defaults to None.
+        interval (str, optional): A string representing the interval to retrieve data for.
+        return_column (str, optional): A string representing the column to use for return calculations.
 
     Raises:
         ValueError: If the start date is after the end date.
@@ -43,21 +48,23 @@ def get_historical_data(
         raise ValueError(f"Type for the tickers ({type(tickers)}) variable is invalid.")
 
     if end is not None:
-        end_date = datetime.strptime(end, "%Y-%m-%d")
+        # Additional data is collected to ensure return calculations are correct
+        end_date = datetime.strptime(end, "%Y-%m-%d") + timedelta(days=1 * 365)
         end_timestamp = int(end_date.timestamp())
     else:
         end_date = datetime.today()
         end_timestamp = int(end_date.timestamp())
 
     if start is not None:
-        start_date = datetime.strptime(start, "%Y-%m-%d")
+        # Additional data is collected to ensure return calculations are correct
+        start_date = datetime.strptime(start, "%Y-%m-%d") - timedelta(days=1 * 365)
 
         if start_date > end_date:
             raise ValueError(
                 f"Start date ({start_date}) must be before end date ({end_date}))"
             )
 
-        start_timestamp = int(datetime.strptime(start, "%Y-%m-%d").timestamp())
+        start_timestamp = int(start_date.timestamp())
     else:
         start_date = datetime.now() - timedelta(days=10 * 365)
 
@@ -109,9 +116,16 @@ def get_historical_data(
             return_column
         ].pct_change()
 
-        historical_data_dict[ticker]["Cumulative Return"] = (
-            1 + historical_data_dict[ticker]["Return"]
-        ).cumprod() - 1
+        adjusted_return = historical_data_dict[ticker].loc[start:end, "Return"].copy()  # type: ignore
+
+        adjusted_return.iloc[0] = 0
+
+        historical_data_dict[ticker].loc[start:end, "Cumulative Return"] = (  # type: ignore
+            1 + adjusted_return
+        ).cumprod()
+        historical_data_dict[ticker]["Volatility"] = (
+            historical_data_dict[ticker].loc[start:end, "Return"].std()  # type: ignore
+        )
 
     if historical_data_dict:
         historical_data = pd.concat(historical_data_dict, axis=1)
@@ -123,7 +137,100 @@ def get_historical_data(
     return pd.DataFrame(), invalid_tickers
 
 
-def convert_daily_to_yearly(daily_historical_data: pd.DataFrame):
+def get_treasury_rates(
+    api_key: str,
+    start: str | None = None,
+    end: str | None = None,
+    rounding: int | None = 4,
+):
+    """
+    Retrieves treasury rates for a specified period. Please note that the maximum period is 3 months.
+
+    Args:
+        api_key (str): A string representing the API key to use for the request.
+        start (str, optional): A string representing the start date of the period to retrieve data for
+            in 'YYYY-MM-DD' format. Defaults to None.
+        end (str, optional): A string representing the end date of the period to retrieve data for
+            in 'YYYY-MM-DD' format. Defaults to None.
+        rounding (int, optional): The number of decimal places to round the data to. Defaults to 4.
+
+    Raises:
+        ValueError: If the start date is after the end date.
+
+    Returns:
+        pd.DataFrame: A pandas DataFrame object containing the treasury rates for the given period.
+    """
+    naming = {
+        "month1": "1 Month",
+        "month2": "2 Month",
+        "month3": "3 Month",
+        "month6": "6 Month",
+        "year1": "1 Year",
+        "year2": "2 Year",
+        "year3": "3 Year",
+        "year5": "5 Year",
+        "year7": "7 Year",
+        "year10": "10 Year",
+        "year20": "20 Year",
+        "year30": "30 Year",
+    }
+
+    # Additional data is collected to ensure return calculations are correct
+    end_date = (
+        datetime.strptime(end, "%Y-%m-%d") + timedelta(days=1 * 365)
+        if end is not None
+        else datetime.today()
+    )
+
+    if start is not None:
+        # Additional data is collected to ensure return calculations are correct
+        start_date = datetime.strptime(start, "%Y-%m-%d") - timedelta(days=1 * 365)
+
+        if start_date > end_date:
+            raise ValueError(
+                f"Start date ({start_date}) must be before end date ({end_date}))"
+            )
+    else:
+        start_date = datetime.now() - timedelta(days=10 * 365)
+
+        if start_date > end_date:
+            start_date = end_date - timedelta(days=10 * 365)
+
+    start_date_string = start_date.strftime("%Y-%m-%d")
+    end_date_string = end_date.strftime("%Y-%m-%d")
+
+    url = (
+        f"https://financialmodelingprep.com/api/v4/treasury?from={start_date_string}"
+        f"&to={end_date_string}&apikey={api_key}"
+    )
+
+    treasury_rates = fundamentals_model.get_financial_data(ticker="TREASURY", url=url)
+
+    if "ERROR_MESSAGE" in treasury_rates:
+        return pd.DataFrame()
+
+    treasury_rates = treasury_rates.set_index("date")
+
+    try:
+        treasury_rates = treasury_rates.astype(np.float64)
+    except ValueError as error:
+        print(
+            f"Not able to convert DataFrame to float64 due to {error}. This could result in"
+            "issues when values are zero and is predominently relevant for "
+            "ratio calculations."
+        )
+
+    treasury_rates = treasury_rates.rename(columns=naming)
+    treasury_rates = treasury_rates.round(rounding)
+
+    return treasury_rates
+
+
+def convert_daily_to_yearly(
+    daily_historical_data: pd.DataFrame,
+    start: str | None = None,
+    end: str | None = None,
+):
     """
     Converts daily historical data to yearly historical data.
 
@@ -158,15 +265,24 @@ def convert_daily_to_yearly(daily_historical_data: pd.DataFrame):
             - 1
         )
 
+        yearly_historical_data["Volatility"] = daily_historical_data["Return"].groupby(
+            dates
+        ).agg(np.std) * np.sqrt(252)
+
     if "Cumulative Return" in yearly_historical_data:
-        yearly_historical_data["Cumulative Return"] = (
-            1 + yearly_historical_data["Return"]
-        ).cumprod() - 1
+        adjusted_return = yearly_historical_data.loc[start:end, "Return"].copy()  # type: ignore
+        adjusted_return.iloc[0] = 0
+
+        yearly_historical_data["Cumulative Return"] = (1 + adjusted_return).cumprod()  # type: ignore
 
     return yearly_historical_data
 
 
-def convert_daily_to_quarterly(daily_historical_data: pd.DataFrame):
+def convert_daily_to_quarterly(
+    daily_historical_data: pd.DataFrame,
+    start: str | None = None,
+    end: str | None = None,
+):
     """
     Converts daily historical data to quarterly historical data.
 
@@ -203,9 +319,14 @@ def convert_daily_to_quarterly(daily_historical_data: pd.DataFrame):
             - 1
         )
 
+        quarterly_historical_data["Volatility"] = daily_historical_data[
+            "Return"
+        ].groupby(dates).agg(np.std) * np.sqrt(63)
+
     if "Cumulative Return" in quarterly_historical_data:
-        quarterly_historical_data["Cumulative Return"] = (
-            1 + quarterly_historical_data["Return"]
-        ).cumprod() - 1
+        adjusted_return = quarterly_historical_data.loc[start:end, "Return"].copy()  # type: ignore
+        adjusted_return.iloc[0] = 0
+
+        quarterly_historical_data["Cumulative Return"] = (1 + adjusted_return).cumprod()
 
     return quarterly_historical_data

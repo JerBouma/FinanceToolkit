@@ -1,9 +1,6 @@
 """Ratios Module"""
 __docformat__ = "google"
 
-import operator
-import re
-
 import pandas as pd
 
 from financetoolkit.base.helpers import calculate_growth, handle_errors
@@ -15,7 +12,7 @@ from financetoolkit.ratios import (
     valuation,
 )
 
-# pylint: disable=too-many-lines,too-many-instance-attributes,too-many-public-methods, too-many-locals
+# pylint: disable=too-many-lines,too-many-instance-attributes,too-many-public-methods,too-many-locals,eval-used
 
 
 class Ratios:
@@ -31,6 +28,7 @@ class Ratios:
         income: pd.DataFrame,
         cash: pd.DataFrame,
         custom_ratios_dict: dict | None = None,
+        rounding: int | None = 4,
     ):
         """
         Initializes the Ratios Controller Class.
@@ -45,6 +43,7 @@ class Ratios:
         )
         self._custom_ratios: pd.DataFrame = pd.DataFrame()
         self._custom_ratios_growth: pd.DataFrame = pd.DataFrame()
+        self._rounding: int | None = rounding
 
         # Initialization of Fundamentals Variables
         self._all_ratios: pd.DataFrame = pd.DataFrame()
@@ -65,7 +64,7 @@ class Ratios:
         include_dividends: bool = False,
         diluted: bool = True,
         days: int = 365,
-        rounding: int = 4,
+        rounding: int | None = 4,
         growth: bool = False,
         lag: int | list[int] = 1,
     ):
@@ -103,11 +102,15 @@ class Ratios:
             ]
         )
 
-        self._all_ratios = self._all_ratios.round(rounding)
+        self._all_ratios = self._all_ratios.round(
+            rounding if rounding else self._rounding
+        )
 
         if growth:
             self._all_ratios_growth = calculate_growth(
-                self._all_ratios, lag=lag, rounding=rounding
+                self._all_ratios,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
             )
 
         return self._all_ratios_growth if growth else self._all_ratios
@@ -115,7 +118,7 @@ class Ratios:
     def collect_efficiency_ratios(
         self,
         days: int = 365,
-        rounding: int = 4,
+        rounding: int | None = 4,
         growth: bool = False,
         lag: int | list[int] = 1,
     ):
@@ -173,11 +176,15 @@ class Ratios:
             .dropna(axis="columns", how="all")
         )
 
-        self._efficiency_ratios = self._efficiency_ratios.round(rounding)
+        self._efficiency_ratios = self._efficiency_ratios.round(
+            rounding if rounding else self._rounding
+        )
 
         if growth:
             self._efficiency_ratios_growth = calculate_growth(
-                self._efficiency_ratios, lag=lag, rounding=rounding
+                self._efficiency_ratios,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
             )
 
         if len(self._tickers) == 1:
@@ -191,7 +198,7 @@ class Ratios:
 
     def collect_liquidity_ratios(
         self,
-        rounding: int = 4,
+        rounding: int | None = 4,
         growth: bool = False,
         lag: int | list[int] = 1,
     ) -> pd.DataFrame:
@@ -237,11 +244,15 @@ class Ratios:
             .dropna(axis="columns", how="all")
         )
 
-        self._liquidity_ratios = self._liquidity_ratios.round(rounding)
+        self._liquidity_ratios = self._liquidity_ratios.round(
+            rounding if rounding else self._rounding
+        )
 
         if growth:
             self._liquidity_ratios_growth = calculate_growth(
-                self._liquidity_ratios, lag=lag, rounding=rounding
+                self._liquidity_ratios,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
             )
 
         if len(self._tickers) == 1:
@@ -255,7 +266,7 @@ class Ratios:
 
     def collect_profitability_ratios(
         self,
-        rounding: int = 4,
+        rounding: int | None = 4,
         growth: bool = False,
         lag: int | list[int] = 1,
     ) -> pd.DataFrame:
@@ -316,11 +327,15 @@ class Ratios:
             .dropna(axis="columns", how="all")
         )
 
-        self._profitability_ratios = self._profitability_ratios.round(rounding)
+        self._profitability_ratios = self._profitability_ratios.round(
+            rounding if rounding else self._rounding
+        )
 
         if growth:
             self._profitability_ratios_growth = calculate_growth(
-                self._profitability_ratios, lag=lag, rounding=rounding
+                self._profitability_ratios,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
             )
 
         if len(self._tickers) == 1:
@@ -337,7 +352,7 @@ class Ratios:
     def collect_solvency_ratios(
         self,
         diluted: bool = True,
-        rounding: int = 4,
+        rounding: int | None = 4,
         growth: bool = False,
         lag: int | list[int] = 1,
     ):
@@ -390,11 +405,15 @@ class Ratios:
             .dropna(axis="columns", how="all")
         )
 
-        self._solvency_ratios = self._solvency_ratios.round(rounding)
+        self._solvency_ratios = self._solvency_ratios.round(
+            rounding if rounding else self._rounding
+        )
 
         if growth:
             self._solvency_ratios_growth = calculate_growth(
-                self._solvency_ratios, lag=lag, rounding=rounding
+                self._solvency_ratios,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
             )
 
         if len(self._tickers) == 1:
@@ -410,7 +429,7 @@ class Ratios:
         self,
         include_dividends: bool = False,
         diluted: bool = True,
-        rounding: int = 4,
+        rounding: int | None = 4,
         growth: bool = False,
         lag: int | list[int] = 1,
     ):
@@ -500,11 +519,15 @@ class Ratios:
             .dropna(axis="columns", how="all")
         )
 
-        self._valuation_ratios = self._valuation_ratios.round(rounding)
+        self._valuation_ratios = self._valuation_ratios.round(
+            rounding if rounding else self._rounding
+        )
 
         if growth:
             self._valuation_ratios_growth = calculate_growth(
-                self._valuation_ratios, lag=lag, rounding=rounding
+                self._valuation_ratios,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
             )
 
         if len(self._tickers) == 1:
@@ -519,18 +542,24 @@ class Ratios:
     @handle_errors
     def collect_custom_ratios(
         self,
-        rounding: int = 4,
+        custom_ratios_dict: dict | None = None,
+        rounding: int | None = 4,
         growth: bool = False,
         lag: int | list[int] = 1,
     ):
         """
         Calculates all Custom Ratios based on the data provided.
 
+        Note that any of the following characters are considered as operators:
+            +, -, *, /, **, %, //, <, >, ==, !=, >=, <=, (, )
+        using any of the above characters as part of the column naming will result into an error.
+
         Args:
+            custom_ratios (dict, optional): A dictionary containing the custom ratios to calculate. This is
+            an optional parameter given that you can also define the custom ratios through the Toolkit initialization.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
-            overwrite (bool, optional): Whether to overwrite the existing ratios. Defaults to False.
 
         As an example:
 
@@ -538,33 +567,53 @@ class Ratios:
         from financetoolkit import Toolkit
 
         custom_ratios = {
-            'WC / Net Income': 'Working Capital / Net Income',
-            'Net Income / Total Assets': 'Net Income / Total Assets',
-            'Current Assets Inventory': 'Total Current Assets - Inventory',
-            'Quick Ratio Current': 'Current Assets Inventory / Total Current Liabilities',
-            'Quick Ratio Total': 'Current Assets Inventory / Total Liabilities'
+            'WC / Net Income as %': '(Working Capital / Net Income) * 100',
+            'Large Revenues': 'Revenue > 1000000000',
+            'Quick Assets': 'Cash and Short Term Investments + Accounts Receivable',
+            'Cash Op Expenses':'Cost of Goods Sold + Selling, General and Administrative Expenses '
+            '- Depreciation and Amortization',
+            'Daily Cash Op Expenses': 'Cash Op Expenses / 365',
+            'Defensive Interval':'Quick Assets / Daily Cash Op Expenses'
         }
 
         companies = Toolkit(
-            ["AAPL", "MSFT", "GOOGL", "AMZN"], api_key=API_KEY, start_date="2000-01-01",
+            ["AAPL", "MSFT", "GOOGL", "AMZN"], api_key=API_KEY, start_date="2022-10-01",
             custom_ratios=custom_ratios, quarterly=True
         )
 
-        companies.ratios.collect_custom_ratios()
+        custom_ratios = companies.ratios.collect_custom_ratios()
+
+        custom_ratios.loc['AMZN']
         ```
+
+        Which returns:
+
+        |                        |         2022Q4 |         2023Q1 |         2023Q2 |   2023Q3 |
+        |:-----------------------|---------------:|---------------:|---------------:|---------:|
+        | Cash Op Expenses       |    2.1856e+10  |    1.9972e+10  |    2.1322e+10  |      nan |
+        | Daily Cash Op Expenses |    5.98795e+07 |    5.47178e+07 |    5.84164e+07 |      nan |
+        | Defensive Interval     | 2260.22        | 2592.34        | 2738.1         |      nan |
+        | Large Revenues         |    1           |    1           |    1           |        0 |
+        | Quick Assets           |    1.35341e+11 |    1.41847e+11 |    1.5995e+11  |      nan |
+        | WC / Net Income as %   |  463.349       |  427.335       |  398.924       |      nan |
         """
-        if not self._custom_ratios_dict:
+        if not self._custom_ratios_dict and not custom_ratios_dict:
             print(
-                "Please define custom ratios through the Toolkit initialization. "
+                "Please define custom ratios through the Toolkit initialization or include a "
+                "dictionary to the custom_ratios_dict parameter. "
                 "See https://github.com/JerBouma/FinanceToolkit how to do this."
             )
+
+        custom_ratios_dict = (
+            custom_ratios_dict if custom_ratios_dict else self._custom_ratios_dict
+        )
 
         if self._all_ratios.empty:
             self._all_ratios = self.collect_all_ratios()
 
         custom_ratios = pd.DataFrame(
             index=pd.MultiIndex.from_product(
-                [self._tickers, self._custom_ratios_dict.keys()]
+                [self._tickers, custom_ratios_dict.keys()]
             ),
             columns=self._balance_sheet_statement.columns,
         )
@@ -584,40 +633,86 @@ class Ratios:
             ~total_financials.index.duplicated(keep="first")
         ]
 
-        operations = {
-            "+": operator.add,
-            "-": operator.sub,
-            "*": operator.mul,
-            "/": operator.truediv,
-            "^": operator.pow,
-        }
+        formula_dict = {}
+        for name, formula in custom_ratios_dict.items():
+            # Rearrange the formula dict in case a formula is dependent on another formula
+            # and the order would result into errors
+            for sub_name, sub_formula in custom_ratios_dict.items():
+                if sub_name in formula:
+                    formula_dict[sub_name] = sub_formula
 
-        for name, formula in self._custom_ratios_dict.items():
-            operator_use = re.findall("[+\\-*^/]", formula)[0]
+            if name not in formula_dict:
+                formula_dict[name] = formula
 
-            split_1, split_2 = formula.split(operator_use)
-            calculation = operations[operator_use]
+        for name, formula in formula_dict.items():
+            formula_names = formula
 
-            result_dataframe = calculation(
-                total_financials.loc[:, split_1.strip(), :],
-                total_financials.loc[:, split_2.strip(), :],
-            )
+            for operator in [
+                "+",
+                "-",
+                "*",
+                "/",
+                "**",
+                "%",
+                "//",
+                "<",
+                ">",
+                "==",
+                "!=",
+                ">=",
+                "<=",
+                "(",
+                ")",
+            ]:
+                formula_names = formula_names.replace(operator, "SPLIT")
 
-            for company in self._tickers:
-                total_financials.loc[company, name, :] = result_dataframe.loc[
-                    company
-                ].to_numpy()
+            formula_names = formula_names.split("SPLIT")
 
-            self._custom_ratios = total_financials.loc[
-                :, list(self._custom_ratios_dict.keys()), :
+            formula_names = [
+                clean_name
+                for clean_name in formula_names
+                if clean_name not in ["", " "]
             ]
-            self._custom_ratios = self._custom_ratios.sort_index(axis=0)
 
-            self._custom_ratios = self._custom_ratios.round(rounding)
+            formula_adjusted = formula
+
+            for formula_section in formula_names:
+                formula_section_stripped = formula_section.strip()
+                if formula_section_stripped in total_financials.index.get_level_values(
+                    1
+                ):
+                    formula_adjusted = formula_adjusted.replace(
+                        formula_section_stripped,
+                        f"total_financials.loc[:, '{formula_section_stripped}', :]",
+                    )
+                else:
+                    try:
+                        float(formula_section_stripped)
+                    except ValueError:
+                        formula_adjusted = None
+                        print(
+                            f"Column {formula_section_stripped} not found in total_financials and is not a number. "
+                            f"Therefore the formula {formula} is invalid."
+                        )
+                        break
+
+            if formula_adjusted:
+                total_financials.loc[:, name, :] = eval(formula_adjusted).to_numpy()
+
+                self._custom_ratios = total_financials.loc[
+                    :, list(self._custom_ratios_dict.keys()), :
+                ]
+                self._custom_ratios = self._custom_ratios.sort_index(axis=0)
+
+                self._custom_ratios = self._custom_ratios.round(
+                    rounding if rounding else self._rounding
+                )
 
         if growth:
             self._custom_ratios_growth = calculate_growth(
-                self._custom_ratios, lag=lag, rounding=rounding
+                self._custom_ratios,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
             )
 
         if len(self._tickers) == 1:
@@ -631,7 +726,7 @@ class Ratios:
 
     @handle_errors
     def get_asset_turnover_ratio(
-        self, rounding: int = 4, growth: bool = False, lag: int | list[int] = 1
+        self, rounding: int | None = 4, growth: bool = False, lag: int | list[int] = 1
     ):
         """
         Calculate the asset turnover ratio, an efficiency ratio that measures how
@@ -659,13 +754,17 @@ class Ratios:
         )
 
         if growth:
-            return calculate_growth(asset_turnover_ratio, lag=lag, rounding=rounding)
+            return calculate_growth(
+                asset_turnover_ratio,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
+            )
 
-        return asset_turnover_ratio.round(rounding)
+        return asset_turnover_ratio.round(rounding if rounding else self._rounding)
 
     @handle_errors
     def get_inventory_turnover_ratio(
-        self, rounding: int = 4, growth: bool = False, lag: int | list[int] = 1
+        self, rounding: int | None = 4, growth: bool = False, lag: int | list[int] = 1
     ):
         """
         Calculate the inventory turnover ratio, an efficiency ratio that measures
@@ -694,16 +793,18 @@ class Ratios:
 
         if growth:
             return calculate_growth(
-                inventory_turnover_ratio, lag=lag, rounding=rounding
+                inventory_turnover_ratio,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
             )
 
-        return inventory_turnover_ratio.round(rounding)
+        return inventory_turnover_ratio.round(rounding if rounding else self._rounding)
 
     @handle_errors
     def get_days_of_inventory_outstanding(
         self,
         days: int = 365,
-        rounding: int = 4,
+        rounding: int | None = 4,
         growth: bool = False,
         lag: int | list[int] = 1,
     ):
@@ -736,16 +837,20 @@ class Ratios:
 
         if growth:
             return calculate_growth(
-                days_of_inventory_outstanding, lag=lag, rounding=rounding
+                days_of_inventory_outstanding,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
             )
 
-        return days_of_inventory_outstanding.round(rounding)
+        return days_of_inventory_outstanding.round(
+            rounding if rounding else self._rounding
+        )
 
     @handle_errors
     def get_days_of_sales_outstanding(
         self,
         days: int = 365,
-        rounding: int = 4,
+        rounding: int | None = 4,
         growth: bool = False,
         lag: int | list[int] = 1,
     ):
@@ -781,16 +886,18 @@ class Ratios:
 
         if growth:
             return calculate_growth(
-                days_of_sales_outstanding, lag=lag, rounding=rounding
+                days_of_sales_outstanding,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
             )
 
-        return days_of_sales_outstanding.round(rounding)
+        return days_of_sales_outstanding.round(rounding if rounding else self._rounding)
 
     @handle_errors
     def get_operating_cycle(
         self,
         days: int = 365,
-        rounding: int = 4,
+        rounding: int | None = 4,
         growth: bool = False,
         lag: int | list[int] = 1,
     ):
@@ -834,13 +941,17 @@ class Ratios:
         )
 
         if growth:
-            return calculate_growth(operating_cycle, lag=lag, rounding=rounding)
+            return calculate_growth(
+                operating_cycle,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
+            )
 
-        return operating_cycle.round(rounding)
+        return operating_cycle.round(rounding if rounding else self._rounding)
 
     @handle_errors
     def get_accounts_payables_turnover_ratio(
-        self, rounding: int = 4, growth: bool = False, lag: int | list[int] = 1
+        self, rounding: int | None = 4, growth: bool = False, lag: int | list[int] = 1
     ):
         """
         Calculate the accounts payable turnover ratio is an efficiency ratio that measures how
@@ -873,16 +984,20 @@ class Ratios:
 
         if growth:
             return calculate_growth(
-                accounts_payables_turnover_ratio, lag=lag, rounding=rounding
+                accounts_payables_turnover_ratio,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
             )
 
-        return accounts_payables_turnover_ratio.round(rounding)
+        return accounts_payables_turnover_ratio.round(
+            rounding if rounding else self._rounding
+        )
 
     @handle_errors
     def get_days_of_accounts_payable_outstanding(
         self,
         days: int = 365,
-        rounding: int = 4,
+        rounding: int | None = 4,
         growth: bool = False,
         lag: int | list[int] = 1,
     ):
@@ -919,16 +1034,20 @@ class Ratios:
 
         if growth:
             return calculate_growth(
-                days_of_accounts_payable_outstanding, lag=lag, rounding=rounding
+                days_of_accounts_payable_outstanding,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
             )
 
-        return days_of_accounts_payable_outstanding.round(rounding)
+        return days_of_accounts_payable_outstanding.round(
+            rounding if rounding else self._rounding
+        )
 
     @handle_errors
     def get_cash_conversion_cycle(
         self,
         days: int = 365,
-        rounding: int = 4,
+        rounding: int | None = 4,
         growth: bool = False,
         lag: int | list[int] = 1,
     ):
@@ -980,13 +1099,17 @@ class Ratios:
         )
 
         if growth:
-            return calculate_growth(cash_conversion_cycle, lag=lag, rounding=rounding)
+            return calculate_growth(
+                cash_conversion_cycle,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
+            )
 
-        return cash_conversion_cycle.round(rounding)
+        return cash_conversion_cycle.round(rounding if rounding else self._rounding)
 
     @handle_errors
     def get_receivables_turnover(
-        self, rounding: int = 4, growth: bool = False, lag: int | list[int] = 1
+        self, rounding: int | None = 4, growth: bool = False, lag: int | list[int] = 1
     ):
         """
         Calculate the receivables turnover, a ratio that measures how efficiently a
@@ -1016,13 +1139,17 @@ class Ratios:
         )
 
         if growth:
-            return calculate_growth(receivables_turnover, lag=lag, rounding=rounding)
+            return calculate_growth(
+                receivables_turnover,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
+            )
 
-        return receivables_turnover.round(rounding)
+        return receivables_turnover.round(rounding if rounding else self._rounding)
 
     @handle_errors
     def get_sga_to_revenue_ratio(
-        self, rounding: int = 4, growth: bool = False, lag: int | list[int] = 1
+        self, rounding: int | None = 4, growth: bool = False, lag: int | list[int] = 1
     ):
         """
         Calculates the sales, general, and administrative (SG&A) expenses to revenue ratio,
@@ -1050,13 +1177,17 @@ class Ratios:
         )
 
         if growth:
-            return calculate_growth(sga_to_revenue_ratio, lag=lag, rounding=rounding)
+            return calculate_growth(
+                sga_to_revenue_ratio,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
+            )
 
-        return sga_to_revenue_ratio.round(rounding)
+        return sga_to_revenue_ratio.round(rounding if rounding else self._rounding)
 
     @handle_errors
     def get_fixed_asset_turnover(
-        self, rounding: int = 4, growth: bool = False, lag: int | list[int] = 1
+        self, rounding: int | None = 4, growth: bool = False, lag: int | list[int] = 1
     ):
         """
         Calculate the Fixed Asset Turnover ratio, an efficiency ratio that
@@ -1083,13 +1214,17 @@ class Ratios:
         )
 
         if growth:
-            return calculate_growth(fixed_asset_turnover, lag=lag, rounding=rounding)
+            return calculate_growth(
+                fixed_asset_turnover,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
+            )
 
-        return fixed_asset_turnover.round(rounding)
+        return fixed_asset_turnover.round(rounding if rounding else self._rounding)
 
     @handle_errors
     def get_operating_ratio(
-        self, rounding: int = 4, growth: bool = False, lag: int | list[int] = 1
+        self, rounding: int | None = 4, growth: bool = False, lag: int | list[int] = 1
     ):
         """
         Calculate the operating ratio, a financial metric that measures the efficiency
@@ -1116,13 +1251,17 @@ class Ratios:
         )
 
         if growth:
-            return calculate_growth(operating_ratio, lag=lag, rounding=rounding)
+            return calculate_growth(
+                operating_ratio,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
+            )
 
-        return operating_ratio.round(rounding)
+        return operating_ratio.round(rounding if rounding else self._rounding)
 
     @handle_errors
     def get_current_ratio(
-        self, rounding: int = 4, growth: bool = False, lag: int | list[int] = 1
+        self, rounding: int | None = 4, growth: bool = False, lag: int | list[int] = 1
     ):
         """
         Calculate the current ratio, a liquidity ratio that measures a company's ability
@@ -1148,13 +1287,17 @@ class Ratios:
         )
 
         if growth:
-            return calculate_growth(current_ratio, lag=lag, rounding=rounding)
+            return calculate_growth(
+                current_ratio,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
+            )
 
-        return current_ratio.round(rounding)
+        return current_ratio.round(rounding if rounding else self._rounding)
 
     @handle_errors
     def get_quick_ratio(
-        self, rounding: int = 4, growth: bool = False, lag: int | list[int] = 1
+        self, rounding: int | None = 4, growth: bool = False, lag: int | list[int] = 1
     ):
         """
         Calculate the quick ratio (also known as the acid-test ratio), a more stringent
@@ -1184,13 +1327,15 @@ class Ratios:
         )
 
         if growth:
-            return calculate_growth(quick_ratio, lag=lag, rounding=rounding)
+            return calculate_growth(
+                quick_ratio, lag=lag, rounding=rounding if rounding else self._rounding
+            )
 
-        return quick_ratio.round(rounding)
+        return quick_ratio.round(rounding if rounding else self._rounding)
 
     @handle_errors
     def get_cash_ratio(
-        self, rounding: int = 4, growth: bool = False, lag: int | list[int] = 1
+        self, rounding: int | None = 4, growth: bool = False, lag: int | list[int] = 1
     ):
         """
         Calculate the cash ratio, a liquidity ratio that measures a company's ability
@@ -1217,13 +1362,15 @@ class Ratios:
         )
 
         if growth:
-            return calculate_growth(cash_ratio, lag=lag, rounding=rounding)
+            return calculate_growth(
+                cash_ratio, lag=lag, rounding=rounding if rounding else self._rounding
+            )
 
-        return cash_ratio.round(rounding)
+        return cash_ratio.round(rounding if rounding else self._rounding)
 
     @handle_errors
     def get_working_capital(
-        self, rounding: int = 4, growth: bool = False, lag: int | list[int] = 1
+        self, rounding: int | None = 4, growth: bool = False, lag: int | list[int] = 1
     ):
         """
         Calculate the working capital, which is the difference between a company's current assets
@@ -1249,13 +1396,17 @@ class Ratios:
         )
 
         if growth:
-            return calculate_growth(working_capital, lag=lag, rounding=rounding)
+            return calculate_growth(
+                working_capital,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
+            )
 
-        return working_capital.round(rounding)
+        return working_capital.round(rounding if rounding else self._rounding)
 
     @handle_errors
     def get_operating_cash_flow_ratio(
-        self, rounding: int = 4, growth: bool = False, lag: int | list[int] = 1
+        self, rounding: int | None = 4, growth: bool = False, lag: int | list[int] = 1
     ):
         """
         Calculate the operating cash flow ratio, a liquidity ratio that measures a company's
@@ -1283,14 +1434,16 @@ class Ratios:
 
         if growth:
             return calculate_growth(
-                operating_cash_flow_ratio, lag=lag, rounding=rounding
+                operating_cash_flow_ratio,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
             )
 
-        return operating_cash_flow_ratio.round(rounding)
+        return operating_cash_flow_ratio.round(rounding if rounding else self._rounding)
 
     @handle_errors
     def get_operating_cash_flow_sales_ratio(
-        self, rounding: int = 4, growth: bool = False, lag: int | list[int] = 1
+        self, rounding: int | None = 4, growth: bool = False, lag: int | list[int] = 1
     ):
         """
         Calculate the operating cash flow to sales ratio, a liquidity ratio that
@@ -1318,14 +1471,18 @@ class Ratios:
 
         if growth:
             return calculate_growth(
-                operating_cash_flow_sales_ratio, lag=lag, rounding=rounding
+                operating_cash_flow_sales_ratio,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
             )
 
-        return operating_cash_flow_sales_ratio.round(rounding)
+        return operating_cash_flow_sales_ratio.round(
+            rounding if rounding else self._rounding
+        )
 
     @handle_errors
     def get_short_term_coverage_ratio(
-        self, rounding: int = 4, growth: bool = False, lag: int | list[int] = 1
+        self, rounding: int | None = 4, growth: bool = False, lag: int | list[int] = 1
     ):
         """
         Calculate the short term coverage ratio, a liquidity ratio that measures a
@@ -1355,14 +1512,16 @@ class Ratios:
 
         if growth:
             return calculate_growth(
-                short_term_coverage_ratio, lag=lag, rounding=rounding
+                short_term_coverage_ratio,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
             )
 
-        return short_term_coverage_ratio.round(rounding)
+        return short_term_coverage_ratio.round(rounding if rounding else self._rounding)
 
     @handle_errors
     def get_gross_margin(
-        self, rounding: int = 4, growth: bool = False, lag: int | list[int] = 1
+        self, rounding: int | None = 4, growth: bool = False, lag: int | list[int] = 1
     ):
         """
         Calculate the gross margin, a profitability ratio that measures the percentage of
@@ -1389,13 +1548,15 @@ class Ratios:
         )
 
         if growth:
-            return calculate_growth(gross_margin, lag=lag, rounding=rounding)
+            return calculate_growth(
+                gross_margin, lag=lag, rounding=rounding if rounding else self._rounding
+            )
 
-        return gross_margin.round(rounding)
+        return gross_margin.round(rounding if rounding else self._rounding)
 
     @handle_errors
     def get_operating_margin(
-        self, rounding: int = 4, growth: bool = False, lag: int | list[int] = 1
+        self, rounding: int | None = 4, growth: bool = False, lag: int | list[int] = 1
     ):
         """
         Calculate the operating margin, a profitability ratio that measures the percentage of
@@ -1422,13 +1583,17 @@ class Ratios:
         )
 
         if growth:
-            return calculate_growth(operating_margin, lag=lag, rounding=rounding)
+            return calculate_growth(
+                operating_margin,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
+            )
 
-        return operating_margin.round(rounding)
+        return operating_margin.round(rounding if rounding else self._rounding)
 
     @handle_errors
     def get_net_profit_margin(
-        self, rounding: int = 4, growth: bool = False, lag: int | list[int] = 1
+        self, rounding: int | None = 4, growth: bool = False, lag: int | list[int] = 1
     ):
         """
         Calculate the net profit margin, a profitability ratio that measures the percentage
@@ -1455,13 +1620,17 @@ class Ratios:
         )
 
         if growth:
-            return calculate_growth(net_profit_margin, lag=lag, rounding=rounding)
+            return calculate_growth(
+                net_profit_margin,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
+            )
 
-        return net_profit_margin.round(rounding)
+        return net_profit_margin.round(rounding if rounding else self._rounding)
 
     @handle_errors
     def get_interest_burden_ratio(
-        self, rounding: int = 4, growth: bool = False, lag: int | list[int] = 1
+        self, rounding: int | None = 4, growth: bool = False, lag: int | list[int] = 1
     ):
         """
         Compute the Interest Coverage Ratio, a metric that reveals a company's
@@ -1491,13 +1660,17 @@ class Ratios:
         )
 
         if growth:
-            return calculate_growth(interest_burden_ratio, lag=lag, rounding=rounding)
+            return calculate_growth(
+                interest_burden_ratio,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
+            )
 
-        return interest_burden_ratio.round(rounding)
+        return interest_burden_ratio.round(rounding if rounding else self._rounding)
 
     @handle_errors
     def get_income_before_tax_profit_margin(
-        self, rounding: int = 4, growth: bool = False, lag: int | list[int] = 1
+        self, rounding: int | None = 4, growth: bool = False, lag: int | list[int] = 1
     ):
         """
         Calculate the Pretax Profit Margin, which is the ratio of a company's pre-tax profit to
@@ -1527,14 +1700,18 @@ class Ratios:
 
         if growth:
             return calculate_growth(
-                income_before_tax_profit_margin, lag=lag, rounding=rounding
+                income_before_tax_profit_margin,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
             )
 
-        return income_before_tax_profit_margin.round(rounding)
+        return income_before_tax_profit_margin.round(
+            rounding if rounding else self._rounding
+        )
 
     @handle_errors
     def get_effective_tax_rate(
-        self, rounding: int = 4, growth: bool = False, lag: int | list[int] = 1
+        self, rounding: int | None = 4, growth: bool = False, lag: int | list[int] = 1
     ):
         """
         Calculate the effective tax rate, a financial ratio that measures the
@@ -1561,13 +1738,17 @@ class Ratios:
         )
 
         if growth:
-            return calculate_growth(effective_tax_rate, lag=lag, rounding=rounding)
+            return calculate_growth(
+                effective_tax_rate,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
+            )
 
-        return effective_tax_rate.round(rounding)
+        return effective_tax_rate.round(rounding if rounding else self._rounding)
 
     @handle_errors
     def get_return_on_assets(
-        self, rounding: int = 4, growth: bool = False, lag: int | list[int] = 1
+        self, rounding: int | None = 4, growth: bool = False, lag: int | list[int] = 1
     ):
         """
         Calculate the return on assets (ROA), a profitability ratio that measures how
@@ -1594,13 +1775,17 @@ class Ratios:
         )
 
         if growth:
-            return calculate_growth(return_on_assets, lag=lag, rounding=rounding)
+            return calculate_growth(
+                return_on_assets,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
+            )
 
-        return return_on_assets.round(rounding)
+        return return_on_assets.round(rounding if rounding else self._rounding)
 
     @handle_errors
     def get_return_on_equity(
-        self, rounding: int = 4, growth: bool = False, lag: int | list[int] = 1
+        self, rounding: int | None = 4, growth: bool = False, lag: int | list[int] = 1
     ):
         """
         Calculate the return on equity (ROE), a profitability ratio that measures how
@@ -1628,13 +1813,17 @@ class Ratios:
         )
 
         if growth:
-            return calculate_growth(return_on_equity, lag=lag, rounding=rounding)
+            return calculate_growth(
+                return_on_equity,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
+            )
 
-        return return_on_equity.round(rounding)
+        return return_on_equity.round(rounding if rounding else self._rounding)
 
     @handle_errors
     def get_return_on_invested_capital(
-        self, rounding: int = 4, growth: bool = False, lag: int | list[int] = 1
+        self, rounding: int | None = 4, growth: bool = False, lag: int | list[int] = 1
     ):
         """
         Calculate the return on invested capital, a financial ratio that measures
@@ -1667,14 +1856,18 @@ class Ratios:
 
         if growth:
             return calculate_growth(
-                return_on_invested_capital, lag=lag, rounding=rounding
+                return_on_invested_capital,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
             )
 
-        return return_on_invested_capital.round(rounding)
+        return return_on_invested_capital.round(
+            rounding if rounding else self._rounding
+        )
 
     @handle_errors
     def get_income_quality_ratio(
-        self, rounding: int = 4, growth: bool = False, lag: int | list[int] = 1
+        self, rounding: int | None = 4, growth: bool = False, lag: int | list[int] = 1
     ):
         """
         Calculates the income quality ratio, which measures the cash flow from operating
@@ -1700,13 +1893,17 @@ class Ratios:
         )
 
         if growth:
-            return calculate_growth(income_quality_ratio, lag=lag, rounding=rounding)
+            return calculate_growth(
+                income_quality_ratio,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
+            )
 
-        return income_quality_ratio.round(rounding)
+        return income_quality_ratio.round(rounding if rounding else self._rounding)
 
     @handle_errors
     def get_return_on_tangible_assets(
-        self, rounding: int = 4, growth: bool = False, lag: int | list[int] = 1
+        self, rounding: int | None = 4, growth: bool = False, lag: int | list[int] = 1
     ):
         """
         Calculate the return on tangible assets, which measures the amount of profit
@@ -1736,14 +1933,16 @@ class Ratios:
 
         if growth:
             return calculate_growth(
-                return_on_tangible_assets, lag=lag, rounding=rounding
+                return_on_tangible_assets,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
             )
 
-        return return_on_tangible_assets.round(rounding)
+        return return_on_tangible_assets.round(rounding if rounding else self._rounding)
 
     @handle_errors
     def get_return_on_capital_employed(
-        self, rounding: int = 4, growth: bool = False, lag: int | list[int] = 1
+        self, rounding: int | None = 4, growth: bool = False, lag: int | list[int] = 1
     ):
         """
         Calculate the return on capital employed (ROCE), a profitability ratio that
@@ -1775,14 +1974,18 @@ class Ratios:
 
         if growth:
             return calculate_growth(
-                return_on_capital_employed, lag=lag, rounding=rounding
+                return_on_capital_employed,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
             )
 
-        return return_on_capital_employed.round(rounding)
+        return return_on_capital_employed.round(
+            rounding if rounding else self._rounding
+        )
 
     @handle_errors
     def get_net_income_per_ebt(
-        self, rounding: int = 4, growth: bool = False, lag: int | list[int] = 1
+        self, rounding: int | None = 4, growth: bool = False, lag: int | list[int] = 1
     ):
         """
         Calculate the net income per earnings before taxes (EBT), a profitability ratio that
@@ -1809,13 +2012,17 @@ class Ratios:
         )
 
         if growth:
-            return calculate_growth(net_income_per_ebt, lag=lag, rounding=rounding)
+            return calculate_growth(
+                net_income_per_ebt,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
+            )
 
-        return net_income_per_ebt.round(rounding)
+        return net_income_per_ebt.round(rounding if rounding else self._rounding)
 
     @handle_errors
     def get_free_cash_flow_operating_cash_flow_ratio(
-        self, rounding: int = 4, growth: bool = False, lag: int | list[int] = 1
+        self, rounding: int | None = 4, growth: bool = False, lag: int | list[int] = 1
     ):
         """
         Calculate the free cash flow to operating cash flow ratio, a profitability ratio that
@@ -1844,14 +2051,18 @@ class Ratios:
 
         if growth:
             return calculate_growth(
-                free_cash_flow_operating_cash_flow_ratio, lag=lag, rounding=rounding
+                free_cash_flow_operating_cash_flow_ratio,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
             )
 
-        return free_cash_flow_operating_cash_flow_ratio.round(rounding)
+        return free_cash_flow_operating_cash_flow_ratio.round(
+            rounding if rounding else self._rounding
+        )
 
     @handle_errors
     def get_tax_burden_ratio(
-        self, rounding: int = 4, growth: bool = False, lag: int | list[int] = 1
+        self, rounding: int | None = 4, growth: bool = False, lag: int | list[int] = 1
     ):
         """
         Calculate the tax burden ratio, which is the ratio of a company's
@@ -1877,13 +2088,17 @@ class Ratios:
         )
 
         if growth:
-            return calculate_growth(tax_burden_ratio, lag=lag, rounding=rounding)
+            return calculate_growth(
+                tax_burden_ratio,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
+            )
 
-        return tax_burden_ratio.round(rounding)
+        return tax_burden_ratio.round(rounding if rounding else self._rounding)
 
     @handle_errors
     def get_EBT_to_EBIT(
-        self, rounding: int = 4, growth: bool = False, lag: int | list[int] = 1
+        self, rounding: int | None = 4, growth: bool = False, lag: int | list[int] = 1
     ):
         """
         Calculate the EBT to EBIT, which is the ratio of a company's earnings before tax to its
@@ -1911,13 +2126,15 @@ class Ratios:
         )
 
         if growth:
-            return calculate_growth(EBT_to_EBIT, lag=lag, rounding=rounding)
+            return calculate_growth(
+                EBT_to_EBIT, lag=lag, rounding=rounding if rounding else self._rounding
+            )
 
-        return EBT_to_EBIT.round(rounding)
+        return EBT_to_EBIT.round(rounding if rounding else self._rounding)
 
     @handle_errors
     def get_EBIT_to_revenue(
-        self, rounding: int = 4, growth: bool = False, lag: int | list[int] = 1
+        self, rounding: int | None = 4, growth: bool = False, lag: int | list[int] = 1
     ):
         """
         Calculate the EBIT per Revenue, which is the ratio of a company's earnings
@@ -1948,13 +2165,17 @@ class Ratios:
         )
 
         if growth:
-            return calculate_growth(EBIT_to_revenue, lag=lag, rounding=rounding)
+            return calculate_growth(
+                EBIT_to_revenue,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
+            )
 
-        return EBIT_to_revenue.round(rounding)
+        return EBIT_to_revenue.round(rounding if rounding else self._rounding)
 
     @handle_errors
     def get_debt_to_assets_ratio(
-        self, rounding: int = 4, growth: bool = False, lag: int | list[int] = 1
+        self, rounding: int | None = 4, growth: bool = False, lag: int | list[int] = 1
     ):
         """
         Calculate the debt to assets ratio, a solvency ratio that measures the proportion
@@ -1983,13 +2204,17 @@ class Ratios:
         )
 
         if growth:
-            return calculate_growth(debt_to_assets_ratio, lag=lag, rounding=rounding)
+            return calculate_growth(
+                debt_to_assets_ratio,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
+            )
 
-        return debt_to_assets_ratio.round(rounding)
+        return debt_to_assets_ratio.round(rounding if rounding else self._rounding)
 
     @handle_errors
     def get_debt_to_equity_ratio(
-        self, rounding: int = 4, growth: bool = False, lag: int | list[int] = 1
+        self, rounding: int | None = 4, growth: bool = False, lag: int | list[int] = 1
     ):
         """
         Calculate the debt to equity ratio, a solvency ratio that measures the
@@ -2015,13 +2240,17 @@ class Ratios:
         )
 
         if growth:
-            return calculate_growth(debt_to_equity_ratio, lag=lag, rounding=rounding)
+            return calculate_growth(
+                debt_to_equity_ratio,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
+            )
 
-        return debt_to_equity_ratio.round(rounding)
+        return debt_to_equity_ratio.round(rounding if rounding else self._rounding)
 
     @handle_errors
     def get_interest_coverage_ratio(
-        self, rounding: int = 4, growth: bool = False, lag: int | list[int] = 1
+        self, rounding: int | None = 4, growth: bool = False, lag: int | list[int] = 1
     ):
         """
         Calculate the interest coverage ratio, a solvency ratio that measures a company's
@@ -2049,13 +2278,17 @@ class Ratios:
         )
 
         if growth:
-            return calculate_growth(interest_coverage_ratio, lag=lag, rounding=rounding)
+            return calculate_growth(
+                interest_coverage_ratio,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
+            )
 
-        return interest_coverage_ratio.round(rounding)
+        return interest_coverage_ratio.round(rounding if rounding else self._rounding)
 
     @handle_errors
     def get_equity_multiplier(
-        self, rounding: int = 4, growth: bool = False, lag: int | list[int] = 1
+        self, rounding: int | None = 4, growth: bool = False, lag: int | list[int] = 1
     ):
         """
         Calculate the equity multiplier, a solvency ratio that measures the degree to which
@@ -2084,13 +2317,17 @@ class Ratios:
         )
 
         if growth:
-            return calculate_growth(equity_multiplier, lag=lag, rounding=rounding)
+            return calculate_growth(
+                equity_multiplier,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
+            )
 
-        return equity_multiplier.round(rounding)
+        return equity_multiplier.round(rounding if rounding else self._rounding)
 
     @handle_errors
     def get_debt_service_coverage_ratio(
-        self, rounding: int = 4, growth: bool = False, lag: int | list[int] = 1
+        self, rounding: int | None = 4, growth: bool = False, lag: int | list[int] = 1
     ):
         """
         Calculate the debt service coverage ratio, a solvency ratio that measures a company's
@@ -2118,16 +2355,20 @@ class Ratios:
 
         if growth:
             return calculate_growth(
-                debt_service_coverage_ratio, lag=lag, rounding=rounding
+                debt_service_coverage_ratio,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
             )
 
-        return debt_service_coverage_ratio.round(rounding)
+        return debt_service_coverage_ratio.round(
+            rounding if rounding else self._rounding
+        )
 
     @handle_errors
     def get_free_cash_flow_yield(
         self,
         diluted: bool = True,
-        rounding: int = 4,
+        rounding: int | None = 4,
         growth: bool = False,
         lag: int | list[int] = 1,
     ):
@@ -2170,13 +2411,17 @@ class Ratios:
         )
 
         if growth:
-            return calculate_growth(free_cash_flow_yield, lag=lag, rounding=rounding)
+            return calculate_growth(
+                free_cash_flow_yield,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
+            )
 
-        return free_cash_flow_yield.round(rounding)
+        return free_cash_flow_yield.round(rounding if rounding else self._rounding)
 
     @handle_errors
     def get_net_debt_to_ebitda_ratio(
-        self, rounding: int = 4, growth: bool = False, lag: int | list[int] = 1
+        self, rounding: int | None = 4, growth: bool = False, lag: int | list[int] = 1
     ):
         """
         Calculates the net debt to EBITDA ratio, which measures the net debt of the company
@@ -2205,14 +2450,16 @@ class Ratios:
 
         if growth:
             return calculate_growth(
-                net_debt_to_ebitda_ratio, lag=lag, rounding=rounding
+                net_debt_to_ebitda_ratio,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
             )
 
-        return net_debt_to_ebitda_ratio.round(rounding)
+        return net_debt_to_ebitda_ratio.round(rounding if rounding else self._rounding)
 
     @handle_errors
     def get_cash_flow_coverage_ratio(
-        self, rounding: int = 4, growth: bool = False, lag: int | list[int] = 1
+        self, rounding: int | None = 4, growth: bool = False, lag: int | list[int] = 1
     ):
         """
         Calculate the cash flow coverage ratio, a solvency ratio that measures a company's
@@ -2240,14 +2487,16 @@ class Ratios:
 
         if growth:
             return calculate_growth(
-                cash_flow_coverage_ratio, lag=lag, rounding=rounding
+                cash_flow_coverage_ratio,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
             )
 
-        return cash_flow_coverage_ratio.round(rounding)
+        return cash_flow_coverage_ratio.round(rounding if rounding else self._rounding)
 
     @handle_errors
     def get_capex_coverage_ratio(
-        self, rounding: int = 4, growth: bool = False, lag: int | list[int] = 1
+        self, rounding: int | None = 4, growth: bool = False, lag: int | list[int] = 1
     ):
         """
         Calculate the capital expenditure coverage ratio, a solvency ratio that
@@ -2275,13 +2524,17 @@ class Ratios:
         )
 
         if growth:
-            return calculate_growth(capex_coverage_ratio, lag=lag, rounding=rounding)
+            return calculate_growth(
+                capex_coverage_ratio,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
+            )
 
-        return capex_coverage_ratio.round(rounding)
+        return capex_coverage_ratio.round(rounding if rounding else self._rounding)
 
     @handle_errors
     def get_capex_dividend_coverage_ratio(
-        self, rounding: int = 4, growth: bool = False, lag: int | list[int] = 1
+        self, rounding: int | None = 4, growth: bool = False, lag: int | list[int] = 1
     ):
         """
         Calculate the dividend paid and capex coverage ratio, a solvency ratio that
@@ -2311,17 +2564,21 @@ class Ratios:
 
         if growth:
             return calculate_growth(
-                dividend_capex_coverage_ratio, lag=lag, rounding=rounding
+                dividend_capex_coverage_ratio,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
             )
 
-        return dividend_capex_coverage_ratio.round(rounding)
+        return dividend_capex_coverage_ratio.round(
+            rounding if rounding else self._rounding
+        )
 
     @handle_errors
     def get_earnings_per_share(
         self,
         include_dividends: bool = False,
         diluted: bool = True,
-        rounding: int = 4,
+        rounding: int | None = 4,
         growth: bool = False,
         lag: int | list[int] = 1,
     ):
@@ -2361,16 +2618,20 @@ class Ratios:
         )
 
         if growth:
-            return calculate_growth(earnings_per_share, lag=lag, rounding=rounding)
+            return calculate_growth(
+                earnings_per_share,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
+            )
 
-        return earnings_per_share.round(rounding)
+        return earnings_per_share.round(rounding if rounding else self._rounding)
 
     @handle_errors
     def get_earnings_per_share_growth(
         self,
         include_dividends: bool = False,
         diluted: bool = True,
-        rounding: int = 4,
+        rounding: int | None = 4,
         growth: bool = False,
         lag: int | list[int] = 1,
     ):
@@ -2400,16 +2661,18 @@ class Ratios:
 
         if growth:
             return calculate_growth(
-                earnings_per_share_growth, lag=lag, rounding=rounding
+                earnings_per_share_growth,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
             )
 
-        return earnings_per_share_growth.round(rounding)
+        return earnings_per_share_growth.round(rounding if rounding else self._rounding)
 
     @handle_errors
     def get_revenue_per_share(
         self,
         diluted: bool = True,
-        rounding: int = 4,
+        rounding: int | None = 4,
         growth: bool = False,
         lag: int | list[int] = 1,
     ):
@@ -2444,16 +2707,20 @@ class Ratios:
         )
 
         if growth:
-            return calculate_growth(revenue_per_share, lag=lag, rounding=rounding)
+            return calculate_growth(
+                revenue_per_share,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
+            )
 
-        return revenue_per_share.round(rounding)
+        return revenue_per_share.round(rounding if rounding else self._rounding)
 
     @handle_errors
     def get_price_earnings_ratio(
         self,
         include_dividends: bool = False,
         diluted: bool = True,
-        rounding: int = 4,
+        rounding: int | None = 4,
         growth: bool = False,
         lag: int | list[int] = 1,
     ):
@@ -2488,16 +2755,20 @@ class Ratios:
         price_earnings_ratio = valuation.get_price_earnings_ratio(share_prices, eps)
 
         if growth:
-            return calculate_growth(price_earnings_ratio, lag=lag, rounding=rounding)
+            return calculate_growth(
+                price_earnings_ratio,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
+            )
 
-        return price_earnings_ratio.round(rounding)
+        return price_earnings_ratio.round(rounding if rounding else self._rounding)
 
     @handle_errors
     def get_price_to_earnings_growth_ratio(
         self,
         include_dividends: bool = False,
         diluted: bool = True,
-        rounding: int = 4,
+        rounding: int | None = 4,
         growth: bool = False,
         lag: int | list[int] = 1,
     ):
@@ -2531,16 +2802,20 @@ class Ratios:
 
         if growth:
             return calculate_growth(
-                price_to_earnings_growth_ratio, lag=lag, rounding=rounding
+                price_to_earnings_growth_ratio,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
             )
 
-        return price_to_earnings_growth_ratio.round(rounding)
+        return price_to_earnings_growth_ratio.round(
+            rounding if rounding else self._rounding
+        )
 
     @handle_errors
     def get_book_value_per_share(
         self,
         diluted: bool = True,
-        rounding: int = 4,
+        rounding: int | None = 4,
         growth: bool = False,
         lag: int | list[int] = 1,
     ):
@@ -2577,15 +2852,19 @@ class Ratios:
         )
 
         if growth:
-            return calculate_growth(book_value_per_share, lag=lag, rounding=rounding)
+            return calculate_growth(
+                book_value_per_share,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
+            )
 
-        return book_value_per_share.round(rounding)
+        return book_value_per_share.round(rounding if rounding else self._rounding)
 
     @handle_errors
     def get_price_to_book_ratio(
         self,
         diluted: bool = True,
-        rounding: int = 4,
+        rounding: int | None = 4,
         growth: bool = False,
         lag: int | list[int] = 1,
     ):
@@ -2621,15 +2900,19 @@ class Ratios:
         )
 
         if growth:
-            return calculate_growth(price_to_book_ratio, lag=lag, rounding=rounding)
+            return calculate_growth(
+                price_to_book_ratio,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
+            )
 
-        return price_to_book_ratio.round(rounding)
+        return price_to_book_ratio.round(rounding if rounding else self._rounding)
 
     @handle_errors
     def get_interest_debt_per_share(
         self,
         diluted: bool = True,
-        rounding: int = 4,
+        rounding: int | None = 4,
         growth: bool = False,
         lag: int | list[int] = 1,
     ):
@@ -2666,15 +2949,19 @@ class Ratios:
         )
 
         if growth:
-            return calculate_growth(interest_debt_per_share, lag=lag, rounding=rounding)
+            return calculate_growth(
+                interest_debt_per_share,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
+            )
 
-        return interest_debt_per_share.round(rounding)
+        return interest_debt_per_share.round(rounding if rounding else self._rounding)
 
     @handle_errors
     def get_capex_per_share(
         self,
         diluted: bool = True,
-        rounding: int = 4,
+        rounding: int | None = 4,
         growth: bool = False,
         lag: int | list[int] = 1,
     ):
@@ -2709,13 +2996,17 @@ class Ratios:
         )
 
         if growth:
-            return calculate_growth(capex_per_share, lag=lag, rounding=rounding)
+            return calculate_growth(
+                capex_per_share,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
+            )
 
-        return capex_per_share.round(rounding)
+        return capex_per_share.round(rounding if rounding else self._rounding)
 
     @handle_errors
     def get_dividend_yield(
-        self, rounding: int = 4, growth: bool = False, lag: int | list[int] = 1
+        self, rounding: int | None = 4, growth: bool = False, lag: int | list[int] = 1
     ):
         """
         Calculate the dividend yield ratio, a valuation ratio that measures the
@@ -2748,15 +3039,19 @@ class Ratios:
         )
 
         if growth:
-            return calculate_growth(dividend_yield, lag=lag, rounding=rounding)
+            return calculate_growth(
+                dividend_yield,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
+            )
 
-        return dividend_yield.round(rounding)
+        return dividend_yield.round(rounding if rounding else self._rounding)
 
     @handle_errors
     def get_weighted_dividend_yield(
         self,
         diluted: bool = True,
-        rounding: int = 4,
+        rounding: int | None = 4,
         growth: bool = False,
         lag: int | list[int] = 1,
     ):
@@ -2801,15 +3096,19 @@ class Ratios:
         )
 
         if growth:
-            return calculate_growth(weighted_dividend_yield, lag=lag, rounding=rounding)
+            return calculate_growth(
+                weighted_dividend_yield,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
+            )
 
-        return weighted_dividend_yield.round(rounding)
+        return weighted_dividend_yield.round(rounding if rounding else self._rounding)
 
     @handle_errors
     def get_price_to_cash_flow_ratio(
         self,
         diluted: bool = True,
-        rounding: int = 4,
+        rounding: int | None = 4,
         growth: bool = False,
         lag: int | list[int] = 1,
     ):
@@ -2852,16 +3151,18 @@ class Ratios:
 
         if growth:
             return calculate_growth(
-                price_to_cash_flow_ratio, lag=lag, rounding=rounding
+                price_to_cash_flow_ratio,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
             )
 
-        return price_to_cash_flow_ratio.round(rounding)
+        return price_to_cash_flow_ratio.round(rounding if rounding else self._rounding)
 
     @handle_errors
     def get_price_to_free_cash_flow_ratio(
         self,
         diluted: bool = True,
-        rounding: int = 4,
+        rounding: int | None = 4,
         growth: bool = False,
         lag: int | list[int] = 1,
     ):
@@ -2904,16 +3205,20 @@ class Ratios:
 
         if growth:
             return calculate_growth(
-                price_to_free_cash_flow_ratio, lag=lag, rounding=rounding
+                price_to_free_cash_flow_ratio,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
             )
 
-        return price_to_free_cash_flow_ratio.round(rounding)
+        return price_to_free_cash_flow_ratio.round(
+            rounding if rounding else self._rounding
+        )
 
     @handle_errors
     def get_market_cap(
         self,
         diluted: bool = True,
-        rounding: int = 4,
+        rounding: int | None = 4,
         growth: bool = False,
         lag: int | list[int] = 1,
     ):
@@ -2952,15 +3257,17 @@ class Ratios:
         market_cap = valuation.get_market_cap(share_prices, average_shares)
 
         if growth:
-            return calculate_growth(market_cap, lag=lag, rounding=rounding)
+            return calculate_growth(
+                market_cap, lag=lag, rounding=rounding if rounding else self._rounding
+            )
 
-        return market_cap.round(rounding)
+        return market_cap.round(rounding if rounding else self._rounding)
 
     @handle_errors
     def get_enterprise_value(
         self,
         diluted: bool = True,
-        rounding: int = 4,
+        rounding: int | None = 4,
         growth: bool = False,
         lag: int | list[int] = 1,
     ):
@@ -3011,15 +3318,19 @@ class Ratios:
         )
 
         if growth:
-            return calculate_growth(enterprise_value, lag=lag, rounding=rounding)
+            return calculate_growth(
+                enterprise_value,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
+            )
 
-        return enterprise_value.round(rounding)
+        return enterprise_value.round(rounding if rounding else self._rounding)
 
     @handle_errors
     def get_ev_to_sales_ratio(
         self,
         diluted: bool = True,
-        rounding: int = 4,
+        rounding: int | None = 4,
         growth: bool = False,
         lag: int | list[int] = 1,
     ):
@@ -3050,15 +3361,19 @@ class Ratios:
         )
 
         if growth:
-            return calculate_growth(ev_to_sales_ratio, lag=lag, rounding=rounding)
+            return calculate_growth(
+                ev_to_sales_ratio,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
+            )
 
-        return ev_to_sales_ratio.round(rounding)
+        return ev_to_sales_ratio.round(rounding if rounding else self._rounding)
 
     @handle_errors
     def get_ev_to_ebitda_ratio(
         self,
         diluted: bool = True,
-        rounding: int = 4,
+        rounding: int | None = 4,
         growth: bool = False,
         lag: int | list[int] = 1,
     ):
@@ -3091,15 +3406,19 @@ class Ratios:
         )
 
         if growth:
-            return calculate_growth(ev_to_ebitda_ratio, lag=lag, rounding=rounding)
+            return calculate_growth(
+                ev_to_ebitda_ratio,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
+            )
 
-        return ev_to_ebitda_ratio.round(rounding)
+        return ev_to_ebitda_ratio.round(rounding if rounding else self._rounding)
 
     @handle_errors
     def get_ev_to_operating_cashflow_ratio(
         self,
         diluted: bool = True,
-        rounding: int = 4,
+        rounding: int | None = 4,
         growth: bool = False,
         lag: int | list[int] = 1,
     ):
@@ -3133,17 +3452,21 @@ class Ratios:
 
         if growth:
             return calculate_growth(
-                ev_to_operating_cashflow_ratio, lag=lag, rounding=rounding
+                ev_to_operating_cashflow_ratio,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
             )
 
-        return ev_to_operating_cashflow_ratio.round(rounding)
+        return ev_to_operating_cashflow_ratio.round(
+            rounding if rounding else self._rounding
+        )
 
     @handle_errors
     def get_earnings_yield(
         self,
         include_dividends: bool = False,
         diluted: bool = True,
-        rounding: int = 4,
+        rounding: int | None = 4,
         growth: bool = False,
         lag: int | list[int] = 1,
     ):
@@ -3178,13 +3501,17 @@ class Ratios:
         earnings_yield = valuation.get_earnings_yield(eps, share_prices)
 
         if growth:
-            return calculate_growth(earnings_yield, lag=lag, rounding=rounding)
+            return calculate_growth(
+                earnings_yield,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
+            )
 
-        return earnings_yield.round(rounding)
+        return earnings_yield.round(rounding if rounding else self._rounding)
 
     @handle_errors
     def get_payout_ratio(
-        self, rounding: int = 4, growth: bool = False, lag: int | list[int] = 1
+        self, rounding: int | None = 4, growth: bool = False, lag: int | list[int] = 1
     ):
         """
         Calculates the (dividend) payout ratio, which measures the proportion of earnings
@@ -3211,13 +3538,15 @@ class Ratios:
         )
 
         if growth:
-            return calculate_growth(payout_ratio, lag=lag, rounding=rounding)
+            return calculate_growth(
+                payout_ratio, lag=lag, rounding=rounding if rounding else self._rounding
+            )
 
-        return payout_ratio.round(rounding)
+        return payout_ratio.round(rounding if rounding else self._rounding)
 
     @handle_errors
     def get_tangible_asset_value(
-        self, rounding: int = 4, growth: bool = False, lag: int | list[int] = 1
+        self, rounding: int | None = 4, growth: bool = False, lag: int | list[int] = 1
     ):
         """
         Calculate the tangible asset value, which represents the total value of a company's
@@ -3245,13 +3574,17 @@ class Ratios:
         )
 
         if growth:
-            return calculate_growth(tangible_asset_value, lag=lag, rounding=rounding)
+            return calculate_growth(
+                tangible_asset_value,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
+            )
 
-        return tangible_asset_value.round(rounding)
+        return tangible_asset_value.round(rounding if rounding else self._rounding)
 
     @handle_errors
     def get_net_current_asset_value(
-        self, rounding: int = 4, growth: bool = False, lag: int | list[int] = 1
+        self, rounding: int | None = 4, growth: bool = False, lag: int | list[int] = 1
     ):
         """
         Calculate the net current asset value, which is the total value of a company's
@@ -3278,15 +3611,19 @@ class Ratios:
         )
 
         if growth:
-            return calculate_growth(net_current_asset_value, lag=lag, rounding=rounding)
+            return calculate_growth(
+                net_current_asset_value,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
+            )
 
-        return net_current_asset_value.round(rounding)
+        return net_current_asset_value.round(rounding if rounding else self._rounding)
 
     @handle_errors
     def get_ev_to_ebit(
         self,
         diluted: bool = True,
-        rounding: int = 4,
+        rounding: int | None = 4,
         growth: bool = False,
         lag: int | list[int] = 1,
     ):
@@ -3320,6 +3657,8 @@ class Ratios:
         )
 
         if growth:
-            return calculate_growth(ev_to_ebit, lag=lag, rounding=rounding)
+            return calculate_growth(
+                ev_to_ebit, lag=lag, rounding=rounding if rounding else self._rounding
+            )
 
-        return ev_to_ebit.round(rounding)
+        return ev_to_ebit.round(rounding if rounding else self._rounding)

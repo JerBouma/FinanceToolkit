@@ -52,7 +52,7 @@ def equal_length(dataset1: pd.Series, dataset2: pd.Series) -> pd.Series:
 def calculate_growth(
     dataset: pd.Series | pd.DataFrame,
     lag: int | list[int] = 1,
-    rounding: int = 4,
+    rounding: int | None = 4,
     axis: str = "columns",
 ) -> pd.Series | pd.DataFrame:
     """

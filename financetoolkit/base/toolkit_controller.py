@@ -20,6 +20,7 @@ from financetoolkit.base.models.historical_model import (
     convert_daily_to_quarterly as _convert_daily_to_quarterly,
     convert_daily_to_yearly as _convert_daily_to_yearly,
     get_historical_data as _get_historical_data,
+    get_treasury_rates as _get_treasury_rates,
 )
 from financetoolkit.base.models.normalization_model import (
     convert_financial_statements as _convert_financial_statements,
@@ -56,6 +57,7 @@ class Toolkit:
         start_date: str | None = None,
         end_date: str | None = None,
         quarterly: bool = False,
+        rounding: int | None = 4,
         format_location: str = "",
         reverse_dates: bool = False,
         remove_invalid_tickers: bool = True,
@@ -78,6 +80,7 @@ class Toolkit:
         start_date (str): A string containing the start date of the data.
         end_date (str): A string containing the end date of the data.
         quarterly (bool): A boolean indicating whether to collect quarterly data.
+        rounding (int): An integer indicating the number of decimals to round the results to.
         format_location (str): A string containing the location of the normalization files.
         reverse_dates (bool): A boolean indicating whether to reverse the dates in the financial statements.
         remove_invalid_tickers (bool): A boolean indicating whether to remove invalid tickers.
@@ -118,6 +121,7 @@ class Toolkit:
         self._start_date = start_date
         self._end_date = end_date
         self._quarterly = quarterly
+        self._rounding = rounding
         self._remove_invalid_tickers = remove_invalid_tickers
         self._invalid_tickers: list = []
         self._sleep_timer = sleep_timer
@@ -144,15 +148,23 @@ class Toolkit:
         self._weekly_historical_data: pd.DataFrame = pd.DataFrame()
         self._monthly_historical_data: pd.DataFrame = pd.DataFrame()
         self._quarterly_historical_data: pd.DataFrame = (
-            _convert_daily_to_quarterly(self._daily_historical_data)
+            _convert_daily_to_quarterly(
+                self._daily_historical_data, self._start_date, self._end_date
+            )
             if not historical.empty
             else pd.DataFrame()
         )
         self._yearly_historical_data: pd.DataFrame = (
-            _convert_daily_to_yearly(self._daily_historical_data)
+            _convert_daily_to_yearly(
+                self._daily_historical_data, self._start_date, self._end_date
+            )
             if not historical.empty
             else pd.DataFrame()
         )
+
+        # Initialization of Treasury Variables
+        self._daily_treasury_data: pd.DataFrame = pd.DataFrame()
+        self._daily_treasury_date_growth: pd.DataFrame = pd.DataFrame()
 
         # Initialization of Normalization Variables
         self._balance_sheet_statement_generic: pd.DataFrame = _read_normalization_file(
@@ -199,6 +211,8 @@ class Toolkit:
 
         self._statistics_statement: pd.DataFrame = pd.DataFrame()
         self._custom_ratios: dict | None = custom_ratios
+
+        pd.set_option("display.float_format", str)
 
     @property
     def ratios(self) -> Ratios:
@@ -311,6 +325,7 @@ class Toolkit:
             self._income_statement,
             self._cash_flow_statement,
             self._custom_ratios,
+            self._rounding,
         )
 
     @property
@@ -413,6 +428,7 @@ class Toolkit:
             self._balance_sheet_statement,
             self._income_statement,
             self._cash_flow_statement,
+            self._rounding,
         )
 
     def get_profile(self):
@@ -620,7 +636,7 @@ class Toolkit:
     def get_analyst_estimates(
         self,
         overwrite: bool = False,
-        rounding: int = 4,
+        rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
     ):
@@ -695,7 +711,7 @@ class Toolkit:
                 self._quarterly,
                 self._start_date,
                 self._end_date,
-                rounding,
+                rounding if rounding else self._rounding,
                 self._sleep_timer,
                 self._progress_bar,
             )
@@ -709,7 +725,9 @@ class Toolkit:
 
         if growth:
             self._analyst_estimates_growth = _calculate_growth(
-                self._analyst_estimates, lag=lag, rounding=rounding
+                self._analyst_estimates,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
             )
 
         if len(self._tickers) == 1:
@@ -1004,12 +1022,15 @@ class Toolkit:
 
             self._daily_historical_data = self._daily_historical_data.sort_index()
 
-            if len(self._tickers) == 1:
-                return self._daily_historical_data.xs(
-                    self._tickers[0], level=1, axis="columns"
-                )
+            historical_data = self._daily_historical_data.loc[
+                self._start_date : self._end_date, :  # type: ignore
+            ].copy()
+            historical_data.loc[historical_data.index[0], "Return"] = 0
 
-            return self._daily_historical_data
+            if len(self._tickers) == 1:
+                return historical_data.xs(self._tickers[0], level=1, axis="columns")
+
+            return historical_data
 
         if period == "weekly":
             self._weekly_historical_data, self._invalid_tickers = _get_historical_data(
@@ -1029,12 +1050,15 @@ class Toolkit:
 
             self._weekly_historical_data = self._weekly_historical_data.sort_index()
 
-            if len(self._tickers) == 1:
-                return self._weekly_historical_data.xs(
-                    self._tickers[0], level=1, axis="columns"
-                )
+            historical_data = self._weekly_historical_data.loc[
+                self._start_date : self._end_date, :  # type: ignore
+            ].copy()
+            historical_data.loc[historical_data.index[0], "Return"] = 0
 
-            return self._weekly_historical_data
+            if len(self._tickers) == 1:
+                return historical_data.xs(self._tickers[0], level=1, axis="columns")
+
+            return historical_data
 
         if period == "monthly":
             self._monthly_historical_data, self._invalid_tickers = _get_historical_data(
@@ -1054,12 +1078,15 @@ class Toolkit:
 
             self._monthly_historical_data = self._monthly_historical_data.sort_index()
 
-            if len(self._tickers) == 1:
-                return self._monthly_historical_data.xs(
-                    self._tickers[0], level=1, axis="columns"
-                )
+            historical_data = self._monthly_historical_data.loc[
+                self._start_date : self._end_date, :  # type: ignore
+            ].copy()
+            historical_data.loc[historical_data.index[0], "Return"] = 0
 
-            return self._monthly_historical_data
+            if len(self._tickers) == 1:
+                return historical_data.xs(self._tickers[0], level=1, axis="columns")
+
+            return historical_data
 
         if period == "quarterly":
             if self._daily_historical_data.empty:
@@ -1075,7 +1102,7 @@ class Toolkit:
                 )
 
             self._quarterly_historical_data = _convert_daily_to_quarterly(
-                self._daily_historical_data
+                self._daily_historical_data, self._start_date, self._end_date
             )
 
             if self._remove_invalid_tickers:
@@ -1085,12 +1112,15 @@ class Toolkit:
                     if ticker not in self._invalid_tickers
                 ]
 
-            if len(self._tickers) == 1:
-                return self._quarterly_historical_data.xs(
-                    self._tickers[0], level=1, axis="columns"
-                )
+            historical_data = self._quarterly_historical_data.loc[
+                self._start_date : self._end_date, :  # type: ignore
+            ].copy()
+            historical_data.loc[historical_data.index[0], "Return"] = 0
 
-            return self._quarterly_historical_data
+            if len(self._tickers) == 1:
+                return historical_data.xs(self._tickers[0], level=1, axis="columns")
+
+            return historical_data
 
         if period == "yearly":
             if self._daily_historical_data.empty:
@@ -1106,7 +1136,7 @@ class Toolkit:
                 )
 
             self._yearly_historical_data = _convert_daily_to_yearly(
-                self._daily_historical_data
+                self._daily_historical_data, self._start_date, self._end_date
             )
 
             if self._remove_invalid_tickers:
@@ -1118,21 +1148,98 @@ class Toolkit:
 
             self._yearly_historical_data = self._yearly_historical_data.sort_index()
 
-            if len(self._tickers) == 1:
-                return self._yearly_historical_data.xs(
-                    self._tickers[0], level=1, axis="columns"
-                )
+            historical_data = self._yearly_historical_data.loc[
+                self._start_date : self._end_date, :  # type: ignore
+            ].copy()
+            historical_data.loc[historical_data.index[0], "Return"] = 0
 
-            return self._yearly_historical_data
+            if len(self._tickers) == 1:
+                return historical_data.xs(self._tickers[0], level=1, axis="columns")
+
+            return historical_data
 
         raise ValueError(
             "Please choose from daily, weekly, monthly, quarterly or yearly as period."
         )
 
+    def get_treasury_data(
+        self,
+        overwrite: bool = False,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        rounding: int | None = None,
+    ):
+        """
+        Retrieve the daily treasury rates for a maximum of 3 months. This gives the
+        ability to construct yield curves for any recent date given that several months
+        and years are included.
+
+        Args:
+            limit (int): Defines the maximum years or quarters to obtain.
+            overwrite (bool): Defines whether to overwrite the existing data.
+            rounding (int): Defines the number of decimal places to round the data to.
+            growth (bool): Defines whether to return the growth of the data.
+            lag (int | str): Defines the number of periods to lag the growth data by.
+
+        Returns:
+            pd.DataFrame: A pandas DataFrame with the retrieved balance sheet statement data.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        companies = Toolkit(["AAPL", "MSFT"], api_key=FMP_KEY, start_date="2023-08-10")
+
+        companies.get_treasury_data()
+        ```
+
+        Which returns:
+
+        | date       |   1 Month |   2 Month |   3 Month |   6 Month |   1 Year |   2 Year |   3 Year |   5 Year |   7 Year |   10 Year |   20 Year |   30 Year |
+        |:-----------|----------:|----------:|----------:|----------:|---------:|---------:|---------:|---------:|---------:|----------:|----------:|----------:|
+        | 2023-08-10 |      5.55 |      5.52 |      5.54 |      5.52 |     5.33 |     4.82 |     4.47 |     4.21 |     4.17 |      4.09 |      4.41 |      4.24 |
+        | 2023-08-11 |      5.54 |      5.51 |      5.54 |      5.52 |     5.36 |     4.89 |     4.56 |     4.31 |     4.26 |      4.16 |      4.45 |      4.27 |
+        | 2023-08-14 |      5.55 |      5.52 |      5.56 |      5.56 |     5.37 |     4.96 |     4.64 |     4.36 |     4.29 |      4.19 |      4.46 |      4.29 |
+        | 2023-08-15 |      5.53 |      5.52 |      5.56 |      5.55 |     5.36 |     4.92 |     4.64 |     4.36 |     4.31 |      4.21 |      4.49 |      4.32 |
+        | 2023-08-16 |      5.52 |      5.53 |      5.56 |      5.54 |     5.37 |     4.97 |     4.68 |     4.42 |     4.37 |      4.28 |      4.55 |      4.38 |
+        | 2023-08-17 |      5.55 |      5.52 |      5.56 |      5.53 |     5.36 |     4.94 |     4.67 |     4.42 |     4.38 |      4.3  |      4.58 |      4.41 |
+        | 2023-08-18 |      5.53 |      5.52 |      5.55 |      5.52 |     5.35 |     4.92 |     4.63 |     4.38 |     4.34 |      4.26 |      4.55 |      4.38 |
+        | 2023-08-21 |      5.55 |      5.53 |      5.57 |      5.58 |     5.37 |     4.97 |     4.7  |     4.46 |     4.42 |      4.34 |      4.64 |      4.45 |
+
+        """
+        if not self._api_key:
+            return print(
+                "The requested data requires the api_key parameter to be set, consider obtaining a key with the following link: https://financialmodelingprep.com/developer/docs/pricing/jeroen/"
+                "\nThe free plan allows for 250 requests per day, a limit of 5 years and has no quarterly data. Consider upgrading "
+                "your plan. You can get 15% off by using the above affiliate link which also supports the project."
+            )
+
+        if self._daily_treasury_data.empty or overwrite:
+            self._daily_treasury_data = _get_treasury_rates(
+                self._api_key, self._start_date, self._end_date, self._rounding
+            )
+
+        self._daily_treasury_data = self._daily_treasury_data.sort_index()
+
+        if growth:
+            self._daily_treasury_date_growth = _calculate_growth(
+                self._daily_treasury_data,
+                lag=lag,
+                axis="index",
+                rounding=rounding if rounding else self._rounding,
+            )
+
+        return (
+            self._daily_treasury_date_growth.loc[self._start_date : self._end_date, :]  # type: ignore
+            if growth
+            else self._daily_treasury_data.loc[self._start_date : self._end_date, :]  # type: ignore
+        )
+
     def get_balance_sheet_statement(
         self,
         overwrite: bool = False,
-        rounding: int = 4,
+        rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
     ):
@@ -1210,8 +1317,10 @@ class Toolkit:
         | Net Debt                                 | -1.565e+09  | -7.46e+08   |  1.316e+09  |  3.086e+09  |  4.55e+09   |
         """
         if not self._api_key and self._balance_sheet_statement.empty:
-            raise ValueError(
-                "Please define an API key from FinancialModelingPrep to use this functionality."
+            return print(
+                "The requested data requires the api_key parameter to be set, consider obtaining a key with the following link: https://financialmodelingprep.com/developer/docs/pricing/jeroen/"
+                "\nThe free plan allows for 250 requests per day, a limit of 5 years and has no quarterly data. Consider upgrading "
+                "your plan. You can get 15% off by using the above affiliate link which also supports the project."
             )
 
         if self._balance_sheet_statement.empty or overwrite:
@@ -1226,7 +1335,7 @@ class Toolkit:
                 self._quarterly,
                 self._start_date,
                 self._end_date,
-                rounding,
+                rounding if rounding else self._rounding,
                 self._balance_sheet_statement_generic,
                 self._statistics_statement_generic,
                 self._sleep_timer,
@@ -1242,7 +1351,9 @@ class Toolkit:
 
         if growth:
             self._balance_sheet_statement_growth = _calculate_growth(
-                self._balance_sheet_statement, lag=lag, rounding=rounding
+                self._balance_sheet_statement,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
             )
 
         if len(self._tickers) == 1:
@@ -1261,7 +1372,7 @@ class Toolkit:
     def get_income_statement(
         self,
         overwrite: bool = False,
-        rounding: int = 4,
+        rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
     ):
@@ -1324,8 +1435,10 @@ class Toolkit:
         | Weighted Average Shares Diluted              | 3.465e+09  |  3.468e+09  |  3.471e+09  |  3.468e+09  | 3.478e+09  |
         """
         if not self._api_key and self._income_statement.empty:
-            raise ValueError(
-                "Please define an API key from FinancialModelingPrep to use this functionality."
+            return print(
+                "The requested data requires the api_key parameter to be set, consider obtaining a key with the following link: https://financialmodelingprep.com/developer/docs/pricing/jeroen/"
+                "\nThe free plan allows for 250 requests per day, a limit of 5 years and has no quarterly data. Consider upgrading "
+                "your plan. You can get 15% off by using the above affiliate link which also supports the project."
             )
 
         if self._income_statement.empty or overwrite:
@@ -1340,7 +1453,7 @@ class Toolkit:
                 self._quarterly,
                 self._start_date,
                 self._end_date,
-                rounding,
+                rounding if rounding else self._rounding,
                 self._income_statement_generic,
                 self._statistics_statement_generic,
                 self._sleep_timer,
@@ -1356,7 +1469,9 @@ class Toolkit:
 
         if growth:
             self._income_statement_growth = _calculate_growth(
-                self._income_statement, lag=lag, rounding=rounding
+                self._income_statement,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
             )
 
         if len(self._tickers) == 1:
@@ -1371,7 +1486,7 @@ class Toolkit:
     def get_cash_flow_statement(
         self,
         overwrite: bool = False,
-        rounding: int = 4,
+        rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
     ):
@@ -1436,8 +1551,10 @@ class Toolkit:
         | Free Cash Flow                | -4.974e+09  |  1.2581e+10 | -9.419e+09  |  5.021e+09  |
         """
         if not self._api_key and self._cash_flow_statement.empty:
-            raise ValueError(
-                "Please define an API key from FinancialModelingPrep to use this functionality."
+            return print(
+                "The requested data requires the api_key parameter to be set, consider obtaining a key with the following link: https://financialmodelingprep.com/developer/docs/pricing/jeroen/"
+                "\nThe free plan allows for 250 requests per day, a limit of 5 years and has no quarterly data. Consider upgrading "
+                "your plan. You can get 15% off by using the above affiliate link which also supports the project."
             )
 
         if self._cash_flow_statement.empty or overwrite:
@@ -1452,7 +1569,7 @@ class Toolkit:
                 self._quarterly,
                 self._start_date,
                 self._end_date,
-                rounding,
+                rounding if rounding else self._rounding,
                 self._cash_flow_statement_generic,
                 self._statistics_statement_generic,
                 self._sleep_timer,
@@ -1468,7 +1585,9 @@ class Toolkit:
 
         if growth:
             self._cash_flow_statement_growth = _calculate_growth(
-                self._cash_flow_statement, lag=lag, rounding=rounding
+                self._cash_flow_statement,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
             )
 
         if len(self._tickers) == 1:
@@ -1522,8 +1641,10 @@ class Toolkit:
 
         """
         if not self._api_key and self._statistics_statement.empty:
-            raise ValueError(
-                "Please define an API key from FinancialModelingPrep to use this functionality."
+            return print(
+                "The requested data requires the api_key parameter to be set, consider obtaining a key with the following link: https://financialmodelingprep.com/developer/docs/pricing/jeroen/"
+                "\nThe free plan allows for 250 requests per day, a limit of 5 years and has no quarterly data. Consider upgrading "
+                "your plan. You can get 15% off by using the above affiliate link which also supports the project."
             )
 
         if self._statistics_statement.empty or overwrite:

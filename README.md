@@ -163,7 +163,7 @@ from financetoolkit import Toolkit
 
 # Initialize the Finance Toolkit
 companies = Toolkit(
-    ["AAPL", "MSFT", "GOOGL", "AMZN"], api_key=API_KEY, start_date="2022-08-10",
+    ["AAPL", "MSFT", "GOOGL", "AMZN"], api_key="FMP_KEY", start_date="2022-08-10",
     custom_ratios=custom_ratios, quarterly=True
 )
 
@@ -272,7 +272,7 @@ companies = Toolkit(['AAPL', 'MSFT'])
 # Copy the normalization files
 companies.get_normalization_files()
 ```
-This copies over three files, `balance.csv`, `income.csv`, `cash.csv` and `statistics.csv` which will contain a structure like the following:
+This copies over three files, `balance.csv`, `income.csv`, `cash.csv` and `statistics.csv` (not required) which will contain a structure like the following:
 
 ![Normalization Format](https://github.com/JerBouma/FinanceToolkit/assets/46355364/ea4ebf87-1a27-4c40-a1fb-40d0eb0634bc)
 
@@ -280,8 +280,7 @@ By replacing the first column with the names from your dataset (e.g. replace `ca
 
 As an example:
 
-![Dataset Example](https://github.com/JerBouma/FinanceToolkit/assets/46355364/fe0e3db0-3e88-41d2-a355-5f68110fdcf3)
-
+![Dataset Example](https://github.com/JerBouma/FinanceToolkit/assets/46355364/c2fb69d9-d599-4ba4-8163-e69abc164e88)
 
 If you have individual DataFrames for each company, you can do the following which will return the DataFrame structure that is required:
 
@@ -328,7 +327,7 @@ companies.ratios.collect_all_ratios()
 
 This will return all financial ratios that can be collected based on the provided data and the format. See [this notebook](https://www.jeroenbouma.com/projects/financetoolkit/external-datasets) to understand how to work with actual datasets.
 
-![Output of Result](https://github.com/JerBouma/FinanceToolkit/assets/46355364/2a995430-b8d8-4236-892c-edb47042d6af)
+![Output of Result](https://github.com/JerBouma/FinanceToolkit/assets/46355364/4ce78cb1-1d37-4f71-ac53-4186cb8b1abf)
 
 # Contact
 If you have any questions about the FinanceToolkit or would like to share with me what you have been working on, feel free to reach out to me via:

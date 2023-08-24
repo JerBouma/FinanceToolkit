@@ -8,8 +8,6 @@ income_dataset = pd.read_pickle("tests/base/datasets/income_dataset.pickle")
 cash_dataset = pd.read_pickle("tests/base/datasets/cash_dataset.pickle")
 historical = pd.read_pickle("tests/base/datasets/historical_dataset.pickle")
 
-print(historical.index.dtype)
-
 toolkit = Toolkit(
     tickers=["AAPL", "MSFT"],
     historical=historical,

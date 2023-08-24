@@ -149,6 +149,14 @@ def handle_errors(func):
                 "financial statements. "
             )
             return pd.Series(dtype="object")
+        except AttributeError as e:
+            function_name = func.__name__
+            print(
+                f"An error occurred while trying to run the function "
+                f"{function_name}. This is {e}. Usually this is due to incomplete "
+                "financial statements. "
+            )
+            return pd.Series(dtype="object")
         except ZeroDivisionError as e:
             function_name = func.__name__
             print(

@@ -140,7 +140,7 @@ def handle_errors(func):
                 f"This is {e}. This is required for the function ({function_name}) "
                 "to run. Please fill this column to be able to calculate the ratios."
             )
-            return pd.Series()
+            return pd.Series(dtype="object")
         except ValueError as e:
             function_name = func.__name__
             print(
@@ -148,13 +148,13 @@ def handle_errors(func):
                 f"{function_name}. This is {e}. Usually this is due to incomplete "
                 "financial statements. "
             )
-            return pd.Series()
+            return pd.Series(dtype="object")
         except ZeroDivisionError as e:
             function_name = func.__name__
             print(
                 f"An error occurred while trying to run the function "
                 f"{function_name}. This is {e}. This is due to a division by zero."
             )
-            return pd.Series()
+            return pd.Series(dtype="object")
 
     return wrapper

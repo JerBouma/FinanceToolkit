@@ -23,6 +23,7 @@ from financetoolkit.base.models.historical_model import (
     get_treasury_rates as _get_treasury_rates,
 )
 from financetoolkit.base.models.normalization_model import (
+    convert_date_label as _convert_date_label,
     convert_financial_statements as _convert_financial_statements,
     copy_normalization_files as _copy_normalization_files,
     read_normalization_file as _read_normalization_file,
@@ -183,8 +184,13 @@ class Toolkit:
 
         # Initialization of Financial Statements
         self._balance_sheet_statement: pd.DataFrame = (
-            _convert_financial_statements(
-                balance, self._balance_sheet_statement_generic, reverse_dates
+            _convert_date_label(
+                _convert_financial_statements(
+                    balance, self._balance_sheet_statement_generic, reverse_dates
+                ),
+                self._start_date,
+                self._end_date,
+                self._quarterly,
             )
             if not balance.empty
             else pd.DataFrame()
@@ -192,8 +198,13 @@ class Toolkit:
         self._balance_sheet_statement_growth: pd.DataFrame = pd.DataFrame()
 
         self._income_statement: pd.DataFrame = (
-            _convert_financial_statements(
-                income, self._income_statement_generic, reverse_dates
+            _convert_date_label(
+                _convert_financial_statements(
+                    income, self._income_statement_generic, reverse_dates
+                ),
+                self._start_date,
+                self._end_date,
+                self._quarterly,
             )
             if not income.empty
             else pd.DataFrame()
@@ -201,8 +212,13 @@ class Toolkit:
         self._income_statement_growth: pd.DataFrame = pd.DataFrame()
 
         self._cash_flow_statement: pd.DataFrame = (
-            _convert_financial_statements(
-                cash, self._cash_flow_statement_generic, reverse_dates
+            _convert_date_label(
+                _convert_financial_statements(
+                    cash, self._cash_flow_statement_generic, reverse_dates
+                ),
+                self._start_date,
+                self._end_date,
+                self._quarterly,
             )
             if not cash.empty
             else pd.DataFrame()

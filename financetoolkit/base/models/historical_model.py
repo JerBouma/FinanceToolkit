@@ -116,8 +116,9 @@ def get_historical_data(
             return_column
         ].pct_change()
 
-        adjusted_return = historical_data_dict[ticker].loc[start:end, "Return"].copy()  # type: ignore
+        historical_data_dict[ticker]["Cumulative Return"] = 1
 
+        adjusted_return = historical_data_dict[ticker].loc[start:end, "Return"].copy()  # type: ignore
         adjusted_return.iloc[0] = 0
 
         historical_data_dict[ticker].loc[start:end, "Cumulative Return"] = (  # type: ignore
@@ -270,12 +271,26 @@ def convert_daily_to_yearly(
         ).agg(np.std) * np.sqrt(252)
 
     if "Cumulative Return" in yearly_historical_data:
+        if start:
+            start = pd.Period(start).asfreq("Y")
+
+            if start < yearly_historical_data.index[0]:
+                start = yearly_historical_data.index[0]
+        if end:
+            end = pd.Period(end).asfreq("Y")
+
+            if end > yearly_historical_data.index[-1]:
+                end = yearly_historical_data.index[-1]
+
         adjusted_return = yearly_historical_data.loc[start:end, "Return"].copy()  # type: ignore
         adjusted_return.iloc[0] = 0
 
         yearly_historical_data["Cumulative Return"] = (1 + adjusted_return).cumprod()  # type: ignore
+        yearly_historical_data["Cumulative Return"] = yearly_historical_data[
+            "Cumulative Return"
+        ].fillna(1)
 
-    return yearly_historical_data
+    return yearly_historical_data.fillna(0)
 
 
 def convert_daily_to_quarterly(
@@ -326,9 +341,23 @@ def convert_daily_to_quarterly(
         ].groupby(dates).agg(np.std) * np.sqrt(63)
 
     if "Cumulative Return" in quarterly_historical_data:
+        if start:
+            start = pd.Period(start).asfreq("Q")
+
+            if start < quarterly_historical_data.index[0]:
+                start = quarterly_historical_data.index[0]
+        if end:
+            end = pd.Period(end).asfreq("Q")
+
+            if end > quarterly_historical_data.index[-1]:
+                end = quarterly_historical_data.index[-1]
+
         adjusted_return = quarterly_historical_data.loc[start:end, "Return"].copy()  # type: ignore
         adjusted_return.iloc[0] = 0
 
         quarterly_historical_data["Cumulative Return"] = (1 + adjusted_return).cumprod()
+        quarterly_historical_data["Cumulative Return"] = quarterly_historical_data[
+            "Cumulative Return"
+        ].fillna(1)
 
-    return quarterly_historical_data
+    return quarterly_historical_data.fillna(0)

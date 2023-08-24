@@ -4,6 +4,7 @@ __docformat__ = "google"
 import shutil
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 import pkg_resources
 
@@ -78,6 +79,62 @@ def convert_financial_statements(
     return financial_statements.sort_index(level=0, sort_remaining=False)
 
 
+def convert_date_label(
+    financial_statement: pd.DataFrame,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    quarter: bool = False,
+):
+    """
+    This function converts the date labels of the financial statements to a PeriodIndex. This is meant to be used
+    throughout the entire Toolkit. This function is relevant for custom datasets that do not have a PeriodIndex.
+
+    As an example, if quarter = False, the date labels will be converted to a PeriodIndex with a frequency of 'Y'
+    which would convert 2022-12-31 to 2022. If quarter = True, the date labels will be converted to a PeriodIndex
+    with a frequency of 'Q' which would convert 2022-12-31 to 2022Q4.
+
+    Args:
+        financial_statements (pd.DataFrame): DataFrame containing the financial statement data.
+        start_date (str): The start date of the financial statement data.
+        end_date (str): The end date of the financial statement data.
+        quarter (bool): Whether to convert the date labels to a PeriodIndex with a frequency of 'Q' or 'Y'.
+
+    Returns:
+        pd.DataFrame: A DataFrame containing the financial statement data with a PeriodIndex.
+    """
+    financial_statement = financial_statement.sort_index(axis=1).truncate(
+        before=start_date, after=end_date, axis=1
+    )
+
+    if financial_statement.columns.duplicated().any():
+        # This happens in the rare case that a company has two financial statements for the same period.
+        # Browsing through the data has shown that these financial statements are equal therefore
+        # one of the columns can be dropped.
+        financial_statement = financial_statement.loc[
+            :, ~financial_statement.columns.duplicated()
+        ]
+
+    try:
+        financial_statement = financial_statement.astype(np.float64)
+    except ValueError as error:
+        print(
+            f"Not able to convert DataFrame to float64 due to {error}. This could result in"
+            "issues when values are zero and is predominently relevant for "
+            "ratio calculations."
+        )
+
+    if quarter:
+        financial_statement.columns = pd.PeriodIndex(
+            financial_statement.columns, freq="Q"
+        )
+    else:
+        financial_statement.columns = pd.PeriodIndex(
+            financial_statement.columns, freq="Y"
+        )
+
+    return financial_statement
+
+
 def copy_normalization_files(
     format_location: str = "",
     save_location: str | Path = Path(Path.home(), "Downloads"),
@@ -94,7 +151,7 @@ def copy_normalization_files(
         Three csv files saved to the desired location.
     """
     print(f"Files are being saved to {save_location}")
-    for statement in ["balance", "income", "cash"]:
+    for statement in ["balance", "income", "cash", "statistics"]:
         if format_location:
             file_location = f"{format_location}/{statement}.csv"
         else:

@@ -700,7 +700,7 @@ class Ratios:
                 total_financials.loc[:, name, :] = eval(formula_adjusted).to_numpy()
 
                 self._custom_ratios = total_financials.loc[
-                    :, list(self._custom_ratios_dict.keys()), :
+                    :, list(custom_ratios_dict.keys()), :
                 ]
                 self._custom_ratios = self._custom_ratios.sort_index(axis=0)
 

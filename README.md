@@ -1,6 +1,6 @@
 ![FinanceToolkitCropped](https://github.com/JerBouma/FinanceToolkit/assets/46355364/198d47bd-e1b3-492d-acc4-5d9f02d1d009)
 
-[![GitHub Sponsors](https://img.shields.io/badge/Sponsor_the_Project-grey?logo=github)](https://github.com/sponsors/JerBouma)
+[![GitHub Sponsors](https://img.shields.io/badge/Sponsor_this_Project-grey?logo=github)](https://github.com/sponsors/JerBouma)
 [![Documentation](https://img.shields.io/badge/Documentation-grey?logo=readme)](https://www.jeroenbouma.com/projects/financetoolkit)
 [![Discord](https://img.shields.io/badge/JerBouma-hello?logo=discord&label=Discord)](https://discord.com/)
 [![Supported Python Versions](https://img.shields.io/pypi/pyversions/financetoolkit)](https://pypi.org/project/FinanceToolkit/)

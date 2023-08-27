@@ -10,7 +10,7 @@ from financetoolkit.technical import breadth, momentum, overlap, volatility
 # pylint: disable=too-many-lines,too-many-instance-attributes,too-many-public-methods,too-many-locals,eval-used
 
 
-class Technical:
+class Technicals:
     """
     Technical Controller Class
     """

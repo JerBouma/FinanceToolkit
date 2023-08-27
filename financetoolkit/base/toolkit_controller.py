@@ -31,7 +31,7 @@ from financetoolkit.base.models.normalization_model import (
 )
 from financetoolkit.base.models_controller import Models
 from financetoolkit.base.ratios_controller import Ratios
-from financetoolkit.base.technical_controller import Technical
+from financetoolkit.base.technicals_controller import Technicals
 
 # pylint: disable=too-many-instance-attributes,too-many-lines,line-too-long,too-many-locals,too-many-function-args
 # ruff: noqa: E501
@@ -236,9 +236,18 @@ class Toolkit:
     @property
     def ratios(self) -> Ratios:
         """
-        This gives access to the Ratios module. The Ratios Module contains over 50+ ratios that can be used to analyse companies. These ratios are divided into 5 categories: profitability, liquidity, solvency, efficiency and valuation. Each ratio is calculated using the data from the Toolkit module.
+        This gives access to the Ratios module. The Ratios Module contains over 50+ ratios that can be used to analyse companies.
+        These ratios are divided into 5 categories: profitability, liquidity, solvency, efficiency and valuation.
+        Each ratio is calculated using the data from the Toolkit module.
 
-        Also see the following link for more information on all of this: https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios
+        Some examples of ratios are the Current Ratio, Debt to Equity Ratio, Return on Assets (ROA), Return on Equity (ROE),
+        Return on Invested Capital (ROIC), Return on Capital Employed (ROCE), Price to Earnings Ratio (P/E),
+        Price to Book Ratio (P/B), Price to Sales Ratio (P/S), Price to Cash Flow Ratio (P/CF),
+        Price to Free Cash Flow Ratio (P/FCF), Dividend Yield and Dividend Payout Ratio.
+
+        Next to that, it is also possible to define custom ratios.
+
+        See the following link for more information: https://www.jeroenbouma.com/projects/financetoolkit/docs
 
         As an example:
 
@@ -350,9 +359,10 @@ class Toolkit:
     @property
     def models(self) -> Models:
         """
-        Gives access to the Models module. The Models module is meant to execute well-known models such as DUPONT and the Discounted Cash Flow (DCF) model. These models are also directly related to the data retrieved from the Toolkit module.
+        Gives access to the Models module. The Models module is meant to execute well-known models such as DUPONT and the Discounted Cash Flow (DCF) model.
+        These models are also directly related to the data retrieved from the Toolkit module.
 
-        Also see the following link for more information on all of this: https://www.jeroenbouma.com/projects/financetoolkit/docs/models
+        See the following link for more information: https://www.jeroenbouma.com/projects/financetoolkit/docs
 
         As an example:
 
@@ -451,11 +461,18 @@ class Toolkit:
         )
 
     @property
-    def technical(self) -> Technical:
+    def technicals(self) -> Technicals:
         """
-        This gives access to the Ratios module. The Ratios Module contains over 50+ ratios that can be used to analyse companies. These ratios are divided into 5 categories: profitability, liquidity, solvency, efficiency and valuation. Each ratio is calculated using the data from the Toolkit module.
+        This gives access to the Technicals module. The Technicals Module contains nearly 50 Technical Indicators that can be used to
+        analyse companies. These ratios are divided into 3 categories: breadth, overlap and volatility. Each indicator is calculated
+        using the data from the Toolkit module.
 
-        Also see the following link for more information on all of this: https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios
+        Some examples of technical indicators are the Average Directional Index (ADX), the Accumulation/Distribution Line (ADL),
+        the Average True Range (ATR), the Bollinger Bands (BBANDS), the Commodity Channel Index (CCI), the Chaikin Oscillator (CHO),
+        the Chaikin Money Flow (CMF), the Double Exponential Moving Average (DEMA), the Exponential Moving Average (EMA) and
+        the Moving Average Convergence Divergence (MACD).
+
+        See the following link for more information: https://www.jeroenbouma.com/projects/financetoolkit/docs
 
         As an example:
 
@@ -464,31 +481,18 @@ class Toolkit:
 
         toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
 
-        profitability_ratios = toolkit.ratios.collect_profitability_ratios()
-
-        profitability_ratios.loc['AAPL']
+        average_directional_index = toolkit.technical.get_average_directional_index()
         ```
 
         Which returns:
 
-        |                                             |     2018 |     2019 |     2020 |     2021 |     2022 |
-        |:--------------------------------------------|---------:|---------:|---------:|---------:|---------:|
-        | Gross Margin                                | 0.383437 | 0.378178 | 0.382332 | 0.417794 | 0.433096 |
-        | Operating Margin                            | 0.26694  | 0.24572  | 0.241473 | 0.297824 | 0.302887 |
-        | Net Profit Margin                           | 0.224142 | 0.212381 | 0.209136 | 0.258818 | 0.253096 |
-        | Interest Burden Ratio                       | 1.02828  | 1.02827  | 1.01211  | 1.00237  | 0.997204 |
-        | Income Before Tax Profit Margin             | 0.274489 | 0.252666 | 0.244398 | 0.298529 | 0.30204  |
-        | Effective Tax Rate                          | 0.183422 | 0.159438 | 0.144282 | 0.133023 | 0.162045 |
-        | Return on Assets (ROA)                      | 0.162775 | 0.16323  | 0.177256 | 0.269742 | 0.282924 |
-        | Return on Equity (ROE)                      | 0.555601 | 0.610645 | 0.878664 | 1.50071  | 1.96959  |
-        | Return on Invested Capital (ROIC)           | 0.269858 | 0.293721 | 0.344126 | 0.503852 | 0.562645 |
-        | Return on Capital Employed (ROCE)           | 0.305968 | 0.297739 | 0.320207 | 0.495972 | 0.613937 |
-        | Return on Tangible Assets                   | 0.555601 | 0.610645 | 0.878664 | 1.50071  | 1.96959  |
-        | Income Quality Ratio                        | 1.30073  | 1.25581  | 1.4052   | 1.09884  | 1.22392  |
-        | Net Income per EBT                          | 0.816578 | 0.840562 | 0.855718 | 0.866977 | 0.837955 |
-        | Free Cash Flow to Operating Cash Flow Ratio | 0.828073 | 0.848756 | 0.909401 | 0.893452 | 0.912338 |
-        | EBT to EBIT Ratio                           | 0.957448 | 0.948408 | 0.958936 | 0.976353 | 0.975982 |
-        | EBIT to Revenue                             | 0.286688 | 0.26641  | 0.254864 | 0.305759 | 0.309473 |
+        | Date       |    AAPL |    MSFT |
+        |:-----------|--------:|--------:|
+        | 2023-08-21 | 62.8842 | 36.7468 |
+        | 2023-08-22 | 65.7063 | 36.5525 |
+        | 2023-08-23 | 67.3596 | 35.5149 |
+        | 2023-08-24 | 66.4527 | 35.4399 |
+        | 2023-08-25 | 63.4837 | 32.3323 |
 
         """
         if not self._start_date:
@@ -499,13 +503,18 @@ class Toolkit:
             self._start_date = datetime.today().strftime("%Y-%m-%d")
 
         if self._historical.empty:
-            self.get_historical_data(period="daily")
-            self.get_historical_data(period="weekly")
-            self.get_historical_data(period="monthly")
-            self.get_historical_data(period="quarterly")
-            self.get_historical_data(period="yearly")
+            if self._daily_historical_data.empty:
+                self.get_historical_data(period="daily")
+            if self._weekly_historical_data.empty:
+                self.get_historical_data(period="weekly")
+            if self._monthly_historical_data.empty:
+                self.get_historical_data(period="monthly")
+            if self._quarterly_historical_data.empty:
+                self.get_historical_data(period="quarterly")
+            if self._yearly_historical_data.empty:
+                self.get_historical_data(period="yearly")
 
-        return Technical(
+        return Technicals(
             self._tickers,
             self._daily_historical_data,
             self._weekly_historical_data,

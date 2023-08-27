@@ -1,6 +1,7 @@
 """Ratios Module"""
 __docformat__ = "google"
 
+
 import pandas as pd
 
 from financetoolkit.base.helpers import calculate_growth, handle_errors
@@ -59,6 +60,7 @@ class Ratios:
         self._valuation_ratios: pd.DataFrame = pd.DataFrame()
         self._valuation_ratios_growth: pd.DataFrame = pd.DataFrame()
 
+    @handle_errors
     def collect_all_ratios(
         self,
         include_dividends: bool = False,
@@ -67,18 +69,27 @@ class Ratios:
         rounding: int | None = 4,
         growth: bool = False,
         lag: int | list[int] = 1,
-    ):
+    ) -> pd.Series | pd.DataFrame:
         """
-        Calculates all Ratios based on the data provided.
+        Calculates and collects all ratios based on the provided data.
 
         Args:
-            include_dividends (bool, optional): Whether to include dividends in the calculations. Defaults to False.
-            diluted (bool, optional): Whether to use diluted shares for the calculation. Defaults to True.
+            include_dividends (bool, optional): Whether to include dividends in the calculations.
+                Defaults to False.
+            diluted (bool, optional): Whether to use diluted shares for the calculation.
+                Defaults to True.
             days (int, optional): The number of days to use for the calculation. Defaults to 365.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
-            overwrite (bool, optional): Whether to overwrite the existing ratios. Defaults to False.
+
+        Returns:
+            pd.Series or pd.DataFrame: Ratios calculated based on the specified parameters.
+
+        Note:
+        - The method calculates various ratios for each asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the ratio values
+          using the specified `lag`.
 
         As an example:
 
@@ -121,16 +132,23 @@ class Ratios:
         rounding: int | None = 4,
         growth: bool = False,
         lag: int | list[int] = 1,
-    ):
+    ) -> pd.Series | pd.DataFrame:
         """
-        Calculates all Efficiency Ratios based on the data provided.
+        Calculates and collects all Efficiency Ratios based on the provided data.
 
         Args:
             days (int, optional): The number of days to use for the calculation. Defaults to 365.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
-            overwrite (bool, optional): Whether to overwrite the existing ratios. Defaults to False.
+
+        Returns:
+            pd.Series or pd.DataFrame: Efficiency ratios calculated based on the specified parameters.
+
+        Note:
+        - The method calculates various efficiency ratios for each asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the ratio values
+          using the specified `lag`.
 
         As an example:
 
@@ -203,13 +221,20 @@ class Ratios:
         lag: int | list[int] = 1,
     ) -> pd.DataFrame:
         """
-        Calculates all Liquidity Ratios based on the data provided.
+        Calculates and collects all Liquidity Ratios based on the provided data.
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
-            overwrite (bool, optional): Whether to overwrite the existing ratios. Defaults to False.
+
+        Returns:
+            pd.DataFrame: Liquidity ratios calculated based on the specified parameters.
+
+        Note:
+        - The method calculates various liquidity ratios for each asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the ratio values
+          using the specified `lag`.
 
         As an example:
 
@@ -218,7 +243,7 @@ class Ratios:
 
         toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
 
-        toolkit.ratios.collect_liquidity_ratios()
+        liquidity_ratios = toolkit.ratios.collect_liquidity_ratios()
         ```
         """
         liquidity_ratios: dict = {}
@@ -271,13 +296,20 @@ class Ratios:
         lag: int | list[int] = 1,
     ) -> pd.DataFrame:
         """
-        Calculates all Profitability Ratios based on the data provided.
+        Calculates and collects all Profitability Ratios based on the provided data.
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
-            overwrite (bool, optional): Whether to overwrite the existing ratios. Defaults to False.
+
+        Returns:
+            pd.DataFrame: Profitability ratios calculated based on the specified parameters.
+
+        Note:
+        - The method calculates various profitability ratios for each asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the ratio values
+          using the specified `lag`.
 
         As an example:
 
@@ -286,7 +318,7 @@ class Ratios:
 
         toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
 
-        toolkit.ratios.collect_profitability_ratios()
+        profitability_ratios = toolkit.ratios.collect_profitability_ratios()
         ```
         """
         profitability_ratios: dict = {}
@@ -355,16 +387,23 @@ class Ratios:
         rounding: int | None = 4,
         growth: bool = False,
         lag: int | list[int] = 1,
-    ):
+    ) -> pd.DataFrame:
         """
-        Calculates all Solvency Ratios based on the data provided.
+        Calculates and collects all Solvency Ratios based on the provided data.
 
         Args:
             diluted (bool, optional): Whether to use diluted shares for the calculation. Defaults to True.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
-            overwrite (bool, optional): Whether to overwrite the existing ratios. Defaults to False.
+
+        Returns:
+            pd.DataFrame: Solvency ratios calculated based on the specified parameters.
+
+        Note:
+        - The method calculates various solvency ratios for each asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the ratio values
+          using the specified `lag`.
 
         As an example:
 
@@ -373,7 +412,7 @@ class Ratios:
 
         toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
 
-        toolkit.ratios.collect_solvency_ratios()
+        solvency_ratios = toolkit.ratios.collect_solvency_ratios()
         ```
         """
         solvency_ratios: dict = {}
@@ -432,9 +471,9 @@ class Ratios:
         rounding: int | None = 4,
         growth: bool = False,
         lag: int | list[int] = 1,
-    ):
+    ) -> pd.DataFrame:
         """
-        Calculates all Valuation Ratios based on the data provided.
+        Calculates and collects all Valuation Ratios based on the provided data.
 
         Args:
             include_dividends (bool, optional): Whether to include dividends in the calculations. Defaults to False.
@@ -442,7 +481,14 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
-            overwrite (bool, optional): Whether to overwrite the existing ratios. Defaults to False.
+
+        Returns:
+            pd.DataFrame: Valuation ratios calculated based on the specified parameters.
+
+        Note:
+        - The method calculates various valuation ratios for each asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the ratio values
+          using the specified `lag`.
 
         As an example:
 
@@ -451,7 +497,7 @@ class Ratios:
 
         toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
 
-        toolkit.ratios.collect_valuation_ratios()
+        valuation_ratios = toolkit.ratios.collect_valuation_ratios()
         ```
         """
         valuation_ratios: dict = {}
@@ -560,6 +606,14 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+
+        Returns:
+            pd.DataFrame: Custom ratios calculated based on the specified parameters.
+
+        Note:
+        - The method calculates various custom ratios for each asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the ratio values
+          using the specified `lag`.
 
         As an example:
 
@@ -727,15 +781,30 @@ class Ratios:
     @handle_errors
     def get_asset_turnover_ratio(
         self, rounding: int | None = 4, growth: bool = False, lag: int | list[int] = 1
-    ):
+    ) -> pd.DataFrame:
         """
         Calculate the asset turnover ratio, an efficiency ratio that measures how
         efficiently a company uses its assets to generate sales.
+
+        The asset turnover ratio is calculated by dividing the company's net sales
+        (revenue) by its average total assets. It measures how well a company utilizes
+        its assets to generate revenue. A higher asset turnover ratio indicates that the
+        company is generating more revenue per unit of assets, which is generally seen
+        as a positive sign of operational efficiency.
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+
+        Returns:
+            pd.Series: Asset turnover ratio values.
+
+        Note:
+        - The method retrieves historical data and calculates the asset turnover ratio
+          for each asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the ratio values
+          using the specified `lag`.
 
         As an example:
 
@@ -744,7 +813,7 @@ class Ratios:
 
         toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
 
-        toolkit.ratios.get_asset_turnover_ratio()
+        asset_turnover_ratios = toolkit.ratios.get_asset_turnover_ratio()
         ```
         """
         asset_turnover_ratio = efficiency.get_asset_turnover_ratio(
@@ -765,15 +834,30 @@ class Ratios:
     @handle_errors
     def get_inventory_turnover_ratio(
         self, rounding: int | None = 4, growth: bool = False, lag: int | list[int] = 1
-    ):
+    ) -> pd.DataFrame:
         """
         Calculate the inventory turnover ratio, an efficiency ratio that measures
         how quickly a company sells its inventory.
+
+        The inventory turnover ratio is calculated by dividing the cost of goods sold
+        (COGS) by the average inventory value. It indicates how many times a company's
+        inventory is sold and replaced over a period. A higher inventory turnover ratio
+        suggests that a company is effectively managing its inventory by quickly
+        converting it into sales.
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+
+        Returns:
+            pd.Series: Inventory turnover ratio values.
+
+        Note:
+        - The method retrieves historical data and calculates the inventory turnover ratio
+          for each asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the ratio values
+          using the specified `lag`.
 
         As an example:
 
@@ -782,7 +866,7 @@ class Ratios:
 
         toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
 
-        toolkit.ratios.get_inventory_turnover_ratio()
+        inventory_turnover_ratios = toolkit.ratios.get_inventory_turnover_ratio()
         ```
         """
         inventory_turnover_ratio = efficiency.get_inventory_turnover_ratio(
@@ -807,16 +891,31 @@ class Ratios:
         rounding: int | None = 4,
         growth: bool = False,
         lag: int | list[int] = 1,
-    ):
+    ) -> pd.DataFrame:
         """
         Calculate the days sales in inventory ratio, an efficiency ratio that measures
         how long it takes a company to sell its inventory.
+
+        The days sales in inventory ratio (DSI) is calculated by dividing the average
+        inventory by the cost of goods sold (COGS) and then multiplying by the number
+        of days in the period. It represents the average number of days it takes for
+        a company to sell its inventory. A lower DSI indicates that the company is
+        selling its inventory more quickly.
 
         Args:
             days (int, optional): The number of days to use for the calculation. Defaults to 365.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+
+        Returns:
+            pd.DataFrame: Days sales in inventory ratio values.
+
+        Note:
+        - The method retrieves historical data and calculates the DSI ratio for each
+          asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the ratio values
+          using the specified `lag`.
 
         As an example:
 
@@ -853,17 +952,32 @@ class Ratios:
         rounding: int | None = 4,
         growth: bool = False,
         lag: int | list[int] = 1,
-    ):
+    ) -> pd.DataFrame:
         """
-        Calculate the days of sales outstanding, an efficiency ratio that measures
+        Calculate the days of sales outstanding ratio, an efficiency ratio that measures
         the average number of days it takes a company to collect payment on its
         credit sales.
+
+        The days of sales outstanding (DSO) ratio is calculated by dividing the accounts
+        receivable by the total credit sales and then multiplying by the number of days
+        in the period. It represents the average number of days it takes for a company
+        to collect payment on its credit sales. A lower DSO indicates that the company
+        is collecting payments more quickly.
 
         Args:
             days (int, optional): The number of days to use for the calculation. Defaults to 365.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+
+        Returns:
+            pd.DataFrame: Days of sales outstanding ratio values.
+
+        Note:
+        - The method retrieves historical data and calculates the DSO ratio for each
+          asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the ratio values
+          using the specified `lag`.
 
         As an example:
 
@@ -872,7 +986,7 @@ class Ratios:
 
         toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
 
-        toolkit.ratios.get_days_of_sales_outstanding()
+        dso_ratios = toolkit.ratios.get_days_of_sales_outstanding()
         ```
         """
         days_of_sales_outstanding = efficiency.get_days_of_sales_outstanding(
@@ -894,22 +1008,37 @@ class Ratios:
         return days_of_sales_outstanding.round(rounding if rounding else self._rounding)
 
     @handle_errors
+    @handle_errors
     def get_operating_cycle(
         self,
         days: int = 365,
         rounding: int | None = 4,
         growth: bool = False,
         lag: int | list[int] = 1,
-    ):
+    ) -> pd.DataFrame:
         """
-        Calculate the operating cycle, an efficiency ratio that measures the average
+        Calculate the operating cycle ratio, an efficiency ratio that measures the average
         number of days it takes a company to turn its inventory into cash.
+
+        The operating cycle represents the total time required to purchase inventory,
+        convert it into finished goods, sell the goods to customers, and collect the
+        accounts receivable. It is calculated by adding the days sales in inventory (DSI)
+        and the days of sales outstanding (DSO).
 
         Args:
             days (int, optional): The number of days to use for the calculation. Defaults to 365.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+
+        Returns:
+            pd.DataFrame: Operating cycle ratio values.
+
+        Note:
+        - The method retrieves historical data and calculates the operating cycle ratio for each
+          asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the ratio values
+          using the specified `lag`.
 
         As an example:
 
@@ -918,9 +1047,10 @@ class Ratios:
 
         toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
 
-        toolkit.ratios.get_operating_cycle()
+        operating_cycle_ratios = toolkit.ratios.get_operating_cycle()
         ```
         """
+
         days_of_inventory = efficiency.get_days_of_inventory_outstanding(
             self._balance_sheet_statement.loc[:, "Inventory", :].shift(axis=1),
             self._balance_sheet_statement.loc[:, "Inventory", :],
@@ -952,15 +1082,29 @@ class Ratios:
     @handle_errors
     def get_accounts_payables_turnover_ratio(
         self, rounding: int | None = 4, growth: bool = False, lag: int | list[int] = 1
-    ):
+    ) -> pd.DataFrame:
         """
-        Calculate the accounts payable turnover ratio is an efficiency ratio that measures how
+        Calculate the accounts payable turnover ratio, an efficiency ratio that measures how
         quickly a company pays its suppliers.
+
+        The accounts payable turnover ratio indicates how many times, on average, a company
+        pays off its accounts payable during a specific period. A higher turnover ratio is
+        generally favorable, as it suggests that the company is efficiently managing its
+        payments to suppliers.
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+
+        Returns:
+            pd.DataFrame: Accounts payable turnover ratio values.
+
+        Note:
+        - The method retrieves historical data and calculates the accounts payable turnover ratio for each
+          asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the ratio values
+          using the specified `lag`.
 
         As an example:
 
@@ -969,7 +1113,7 @@ class Ratios:
 
         toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
 
-        toolkit.ratios.get_accounts_payables_turnover_ratio()
+        ap_turnover_ratios = toolkit.ratios.get_accounts_payables_turnover_ratio()
         ```
         """
         accounts_payables_turnover_ratio = (
@@ -1000,16 +1144,31 @@ class Ratios:
         rounding: int | None = 4,
         growth: bool = False,
         lag: int | list[int] = 1,
-    ):
+    ) -> pd.DataFrame:
         """
         Calculate the days payables outstanding, an efficiency ratio that measures the
         number of days it takes a company to pay its suppliers.
+
+        The days payables outstanding (DPO) ratio is used to assess how efficiently a company
+        manages its accounts payable. It calculates the average number of days it takes for
+        a company to pay its suppliers after receiving an invoice. A higher DPO ratio indicates
+        that the company is taking longer to pay its suppliers, which may have implications for
+        its relationships with suppliers.
 
         Args:
             days (int, optional): The number of days to use for the calculation. Defaults to 365.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+
+        Returns:
+            pd.DataFrame: Days payables outstanding (DPO) ratio values.
+
+        Note:
+        - The method retrieves historical data and calculates the DPO ratio for each
+          asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the ratio values
+          using the specified `lag`.
 
         As an example:
 
@@ -1018,7 +1177,7 @@ class Ratios:
 
         toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
 
-        toolkit.ratios.get_days_of_accounts_payable_outstanding()
+        dpo_ratios = toolkit.ratios.get_days_of_accounts_payable_outstanding()
         ```
         """
         days_of_accounts_payable_outstanding = (
@@ -1050,17 +1209,29 @@ class Ratios:
         rounding: int | None = 4,
         growth: bool = False,
         lag: int | list[int] = 1,
-    ):
+    ) -> pd.DataFrame:
         """
         Calculate the Cash Conversion Cycle, which measures the amount of time it takes for a company to convert
         its investments in inventory and accounts receivable into cash, while considering the time it takes to pay
         its accounts payable.
+
+        The Cash Conversion Cycle (CCC) is an important measure of a company's liquidity management and efficiency
+        in managing its working capital. It takes into account the time it takes to sell inventory, collect payments
+        from customers, and pay suppliers. A shorter CCC indicates that a company is able to quickly convert its
+        investments into cash, which can be a positive sign of efficient operations.
 
         Args:
             days (int, optional): The number of days to use for the calculation. Defaults to 365.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+
+        Returns:
+            pd.DataFrame: Cash Conversion Cycle (CCC) values.
+
+        Note:
+        - The method retrieves historical data and calculates the CCC for each asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the CCC values using the specified `lag`.
 
         As an example:
 
@@ -1069,7 +1240,7 @@ class Ratios:
 
         toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
 
-        toolkit.ratios.get_cash_conversion_cycle()
+        ccc_values = toolkit.ratios.get_cash_conversion_cycle()
         ```
         """
         days_of_inventory = efficiency.get_days_of_inventory_outstanding(
@@ -1110,16 +1281,29 @@ class Ratios:
     @handle_errors
     def get_receivables_turnover(
         self, rounding: int | None = 4, growth: bool = False, lag: int | list[int] = 1
-    ):
+    ) -> pd.DataFrame:
         """
         Calculate the receivables turnover, a ratio that measures how efficiently a
         company uses its assets by comparing the amount of credit extended to customers to
         the amount of sales generated.
 
+        The receivables turnover ratio is an important measure of how well a company manages its
+        accounts receivable. It indicates how quickly a company collects payments from its customers.
+        A higher turnover ratio is generally favorable as it suggests that the company is collecting
+        payments more quickly, which improves its cash flow and working capital management.
+
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+        Returns:
+            pd.DataFrame: Receivables turnover ratio values.
+
+        Note:
+        - The method retrieves historical data and calculates the receivables turnover ratio for each
+          asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the ratio values using the specified `lag`.
+
         As an example:
 
         ```python
@@ -1127,7 +1311,7 @@ class Ratios:
 
         toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
 
-        toolkit.ratios.get_receivables_turnover()
+        receivables_turnover = toolkit.ratios.get_receivables_turnover()
         ```
         """
         receivables_turnover = efficiency.get_receivables_turnover(
@@ -1150,23 +1334,38 @@ class Ratios:
     @handle_errors
     def get_sga_to_revenue_ratio(
         self, rounding: int | None = 4, growth: bool = False, lag: int | list[int] = 1
-    ):
+    ) -> pd.DataFrame:
         """
-        Calculates the sales, general, and administrative (SG&A) expenses to revenue ratio,
+        Calculate the sales, general, and administrative (SG&A) expenses to revenue ratio,
         which measures the SG&A expenses relative to the revenue of the company.
+
+        The SG&A to revenue ratio is calculated by dividing the total SG&A expenses by the
+        company's revenue and then multiplying by 100 to express it as a percentage. It
+        provides insight into the efficiency of a company's cost management and its ability
+        to control its overhead costs.
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
 
+        Returns:
+            pd.DataFrame: SG&A to revenue ratio values.
+
+        Note:
+        - The method retrieves historical data and calculates the SG&A to revenue ratio for
+        each asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the ratio values
+        using the specified `lag`.
+
+        As an example:
 
         ```python
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
 
-        toolkit.ratios.get_sga_to_revenue_ratio()
+        sga_to_revenue_ratios = toolkit.ratios.get_sga_to_revenue_ratio()
         ```
         """
         sga_to_revenue_ratio = efficiency.get_sga_to_revenue_ratio(
@@ -1188,23 +1387,38 @@ class Ratios:
     @handle_errors
     def get_fixed_asset_turnover(
         self, rounding: int | None = 4, growth: bool = False, lag: int | list[int] = 1
-    ):
+    ) -> pd.DataFrame:
         """
         Calculate the Fixed Asset Turnover ratio, an efficiency ratio that
         measures how efficiently a company uses its fixed assets to generate sales.
+
+        The Fixed Asset Turnover ratio is calculated by dividing the company's net sales
+        by the average fixed assets. It indicates how well a company is utilizing its fixed
+        assets to generate revenue. A higher ratio suggests more efficient utilization of
+        fixed assets.
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
 
+        Returns:
+            pd.DataFrame: Fixed Asset Turnover ratio values.
+
+        Note:
+        - The method retrieves historical data and calculates the Fixed Asset Turnover ratio
+        for each asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the ratio values
+        using the specified `lag`.
+
         As an example:
+
         ```python
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
 
-        toolkit.ratios.get_fixed_asset_turnover()
+        fixed_asset_turnover_ratios = toolkit.ratios.get_fixed_asset_turnover()
         ```
         """
         fixed_asset_turnover = efficiency.get_fixed_asset_turnover(
@@ -1225,23 +1439,37 @@ class Ratios:
     @handle_errors
     def get_operating_ratio(
         self, rounding: int | None = 4, growth: bool = False, lag: int | list[int] = 1
-    ):
+    ) -> pd.DataFrame:
         """
         Calculate the operating ratio, a financial metric that measures the efficiency
         of a company's operations by comparing its operating expenses to its revenue.
+
+        The operating ratio is calculated by dividing the company's operating expenses by
+        its net sales and multiplying by 100 to express it as a percentage. It provides
+        insight into how efficiently a company is managing its operations.
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
 
+        Returns:
+            pd.DataFrame: Operating ratio values.
+
+        Note:
+        - The method retrieves historical data and calculates the operating ratio for each
+        asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the ratio values
+        using the specified `lag`.
+
         As an example:
 
+        ```python
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
 
-        toolkit.ratios.get_operating_ratio()
+        operating_ratios = toolkit.ratios.get_operating_ratio()
         ```
         """
         operating_ratio = efficiency.get_operating_ratio(
@@ -1262,23 +1490,37 @@ class Ratios:
     @handle_errors
     def get_current_ratio(
         self, rounding: int | None = 4, growth: bool = False, lag: int | list[int] = 1
-    ):
+    ) -> pd.DataFrame:
         """
         Calculate the current ratio, a liquidity ratio that measures a company's ability
         to pay off its short-term liabilities with its current assets.
+
+        The current ratio is calculated by dividing a company's current assets by its
+        current liabilities. It indicates whether a company can meet its short-term
+        obligations using its short-term assets.
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
 
+        Returns:
+            pd.DataFrame: Current ratio values.
+
+        Note:
+        - The method retrieves historical data and calculates the current ratio for each
+        asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the ratio values
+        using the specified `lag`.
+
         As an example:
 
         ```python
+        from financetoolkit import Toolkit
 
         toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
 
-        toolkit.ratios.get_current_ratio()
+        current_ratios = toolkit.ratios.get_current_ratio()
         ```
         """
         current_ratio = liquidity.get_current_ratio(
@@ -1298,17 +1540,31 @@ class Ratios:
     @handle_errors
     def get_quick_ratio(
         self, rounding: int | None = 4, growth: bool = False, lag: int | list[int] = 1
-    ):
+    ) -> pd.DataFrame:
         """
         Calculate the quick ratio (also known as the acid-test ratio), a more stringent
         measure of liquidity that excludes inventory from current assets.
 
         This ratio is also referred to as the Acid Test Ratio.
 
+        The quick ratio is calculated by subtracting inventory from current assets and
+        then dividing the result by current liabilities. It provides insight into a
+        company's ability to cover its short-term liabilities using its most liquid
+        assets without relying on inventory.
+
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+
+        Returns:
+            pd.DataFrame: Quick ratio values.
+
+        Note:
+        - The method retrieves historical data and calculates the quick ratio for each
+        asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the ratio values
+        using the specified `lag`.
 
         As an example:
 
@@ -1316,7 +1572,7 @@ class Ratios:
         from financetoolkit import Toolkit
         toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
 
-        toolkit.ratios.get_quick_ratio()
+        quick_ratios = toolkit.ratios.get_quick_ratio()
         ```
         """
         quick_ratio = liquidity.get_quick_ratio(
@@ -1336,23 +1592,37 @@ class Ratios:
     @handle_errors
     def get_cash_ratio(
         self, rounding: int | None = 4, growth: bool = False, lag: int | list[int] = 1
-    ):
+    ) -> pd.DataFrame:
         """
         Calculate the cash ratio, a liquidity ratio that measures a company's ability
         to pay off its short-term liabilities with its cash and cash equivalents.
+
+        The cash ratio is calculated by dividing the sum of cash and cash equivalents
+        by current liabilities. It provides insight into a company's immediate ability
+        to cover its short-term obligations using its most liquid assets.
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
 
+        Returns:
+            pd.DataFrame: Cash ratio values.
+
+        Note:
+        - The method retrieves historical data and calculates the cash ratio for each
+        asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the ratio values
+        using the specified `lag`.
+
         As an example:
 
         ```python
         from financetoolkit import Toolkit
 
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
 
-        toolkit.ratios.get_cash_ratio()
+        cash_ratios = toolkit.ratios.get_cash_ratio()
         ```
         """
         cash_ratio = liquidity.get_cash_ratio(

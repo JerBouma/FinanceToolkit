@@ -1,6 +1,7 @@
 """Ratios Module"""
 __docformat__ = "google"
 
+
 import pandas as pd
 
 from financetoolkit.base.helpers import calculate_growth, handle_errors
@@ -66,11 +67,9 @@ class Technical:
         rounding: int | None = 4,
         growth: bool = False,
         lag: int | list[int] = 1,
-    ):
+    ) -> pd.Series | pd.DataFrame:
         """
         Calculates all Technical Indicators based on the data provided.
-
-        Note that due to the nature of the calculations, the dataset can get quite extensive.
 
         Args:
             period (str, optional): The period to use for the calculation. Defaults to "daily".
@@ -80,15 +79,13 @@ class Technical:
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
 
-        As an example:
+        Returns:
+            pd.Series or pd.DataFrame: Technical indicators calculated based on the specified parameters.
 
-        ```python
-        from financetoolkit import Toolkit
-
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
-
-        toolkit.ratios.collect_all_ratios()
-        ```
+        Note:
+        - The method calculates various types of technical indicators for each asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the indicator values
+          using the specified `lag`.
         """
         self._all_indicators = pd.concat(
             [
@@ -132,26 +129,29 @@ class Technical:
         rounding: int | None = 4,
         growth: bool = False,
         lag: int | list[int] = 1,
-    ):
+    ) -> pd.Series | pd.DataFrame:
         """
-        Calculates all Efficiency Ratios based on the data provided.
+        Calculates and collects various breadth indicators based on the provided data.
 
         Args:
-            days (int, optional): The number of days to use for the calculation. Defaults to 365.
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
-            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
-            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
-            overwrite (bool, optional): Whether to overwrite the existing ratios. Defaults to False.
+            period (str, optional): The time period to consider for historical data.
+                Can be "daily", "weekly", "quarterly", or "yearly". Defaults to "daily".
+            close_column (str, optional): The name of the column containing the close prices.
+                Defaults to "Adj Close".
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the indicator values.
+                Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation.
+                Defaults to 1.
 
-        As an example:
+        Returns:
+            pd.Series or pd.DataFrame: Breadth indicators calculated based on the specified parameters.
 
-        ```python
-        from financetoolkit import Toolkit
-
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
-
-        toolkit.ratios.collect_efficiency_ratios()
-        ```
+        Note:
+        - The method calculates various breadth indicators for each asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the indicator values
+          using the specified `lag`.
         """
         breadth_indicators: dict = {}
 
@@ -194,26 +194,31 @@ class Technical:
         rounding: int | None = 4,
         growth: bool = False,
         lag: int | list[int] = 1,
-    ):
+    ) -> pd.Series | pd.DataFrame:
         """
-        Calculates all Efficiency Ratios based on the data provided.
+        Calculates and collects various momentum indicators based on the provided data.
 
         Args:
-            days (int, optional): The number of days to use for the calculation. Defaults to 365.
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
-            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
-            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
-            overwrite (bool, optional): Whether to overwrite the existing ratios. Defaults to False.
+            period (str, optional): The time period to consider for historical data.
+                Can be "daily", "weekly", "quarterly", or "yearly". Defaults to "daily".
+            window (int, optional): The window size for calculating indicators.
+                Defaults to 14.
+            close_column (str, optional): The name of the column containing the close prices.
+                Defaults to "Adj Close".
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the indicator values.
+                Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation.
+                Defaults to 1.
 
-        As an example:
+        Returns:
+            pd.Series or pd.DataFrame: Momentum indicators calculated based on the specified parameters.
 
-        ```python
-        from financetoolkit import Toolkit
-
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
-
-        toolkit.ratios.collect_efficiency_ratios()
-        ```
+        Note:
+        - The method calculates various momentum indicators for each asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the indicator values
+          using the specified `lag`.
         """
         momentum_indicators: dict = {}
 
@@ -252,7 +257,7 @@ class Technical:
             period=period, close_column=close_column
         )
         momentum_indicators[
-            "Deterended Price Oscillator"
+            "Detrended Price Oscillator"
         ] = self.get_detrended_price_oscillator(
             period=period, close_column=close_column, window=window
         )
@@ -324,26 +329,31 @@ class Technical:
         rounding: int | None = 4,
         growth: bool = False,
         lag: int | list[int] = 1,
-    ):
+    ) -> pd.Series | pd.DataFrame:
         """
-        Calculates all Efficiency Ratios based on the data provided.
+        Calculates and collects various overlap-based indicators based on the provided data.
 
         Args:
-            days (int, optional): The number of days to use for the calculation. Defaults to 365.
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
-            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
-            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
-            overwrite (bool, optional): Whether to overwrite the existing ratios. Defaults to False.
+            period (str, optional): The time period to consider for historical data.
+                Can be "daily", "weekly", "quarterly", or "yearly". Defaults to "daily".
+            window (int, optional): The window size for calculating indicators.
+                Defaults to 14.
+            close_column (str, optional): The name of the column containing the close prices.
+                Defaults to "Adj Close".
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the indicator values.
+                Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation.
+                Defaults to 1.
 
-        As an example:
+        Returns:
+            pd.Series or pd.DataFrame: Overlap-based indicators calculated based on the specified parameters.
 
-        ```python
-        from financetoolkit import Toolkit
-
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
-
-        toolkit.ratios.collect_efficiency_ratios()
-        ```
+        Note:
+        - The method calculates several overlap-based indicators for each asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the indicator values
+          using the specified `lag`.
         """
         overlap_indicators: dict = {}
 
@@ -412,26 +422,31 @@ class Technical:
         rounding: int | None = 4,
         growth: bool = False,
         lag: int | list[int] = 1,
-    ):
+    ) -> pd.Series | pd.DataFrame:
         """
-        Calculates all Efficiency Ratios based on the data provided.
+        Calculates and collects various volatility indicators based on the provided data.
 
         Args:
-            days (int, optional): The number of days to use for the calculation. Defaults to 365.
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
-            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
-            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
-            overwrite (bool, optional): Whether to overwrite the existing ratios. Defaults to False.
+            period (str, optional): The time period to consider for historical data.
+                Can be "daily", "weekly", "quarterly", or "yearly". Defaults to "daily".
+            window (int, optional): The window size for calculating indicators.
+                Defaults to 14.
+            close_column (str, optional): The name of the column containing the close prices.
+                Defaults to "Adj Close".
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the indicator values.
+                Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation.
+                Defaults to 1.
 
-        As an example:
+        Returns:
+            pd.Series or pd.DataFrame: Volatility indicators calculated based on the specified parameters.
 
-        ```python
-        from financetoolkit import Toolkit
-
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
-
-        toolkit.ratios.collect_efficiency_ratios()
-        ```
+        Note:
+        - The method calculates several volatility-based indicators for each asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the indicator values
+          using the specified `lag`.
         """
         volatility_indicators: dict = {}
 
@@ -446,7 +461,7 @@ class Technical:
         (
             volatility_indicators["Keltner Channel Upper"],
             volatility_indicators["Keltner Channel Middle"],
-            volatility_indicators["Keltner Channels Lower"],
+            volatility_indicators["Keltner Channel Lower"],
         ) = self.get_keltner_channels(
             period=period, close_column=close_column, window=window
         )
@@ -485,26 +500,29 @@ class Technical:
         rounding: int | None = 4,
         growth: bool = False,
         lag: int | list[int] = 1,
-    ):
+    ) -> pd.Series | pd.DataFrame:
         """
-        Calculates all Efficiency Ratios based on the data provided.
+        Calculates and collects various volume indicators based on the provided data.
 
         Args:
-            days (int, optional): The number of days to use for the calculation. Defaults to 365.
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
-            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
-            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
-            overwrite (bool, optional): Whether to overwrite the existing ratios. Defaults to False.
+            period (str, optional): The time period to consider for historical data.
+                Can be "daily", "weekly", "quarterly", or "yearly". Defaults to "daily".
+            close_column (str, optional): The name of the column containing the close prices.
+                Defaults to "Adj Close".
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the indicator values.
+                Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation.
+                Defaults to 1.
 
-        As an example:
+        Returns:
+            pd.Series or pd.DataFrame: Volume indicators calculated based on the specified parameters.
 
-        ```python
-        from financetoolkit import Toolkit
-
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
-
-        toolkit.ratios.collect_efficiency_ratios()
-        ```
+        Note:
+        - The method calculates several volume-based indicators for each asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the indicator values
+          using the specified `lag`.
         """
         volume_indicators: dict = {}
 
@@ -555,25 +573,38 @@ class Technical:
         rounding: int | None = 4,
         growth: bool = False,
         lag: int | list[int] = 1,
-    ):
+    ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the asset turnover ratio, an efficiency ratio that measures how
-        efficiently a company uses its assets to generate sales.
+        Calculate the McClellan Oscillator for a given price series.
+
+        The McClellan Oscillator is a breadth indicator that measures the difference
+        between the exponential moving average of advancing stocks and the exponential
+        moving average of declining stocks.
 
         Args:
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
-            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
-            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            period (str, optional): The time period to consider for historical data.
+                Can be "daily", "weekly", "quarterly", or "yearly". Defaults to "daily".
+            close_column (str, optional): The name of the column containing the close prices.
+                Defaults to "Adj Close".
+            short_ema_window (int, optional): The window size for the short-term EMA.
+                Defaults to 19.
+            long_ema_window (int, optional): The window size for the long-term EMA.
+                Defaults to 39.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the indicator values.
+                Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation.
+                Defaults to 1.
 
-        As an example:
+        Returns:
+            pd.Series or pd.DataFrame: McClellan Oscillator values.
 
-        ```python
-        from financetoolkit import Toolkit
-
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
-
-        toolkit.ratios.get_asset_turnover_ratio()
-        ```
+        Note:
+        - The method retrieves historical data based on the specified `period` and calculates
+          the McClellan Oscillator for each asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the indicator values
+          using the specified `lag`.
         """
         if period == "daily":
             historical_data = self._daily_historical
@@ -584,23 +615,23 @@ class Technical:
         elif period == "yearly":
             historical_data = self._yearly_historical
         else:
-            raise ValueError("Period must be daily, weekly, quarterly or yearly.")
+            raise ValueError("Period must be daily, weekly, quarterly, or yearly.")
 
-        mcclelland_oscillator = pd.DataFrame(index=historical_data.index)
+        mcclellan_oscillator = pd.DataFrame(index=historical_data.index)
         for ticker in self._tickers:
-            mcclelland_oscillator[ticker] = breadth.get_mcclellan_oscillator(
+            mcclellan_oscillator[ticker] = breadth.get_mcclellan_oscillator(
                 historical_data[close_column][ticker], short_ema_window, long_ema_window
             )
 
         if growth:
             return calculate_growth(
-                mcclelland_oscillator,
+                mcclellan_oscillator,
                 lag=lag,
                 rounding=rounding if rounding else self._rounding,
                 axis="index",
             )
 
-        return mcclelland_oscillator.round(rounding if rounding else self._rounding)
+        return mcclellan_oscillator.round(rounding if rounding else self._rounding)
 
     @handle_errors
     def get_advancers_decliners(
@@ -610,25 +641,34 @@ class Technical:
         rounding: int | None = 4,
         growth: bool = False,
         lag: int | list[int] = 1,
-    ):
+    ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the asset turnover ratio, an efficiency ratio that measures how
-        efficiently a company uses its assets to generate sales.
+        Calculate the Advancers/Decliners ratio for a given price series.
+
+        The Advancers/Decliners ratio is a breadth indicator that measures the number
+        of advancing stocks (stocks with positive price changes) versus the number of
+        declining stocks (stocks with negative price changes).
 
         Args:
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
-            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
-            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            period (str, optional): The time period to consider for historical data.
+                Can be "daily", "weekly", "quarterly", or "yearly". Defaults to "daily".
+            close_column (str, optional): The name of the column containing the close prices.
+                Defaults to "Adj Close".
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the indicator values.
+                Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation.
+                Defaults to 1.
 
-        As an example:
+        Returns:
+            pd.Series or pd.DataFrame: Advancers/Decliners ratio values.
 
-        ```python
-        from financetoolkit import Toolkit
-
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
-
-        toolkit.ratios.get_asset_turnover_ratio()
-        ```
+        Note:
+        - The method retrieves historical data based on the specified `period` and calculates
+          the Advancers/Decliners ratio for each asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the indicator values
+          using the specified `lag`.
         """
         if period == "daily":
             historical_data = self._daily_historical
@@ -639,21 +679,21 @@ class Technical:
         elif period == "yearly":
             historical_data = self._yearly_historical
         else:
-            raise ValueError("Period must be daily, weekly, quarterly or yearly.")
+            raise ValueError("Period must be daily, weekly, quarterly, or yearly.")
 
-        advanced_decliners = breadth.get_advancers_decliners(
+        advancers_decliners = breadth.get_advancers_decliners(
             historical_data[close_column],
         )
 
         if growth:
             return calculate_growth(
-                advanced_decliners,
+                advancers_decliners,
                 lag=lag,
                 rounding=rounding if rounding else self._rounding,
                 axis="index",
             )
 
-        return advanced_decliners.round(rounding if rounding else self._rounding)
+        return advancers_decliners.round(rounding if rounding else self._rounding)
 
     @handle_errors
     def get_money_flow_index(
@@ -664,25 +704,36 @@ class Technical:
         rounding: int | None = 4,
         growth: bool = False,
         lag: int | list[int] = 1,
-    ):
+    ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the asset turnover ratio, an efficiency ratio that measures how
-        efficiently a company uses its assets to generate sales.
+        Calculate the Money Flow Index (MFI) for a given price series.
+
+        The Money Flow Index is a momentum indicator that measures the strength and
+        direction of money flowing in and out of a security by considering both price
+        and volume.
 
         Args:
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
-            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
-            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            period (str, optional): The time period to consider for historical data.
+                Can be "daily", "weekly", "quarterly", or "yearly". Defaults to "daily".
+            close_column (str, optional): The name of the column containing the close prices.
+                Defaults to "Adj Close".
+            window (int, optional): The number of periods for calculating the MFI.
+                Defaults to 14.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the indicator values.
+                Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation.
+                Defaults to 1.
 
-        As an example:
+        Returns:
+            pd.Series or pd.DataFrame: Money Flow Index (MFI) values.
 
-        ```python
-        from financetoolkit import Toolkit
-
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
-
-        toolkit.ratios.get_asset_turnover_ratio()
-        ```
+        Note:
+        - The method retrieves historical data based on the specified `period` and calculates
+          the MFI values for each asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the indicator values
+          using the specified `lag`.
         """
         if period == "daily":
             historical_data = self._daily_historical
@@ -693,7 +744,7 @@ class Technical:
         elif period == "yearly":
             historical_data = self._yearly_historical
         else:
-            raise ValueError("Period must be daily, weekly, quarterly or yearly.")
+            raise ValueError("Period must be daily, weekly, quarterly, or yearly.")
 
         money_flow_index = momentum.get_money_flow_index(
             historical_data["High"],
@@ -722,25 +773,35 @@ class Technical:
         rounding: int | None = 4,
         growth: bool = False,
         lag: int | list[int] = 1,
-    ):
+    ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the asset turnover ratio, an efficiency ratio that measures how
-        efficiently a company uses its assets to generate sales.
+        Calculate the Williams Percent R (Williams %R) for a given price series.
+
+        The Williams %R is a momentum indicator that measures the level of the close price
+        relative to the high-low range over a certain number of periods.
 
         Args:
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
-            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
-            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            period (str, optional): The time period to consider for historical data.
+                Can be "daily", "weekly", "quarterly", or "yearly". Defaults to "daily".
+            close_column (str, optional): The name of the column containing the close prices.
+                Defaults to "Adj Close".
+            window (int, optional): The number of periods for calculating the Williams %R.
+                Defaults to 14.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the indicator values.
+                Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation.
+                Defaults to 1.
 
-        As an example:
+        Returns:
+            pd.Series or pd.DataFrame: Williams %R values.
 
-        ```python
-        from financetoolkit import Toolkit
-
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
-
-        toolkit.ratios.get_asset_turnover_ratio()
-        ```
+        Note:
+        - The method retrieves historical data based on the specified `period` and calculates
+          the Williams %R values for each asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the indicator values
+          using the specified `lag`.
         """
         if period == "daily":
             historical_data = self._daily_historical
@@ -751,7 +812,7 @@ class Technical:
         elif period == "yearly":
             historical_data = self._yearly_historical
         else:
-            raise ValueError("Period must be daily, weekly, quarterly or yearly.")
+            raise ValueError("Period must be daily, weekly, quarterly, or yearly.")
 
         williams_percent_r = momentum.get_williams_percent_r(
             historical_data["High"],
@@ -778,25 +839,34 @@ class Technical:
         rounding: int | None = 4,
         growth: bool = False,
         lag: int | list[int] = 1,
-    ):
+    ) -> tuple[pd.Series, pd.Series] | tuple[pd.DataFrame, pd.DataFrame]:
         """
-        Calculate the asset turnover ratio, an efficiency ratio that measures how
-        efficiently a company uses its assets to generate sales.
+        Calculate the Aroon Indicator for a given price series.
+
+        The Aroon Indicator is an oscillator that measures the strength of a trend and the
+        likelihood of its continuation or reversal.
 
         Args:
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
-            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
-            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            period (str, optional): The time period to consider for historical data.
+                Can be "daily", "weekly", "quarterly", or "yearly". Defaults to "daily".
+            window (int, optional): The number of periods for calculating the Aroon Indicator.
+                Defaults to 14.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the indicator values.
+                Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation.
+                Defaults to 1.
 
-        As an example:
+        Returns:
+            Tuple[pd.Series, pd.Series] or Tuple[pd.DataFrame, pd.DataFrame]:
+            Aroon Indicator values for the upward and downward trends.
 
-        ```python
-        from financetoolkit import Toolkit
-
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
-
-        toolkit.ratios.get_asset_turnover_ratio()
-        ```
+        Note:
+        - The method retrieves historical data based on the specified `period` and calculates
+          the Aroon Indicator values for each asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the indicator values
+          using the specified `lag`.
         """
         if period == "daily":
             historical_data = self._daily_historical
@@ -807,7 +877,7 @@ class Technical:
         elif period == "yearly":
             historical_data = self._yearly_historical
         else:
-            raise ValueError("Period must be daily, weekly, quarterly or yearly.")
+            raise ValueError("Period must be daily, weekly, quarterly, or yearly.")
 
         aroon_indicator_up, aroon_indicator_down = momentum.get_aroon_indicator(
             historical_data["High"], historical_data["Low"], window
@@ -828,9 +898,10 @@ class Technical:
             )
             return aroon_indicator_up_growth, aroon_indicator_down_growth
 
-        return aroon_indicator_up.round(
-            rounding if rounding else self._rounding
-        ), aroon_indicator_down.round(rounding if rounding else self._rounding)
+        return (
+            aroon_indicator_up.round(rounding if rounding else self._rounding),
+            aroon_indicator_down.round(rounding if rounding else self._rounding),
+        )
 
     @handle_errors
     def get_commodity_channel_index(
@@ -842,25 +913,37 @@ class Technical:
         rounding: int | None = 4,
         growth: bool = False,
         lag: int | list[int] = 1,
-    ):
+    ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the asset turnover ratio, an efficiency ratio that measures how
-        efficiently a company uses its assets to generate sales.
+        Calculate the Commodity Channel Index (CCI) for a given price series.
+
+        The Commodity Channel Index is an oscillator that measures the current price level
+        relative to an average price level over a specified period.
 
         Args:
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
-            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
-            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            period (str, optional): The time period to consider for historical data.
+                Can be "daily", "weekly", "quarterly", or "yearly". Defaults to "daily".
+            close_column (str, optional): The column in the historical data that represents
+                the closing prices. Defaults to "Adj Close".
+            window (int, optional): The number of periods for calculating the CCI.
+                Defaults to 14.
+            constant (float, optional): Constant multiplier used in the CCI calculation.
+                Defaults to 0.015.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the indicator values.
+                Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation.
+                Defaults to 1.
 
-        As an example:
+        Returns:
+            pd.Series or pd.DataFrame: Commodity Channel Index (CCI) values.
 
-        ```python
-        from financetoolkit import Toolkit
-
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
-
-        toolkit.ratios.get_asset_turnover_ratio()
-        ```
+        Note:
+        - The method retrieves historical data based on the specified `period` and calculates
+          the CCI values for each asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the indicator values
+          using the specified `lag`.
         """
         if period == "daily":
             historical_data = self._daily_historical
@@ -871,7 +954,7 @@ class Technical:
         elif period == "yearly":
             historical_data = self._yearly_historical
         else:
-            raise ValueError("Period must be daily, weekly, quarterly or yearly.")
+            raise ValueError("Period must be daily, weekly, quarterly, or yearly.")
 
         commodity_channel_index = pd.DataFrame(index=historical_data.index)
 
@@ -903,25 +986,35 @@ class Technical:
         rounding: int | None = 4,
         growth: bool = False,
         lag: int | list[int] = 1,
-    ):
+    ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the asset turnover ratio, an efficiency ratio that measures how
-        efficiently a company uses its assets to generate sales.
+        Calculate the Relative Vigor Index (RVI) for a given price series.
+
+        The Relative Vigor Index is an oscillator that measures the conviction of a current price
+        trend using the relationship between closing and opening prices.
 
         Args:
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
-            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
-            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            period (str, optional): The time period to consider for historical data.
+                Can be "daily", "weekly", "quarterly", or "yearly". Defaults to "daily".
+            close_column (str, optional): The column in the historical data that represents
+                the closing prices. Defaults to "Adj Close".
+            window (int, optional): The number of periods for calculating the RVI.
+                Defaults to 14.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the indicator values.
+                Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation.
+                Defaults to 1.
 
-        As an example:
+        Returns:
+            pd.Series or pd.DataFrame: Relative Vigor Index (RVI) values.
 
-        ```python
-        from financetoolkit import Toolkit
-
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
-
-        toolkit.ratios.get_asset_turnover_ratio()
-        ```
+        Note:
+        - The method retrieves historical data based on the specified `period` and calculates
+          the RVI values for each asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the indicator values
+          using the specified `lag`.
         """
         if period == "daily":
             historical_data = self._daily_historical
@@ -932,7 +1025,7 @@ class Technical:
         elif period == "yearly":
             historical_data = self._yearly_historical
         else:
-            raise ValueError("Period must be daily, weekly, quarterly or yearly.")
+            raise ValueError("Period must be daily, weekly, quarterly, or yearly.")
 
         relative_vigor_index = momentum.get_relative_vigor_index(
             historical_data["Open"],
@@ -960,25 +1053,34 @@ class Technical:
         rounding: int | None = 4,
         growth: bool = False,
         lag: int | list[int] = 1,
-    ):
+    ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the asset turnover ratio, an efficiency ratio that measures how
-        efficiently a company uses its assets to generate sales.
+        Calculate the Force Index for a given price series.
+
+        The Force Index is an indicator that measures the strength behind price movements.
 
         Args:
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
-            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
-            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            period (str, optional): The time period to consider for historical data.
+                Can be "daily", "weekly", "quarterly", or "yearly". Defaults to "daily".
+            close_column (str, optional): The column in the historical data that represents
+                the closing prices. Defaults to "Adj Close".
+            window (int, optional): The number of periods for calculating the Force Index.
+                Defaults to 14.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the indicator values.
+                Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation.
+                Defaults to 1.
 
-        As an example:
+        Returns:
+            pd.Series or pd.DataFrame: Force Index values.
 
-        ```python
-        from financetoolkit import Toolkit
-
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
-
-        toolkit.ratios.get_asset_turnover_ratio()
-        ```
+        Note:
+        - The method retrieves historical data based on the specified `period` and calculates
+          the Force Index values for each asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the indicator values
+          using the specified `lag`.
         """
         if period == "daily":
             historical_data = self._daily_historical
@@ -989,7 +1091,7 @@ class Technical:
         elif period == "yearly":
             historical_data = self._yearly_historical
         else:
-            raise ValueError("Period must be daily, weekly, quarterly or yearly.")
+            raise ValueError("Period must be daily, weekly, quarterly, or yearly.")
 
         force_index = momentum.get_force_index(
             historical_data[close_column],
@@ -1018,25 +1120,39 @@ class Technical:
         rounding: int | None = 4,
         growth: bool = False,
         lag: int | list[int] = 1,
-    ):
+    ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the asset turnover ratio, an efficiency ratio that measures how
-        efficiently a company uses its assets to generate sales.
+        Calculate the Ultimate Oscillator for a given price series.
+
+        The Ultimate Oscillator is a momentum oscillator that combines short-term, mid-term,
+        and long-term price momentum into a single value.
 
         Args:
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
-            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
-            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            period (str, optional): The time period to consider for historical data.
+                Can be "daily", "weekly", "quarterly", or "yearly". Defaults to "daily".
+            close_column (str, optional): The column in the historical data that represents
+                the closing prices. Defaults to "Adj Close".
+            window_1 (int, optional): The number of periods for the first short-term window.
+                Defaults to 7.
+            window_2 (int, optional): The number of periods for the second mid-term window.
+                Defaults to 14.
+            window_3 (int, optional): The number of periods for the third long-term window.
+                Defaults to 28.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the indicator values.
+                Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation.
+                Defaults to 1.
 
-        As an example:
+        Returns:
+            pd.Series or pd.DataFrame: Ultimate Oscillator values.
 
-        ```python
-        from financetoolkit import Toolkit
-
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
-
-        toolkit.ratios.get_asset_turnover_ratio()
-        ```
+        Note:
+        - The method retrieves historical data based on the specified `period` and calculates
+          the Ultimate Oscillator values for each asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the indicator values
+          using the specified `lag`.
         """
         if period == "daily":
             historical_data = self._daily_historical
@@ -1047,7 +1163,7 @@ class Technical:
         elif period == "yearly":
             historical_data = self._yearly_historical
         else:
-            raise ValueError("Period must be daily, weekly, quarterly or yearly.")
+            raise ValueError("Period must be daily, weekly, quarterly, or yearly.")
 
         ultimate_oscillator = pd.DataFrame(index=historical_data.index)
         for ticker in self._tickers:
@@ -1061,12 +1177,13 @@ class Technical:
             )
 
         if growth:
-            return calculate_growth(
+            ultimate_oscillator_growth = calculate_growth(
                 ultimate_oscillator,
                 lag=lag,
                 rounding=rounding if rounding else self._rounding,
                 axis="index",
             )
+            return ultimate_oscillator_growth
 
         return ultimate_oscillator.round(rounding if rounding else self._rounding)
 
@@ -1080,25 +1197,37 @@ class Technical:
         rounding: int | None = 4,
         growth: bool = False,
         lag: int | list[int] = 1,
-    ):
+    ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the asset turnover ratio, an efficiency ratio that measures how
-        efficiently a company uses its assets to generate sales.
+        Calculate the Percentage Price Oscillator (PPO) for a given price series.
+
+        The Percentage Price Oscillator (PPO) is a momentum oscillator that measures the
+        difference between two moving averages as a percentage of the longer moving average.
 
         Args:
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
-            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
-            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            period (str, optional): The time period to consider for historical data.
+                Can be "daily", "weekly", "quarterly", or "yearly". Defaults to "daily".
+            close_column (str, optional): The column in the historical data that represents
+                the closing prices. Defaults to "Adj Close".
+            short_window (int, optional): The number of periods for the short-term moving average.
+                Defaults to 7.
+            long_window (int, optional): The number of periods for the long-term moving average.
+                Defaults to 28.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the indicator values.
+                Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation.
+                Defaults to 1.
 
-        As an example:
+        Returns:
+            pd.Series or pd.DataFrame: Percentage Price Oscillator (PPO) values.
 
-        ```python
-        from financetoolkit import Toolkit
-
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
-
-        toolkit.ratios.get_asset_turnover_ratio()
-        ```
+        Note:
+        - The method retrieves historical data based on the specified `period` and calculates
+          the PPO values for each asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the indicator values
+          using the specified `lag`.
         """
         if period == "daily":
             historical_data = self._daily_historical
@@ -1109,7 +1238,7 @@ class Technical:
         elif period == "yearly":
             historical_data = self._yearly_historical
         else:
-            raise ValueError("Period must be daily, weekly, quarterly or yearly.")
+            raise ValueError("Period must be daily, weekly, quarterly, or yearly.")
 
         percentage_price_oscillator = momentum.get_percentage_price_oscillator(
             historical_data[close_column],
@@ -1118,12 +1247,13 @@ class Technical:
         )
 
         if growth:
-            return calculate_growth(
+            ppo_growth = calculate_growth(
                 percentage_price_oscillator,
                 lag=lag,
                 rounding=rounding if rounding else self._rounding,
                 axis="index",
             )
+            return ppo_growth
 
         return percentage_price_oscillator.round(
             rounding if rounding else self._rounding
@@ -1138,25 +1268,35 @@ class Technical:
         rounding: int | None = 4,
         growth: bool = False,
         lag: int | list[int] = 1,
-    ):
+    ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the asset turnover ratio, an efficiency ratio that measures how
-        efficiently a company uses its assets to generate sales.
+        Calculate the Detrended Price Oscillator (DPO) for a given price series.
+
+        The Detrended Price Oscillator (DPO) is an indicator that helps identify short-term cycles
+        by removing longer-term trends from prices.
 
         Args:
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
-            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
-            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            period (str, optional): The time period to consider for historical data.
+                Can be "daily", "weekly", "quarterly", or "yearly". Defaults to "daily".
+            close_column (str, optional): The column in the historical data that represents
+                the closing prices. Defaults to "Adj Close".
+            window (int, optional): The number of periods to consider for the DPO calculation.
+                Defaults to 14.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the indicator values.
+                Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation.
+                Defaults to 1.
 
-        As an example:
+        Returns:
+            pd.Series or pd.DataFrame: Detrended Price Oscillator (DPO) values.
 
-        ```python
-        from financetoolkit import Toolkit
-
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
-
-        toolkit.ratios.get_asset_turnover_ratio()
-        ```
+        Note:
+        - The method retrieves historical data based on the specified `period` and calculates
+          the DPO values for each asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the indicator values
+          using the specified `lag`.
         """
         if period == "daily":
             historical_data = self._daily_historical
@@ -1167,19 +1307,20 @@ class Technical:
         elif period == "yearly":
             historical_data = self._yearly_historical
         else:
-            raise ValueError("Period must be daily, weekly, quarterly or yearly.")
+            raise ValueError("Period must be daily, weekly, quarterly, or yearly.")
 
         detrended_price_oscillator = momentum.get_detrended_price_oscillator(
             historical_data[close_column], window
         )
 
         if growth:
-            return calculate_growth(
+            dpo_growth = calculate_growth(
                 detrended_price_oscillator,
                 lag=lag,
                 rounding=rounding if rounding else self._rounding,
                 axis="index",
             )
+            return dpo_growth
 
         return detrended_price_oscillator.round(
             rounding if rounding else self._rounding
@@ -1194,25 +1335,35 @@ class Technical:
         rounding: int | None = 4,
         growth: bool = False,
         lag: int | list[int] = 1,
-    ):
+    ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the asset turnover ratio, an efficiency ratio that measures how
-        efficiently a company uses its assets to generate sales.
+        Calculate the Average Directional Index (ADX) for a given price series.
+
+        The Average Directional Index (ADX) is an indicator that measures the strength of a trend,
+        whether it's an uptrend or a downtrend.
 
         Args:
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
-            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
-            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            period (str, optional): The time period to consider for historical data.
+                Can be "daily", "weekly", "quarterly", or "yearly". Defaults to "daily".
+            close_column (str, optional): The column in the historical data that represents
+                the closing prices. Defaults to "Adj Close".
+            window (int, optional): The number of periods to consider for the ADX calculation.
+                Defaults to 14.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the indicator values.
+                Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation.
+                Defaults to 1.
 
-        As an example:
+        Returns:
+            pd.DataFrame or pd.Series: Average Directional Index (ADX) values.
 
-        ```python
-        from financetoolkit import Toolkit
-
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
-
-        toolkit.ratios.get_asset_turnover_ratio()
-        ```
+        Note:
+        - The method retrieves historical data based on the specified `period` and calculates
+          the ADX values for each asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the indicator values
+          using the specified `lag`.
         """
         if period == "daily":
             historical_data = self._daily_historical
@@ -1223,7 +1374,7 @@ class Technical:
         elif period == "yearly":
             historical_data = self._yearly_historical
         else:
-            raise ValueError("Period must be daily, weekly, quarterly or yearly.")
+            raise ValueError("Period must be daily, weekly, quarterly, or yearly.")
 
         average_directional_index = pd.DataFrame(index=historical_data.index)
         for ticker in self._tickers:
@@ -1235,12 +1386,13 @@ class Technical:
             )
 
         if growth:
-            return calculate_growth(
+            adx_growth = calculate_growth(
                 average_directional_index,
                 lag=lag,
                 rounding=rounding if rounding else self._rounding,
                 axis="index",
             )
+            return adx_growth
 
         return average_directional_index.round(rounding if rounding else self._rounding)
 
@@ -1253,25 +1405,35 @@ class Technical:
         rounding: int | None = 4,
         growth: bool = False,
         lag: int | list[int] = 1,
-    ):
+    ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the asset turnover ratio, an efficiency ratio that measures how
-        efficiently a company uses its assets to generate sales.
+        Calculate the Chande Momentum Oscillator (CMO) for a given price series.
+
+        The Chande Momentum Oscillator is an indicator that measures the momentum of a price
+        series and identifies overbought and oversold conditions.
 
         Args:
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
-            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
-            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            period (str, optional): The time period to consider for historical data.
+                Can be "daily", "weekly", "quarterly", or "yearly". Defaults to "daily".
+            close_column (str, optional): The column in the historical data that represents
+                the closing prices. Defaults to "Adj Close".
+            window (int, optional): The number of periods to consider for the CMO calculation.
+                Defaults to 14.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the indicator values.
+                Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation.
+                Defaults to 1.
 
-        As an example:
+        Returns:
+            pd.Series or pd.DataFrame: Chande Momentum Oscillator values.
 
-        ```python
-        from financetoolkit import Toolkit
-
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
-
-        toolkit.ratios.get_asset_turnover_ratio()
-        ```
+        Note:
+        - The method retrieves historical data based on the specified `period` and calculates
+          the Chande Momentum Oscillator values for each asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the indicator values
+          using the specified `lag`.
         """
         if period == "daily":
             historical_data = self._daily_historical
@@ -1282,19 +1444,20 @@ class Technical:
         elif period == "yearly":
             historical_data = self._yearly_historical
         else:
-            raise ValueError("Period must be daily, weekly, quarterly or yearly.")
+            raise ValueError("Period must be daily, weekly, quarterly, or yearly.")
 
         chande_momentum_oscillator = momentum.get_chande_momentum_oscillator(
             historical_data[close_column], window
         )
 
         if growth:
-            return calculate_growth(
+            cmo_growth = calculate_growth(
                 chande_momentum_oscillator,
                 lag=lag,
                 rounding=rounding if rounding else self._rounding,
                 axis="index",
             )
+            return cmo_growth
 
         return chande_momentum_oscillator.round(
             rounding if rounding else self._rounding
@@ -1310,25 +1473,40 @@ class Technical:
         rounding: int | None = 4,
         growth: bool = False,
         lag: int | list[int] = 1,
-    ):
+    ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
         """
-        Calculate the asset turnover ratio, an efficiency ratio that measures how
-        efficiently a company uses its assets to generate sales.
+        Calculate the Ichimoku Cloud indicator for a given price series.
+
+        The Ichimoku Cloud, also known as the Ichimoku Kinko Hyo, is a versatile indicator that
+        defines support and resistance, identifies trend direction, gauges momentum, and provides
+        trading signals.
 
         Args:
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
-            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
-            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            period (str, optional): The time period to consider for historical data.
+                Can be "daily", "weekly", "quarterly", or "yearly". Defaults to "daily".
+            conversion_window (int, optional): The number of periods to consider for the
+                Conversion Line (Tenkan-sen) calculation. Defaults to 9.
+            base_window (int, optional): The number of periods to consider for the Base Line
+                (Kijun-sen) calculation. Defaults to 20.
+            lead_span_b_window (int, optional): The number of periods to shift forward for the
+                Lead Span B calculation. Defaults to 40.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the indicator values.
+                Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation.
+                Defaults to 1.
 
-        As an example:
+        Returns:
+            Tuple[pd.Series, pd.Series, pd.Series, pd.Series] or
+            Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+            Conversion Line, Base Line, Lead Span A, and Lead Span B values.
 
-        ```python
-        from financetoolkit import Toolkit
-
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
-
-        toolkit.ratios.get_asset_turnover_ratio()
-        ```
+        Note:
+        - The method retrieves historical data based on the specified `period` and calculates
+          the Ichimoku Cloud values for each asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the indicator values
+          using the specified `lag`.
         """
         if period == "daily":
             historical_data = self._daily_historical
@@ -1339,7 +1517,7 @@ class Technical:
         elif period == "yearly":
             historical_data = self._yearly_historical
         else:
-            raise ValueError("Period must be daily, weekly, quarterly or yearly.")
+            raise ValueError("Period must be daily, weekly, quarterly, or yearly.")
 
         (
             conversion_line,
@@ -1387,14 +1565,12 @@ class Technical:
                 lead_span_b_growth,
             )
 
-        conversion_line = conversion_line.round(
-            rounding if rounding else self._rounding
+        return (
+            conversion_line.round(rounding if rounding else self._rounding),
+            base_line.round(rounding if rounding else self._rounding),
+            lead_span_a.round(rounding if rounding else self._rounding),
+            lead_span_b.round(rounding if rounding else self._rounding),
         )
-        base_line = base_line.round(rounding if rounding else self._rounding)
-        lead_span_a = lead_span_a.round(rounding if rounding else self._rounding)
-        lead_span_b = lead_span_b.round(rounding if rounding else self._rounding)
-
-        return conversion_line, base_line, lead_span_a, lead_span_b
 
     @handle_errors
     def get_stochastic_oscillator(
@@ -1406,25 +1582,39 @@ class Technical:
         rounding: int | None = 4,
         growth: bool = False,
         lag: int | list[int] = 1,
-    ):
+    ) -> tuple[pd.DataFrame, pd.DataFrame]:
         """
-        Calculate the asset turnover ratio, an efficiency ratio that measures how
-        efficiently a company uses its assets to generate sales.
+        Calculate the Stochastic Oscillator indicator for a given price series.
+
+        The Stochastic Oscillator is a momentum indicator that shows the location of the close
+        relative to the high-low range over a set number of periods. It consists of the %K line
+        (fast) and the %D line (slow).
 
         Args:
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
-            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
-            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            period (str, optional): The time period to consider for historical data.
+                Can be "daily", "weekly", "quarterly", or "yearly". Defaults to "daily".
+            close_column (str, optional): The column name for closing prices in the historical data.
+                Defaults to "Adj Close".
+            window (int, optional): The number of periods to consider for the %K line calculation.
+                Defaults to 14.
+            smooth_widow (int, optional): The number of periods to consider for the %D line
+                (slow stochastic) calculation. Defaults to 3.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the %K and %D values.
+                Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation.
+                Defaults to 1.
 
-        As an example:
+        Returns:
+            Tuple[pd.Series, pd.Series] or Tuple[pd.DataFrame, pd.DataFrame]:
+            %K line and %D line values.
 
-        ```python
-        from financetoolkit import Toolkit
-
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
-
-        toolkit.ratios.get_asset_turnover_ratio()
-        ```
+        Note:
+        - The method retrieves historical data based on the specified `period` and calculates
+          the Stochastic Oscillator values for each asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the %K and %D values
+          using the specified `lag`.
         """
         if period == "daily":
             historical_data = self._daily_historical
@@ -1435,7 +1625,7 @@ class Technical:
         elif period == "yearly":
             historical_data = self._yearly_historical
         else:
-            raise ValueError("Period must be daily, weekly, quarterly or yearly.")
+            raise ValueError("Period must be daily, weekly, quarterly, or yearly.")
 
         stochastic_d, stochastic_k = momentum.get_stochastic_oscillator(
             historical_data["High"],
@@ -1461,10 +1651,10 @@ class Technical:
 
             return stochastic_k_growth, stochastic_d_growth
 
-        stochastic_k = stochastic_k.round(rounding if rounding else self._rounding)
-        stochastic_d = stochastic_d.round(rounding if rounding else self._rounding)
-
-        return stochastic_k, stochastic_d
+        return (
+            stochastic_k.round(rounding if rounding else self._rounding),
+            stochastic_d.round(rounding if rounding else self._rounding),
+        )
 
     @handle_errors
     def get_moving_average_convergence_divergence(
@@ -1477,25 +1667,41 @@ class Technical:
         rounding: int | None = 4,
         growth: bool = False,
         lag: int | list[int] = 1,
-    ):
+    ) -> tuple[pd.Series, pd.Series] | tuple[pd.DataFrame, pd.DataFrame]:
         """
-        Calculate the asset turnover ratio, an efficiency ratio that measures how
-        efficiently a company uses its assets to generate sales.
+        Calculate the Moving Average Convergence Divergence (MACD) indicator for a given price series.
+
+        The Moving Average Convergence Divergence (MACD) is a trend-following momentum indicator
+        that shows the relationship between two moving averages of a security's price. It consists
+        of the MACD line, signal line, and MACD histogram.
 
         Args:
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
-            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
-            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            period (str, optional): The time period to consider for historical data.
+                Can be "daily", "weekly", "quarterly", or "yearly". Defaults to "daily".
+            close_column (str, optional): The column name for closing prices in the historical data.
+                Defaults to "Adj Close".
+            short_window (int, optional): The number of periods for the shorter moving average.
+                Defaults to 12.
+            long_window (int, optional): The number of periods for the longer moving average.
+                Defaults to 26.
+            signal_window (int, optional): The number of periods for the signal line.
+                Defaults to 9.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the MACD and signal values.
+                Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation.
+                Defaults to 1.
 
-        As an example:
+        Returns:
+            Tuple[pd.DataFrame, pd.DataFrame] or Tuple[pd.Series, pd.Series]:
+            MACD line and signal line values.
 
-        ```python
-        from financetoolkit import Toolkit
-
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
-
-        toolkit.ratios.get_asset_turnover_ratio()
-        ```
+        Note:
+        - The method retrieves historical data based on the specified `period` and calculates
+          the MACD and signal line values for each asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the MACD and signal values
+          using the specified `lag`.
         """
         if period == "daily":
             historical_data = self._daily_historical
@@ -1506,7 +1712,7 @@ class Technical:
         elif period == "yearly":
             historical_data = self._yearly_historical
         else:
-            raise ValueError("Period must be daily, weekly, quarterly or yearly.")
+            raise ValueError("Period must be daily, weekly, quarterly, or yearly.")
 
         macd, signal = momentum.get_moving_average_convergence_divergence(
             historical_data[close_column], short_window, long_window, signal_window
@@ -1529,8 +1735,9 @@ class Technical:
 
             return macd_growth, signal_growth
 
-        return macd.round(rounding if rounding else self._rounding), signal.round(
-            rounding if rounding else self._rounding
+        return (
+            macd.round(rounding if rounding else self._rounding),
+            signal.round(rounding if rounding else self._rounding),
         )
 
     @handle_errors
@@ -1542,25 +1749,36 @@ class Technical:
         rounding: int | None = 4,
         growth: bool = False,
         lag: int | list[int] = 1,
-    ):
+    ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the asset turnover ratio, an efficiency ratio that measures how
-        efficiently a company uses its assets to generate sales.
+        Calculate the Relative Strength Index (RSI) indicator for a given price series.
+
+        The Relative Strength Index (RSI) is a momentum oscillator that measures the speed and
+        change of price movements. It ranges from 0 to 100 and is used to identify overbought or
+        oversold conditions in an asset's price.
 
         Args:
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
-            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
-            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            period (str, optional): The time period to consider for historical data.
+                Can be "daily", "weekly", "quarterly", or "yearly". Defaults to "daily".
+            close_column (str, optional): The column name for closing prices in the historical data.
+                Defaults to "Adj Close".
+            window (int, optional): The number of periods for RSI calculation. Defaults to 14.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the RSI.
+                Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation.
+                Defaults to 1.
 
-        As an example:
+        Returns:
+            pd.DataFrame or pd.Series:
+            Relative Strength Index (RSI) values.
 
-        ```python
-        from financetoolkit import Toolkit
-
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
-
-        toolkit.ratios.get_asset_turnover_ratio()
-        ```
+        Note:
+        - The method retrieves historical data based on the specified `period` and calculates the
+          RSI for each asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the RSI
+          using the specified `lag`.
         """
         if period == "daily":
             historical_data = self._daily_historical
@@ -1571,7 +1789,7 @@ class Technical:
         elif period == "yearly":
             historical_data = self._yearly_historical
         else:
-            raise ValueError("Period must be daily, weekly, quarterly or yearly.")
+            raise ValueError("Period must be daily, weekly, quarterly, or yearly.")
 
         relative_strength_index = momentum.get_relative_strength_index(
             historical_data[close_column], window
@@ -1595,25 +1813,34 @@ class Technical:
         rounding: int | None = 4,
         growth: bool = False,
         lag: int | list[int] = 1,
-    ):
+    ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the asset turnover ratio, an efficiency ratio that measures how
-        efficiently a company uses its assets to generate sales.
+        Calculate the Balance of Power (BOP) indicator for a given price series.
+
+        The Balance of Power (BOP) indicator measures the strength of buyers versus sellers
+        in the market. It relates the price change to the change in the asset's trading range.
 
         Args:
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
-            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
-            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            period (str, optional): The time period to consider for historical data.
+                Can be "daily", "weekly", "quarterly", or "yearly". Defaults to "daily".
+            close_column (str, optional): The column name for closing prices in the historical data.
+                Defaults to "Adj Close".
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the BOP.
+                Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation.
+                Defaults to 1.
 
-        As an example:
+        Returns:
+            pd.DataFrame or pd.Series:
+            Balance of Power (BOP) values.
 
-        ```python
-        from financetoolkit import Toolkit
-
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
-
-        toolkit.ratios.get_asset_turnover_ratio()
-        ```
+        Note:
+        - The method retrieves historical data based on the specified `period` and calculates the
+          BOP for each asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the BOP
+          using the specified `lag`.
         """
         if period == "daily":
             historical_data = self._daily_historical
@@ -1624,7 +1851,7 @@ class Technical:
         elif period == "yearly":
             historical_data = self._yearly_historical
         else:
-            raise ValueError("Period must be daily, weekly, quarterly or yearly.")
+            raise ValueError("Period must be daily, weekly, quarterly, or yearly.")
 
         balance_of_power = momentum.get_balance_of_power(
             historical_data["Open"],
@@ -1652,25 +1879,36 @@ class Technical:
         rounding: int | None = 4,
         growth: bool = False,
         lag: int | list[int] = 1,
-    ):
+    ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the asset turnover ratio, an efficiency ratio that measures how
-        efficiently a company uses its assets to generate sales.
+        Calculate the Moving Average (MA) for a given price series.
+
+        The Moving Average (MA) is a commonly used technical indicator that smooths out
+        price data by calculating the average price over a specified number of periods.
 
         Args:
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
-            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
-            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            period (str, optional): The time period to consider for historical data.
+                Can be "daily", "weekly", "quarterly", or "yearly". Defaults to "daily".
+            close_column (str, optional): The column name for closing prices in the historical data.
+                Defaults to "Adj Close".
+            window (int, optional): Number of periods to consider for the moving average.
+                The number of periods (time intervals) over which to calculate the MA.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the MA.
+                Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation.
+                Defaults to 1.
 
-        As an example:
+        Returns:
+            pd.DataFrame or pd.Series:
+            Moving Average (MA) values.
 
-        ```python
-        from financetoolkit import Toolkit
-
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
-
-        toolkit.ratios.get_asset_turnover_ratio()
-        ```
+        Note:
+        - The method retrieves historical data based on the specified `period` and calculates the
+          MA for each asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the MA
+          using the specified `lag`.
         """
         if period == "daily":
             historical_data = self._daily_historical
@@ -1681,7 +1919,7 @@ class Technical:
         elif period == "yearly":
             historical_data = self._yearly_historical
         else:
-            raise ValueError("Period must be daily, weekly, quarterly or yearly.")
+            raise ValueError("Period must be daily, weekly, quarterly, or yearly.")
 
         moving_average = overlap.get_moving_average(
             historical_data[close_column], window
@@ -1706,25 +1944,36 @@ class Technical:
         rounding: int | None = 4,
         growth: bool = False,
         lag: int | list[int] = 1,
-    ):
+    ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the asset turnover ratio, an efficiency ratio that measures how
-        efficiently a company uses its assets to generate sales.
+        Calculate the Exponential Moving Average (EMA) for a given price series.
+
+        EMA is a technical indicator that gives more weight to recent price data,
+        providing a smoothed moving average that reacts faster to price changes.
 
         Args:
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
-            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
-            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            period (str, optional): The time period to consider for historical data.
+                Can be "daily", "weekly", "quarterly", or "yearly". Defaults to "daily".
+            close_column (str, optional): The column name for closing prices in the historical data.
+                Defaults to "Adj Close".
+            window (int, optional): Number of periods for EMA calculation.
+                The number of periods (time intervals) over which to calculate the EMA.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the EMA.
+                Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation.
+                Defaults to 1.
 
-        As an example:
+        Returns:
+            pd.DataFrame or pd.Series:
+            Exponential Moving Average (EMA) values.
 
-        ```python
-        from financetoolkit import Toolkit
-
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
-
-        toolkit.ratios.get_asset_turnover_ratio()
-        ```
+        Note:
+        - The method retrieves historical data based on the specified `period` and calculates the
+          EMA for each asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the EMA
+          using the specified `lag`.
         """
         if period == "daily":
             historical_data = self._daily_historical
@@ -1735,7 +1984,7 @@ class Technical:
         elif period == "yearly":
             historical_data = self._yearly_historical
         else:
-            raise ValueError("Period must be daily, weekly, quarterly or yearly.")
+            raise ValueError("Period must be daily, weekly, quarterly, or yearly.")
 
         exponential_moving_average = overlap.get_exponential_moving_average(
             historical_data[close_column], window
@@ -1762,25 +2011,36 @@ class Technical:
         rounding: int | None = 4,
         growth: bool = False,
         lag: int | list[int] = 1,
-    ):
+    ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the asset turnover ratio, an efficiency ratio that measures how
-        efficiently a company uses its assets to generate sales.
+        Calculate the Double Exponential Moving Average (DEMA) for a given price series.
+
+        DEMA is a technical indicator that attempts to reduce the lag from traditional
+        moving averages by using a combination of two exponential moving averages.
 
         Args:
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
-            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
-            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            period (str, optional): The time period to consider for historical data.
+                Can be "daily", "weekly", "quarterly", or "yearly". Defaults to "daily".
+            close_column (str, optional): The column name for closing prices in the historical data.
+                Defaults to "Adj Close".
+            window (int, optional): Number of periods for moving average calculation.
+                The number of periods (time intervals) over which to calculate the moving average.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the DEMA.
+                Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation.
+                Defaults to 1.
 
-        As an example:
+        Returns:
+            pd.DataFrame or pd.Series:
+            Double Exponential Moving Average (DEMA) values.
 
-        ```python
-        from financetoolkit import Toolkit
-
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
-
-        toolkit.ratios.get_asset_turnover_ratio()
-        ```
+        Note:
+        - The method retrieves historical data based on the specified `period` and calculates the
+          DEMA for each asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the DEMA
+          using the specified `lag`.
         """
         if period == "daily":
             historical_data = self._daily_historical
@@ -1791,7 +2051,7 @@ class Technical:
         elif period == "yearly":
             historical_data = self._yearly_historical
         else:
-            raise ValueError("Period must be daily, weekly, quarterly or yearly.")
+            raise ValueError("Period must be daily, weekly, quarterly, or yearly.")
 
         double_exponential_moving_average = (
             overlap.get_double_exponential_moving_average(
@@ -1820,25 +2080,37 @@ class Technical:
         rounding: int | None = 4,
         growth: bool = False,
         lag: int | list[int] = 1,
-    ):
+    ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the asset turnover ratio, an efficiency ratio that measures how
-        efficiently a company uses its assets to generate sales.
+        Calculate the Trix (Triple Exponential Moving Average) for a given price series.
+
+        Trix is a momentum oscillator that calculates the percentage rate of change of a triple
+        exponentially smoothed moving average. It helps identify overbought and oversold conditions
+        in a market.
 
         Args:
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
-            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
-            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            period (str, optional): The time period to consider for historical data.
+                Can be "daily", "weekly", "quarterly", or "yearly". Defaults to "daily".
+            close_column (str, optional): The column name for closing prices in the historical data.
+                Defaults to "Adj Close".
+            window (int, optional): Number of periods for moving average calculation.
+                The number of periods (time intervals) over which to calculate the moving average.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the Trix.
+                Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation.
+                Defaults to 1.
 
-        As an example:
+        Returns:
+            pd.DataFrame or pd.Series:
+            Trix values.
 
-        ```python
-        from financetoolkit import Toolkit
-
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
-
-        toolkit.ratios.get_asset_turnover_ratio()
-        ```
+        Note:
+        - The method retrieves historical data based on the specified `period` and calculates the
+          Trix for each asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the Trix
+          using the specified `lag`.
         """
         if period == "daily":
             historical_data = self._daily_historical
@@ -1849,7 +2121,7 @@ class Technical:
         elif period == "yearly":
             historical_data = self._yearly_historical
         else:
-            raise ValueError("Period must be daily, weekly, quarterly or yearly.")
+            raise ValueError("Period must be daily, weekly, quarterly, or yearly.")
 
         trix = overlap.get_trix(historical_data[close_column], window)
 
@@ -1873,25 +2145,40 @@ class Technical:
         rounding: int | None = 4,
         growth: bool = False,
         lag: int | list[int] = 1,
-    ):
+    ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
         """
-        Calculate the asset turnover ratio, an efficiency ratio that measures how
-        efficiently a company uses its assets to generate sales.
+        Calculate the Bollinger Bands for a given price series.
+
+        Bollinger Bands are a volatility indicator that consists of three lines: an upper band,
+        a middle band (simple moving average), and a lower band. The upper and lower bands are
+        calculated as the moving average plus and minus a specified number of standard deviations,
+        respectively.
 
         Args:
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
-            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
-            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            period (str, optional): The time period to consider for historical data.
+                Can be "daily", "weekly", "quarterly", or "yearly". Defaults to "daily".
+            close_column (str, optional): The column name for closing prices in the historical data.
+                Defaults to "Adj Close".
+            window (int, optional): Number of periods for moving average calculation.
+                The number of periods (time intervals) over which to calculate the moving average.
+            num_std_dev (int, optional): Number of standard deviations for the bands.
+                Defaults to 2.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the bands.
+                Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation.
+                Defaults to 1.
 
-        As an example:
+        Returns:
+            Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame] or Tuple[pd.Series, pd.Series, pd.Series]:
+            Bollinger Bands (upper, middle, lower).
 
-        ```python
-        from financetoolkit import Toolkit
-
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
-
-        toolkit.ratios.get_asset_turnover_ratio()
-        ```
+        Note:
+        - The method retrieves historical data based on the specified `period` and calculates the
+          Bollinger Bands for each asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the Bollinger Bands
+          using the specified `lag`.
         """
         if period == "daily":
             historical_data = self._daily_historical
@@ -1902,7 +2189,7 @@ class Technical:
         elif period == "yearly":
             historical_data = self._yearly_historical
         else:
-            raise ValueError("Period must be daily, weekly, quarterly or yearly.")
+            raise ValueError("Period must be daily, weekly, quarterly, or yearly.")
 
         upper_band, middle_band, lower_band = overlap.get_bollinger_bands(
             historical_data[close_column], window, num_std_dev
@@ -1945,25 +2232,35 @@ class Technical:
         rounding: int | None = 4,
         growth: bool = False,
         lag: int | list[int] = 1,
-    ):
+    ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the asset turnover ratio, an efficiency ratio that measures how
-        efficiently a company uses its assets to generate sales.
+        Calculate the Triangular Moving Average (TMA) for a given price series.
+
+        The Triangular Moving Average (TMA) is a smoothed version of the Simple Moving Average (SMA)
+        that uses multiple SMAs to reduce noise and provide a smoother trendline.
 
         Args:
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
-            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
-            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            period (str, optional): The time period to consider for historical data.
+                Can be "daily", "weekly", "quarterly", or "yearly". Defaults to "daily".
+            close_column (str, optional): The column name for closing prices in the historical data.
+                Defaults to "Adj Close".
+            window (int, optional): Number of periods for TMA calculation.
+                The number of periods (time intervals) over which to calculate the TMA.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the TMA.
+                Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation.
+                Defaults to 1.
 
-        As an example:
+        Returns:
+            pd.Series or pd.DataFrame: Triangular Moving Average values.
 
-        ```python
-        from financetoolkit import Toolkit
-
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
-
-        toolkit.ratios.get_asset_turnover_ratio()
-        ```
+        Note:
+        - The method retrieves historical data based on the specified `period` and calculates the
+          Triangular Moving Average for each asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the Triangular Moving Average
+          using the specified `lag`.
         """
         if period == "daily":
             historical_data = self._daily_historical
@@ -1974,7 +2271,7 @@ class Technical:
         elif period == "yearly":
             historical_data = self._yearly_historical
         else:
-            raise ValueError("Period must be daily, weekly, quarterly or yearly.")
+            raise ValueError("Period must be daily, weekly, quarterly, or yearly.")
 
         triangular_moving_average = overlap.get_triangular_moving_average(
             historical_data[close_column], window
@@ -1998,25 +2295,34 @@ class Technical:
         rounding: int | None = 4,
         growth: bool = False,
         lag: int | list[int] = 1,
-    ):
+    ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the asset turnover ratio, an efficiency ratio that measures how
-        efficiently a company uses its assets to generate sales.
+        Calculate the True Range (TR) for a given price series.
+
+        The True Range (TR) is a measure of market volatility that considers the differences
+        between the high and low prices and the previous closing price. It provides insights
+        into the price movement of an asset.
 
         Args:
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
-            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
-            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            period (str, optional): The time period to consider for historical data.
+                Can be "daily", "weekly", "quarterly", or "yearly". Defaults to "daily".
+            close_column (str, optional): The column name for closing prices in the historical data.
+                Defaults to "Adj Close".
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the True Range.
+                Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation.
+                Defaults to 1.
 
-        As an example:
+        Returns:
+            pd.Series or pd.DataFrame: True Range values.
 
-        ```python
-        from financetoolkit import Toolkit
-
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
-
-        toolkit.ratios.get_asset_turnover_ratio()
-        ```
+        Note:
+        - The method retrieves historical data based on the specified `period` and calculates the
+          True Range for each asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the True Range
+          using the specified `lag`.
         """
         if period == "daily":
             historical_data = self._daily_historical
@@ -2027,7 +2333,7 @@ class Technical:
         elif period == "yearly":
             historical_data = self._yearly_historical
         else:
-            raise ValueError("Period must be daily, weekly, quarterly or yearly.")
+            raise ValueError("Period must be daily, weekly, quarterly, or yearly.")
 
         true_range = pd.DataFrame(index=historical_data.index)
         for ticker in self._tickers:
@@ -2056,25 +2362,41 @@ class Technical:
         rounding: int | None = 4,
         growth: bool = False,
         lag: int | list[int] = 1,
-    ):
+    ) -> pd.Series:
         """
-        Calculate the asset turnover ratio, an efficiency ratio that measures how
-        efficiently a company uses its assets to generate sales.
+        Calculate the Average True Range (ATR) of a given price series.
+
+        The Average True Range (ATR) is a technical indicator that measures the volatility
+        of an asset's price movements over a specified number of periods. It provides insights
+        into the potential price range of an asset, which can help traders and investors make
+        more informed decisions.
 
         Args:
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
-            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
-            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            period (str): Period for which to calculate the ATR.
+            window (int): Number of periods for ATR calculation.
+                The number of periods (time intervals) over which to calculate the Average True Range.
+            rounding (int | None): Number of decimal places to round the resulting ATR values to.
+                If None, no rounding is performed.
+            growth (bool): Flag indicating whether to return the ATR growth rate.
+                If True, the ATR growth rate is calculated.
+            lag (int | list[int]): Number of periods to lag the ATR values by.
+                If an integer is provided, all ATR values are lagged by the same number of periods.
+                If a list of integers is provided, each ATR value is lagged by the corresponding number of periods.
 
-        As an example:
+        Returns:
+            pd.Series: ATR values or ATR growth rate (if growth is True).
+                A pandas Series containing the calculated Average True Range values or growth rate for each period.
 
-        ```python
-        from financetoolkit import Toolkit
+        Formula:
+        The Average True Range (ATR) is calculated using the following steps:
+        1. Calculate the True Range (TR) for each period:
+            - True Range (TR) = max(high - low, abs(high - previous_close), abs(low - previous_close))
+        2. Calculate the Average True Range (ATR) over the specified window:
+            - ATR = EMA(TR, window), where EMA is the Exponential Moving Average.
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
-
-        toolkit.ratios.get_asset_turnover_ratio()
-        ```
+        Note:
+        - ATR values are typically used to assess the volatility and potential price movement of an asset.
+        - A higher ATR value indicates higher volatility, while a lower ATR value suggests lower volatility.
         """
         if period == "daily":
             historical_data = self._daily_historical
@@ -2117,25 +2439,40 @@ class Technical:
         rounding: int | None = 4,
         growth: bool = False,
         lag: int | list[int] = 1,
-    ):
+    ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
         """
-        Calculate the asset turnover ratio, an efficiency ratio that measures how
-        efficiently a company uses its assets to generate sales.
+        Calculate the Keltner Channels for a given price series.
+
+        The Keltner Channels consist of three lines:
+        - Upper Channel Line = Exponential Moving Average (EMA) of High Prices + ATR * ATR Multiplier
+        - Middle Channel Line = Exponential Moving Average (EMA) of Closing Prices
+        - Lower Channel Line = Exponential Moving Average (EMA) of Low Prices - ATR * ATR Multiplier
 
         Args:
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
-            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
-            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            period (str, optional): The time period to consider for historical data.
+                Can be "daily", "weekly", "quarterly", or "yearly". Defaults to "daily".
+            close_column (str, optional): The column name for closing prices in the historical data.
+                Defaults to "Adj Close".
+            window (int, optional): Number of periods for the moving average.
+                Defaults to 14.
+            atr_window (int, optional): Number of periods for ATR calculation.
+                Defaults to 14.
+            atr_multiplier (int, optional): Multiplier for ATR to determine channel width.
+                Defaults to 2.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the channels.
+                Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation.
+                Defaults to 1.
 
-        As an example:
+        Returns:
+            pd.DataFrame or Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]: Keltner Channels (upper, middle, lower).
 
-        ```python
-        from financetoolkit import Toolkit
-
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
-
-        toolkit.ratios.get_asset_turnover_ratio()
-        ```
+        Note:
+        - The method retrieves historical data based on the specified `period` and calculates Keltner Channels
+          for each asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the channels using the specified `lag`.
         """
         if period == "daily":
             historical_data = self._daily_historical
@@ -2146,7 +2483,7 @@ class Technical:
         elif period == "yearly":
             historical_data = self._yearly_historical
         else:
-            raise ValueError("Period must be daily, weekly, quarterly or yearly.")
+            raise ValueError("Period must be daily, weekly, quarterly, or yearly.")
 
         upper_line = pd.DataFrame(index=historical_data.index)
         middle_line = pd.DataFrame(index=historical_data.index)
@@ -2202,25 +2539,33 @@ class Technical:
         rounding: int | None = 4,
         growth: bool = False,
         lag: int | list[int] = 1,
-    ):
+    ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the asset turnover ratio, an efficiency ratio that measures how
-        efficiently a company uses its assets to generate sales.
+        Calculate the On-Balance Volume (OBV) for a given price series.
+
+        The On-Balance Volume (OBV) is a technical indicator that uses volume flow to predict changes in stock price.
+        It accumulates the volume on up days and subtracts the volume on down days. The resulting OBV line provides
+        insights into the buying and selling pressure behind price movements.
 
         Args:
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
-            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
-            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            period (str, optional): The time period to consider for historical data.
+                Can be "daily", "weekly", "quarterly", or "yearly". Defaults to "daily".
+            close_column (str, optional): The column name for closing prices in the historical data.
+                Defaults to "Adj Close".
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the OBV.
+                Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation.
+                Defaults to 1.
 
-        As an example:
+        Returns:
+            pd.Series or pd.DataFrame: On-Balance Volume values.
 
-        ```python
-        from financetoolkit import Toolkit
-
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
-
-        toolkit.ratios.get_asset_turnover_ratio()
-        ```
+        Note:
+        - The method retrieves historical data based on the specified `period` and calculates On-Balance Volume
+          for each asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the OBV using the specified `lag`.
         """
         if period == "daily":
             historical_data = self._daily_historical
@@ -2231,7 +2576,7 @@ class Technical:
         elif period == "yearly":
             historical_data = self._yearly_historical
         else:
-            raise ValueError("Period must be daily, weekly, quarterly or yearly.")
+            raise ValueError("Period must be daily, weekly, quarterly, or yearly.")
 
         on_balance_volume = volume.get_on_balance_volume(
             historical_data[close_column],
@@ -2256,25 +2601,34 @@ class Technical:
         rounding: int | None = 4,
         growth: bool = False,
         lag: int | list[int] = 1,
-    ):
+    ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the asset turnover ratio, an efficiency ratio that measures how
-        efficiently a company uses its assets to generate sales.
+        Calculate the Accumulation/Distribution Line for a given price series.
+
+        The Accumulation/Distribution Line is a technical indicator that evaluates the flow of money
+        into or out of an asset. It takes into account both price and volume information to identify
+        whether an asset is being accumulated (bought) or distributed (sold) by investors.
 
         Args:
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
-            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
-            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            period (str, optional): The time period to consider for historical data.
+                Can be "daily", "weekly", "quarterly", or "yearly". Defaults to "daily".
+            close_column (str, optional): The column name for closing prices in the historical data.
+                Defaults to "Adj Close".
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the Accumulation/Distribution Line.
+                Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation.
+                Defaults to 1.
 
-        As an example:
+        Returns:
+            pd.Series or pd.DataFrame: Accumulation/Distribution Line values.
 
-        ```python
-        from financetoolkit import Toolkit
-
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
-
-        toolkit.ratios.get_asset_turnover_ratio()
-        ```
+        Note:
+        - The method retrieves historical data based on the specified `period` and calculates the
+          Accumulation/Distribution Line for each asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the Accumulation/Distribution Line
+          using the specified `lag`.
         """
         if period == "daily":
             historical_data = self._daily_historical
@@ -2285,7 +2639,7 @@ class Technical:
         elif period == "yearly":
             historical_data = self._yearly_historical
         else:
-            raise ValueError("Period must be daily, weekly, quarterly or yearly.")
+            raise ValueError("Period must be daily, weekly, quarterly, or yearly.")
 
         accumulation_distribution_line = pd.DataFrame(index=historical_data.index)
         for ticker in self._tickers:
@@ -2320,25 +2674,38 @@ class Technical:
         rounding: int | None = 4,
         growth: bool = False,
         lag: int | list[int] = 1,
-    ):
+    ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the asset turnover ratio, an efficiency ratio that measures how
-        efficiently a company uses its assets to generate sales.
+        Calculate the Chaikin Oscillator for a given price series.
+
+        The Chaikin Oscillator is a momentum-based indicator that combines price and volume
+        to help identify potential trends and reversals in the market. It is calculated as the
+        difference between the 3-day and 10-day Accumulation/Distribution Line.
 
         Args:
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
-            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
-            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            period (str, optional): The time period to consider for historical data.
+                Can be "daily", "weekly", "quarterly", or "yearly". Defaults to "daily".
+            close_column (str, optional): The column name for closing prices in the historical data.
+                Defaults to "Adj Close".
+            short_window (int, optional): Number of periods for the short-term moving average.
+                Defaults to 3.
+            long_window (int, optional): Number of periods for the long-term moving average.
+                Defaults to 10.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the Chaikin Oscillator.
+                Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation.
+                Defaults to 1.
 
-        As an example:
+        Returns:
+            pd.Series or pd.DataFrame: Chaikin Oscillator values.
 
-        ```python
-        from financetoolkit import Toolkit
-
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
-
-        toolkit.ratios.get_asset_turnover_ratio()
-        ```
+        Note:
+        - The method retrieves historical data based on the specified `period` and calculates the
+          Chaikin Oscillator for each asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the Chaikin Oscillator
+          using the specified `lag`.
         """
         if period == "daily":
             historical_data = self._daily_historical
@@ -2349,7 +2716,7 @@ class Technical:
         elif period == "yearly":
             historical_data = self._yearly_historical
         else:
-            raise ValueError("Period must be daily, weekly, quarterly or yearly.")
+            raise ValueError("Period must be daily, weekly, quarterly, or yearly.")
 
         chaikin_oscillator = volume.get_chaikin_oscillator(
             historical_data["High"],

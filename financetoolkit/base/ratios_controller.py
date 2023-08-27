@@ -1641,15 +1641,28 @@ class Ratios:
     @handle_errors
     def get_working_capital(
         self, rounding: int | None = 4, growth: bool = False, lag: int | list[int] = 1
-    ):
+    ) -> pd.DataFrame:
         """
         Calculate the working capital, which is the difference between a company's current assets
         and current liabilities.
+
+        The working capital is calculated by subtracting total current liabilities from total
+        current assets. It represents the company's short-term financial health and its ability
+        to cover its current obligations using its liquid assets.
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+
+        Returns:
+            pd.DataFrame: Working capital values.
+
+        Note:
+        - The method retrieves historical data and calculates the working capital for each
+        asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the working capital
+        values using the specified `lag`.
 
         As an example:
 
@@ -1657,7 +1670,8 @@ class Ratios:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
-        toolkit.ratios.get_working_capital()
+
+        working_capitals = toolkit.ratios.get_working_capital()
         ```
         """
         working_capital = liquidity.get_working_capital(
@@ -1677,15 +1691,28 @@ class Ratios:
     @handle_errors
     def get_operating_cash_flow_ratio(
         self, rounding: int | None = 4, growth: bool = False, lag: int | list[int] = 1
-    ):
+    ) -> pd.DataFrame:
         """
         Calculate the operating cash flow ratio, a liquidity ratio that measures a company's
         ability to pay off its current liabilities with its operating cash flow.
+
+        The operating cash flow ratio is calculated by dividing operating cash flow by
+        current liabilities. It indicates whether a company's operating cash flow is
+        sufficient to cover its short-term obligations.
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+
+        Returns:
+            pd.DataFrame: Operating cash flow ratio values.
+
+        Note:
+        - The method retrieves historical data and calculates the operating cash flow ratio for each
+        asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the ratio values
+        using the specified `lag`.
 
         As an example:
 
@@ -1694,7 +1721,7 @@ class Ratios:
 
         toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
 
-        toolkit.ratios.get_operating_cash_flow_ratio()
+        operating_cash_flow_ratios = toolkit.ratios.get_operating_cash_flow_ratio()
         ```
         """
         operating_cash_flow_ratio = liquidity.get_operating_cash_flow_ratio(
@@ -1714,15 +1741,28 @@ class Ratios:
     @handle_errors
     def get_operating_cash_flow_sales_ratio(
         self, rounding: int | None = 4, growth: bool = False, lag: int | list[int] = 1
-    ):
+    ) -> pd.DataFrame:
         """
         Calculate the operating cash flow to sales ratio, a liquidity ratio that
         measures the ability of a company to generate cash from its sales.
+
+        The operating cash flow to sales ratio is calculated by dividing operating cash flow by
+        sales revenue. It indicates the proportion of sales revenue that is converted into cash
+        from operating activities.
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+
+        Returns:
+            pd.DataFrame: Operating cash flow to sales ratio values.
+
+        Note:
+        - The method retrieves historical data and calculates the operating cash flow to sales ratio for each
+        asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the ratio values
+        using the specified `lag`.
 
         As an example:
 
@@ -1731,7 +1771,7 @@ class Ratios:
 
         toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
 
-        toolkit.ratios.get_operating_cash_flow_sales_ratio()
+        operating_cash_flow_sales_ratios = toolkit.ratios.get_operating_cash_flow_sales_ratio()
         ```
         """
         operating_cash_flow_sales_ratio = liquidity.get_operating_cash_flow_sales_ratio(
@@ -1755,8 +1795,11 @@ class Ratios:
         self, rounding: int | None = 4, growth: bool = False, lag: int | list[int] = 1
     ):
         """
-        Calculate the short term coverage ratio, a liquidity ratio that measures a
-        company's ability to pay off its short-term obligations with its operating cash flow.
+        Calculate the short-term coverage ratio, a liquidity ratio that measures a company's
+        ability to pay off its short-term obligations with its operating cash flow.
+
+        The short-term coverage ratio is calculated by dividing operating cash flow by short-term debt.
+        It assesses the company's ability to meet its short-term obligations using its operating cash flow.
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
@@ -1792,15 +1835,28 @@ class Ratios:
     @handle_errors
     def get_gross_margin(
         self, rounding: int | None = 4, growth: bool = False, lag: int | list[int] = 1
-    ):
+    ) -> pd.DataFrame:
         """
         Calculate the gross margin, a profitability ratio that measures the percentage of
         revenue that exceeds the cost of goods sold.
+
+        The gross margin ratio is calculated by subtracting the cost of goods sold (COGS) from
+        the total revenue and then dividing the result by the total revenue. It represents the
+        portion of revenue that contributes to covering other expenses and generating profit.
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+
+        Returns:
+            pd.DataFrame: Gross margin ratio values.
+
+        Note:
+        - The method retrieves historical data and calculates the gross margin ratio for each
+        asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the ratio values
+        using the specified `lag`.
 
         As an example:
 
@@ -1809,7 +1865,7 @@ class Ratios:
 
         toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
 
-        toolkit.ratios.get_gross_margin()
+        gross_margin_ratios = toolkit.ratios.get_gross_margin()
         ```
         """
         gross_margin = profitability.get_gross_margin(
@@ -1827,15 +1883,28 @@ class Ratios:
     @handle_errors
     def get_operating_margin(
         self, rounding: int | None = 4, growth: bool = False, lag: int | list[int] = 1
-    ):
+    ) -> pd.DataFrame:
         """
         Calculate the operating margin, a profitability ratio that measures the percentage of
         revenue that remains after deducting operating expenses.
+
+        The operating margin ratio is calculated by subtracting the operating expenses from the
+        total revenue and then dividing the result by the total revenue. It indicates how efficiently
+        a company is managing its operating expenses in relation to its revenue.
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+
+        Returns:
+            pd.DataFrame: Operating margin ratio values.
+
+        Note:
+        - The method retrieves historical data and calculates the operating margin ratio for each
+        asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the ratio values
+        using the specified `lag`.
 
         As an example:
 
@@ -1844,7 +1913,7 @@ class Ratios:
 
         toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
 
-        toolkit.ratios.get_operating_margin()
+        operating_margin_ratios = toolkit.ratios.get_operating_margin()
         ```
         """
         operating_margin = profitability.get_operating_margin(
@@ -1864,15 +1933,28 @@ class Ratios:
     @handle_errors
     def get_net_profit_margin(
         self, rounding: int | None = 4, growth: bool = False, lag: int | list[int] = 1
-    ):
+    ) -> pd.DataFrame:
         """
         Calculate the net profit margin, a profitability ratio that measures the percentage
         of profit a company earns per dollar of revenue.
+
+        The net profit margin ratio is calculated by dividing the net income by the total revenue.
+        It indicates the portion of each dollar of revenue that represents profit after all expenses
+        have been deducted. A higher net profit margin is generally considered favorable.
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+
+        Returns:
+            pd.DataFrame: Net profit margin ratio values.
+
+        Note:
+        - The method retrieves historical data and calculates the net profit margin ratio for each
+        asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the ratio values
+        using the specified `lag`.
 
         As an example:
 
@@ -1881,7 +1963,7 @@ class Ratios:
 
         toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
 
-        toolkit.ratios.get_net_profit_margin()
+        net_profit_margin_ratios = toolkit.ratios.get_net_profit_margin()
         ```
         """
         net_profit_margin = profitability.get_net_profit_margin(
@@ -1901,7 +1983,7 @@ class Ratios:
     @handle_errors
     def get_interest_burden_ratio(
         self, rounding: int | None = 4, growth: bool = False, lag: int | list[int] = 1
-    ):
+    ) -> pd.DataFrame:
         """
         Compute the Interest Coverage Ratio, a metric that reveals a company's
         ability to cover its interest expenses with its pre-tax profits.
@@ -1909,10 +1991,24 @@ class Ratios:
         pay for interest payments and is crucial in determining a
         company's financial health.
 
+        The Interest Coverage Ratio is calculated by dividing the earnings before
+        interest and taxes (EBIT) by the interest expenses. A higher ratio indicates
+        that the company has more earnings to cover its interest expenses, which is
+        generally considered favorable.
+
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+
+        Returns:
+            pd.DataFrame: Interest Coverage Ratio values.
+
+        Note:
+        - The method retrieves historical data and calculates the Interest Coverage Ratio for each
+        asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the ratio values
+        using the specified `lag`.
 
         As an example:
 
@@ -1921,7 +2017,7 @@ class Ratios:
 
         toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
 
-        toolkit.ratios.get_interest_burden_ratio()
+        interest_coverage_ratios = toolkit.ratios.get_interest_burden_ratio()
         ```
         """
         interest_burden_ratio = profitability.get_interest_burden_ratio(
@@ -1941,15 +2037,27 @@ class Ratios:
     @handle_errors
     def get_income_before_tax_profit_margin(
         self, rounding: int | None = 4, growth: bool = False, lag: int | list[int] = 1
-    ):
+    ) -> pd.DataFrame:
         """
         Calculate the Pretax Profit Margin, which is the ratio of a company's pre-tax profit to
         its revenue, indicating how much profit a company makes before paying taxes on its earnings.
+
+        The Pretax Profit Margin is calculated by dividing the pre-tax profit by the revenue.
+        It provides insight into how efficiently a company is able to generate profits from its revenue.
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+
+        Returns:
+            pd.DataFrame: Pretax Profit Margin values.
+
+        Note:
+        - The method retrieves historical data and calculates the Pretax Profit Margin for each
+        asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the ratio values
+        using the specified `lag`.
 
         As an example:
 
@@ -1958,7 +2066,7 @@ class Ratios:
 
         toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
 
-        toolkit.ratios.get_income_before_tax_profit_margin()
+        pretax_profit_margin = toolkit.ratios.get_income_before_tax_profit_margin()
         ```
         """
         income_before_tax_profit_margin = (
@@ -1982,15 +2090,27 @@ class Ratios:
     @handle_errors
     def get_effective_tax_rate(
         self, rounding: int | None = 4, growth: bool = False, lag: int | list[int] = 1
-    ):
+    ) -> pd.DataFrame:
         """
         Calculate the effective tax rate, a financial ratio that measures the
         percentage of pretax income that is paid as taxes.
+
+        The effective tax rate is calculated by dividing the income tax expense by the
+        pre-tax income.
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+
+        Returns:
+            pd.DataFrame: Effective tax rate values.
+
+        Note:
+        - The method retrieves historical data and calculates the effective tax rate for each
+        asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the ratio values
+        using the specified `lag`.
 
         As an example:
 
@@ -1999,7 +2119,7 @@ class Ratios:
 
         toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
 
-        toolkit.ratios.get_effective_tax_rate()
+        effective_tax_rate = toolkit.ratios.get_effective_tax_rate()
         ```
         """
         effective_tax_rate = profitability.get_effective_tax_rate(
@@ -2019,15 +2139,26 @@ class Ratios:
     @handle_errors
     def get_return_on_assets(
         self, rounding: int | None = 4, growth: bool = False, lag: int | list[int] = 1
-    ):
+    ) -> pd.DataFrame:
         """
         Calculate the return on assets (ROA), a profitability ratio that measures how
         efficiently a company uses its assets to generate profits.
+
+        The return on assets is calculated by dividing the net income by the average total assets
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+
+        Returns:
+            pd.DataFrame: Return on assets (ROA) values.
+
+        Note:
+        - The method retrieves historical data and calculates the ROA for each asset in the
+        Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the ratio values
+        using the specified `lag`.
 
         As an example:
 
@@ -2036,7 +2167,7 @@ class Ratios:
 
         toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
 
-        toolkit.ratios.get_return_on_assets()
+        roa_ratios = toolkit.ratios.get_return_on_assets()
         ```
         """
         return_on_assets = profitability.get_return_on_assets(
@@ -2056,15 +2187,29 @@ class Ratios:
     @handle_errors
     def get_return_on_equity(
         self, rounding: int | None = 4, growth: bool = False, lag: int | list[int] = 1
-    ):
+    ) -> pd.DataFrame:
         """
         Calculate the return on equity (ROE), a profitability ratio that measures how
         efficiently a company generates profits using its shareholders' equity.
+
+        The return on equity is calculated by dividing the net income by the average shareholders' equity.
+        Shareholders' equity represents the residual interest in the assets of a company after deducting liabilities.
+
+        ROE provides insight into the company's ability to generate profits from the investments made by
+        its shareholders. A higher ROE indicates that the company is using its equity effectively to generate
+        higher returns for its shareholders.
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+
+        Returns:
+            pd.DataFrame: Return on equity (ROE) values.
+
+        Note:
+        - The method retrieves historical data and calculates the ROE for each asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the ratio values using the specified `lag`.
 
         As an example:
 
@@ -2073,7 +2218,7 @@ class Ratios:
 
         toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
 
-        toolkit.ratios.get_return_on_equity()
+        roe_ratios = toolkit.ratios.get_return_on_equity()
         ```
         """
         return_on_equity = profitability.get_return_on_equity(
@@ -2096,13 +2241,24 @@ class Ratios:
         self, rounding: int | None = 4, growth: bool = False, lag: int | list[int] = 1
     ):
         """
-        Calculate the return on invested capital, a financial ratio that measures
+        Calculate the return on invested capital (ROIC), a financial ratio that measures
         the company's return on the capital invested in it, including both equity and debt.
+
+        The return on invested capital is calculated by dividing the net operating profit after taxes (NOPAT)
+        by the average invested capital. Invested capital includes both equity and debt, making this ratio
+        a valuable measure of how efficiently a company generates returns for all of its investors.
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+
+        Returns:
+            pd.DataFrame: Return on invested capital (ROIC) values.
+
+        Note:
+        - The method retrieves historical data and calculates the ROIC for each asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the ratio values using the specified `lag`.
 
         As an example:
 
@@ -2111,7 +2267,7 @@ class Ratios:
 
         toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
 
-        toolkit.ratios.get_return_on_invested_capital()
+        roic_ratios = toolkit.ratios.get_return_on_invested_capital()
         ```
         """
         effective_tax_rate = self.get_effective_tax_rate()
@@ -2140,13 +2296,27 @@ class Ratios:
         self, rounding: int | None = 4, growth: bool = False, lag: int | list[int] = 1
     ):
         """
-        Calculates the income quality ratio, which measures the cash flow from operating
-        activities relative to the net income of the company.
+        Calculate the income quality ratio, a financial metric that measures the cash flow from
+        operating activities relative to the net income of the company.
+
+        The income quality ratio provides insights into the quality of a company's reported earnings.
+        By comparing the cash flow from operating activities to the net income, this ratio helps assess
+        whether a company's reported profits are backed by actual cash flow. A higher income quality
+        ratio suggests higher earnings quality and a better ability to convert profits into cash flow.
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+
+        Returns:
+            pd.DataFrame: Income quality ratio values.
+
+        Note:
+        - The method retrieves historical data and calculates the income quality ratio for each asset
+        in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the ratio values using the specified `lag`.
+
         As an example:
 
         ```python
@@ -2154,7 +2324,7 @@ class Ratios:
 
         toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
 
-        toolkit.ratios.get_income_quality_ratio()
+        income_quality_ratios = toolkit.ratios.get_income_quality_ratio()
         ```
         """
         income_quality_ratio = profitability.get_income_quality_ratio(
@@ -2176,13 +2346,25 @@ class Ratios:
         self, rounding: int | None = 4, growth: bool = False, lag: int | list[int] = 1
     ):
         """
-        Calculate the return on tangible assets, which measures the amount of profit
+        Calculate the return on tangible assets, a financial ratio that measures the amount of profit
         generated by a company's tangible assets.
+
+        The return on tangible assets (ROTA) provides insights into the efficiency with which a company
+        utilizes its tangible assets to generate profits. Tangible assets include physical assets such as
+        buildings, machinery, and equipment. ROTA indicates how well a company can generate profits from
+        its core operational assets.
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+
+        Returns:
+            pd.DataFrame: Return on tangible assets (ROTA) values.
+
+        Note:
+        - The method retrieves historical data and calculates the ROTA for each asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the ratio values using the specified `lag`.
 
         As an example:
 
@@ -2191,7 +2373,7 @@ class Ratios:
 
         toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
 
-        toolkit.ratios.get_return_on_tangible_assets()
+        rota_ratios = toolkit.ratios.get_return_on_tangible_assets()
         ```
         """
         return_on_tangible_assets = profitability.get_return_on_tangible_assets(
@@ -2215,14 +2397,24 @@ class Ratios:
         self, rounding: int | None = 4, growth: bool = False, lag: int | list[int] = 1
     ):
         """
-        Calculate the return on capital employed (ROCE), a profitability ratio that
-        measures the amount of return a company generates from the capital it has
-        invested in the business.
+        Calculate the return on capital employed (ROCE), a profitability ratio that measures the amount of return
+        a company generates from the capital it has invested in the business.
+
+        Return on capital employed (ROCE) is a crucial financial metric that evaluates the efficiency and profitability
+        of a company's utilization of both equity and debt capital to generate profits. It assesses how well the company
+        generates earnings relative to the total capital invested in the business.
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+
+        Returns:
+            pd.DataFrame: Return on capital employed (ROCE) values.
+
+        Note:
+        - The method retrieves historical data and calculates the ROCE for each asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the ratio values using the specified `lag`.
 
         As an example:
 
@@ -2231,7 +2423,7 @@ class Ratios:
 
         toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
 
-        toolkit.ratios.get_return_on_capital_employed()
+        roce_ratios = toolkit.ratios.get_return_on_capital_employed()
         ```
         """
         return_on_capital_employed = profitability.get_return_on_capital_employed(
@@ -2258,13 +2450,26 @@ class Ratios:
         self, rounding: int | None = 4, growth: bool = False, lag: int | list[int] = 1
     ):
         """
-        Calculate the net income per earnings before taxes (EBT), a profitability ratio that
-        measures the net income generated for each dollar of EBT.
+        Calculate the net income per earnings before taxes (EBT), a profitability ratio that measures
+        the net income generated for each dollar of EBT.
+
+        The net income per earnings before taxes (EBT) ratio helps evaluate the extent to which a company's net
+        income is generated from its operating activities before considering the impact of income taxes. It gives
+        insights into how effectively a company generates profit relative to its taxable income.
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+
+        Returns:
+            pd.DataFrame: Net income per earnings before taxes (EBT) values.
+
+        Note:
+        - The method retrieves historical data and calculates the net income per EBT for each asset in
+        the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the ratio values using
+        the specified `lag`.
 
         As an example:
 
@@ -2273,7 +2478,7 @@ class Ratios:
 
         toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
 
-        toolkit.ratios.get_net_income_per_ebt()
+        net_income_per_ebt_ratios = toolkit.ratios.get_net_income_per_ebt()
         ```
         """
         net_income_per_ebt = profitability.get_net_income_per_ebt(
@@ -2295,13 +2500,26 @@ class Ratios:
         self, rounding: int | None = 4, growth: bool = False, lag: int | list[int] = 1
     ):
         """
-        Calculate the free cash flow to operating cash flow ratio, a profitability ratio that
-        measures the amount of free cash flow a company generates for every dollar of operating cash flow.
+        Calculate the free cash flow to operating cash flow ratio, a profitability ratio that measures
+        the amount of free cash flow a company generates for every dollar of operating cash flow.
+
+        The free cash flow to operating cash flow ratio helps assess how well a company's operating activities
+        translate into free cash flow, which is the cash available after all expenses and investments. A higher
+        ratio indicates that the company is generating strong free cash flow relative to its operating cash flow,
+        which could signify efficient capital management.
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+
+        Returns:
+            pd.DataFrame: Free cash flow to operating cash flow ratio values.
+
+        Note:
+        - The method retrieves historical data and calculates the ratio for each asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the ratio values using the specified `lag`.
+
         As an example:
 
         ```python
@@ -2309,7 +2527,7 @@ class Ratios:
 
         toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
 
-        toolkit.ratios.get_free_cash_flow_operating_cash_flow_ratio()
+        fcf_to_ocf_ratios = toolkit.ratios.get_free_cash_flow_operating_cash_flow_ratio()
         ```
         """
         free_cash_flow_operating_cash_flow_ratio = (
@@ -2339,17 +2557,32 @@ class Ratios:
         net income to its income before tax, indicating how much of a
         company's income is retained after taxes.
 
+        The tax burden ratio measures the portion of a company's earnings that
+        is paid as taxes. A higher ratio indicates that a larger portion of the
+        income is being retained by the company after taxes. This ratio provides
+        insights into the tax efficiency of the company and its ability to manage
+        its tax liabilities.
+
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+
+        Returns:
+            pd.DataFrame: Tax burden ratio values.
+
+        Note:
+        - The method retrieves historical data and calculates the ratio for each asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the ratio values using the specified `lag`.
+
+        As an example:
 
         ```python
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
 
-        toolkit.ratios.get_tax_burden_ratio()
+        tax_burden_ratios = toolkit.ratios.get_tax_burden_ratio()
         ```
         """
         tax_burden_ratio = profitability.get_tax_burden_ratio(
@@ -2375,16 +2608,32 @@ class Ratios:
         earnings before interest and taxes, indicating how much of a company's earnings are
         generated before paying interest on debt.
 
+        The EBT to EBIT ratio measures the proportion of a company's earnings that is generated
+        before paying interest and taxes. It provides insights into how a company's operating
+        performance is impacted by interest expenses and tax obligations. A higher ratio indicates
+        that a larger portion of the company's earnings is generated from its core operations
+        before considering interest payments and taxes.
+
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+
+        Returns:
+            pd.DataFrame: EBT to EBIT ratio values.
+
+        Note:
+        - The method retrieves historical data and calculates the ratio for each asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the ratio values using the specified `lag`.
+
+        As an example:
+
         ```python
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
 
-        toolkit.ratios.get_EBT_to_EBIT()
+        ebt_to_ebit_ratios = toolkit.ratios.get_EBT_to_EBIT()
         ```
         """
         EBT_to_EBIT = profitability.get_EBT_to_EBIT(
@@ -2412,10 +2661,24 @@ class Ratios:
         company generates from its operations before paying interest on debt
         and taxes on its earnings.
 
+        The EBIT to Revenue ratio measures the company's ability to generate profit
+        from its core operations relative to its revenue. It provides insights into
+        the operational efficiency and profitability of the company, as it excludes
+        the impact of interest expenses and taxes on its earnings. A higher ratio
+        indicates that a larger portion of the company's revenue is converted into
+        operating profit.
+
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+
+        Returns:
+            pd.DataFrame: EBIT to Revenue ratio values.
+
+        Note:
+        - The method retrieves historical data and calculates the ratio for each asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the ratio values using the specified `lag`.
 
         As an example:
 
@@ -2424,7 +2687,7 @@ class Ratios:
 
         toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
 
-        toolkit.ratios.get_EBIT_to_revenue()
+        ebit_to_revenue_ratios = toolkit.ratios.get_EBIT_to_revenue()
         ```
         """
         EBIT_to_revenue = profitability.get_EBIT_to_revenue(
@@ -2451,12 +2714,23 @@ class Ratios:
         Calculate the debt to assets ratio, a solvency ratio that measures the proportion
         of a company's assets that are financed by debt.
 
-        This ratio is also known as the Debt Ratio.
+        This ratio, also known as the Debt Ratio, indicates the percentage of a company's
+        total assets that are funded by debt. It is a measure of a company's financial
+        leverage and indicates the extent to which a company relies on borrowed funds to
+        finance its operations. A higher ratio implies a higher level of debt in the company's
+        capital structure, which could increase financial risk.
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+
+        Returns:
+            pd.DataFrame: Debt to assets ratio values.
+
+        Note:
+        - The method retrieves historical data and calculates the ratio for each asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the ratio values using the specified `lag`.
 
         As an example:
 
@@ -2465,7 +2739,7 @@ class Ratios:
 
         toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
 
-        toolkit.ratios.get_debt_to_assets_ratio()
+        debt_to_assets_ratios = toolkit.ratios.get_debt_to_assets_ratio()
         ```
         """
         debt_to_assets_ratio = solvency.get_debt_to_assets_ratio(
@@ -2490,18 +2764,32 @@ class Ratios:
         Calculate the debt to equity ratio, a solvency ratio that measures the
         proportion of a company's equity that is financed by debt.
 
+        The debt to equity ratio, also known as the D/E ratio, indicates the relative
+        contribution of debt and equity to a company's capital structure. It helps assess
+        the level of financial risk a company carries due to its debt obligations. A higher
+        ratio implies a higher reliance on debt to finance the business, which could increase
+        risk but also potentially lead to higher returns for shareholders.
+
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
 
+        Returns:
+            pd.DataFrame: Debt to equity ratio values.
+
+        Note:
+        - The method retrieves historical data and calculates the ratio for each asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the ratio values using the specified `lag`.
+
         As an example:
 
         ```python
+        from financetoolkit import Toolkit
 
         toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
 
-        toolkit.ratios.get_debt_to_equity_ratio()
+        debt_to_equity_ratios = toolkit.ratios.get_debt_to_equity_ratio()
         ```
         """
         debt_to_equity_ratio = solvency.get_debt_to_equity_ratio(
@@ -2526,10 +2814,23 @@ class Ratios:
         Calculate the interest coverage ratio, a solvency ratio that measures a company's
         ability to pay its interest expenses on outstanding debt.
 
+        The interest coverage ratio evaluates a company's ability to meet its interest
+        obligations from its operating income. A higher ratio indicates a company's stronger
+        ability to cover its interest payments using its earnings, implying lower financial risk.
+        Conversely, a lower ratio suggests a company may have difficulty meeting its interest
+        obligations and could be at higher risk of default.
+
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+
+        Returns:
+            pd.DataFrame: Interest coverage ratio values.
+
+        Note:
+        - The method retrieves historical data and calculates the ratio for each asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the ratio values using the specified `lag`.
 
         As an example:
 
@@ -2538,7 +2839,7 @@ class Ratios:
 
         toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
 
-        toolkit.ratios.get_interest_coverage_ratio()
+        interest_coverage_ratios = toolkit.ratios.get_interest_coverage_ratio()
         ```
         """
         interest_coverage_ratio = solvency.get_interest_coverage_ratio(
@@ -2564,10 +2865,23 @@ class Ratios:
         Calculate the equity multiplier, a solvency ratio that measures the degree to which
         a company uses borrowed money (debt) to finance its operations and growth.
 
+        The equity multiplier helps assess the financial leverage of a company by indicating
+        how much of its assets are financed by equity versus debt. A higher equity multiplier
+        suggests that the company relies more on debt financing, which can amplify returns but
+        also increases financial risk. Conversely, a lower equity multiplier indicates a
+        larger portion of assets is financed by equity, potentially lowering financial risk.
+
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+
+        Returns:
+            pd.DataFrame: Equity multiplier values.
+
+        Note:
+        - The method retrieves historical data and calculates the ratio for each asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the ratio values using the specified `lag`.
 
         As an example:
 
@@ -2576,7 +2890,7 @@ class Ratios:
 
         toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
 
-        toolkit.ratios.get_equity_multiplier()
+        equity_multipliers = toolkit.ratios.get_equity_multiplier()
         ```
         """
         equity_multiplier = solvency.get_equity_multiplier(
@@ -2603,10 +2917,22 @@ class Ratios:
         Calculate the debt service coverage ratio, a solvency ratio that measures a company's
         ability to service its debt with its net operating income.
 
+        The debt service coverage ratio provides insights into a company's ability to meet its
+        debt obligations from its operating income. It is especially important for companies
+        with significant debt obligations, as a lower ratio indicates higher financial risk and
+        potential difficulties in servicing debt payments.
+
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+
+        Returns:
+            pd.DataFrame: Debt service coverage ratio values.
+
+        Note:
+        - The method retrieves historical data and calculates the ratio for each asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the ratio values using the specified `lag`.
 
         As an example:
 
@@ -2615,7 +2941,7 @@ class Ratios:
 
         toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
 
-        toolkit.ratios.get_debt_service_coverage_ratio()
+        debt_service_coverage_ratios = toolkit.ratios.get_debt_service_coverage_ratio()
         ```
         """
         debt_service_coverage_ratio = solvency.get_debt_service_coverage_ratio(
@@ -2646,10 +2972,22 @@ class Ratios:
         Calculates the free cash flow yield ratio, which measures the free cash flow
         relative to the market capitalization of the company.
 
+        The free cash flow yield ratio is a measure of how efficiently a company generates
+        free cash flow relative to its market value. It provides insights into whether the
+        company's valuation is reasonable compared to the amount of cash it generates.
+
         Args:
+            diluted (bool, optional): Whether to use diluted shares for market capitalization. Defaults to True.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+
+        Returns:
+            pd.DataFrame: Free cash flow yield ratio values.
+
+        Note:
+        - The method retrieves historical data and calculates the ratio for each asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the ratio values using the specified `lag`.
 
         As an example:
 
@@ -2658,10 +2996,9 @@ class Ratios:
 
         toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
 
-        toolkit.ratios.get_free_cash_flow_yield()
+        free_cash_flow_yield_ratios = toolkit.ratios.get_free_cash_flow_yield()
         ```
         """
-
         years = self._balance_sheet_statement.columns
         begin, end = str(years[0]), str(years[-1])
 
@@ -2695,12 +3032,23 @@ class Ratios:
     ):
         """
         Calculates the net debt to EBITDA ratio, which measures the net debt of the company
-        relative to its EBITDA.
+        relative to its EBITDA (Earnings Before Interest, Taxes, Depreciation, and Amortization).
+
+        The net debt to EBITDA ratio is a measure of a company's ability to manage its debt
+        obligations in relation to its earnings and cash flow. A lower ratio indicates better
+        financial health and a stronger ability to manage debt.
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+
+        Returns:
+            pd.DataFrame: Net debt to EBITDA ratio values.
+
+        Note:
+        - The method retrieves historical data and calculates the ratio for each asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the ratio values using the specified `lag`.
 
         As an example:
 
@@ -2709,7 +3057,7 @@ class Ratios:
 
         toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
 
-        toolkit.ratios.get_net_debt_to_ebitda_ratio()
+        net_debt_to_ebitda_ratios = toolkit.ratios.get_net_debt_to_ebitda_ratio()
         ```
         """
         net_debt_to_ebitda_ratio = solvency.get_net_debt_to_ebitda_ratio(
@@ -2735,10 +3083,21 @@ class Ratios:
         Calculate the cash flow coverage ratio, a solvency ratio that measures a company's
         ability to pay off its debt with its operating cash flow.
 
+        The cash flow coverage ratio assesses a company's ability to meet its debt obligations
+        by comparing its operating cash flow to its total debt. A higher ratio indicates a
+        stronger ability to cover its debt with cash generated from operations.
+
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+
+        Returns:
+            pd.DataFrame: Cash flow coverage ratio values.
+
+        Note:
+        - The method retrieves historical data and calculates the ratio for each asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the ratio values using the specified `lag`.
 
         As an example:
 
@@ -2747,7 +3106,7 @@ class Ratios:
 
         toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
 
-        toolkit.ratios.get_cash_flow_coverage_ratio()
+        cash_flow_coverage_ratios = toolkit.ratios.get_cash_flow_coverage_ratio()
         ```
         """
         cash_flow_coverage_ratio = solvency.get_cash_flow_coverage_ratio(
@@ -2773,10 +3132,22 @@ class Ratios:
         measures a company's ability to cover its capital expenditures with its
         cash flow from operations.
 
+        The capex coverage ratio evaluates a company's ability to fund its capital
+        expenditures, which are essential for maintaining and growing its business,
+        using the cash generated from its operations. A higher ratio indicates a
+        stronger ability to fund capital investments from operating cash flow.
+
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+
+        Returns:
+            pd.DataFrame: Capital expenditure coverage ratio values.
+
+        Note:
+        - The method retrieves historical data and calculates the ratio for each asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the ratio values using the specified `lag`.
 
         As an example:
 
@@ -2785,7 +3156,7 @@ class Ratios:
 
         toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
 
-        toolkit.ratios.get_capex_coverage_ratio()
+        capex_coverage_ratios = toolkit.ratios.get_capex_coverage_ratio()
         ```
         """
         capex_coverage_ratio = solvency.get_capex_coverage_ratio(
@@ -2807,14 +3178,27 @@ class Ratios:
         self, rounding: int | None = 4, growth: bool = False, lag: int | list[int] = 1
     ):
         """
-        Calculate the dividend paid and capex coverage ratio, a solvency ratio that
-        measures a company's ability to cover both its capital expenditures and
-        dividend payments with its cash flow from operations.
+        Calculate the dividend paid and capital expenditure coverage ratio, a solvency ratio
+        that measures a company's ability to cover both its capital expenditures and dividend
+        payments with its cash flow from operations.
+
+        The capex dividend coverage ratio assesses whether a company's cash flow from
+        operations is sufficient to cover both its capital expenditures (which are essential
+        for maintaining and growing its business) and its dividend payments to shareholders.
+        A higher ratio indicates a stronger ability to fund both capex and dividends from
+        operating cash flow.
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+
+        Returns:
+            pd.DataFrame: Dividend paid and capex coverage ratio values.
+
+        Note:
+        - The method retrieves historical data and calculates the ratio for each asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the ratio values using the specified `lag`.
 
         As an example:
 
@@ -2823,7 +3207,7 @@ class Ratios:
 
         toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
 
-        toolkit.ratios.get_capex_dividend_coverage_ratio()
+        capex_dividend_coverage_ratios = toolkit.ratios.get_capex_dividend_coverage_ratio()
         ```
         """
         dividend_capex_coverage_ratio = solvency.get_dividend_capex_coverage_ratio(
@@ -2853,13 +3237,28 @@ class Ratios:
         lag: int | list[int] = 1,
     ):
         """
-        Calculate the earnings per share (EPS), a valuation ratio that measures the
-        amount of net income earned per share of outstanding common stock.
+        Calculate the earnings per share (EPS), a valuation ratio that measures the amount
+        of net income earned per share of outstanding common stock.
+
+        The earnings per share (EPS) is a widely used financial metric that helps investors
+        understand the profitability of a company on a per-share basis. It provides insight
+        into the portion of a company's earnings that is allocated to each outstanding share
+        of its common stock. EPS is an important measure for investors and analysts when
+        assessing a company's financial performance and comparing it to other companies.
 
         Args:
+            include_dividends (bool, optional): Whether to include dividends in the EPS calculation. Defaults to False.
+            diluted (bool, optional): Whether to use diluted earnings per share. Defaults to True.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+
+        Returns:
+            pd.DataFrame: Earnings per share (EPS) values.
+
+        Note:
+        - The method retrieves historical data and calculates the EPS for each asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the EPS values using the specified `lag`.
 
         As an example:
 
@@ -2868,7 +3267,7 @@ class Ratios:
 
         toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
 
-        toolkit.ratios.get_earnings_per_share()
+        eps_ratios = toolkit.ratios.get_earnings_per_share()
         ```
         """
         dividends = (
@@ -2908,12 +3307,25 @@ class Ratios:
         """
         Calculate the earnings per share growth.
 
+        The earnings per share (EPS) growth is a measure that indicates the rate at which a company's
+        earnings per share have increased or decreased over a specific period of time. EPS growth is
+        an important metric for investors as it provides insight into the company's ability to generate
+        increasing profits on a per-share basis. Positive EPS growth is often considered favorable,
+        while negative growth might raise concerns about the company's financial performance.
+
         Args:
             include_dividends (bool, optional): Whether to include dividends in the calculation. Defaults to False.
             diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+
+        Returns:
+            pd.DataFrame: Earnings per share (EPS) growth values.
+
+        Note:
+        - The method retrieves historical data and calculates the EPS growth for each asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the EPS values using the specified `lag`.
 
         As an example:
 
@@ -2922,7 +3334,7 @@ class Ratios:
 
         toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
 
-        toolkit.ratios.get_earnings_per_share_growth()
+        eps_growth = toolkit.ratios.get_earnings_per_share_growth()
         ```
         """
         eps = self.get_earnings_per_share(include_dividends, diluted)
@@ -2950,11 +3362,24 @@ class Ratios:
         Calculate the revenue per share, a valuation ratio that measures the amount
         of revenue generated per outstanding share of a company's stock.
 
+        The revenue per share is an important metric that provides insight into a
+        company's ability to generate revenue on a per-share basis. It can help investors
+        understand the company's revenue-generation efficiency and its overall financial health.
+
         Args:
             diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+
+        Returns:
+            pd.DataFrame: Revenue per share values.
+
+        Note:
+        - The method retrieves historical data and calculates the revenue per share for each asset in
+        the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the revenue per share values
+        using the specified `lag`.
 
         As an example:
 
@@ -2963,7 +3388,7 @@ class Ratios:
 
         toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
 
-        toolkit.ratios.get_revenue_per_share()
+        revenue_per_share = toolkit.ratios.get_revenue_per_share()
         ```
         """
         average_shares = (
@@ -2998,12 +3423,24 @@ class Ratios:
         Calculate the price earnings ratio (P/E), a valuation ratio that compares a
         company's stock price to its earnings per share.
 
+        The price earnings ratio is a widely used valuation metric that helps investors
+        assess the relative value of a company's stock. A higher P/E ratio may indicate
+        that the market has high expectations for the company's future growth, while a
+        lower P/E ratio may suggest that the company is undervalued.
+
         Args:
             include_dividends (bool, optional): Whether to include dividends in the calculation. Defaults to False.
             diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+
+        Returns:
+            pd.DataFrame: Price earnings ratio (P/E) values.
+
+        Note:
+        - The method retrieves historical data and calculates the P/E ratio for each asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the P/E ratio values using the specified `lag`.
 
         As an example:
 
@@ -3012,7 +3449,7 @@ class Ratios:
 
         toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
 
-        toolkit.ratios.get_price_earnings_ratio()
+        pe_ratio = toolkit.ratios.get_price_earnings_ratio()
         ```
         """
         eps = self.get_earnings_per_share(include_dividends, diluted)
@@ -3046,12 +3483,24 @@ class Ratios:
         Calculate the price earnings to growth (PEG) ratio, a valuation metric that
         measures the ratio of the price-to-earnings ratio to earnings growth rate.
 
+        The price-to-earnings growth (PEG) ratio provides a more comprehensive valuation
+        measure compared to the P/E ratio alone. It takes into account a company's earnings
+        growth rate, allowing investors to assess whether a stock is overvalued or undervalued
+        relative to its growth prospects.
+
         Args:
             include_dividends (bool, optional): Whether to include dividends in the calculation. Defaults to False.
             diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+
+        Returns:
+            pd.DataFrame: Price earnings to growth (PEG) ratio values.
+
+        Note:
+        - The method retrieves historical data and calculates the PEG ratio for each asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the PEG ratio values using the specified `lag`.
 
         As an example:
 
@@ -3060,7 +3509,7 @@ class Ratios:
 
         toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
 
-        toolkit.ratios.get_price_to_earnings_growth_ratio()
+        peg_ratio = toolkit.ratios.get_price_to_earnings_growth_ratio()
         ```
         """
         eps_growth = self.get_earnings_per_share(include_dividends, diluted)
@@ -3093,11 +3542,23 @@ class Ratios:
         Calculate the book value per share, a valuation ratio that measures the
         amount of common equity value per share outstanding.
 
+        The book value per share is a fundamental valuation metric that reflects
+        the net worth of a company attributed to each outstanding share of common stock.
+
         Args:
             diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+
+        Returns:
+            pd.DataFrame: Book value per share values.
+
+        Note:
+        - The method retrieves historical data and calculates the book value per share for each asset
+        in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the book value per share values
+        using the specified `lag`.
 
         As an example:
 
@@ -3106,7 +3567,7 @@ class Ratios:
 
         toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
 
-        toolkit.ratios.get_book_value_per_share()
+        book_value_per_share = toolkit.ratios.get_book_value_per_share()
         ```
         """
         average_shares = (
@@ -3142,11 +3603,24 @@ class Ratios:
         Calculate the price to book ratio, a valuation ratio that compares a
         company's market price to its book value per share.
 
+        The price to book ratio is a key valuation metric that helps investors
+        assess whether a company's stock is overvalued or undervalued relative to its
+        underlying net asset value.
+
         Args:
             diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+
+        Returns:
+            pd.DataFrame: Price to book ratio values.
+
+        Note:
+        - The method retrieves historical data and calculates the price to book ratio for each asset
+        in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the price to book ratio values
+        using the specified `lag`.
 
         As an example:
 
@@ -3155,7 +3629,7 @@ class Ratios:
 
         toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
 
-        toolkit.ratios.get_price_to_book_ratio()
+        price_to_book_ratio = toolkit.ratios.get_price_to_book_ratio()
         ```
         """
         book_value_per_share = self.get_book_value_per_share(diluted)
@@ -3190,11 +3664,24 @@ class Ratios:
         Calculate the interest debt per share, a valuation ratio that measures the
         amount of interest expense incurred per outstanding share of a company's stock.
 
+        The interest debt per share ratio provides insight into how much interest a company
+        pays on its debt relative to its shareholder base. It can help investors assess
+        the financial burden of interest expenses on the company's profitability.
+
         Args:
             diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+
+        Returns:
+            pd.DataFrame: Interest debt per share values.
+
+        Note:
+        - The method retrieves historical data and calculates the interest debt per share ratio for each asset
+        in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the interest debt per share values
+        using the specified `lag`.
 
         As an example:
 
@@ -3203,7 +3690,7 @@ class Ratios:
 
         toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
 
-        toolkit.ratios.get_interest_debt_per_share()
+        interest_debt_per_share = toolkit.ratios.get_interest_debt_per_share()
         ```
         """
         average_shares = (
@@ -3239,11 +3726,24 @@ class Ratios:
         Calculate the capex per share, a valuation ratio that measures the amount of
         capital expenditures made per outstanding share of a company's stock.
 
+        The capex per share ratio provides insight into how much capital a company invests
+        in its operations and growth initiatives relative to its shareholder base. It can
+        help investors assess the level of reinvestment into the business.
+
         Args:
             diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+
+        Returns:
+            pd.DataFrame: Capex per share values.
+
+        Note:
+        - The method retrieves historical data and calculates the capex per share ratio for each asset
+        in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the capex per share values
+        using the specified `lag`.
 
         As an example:
 
@@ -3252,7 +3752,7 @@ class Ratios:
 
         toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
 
-        toolkit.ratios.get_capex_per_share()
+        capex_per_share = toolkit.ratios.get_capex_per_share()
         ```
         """
         average_shares = (
@@ -3282,10 +3782,23 @@ class Ratios:
         Calculate the dividend yield ratio, a valuation ratio that measures the
         amount of dividends distributed per share of stock relative to the stock's price.
 
+        The dividend yield ratio is used by investors to assess the income potential
+        of an investment in a company's stock based on the dividends it pays out. A higher
+        dividend yield can be attractive to income-seeking investors.
+
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+
+        Returns:
+            pd.DataFrame: Dividend yield values.
+
+        Note:
+        - The method retrieves historical data and calculates the dividend yield ratio for each asset
+        in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the dividend yield values
+        using the specified `lag`.
 
         As an example:
 
@@ -3294,7 +3807,7 @@ class Ratios:
 
         toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
 
-        toolkit.ratios.get_dividend_yield()
+        dividend_yield = toolkit.ratios.get_dividend_yield()
         ```
         """
         years = self._cash_flow_statement.columns
@@ -3326,17 +3839,27 @@ class Ratios:
         lag: int | list[int] = 1,
     ):
         """
-        Calculate the dividend yield ratio, a valuation ratio that measures the
+        Calculate the weighted dividend yield ratio, a valuation ratio that measures the
         amount of dividends distributed per share of stock relative to the stock's price.
 
-        This dividend yield differs from the dividend yield ratio in that it takes into account the
-        (diluted) weighted average shares and actual dividends paid as found in the cash flow statement.
+        This dividend yield ratio takes into account the (diluted) weighted average shares and actual
+        dividends paid as found in the cash flow statement. It provides a more accurate reflection
+        of the dividends paid out per share, considering any changes in the number of shares.
 
         Args:
             diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+
+        Returns:
+            pd.DataFrame: Weighted dividend yield values.
+
+        Note:
+        - The method retrieves historical data and calculates the weighted dividend yield ratio for each asset
+        in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the weighted dividend yield values
+        using the specified `lag`.
 
         As an example:
 
@@ -3345,7 +3868,7 @@ class Ratios:
 
         toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
 
-        toolkit.ratios.get_weighted_dividend_yield()
+        weighted_dividend_yield = toolkit.ratios.get_weighted_dividend_yield()
         ```
         """
         average_shares = (
@@ -3392,6 +3915,15 @@ class Ratios:
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
 
+        Returns:
+            pd.DataFrame: Price to cash flow ratio values.
+
+        Note:
+        - The method retrieves historical data and calculates the price to cash flow ratio for each asset
+        in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the price to cash flow ratio values
+        using the specified `lag`.
+
         As an example:
 
         ```python
@@ -3399,7 +3931,7 @@ class Ratios:
 
         toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
 
-        toolkit.ratios.get_price_to_cash_flow_ratio()
+        price_to_cash_flow_ratio = toolkit.ratios.get_price_to_cash_flow_ratio()
         ```
         """
         average_shares = (
@@ -3440,11 +3972,22 @@ class Ratios:
         Calculate the price to free cash flow ratio, a valuation ratio that compares a
         company's market price to its free cash flow per share.
 
+        This ratio provides insight into how the market values a company's ability to generate free cash flow.
+
         Args:
             diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+
+        Returns:
+            pd.DataFrame: Price to free cash flow ratio values.
+
+        Note:
+        - The method retrieves historical data and calculates the price to free cash flow ratio for each asset
+        in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the price to free cash flow ratio values
+        using the specified `lag`.
 
         As an example:
 
@@ -3453,7 +3996,7 @@ class Ratios:
 
         toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
 
-        toolkit.ratios.get_price_to_free_cash_flow_ratio()
+        price_to_free_cash_flow_ratio = toolkit.ratios.get_price_to_free_cash_flow_ratio()
         ```
         """
         average_shares = (
@@ -3495,6 +4038,10 @@ class Ratios:
         """
         Calculates the market capitalization of the company.
 
+        Market capitalization, often referred to as "market cap," is the total value of a company's
+        outstanding shares of stock in the stock market. It is calculated by multiplying the current
+        market price per share by the total number of outstanding shares.
+
         Note: All the inputs must be in the same currency and unit for accurate calculations.
 
         Args:
@@ -3503,6 +4050,9 @@ class Ratios:
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
 
+        Returns:
+            pd.DataFrame: Market capitalization values.
+
         As an example:
 
         ```python
@@ -3510,7 +4060,7 @@ class Ratios:
 
         toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
 
-        toolkit.ratios.get_market_cap()
+        market_cap = toolkit.ratios.get_market_cap()
         ```
         """
         average_shares = (
@@ -3548,6 +4098,9 @@ class Ratios:
         market capitalization, outstanding debt, minority interest, and
         preferred equity, minus the cash and cash equivalents.
 
+        Enterprise Value = Market Capitalization + Total Debt + Minority Interest + Preferred Equity
+        - Cash and Cash Equivalents
+
         Note: All the inputs must be in the same currency and unit for accurate calculations.
 
         Args:
@@ -3556,6 +4109,9 @@ class Ratios:
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
 
+        Returns:
+            pd.DataFrame: Enterprise Value values.
+
         As an example:
 
         ```python
@@ -3563,7 +4119,7 @@ class Ratios:
 
         toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
 
-        toolkit.ratios.get_enterprise_value()
+        enterprise_value = toolkit.ratios.get_enterprise_value()
         ```
         """
         average_shares = (
@@ -3608,11 +4164,20 @@ class Ratios:
         Calculate the EV to sales ratio, a valuation ratio that compares a company's
         enterprise value (EV) to its total revenue.
 
+        This ratio compares the enterprise value (EV) to the total revenue generated
+        by the company. It can provide insights into how efficiently a company is using
+        its revenue to generate value for its investors.
+
+        Enterprise Value to Sales Ratio = Enterprise Value / Total Revenue
+
         Args:
             diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+
+        Returns:
+            pd.DataFrame: EV to Sales Ratio values.
 
         As an example:
 
@@ -3621,7 +4186,7 @@ class Ratios:
 
         toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
 
-        toolkit.ratios.get_ev_to_sales_ratio()
+        ev_to_sales_ratio = toolkit.ratios.get_ev_to_sales_ratio()
         ```
         """
         enterprise_value = self.get_enterprise_value(diluted)
@@ -3648,14 +4213,22 @@ class Ratios:
         lag: int | list[int] = 1,
     ):
         """
-        Calculates the enterprise value over EBITDA ratio, which is a valuation ratio that
+        Calculate the enterprise value over EBITDA ratio, a valuation ratio that
         measures a company's total value (including debt and equity) relative to its EBITDA.
+
+        This ratio helps investors understand how many times the enterprise value exceeds the
+        company's EBITDA, providing insights into the company's debt load and operating performance.
+
+        Enterprise Value to EBITDA Ratio = Enterprise Value / EBITDA
 
         Args:
             diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+
+        Returns:
+            pd.DataFrame: EV to EBITDA Ratio values.
 
         As an example:
 
@@ -3664,7 +4237,7 @@ class Ratios:
 
         toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
 
-        toolkit.ratios.get_ev_to_ebitda_ratio()
+        ev_to_ebitda_ratio = toolkit.ratios.get_ev_to_ebitda_ratio()
         ```
         """
         enterprise_value = self.get_enterprise_value(diluted)
@@ -3693,15 +4266,24 @@ class Ratios:
         lag: int | list[int] = 1,
     ):
         """
-        Calculates the enterprise value over operating cash flow ratio, which is a valuation
-        ratio that measures a company's total value (including debt and equity) relative
-        to its operating cash flow.
+        Calculate the enterprise value over operating cash flow ratio, a valuation ratio that
+        measures a company's total value (including debt and equity) relative to its operating cash flow.
+
+        The ratio is a valuation metric that helps investors assess the company's valuation
+        relative to its operating cash flow. This ratio provides insights into how many times
+        the enterprise value exceeds the company's operating cash flow, indicating the company's
+        ability to generate cash from its operations.
+
+        Enterprise Value to Operating Cash Flow Ratio = Enterprise Value / Operating Cash Flow
 
         Args:
             diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+
+        Returns:
+            pd.DataFrame: EV to Operating Cash Flow Ratio values.
 
         As an example:
 
@@ -3710,7 +4292,7 @@ class Ratios:
 
         toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
 
-        toolkit.ratios.get_ev_to_operating_cashflow_ratio()
+        ev_to_operating_cashflow_ratio = toolkit.ratios.get_ev_to_operating_cashflow_ratio()
         ```
         """
         enterprise_value = self.get_enterprise_value(diluted)
@@ -3741,8 +4323,15 @@ class Ratios:
         lag: int | list[int] = 1,
     ):
         """
-        Calculates the earnings yield ratio, which measures the earnings per share
+        Calculate the earnings yield ratio, a valuation ratio that measures the earnings per share
         relative to the market price per share.
+
+        The earnings yield ratio is a valuation metric that provides insights into how much a
+        company's earnings contribute to its stock price. It compares the earnings per share
+        to the market price per share, helping investors understand the earnings potential of
+        the company relative to its current market value
+
+        Earnings Yield Ratio = Earnings Per Share / Price Per Share
 
         Args:
             include_dividends (bool, optional): Whether to include dividends in the calculation. Defaults to False.
@@ -3751,6 +4340,9 @@ class Ratios:
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
 
+        Returns:
+            pd.DataFrame: Earnings Yield Ratio values.
+
         As an example:
 
         ```python
@@ -3758,7 +4350,7 @@ class Ratios:
 
         toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
 
-        toolkit.ratios.get_earnings_yield()
+        earnings_yield_ratio = toolkit.ratios.get_earnings_yield()
         ```
         """
         eps = self.get_earnings_per_share(include_dividends, diluted)
@@ -3784,13 +4376,22 @@ class Ratios:
         self, rounding: int | None = 4, growth: bool = False, lag: int | list[int] = 1
     ):
         """
-        Calculates the (dividend) payout ratio, which measures the proportion of earnings
-        paid out as dividends to shareholders.
+        Calculate the (dividend) payout ratio, a financial metric that measures the proportion
+        of earnings paid out as dividends to shareholders.
+
+        The payout ratio is a financial metric that helps investors assess the
+        portion of a company's earnings that is being distributed to shareholders
+        in the form of dividends. It's a valuable indicator for dividend investors as
+        it indicates the sustainability of dividend payments and the company's
+        approach to distributing profits.
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+
+        Returns:
+            pd.DataFrame: Payout Ratio values.
 
         As an example:
 
@@ -3799,7 +4400,7 @@ class Ratios:
 
         toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
 
-        toolkit.ratios.get_payout_ratio()
+        payout_ratio = toolkit.ratios.get_payout_ratio()
         ```
         """
         payout_ratio = valuation.get_payout_ratio(
@@ -3819,13 +4420,19 @@ class Ratios:
         self, rounding: int | None = 4, growth: bool = False, lag: int | list[int] = 1
     ):
         """
-        Calculate the tangible asset value, which represents the total value of a company's
-        assets that can be used to generate revenue.
+        Calculate the tangible asset value, a financial metric that represents the total value
+        of a company's assets that can be used to generate revenue. Tangible assets are those
+        physical assets that have a finite monetary value and can be sold, used, or consumed.
+
+        Tangible Asset Value = Total Assets - Intangible Assets - Goodwill
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+
+        Returns:
+            pd.DataFrame: Tangible Asset Value values.
 
         As an example:
 
@@ -3834,9 +4441,10 @@ class Ratios:
 
         toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
 
-        toolkit.ratios.get_tangible_asset_value()
+        tangible_asset_value = toolkit.ratios.get_tangible_asset_value()
         ```
         """
+
         tangible_asset_value = valuation.get_tangible_asset_value(
             self._balance_sheet_statement.loc[:, "Total Assets", :],
             self._balance_sheet_statement.loc[:, "Total Liabilities", :],
@@ -3857,13 +4465,19 @@ class Ratios:
         self, rounding: int | None = 4, growth: bool = False, lag: int | list[int] = 1
     ):
         """
-        Calculate the net current asset value, which is the total value of a company's
-        current assets minus its current liabilities.
+        Calculate the net current asset value, a financial metric that represents the total value
+        of a company's current assets minus its current liabilities. It indicates the extent to
+        which a company's short-term assets exceed its short-term liabilities.
+
+        Net Current Asset Value = Current Assets - Current Liabilities
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+
+        Returns:
+            pd.DataFrame: Net Current Asset Value values.
 
         As an example:
 
@@ -3872,7 +4486,7 @@ class Ratios:
 
         toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
 
-        toolkit.ratios.get_net_current_asset_value()
+        net_current_asset_value = toolkit.ratios.get_net_current_asset_value()
         ```
         """
         net_current_asset_value = valuation.get_net_current_asset_value(
@@ -3898,14 +4512,18 @@ class Ratios:
         lag: int | list[int] = 1,
     ):
         """
-        Calculate the net current asset value, which is the total value of a company's
-        current assets minus its current liabilities.
+        Calculate the enterprise value over earnings before interest and taxes (EBIT) ratio,
+        which is a valuation metric that compares a company's total value (including debt and equity)
+        relative to its earnings before interest and taxes.
 
         Args:
             diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+
+        Returns:
+            pd.DataFrame: Enterprise Value over EBIT values.
 
         As an example:
 
@@ -3914,7 +4532,7 @@ class Ratios:
 
         toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
 
-        toolkit.ratios.get_ev_to_ebit()
+        ev_to_ebit_ratio = toolkit.ratios.get_ev_to_ebit()
         ```
         """
         enterprise_value = self.get_enterprise_value(diluted)

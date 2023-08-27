@@ -56,10 +56,26 @@ class Models:
         """
         Perform a Dupont analysis to breakdown the return on equity (ROE) into its components.
 
+        The Dupont analysis is a method used to dissect and understand the factors that drive a company's
+        return on equity (ROE). It breaks down the ROE into three key components: Profit Margin, Asset
+        Turnover, and Financial Leverage.
+
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the values. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+
+        Returns:
+            pd.DataFrame: DataFrame containing Dupont analysis results, including Profit Margin, Asset
+                          Turnover, Financial Leverage, and the calculated ROE values.
+
+        Notes:
+            - The Profit Margin is the ratio of Net Income to Total Revenue, indicating the percentage of
+            revenue that translates into profit.
+            - Asset Turnover measures the efficiency of a company's use of its assets to generate sales
+            revenue.
+            - Financial Leverage represents the use of debt to finance a company's operations, which can
+            amplify returns as well as risks.
 
         As an example:
 
@@ -68,7 +84,7 @@ class Models:
 
         toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
 
-        toolkit.models.get_dupont_analysis()
+        dupont_analysis = toolkit.models.get_dupont_analysis()
         ```
         """
         self._dupont_analysis = get_dupont_analysis(
@@ -108,12 +124,33 @@ class Models:
         lag: int | list[int] = 1,
     ) -> pd.DataFrame:
         """
-        Perform am Extended Dupont analysis to breakdown the return on equity (ROE) into its components.
+        Perform an Extended Dupont analysis to breakdown the return on equity (ROE) into its components,
+        while considering additional financial metrics.
+
+        The Extended Dupont analysis is an advanced method used to break down the return on equity (ROE)
+        into multiple components, providing a more detailed insight into the factors influencing a
+        company's profitability. It considers additional metrics such as Return on Assets (ROA),
+        Total Asset Turnover, Financial Leverage, and more.
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the values. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+
+        Returns:
+            pd.DataFrame: DataFrame containing Extended Dupont analysis results, including Profit Margin, Asset Turnover,
+                        Financial Leverage, ROA, Total Asset Turnover, and the calculated ROE values.
+
+        Notes:
+            - The Profit Margin is the ratio of Net Income to Total Revenue, indicating the percentage of
+            revenue that translates into profit.
+            - Asset Turnover measures the efficiency of a company's use of its assets to generate
+            sales revenue.
+            - Financial Leverage represents the use of debt to finance a company's operations, which can
+            amplify returns as well as risks.
+            - Return on Assets (ROA) measures the efficiency of a company's use of its assets to
+            generate profit.
+            - Total Asset Turnover considers all assets, including both equity and debt financing.
 
         As an example:
 
@@ -122,7 +159,7 @@ class Models:
 
         toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
 
-        toolkit.models.get_extended_dupont_analysis()
+        extended_dupont_analysis = toolkit.models.get_extended_dupont_analysis()
         ```
         """
         self._extended_dupont_analysis = get_extended_dupont_analysis(
@@ -160,6 +197,7 @@ class Models:
             else self._extended_dupont_analysis
         )
 
+    @handle_errors
     def get_enterprise_value_breakdown(
         self,
         diluted: bool = True,
@@ -168,18 +206,21 @@ class Models:
         lag: int | list[int] = 1,
     ) -> pd.DataFrame:
         """
-        The Enterprise Value breakdown corresponds to the following components:
-            - Share Price: given for each quarter or year.
-            - Market cap: The total value of a company's outstanding common and preferred shares
-            - Debt: The sum of long-term and short-term debt
-            - Preferred equity: The value of preferred shares
-            - Minority interest: The equity value of a subsidiary with less than 50% ownership.
-            - Cash and cash equivalents: The total amount of cash, certificates of
-            deposit, drafts, money orders, commercial paper, marketable securities, money market
-            funds, short-term government bonds, or Treasury bills a company possesses.
+        Calculate the Enterprise Value (EV) breakdown, providing a detailed view of its components.
 
-        This is displayed in one DataFrame for each company and includes the option to show
-        growth values as well.
+        The Enterprise Value breakdown includes the following components for each quarter or year:
+        - Share Price: The market price per share of the company's stock.
+        - Market Capitalization (Market Cap): The total value of a company's outstanding common and preferred shares.
+        - Debt: The sum of long-term and short-term debt on the company's balance sheet.
+        - Preferred Equity: The value of preferred shares, if applicable.
+        - Minority Interest: The equity value of a subsidiary with less than 50% ownership.
+        - Cash and Cash Equivalents: The total amount of liquid assets including cash, marketable securities,
+        and short-term investments.
+
+        The Enterprise Value is calculated as the sum of Market Cap, Debt, Preferred Equity,
+        Minority Interest, minus Cash and Cash Equivalents.
+
+        This breakdown is displayed in a DataFrame for each company and includes the option to show growth values as well.
 
         Args:
             diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
@@ -188,7 +229,15 @@ class Models:
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
 
         Returns:
-            pd.DataFrame: the Enterprise Value breakdown.
+            pd.DataFrame: DataFrame containing the Enterprise Value breakdown, including the calculated components.
+
+        Note:
+        - All the inputs must be in the same currency and unit for accurate calculations.
+        - The Enterprise Value is an important metric used for valuation and investment analysis.
+        - A positive Enterprise Value indicates that the company is financed primarily by equity and has excess cash.
+        - A negative Enterprise Value may indicate financial distress or unusual financial situations.
+        - Understanding the Enterprise Value breakdown can provide insights into the sources of a
+        company's value and potential risks.
 
         As an example:
 
@@ -197,7 +246,7 @@ class Models:
 
         toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
 
-        toolkit.models.get_enterprise_value_breakdown()
+        enterprise_value_breakdown = toolkit.models.get_enterprise_value_breakdown()
         ```
         """
         average_shares = (

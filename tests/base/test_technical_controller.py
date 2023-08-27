@@ -9,7 +9,7 @@ print(historical)
 
 toolkit = Toolkit(tickers=["AAPL", "MSFT"], historical=historical)
 
-technical_module = toolkit.technical
+technical_module = toolkit.technicals
 
 # pylint: disable=missing-function-docstring
 

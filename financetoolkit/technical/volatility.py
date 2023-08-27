@@ -86,3 +86,26 @@ def get_keltner_channels(
     lower_line = middle_line - atr_multiplier * average_true_range
 
     return upper_line, middle_line, lower_line
+
+
+def get_bollinger_bands(
+    prices: pd.Series, window: int, num_std_dev: int
+) -> pd.DataFrame:
+    """
+    Calculate the Bollinger Bands of a given price series.
+
+    Args:
+        prices (pd.Series): Series of prices.
+        window (int): Number of periods for the moving average.
+        num_std_dev (int): Number of standard deviations for the bands.
+
+    Returns:
+        pd.DataFrame: Bollinger Bands (upper, middle, lower).
+    """
+    rolling_mean = prices.rolling(window=window).mean()
+    rolling_std = prices.rolling(window=window).std()
+
+    upper_band = rolling_mean + (num_std_dev * rolling_std)
+    lower_band = rolling_mean - (num_std_dev * rolling_std)
+
+    return upper_band, rolling_mean, lower_band

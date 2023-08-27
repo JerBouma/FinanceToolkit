@@ -5,7 +5,7 @@ __docformat__ = "google"
 import pandas as pd
 
 from financetoolkit.base.helpers import calculate_growth, handle_errors
-from financetoolkit.technical import breadth, momentum, overlap, volatility, volume
+from financetoolkit.technical import breadth, momentum, overlap, volatility
 
 # pylint: disable=too-many-lines,too-many-instance-attributes,too-many-public-methods,too-many-locals,eval-used
 
@@ -56,8 +56,6 @@ class Technical:
         self._overlap_indicators_growth: pd.DataFrame = pd.DataFrame()
         self._volatility_indicators: pd.DataFrame = pd.DataFrame()
         self._volatility_indicators_growth: pd.DataFrame = pd.DataFrame()
-        self._volume_indicators: pd.DataFrame = pd.DataFrame()
-        self._volume_indicators_growth: pd.DataFrame = pd.DataFrame()
 
     def collect_all_indicators(
         self,
@@ -100,9 +98,6 @@ class Technical:
                 ),
                 self.collect_volatility_indicators(
                     period=period, close_column=close_column, window=window
-                ),
-                self.collect_volume_indicators(
-                    period=period, close_column=close_column
                 ),
             ],
             axis=1,
@@ -160,6 +155,19 @@ class Technical:
         )
 
         breadth_indicators["Advancers - Decliners"] = self.get_advancers_decliners(
+            period=period, close_column=close_column
+        )
+        breadth_indicators["On-Balance Volume"] = self.get_on_balance_volume(
+            period=period, close_column=close_column
+        )
+
+        breadth_indicators[
+            "Accumulation/Distribution Line"
+        ] = self.get_accumulation_distribution_line(
+            period=period, close_column=close_column
+        )
+
+        breadth_indicators["Chaikin Oscillator"] = self.get_chaikin_oscillator(
             period=period, close_column=close_column
         )
 
@@ -377,14 +385,6 @@ class Technical:
             period=period, close_column=close_column, window=window
         )
 
-        (
-            overlap_indicators["Bollinger Band Upper"],
-            overlap_indicators["Bollinger Band Middle"],
-            overlap_indicators["Bollinger Band Lower"],
-        ) = self.get_bollinger_bands(
-            period=period, close_column=close_column, window=window
-        )
-
         overlap_indicators[
             "Triangular Moving Average"
         ] = self.get_triangular_moving_average(
@@ -450,6 +450,14 @@ class Technical:
         """
         volatility_indicators: dict = {}
 
+        (
+            volatility_indicators["Bollinger Band Upper"],
+            volatility_indicators["Bollinger Band Middle"],
+            volatility_indicators["Bollinger Band Lower"],
+        ) = self.get_bollinger_bands(
+            period=period, close_column=close_column, window=window
+        )
+
         volatility_indicators["True Range"] = self.get_true_range(
             period=period, close_column=close_column
         )
@@ -492,76 +500,6 @@ class Technical:
             if growth
             else self._volatility_indicators
         )
-
-    def collect_volume_indicators(
-        self,
-        period: str = "daily",
-        close_column: str = "Adj Close",
-        rounding: int | None = 4,
-        growth: bool = False,
-        lag: int | list[int] = 1,
-    ) -> pd.Series | pd.DataFrame:
-        """
-        Calculates and collects various volume indicators based on the provided data.
-
-        Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "daily", "weekly", "quarterly", or "yearly". Defaults to "daily".
-            close_column (str, optional): The name of the column containing the close prices.
-                Defaults to "Adj Close".
-            rounding (int | None, optional): The number of decimals to round the results to.
-                Defaults to 4.
-            growth (bool, optional): Whether to calculate the growth of the indicator values.
-                Defaults to False.
-            lag (int | list[int], optional): The lag to use for the growth calculation.
-                Defaults to 1.
-
-        Returns:
-            pd.Series or pd.DataFrame: Volume indicators calculated based on the specified parameters.
-
-        Note:
-        - The method calculates several volume-based indicators for each asset in the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of the indicator values
-          using the specified `lag`.
-        """
-        volume_indicators: dict = {}
-
-        volume_indicators["On-Balance Volume"] = self.get_on_balance_volume(
-            period=period, close_column=close_column
-        )
-
-        volume_indicators[
-            "Accumulation/Distribution Line"
-        ] = self.get_accumulation_distribution_line(
-            period=period, close_column=close_column
-        )
-
-        volume_indicators["Chaikin Oscillator"] = self.get_chaikin_oscillator(
-            period=period, close_column=close_column
-        )
-
-        self._volume_indicators = pd.concat(volume_indicators, axis=1)
-
-        self._volume_indicators = self._volume_indicators.round(
-            rounding if rounding else self._rounding
-        )
-
-        if growth:
-            self._volume_indicators_growth = calculate_growth(
-                self._volume_indicators,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-                axis="index",
-            )
-
-        if len(self._tickers) == 1:
-            return (
-                self._volume_indicators_growth[self._tickers[0]]
-                if growth
-                else self._volume_indicators.loc[self._tickers[0]]
-            )
-
-        return self._volume_indicators_growth if growth else self._volume_indicators
 
     @handle_errors
     def get_mcclellan_oscillator(
@@ -2191,7 +2129,7 @@ class Technical:
         else:
             raise ValueError("Period must be daily, weekly, quarterly, or yearly.")
 
-        upper_band, middle_band, lower_band = overlap.get_bollinger_bands(
+        upper_band, middle_band, lower_band = volatility.get_bollinger_bands(
             historical_data[close_column], window, num_std_dev
         )
 
@@ -2578,7 +2516,7 @@ class Technical:
         else:
             raise ValueError("Period must be daily, weekly, quarterly, or yearly.")
 
-        on_balance_volume = volume.get_on_balance_volume(
+        on_balance_volume = breadth.get_on_balance_volume(
             historical_data[close_column],
             historical_data["Volume"],
         )
@@ -2645,7 +2583,7 @@ class Technical:
         for ticker in self._tickers:
             accumulation_distribution_line[
                 ticker
-            ] = volume.get_accumulation_distribution_line(
+            ] = breadth.get_accumulation_distribution_line(
                 historical_data["High"][ticker],
                 historical_data["Low"][ticker],
                 historical_data[close_column][ticker],
@@ -2718,7 +2656,7 @@ class Technical:
         else:
             raise ValueError("Period must be daily, weekly, quarterly, or yearly.")
 
-        chaikin_oscillator = volume.get_chaikin_oscillator(
+        chaikin_oscillator = breadth.get_chaikin_oscillator(
             historical_data["High"],
             historical_data["Low"],
             historical_data[close_column],

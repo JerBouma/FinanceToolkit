@@ -54,6 +54,7 @@ def get_historical_data(
     else:
         end_date = datetime.today()
         end_timestamp = int(end_date.timestamp())
+        end = end_date.strftime("%Y-%m-%d")
 
     if start is not None:
         # Additional data is collected to ensure return calculations are correct
@@ -67,6 +68,7 @@ def get_historical_data(
         start_timestamp = int(start_date.timestamp())
     else:
         start_date = datetime.now() - timedelta(days=10 * 365)
+        start = start_date.strftime("%Y-%m-%d")
 
         if start_date > end_date:
             start_date = end_date - timedelta(days=10 * 365)

@@ -129,6 +129,7 @@ class Toolkit:
         self._invalid_tickers: list = []
         self._sleep_timer = sleep_timer
         self._progress_bar = progress_bar
+        self._historical = historical
 
         if self._api_key:
             # Initialization of FinancialModelingPrep Variables
@@ -497,12 +498,12 @@ class Toolkit:
         if not self._end_date:
             self._start_date = datetime.today().strftime("%Y-%m-%d")
 
-        # Collect Historical Data
-        self.get_historical_data(period="daily")
-        self.get_historical_data(period="weekly")
-        self.get_historical_data(period="monthly")
-        self.get_historical_data(period="quarterly")
-        self.get_historical_data(period="yearly")
+        if self._historical.empty:
+            self.get_historical_data(period="daily")
+            self.get_historical_data(period="weekly")
+            self.get_historical_data(period="monthly")
+            self.get_historical_data(period="quarterly")
+            self.get_historical_data(period="yearly")
 
         return Technical(
             self._tickers,

@@ -231,7 +231,7 @@ class Models:
         Returns:
             pd.DataFrame: DataFrame containing the Enterprise Value breakdown, including the calculated components.
 
-        Note:
+        Notes:
         - All the inputs must be in the same currency and unit for accurate calculations.
         - The Enterprise Value is an important metric used for valuation and investment analysis.
         - A positive Enterprise Value indicates that the company is financed primarily by equity and has excess cash.

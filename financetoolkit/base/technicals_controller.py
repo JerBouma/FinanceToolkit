@@ -80,7 +80,7 @@ class Technicals:
         Returns:
             pd.Series or pd.DataFrame: Technical indicators calculated based on the specified parameters.
 
-        Note:
+        Notes:
         - The method calculates various types of technical indicators for each asset in the Toolkit instance.
         - If `growth` is set to True, the method calculates the growth of the indicator values
           using the specified `lag`.
@@ -143,7 +143,7 @@ class Technicals:
         Returns:
             pd.Series or pd.DataFrame: Breadth indicators calculated based on the specified parameters.
 
-        Note:
+        Notes:
         - The method calculates various breadth indicators for each asset in the Toolkit instance.
         - If `growth` is set to True, the method calculates the growth of the indicator values
           using the specified `lag`.
@@ -223,7 +223,7 @@ class Technicals:
         Returns:
             pd.Series or pd.DataFrame: Momentum indicators calculated based on the specified parameters.
 
-        Note:
+        Notes:
         - The method calculates various momentum indicators for each asset in the Toolkit instance.
         - If `growth` is set to True, the method calculates the growth of the indicator values
           using the specified `lag`.
@@ -358,7 +358,7 @@ class Technicals:
         Returns:
             pd.Series or pd.DataFrame: Overlap-based indicators calculated based on the specified parameters.
 
-        Note:
+        Notes:
         - The method calculates several overlap-based indicators for each asset in the Toolkit instance.
         - If `growth` is set to True, the method calculates the growth of the indicator values
           using the specified `lag`.
@@ -443,7 +443,7 @@ class Technicals:
         Returns:
             pd.Series or pd.DataFrame: Volatility indicators calculated based on the specified parameters.
 
-        Note:
+        Notes:
         - The method calculates several volatility-based indicators for each asset in the Toolkit instance.
         - If `growth` is set to True, the method calculates the growth of the indicator values
           using the specified `lag`.
@@ -538,7 +538,7 @@ class Technicals:
         Returns:
             pd.Series or pd.DataFrame: McClellan Oscillator values.
 
-        Note:
+        Notes:
         - The method retrieves historical data based on the specified `period` and calculates
           the McClellan Oscillator for each asset in the Toolkit instance.
         - If `growth` is set to True, the method calculates the growth of the indicator values
@@ -602,7 +602,7 @@ class Technicals:
         Returns:
             pd.Series or pd.DataFrame: Advancers/Decliners ratio values.
 
-        Note:
+        Notes:
         - The method retrieves historical data based on the specified `period` and calculates
           the Advancers/Decliners ratio for each asset in the Toolkit instance.
         - If `growth` is set to True, the method calculates the growth of the indicator values
@@ -667,7 +667,7 @@ class Technicals:
         Returns:
             pd.Series or pd.DataFrame: Money Flow Index (MFI) values.
 
-        Note:
+        Notes:
         - The method retrieves historical data based on the specified `period` and calculates
           the MFI values for each asset in the Toolkit instance.
         - If `growth` is set to True, the method calculates the growth of the indicator values
@@ -735,7 +735,7 @@ class Technicals:
         Returns:
             pd.Series or pd.DataFrame: Williams %R values.
 
-        Note:
+        Notes:
         - The method retrieves historical data based on the specified `period` and calculates
           the Williams %R values for each asset in the Toolkit instance.
         - If `growth` is set to True, the method calculates the growth of the indicator values
@@ -800,7 +800,7 @@ class Technicals:
             Tuple[pd.Series, pd.Series] or Tuple[pd.DataFrame, pd.DataFrame]:
             Aroon Indicator values for the upward and downward trends.
 
-        Note:
+        Notes:
         - The method retrieves historical data based on the specified `period` and calculates
           the Aroon Indicator values for each asset in the Toolkit instance.
         - If `growth` is set to True, the method calculates the growth of the indicator values
@@ -877,7 +877,7 @@ class Technicals:
         Returns:
             pd.Series or pd.DataFrame: Commodity Channel Index (CCI) values.
 
-        Note:
+        Notes:
         - The method retrieves historical data based on the specified `period` and calculates
           the CCI values for each asset in the Toolkit instance.
         - If `growth` is set to True, the method calculates the growth of the indicator values
@@ -948,7 +948,7 @@ class Technicals:
         Returns:
             pd.Series or pd.DataFrame: Relative Vigor Index (RVI) values.
 
-        Note:
+        Notes:
         - The method retrieves historical data based on the specified `period` and calculates
           the RVI values for each asset in the Toolkit instance.
         - If `growth` is set to True, the method calculates the growth of the indicator values
@@ -1014,7 +1014,7 @@ class Technicals:
         Returns:
             pd.Series or pd.DataFrame: Force Index values.
 
-        Note:
+        Notes:
         - The method retrieves historical data based on the specified `period` and calculates
           the Force Index values for each asset in the Toolkit instance.
         - If `growth` is set to True, the method calculates the growth of the indicator values
@@ -1086,7 +1086,7 @@ class Technicals:
         Returns:
             pd.Series or pd.DataFrame: Ultimate Oscillator values.
 
-        Note:
+        Notes:
         - The method retrieves historical data based on the specified `period` and calculates
           the Ultimate Oscillator values for each asset in the Toolkit instance.
         - If `growth` is set to True, the method calculates the growth of the indicator values
@@ -1161,7 +1161,7 @@ class Technicals:
         Returns:
             pd.Series or pd.DataFrame: Percentage Price Oscillator (PPO) values.
 
-        Note:
+        Notes:
         - The method retrieves historical data based on the specified `period` and calculates
           the PPO values for each asset in the Toolkit instance.
         - If `growth` is set to True, the method calculates the growth of the indicator values
@@ -1230,7 +1230,7 @@ class Technicals:
         Returns:
             pd.Series or pd.DataFrame: Detrended Price Oscillator (DPO) values.
 
-        Note:
+        Notes:
         - The method retrieves historical data based on the specified `period` and calculates
           the DPO values for each asset in the Toolkit instance.
         - If `growth` is set to True, the method calculates the growth of the indicator values
@@ -1297,7 +1297,7 @@ class Technicals:
         Returns:
             pd.DataFrame or pd.Series: Average Directional Index (ADX) values.
 
-        Note:
+        Notes:
         - The method retrieves historical data based on the specified `period` and calculates
           the ADX values for each asset in the Toolkit instance.
         - If `growth` is set to True, the method calculates the growth of the indicator values
@@ -1367,7 +1367,7 @@ class Technicals:
         Returns:
             pd.Series or pd.DataFrame: Chande Momentum Oscillator values.
 
-        Note:
+        Notes:
         - The method retrieves historical data based on the specified `period` and calculates
           the Chande Momentum Oscillator values for each asset in the Toolkit instance.
         - If `growth` is set to True, the method calculates the growth of the indicator values
@@ -1440,7 +1440,7 @@ class Technicals:
             Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
             Conversion Line, Base Line, Lead Span A, and Lead Span B values.
 
-        Note:
+        Notes:
         - The method retrieves historical data based on the specified `period` and calculates
           the Ichimoku Cloud values for each asset in the Toolkit instance.
         - If `growth` is set to True, the method calculates the growth of the indicator values
@@ -1548,7 +1548,7 @@ class Technicals:
             Tuple[pd.Series, pd.Series] or Tuple[pd.DataFrame, pd.DataFrame]:
             %K line and %D line values.
 
-        Note:
+        Notes:
         - The method retrieves historical data based on the specified `period` and calculates
           the Stochastic Oscillator values for each asset in the Toolkit instance.
         - If `growth` is set to True, the method calculates the growth of the %K and %D values
@@ -1635,7 +1635,7 @@ class Technicals:
             Tuple[pd.DataFrame, pd.DataFrame] or Tuple[pd.Series, pd.Series]:
             MACD line and signal line values.
 
-        Note:
+        Notes:
         - The method retrieves historical data based on the specified `period` and calculates
           the MACD and signal line values for each asset in the Toolkit instance.
         - If `growth` is set to True, the method calculates the growth of the MACD and signal values
@@ -1712,7 +1712,7 @@ class Technicals:
             pd.DataFrame or pd.Series:
             Relative Strength Index (RSI) values.
 
-        Note:
+        Notes:
         - The method retrieves historical data based on the specified `period` and calculates the
           RSI for each asset in the Toolkit instance.
         - If `growth` is set to True, the method calculates the growth of the RSI
@@ -1774,7 +1774,7 @@ class Technicals:
             pd.DataFrame or pd.Series:
             Balance of Power (BOP) values.
 
-        Note:
+        Notes:
         - The method retrieves historical data based on the specified `period` and calculates the
           BOP for each asset in the Toolkit instance.
         - If `growth` is set to True, the method calculates the growth of the BOP
@@ -1842,7 +1842,7 @@ class Technicals:
             pd.DataFrame or pd.Series:
             Moving Average (MA) values.
 
-        Note:
+        Notes:
         - The method retrieves historical data based on the specified `period` and calculates the
           MA for each asset in the Toolkit instance.
         - If `growth` is set to True, the method calculates the growth of the MA
@@ -1907,7 +1907,7 @@ class Technicals:
             pd.DataFrame or pd.Series:
             Exponential Moving Average (EMA) values.
 
-        Note:
+        Notes:
         - The method retrieves historical data based on the specified `period` and calculates the
           EMA for each asset in the Toolkit instance.
         - If `growth` is set to True, the method calculates the growth of the EMA
@@ -1974,7 +1974,7 @@ class Technicals:
             pd.DataFrame or pd.Series:
             Double Exponential Moving Average (DEMA) values.
 
-        Note:
+        Notes:
         - The method retrieves historical data based on the specified `period` and calculates the
           DEMA for each asset in the Toolkit instance.
         - If `growth` is set to True, the method calculates the growth of the DEMA
@@ -2044,7 +2044,7 @@ class Technicals:
             pd.DataFrame or pd.Series:
             Trix values.
 
-        Note:
+        Notes:
         - The method retrieves historical data based on the specified `period` and calculates the
           Trix for each asset in the Toolkit instance.
         - If `growth` is set to True, the method calculates the growth of the Trix
@@ -2112,7 +2112,7 @@ class Technicals:
             Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame] or Tuple[pd.Series, pd.Series, pd.Series]:
             Bollinger Bands (upper, middle, lower).
 
-        Note:
+        Notes:
         - The method retrieves historical data based on the specified `period` and calculates the
           Bollinger Bands for each asset in the Toolkit instance.
         - If `growth` is set to True, the method calculates the growth of the Bollinger Bands
@@ -2194,7 +2194,7 @@ class Technicals:
         Returns:
             pd.Series or pd.DataFrame: Triangular Moving Average values.
 
-        Note:
+        Notes:
         - The method retrieves historical data based on the specified `period` and calculates the
           Triangular Moving Average for each asset in the Toolkit instance.
         - If `growth` is set to True, the method calculates the growth of the Triangular Moving Average
@@ -2256,7 +2256,7 @@ class Technicals:
         Returns:
             pd.Series or pd.DataFrame: True Range values.
 
-        Note:
+        Notes:
         - The method retrieves historical data based on the specified `period` and calculates the
           True Range for each asset in the Toolkit instance.
         - If `growth` is set to True, the method calculates the growth of the True Range
@@ -2332,7 +2332,7 @@ class Technicals:
         2. Calculate the Average True Range (ATR) over the specified window:
             - ATR = EMA(TR, window), where EMA is the Exponential Moving Average.
 
-        Note:
+        Notes:
         - ATR values are typically used to assess the volatility and potential price movement of an asset.
         - A higher ATR value indicates higher volatility, while a lower ATR value suggests lower volatility.
         """
@@ -2407,7 +2407,7 @@ class Technicals:
         Returns:
             pd.DataFrame or Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]: Keltner Channels (upper, middle, lower).
 
-        Note:
+        Notes:
         - The method retrieves historical data based on the specified `period` and calculates Keltner Channels
           for each asset in the Toolkit instance.
         - If `growth` is set to True, the method calculates the growth of the channels using the specified `lag`.
@@ -2500,7 +2500,7 @@ class Technicals:
         Returns:
             pd.Series or pd.DataFrame: On-Balance Volume values.
 
-        Note:
+        Notes:
         - The method retrieves historical data based on the specified `period` and calculates On-Balance Volume
           for each asset in the Toolkit instance.
         - If `growth` is set to True, the method calculates the growth of the OBV using the specified `lag`.
@@ -2562,7 +2562,7 @@ class Technicals:
         Returns:
             pd.Series or pd.DataFrame: Accumulation/Distribution Line values.
 
-        Note:
+        Notes:
         - The method retrieves historical data based on the specified `period` and calculates the
           Accumulation/Distribution Line for each asset in the Toolkit instance.
         - If `growth` is set to True, the method calculates the growth of the Accumulation/Distribution Line
@@ -2639,7 +2639,7 @@ class Technicals:
         Returns:
             pd.Series or pd.DataFrame: Chaikin Oscillator values.
 
-        Note:
+        Notes:
         - The method retrieves historical data based on the specified `period` and calculates the
           Chaikin Oscillator for each asset in the Toolkit instance.
         - If `growth` is set to True, the method calculates the growth of the Chaikin Oscillator

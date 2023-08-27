@@ -251,7 +251,7 @@ def get_market_cap(
     """
     Calculates the market capitalization of the company.
 
-    Note: All the inputs must be in the same currency and unit for accurate calculations.
+    Notes: All the inputs must be in the same currency and unit for accurate calculations.
 
     Args:
         share_price (float | pd.Series): The share price of the company.
@@ -277,7 +277,7 @@ def get_enterprise_value(
     market capitalization, outstanding debt, minority interest, and
     preferred equity, minus the cash and cash equivalents.
 
-    Note: All the inputs must be in the same currency and unit for accurate calculations.
+    Notes: All the inputs must be in the same currency and unit for accurate calculations.
 
     Args:
         market_cap (float or pd.Series): The market capitalization of the company.

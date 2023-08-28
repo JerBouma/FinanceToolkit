@@ -84,6 +84,16 @@ class Technicals:
         - The method calculates various types of technical indicators for each asset in the Toolkit instance.
         - If `growth` is set to True, the method calculates the growth of the indicator values
           using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(tickers=["AAPL", "MSFT"])
+
+        toolkit.technicals.collect_all_indicators()
+        ```
         """
         self._all_indicators = pd.concat(
             [
@@ -147,6 +157,16 @@ class Technicals:
         - The method calculates various breadth indicators for each asset in the Toolkit instance.
         - If `growth` is set to True, the method calculates the growth of the indicator values
           using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(tickers=["AAPL", "MSFT"])
+
+        toolkit.technicals.collect_breadth_indicators()
+        ```
         """
         breadth_indicators: dict = {}
 
@@ -231,6 +251,16 @@ class Technicals:
         - The method calculates various momentum indicators for each asset in the Toolkit instance.
         - If `growth` is set to True, the method calculates the growth of the indicator values
           using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(tickers=["AAPL", "MSFT"])
+
+        toolkit.technicals.collect_momentum_indicators()
+        ```
         """
         momentum_indicators: dict = {}
 
@@ -380,6 +410,16 @@ class Technicals:
         - The method calculates several overlap-based indicators for each asset in the Toolkit instance.
         - If `growth` is set to True, the method calculates the growth of the indicator values
           using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(tickers=["AAPL", "MSFT"])
+
+        toolkit.technicals.collect_overlap_indicators()
+        ```
         """
         overlap_indicators: dict = {}
 
@@ -467,6 +507,16 @@ class Technicals:
         - The method calculates several volatility-based indicators for each asset in the Toolkit instance.
         - If `growth` is set to True, the method calculates the growth of the indicator values
           using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(tickers=["AAPL", "MSFT"])
+
+        toolkit.technicals.collect_volatility_indicators()
+        ```
         """
         volatility_indicators: dict = {}
 
@@ -567,6 +617,16 @@ class Technicals:
           the McClellan Oscillator for each asset in the Toolkit instance.
         - If `growth` is set to True, the method calculates the growth of the indicator values
           using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(tickers=["AAPL", "MSFT"])
+
+        toolkit.technicals.get_mcclellan_oscillator()
+        ```
         """
         if period == "daily":
             historical_data = self._daily_historical
@@ -631,6 +691,16 @@ class Technicals:
           the Advancers/Decliners ratio for each asset in the Toolkit instance.
         - If `growth` is set to True, the method calculates the growth of the indicator values
           using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(tickers=["AAPL", "MSFT"])
+
+        toolkit.technicals.get_advancers_decliners()
+        ```
         """
         if period == "daily":
             historical_data = self._daily_historical
@@ -696,6 +766,16 @@ class Technicals:
           the MFI values for each asset in the Toolkit instance.
         - If `growth` is set to True, the method calculates the growth of the indicator values
           using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(tickers=["AAPL", "MSFT"])
+
+        toolkit.technicals.get_money_flow_index()
+        ```
         """
         if period == "daily":
             historical_data = self._daily_historical
@@ -764,6 +844,16 @@ class Technicals:
           the Williams %R values for each asset in the Toolkit instance.
         - If `growth` is set to True, the method calculates the growth of the indicator values
           using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(tickers=["AAPL", "MSFT"])
+
+        toolkit.technicals.get_williams_percent_r()
+        ```
         """
         if period == "daily":
             historical_data = self._daily_historical
@@ -829,6 +919,16 @@ class Technicals:
           the Aroon Indicator values for each asset in the Toolkit instance.
         - If `growth` is set to True, the method calculates the growth of the indicator values
           using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(tickers=["AAPL", "MSFT"])
+
+        toolkit.technicals.get_aroon_indicator()
+        ```
         """
         if period == "daily":
             historical_data = self._daily_historical
@@ -907,6 +1007,16 @@ class Technicals:
           the CCI values for each asset in the Toolkit instance.
         - If `growth` is set to True, the method calculates the growth of the indicator values
           using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(tickers=["AAPL", "MSFT"])
+
+        toolkit.technicals.get_commodity_channel_index()
+        ```
         """
         if period == "daily":
             historical_data = self._daily_historical
@@ -978,6 +1088,16 @@ class Technicals:
           the RVI values for each asset in the Toolkit instance.
         - If `growth` is set to True, the method calculates the growth of the indicator values
           using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(tickers=["AAPL", "MSFT"])
+
+        toolkit.technicals.get_relative_vigor_index()
+        ```
         """
         if period == "daily":
             historical_data = self._daily_historical
@@ -1044,6 +1164,16 @@ class Technicals:
           the Force Index values for each asset in the Toolkit instance.
         - If `growth` is set to True, the method calculates the growth of the indicator values
           using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(tickers=["AAPL", "MSFT"])
+
+        toolkit.technicals.get_force_index()
+        ```
         """
         if period == "daily":
             historical_data = self._daily_historical
@@ -1116,6 +1246,16 @@ class Technicals:
           the Ultimate Oscillator values for each asset in the Toolkit instance.
         - If `growth` is set to True, the method calculates the growth of the indicator values
           using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(tickers=["AAPL", "MSFT"])
+
+        toolkit.technicals.get_ultimate_oscillator()
+        ```
         """
         if period == "daily":
             historical_data = self._daily_historical
@@ -1191,6 +1331,16 @@ class Technicals:
           the PPO values for each asset in the Toolkit instance.
         - If `growth` is set to True, the method calculates the growth of the indicator values
           using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(tickers=["AAPL", "MSFT"])
+
+        toolkit.technicals.get_percentage_price_oscillator()
+        ```
         """
         if period == "daily":
             historical_data = self._daily_historical
@@ -1260,6 +1410,16 @@ class Technicals:
           the DPO values for each asset in the Toolkit instance.
         - If `growth` is set to True, the method calculates the growth of the indicator values
           using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(tickers=["AAPL", "MSFT"])
+
+        toolkit.technicals.get_detrended_price_oscillator()
+        ```
         """
         if period == "daily":
             historical_data = self._daily_historical
@@ -1327,6 +1487,16 @@ class Technicals:
           the ADX values for each asset in the Toolkit instance.
         - If `growth` is set to True, the method calculates the growth of the indicator values
           using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(tickers=["AAPL", "MSFT"])
+
+        toolkit.technicals.get_average_directional_index()
+        ```
         """
         if period == "daily":
             historical_data = self._daily_historical
@@ -1397,6 +1567,16 @@ class Technicals:
           the Chande Momentum Oscillator values for each asset in the Toolkit instance.
         - If `growth` is set to True, the method calculates the growth of the indicator values
           using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(tickers=["AAPL", "MSFT"])
+
+        toolkit.technicals.get_chande_momentum_oscillator()
+        ```
         """
         if period == "daily":
             historical_data = self._daily_historical
@@ -1470,6 +1650,16 @@ class Technicals:
           the Ichimoku Cloud values for each asset in the Toolkit instance.
         - If `growth` is set to True, the method calculates the growth of the indicator values
           using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(tickers=["AAPL", "MSFT"])
+
+        toolkit.technicals.get_ichimoku_cloud()
+        ```
         """
         if period == "daily":
             historical_data = self._daily_historical
@@ -1554,6 +1744,16 @@ class Technicals:
           the Stochastic Oscillator values for each asset in the Toolkit instance.
         - If `growth` is set to True, the method calculates the growth of the %K and %D values
           using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(tickers=["AAPL", "MSFT"])
+
+        toolkit.technicals.get_stochastic_oscillator()
+        ```
         """
         if period == "daily":
             historical_data = self._daily_historical
@@ -1641,6 +1841,16 @@ class Technicals:
           the MACD and signal line values for each asset in the Toolkit instance.
         - If `growth` is set to True, the method calculates the growth of the MACD and signal values
           using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(tickers=["AAPL", "MSFT"])
+
+        toolkit.technicals.get_moving_average_convergence_divergence()
+        ```
         """
         if period == "daily":
             historical_data = self._daily_historical
@@ -1716,6 +1926,16 @@ class Technicals:
           RSI for each asset in the Toolkit instance.
         - If `growth` is set to True, the method calculates the growth of the RSI
           using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(tickers=["AAPL", "MSFT"])
+
+        toolkit.technicals.get_relative_strength_index()
+        ```
         """
         if period == "daily":
             historical_data = self._daily_historical
@@ -1778,6 +1998,16 @@ class Technicals:
           BOP for each asset in the Toolkit instance.
         - If `growth` is set to True, the method calculates the growth of the BOP
           using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(tickers=["AAPL", "MSFT"])
+
+        toolkit.technicals.get_balance_of_power()
+        ```
         """
         if period == "daily":
             historical_data = self._daily_historical
@@ -1846,6 +2076,16 @@ class Technicals:
           MA for each asset in the Toolkit instance.
         - If `growth` is set to True, the method calculates the growth of the MA
           using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(tickers=["AAPL", "MSFT"])
+
+        toolkit.technicals.get_moving_average()
+        ```
         """
         if period == "daily":
             historical_data = self._daily_historical
@@ -1911,6 +2151,16 @@ class Technicals:
           EMA for each asset in the Toolkit instance.
         - If `growth` is set to True, the method calculates the growth of the EMA
           using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(tickers=["AAPL", "MSFT"])
+
+        toolkit.technicals.get_exponential_moving_average()
+        ```
         """
         if period == "daily":
             historical_data = self._daily_historical
@@ -1978,6 +2228,16 @@ class Technicals:
           DEMA for each asset in the Toolkit instance.
         - If `growth` is set to True, the method calculates the growth of the DEMA
           using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(tickers=["AAPL", "MSFT"])
+
+        toolkit.technicals.get_double_exponential_moving_average()
+        ```
         """
         if period == "daily":
             historical_data = self._daily_historical
@@ -2048,6 +2308,16 @@ class Technicals:
           Trix for each asset in the Toolkit instance.
         - If `growth` is set to True, the method calculates the growth of the Trix
           using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(tickers=["AAPL", "MSFT"])
+
+        toolkit.technicals.get_trix()
+        ```
         """
         if period == "daily":
             historical_data = self._daily_historical
@@ -2116,6 +2386,16 @@ class Technicals:
           Bollinger Bands for each asset in the Toolkit instance.
         - If `growth` is set to True, the method calculates the growth of the Bollinger Bands
           using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(tickers=["AAPL", "MSFT"])
+
+        toolkit.technicals.get_bollinger_bands()
+        ```
         """
         if period == "daily":
             historical_data = self._daily_historical
@@ -2191,6 +2471,16 @@ class Technicals:
           Triangular Moving Average for each asset in the Toolkit instance.
         - If `growth` is set to True, the method calculates the growth of the Triangular Moving Average
           using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(tickers=["AAPL", "MSFT"])
+
+        toolkit.technicals.get_triangular_moving_average()
+        ```
         """
         if period == "daily":
             historical_data = self._daily_historical
@@ -2253,6 +2543,16 @@ class Technicals:
           True Range for each asset in the Toolkit instance.
         - If `growth` is set to True, the method calculates the growth of the True Range
           using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(tickers=["AAPL", "MSFT"])
+
+        toolkit.technicals.get_true_range()
+        ```
         """
         if period == "daily":
             historical_data = self._daily_historical
@@ -2327,6 +2627,16 @@ class Technicals:
         Notes:
         - ATR values are typically used to assess the volatility and potential price movement of an asset.
         - A higher ATR value indicates higher volatility, while a lower ATR value suggests lower volatility.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(tickers=["AAPL", "MSFT"])
+
+        toolkit.technicals.get_average_true_range()
+        ```
         """
         if period == "daily":
             historical_data = self._daily_historical
@@ -2403,6 +2713,16 @@ class Technicals:
         - The method retrieves historical data based on the specified `period` and calculates Keltner Channels
           for each asset in the Toolkit instance.
         - If `growth` is set to True, the method calculates the growth of the channels using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(tickers=["AAPL", "MSFT"])
+
+        toolkit.technicals.get_keltner_channels()
+        ```
         """
         if period == "daily":
             historical_data = self._daily_historical
@@ -2480,6 +2800,16 @@ class Technicals:
         - The method retrieves historical data based on the specified `period` and calculates On-Balance Volume
           for each asset in the Toolkit instance.
         - If `growth` is set to True, the method calculates the growth of the OBV using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(tickers=["AAPL", "MSFT"])
+
+        toolkit.technicals.get_on_balance_volume()
+        ```
         """
         if period == "daily":
             historical_data = self._daily_historical
@@ -2543,6 +2873,16 @@ class Technicals:
           Accumulation/Distribution Line for each asset in the Toolkit instance.
         - If `growth` is set to True, the method calculates the growth of the Accumulation/Distribution Line
           using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(tickers=["AAPL", "MSFT"])
+
+        toolkit.technicals.get_accumulation_distribution_line()
+        ```
         """
         if period == "daily":
             historical_data = self._daily_historical
@@ -2620,6 +2960,16 @@ class Technicals:
           Chaikin Oscillator for each asset in the Toolkit instance.
         - If `growth` is set to True, the method calculates the growth of the Chaikin Oscillator
           using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(tickers=["AAPL", "MSFT"])
+
+        toolkit.technicals.get_chaikin_oscillator()
+        ```
         """
         if period == "daily":
             historical_data = self._daily_historical

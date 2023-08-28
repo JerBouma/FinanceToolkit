@@ -40,7 +40,7 @@ from financetoolkit.base.technicals_controller import Technicals
 class Toolkit:
     """
     The Finance Toolkit is an open-source toolkit in which
-    all relevant financial ratios (50+), indicators and performance measurements
+    all 100+ financial ratios, indicators and performance measurements
     are written down in the most simplistic way allowing for complete transparency
     of the calculation method. This allows you to not have to rely on metrics
     from other providers and, given a financial statement, allow for efficient manual
@@ -247,7 +247,7 @@ class Toolkit:
 
         Next to that, it is also possible to define custom ratios.
 
-        See the following link for more information: https://www.jeroenbouma.com/projects/financetoolkit/docs
+        See the following link for more information: https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios
 
         As an example:
 
@@ -362,7 +362,7 @@ class Toolkit:
         Gives access to the Models module. The Models module is meant to execute well-known models such as DUPONT and the Discounted Cash Flow (DCF) model.
         These models are also directly related to the data retrieved from the Toolkit module.
 
-        See the following link for more information: https://www.jeroenbouma.com/projects/financetoolkit/docs
+        See the following link for more information: https://www.jeroenbouma.com/projects/financetoolkit/docs/models
 
         As an example:
 
@@ -472,7 +472,7 @@ class Toolkit:
         the Chaikin Money Flow (CMF), the Double Exponential Moving Average (DEMA), the Exponential Moving Average (EMA) and
         the Moving Average Convergence Divergence (MACD).
 
-        See the following link for more information: https://www.jeroenbouma.com/projects/financetoolkit/docs
+        See the following link for more information: https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals
 
         As an example:
 

@@ -85,7 +85,11 @@ def get_keltner_channels(
     upper_line = middle_line + atr_multiplier * average_true_range
     lower_line = middle_line - atr_multiplier * average_true_range
 
-    return upper_line, middle_line, lower_line
+    return pd.concat(
+        [upper_line, middle_line, lower_line],
+        keys=["Upper Line", "Middle Line", "Lower Line"],
+        axis=1,
+    )
 
 
 def get_bollinger_bands(
@@ -108,4 +112,8 @@ def get_bollinger_bands(
     upper_band = rolling_mean + (num_std_dev * rolling_std)
     lower_band = rolling_mean - (num_std_dev * rolling_std)
 
-    return upper_band, rolling_mean, lower_band
+    return pd.concat(
+        [upper_band, rolling_mean, lower_band],
+        axis=1,
+        keys=["Upper Band", "Middle Band", "Lower Band"],
+    )

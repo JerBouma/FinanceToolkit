@@ -179,23 +179,23 @@ def get_treasury_rates(
     }
 
     end_date = (
-        datetime.strptime(end, "%Y-%m-%d") + timedelta(days=1 * 365)
+        datetime.strptime(end, "%Y-%m-%d") + timedelta(days=30)
         if end is not None
         else datetime.today()
     )
 
     if start is not None:
-        start_date = datetime.strptime(start, "%Y-%m-%d") - timedelta(days=1 * 365)
+        start_date = datetime.strptime(start, "%Y-%m-%d") - timedelta(days=30)
 
         if start_date > end_date:
             raise ValueError(
                 f"Start date ({start_date}) must be before end date ({end_date}))"
             )
     else:
-        start_date = datetime.now() - timedelta(days=10 * 365)
+        start_date = datetime.now() - timedelta(days=100)
 
         if start_date > end_date:
-            start_date = end_date - timedelta(days=10 * 365)
+            start_date = end_date - timedelta(days=100)
 
     start_date_string = start_date.strftime("%Y-%m-%d")
     end_date_string = end_date.strftime("%Y-%m-%d")

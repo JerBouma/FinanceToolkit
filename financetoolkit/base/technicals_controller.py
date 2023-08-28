@@ -187,9 +187,13 @@ class Technicals:
 
         if len(self._tickers) == 1:
             return (
-                self._breadth_indicators_growth[self._tickers[0]]
+                self._breadth_indicators_growth.xs(
+                    self._tickers[0], level=1, axis="columns"
+                )
                 if growth
-                else self._breadth_indicators.loc[self._tickers[0]]
+                else self._breadth_indicators.xs(
+                    self._tickers[0], level=1, axis="columns"
+                )
             )
 
         return self._breadth_indicators_growth if growth else self._breadth_indicators
@@ -238,10 +242,10 @@ class Technicals:
             period=period, close_column=close_column, window=window
         )
 
-        (
-            momentum_indicators["Aroon Indicator Up"],
-            momentum_indicators["Aroon Indicator Down"],
-        ) = self.get_aroon_indicator(period=period, window=window)
+        aroon_indicator = self.get_aroon_indicator(period=period, window=window)
+
+        momentum_indicators["Aroon Indicator Up"] = aroon_indicator["Aroon Up"]
+        momentum_indicators["Aroon Indicator Down"] = aroon_indicator["Aroon Down"]
 
         momentum_indicators[
             "Commodity Channel Index"
@@ -279,24 +283,34 @@ class Technicals:
         ] = self.get_chande_momentum_oscillator(
             period=period, close_column=close_column, window=window
         )
-        (
-            momentum_indicators["Ichimoku Conversion Line"],
-            momentum_indicators["Ichimoku Base Line"],
-            momentum_indicators["Ichimoku Leading Span A"],
-            momentum_indicators["Ichimoku Leading Span B"],
-        ) = self.get_ichimoku_cloud(period=period)
-        (
-            momentum_indicators["Stochastic %K"],
-            momentum_indicators["Stochastic %D"],
-        ) = self.get_stochastic_oscillator(
+
+        ichimoku_cloud = self.get_ichimoku_cloud(period=period)
+
+        momentum_indicators["Ichimoku Conversion Line"] = ichimoku_cloud[
+            "Conversion Line"
+        ]
+        momentum_indicators["Ichimoku Base Line"] = ichimoku_cloud["Base Line"]
+        momentum_indicators["Ichimoku Leading Span A"] = ichimoku_cloud[
+            "Leading Span A"
+        ]
+        momentum_indicators["Ichimoku Leading Span B"] = ichimoku_cloud[
+            "Leading Span B"
+        ]
+
+        stochastic_oscillator = self.get_stochastic_oscillator(
             period=period, close_column=close_column, window=window
         )
-        (
-            momentum_indicators["MACD Line"],
-            momentum_indicators["MACD Signal Line"],
-        ) = self.get_moving_average_convergence_divergence(
+
+        momentum_indicators["Stochastic %K"] = stochastic_oscillator["Stochastic %K"]
+        momentum_indicators["Stochastic %D"] = stochastic_oscillator["Stochastic %D"]
+
+        macd = self.get_moving_average_convergence_divergence(
             period=period, close_column=close_column
         )
+
+        momentum_indicators["MACD Line"] = macd["MACD Line"]
+        momentum_indicators["MACD Signal Line"] = macd["Signal Line"]
+
         momentum_indicators[
             "Relative Strength Index"
         ] = self.get_relative_strength_index(
@@ -322,9 +336,13 @@ class Technicals:
 
         if len(self._tickers) == 1:
             return (
-                self._momentum_indicators_growth[self._tickers[0]]
+                self._momentum_indicators_growth.xs(
+                    self._tickers[0], level=1, axis="columns"
+                )
                 if growth
-                else self._momentum_indicators.loc[self._tickers[0]]
+                else self._momentum_indicators.xs(
+                    self._tickers[0], level=1, axis="columns"
+                )
             )
 
         return self._momentum_indicators_growth if growth else self._momentum_indicators
@@ -409,7 +427,9 @@ class Technicals:
             return (
                 self._overlap_indicators_growth[self._tickers[0]]
                 if growth
-                else self._overlap_indicators.loc[self._tickers[0]]
+                else self._overlap_indicators.xs(
+                    self._tickers[0], level=1, axis="columns"
+                )
             )
 
         return self._overlap_indicators_growth if growth else self._overlap_indicators
@@ -450,13 +470,13 @@ class Technicals:
         """
         volatility_indicators: dict = {}
 
-        (
-            volatility_indicators["Bollinger Band Upper"],
-            volatility_indicators["Bollinger Band Middle"],
-            volatility_indicators["Bollinger Band Lower"],
-        ) = self.get_bollinger_bands(
+        bollinger_bands = self.get_bollinger_bands(
             period=period, close_column=close_column, window=window
         )
+
+        volatility_indicators["Bollinger Band Upper"] = bollinger_bands["Upper Band"]
+        volatility_indicators["Bollinger Band Middle"] = bollinger_bands["Middle Band"]
+        volatility_indicators["Bollinger Band Lower"] = bollinger_bands["Lower Band"]
 
         volatility_indicators["True Range"] = self.get_true_range(
             period=period, close_column=close_column
@@ -466,13 +486,15 @@ class Technicals:
             period=period, close_column=close_column, window=window
         )
 
-        (
-            volatility_indicators["Keltner Channel Upper"],
-            volatility_indicators["Keltner Channel Middle"],
-            volatility_indicators["Keltner Channel Lower"],
-        ) = self.get_keltner_channels(
+        keltner_channels = self.get_keltner_channels(
             period=period, close_column=close_column, window=window
         )
+
+        volatility_indicators["Keltner Channel Upper"] = keltner_channels["Upper Line"]
+        volatility_indicators["Keltner Channel Middle"] = keltner_channels[
+            "Middle Line"
+        ]
+        volatility_indicators["Keltner Channel Lower"] = keltner_channels["Lower Line"]
 
         self._volatility_indicators = pd.concat(volatility_indicators, axis=1)
 
@@ -492,7 +514,9 @@ class Technicals:
             return (
                 self._volatility_indicators_growth[self._tickers[0]]
                 if growth
-                else self._volatility_indicators.loc[self._tickers[0]]
+                else self._volatility_indicators.xs(
+                    self._tickers[0], level=1, axis="columns"
+                )
             )
 
         return (
@@ -817,29 +841,30 @@ class Technicals:
         else:
             raise ValueError("Period must be daily, weekly, quarterly, or yearly.")
 
-        aroon_indicator_up, aroon_indicator_down = momentum.get_aroon_indicator(
-            historical_data["High"], historical_data["Low"], window
+        aroon_indicator_dict = {}
+
+        for ticker in self._tickers:
+            aroon_indicator_dict[ticker] = momentum.get_aroon_indicator(
+                historical_data["High"][ticker], historical_data["Low"][ticker], window
+            )
+
+        aroon_indicator = (
+            pd.concat(aroon_indicator_dict, axis=1)
+            .swaplevel(1, 0, axis=1)
+            .sort_index(axis=1)
         )
 
         if growth:
-            aroon_indicator_up_growth = calculate_growth(
-                aroon_indicator_up,
+            aroon_indicator_growth = calculate_growth(
+                aroon_indicator,
                 lag=lag,
                 rounding=rounding if rounding else self._rounding,
                 axis="index",
             )
-            aroon_indicator_down_growth = calculate_growth(
-                aroon_indicator_down,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-                axis="index",
-            )
-            return aroon_indicator_up_growth, aroon_indicator_down_growth
 
-        return (
-            aroon_indicator_up.round(rounding if rounding else self._rounding),
-            aroon_indicator_down.round(rounding if rounding else self._rounding),
-        )
+            return aroon_indicator_growth
+
+        return aroon_indicator.round(rounding if rounding else self._rounding)
 
     @handle_errors
     def get_commodity_channel_index(
@@ -1457,58 +1482,34 @@ class Technicals:
         else:
             raise ValueError("Period must be daily, weekly, quarterly, or yearly.")
 
-        (
-            conversion_line,
-            base_line,
-            lead_span_a,
-            lead_span_b,
-        ) = momentum.get_ichimoku_cloud(
-            historical_data["High"],
-            historical_data["Low"],
-            conversion_window,
-            base_window,
-            lead_span_b_window,
+        ichimoku_cloud_dict = {}
+
+        for ticker in self._tickers:
+            ichimoku_cloud_dict[ticker] = momentum.get_ichimoku_cloud(
+                historical_data["High"][ticker],
+                historical_data["Low"][ticker],
+                conversion_window,
+                base_window,
+                lead_span_b_window,
+            )
+
+        ichimoku_cloud = (
+            pd.concat(ichimoku_cloud_dict, axis=1)
+            .swaplevel(1, 0, axis=1)
+            .sort_index(axis=1)
         )
 
         if growth:
-            conversion_line_growth = calculate_growth(
-                conversion_line,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-                axis="index",
-            )
-            base_line_growth = calculate_growth(
-                base_line,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-                axis="index",
-            )
-            lead_span_a_growth = calculate_growth(
-                lead_span_a,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-                axis="index",
-            )
-            lead_span_b_growth = calculate_growth(
-                lead_span_b,
+            ichimoku_cloud_growth = calculate_growth(
+                ichimoku_cloud,
                 lag=lag,
                 rounding=rounding if rounding else self._rounding,
                 axis="index",
             )
 
-            return (
-                conversion_line_growth,
-                base_line_growth,
-                lead_span_a_growth,
-                lead_span_b_growth,
-            )
+            return ichimoku_cloud_growth
 
-        return (
-            conversion_line.round(rounding if rounding else self._rounding),
-            base_line.round(rounding if rounding else self._rounding),
-            lead_span_a.round(rounding if rounding else self._rounding),
-            lead_span_b.round(rounding if rounding else self._rounding),
-        )
+        return ichimoku_cloud.round(rounding if rounding else self._rounding)
 
     @handle_errors
     def get_stochastic_oscillator(
@@ -1565,34 +1566,34 @@ class Technicals:
         else:
             raise ValueError("Period must be daily, weekly, quarterly, or yearly.")
 
-        stochastic_d, stochastic_k = momentum.get_stochastic_oscillator(
-            historical_data["High"],
-            historical_data["Low"],
-            historical_data[close_column],
-            window,
-            smooth_widow,
+        stochastic_osciallator_dict = {}
+
+        for ticker in self._tickers:
+            stochastic_osciallator_dict[ticker] = momentum.get_stochastic_oscillator(
+                historical_data["High"][ticker],
+                historical_data["Low"][ticker],
+                historical_data[close_column][ticker],
+                window,
+                smooth_widow,
+            )
+
+        stochastic_osciallator = (
+            pd.concat(stochastic_osciallator_dict, axis=1)
+            .swaplevel(1, 0, axis=1)
+            .sort_index(axis=1)
         )
 
         if growth:
-            stochastic_k_growth = calculate_growth(
-                stochastic_k,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-                axis="index",
-            )
-            stochastic_d_growth = calculate_growth(
-                stochastic_d,
+            stochastic_osciallator_growth = calculate_growth(
+                stochastic_osciallator,
                 lag=lag,
                 rounding=rounding if rounding else self._rounding,
                 axis="index",
             )
 
-            return stochastic_k_growth, stochastic_d_growth
+            return stochastic_osciallator_growth
 
-        return (
-            stochastic_k.round(rounding if rounding else self._rounding),
-            stochastic_d.round(rounding if rounding else self._rounding),
-        )
+        return stochastic_osciallator.round(rounding if rounding else self._rounding)
 
     @handle_errors
     def get_moving_average_convergence_divergence(
@@ -1652,9 +1653,17 @@ class Technicals:
         else:
             raise ValueError("Period must be daily, weekly, quarterly, or yearly.")
 
-        macd, signal = momentum.get_moving_average_convergence_divergence(
-            historical_data[close_column], short_window, long_window, signal_window
-        )
+        macd_dict = {}
+
+        for ticker in self._tickers:
+            macd_dict[ticker] = momentum.get_moving_average_convergence_divergence(
+                historical_data[close_column][ticker],
+                short_window,
+                long_window,
+                signal_window,
+            )
+
+        macd = pd.concat(macd_dict, axis=1).swaplevel(1, 0, axis=1).sort_index(axis=1)
 
         if growth:
             macd_growth = calculate_growth(
@@ -1664,19 +1673,9 @@ class Technicals:
                 axis="index",
             )
 
-            signal_growth = calculate_growth(
-                signal,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-                axis="index",
-            )
+            return macd_growth
 
-            return macd_growth, signal_growth
-
-        return (
-            macd.round(rounding if rounding else self._rounding),
-            signal.round(rounding if rounding else self._rounding),
-        )
+        return macd.round(rounding if rounding else self._rounding)
 
     @handle_errors
     def get_relative_strength_index(
@@ -2129,37 +2128,30 @@ class Technicals:
         else:
             raise ValueError("Period must be daily, weekly, quarterly, or yearly.")
 
-        upper_band, middle_band, lower_band = volatility.get_bollinger_bands(
-            historical_data[close_column], window, num_std_dev
+        bollinger_bands_dict = {}
+
+        for ticker in self._tickers:
+            bollinger_bands_dict[ticker] = volatility.get_bollinger_bands(
+                historical_data[close_column][ticker], window, num_std_dev
+            )
+
+        bollinger_bands = (
+            pd.concat(bollinger_bands_dict, axis=1)
+            .swaplevel(1, 0, axis=1)
+            .sort_index(axis=1)
         )
 
         if growth:
-            upper_band_growth = calculate_growth(
-                upper_band,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-                axis="index",
-            )
-            middle_band_growth = calculate_growth(
-                middle_band,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-                axis="index",
-            )
-            lower_band_growth = calculate_growth(
-                lower_band,
+            bollinger_bands_growth = calculate_growth(
+                bollinger_bands,
                 lag=lag,
                 rounding=rounding if rounding else self._rounding,
                 axis="index",
             )
 
-            return upper_band_growth, middle_band_growth, lower_band_growth
+            return bollinger_bands_growth
 
-        upper_band = upper_band.round(rounding if rounding else self._rounding)
-        middle_band = middle_band.round(rounding if rounding else self._rounding)
-        lower_band = lower_band.round(rounding if rounding else self._rounding)
-
-        return upper_band, middle_band, lower_band
+        return bollinger_bands.round(rounding if rounding else self._rounding)
 
     @handle_errors
     def get_triangular_moving_average(
@@ -2423,16 +2415,10 @@ class Technicals:
         else:
             raise ValueError("Period must be daily, weekly, quarterly, or yearly.")
 
-        upper_line = pd.DataFrame(index=historical_data.index)
-        middle_line = pd.DataFrame(index=historical_data.index)
-        lower_line = pd.DataFrame(index=historical_data.index)
+        keltner_channels_dict = {}
 
         for ticker in self._tickers:
-            (
-                upper_line[ticker],
-                middle_line[ticker],
-                lower_line[ticker],
-            ) = volatility.get_keltner_channels(
+            keltner_channels_dict[ticker] = volatility.get_keltner_channels(
                 historical_data["High"][ticker],
                 historical_data["Low"][ticker],
                 historical_data[close_column][ticker],
@@ -2441,33 +2427,23 @@ class Technicals:
                 atr_multiplier,
             )
 
+        kelter_channels = (
+            pd.concat(keltner_channels_dict, axis=1)
+            .swaplevel(1, 0, axis=1)
+            .sort_index(axis=1)
+        )
+
         if growth:
-            upper_line_growth = calculate_growth(
-                upper_line,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-                axis="index",
-            )
-            middle_line_growth = calculate_growth(
-                middle_line,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-                axis="index",
-            )
-            lower_line_growth = calculate_growth(
-                lower_line,
+            kelter_channels_growth = calculate_growth(
+                kelter_channels,
                 lag=lag,
                 rounding=rounding if rounding else self._rounding,
                 axis="index",
             )
 
-            return upper_line_growth, middle_line_growth, lower_line_growth
+            return kelter_channels_growth
 
-        upper_line = upper_line.round(rounding if rounding else self._rounding)
-        middle_line = middle_line.round(rounding if rounding else self._rounding)
-        lower_line = lower_line.round(rounding if rounding else self._rounding)
-
-        return upper_line, middle_line, lower_line
+        return kelter_channels.round(rounding if rounding else self._rounding)
 
     @handle_errors
     def get_on_balance_volume(

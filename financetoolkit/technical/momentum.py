@@ -102,7 +102,7 @@ def get_aroon_indicator(
         * 100
     )
 
-    return aroon_up, aroon_down
+    return pd.concat([aroon_up, aroon_down], keys=["Aroon Up", "Aroon Down"], axis=1)
 
 
 def get_commodity_channel_index(
@@ -390,7 +390,11 @@ def get_ichimoku_cloud(
         / 2
     ).shift(conversion_window)
 
-    return conversion_line, base_line, lead_span_a, lead_span_b
+    return pd.concat(
+        [conversion_line, base_line, lead_span_a, lead_span_b],
+        keys=["Conversion Line", "Base Line", "Leading Span A", "Leading Span B"],
+        axis=1,
+    )
 
 
 def get_stochastic_oscillator(
@@ -419,7 +423,9 @@ def get_stochastic_oscillator(
     stochastic_k = ((prices_close - lowest_low) / (highest_high - lowest_low)) * 100
     stochastic_d = stochastic_k.rolling(window=smooth_window).mean()
 
-    return stochastic_k, stochastic_d
+    return pd.concat(
+        [stochastic_k, stochastic_d], keys=["Stochastic %K", "Stochastic %D"], axis=1
+    )
 
 
 def get_moving_average_convergence_divergence(
@@ -443,7 +449,9 @@ def get_moving_average_convergence_divergence(
     macd_line = short_ema - long_ema
     signal_line = macd_line.ewm(span=signal_window, min_periods=1, adjust=False).mean()
 
-    return macd_line, signal_line
+    return pd.concat(
+        [macd_line, signal_line], keys=["MACD Line", "Signal Line"], axis=1
+    )
 
 
 def get_relative_strength_index(prices: pd.Series, window: int) -> pd.Series:

@@ -71,10 +71,7 @@ def test_get_williams_percent_r(recorder):
 
 
 def test_get_aroon_indicator(recorder):
-    result = technical_module.get_aroon_indicator()
-
-    recorder.capture(result[0])
-    recorder.capture(result[1])
+    recorder.capture(technical_module.get_aroon_indicator())
 
 
 def test_get_commodity_channel_index(recorder):
@@ -110,26 +107,15 @@ def test_get_chande_momentum_oscillator(recorder):
 
 
 def test_get_ichimoku_cloud(recorder):
-    result = technical_module.get_ichimoku_cloud()
-
-    recorder.capture(result[0])
-    recorder.capture(result[1])
-    recorder.capture(result[2])
-    recorder.capture(result[3])
+    recorder.capture(technical_module.get_ichimoku_cloud())
 
 
 def test_get_stochastic_oscillator(recorder):
-    result = technical_module.get_stochastic_oscillator()
-
-    recorder.capture(result[0])
-    recorder.capture(result[1])
+    recorder.capture(technical_module.get_stochastic_oscillator())
 
 
 def test_get_moving_average_convergence_divergence(recorder):
-    result = technical_module.get_moving_average_convergence_divergence()
-
-    recorder.capture(result[0])
-    recorder.capture(result[1])
+    recorder.capture(technical_module.get_moving_average_convergence_divergence())
 
 
 def test_get_relative_strength_index(recorder):
@@ -157,11 +143,7 @@ def test_get_trix(recorder):
 
 
 def test_get_bollinger_bands(recorder):
-    result = technical_module.get_bollinger_bands()
-
-    recorder.capture(result[0])
-    recorder.capture(result[1])
-    recorder.capture(result[2])
+    recorder.capture(technical_module.get_bollinger_bands())
 
 
 def test_get_triangular_moving_average(recorder):
@@ -177,11 +159,7 @@ def test_get_average_true_range(recorder):
 
 
 def test_get_keltner_channels(recorder):
-    result = technical_module.get_keltner_channels()
-
-    recorder.capture(result[0])
-    recorder.capture(result[1])
-    recorder.capture(result[2])
+    recorder.capture(technical_module.get_keltner_channels())
 
 
 def test_get_on_balance_volume(recorder):

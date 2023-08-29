@@ -201,7 +201,7 @@ Get Profitability Ratios based on the inputted balance sheet, income and cash fl
 
 ### Financial Models
 
-Get an [Extended DuPont Analysis]((https://www.jeroenbouma.com/projects/financetoolkit/docs/models#get_extended_dupont_analysis)) based on the inputted balance sheet, income and cash flow statements. This can also be for example an Enterprise Value Breakdown (`companies.models.get_enterprise_value_breakdown()`).
+Get an Extended DuPont Analysis based on the inputted balance sheet, income and cash flow statements. This can also be for example an Enterprise Value Breakdown (`companies.models.get_enterprise_value_breakdown()`).
 
 |                         |     2017 |   2018 |   2019 |   2020 |   2021 |   2022 |
 |:------------------------|---------:|-------:|-------:|-------:|-------:|-------:|
@@ -214,7 +214,7 @@ Get an [Extended DuPont Analysis]((https://www.jeroenbouma.com/projects/financet
 
 ### Technical Indicators
 
-Get [Bollinger Bands](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals#get_bollinger_bands) based on the historical market data. This can be any of the 30+ technical indicators within the `technicals` module. The `get_` functions show a single indicator whereas the `collect_` functions show an aggregation of multiple indicators.
+Get Bollinger Bands based on the historical market data. This can be any of the 30+ technical indicators within the `technicals` module. The `get_` functions show a single indicator whereas the `collect_` functions show an aggregation of multiple indicators.
 
 | Date       |   Lower Band |   Middle Band |   Upper Band |
 |:-----------|-------------:|--------------:|-------------:|
@@ -430,139 +430,137 @@ The Finance Toolkit has the ability to calculate 100+ ratios and indicators. The
 
 Each ratio and indicator has a corresponding function that can be called directly for example `ratios.get_return_on_equity` or `technicals.get_relative_strength_index`.
 
-**By clicking on any of the ratios or indicators, you will be redirected to the documentation page that explains more about how the ratio is calculated and what the result means.**
-
 ## Financial Ratios
 
-The Ratios Module contains over 50+ ratios that can be used to analyse companies. These ratios are divided into 5 categories which are efficiency, liquidity, profitability, solvency and valuation. Each ratio is calculated using the data from the Toolkit module.
+The Ratios Module contains over 50+ ratios that can be used to analyse companies. These ratios are divided into 5 categories which are efficiency, liquidity, profitability, solvency and valuation. Each ratio is calculated using the data from the Toolkit module.  **Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios) which includes an explanation about the ratio, the parameters and an example.**
 
 ### Efficiency Ratios
-- [Asset Turnover Ratio](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_asset_turnover_ratio)
-- [Inventory Turnover Ratio](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_inventory_turnover_ratio)
-- [Days of Inventory Outstanding](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_days_of_inventory_outstanding)
-- [Days of Sales Outstanding](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_days_of_sales_outstanding)
-- [Operating Cycle](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_operating_cycle)
-- [Accounts Payables Turnover Ratio](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_accounts_payables_turnover_ratio)
-- [Days of Accounts Payable Outstanding](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_days_of_accounts_payable_outstanding)
-- [Cash Conversion Cycle](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_cash_conversion_cycle)
-- [Receivables Turnover](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_receivables_turnover)
-- [SGA to Revenue Ratio](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_sga_to_revenue_ratio)
-- [Fixed Asset Turnover](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_fixed_asset_turnover)
-- [Operating Ratio](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_operating_ratio)
+- Asset Turnover Ratio
+- Inventory Turnover Ratio
+- Days of Inventory Outstanding
+- Days of Sales Outstanding
+- Operating Cycle
+- Accounts Payables Turnover Ratio
+- Days of Accounts Payable Outstanding
+- Cash Conversion Cycle
+- Receivables Turnover
+- SGA to Revenue Ratio
+- Fixed Asset Turnover
+- Operating Ratio
 
 ### Liquidity Ratios
-- [Current Ratio](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_current_ratio)
-- [Quick Ratio](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_quick_ratio)
-- [Cash Ratio](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_cash_ratio)
-- [Working Capital](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_working_capital)
-- [Operating Cash Flow Ratio](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_operating_cash_flow_ratio)
-- [Operating Cash Flow Sales Ratio](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_operating_cash_flow_sales_ratio)
-- [Short Term Coverage Ratio](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_short_term_coverage_ratio)
+- Current Ratio
+- Quick Ratio
+- Cash Ratio
+- Working Capital
+- Operating Cash Flow Ratio
+- Operating Cash Flow Sales Ratio
+- Short Term Coverage Ratio
 
 ### Profitability Ratios
-- [Gross Margin](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_gross_margin)
-- [Operating Margin](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_operating_margin)
-- [Net Profit Margin](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_net_profit_margin)
-- [Interest Burden Ratio](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_interest_burden_ratio)
-- [Income Before Tax Profit Margin](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_income_before_tax_profit_margin)
-- [Effective Tax Rate](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_effective_tax_rate)
-- [Return on Assets (RoA)](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_return_on_assets)
-- [Return on Equity (RoE)](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_return_on_equity)
-- [Return on Invested Capital (RoIC)](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_return_on_invested_capital)
-- [Income Quality Ratio](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_income_quality_ratio)
-- [Return on Tangible Assets (RoTA)](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_return_on_tangible_assets)
-- [Return on Capital Employed (RoCE)](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_return_on_capital_employed)
-- [Net Income per EBT](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_net_income_per_ebt)
-- [Free Cash Flow Operating Cash Flow Ratio](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_free_cash_flow_operating_cash_flow_ratio)
-- [Tax Burden Ratio](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_tax_burden_ratio)
-- [EBT to EBIT](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_EBT_to_EBIT)
-- [EBIT to Revenue](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_EBIT_to_revenue)
+- Gross Margin
+- Operating Margin
+- Net Profit Margin
+- Interest Burden Ratio
+- Income Before Tax Profit Margin
+- Effective Tax Rate
+- Return on Assets (RoA)
+- Return on Equity (RoE)
+- Return on Invested Capital (RoIC)
+- Income Quality Ratio
+- Return on Tangible Assets (RoTA)
+- Return on Capital Employed (RoCE)
+- Net Income per EBT
+- Free Cash Flow Operating Cash Flow Ratio
+- Tax Burden Ratio
+- EBT to EBIT
+- EBIT to Revenue
 
 ### Solvency Ratios
-- [Debt to Assets Ratio](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_debt_to_assets_ratio)
-- [Debt to Equity Ratio](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_debt_to_equity_ratio)
-- [Interest Coverage Ratio](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_interest_coverage_ratio)
-- [Equity Multiplier](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_equity_multiplier)
-- [Debt Service Coverage Ratio](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_debt_service_coverage_ratio)
-- [Free Cash Flow Yield](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_free_cash_flow_yield)
-- [Net Debt to EBITDA Ratio](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_net_debt_to_ebitda_ratio)
-- [Cash Flow Coverage Ratio](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_cash_flow_coverage_ratio)
-- [CAPEX Coverage Ratio](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_capex_coverage_ratio)
-- [CAPEX Dividend Coverage Ratio](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_capex_dividend_coverage_ratio)
+- Debt to Assets Ratio
+- Debt to Equity Ratio
+- Interest Coverage Ratio
+- Equity Multiplier
+- Debt Service Coverage Ratio
+- Free Cash Flow Yield
+- Net Debt to EBITDA Ratio
+- Cash Flow Coverage Ratio
+- CAPEX Coverage Ratio
+- CAPEX Dividend Coverage Ratio
 
 ### Valuation Ratios
-- [Earnings per Share (EPS)](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_earnings_per_share)
-- [Revenue per Share (RPS)](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_revenue_per_share)
-- [Price Earnings Ratio (PE)](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_price_earnings_ratio)
-- [Price to Earnings Growth Ratio (PEG)](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_price_to_earnings_growth_ratio)
-- [Book Value per Share](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_book_value_per_share)
-- [Price to Book Ratio (PB)](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_price_to_book_ratio)
-- [Interest Debt per Share](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_interest_debt_per_share)
-- [CAPEX per Share](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_capex_per_share)
-- [Dividend Yield](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_dividend_yield)
-- [Weighted Dividend Yiel](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_weighted_dividend_yield)
-- [Price to Cash Flow Ratio (P/CF)](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_price_to_cash_flow_ratio)
-- [Price to Free Cash Flow Ratio (P/FCF)](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_price_to_free_cash_flow_ratio)
-- [Market Capitalization](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_market_cap)
-- [Enterprise Value](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_enterprise_value)
-- [EV to Sales Ratio](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_ev_to_sales_ratio)
-- [EV to EBITDA Ratio](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_ev_to_ebitda_ratio)
-- [EV to Operating Cashflow Ratio](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_ev_to_operating_cashflow_ratio)
-- [EV to EBIT](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_ev_to_ebit)
-- [Earnings Yield](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_earnings_yield)
-- [Payout Ratio](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_payout_ratio)
-- [Tangible Asset Value](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_tangible_asset_value)
-- [Net Current Asset Value](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_net_current_asset_value)
+- Earnings per Share (EPS)
+- Revenue per Share (RPS)
+- Price Earnings Ratio (PE)
+- Price to Earnings Growth Ratio (PEG)
+- Book Value per Share
+- Price to Book Ratio (PB)
+- Interest Debt per Share
+- CAPEX per Share
+- Dividend Yield
+- Weighted Dividend Yield
+- Price to Cash Flow Ratio (P/CF)
+- Price to Free Cash Flow Ratio (P/FCF)
+- Market Capitalization
+- Enterprise Value
+- EV to Sales Ratio
+- EV to EBITDA Ratio
+- EV to Operating Cashflow Ratio
+- EV to EBIT
+- Earnings Yield
+- Payout Ratio
+- Tangible Asset Value
+- Net Current Asset Value
 
 ## Financial Models
 
-The Models module is meant to execute well-known models such as DUPONT and the Discounted Cash Flow (DCF) model. These models are also directly related to the data retrieved from the Toolkit module.
+The Models module is meant to execute well-known models such as DUPONT and the Discounted Cash Flow (DCF) model. These models are also directly related to the data retrieved from the Toolkit module. **Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/models) which includes an explanation about the model, the parameters and an example.**
 
-- [DuPont Analysis](https://www.jeroenbouma.com/projects/financetoolkit/docs/models#get_dupont_analysis)
-- [Extended DuPont Analysis](https://www.jeroenbouma.com/projects/financetoolkit/docs/models#get_extended_dupont_analysis)
-- [Enterprise Value Breakdown](https://www.jeroenbouma.com/projects/financetoolkit/docs/models#get_enterprise_value_breakdown)
+- DuPont Analysis
+- Extended DuPont Analysis
+- Enterprise Value Breakdown
 
 ## Technical Indicators
 
-The Technicals Module contains 30+ Technical Indicators that can be used to analyse companies. These ratios are divided into 4 categories which are breadth, momentum, overlap and volatility. Each indicator is calculated using the data from the Toolkit module.
+The Technicals Module contains 30+ Technical Indicators that can be used to analyse companies. These ratios are divided into 4 categories which are breadth, momentum, overlap and volatility. Each indicator is calculated using the data from the Toolkit module. **Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals) which includes an explanation about the indicator, the parameters and an example.**
 
 ### Breadth Indicators
-- [McClellan Oscillator](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals#get_mcclellan_oscillator)
-- [Advancers/Decliners Ratio](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals#get_advancers_decliners)
-- [On-Balance Volume (OBV)](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals#get_on_balance_volume)
-- [Accumulation/Distribution Line (ADL)](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals#get_accumulation_distribution_line)
-- [Chaikin Oscillator](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals#get_chaikin_oscillator)
+- McClellan Oscillator
+- Advancers/Decliners Ratio
+- On-Balance Volume (OBV)
+- Accumulation/Distribution Line (ADL)
+- Chaikin Oscillator
 
 ### Momentum Indicators
-- [Money Flow Index](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals#get_money_flow_index)
-- [Williams %R](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals#get_williams_percent_r)
-- [Aroon Indicator](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals#get_aroon_indicator)
-- [Commodity Channel Index](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals#get_commodity_channel_index)
-- [Relative Vigor Index](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals#get_relative_vigor_index)
-- [Force Index](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals#get_force_index)
-- [Ultimate Oscillator](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals#get_ultimate_oscillator)
-- [Percentage Price Oscillator](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals#get_percentage_price_oscillator)
-- [Detrended Price Oscillator](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals#get_detrended_price_oscillator)
-- [Average Directional Index (ADX)](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals#get_average_directional_index)
-- [Chande Momentum Oscillator (CMO)](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals#get_chande_momentum_oscillator)
-- [Ichimoku Cloud](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals#get_ichimoku_cloud)
-- [Stochastic Oscillator](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals#get_stochastic_oscillator)
-- [Moving Average Convergence Divergence (MACD)](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals#get_moving_average_convergence_divergence)
-- [Relative Strength Index (RSI)](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals#get_relative_strength_index)
-- [Balance of Power (BOP)](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals#get_balance_of_power)
+- Money Flow Index
+- Williams %R
+- Aroon Indicator
+- Commodity Channel Index
+- Relative Vigor Index
+- Force Index
+- Ultimate Oscillator
+- Percentage Price Oscillator
+- Detrended Price Oscillator
+- Average Directional Index (ADX)
+- Chande Momentum Oscillator (CMO)
+- Ichimoku Cloud
+- Stochastic Oscillator
+- Moving Average Convergence Divergence (MACD)
+- Relative Strength Index (RSI)
+- Balance of Power (BOP)
 
 ### Overlap Indicators
-- [Simple Moving Average (SMA)](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals#get_moving_average)
-- [Exponential Moving Average (EMA)](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals#get_exponential_moving_average)
-- [Double Exponential Moving Average (DEMA)](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals#get_double_exponential_moving_average)
-- [Triple Exponential Moving Average (TRIX)](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals#get_trix)
-- [Triangular Moving Average (TMA)](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals#get_triangular_moving_average)
+- Simple Moving Average (SMA)
+- Exponential Moving Average (EMA)
+- Double Exponential Moving Average (DEMA)
+- Triple Exponential Moving Average (TRIX)
+- Triangular Moving Average (TMA)
 
 ### Volatility Indicators
-- [True Range (TR)](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals#get_true_range)
-- [Average True Range (ATR)](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals#get_average_true_range)
-- [Keltners Channels](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals#get_keltner_channels)
-- [Bollinger Bands](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals#get_bollinger_bands)
+- True Range (TR)
+- Average True Range (ATR)
+- Keltners Channels
+- Bollinger Bands
 
 # Contact
 If you have any questions about the FinanceToolkit or would like to share with me what you have been working on, feel free to reach out to me via:

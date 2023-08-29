@@ -18,6 +18,7 @@ def get_historical_data(
     end: str | None = None,
     interval: str = "1d",
     return_column: str = "Adj Close",
+    risk_free_rate: pd.Series | int = 0,
 ):
     """
     Retrieves historical stock data for the given ticker(s) from Yahoo! Finance API for a specified period.
@@ -118,6 +119,18 @@ def get_historical_data(
             return_column
         ].pct_change()
 
+        historical_data_dict[ticker]["Volatility"] = (
+            historical_data_dict[ticker].loc[start:end, "Return"].std()  # type: ignore
+        )
+
+        historical_data_dict[ticker]["Excess Return"] = historical_data_dict[ticker][
+            "Return"
+        ].sub(risk_free_rate, axis=0)
+
+        historical_data_dict[ticker]["Excess Volatility"] = (
+            historical_data_dict[ticker].loc[start:end, "Excess Return"].std()  # type: ignore
+        )
+
         historical_data_dict[ticker]["Cumulative Return"] = 1
 
         adjusted_return = historical_data_dict[ticker].loc[start:end, "Return"].copy()  # type: ignore
@@ -126,14 +139,16 @@ def get_historical_data(
         historical_data_dict[ticker].loc[start:end, "Cumulative Return"] = (  # type: ignore
             1 + adjusted_return
         ).cumprod()
-        historical_data_dict[ticker]["Volatility"] = (
-            historical_data_dict[ticker].loc[start:end, "Return"].std()  # type: ignore
-        )
 
     if historical_data_dict:
         historical_data = pd.concat(historical_data_dict, axis=1)
         historical_data.columns = historical_data.columns.swaplevel(0, 1)
-        historical_data = historical_data.sort_index(axis=1)
+
+        # Sort the DataFrame with respect to the original column order
+        column_order = historical_data.columns.get_level_values(0).unique()
+        historical_data = historical_data.sort_index(
+            level=0, axis=1, sort_remaining=False
+        ).reindex(column_order, level=0, axis=1)
 
         return historical_data, invalid_tickers
 
@@ -231,6 +246,7 @@ def convert_daily_to_yearly(
     daily_historical_data: pd.DataFrame,
     start: str | None = None,
     end: str | None = None,
+    yearly_risk_free_rate: pd.Series | int = 0,
 ):
     """
     Converts daily historical data to yearly historical data.
@@ -272,6 +288,14 @@ def convert_daily_to_yearly(
             dates
         ).agg(np.std) * np.sqrt(252)
 
+        yearly_historical_data["Excess Return"] = yearly_historical_data["Return"].sub(
+            yearly_risk_free_rate, axis=0
+        )
+
+        yearly_historical_data["Excess Volatility"] = daily_historical_data[
+            "Excess Return"
+        ].groupby(dates).agg(np.std) * np.sqrt(252)
+
     if "Cumulative Return" in yearly_historical_data:
         if start:
             start = pd.Period(start).asfreq("Y")
@@ -299,6 +323,7 @@ def convert_daily_to_quarterly(
     daily_historical_data: pd.DataFrame,
     start: str | None = None,
     end: str | None = None,
+    quarterly_risk_free_rate: pd.Series | int = 0,
 ):
     """
     Converts daily historical data to quarterly historical data.
@@ -340,6 +365,14 @@ def convert_daily_to_quarterly(
         # square root of the number of trading days divided by 4 (252 / 4)
         quarterly_historical_data["Volatility"] = daily_historical_data[
             "Return"
+        ].groupby(dates).agg(np.std) * np.sqrt(63)
+
+        quarterly_historical_data["Excess Return"] = quarterly_historical_data[
+            "Return"
+        ].sub(quarterly_risk_free_rate, axis=0)
+
+        quarterly_historical_data["Excess Volatility"] = daily_historical_data[
+            "Excess Return"
         ].groupby(dates).agg(np.std) * np.sqrt(63)
 
     if "Cumulative Return" in quarterly_historical_data:

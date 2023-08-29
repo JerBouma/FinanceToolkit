@@ -166,6 +166,11 @@ class Toolkit:
             else pd.DataFrame()
         )
 
+        # Initialization of Risk Free Rate
+        self._daily_risk_free_rate: pd.DataFrame = pd.DataFrame()
+        self._quarterly_risk_free_rate: pd.DataFrame = pd.DataFrame()
+        self._yearly_risk_free_rate: pd.DataFrame = pd.DataFrame()
+
         # Initialization of Treasury Variables
         self._daily_treasury_data: pd.DataFrame = pd.DataFrame()
         self._daily_treasury_date_growth: pd.DataFrame = pd.DataFrame()
@@ -236,9 +241,9 @@ class Toolkit:
     @property
     def ratios(self) -> Ratios:
         """
-        This gives access to the Ratios module. The Ratios Module contains over 50+ ratios that can be used to analyse companies.
-        These ratios are divided into 5 categories: profitability, liquidity, solvency, efficiency and valuation.
-        Each ratio is calculated using the data from the Toolkit module.
+        The Ratios Module contains over 50+ ratios that can be used to analyse companies. These ratios
+        are divided into 5 categories which are efficiency, liquidity, profitability, solvency and
+        valuation. Each ratio is calculated using the data from the Toolkit module.
 
         Some examples of ratios are the Current Ratio, Debt to Equity Ratio, Return on Assets (ROA), Return on Equity (ROE),
         Return on Invested Capital (ROIC), Return on Capital Employed (ROCE), Price to Earnings Ratio (P/E),
@@ -464,7 +469,7 @@ class Toolkit:
     def technicals(self) -> Technicals:
         """
         This gives access to the Technicals module. The Technicals Module contains nearly 50 Technical Indicators that can be used to
-        analyse companies. These ratios are divided into 3 categories: breadth, overlap and volatility. Each indicator is calculated
+        analyse companies. These indicators are divided into 3 categories: breadth, overlap and volatility. Each indicator is calculated
         using the data from the Toolkit module.
 
         Some examples of technical indicators are the Average Directional Index (ADX), the Accumulation/Distribution Line (ADL),
@@ -1056,7 +1061,21 @@ class Toolkit:
         self, period: str = "daily", return_column: str = "Adj Close"
     ):
         """
-        Returns a pandas dataframe containing the historical data for the specified tickers.
+        Returns historical data for the specified tickers. This contains the following columns:
+            - Open: The opening price for the period.
+            - High: The highest price for the period.
+            - Low: The lowest price for the period.
+            - Close: The closing price for the period.
+            - Adj Close: The adjusted closing price for the period.
+            - Volume: The volume for the period.
+            - Dividends: The dividends for the period.
+            - Return: The return for the period.
+            - Volatility: The volatility for the period.
+            - Excess Return: The excess return for the period. This is defined as the return minus
+            the 10-year treasury rate.
+            - Excess Volatility: The excess volatility for the period. This is defined as the volatility
+            of the excess return.
+            - Cumulative Return: The cumulative return for the period.
 
         Args:
             start (str): The start date for the historical data. Defaults to None.
@@ -1097,6 +1116,36 @@ class Toolkit:
         | 2022   |    129.378  | 129.93   |            6.35566  |    0.91     | 129.95   | 127.43   | 128.41   |  -0.264042  | 7.70342e+07 |
         | 2023   |    174.49   | 174.49   |            8.92046  |    0.71     | 175.1    | 171.96   | 172.3    |   0.348684  | 6.11142e+07 |
         """
+        if self._daily_risk_free_rate.empty:
+            daily_risk_free_rate, _ = _get_historical_data(
+                "^TNX", self._start_date, self._end_date
+            )
+
+            if daily_risk_free_rate.empty:
+                print(
+                    "Unable to retrieve the risk free rate ('^TNX'), using default value of 0."
+                )
+                self._daily_risk_free_rate = pd.Series(0)
+                self._quarterly_risk_free_rate = pd.Series(0)
+                self._yearly_historical_data = pd.Series(0)
+            else:
+                # Division by 100 given that TNX is also a percentage (e.g 4.5% == 0.045)
+                daily_risk_free_rate = (
+                    daily_risk_free_rate.xs("^TNX", level=1, axis=1) / 100
+                )
+
+                quarterly_risk_free_rate = _convert_daily_to_quarterly(
+                    daily_risk_free_rate, self._start_date, self._end_date
+                )
+
+                yearly_risk_free_rate = _convert_daily_to_yearly(
+                    daily_risk_free_rate, self._start_date, self._end_date
+                )
+
+                self._daily_risk_free_rate = daily_risk_free_rate["Adj Close"]
+                self._quarterly_risk_free_rate = quarterly_risk_free_rate["Adj Close"]
+                self._yearly_risk_free_rate = yearly_risk_free_rate["Adj Close"]
+
         if period == "daily":
             self._daily_historical_data, self._invalid_tickers = _get_historical_data(
                 self._tickers,
@@ -1104,6 +1153,7 @@ class Toolkit:
                 self._end_date,
                 interval="1d",
                 return_column=return_column,
+                risk_free_rate=self._daily_risk_free_rate,
             )
 
             if self._remove_invalid_tickers:
@@ -1132,6 +1182,7 @@ class Toolkit:
                 self._end_date,
                 interval="1wk",
                 return_column=return_column,
+                risk_free_rate=self._daily_risk_free_rate,
             )
 
             if self._remove_invalid_tickers:
@@ -1160,6 +1211,7 @@ class Toolkit:
                 self._end_date,
                 interval="1mo",
                 return_column=return_column,
+                risk_free_rate=self._daily_risk_free_rate,
             )
 
             if self._remove_invalid_tickers:
@@ -1192,6 +1244,7 @@ class Toolkit:
                     self._end_date,
                     interval="1d",
                     return_column=return_column,
+                    risk_free_rate=self._daily_risk_free_rate,
                 )
 
             self._quarterly_historical_data = _convert_daily_to_quarterly(
@@ -1226,6 +1279,7 @@ class Toolkit:
                     self._end_date,
                     interval="1d",
                     return_column=return_column,
+                    risk_free_rate=self._daily_risk_free_rate,
                 )
 
             self._yearly_historical_data = _convert_daily_to_yearly(

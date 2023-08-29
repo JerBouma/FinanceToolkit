@@ -352,7 +352,6 @@ class Ratios:
         profitability_ratios["EBT to EBIT Ratio"] = self.get_EBT_to_EBIT()
         profitability_ratios["EBIT to Revenue"] = self.get_EBIT_to_revenue()
         profitability_ratios["Sharpe Ratio"] = self.get_sharpe_ratio()
-        profitability_ratios["Sortino Ratio"] = self.get_sharpe_ratio()
 
         self._profitability_ratios = (
             pd.concat(profitability_ratios)
@@ -2711,7 +2710,6 @@ class Ratios:
     @handle_errors
     def get_sharpe_ratio(
         self,
-        risk_free_rate: float = 0.05,
         rounding: int | None = 4,
         growth: bool = False,
         lag: int | list[int] = 1,
@@ -2726,7 +2724,6 @@ class Ratios:
         investment's performance relative to the risk taken.
 
         Args:
-            risk_free_rate (float, optional): The risk-free rate of return used in the calculation. Defaults to 0.05.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
@@ -2749,8 +2746,14 @@ class Ratios:
         sharpe_ratios = toolkit.ratios.get_sharpe_ratio()
         ```
         """
+        years = self._balance_sheet_statement.columns
+        begin, end = str(years[0]), str(years[-1])
+
+        excess_return = self._historical_data.loc[begin:end, "Excess Return"]  # type: ignore
+        excess_volatility = self._historical_data.loc[begin:end, "Excess Volatility"]  # type: ignore
+
         sharpe_ratio = profitability.get_sharpe_ratio(
-            self._historical_data.loc[:, "Return"], risk_free_rate=risk_free_rate
+            excess_return, excess_volatility
         ).T
 
         if growth:
@@ -2761,60 +2764,6 @@ class Ratios:
             )
 
         return sharpe_ratio.round(rounding if rounding else self._rounding)
-
-    @handle_errors
-    def get_sortino_ratio(
-        self,
-        risk_free_rate: float = 0.05,
-        rounding: int | None = 4,
-        growth: bool = False,
-        lag: int | list[int] = 1,
-    ):
-        """
-        Calculate the Sortino ratio, a risk-adjusted performance measure that evaluates the excess return
-        of an investment portfolio or asset per unit of downside risk taken.
-
-        The Sortino ratio is calculated similarly to the Sharpe ratio but focuses on downside volatility, which
-        includes only the standard deviation of returns that fall below the risk-free rate. It provides insights
-        into the investment's performance in relation to the risk of losses. A higher Sortino ratio indicates
-        better risk-adjusted performance.
-
-        Args:
-            risk_free_rate (float, optional): The risk-free rate of return used in the calculation. Defaults to 0.05.
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
-            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
-            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
-
-        Returns:
-            pd.DataFrame: Sortino ratio values.
-
-        Notes:
-        - The method retrieves historical data and calculates the Sortino ratio for each asset in the Toolkit instance.
-        - The risk-free rate is often represented by the return of a risk-free investment, such as a Treasury bond.
-        - If `growth` is set to True, the method calculates the growth of the ratio values using the specified `lag`.
-
-        As an example:
-
-        ```python
-        from financetoolkit import Toolkit
-
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
-
-        sortino_ratios = toolkit.ratios.get_sortino_ratio()
-        ```
-        """
-        sortino_ratio = profitability.get_sortino_ratio(
-            self._historical_data.loc[:, "Return"], risk_free_rate=risk_free_rate
-        ).T
-
-        if growth:
-            return calculate_growth(
-                sortino_ratio,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-            )
-
-        return sortino_ratio.round(rounding if rounding else self._rounding)
 
     @handle_errors
     def get_debt_to_assets_ratio(

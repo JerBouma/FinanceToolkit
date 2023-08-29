@@ -13,7 +13,7 @@ Any new contribution preferably goes via a Pull Request. In essence, all you rea
 - [Set up Git](https://docs.github.com/en/get-started/quickstart/set-up-git)
 - [Collaborating with pull requests](https://docs.github.com/en/github/collaborating-with-pull-requests)
 
-On every Pull Request, a couple of linters will run (see [here](https://github.com/JerBouma/FinanceDatabase/blob/main/.github/workflows/) as well as categorization and compression linters). The linters check the code and whether it matches specific coding formatting. This is entirely irrelevant for the database itself but keeps the code of the related package in check as well as any markdown changes. The categorization and compression actions are very relevant for the database as it makes it much easier and faster to read data.
+On every Pull Request, a couple of linters will run (see [here](https://github.com/JerBouma/FinanceToolkit/tree/main/.github/workflows) as well as unit tests for each function in the package. The linters check the code and whether it matches specific coding formatting. The tests check whether running the function returns the expected output. If any of these fail, the Pull Request can not be merged.
 
 ## Following the Workflow
 
@@ -27,7 +27,7 @@ After setting up Git, you can fork and pull the project in.
 4. Add your changes (`git add .`)
 5. Install pre-commit, this checks the code for any errors before committing (`pre-commit install`)
 6. Commit your Changes (`git commit -m 'Improve the Toolkit'`)
-7. Check whether the tests still pass (`pytest tests`)`
+7. Check whether the tests still pass (`pytest tests`)` and if not, correct then.
 5. Push to your Branch (`git push origin feature/contribution`)
 6. Open a Pull Request
 

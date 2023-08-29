@@ -501,11 +501,11 @@ class Toolkit:
 
         """
         if not self._start_date:
-            self._start_date = (datetime.today() - timedelta(days=365)).strftime(
+            self._start_date = (datetime.today() - timedelta(days=365 * 10)).strftime(
                 "%Y-%m-%d"
             )
         if not self._end_date:
-            self._start_date = datetime.today().strftime("%Y-%m-%d")
+            self._end_date = datetime.today().strftime("%Y-%m-%d")
 
         if self._historical.empty:
             if self._daily_historical_data.empty:
@@ -1129,6 +1129,12 @@ class Toolkit:
                 self._quarterly_risk_free_rate = pd.Series(0)
                 self._yearly_historical_data = pd.Series(0)
             else:
+                daily_risk_free_rate = daily_risk_free_rate.loc[
+                    self._start_date : self._end_date, :  # type: ignore
+                ].copy()
+
+                daily_risk_free_rate.loc[daily_risk_free_rate.index[0], "Return"] = 0
+
                 # Division by 100 given that TNX is also a percentage (e.g 4.5% == 0.045)
                 daily_risk_free_rate = (
                     daily_risk_free_rate.xs("^TNX", level=1, axis=1) / 100

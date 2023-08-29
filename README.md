@@ -2,7 +2,6 @@
 
 [![GitHub Sponsors](https://img.shields.io/badge/Sponsor_this_Project-grey?logo=github)](https://github.com/sponsors/JerBouma)
 [![Documentation](https://img.shields.io/badge/Documentation-grey?logo=readme)](https://www.jeroenbouma.com/projects/financetoolkit)
-[![Discord](https://img.shields.io/badge/JerBouma-hello?logo=discord&label=Discord)](https://discord.com/)
 [![Supported Python Versions](https://img.shields.io/pypi/pyversions/financetoolkit)](https://pypi.org/project/FinanceToolkit/)
 [![PYPI Version](https://img.shields.io/pypi/v/FinanceToolkit)](https://pypi.org/project/FinanceToolkit/)
 [![PYPI Downloads](https://static.pepy.tech/badge/financetoolkit/month)](https://pepy.tech/project/financetoolkit)
@@ -11,7 +10,7 @@ While browsing a variety of websites, I kept finding that the same financial met
 
 For example, Microsoft's Price-to-Earnings (PE) ratio on the 6th of May, 2023 is reported to be 28.93 (Stockopedia), 32.05 (Morningstar), 32.66 (Macrotrends), 33.09 (Finance Charts), 33.66 (Y Charts), 33.67 (Wall Street Journal), 33.80 (Yahoo Finance) and 34.4 (Companies Market Cap). All of these calculations are correct, however the method applied varies leading to different results. Therefore, collecting data from multiple sources can lead to wrong interpretation of the results given that one source could be applying a different calculation method than another. And that is, if it is even freely available. Often the calculation is hidden behind a paid subscription.
 
-**This is why I designed the FinanceToolkit**, this is an open-source toolkit in which all relevant financial ratios (50+), indicators and performance measurements are written down in the most simplistic way allowing for complete transparency of the calculation method. This allows you to not have to rely on metrics from other providers and, given a financial statement, allow for efficient manual calculations. This leads to one uniform method of calculation being applied that is available and understood by everyone.
+**This is why I designed the FinanceToolkit**, this is an open-source toolkit in which all relevant financial ratios ([100+](#complete-list-of-available-ratios-and-indicators)), indicators and performance measurements are written down in the most simplistic way allowing for complete transparency of the calculation method. This allows you to not have to rely on metrics from other providers and, given a financial statement, allow for efficient manual calculations. This leads to one uniform method of calculation being applied that is available and understood by everyone.
 
 The Finance Toolkit is complimented very well with the [Finance Database 🌎](https://github.com/JerBouma/FinanceDatabase), a database that features 300.000+ symbols containing Equities, ETFs, Funds, Indices, Currencies, Cryptocurrencies and Money Markets. By utilising both, it is possible to do a fully-fledged competitive analysis with the tickers found from the FinanceDatabase inputted into the FinanceToolkit.
 
@@ -29,6 +28,10 @@ The Finance Toolkit is complimented very well with the [Finance Database 🌎](h
     2. [Defining Custom Ratios](#defining-custom-ratios)
     3. [Calling Functions Directly](#calling-functions-directly)
     4. [Working with other Datasets](#working-with-other-datasets)
+3. [Available Ratios and Indicators](#available-ratios-and-indicators)
+    1. [Financial Ratios](#financial-ratios)
+    2. [Financial Models](#financial-models)
+    3. [Technical Indicators](#technical-indicators)
 3. [Contact](#contact)
 
 # Installation
@@ -59,7 +62,7 @@ Through the link you are able to subscribe for the free plan and also premium pl
 
 # Basic Usage
 
-This section explains in detail how the Finance Toolkit can utilitised effectively. Also see the Jupyter Notebook in which you can run the examples also demonstrated here.
+This section explains in detail how the Finance Toolkit can utilitised effectively. Also see the Jupyter Notebooks in which you can run the examples also demonstrated here.
 
 ___ 
 
@@ -79,8 +82,9 @@ Within this package the following things are included:
 - Balance Sheet Statements (`get_balance_sheet_statement`), Income Statements (`get_income_statement`), Cash Flow Statements (`get_cash_flow_statement`) and Statistics Statement (`get_statistics_statement`), obtainable from FinancialModelingPrep or the source of your choosing through custom input. These functions are accompanied with a normalization function so that for any source, the same ratio analysis can be performed. Please see [this Jupyter Notebook](https://www.jeroenbouma.com/projects/financetoolkit/external-datasets) that explains how to use a custom source.
 - Efficiency ratios (`ratios.collect_efficiency_ratios`), liquidity ratios (`ratios.collect_liquidity_ratios`), profitability ratios (`ratios._collect_profitability_ratios`), solvency ratios (`ratios.collect_solvency_ratios`) and valuation ratios (`ratios.collect_valuation_ratios`) functionality that automatically calculates the most important ratios based on the inputted balance sheet, income and cash flow statements. Any of the underlying ratios can also be called individually such as `ratios.get_return_on_equity`. Next to that, it is also possible to input your own custom ratios (`ratios.collect_custom_ratios`). See also [this Notebook](https://www.jeroenbouma.com/projects/financetoolkit/custom-ratios) or [this section](#defining-custom-ratios) for more information.
 - Models like DUPONT analysis (`models.get_extended_dupont_analysis`) or Enterprise Breakdown (`models.get_enterprise_value_breakdown`) that can be used to perform in-depth financial analysis through a single function. These functions combine much of the functionality throughout the Toolkit to provide advanced calculations. 
+- Technical indicators like Relative Strength Index (`technicals.get_relative_strength_index`),  Exponential Moving Average (`models.get_exponential_moving_average`) and Bollinger Bands (`technicals.get_bollinger_bands`) that can be used to perform in-depth momentum and trend analysis. These functions allow for the calculation of technical indicators based on the historical market data.
 
-The dependencies of the package are on purpose *very slim* so that it will work well with any combination of packages and not result in conflicts. I've also been careful with my selection in which I leave out functionality like technical analysis in which [ta-lib](https://ta-lib.org/) does an excellent job as well as portfolio attribution and optimisation in which [Riskfolio-lib](https://riskfolio-lib.readthedocs.io/en/latest/index.html) shines.
+The dependencies of the package are on purpose *very slim* so that it will work well with any combination of packages and not result in conflicts.
 
 ## Using the Finance Toolkit
 
@@ -103,31 +107,122 @@ profitability_ratios = companies.ratios.collect_profitability_ratios()
 # a Models example
 extended_dupont_analysis = companies.models.get_extended_dupont_analysis()
 
-# Show the profitability ratios for Apple
-profitability_ratios.loc['AAPL']
+# a Technical example
+bollinger_bands = companies.technicals.get_bollinger_bands()
 ````
 
-This returns the following output for `profitability_ratios.loc['AAPL]`. Omitting `.loc['AAPL']` will return the result for both AAPL and MSFT.
+For each object, it returns a multi-index in which both Apple and Microsoft are presented. For this example, I've selected just Apple to keep things organized but in essence it can be any list of tickers (no limit). The filtering is done through using `.loc['AAPL']` and `.xs('AAPL', level=1, axis=1)` based on whether it's fundamental data or historical data respectively.
 
+### Historical Data
 
-|                                             |     2018 |     2019 |     2020 |     2021 |     2022 |
-|:--------------------------------------------|---------:|---------:|---------:|---------:|---------:|
-| Gross Margin                                | 0.383437 | 0.378178 | 0.382332 | 0.417794 | 0.433096 |
-| Operating Margin                            | 0.26694  | 0.24572  | 0.241473 | 0.297824 | 0.302887 |
-| Net Profit Margin                           | 0.224142 | 0.212381 | 0.209136 | 0.258818 | 0.253096 |
-| Interest Burden Ratio                       | 1.02828  | 1.02827  | 1.01211  | 1.00237  | 0.997204 |
-| Income Before Tax Profit Margin             | 0.274489 | 0.252666 | 0.244398 | 0.298529 | 0.30204  |
-| Effective Tax Rate                          | 0.183422 | 0.159438 | 0.144282 | 0.133023 | 0.162045 |
-| Return on Assets (ROA)                      | 0.162775 | 0.16323  | 0.177256 | 0.269742 | 0.282924 |
-| Return on Equity (ROE)                      | 0.555601 | 0.610645 | 0.878664 | 1.50071  | 1.96959  |
-| Return on Invested Capital (ROIC)           | 0.269858 | 0.293721 | 0.344126 | 0.503852 | 0.562645 |
-| Return on Capital Employed (ROCE)           | 0.305968 | 0.297739 | 0.320207 | 0.495972 | 0.613937 |
-| Return on Tangible Assets                   | 0.555601 | 0.610645 | 0.878664 | 1.50071  | 1.96959  |
-| Income Quality Ratio                        | 1.30073  | 1.25581  | 1.4052   | 1.09884  | 1.22392  |
-| Net Income per EBT                          | 0.816578 | 0.840562 | 0.855718 | 0.866977 | 0.837955 |
-| Free Cash Flow to Operating Cash Flow Ratio | 0.828073 | 0.848756 | 0.909401 | 0.893452 | 0.912338 |
-| EBT to EBIT Ratio                           | 0.957448 | 0.948408 | 0.958936 | 0.976353 | 0.975982 |
-| EBIT to Revenue                             | 0.286688 | 0.26641  | 0.254864 | 0.305759 | 0.309473 |
+Obtain historical data on a daily, weekly, monthly or yearly basis. This includes OHLC, volumes, dividends, returns, cumulative returns and volatility calculations for each corresponding period.
+
+| Date       |    Open |    High |     Low |   Close |   Adj Close |      Volume |   Dividends |       Return |   Volatility |   Excess Return |   Excess Volatility |   Cumulative Return |
+|:-----------|--------:|--------:|--------:|--------:|------------:|------------:|------------:|-------------:|-------------:|----------------:|--------------------:|--------------------:|
+| 2018-01-02 | 42.54   | 43.075  | 42.315  | 43.065  |     40.7765 | 1.02224e+08 |           0 |  0           |    0.0203524 |     -0.00674528 |           0.0231223 |            1        |
+| 2018-01-03 | 43.1325 | 43.6375 | 42.99   | 43.0575 |     40.7694 | 1.18072e+08 |           0 | -0.000173997 |    0.0203524 |     -0.024644   |           0.0231223 |            0.999826 |
+| 2018-01-04 | 43.135  | 43.3675 | 43.02   | 43.2575 |     40.9588 | 8.97384e+07 |           0 |  0.00464441  |    0.0203524 |     -0.0198856  |           0.0231223 |            1.00447  |
+| 2018-01-05 | 43.36   | 43.8425 | 43.2625 | 43.75   |     41.4251 | 9.464e+07   |           0 |  0.0113856   |    0.0203524 |     -0.0133744  |           0.0231223 |            1.01591  |
+| 2018-01-08 | 43.5875 | 43.9025 | 43.4825 | 43.5875 |     41.2713 | 8.22712e+07 |           0 | -0.00371412  |    0.0203524 |     -0.0285141  |           0.0231223 |            1.01213  |
+
+### Financial Statements
+
+Obtain a Balance Sheet Statement on an annual or quarterly basis. This can also be an income statement (`companies.get_income_statement()`) or cash flow statement (`companies.get_cash_flow_statement()`).
+
+|                                          |         2018 |         2019 |         2020 |        2021 |         2022 |
+|:-----------------------------------------|-------------:|-------------:|-------------:|------------:|-------------:|
+| Cash and Cash Equivalents                |  2.5913e+10  |  4.8844e+10  |  3.8016e+10  | 3.494e+10   |  2.3646e+10  |
+| Short Term Investments                   |  4.0388e+10  |  5.1713e+10  |  5.2927e+10  | 2.7699e+10  |  2.4658e+10  |
+| Cash and Short Term Investments          |  6.6301e+10  |  1.00557e+11 |  9.0943e+10  | 6.2639e+10  |  4.8304e+10  |
+| Accounts Receivable                      |  4.8995e+10  |  4.5804e+10  |  3.7445e+10  | 5.1506e+10  |  6.0932e+10  |
+| Inventory                                |  3.956e+09   |  4.106e+09   |  4.061e+09   | 6.58e+09    |  4.946e+09   |
+| Other Current Assets                     |  1.2087e+10  |  1.2352e+10  |  1.1264e+10  | 1.4111e+10  |  2.1223e+10  |
+| Total Current Assets                     |  1.31339e+11 |  1.62819e+11 |  1.43713e+11 | 1.34836e+11 |  1.35405e+11 |
+| Property, Plant and Equipment            |  4.1304e+10  |  3.7378e+10  |  3.6766e+10  | 3.944e+10   |  4.2117e+10  |
+| Goodwill                                 |  0           |  0           |  0           | 0           |  0           |
+| Intangible Assets                        |  0           |  0           |  0           | 0           |  0           |
+| Long Term Investments                    |  1.70799e+11 |  1.05341e+11 |  1.00887e+11 | 1.27877e+11 |  1.20805e+11 |
+| Tax Assets                               |  0           |  0           |  0           | 0           |  0           |
+| Other Fixed Assets                       |  2.2283e+10  |  3.2978e+10  |  4.2522e+10  | 4.8849e+10  |  5.4428e+10  |
+| Fixed Assets                             |  2.34386e+11 |  1.75697e+11 |  1.80175e+11 | 2.16166e+11 |  2.1735e+11  |
+| Other Assets                             |  0           |  0           |  0           | 0           |  0           |
+| Total Assets                             |  3.65725e+11 |  3.38516e+11 |  3.23888e+11 | 3.51002e+11 |  3.52755e+11 |
+| Accounts Payable                         |  5.5888e+10  |  4.6236e+10  |  4.2296e+10  | 5.4763e+10  |  6.4115e+10  |
+| Short Term Debt                          |  2.0748e+10  |  1.624e+10   |  1.3769e+10  | 1.5613e+10  |  2.111e+10   |
+| Tax Payables                             |  0           |  0           |  0           | 0           |  0           |
+| Deferred Revenue                         |  7.543e+09   |  5.522e+09   |  6.643e+09   | 7.612e+09   |  7.912e+09   |
+| Other Current Liabilities                |  3.2687e+10  |  3.772e+10   |  4.2684e+10  | 4.7493e+10  |  6.0845e+10  |
+| Total Current Liabilities                |  1.16866e+11 |  1.05718e+11 |  1.05392e+11 | 1.25481e+11 |  1.53982e+11 |
+| Long Term Debt                           |  9.3735e+10  |  9.1807e+10  |  9.8667e+10  | 1.09106e+11 |  9.8959e+10  |
+| Deferred Revenue Non Current             |  2.797e+09   |  0           |  0           | 0           |  0           |
+| Deferred Tax Liabilities                 |  4.26e+08    |  0           |  0           | 0           |  0           |
+| Other Non Current Liabilities            |  4.4754e+10  |  5.0503e+10  |  5.449e+10   | 5.3325e+10  |  4.9142e+10  |
+| Total Non Current Liabilities            |  1.41712e+11 |  1.4231e+11  |  1.53157e+11 | 1.62431e+11 |  1.48101e+11 |
+| Other Liabilities                        |  0           |  0           |  0           | 0           |  0           |
+| Capital Lease Obligations                |  0           |  0           |  0           | 0           |  0           |
+| Total Liabilities                        |  2.58578e+11 |  2.48028e+11 |  2.58549e+11 | 2.87912e+11 |  3.02083e+11 |
+| Preferred Stock                          |  0           |  0           |  0           | 0           |  0           |
+| Common Stock                             |  4.0201e+10  |  4.5174e+10  |  5.0779e+10  | 5.7365e+10  |  6.4849e+10  |
+| Retained Earnings                        |  7.04e+10    |  4.5898e+10  |  1.4966e+10  | 5.562e+09   | -3.068e+09   |
+| Accumulated Other Comprehensive Income   | -3.454e+09   | -5.84e+08    | -4.06e+08    | 1.63e+08    | -1.1109e+10  |
+| Other Total Shareholder Equity           |  0           |  0           |  0           | 0           |  0           |
+| Total Shareholder Equity                 |  1.07147e+11 |  9.0488e+10  |  6.5339e+10  | 6.309e+10   |  5.0672e+10  |
+| Total Equity                             |  1.07147e+11 |  9.0488e+10  |  6.5339e+10  | 6.309e+10   |  5.0672e+10  |
+| Total Liabilities and Shareholder Equity |  3.65725e+11 |  3.38516e+11 |  3.23888e+11 | 3.51002e+11 |  3.52755e+11 |
+| Minority Interest                        |  0           |  0           |  0           | 0           |  0           |
+| Total Liabilities and Equity             |  3.65725e+11 |  3.38516e+11 |  3.23888e+11 | 3.51002e+11 |  3.52755e+11 |
+| Total Investments                        |  2.11187e+11 |  1.57054e+11 |  1.53814e+11 | 1.55576e+11 |  1.45463e+11 |
+| Total Debt                               |  1.14483e+11 |  1.08047e+11 |  1.12436e+11 | 1.24719e+11 |  1.20069e+11 |
+| Net Debt                                 |  8.857e+10   |  5.9203e+10  |  7.442e+10   | 8.9779e+10  |  9.6423e+10  |
+
+### Financial Ratios
+
+Get Profitability Ratios based on the inputted balance sheet, income and cash flow statements. This can be any of the 50+ ratios within the `ratios` module. The `get_` functions show a single ratio whereas the `collect_` functions show an aggregation of multiple ratios.
+
+|                                             |     2018 |    2019 |    2020 |    2021 |    2022 |
+|:--------------------------------------------|---------:|--------:|--------:|--------:|--------:|
+| Gross Margin                                |   0.3834 |  0.3782 |  0.3823 |  0.4178 |  0.4331 |
+| Operating Margin                            |   0.2669 |  0.2457 |  0.2415 |  0.2978 |  0.3029 |
+| Net Profit Margin                           |   0.2241 |  0.2124 |  0.2091 |  0.2588 |  0.2531 |
+| Interest Coverage Ratio                     |  25.2472 | 21.3862 | 26.921  | 45.4567 | 44.538  |
+| Income Before Tax Profit Margin             |   0.2745 |  0.2527 |  0.2444 |  0.2985 |  0.302  |
+| Effective Tax Rate                          |   0.1834 |  0.1594 |  0.1443 |  0.133  |  0.162  |
+| Return on Assets (ROA)                      |   0.1628 |  0.1632 |  0.1773 |  0.2697 |  0.2829 |
+| Return on Equity (ROE)                      | nan      |  0.5592 |  0.7369 |  1.4744 |  1.7546 |
+| Return on Invested Capital (ROIC)           |   0.2699 |  0.2937 |  0.3441 |  0.5039 |  0.5627 |
+| Return on Capital Employed (ROCE)           |   0.306  |  0.2977 |  0.3202 |  0.496  |  0.6139 |
+| Return on Tangible Assets                   |   0.5556 |  0.6106 |  0.8787 |  1.5007 |  1.9696 |
+| Income Quality Ratio                        |   1.3007 |  1.2558 |  1.4052 |  1.0988 |  1.2239 |
+| Net Income per EBT                          |   0.8166 |  0.8406 |  0.8557 |  0.867  |  0.838  |
+| Free Cash Flow to Operating Cash Flow Ratio |   0.8281 |  0.8488 |  0.9094 |  0.8935 |  0.9123 |
+| EBT to EBIT Ratio                           |   0.9574 |  0.9484 |  0.9589 |  0.9764 |  0.976  |
+| EBIT to Revenue                             |   0.2867 |  0.2664 |  0.2549 |  0.3058 |  0.3095 |
+| Sharpe Ratio                                |  -0.1859 |  3.2954 |  1.7484 |  1.378  | -0.6998 |
+
+### Financial Models
+
+Get an [Extended DuPont Analysis]((https://www.jeroenbouma.com/projects/financetoolkit/docs/models#get_extended_dupont_analysis)) based on the inputted balance sheet, income and cash flow statements. This can also be for example an Enterprise Value Breakdown (`companies.models.get_enterprise_value_breakdown()`).
+
+|                         |     2017 |   2018 |   2019 |   2020 |   2021 |   2022 |
+|:------------------------|---------:|-------:|-------:|-------:|-------:|-------:|
+| Interest Burden Ratio   |   0.9572 | 0.9725 | 0.9725 | 0.988  | 0.9976 | 1.0028 |
+| Tax Burden Ratio        |   0.7882 | 0.8397 | 0.8643 | 0.8661 | 0.869  | 0.8356 |
+| Operating Profit Margin |   0.2796 | 0.2745 | 0.2527 | 0.2444 | 0.2985 | 0.302  |
+| Asset Turnover          | nan      | 0.7168 | 0.7389 | 0.8288 | 1.0841 | 1.1206 |
+| Equity Multiplier       | nan      | 3.0724 | 3.5633 | 4.2509 | 5.255  | 6.1862 |
+| Return on Equity        | nan      | 0.4936 | 0.5592 | 0.7369 | 1.4744 | 1.7546 |
+
+### Technical Indicators
+
+Get [Bollinger Bands](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals#get_bollinger_bands) based on the historical market data. This can be any of the 30+ technical indicators within the `technicals` module. The `get_` functions show a single indicator whereas the `collect_` functions show an aggregation of multiple indicators.
+
+| Date       |   Lower Band |   Middle Band |   Upper Band |
+|:-----------|-------------:|--------------:|-------------:|
+| 2023-08-22 |      170.336 |       178.524 |      186.712 |
+| 2023-08-23 |      173.376 |       177.824 |      182.272 |
+| 2023-08-24 |      173.56  |       177.441 |      181.322 |
+| 2023-08-25 |      173.56  |       177.441 |      181.323 |
+| 2023-08-28 |      173.486 |       177.486 |      181.487 |
 
 ## Defining Custom Ratios
 
@@ -215,7 +310,7 @@ Which returns the following for GOOGL (Google):
 
 ## Calling Functions Directly
 
-It also possible to call any ratio or model directly as shown below. This allows access to 50+ ratios with custom data. Also see [this notebook](https://www.jeroenbouma.com/projects/financetoolkit/functional-toolkit).
+It also possible to call any ratio or model directly as shown below. This allows access to 100+ ratios and indicators with custom data. Also see [this notebook](https://www.jeroenbouma.com/projects/financetoolkit/functional-toolkit).
 
 ```python
 import pandas as pd
@@ -329,6 +424,146 @@ This will return all financial ratios that can be collected based on the provide
 
 ![Output of Result](https://github.com/JerBouma/FinanceToolkit/assets/46355364/4ce78cb1-1d37-4f71-ac53-4186cb8b1abf)
 
+# Available Ratios and Indicators
+
+The Finance Toolkit has the ability to calculate 100+ ratios and indicators. The following list shows all of the available ratios and indicators. Note that the Finance Toolkit is not limited to these ratios and indicators as it is possible to add custom ratios as well. See [this section](#defining-custom-ratios) for more information.
+
+Each ratio and indicator has a corresponding function that can be called directly for example `ratios.get_return_on_equity` or `technicals.get_relative_strength_index`.
+
+**By clicking on any of the ratios or indicators, you will be redirected to the documentation page that explains more about how the ratio is calculated and what the result means.**
+
+## Financial Ratios
+
+The Ratios Module contains over 50+ ratios that can be used to analyse companies. These ratios are divided into 5 categories which are efficiency, liquidity, profitability, solvency and valuation. Each ratio is calculated using the data from the Toolkit module.
+
+### Efficiency Ratios
+- [Asset Turnover Ratio](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_asset_turnover_ratio)
+- [Inventory Turnover Ratio](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_inventory_turnover_ratio)
+- [Days of Inventory Outstanding](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_days_of_inventory_outstanding)
+- [Days of Sales Outstanding](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_days_of_sales_outstanding)
+- [Operating Cycle](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_operating_cycle)
+- [Accounts Payables Turnover Ratio](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_accounts_payables_turnover_ratio)
+- [Days of Accounts Payable Outstanding](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_days_of_accounts_payable_outstanding)
+- [Cash Conversion Cycle](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_cash_conversion_cycle)
+- [Receivables Turnover](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_receivables_turnover)
+- [SGA to Revenue Ratio](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_sga_to_revenue_ratio)
+- [Fixed Asset Turnover](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_fixed_asset_turnover)
+- [Operating Ratio](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_operating_ratio)
+
+### Liquidity Ratios
+- [Current Ratio](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_current_ratio)
+- [Quick Ratio](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_quick_ratio)
+- [Cash Ratio](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_cash_ratio)
+- [Working Capital](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_working_capital)
+- [Operating Cash Flow Ratio](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_operating_cash_flow_ratio)
+- [Operating Cash Flow Sales Ratio](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_operating_cash_flow_sales_ratio)
+- [Short Term Coverage Ratio](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_short_term_coverage_ratio)
+
+### Profitability Ratios
+- [Gross Margin](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_gross_margin)
+- [Operating Margin](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_operating_margin)
+- [Net Profit Margin](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_net_profit_margin)
+- [Interest Burden Ratio](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_interest_burden_ratio)
+- [Income Before Tax Profit Margin](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_income_before_tax_profit_margin)
+- [Effective Tax Rate](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_effective_tax_rate)
+- [Return on Assets (RoA)](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_return_on_assets)
+- [Return on Equity (RoE)](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_return_on_equity)
+- [Return on Invested Capital (RoIC)](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_return_on_invested_capital)
+- [Income Quality Ratio](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_income_quality_ratio)
+- [Return on Tangible Assets (RoTA)](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_return_on_tangible_assets)
+- [Return on Capital Employed (RoCE)](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_return_on_capital_employed)
+- [Net Income per EBT](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_net_income_per_ebt)
+- [Free Cash Flow Operating Cash Flow Ratio](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_free_cash_flow_operating_cash_flow_ratio)
+- [Tax Burden Ratio](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_tax_burden_ratio)
+- [EBT to EBIT](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_EBT_to_EBIT)
+- [EBIT to Revenue](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_EBIT_to_revenue)
+
+### Solvency Ratios
+- [Debt to Assets Ratio](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_debt_to_assets_ratio)
+- [Debt to Equity Ratio](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_debt_to_equity_ratio)
+- [Interest Coverage Ratio](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_interest_coverage_ratio)
+- [Equity Multiplier](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_equity_multiplier)
+- [Debt Service Coverage Ratio](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_debt_service_coverage_ratio)
+- [Free Cash Flow Yield](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_free_cash_flow_yield)
+- [Net Debt to EBITDA Ratio](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_net_debt_to_ebitda_ratio)
+- [Cash Flow Coverage Ratio](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_cash_flow_coverage_ratio)
+- [CAPEX Coverage Ratio](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_capex_coverage_ratio)
+- [CAPEX Dividend Coverage Ratio](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_capex_dividend_coverage_ratio)
+
+### Valuation Ratios
+- [Earnings per Share (EPS)](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_earnings_per_share)
+- [Revenue per Share (RPS)](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_revenue_per_share)
+- [Price Earnings Ratio (PE)](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_price_earnings_ratio)
+- [Price to Earnings Growth Ratio (PEG)](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_price_to_earnings_growth_ratio)
+- [Book Value per Share](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_book_value_per_share)
+- [Price to Book Ratio (PB)](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_price_to_book_ratio)
+- [Interest Debt per Share](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_interest_debt_per_share)
+- [CAPEX per Share](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_capex_per_share)
+- [Dividend Yield](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_dividend_yield)
+- [Weighted Dividend Yiel](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_weighted_dividend_yield)
+- [Price to Cash Flow Ratio (P/CF)](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_price_to_cash_flow_ratio)
+- [Price to Free Cash Flow Ratio (P/FCF)](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_price_to_free_cash_flow_ratio)
+- [Market Capitalization](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_market_cap)
+- [Enterprise Value](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_enterprise_value)
+- [EV to Sales Ratio](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_ev_to_sales_ratio)
+- [EV to EBITDA Ratio](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_ev_to_ebitda_ratio)
+- [EV to Operating Cashflow Ratio](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_ev_to_operating_cashflow_ratio)
+- [EV to EBIT](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_ev_to_ebit)
+- [Earnings Yield](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_earnings_yield)
+- [Payout Ratio](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_payout_ratio)
+- [Tangible Asset Value](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_tangible_asset_value)
+- [Net Current Asset Value](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_net_current_asset_value)
+
+## Financial Models
+
+The Models module is meant to execute well-known models such as DUPONT and the Discounted Cash Flow (DCF) model. These models are also directly related to the data retrieved from the Toolkit module.
+
+- [DuPont Analysis](https://www.jeroenbouma.com/projects/financetoolkit/docs/models#get_dupont_analysis)
+- [Extended DuPont Analysis](https://www.jeroenbouma.com/projects/financetoolkit/docs/models#get_extended_dupont_analysis)
+- [Enterprise Value Breakdown](https://www.jeroenbouma.com/projects/financetoolkit/docs/models#get_enterprise_value_breakdown)
+
+## Technical Indicators
+
+The Technicals Module contains 30+ Technical Indicators that can be used to analyse companies. These ratios are divided into 4 categories which are breadth, momentum, overlap and volatility. Each indicator is calculated using the data from the Toolkit module.
+
+### Breadth Indicators
+- [McClellan Oscillator](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals#get_mcclellan_oscillator)
+- [Advancers/Decliners Ratio](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals#get_advancers_decliners)
+- [On-Balance Volume (OBV)](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals#get_on_balance_volume)
+- [Accumulation/Distribution Line (ADL)](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals#get_accumulation_distribution_line)
+- [Chaikin Oscillator](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals#get_chaikin_oscillator)
+
+### Momentum Indicators
+- [Money Flow Index](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals#get_money_flow_index)
+- [Williams %R](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals#get_williams_percent_r)
+- [Aroon Indicator](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals#get_aroon_indicator)
+- [Commodity Channel Index](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals#get_commodity_channel_index)
+- [Relative Vigor Index](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals#get_relative_vigor_index)
+- [Force Index](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals#get_force_index)
+- [Ultimate Oscillator](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals#get_ultimate_oscillator)
+- [Percentage Price Oscillator](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals#get_percentage_price_oscillator)
+- [Detrended Price Oscillator](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals#get_detrended_price_oscillator)
+- [Average Directional Index (ADX)](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals#get_average_directional_index)
+- [Chande Momentum Oscillator (CMO)](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals#get_chande_momentum_oscillator)
+- [Ichimoku Cloud](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals#get_ichimoku_cloud)
+- [Stochastic Oscillator](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals#get_stochastic_oscillator)
+- [Moving Average Convergence Divergence (MACD)](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals#get_moving_average_convergence_divergence)
+- [Relative Strength Index (RSI)](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals#get_relative_strength_index)
+- [Balance of Power (BOP)](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals#get_balance_of_power)
+
+### Overlap Indicators
+- [Simple Moving Average (SMA)](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals#get_moving_average)
+- [Exponential Moving Average (EMA)](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals#get_exponential_moving_average)
+- [Double Exponential Moving Average (DEMA)](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals#get_double_exponential_moving_average)
+- [Triple Exponential Moving Average (TRIX)](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals#get_trix)
+- [Triangular Moving Average (TMA)](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals#get_triangular_moving_average)
+
+### Volatility Indicators
+- [True Range (TR)](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals#get_true_range)
+- [Average True Range (ATR)](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals#get_average_true_range)
+- [Keltners Channels](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals#get_keltner_channels)
+- [Bollinger Bands](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals#get_bollinger_bands)
+
 # Contact
 If you have any questions about the FinanceToolkit or would like to share with me what you have been working on, feel free to reach out to me via:
 
@@ -337,6 +572,6 @@ If you have any questions about the FinanceToolkit or would like to share with m
 - **Email:** jer.bouma@gmail.com
 - **Discord:** add me on Discord **`JerBouma`**
 
-If you'd like to support my efforts, either help me out by contributing to the package or [Buy me a Coffee](https://www.buymeacoffee.com/jerbouma).
+If you'd like to support my efforts, either help me out by contributing to the package or [Sponsor Me](https://github.com/sponsors/JerBouma).
 
 [![Star History Chart](https://api.star-history.com/svg?repos=JerBouma/FinanceToolkit&type=Date)](https://star-history.com/#JerBouma/FinanceToolkit&Date)

@@ -18,8 +18,7 @@ from financetoolkit.base.models.fundamentals_model import (
     get_revenue_segmentation as _get_revenue_segmentation,
 )
 from financetoolkit.base.models.historical_model import (
-    convert_daily_to_quarterly as _convert_daily_to_quarterly,
-    convert_daily_to_yearly as _convert_daily_to_yearly,
+    convert_daily_to_other_period as _convert_daily_to_other_period,
     get_historical_data as _get_historical_data,
     get_treasury_rates as _get_treasury_rates,
 )
@@ -60,6 +59,7 @@ class Toolkit:
         start_date: str | None = None,
         end_date: str | None = None,
         quarterly: bool = False,
+        risk_free_rate: str = "10y",
         rounding: int | None = 4,
         format_location: str = "",
         reverse_dates: bool = False,
@@ -120,10 +120,29 @@ class Toolkit:
                 f"Please ensure the start date {start_date} is before the end date {end_date}"
             )
 
+        if risk_free_rate not in [
+            "1m",
+            "2m",
+            "3m",
+            "6m",
+            "1y",
+            "2y",
+            "3y",
+            "5y",
+            "7y",
+            "10y",
+            "20y",
+            "30y",
+        ]:
+            raise ValueError(
+                "Please select a valid risk free rate (1m, 2m, 3m, 6m, 1y, 2y, 3y, 5y, 7y, 10y, 20y, 30y)"
+            )
+
         self._api_key = api_key
         self._start_date = start_date
         self._end_date = end_date
         self._quarterly = quarterly
+        self._risk_free_rate = risk_free_rate
         self._rounding = rounding
         self._remove_invalid_tickers = remove_invalid_tickers
         self._invalid_tickers: list = []
@@ -152,15 +171,18 @@ class Toolkit:
         self._weekly_historical_data: pd.DataFrame = pd.DataFrame()
         self._monthly_historical_data: pd.DataFrame = pd.DataFrame()
         self._quarterly_historical_data: pd.DataFrame = (
-            _convert_daily_to_quarterly(
-                self._daily_historical_data, self._start_date, self._end_date
+            _convert_daily_to_other_period(
+                "quarterly",
+                self._daily_historical_data,
+                self._start_date,
+                self._end_date,
             )
             if not historical.empty
             else pd.DataFrame()
         )
         self._yearly_historical_data: pd.DataFrame = (
-            _convert_daily_to_yearly(
-                self._daily_historical_data, self._start_date, self._end_date
+            _convert_daily_to_other_period(
+                "yearly", self._daily_historical_data, self._start_date, self._end_date
             )
             if not historical.empty
             else pd.DataFrame()
@@ -168,12 +190,17 @@ class Toolkit:
 
         # Initialization of Risk Free Rate
         self._daily_risk_free_rate: pd.DataFrame = pd.DataFrame()
+        self._weekly_risk_free_rate: pd.DataFrame = pd.DataFrame()
+        self._monthly_risk_free_rate: pd.DataFrame = pd.DataFrame()
         self._quarterly_risk_free_rate: pd.DataFrame = pd.DataFrame()
         self._yearly_risk_free_rate: pd.DataFrame = pd.DataFrame()
 
         # Initialization of Treasury Variables
         self._daily_treasury_data: pd.DataFrame = pd.DataFrame()
-        self._daily_treasury_date_growth: pd.DataFrame = pd.DataFrame()
+        self._weekly_treasury_data: pd.DataFrame = pd.DataFrame()
+        self._monthly_treasury_data: pd.DataFrame = pd.DataFrame()
+        self._quarterly_treasury_data: pd.DataFrame = pd.DataFrame()
+        self._yearly_treasury_data: pd.DataFrame = pd.DataFrame()
 
         # Initialization of Normalization Variables
         self._balance_sheet_statement_generic: pd.DataFrame = _read_normalization_file(
@@ -1058,7 +1085,12 @@ class Toolkit:
         return self._revenue_product_segmentation
 
     def get_historical_data(
-        self, period: str = "daily", return_column: str = "Adj Close"
+        self,
+        period: str = "daily",
+        return_column: str = "Adj Close",
+        fill_nan: bool = True,
+        overwrite: bool = False,
+        excess_return: bool = False,
     ):
         """
         Returns historical data for the specified tickers. This contains the following columns:
@@ -1083,6 +1115,9 @@ class Toolkit:
             period (str): The interval at which the historical data should be
             returned - daily, weekly, monthly, quarterly, or yearly.
             Defaults to "daily".
+            fill_nan (bool): Defines whether to forward fill NaN values. This defaults
+            to True to prevent holes in the dataset. This is especially relevant for
+            technical indicators.
 
         Raises:
             ValueError: If an invalid value is specified for period.
@@ -1116,61 +1151,31 @@ class Toolkit:
         | 2022   |    129.378  | 129.93   |            6.35566  |    0.91     | 129.95   | 127.43   | 128.41   |  -0.264042  | 7.70342e+07 |
         | 2023   |    174.49   | 174.49   |            8.92046  |    0.71     | 175.1    | 171.96   | 172.3    |   0.348684  | 6.11142e+07 |
         """
-        if self._daily_risk_free_rate.empty:
-            daily_risk_free_rate, _ = _get_historical_data(
-                "^TNX", self._start_date, self._end_date
-            )
+        if (self._daily_risk_free_rate.empty or overwrite) and excess_return:
+            self.get_risk_free_rate(period="daily")
 
-            if daily_risk_free_rate.empty:
-                print(
-                    "Unable to retrieve the risk free rate ('^TNX'), using default value of 0."
-                )
-                self._daily_risk_free_rate = pd.Series(0)
-                self._quarterly_risk_free_rate = pd.Series(0)
-                self._yearly_historical_data = pd.Series(0)
-            else:
-                daily_risk_free_rate = daily_risk_free_rate.loc[
-                    self._start_date : self._end_date, :  # type: ignore
-                ].copy()
-
-                daily_risk_free_rate.loc[daily_risk_free_rate.index[0], "Return"] = 0
-
-                # Division by 100 given that TNX is also a percentage (e.g 4.5% == 0.045)
-                daily_risk_free_rate = (
-                    daily_risk_free_rate.xs("^TNX", level=1, axis=1) / 100
-                )
-
-                quarterly_risk_free_rate = _convert_daily_to_quarterly(
-                    daily_risk_free_rate, self._start_date, self._end_date
-                )
-
-                yearly_risk_free_rate = _convert_daily_to_yearly(
-                    daily_risk_free_rate, self._start_date, self._end_date
-                )
-
-                self._daily_risk_free_rate = daily_risk_free_rate["Adj Close"]
-                self._quarterly_risk_free_rate = quarterly_risk_free_rate["Adj Close"]
-                self._yearly_risk_free_rate = yearly_risk_free_rate["Adj Close"]
-
-        if period == "daily":
+        if self._daily_historical_data.empty or overwrite:
             self._daily_historical_data, self._invalid_tickers = _get_historical_data(
                 self._tickers,
                 self._start_date,
                 self._end_date,
                 interval="1d",
                 return_column=return_column,
-                risk_free_rate=self._daily_risk_free_rate,
+                risk_free_rate=self._daily_risk_free_rate
+                if excess_return
+                else pd.Series(),
+                progress_bar=self._progress_bar,
+                fill_nan=fill_nan,
             )
 
-            if self._remove_invalid_tickers:
-                self._tickers = [
-                    ticker
-                    for ticker in self._tickers
-                    if ticker not in self._invalid_tickers
-                ]
+        if self._remove_invalid_tickers:
+            self._tickers = [
+                ticker
+                for ticker in self._tickers
+                if ticker not in self._invalid_tickers
+            ]
 
-            self._daily_historical_data = self._daily_historical_data.sort_index()
-
+        if period == "daily":
             historical_data = self._daily_historical_data.loc[
                 self._start_date : self._end_date, :  # type: ignore
             ].copy()
@@ -1182,23 +1187,18 @@ class Toolkit:
             return historical_data
 
         if period == "weekly":
-            self._weekly_historical_data, self._invalid_tickers = _get_historical_data(
-                self._tickers,
-                self._start_date,
-                self._end_date,
-                interval="1wk",
-                return_column=return_column,
-                risk_free_rate=self._daily_risk_free_rate,
+            if (self._weekly_risk_free_rate.empty or overwrite) and excess_return:
+                self.get_risk_free_rate(period="weekly")
+
+            self._weekly_historical_data = _convert_daily_to_other_period(
+                period="weekly",
+                daily_historical_data=self._daily_historical_data,
+                start=self._start_date,
+                end=self._end_date,
+                risk_free_rate=self._weekly_risk_free_rate
+                if excess_return
+                else pd.Series(),
             )
-
-            if self._remove_invalid_tickers:
-                self._tickers = [
-                    ticker
-                    for ticker in self._tickers
-                    if ticker not in self._invalid_tickers
-                ]
-
-            self._weekly_historical_data = self._weekly_historical_data.sort_index()
 
             historical_data = self._weekly_historical_data.loc[
                 self._start_date : self._end_date, :  # type: ignore
@@ -1211,23 +1211,16 @@ class Toolkit:
             return historical_data
 
         if period == "monthly":
-            self._monthly_historical_data, self._invalid_tickers = _get_historical_data(
-                self._tickers,
-                self._start_date,
-                self._end_date,
-                interval="1mo",
-                return_column=return_column,
-                risk_free_rate=self._daily_risk_free_rate,
+            if (self._monthly_risk_free_rate.empty or overwrite) and excess_return:
+                self.get_risk_free_rate(period="monthly")
+
+            self._monthly_historical_data = _convert_daily_to_other_period(
+                period="monthly",
+                daily_historical_data=self._daily_historical_data,
+                start=self._start_date,
+                end=self._end_date,
+                risk_free_rate=self._monthly_risk_free_rate,
             )
-
-            if self._remove_invalid_tickers:
-                self._tickers = [
-                    ticker
-                    for ticker in self._tickers
-                    if ticker not in self._invalid_tickers
-                ]
-
-            self._monthly_historical_data = self._monthly_historical_data.sort_index()
 
             historical_data = self._monthly_historical_data.loc[
                 self._start_date : self._end_date, :  # type: ignore
@@ -1240,29 +1233,16 @@ class Toolkit:
             return historical_data
 
         if period == "quarterly":
-            if self._daily_historical_data.empty:
-                (
-                    self._daily_historical_data,
-                    self._invalid_tickers,
-                ) = _get_historical_data(
-                    self._tickers,
-                    self._start_date,
-                    self._end_date,
-                    interval="1d",
-                    return_column=return_column,
-                    risk_free_rate=self._daily_risk_free_rate,
-                )
+            if (self._quarterly_risk_free_rate.empty or overwrite) and excess_return:
+                self.get_risk_free_rate(period="quarterly")
 
-            self._quarterly_historical_data = _convert_daily_to_quarterly(
-                self._daily_historical_data, self._start_date, self._end_date
+            self._quarterly_historical_data = _convert_daily_to_other_period(
+                period="quarterly",
+                daily_historical_data=self._daily_historical_data,
+                start=self._start_date,
+                end=self._end_date,
+                risk_free_rate=self._quarterly_risk_free_rate,
             )
-
-            if self._remove_invalid_tickers:
-                self._tickers = [
-                    ticker
-                    for ticker in self._tickers
-                    if ticker not in self._invalid_tickers
-                ]
 
             historical_data = self._quarterly_historical_data.loc[
                 self._start_date : self._end_date, :  # type: ignore
@@ -1275,31 +1255,16 @@ class Toolkit:
             return historical_data
 
         if period == "yearly":
-            if self._daily_historical_data.empty:
-                (
-                    self._daily_historical_data,
-                    self._invalid_tickers,
-                ) = _get_historical_data(
-                    self._tickers,
-                    self._start_date,
-                    self._end_date,
-                    interval="1d",
-                    return_column=return_column,
-                    risk_free_rate=self._daily_risk_free_rate,
-                )
+            if (self._yearly_risk_free_rate.empty or overwrite) and excess_return:
+                self.get_risk_free_rate(period="yearly")
 
-            self._yearly_historical_data = _convert_daily_to_yearly(
-                self._daily_historical_data, self._start_date, self._end_date
+            self._yearly_historical_data = _convert_daily_to_other_period(
+                period="yearly",
+                daily_historical_data=self._daily_historical_data,
+                start=self._start_date,
+                end=self._end_date,
+                risk_free_rate=self._yearly_risk_free_rate,
             )
-
-            if self._remove_invalid_tickers:
-                self._tickers = [
-                    ticker
-                    for ticker in self._tickers
-                    if ticker not in self._invalid_tickers
-                ]
-
-            self._yearly_historical_data = self._yearly_historical_data.sort_index()
 
             historical_data = self._yearly_historical_data.loc[
                 self._start_date : self._end_date, :  # type: ignore
@@ -1317,10 +1282,10 @@ class Toolkit:
 
     def get_treasury_data(
         self,
+        period: str = "daily",
+        source: str = "FinancialModelingPrep",
+        fill_nan: bool = True,
         overwrite: bool = False,
-        growth: bool = False,
-        lag: int | list[int] = 1,
-        rounding: int | None = None,
     ):
         """
         Retrieve the daily treasury rates for a maximum of 3 months. This gives the
@@ -1328,6 +1293,8 @@ class Toolkit:
         and years are included.
 
         Args:
+            source (str): Defines the source of the data. Can be either "FinancialModelingPrep" or "YahooFinance".
+            Defaults to "FinancialModelingPrep".
             limit (int): Defines the maximum years or quarters to obtain.
             overwrite (bool): Defines whether to overwrite the existing data.
             rounding (int): Defines the number of decimal places to round the data to.
@@ -1361,32 +1328,195 @@ class Toolkit:
         | 2023-08-21 |      5.55 |      5.53 |      5.57 |      5.58 |     5.37 |     4.97 |     4.7  |     4.46 |     4.42 |      4.34 |      4.64 |      4.45 |
 
         """
-        if not self._api_key:
-            return print(
-                "The requested data requires the api_key parameter to be set, consider obtaining a key with the following link: https://financialmodelingprep.com/developer/docs/pricing/jeroen/"
-                "\nThe free plan allows for 250 requests per day, a limit of 5 years and has no quarterly data. Consider upgrading "
-                "your plan. You can get 15% off by using the above affiliate link which also supports the project."
+        if source == "FinancialModelingPrep":
+            if not self._api_key:
+                return print(
+                    "The requested data requires the api_key parameter to be set, consider obtaining a key with the following link: https://financialmodelingprep.com/developer/docs/pricing/jeroen/"
+                    "\nThe free plan allows for 250 requests per day, a limit of 5 years and has no quarterly data. Consider upgrading "
+                    "your plan. You can get 15% off by using the above affiliate link which also supports the project."
+                )
+
+            if self._daily_treasury_data.empty or overwrite:
+                daily_treasury_data = _get_treasury_rates(
+                    self._api_key, self._start_date, self._end_date, self._rounding
+                )
+
+                if daily_treasury_data.empty or overwrite:
+                    print(
+                        "\nAs the dataset from FinancialModelingPrep is unavailable, reverting to source='YahooFinance' instead. "
+                        "Note that this dataset is much more limited."
+                    )
+                    return self.get_treasury_data(
+                        period=period, source="YahooFinance", fill_nan=fill_nan
+                    )
+
+                self._daily_treasury_data = daily_treasury_data
+        elif source == "YahooFinance":
+            treasury_names = {
+                "^IRX": "13 Week",
+                "^FVX": "5 Year",
+                "^TNX": "10 Year",
+                "^TYX": "30 Year",
+            }
+            daily_treasury_data, _ = _get_historical_data(
+                ["^IRX", "^FVX", "^TNX", "^TYX"],
+                self._start_date,
+                self._end_date,
+                progress_bar=False,
             )
+
+            daily_treasury_data = daily_treasury_data["Adj Close"] / 100
+            daily_treasury_data = daily_treasury_data.rename(treasury_names, axis=1)
+
+            self._daily_treasury_data = daily_treasury_data
+        else:
+            raise ValueError(
+                "Please choose from 'FinancialModelingPrep' or 'YahooFinance' as source."
+            )
+
+        if fill_nan:
+            self._daily_treasury_data = self._daily_treasury_data.ffill()
+
+        if period == "daily":
+            return self._daily_treasury_data.loc[self._start_date : self._end_date, :]  # type: ignore
+        if period == "weekly":
+            self._weekly_treasury_data = _convert_daily_to_other_period(
+                period, self._daily_treasury_data, self._start_date, self._end_date
+            )
+            return self._weekly_treasury_data.loc[self._start_date : self._end_date, :]  # type: ignore
+        if period == "monthly":
+            self._monthly_treasury_data = _convert_daily_to_other_period(
+                period, self._daily_treasury_data, self._start_date, self._end_date
+            )
+            return self._monthly_treasury_data.loc[self._start_date : self._end_date, :]  # type: ignore
+        if period == "quarterly":
+            self._quarterly_treasury_data = _convert_daily_to_other_period(
+                period, self._daily_treasury_data, self._start_date, self._end_date
+            )
+
+            return self._quarterly_treasury_data.loc[
+                self._start_date : self._end_date, :  # type: ignore
+            ]
+        if period == "yearly":
+            self._yearly_treasury_data = _convert_daily_to_other_period(
+                period, self._daily_treasury_data, self._start_date, self._end_date
+            )
+
+            return self._yearly_treasury_data.loc[self._start_date : self._end_date, :]  # type: ignore
+
+        raise ValueError(
+            "Please choose from daily, weekly, monthly, quarterly or yearly as period."
+        )
+
+    def get_risk_free_rate(
+        self,
+        period: str = "daily",
+        source: str = "FinancialModelingPrep",
+        fill_nan: bool = True,
+        overwrite: bool = False,
+    ):
+        """
+        Retrieve the daily treasury rates for a maximum of 3 months. This gives the
+        ability to construct yield curves for any recent date given that several months
+        and years are included.
+
+        Args:
+            source (str): Defines the source of the data. Can be either "FinancialModelingPrep" or "YahooFinance".
+            Defaults to "FinancialModelingPrep".
+            limit (int): Defines the maximum years or quarters to obtain.
+            overwrite (bool): Defines whether to overwrite the existing data.
+            rounding (int): Defines the number of decimal places to round the data to.
+            growth (bool): Defines whether to return the growth of the data.
+            lag (int | str): Defines the number of periods to lag the growth data by.
+
+        Returns:
+            pd.DataFrame: A pandas DataFrame with the retrieved balance sheet statement data.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        companies = Toolkit(["AAPL", "MSFT"], api_key=FMP_KEY, start_date="2023-08-10")
+
+        companies.get_treasury_data()
+        ```
+
+        Which returns:
+
+        | date       |   1 Month |   2 Month |   3 Month |   6 Month |   1 Year |   2 Year |   3 Year |   5 Year |   7 Year |   10 Year |   20 Year |   30 Year |
+        |:-----------|----------:|----------:|----------:|----------:|---------:|---------:|---------:|---------:|---------:|----------:|----------:|----------:|
+        | 2023-08-10 |      5.55 |      5.52 |      5.54 |      5.52 |     5.33 |     4.82 |     4.47 |     4.21 |     4.17 |      4.09 |      4.41 |      4.24 |
+        | 2023-08-11 |      5.54 |      5.51 |      5.54 |      5.52 |     5.36 |     4.89 |     4.56 |     4.31 |     4.26 |      4.16 |      4.45 |      4.27 |
+        | 2023-08-14 |      5.55 |      5.52 |      5.56 |      5.56 |     5.37 |     4.96 |     4.64 |     4.36 |     4.29 |      4.19 |      4.46 |      4.29 |
+        | 2023-08-15 |      5.53 |      5.52 |      5.56 |      5.55 |     5.36 |     4.92 |     4.64 |     4.36 |     4.31 |      4.21 |      4.49 |      4.32 |
+        | 2023-08-16 |      5.52 |      5.53 |      5.56 |      5.54 |     5.37 |     4.97 |     4.68 |     4.42 |     4.37 |      4.28 |      4.55 |      4.38 |
+        | 2023-08-17 |      5.55 |      5.52 |      5.56 |      5.53 |     5.36 |     4.94 |     4.67 |     4.42 |     4.38 |      4.3  |      4.58 |      4.41 |
+        | 2023-08-18 |      5.53 |      5.52 |      5.55 |      5.52 |     5.35 |     4.92 |     4.63 |     4.38 |     4.34 |      4.26 |      4.55 |      4.38 |
+        | 2023-08-21 |      5.55 |      5.53 |      5.57 |      5.58 |     5.37 |     4.97 |     4.7  |     4.46 |     4.42 |      4.34 |      4.64 |      4.45 |
+
+        """
+        naming = {
+            "1m": "1 Month",
+            "2m": "2 Month",
+            "3m": "3 Month",
+            "6m": "6 Month",
+            "1y": "1 Year",
+            "2y": "2 Year",
+            "3y": "3 Year",
+            "5y": "5 Year",
+            "7y": "7 Year",
+            "10y": "10 Year",
+            "30y": "30 Year",
+        }
+
+        column_name = naming[self._risk_free_rate]
 
         if self._daily_treasury_data.empty or overwrite:
-            self._daily_treasury_data = _get_treasury_rates(
-                self._api_key, self._start_date, self._end_date, self._rounding
+            self.get_treasury_data(
+                period="daily", source=source, fill_nan=fill_nan, overwrite=overwrite
+            )
+        if column_name not in self._daily_treasury_data.columns:
+            raise ValueError(
+                f"{self._risk_free_rate} not available in the daily treasury data."
+                "Note that Yahoo Finance is limited to '5y', '10y' and '20y."
             )
 
-        self._daily_treasury_data = self._daily_treasury_data.sort_index()
+        if period == "daily":
+            self._daily_risk_free_rate = self._daily_treasury_data[column_name]
 
-        if growth:
-            self._daily_treasury_date_growth = _calculate_growth(
-                self._daily_treasury_data,
-                lag=lag,
-                axis="index",
-                rounding=rounding if rounding else self._rounding,
-            )
+            return self._daily_risk_free_rate.loc[self._start_date : self._end_date]  # type: ignore
+        if period == "weekly":
+            if self._weekly_treasury_data.empty or overwrite:
+                self.get_treasury_data(period="weekly")
 
-        return (
-            self._daily_treasury_date_growth.loc[self._start_date : self._end_date, :]  # type: ignore
-            if growth
-            else self._daily_treasury_data.loc[self._start_date : self._end_date, :]  # type: ignore
+            self._weekly_risk_free_rate = self._weekly_treasury_data[column_name]
+
+            return self._weekly_risk_free_rate.loc[self._start_date : self._end_date]  # type: ignore
+        if period == "monthly":
+            if self._monthly_treasury_data.empty or overwrite:
+                self.get_treasury_data(period="monthly")
+
+            self._monthly_risk_free_rate = self._monthly_treasury_data[column_name]
+
+            return self._monthly_risk_free_rate.loc[self._start_date : self._end_date]  # type: ignore
+        if period == "quarterly":
+            if self._quarterly_treasury_data.empty or overwrite:
+                self.get_treasury_data(period="quarterly")
+
+            self._quarterly_risk_free_rate = self._quarterly_treasury_data[column_name]
+
+            return self._quarterly_risk_free_rate.loc[self._start_date : self._end_date]  # type: ignore
+        if period == "yearly":
+            if self._yearly_treasury_data.empty or overwrite:
+                self.get_treasury_data(period="yearly")
+
+            self._yearly_risk_free_rate = self._yearly_treasury_data[column_name]
+
+            return self._yearly_risk_free_rate.loc[self._start_date : self._end_date]  # type: ignore
+
+        raise ValueError(
+            "Please choose from daily, weekly, monthly, quarterly or yearly as period."
         )
 
     def get_balance_sheet_statement(

@@ -7,9 +7,18 @@ from urllib.error import HTTPError
 import numpy as np
 import pandas as pd
 
+try:
+    from tqdm import tqdm
+
+    ENABLE_TQDM = True
+except ImportError:
+    ENABLE_TQDM = False
+
 from financetoolkit.base.models import fundamentals_model
 
 # pylint: disable=too-many-locals
+
+TREASURY_LIMIT = 90
 
 
 def get_historical_data(
@@ -18,7 +27,9 @@ def get_historical_data(
     end: str | None = None,
     interval: str = "1d",
     return_column: str = "Adj Close",
-    risk_free_rate: pd.Series | int = 0,
+    risk_free_rate: pd.Series = pd.Series(),
+    progress_bar: bool = True,
+    fill_nan: bool = True,
 ):
     """
     Retrieves historical stock data for the given ticker(s) from Yahoo! Finance API for a specified period.
@@ -82,7 +93,14 @@ def get_historical_data(
         interval = "1d"
 
     invalid_tickers = []
-    for ticker in ticker_list:
+
+    ticker_list_iterator = (
+        tqdm(ticker_list, desc="Obtaining historical data")
+        if (ENABLE_TQDM & progress_bar)
+        else ticker_list
+    )
+
+    for ticker in ticker_list_iterator:
         historical_data_url = (
             f"https://query1.finance.yahoo.com/v7/finance/download/{ticker}?"
             f"interval={interval}&period1={start_timestamp}&period2={end_timestamp}"
@@ -101,6 +119,11 @@ def get_historical_data(
             )
         except HTTPError:
             print(f"No historical data found for {ticker}")
+            invalid_tickers.append(ticker)
+            continue
+
+        if historical_data_dict[ticker].loc[start:end].empty:  # type: ignore
+            print(f"The given start and end date result in no data found for {ticker}")
             invalid_tickers.append(ticker)
             continue
 
@@ -123,13 +146,14 @@ def get_historical_data(
             historical_data_dict[ticker].loc[start:end, "Return"].std()  # type: ignore
         )
 
-        historical_data_dict[ticker]["Excess Return"] = historical_data_dict[ticker][
-            "Return"
-        ].sub(risk_free_rate, axis=0)
+        if risk_free_rate.empty:
+            historical_data_dict[ticker]["Excess Return"] = historical_data_dict[
+                ticker
+            ]["Return"].sub(risk_free_rate, axis=0)
 
-        historical_data_dict[ticker]["Excess Volatility"] = (
-            historical_data_dict[ticker].loc[start:end, "Excess Return"].std()  # type: ignore
-        )
+            historical_data_dict[ticker]["Excess Volatility"] = (
+                historical_data_dict[ticker].loc[start:end, "Excess Return"].std()  # type: ignore
+            )
 
         historical_data_dict[ticker]["Cumulative Return"] = 1
 
@@ -149,6 +173,11 @@ def get_historical_data(
         historical_data = historical_data.sort_index(
             level=0, axis=1, sort_remaining=False
         ).reindex(column_order, level=0, axis=1)
+
+        historical_data = historical_data.sort_index()
+
+        if fill_nan:
+            historical_data = historical_data.ffill()
 
         return historical_data, invalid_tickers
 
@@ -194,13 +223,11 @@ def get_treasury_rates(
     }
 
     end_date = (
-        datetime.strptime(end, "%Y-%m-%d") + timedelta(days=30)
-        if end is not None
-        else datetime.today()
+        datetime.strptime(end, "%Y-%m-%d") if end is not None else datetime.today()
     )
 
     if start is not None:
-        start_date = datetime.strptime(start, "%Y-%m-%d") - timedelta(days=30)
+        start_date = datetime.strptime(start, "%Y-%m-%d")
 
         if start_date > end_date:
             raise ValueError(
@@ -212,21 +239,51 @@ def get_treasury_rates(
         if start_date > end_date:
             start_date = end_date - timedelta(days=100)
 
-    start_date_string = start_date.strftime("%Y-%m-%d")
-    end_date_string = end_date.strftime("%Y-%m-%d")
+    if (end_date - start_date).days > TREASURY_LIMIT:
+        # Given that the limit is set to 90 days, the requests need to be split to
+        # be able to collect enough data to match the period requested
+        groups = np.ceil((end_date - start_date).days / (TREASURY_LIMIT))
+        treasury_rates = pd.DataFrame()
 
-    url = (
-        f"https://financialmodelingprep.com/api/v4/treasury?from={start_date_string}"
-        f"&to={end_date_string}&apikey={api_key}"
-    )
+        for group in range(0, int(groups) + 1):
+            start_date_group = start_date + timedelta(days=TREASURY_LIMIT * group)
+            end_date_group = start_date + timedelta(days=TREASURY_LIMIT * (group + 1))
+            start_date_string = start_date_group.strftime("%Y-%m-%d")
+            end_date_string = end_date_group.strftime("%Y-%m-%d")
 
-    treasury_rates = fundamentals_model.get_financial_data(ticker="TREASURY", url=url)
+            url = (
+                f"https://financialmodelingprep.com/api/v4/treasury?from={start_date_string}"
+                f"&to={end_date_string}&apikey={api_key}"
+            )
 
-    if "ERROR_MESSAGE" in treasury_rates:
-        return pd.DataFrame()
+            treasury_rates_subset = fundamentals_model.get_financial_data(
+                ticker="TREASURY", url=url
+            )
+
+            if "ERROR_MESSAGE" in treasury_rates_subset:
+                return pd.DataFrame()
+
+            treasury_rates = pd.concat([treasury_rates, treasury_rates_subset], axis=0)
+    else:
+        start_date_string = start_date.strftime("%Y-%m-%d")
+        end_date_string = end_date.strftime("%Y-%m-%d")
+
+        url = (
+            f"https://financialmodelingprep.com/api/v4/treasury?from={start_date_string}"
+            f"&to={end_date_string}&apikey={api_key}"
+        )
+        treasury_rates = fundamentals_model.get_financial_data(
+            ticker="TREASURY", url=url
+        )
+
+        if "ERROR_MESSAGE" in treasury_rates:
+            return pd.DataFrame()
 
     treasury_rates = treasury_rates.set_index("date")
 
+    # Division is done by 100 to make the numbers represent actual values
+    # by default, they are represented as percentages
+    treasury_rates = treasury_rates / 100
     try:
         treasury_rates = treasury_rates.astype(np.float64)
     except ValueError as error:
@@ -238,15 +295,18 @@ def get_treasury_rates(
 
     treasury_rates = treasury_rates.rename(columns=naming)
     treasury_rates = treasury_rates.round(rounding)
+    treasury_rates = treasury_rates.sort_index()
+    treasury_rates.index = treasury_rates.index.astype(str)
 
     return treasury_rates
 
 
-def convert_daily_to_yearly(
+def convert_daily_to_other_period(
+    period: str,
     daily_historical_data: pd.DataFrame,
     start: str | None = None,
     end: str | None = None,
-    yearly_risk_free_rate: pd.Series | int = 0,
+    risk_free_rate: pd.Series = pd.Series(),
 ):
     """
     Converts daily historical data to yearly historical data.
@@ -259,140 +319,86 @@ def convert_daily_to_yearly(
         The index of the DataFrame is the date of the data and the columns are a multi-index
         with the ticker symbol(s) as the first level and the OHLC data as the second level.
     """
+    period_translation = {
+        "weekly": "W",
+        "monthly": "M",
+        "quarterly": "Q",
+        "yearly": "Y",
+    }
+    volatility_window_translation = {
+        "weekly": 252 / 52,
+        "monthly": 252 / 12,
+        "quarterly": 252 / 4,
+        "yearly": 252,
+    }
+
+    if period not in ["weekly", "monthly", "quarterly", "yearly"]:
+        raise ValueError(
+            f"Period {period} is not valid. It should be either "
+            "weekly, monthly, quarterly or yearly."
+        )
+
+    period_str = period_translation[period]
+    volatility_window = volatility_window_translation[period]
+
     daily_historical_data.index.name = "Date"
     daily_historical_data = daily_historical_data.reset_index()
-    dates = pd.to_datetime(daily_historical_data.Date).dt.to_period("Y")
-    yearly_historical_data = daily_historical_data.groupby(dates).transform("last")
+    dates = pd.to_datetime(daily_historical_data.Date).dt.to_period(period_str)
+    period_historical_data = daily_historical_data.groupby(dates).transform("last")
 
-    if "Dividends" in yearly_historical_data:
-        yearly_historical_data["Dividends"] = (
+    if "Dividends" in period_historical_data:
+        period_historical_data["Dividends"] = (
             daily_historical_data["Dividends"].groupby(dates).transform("sum")
         )
 
-    yearly_historical_data["Date"] = yearly_historical_data["Date"].str[:4]
-    yearly_historical_data = yearly_historical_data.drop_duplicates().set_index("Date")
-    yearly_historical_data.index = pd.PeriodIndex(
-        yearly_historical_data.index, freq="Y"
+    period_historical_data["Date"] = period_historical_data["Date"]
+    period_historical_data = period_historical_data.drop_duplicates().set_index("Date")
+    period_historical_data.index = pd.PeriodIndex(
+        period_historical_data.index, freq=period_str
     )
 
-    if "Return" in yearly_historical_data:
-        yearly_historical_data["Return"] = (
-            yearly_historical_data["Adj Close"]
-            / yearly_historical_data["Adj Close"].shift()
+    if "Return" in period_historical_data:
+        period_historical_data["Return"] = (
+            period_historical_data["Adj Close"]
+            / period_historical_data["Adj Close"].shift()
             - 1
         )
 
         # Volatility is calculated as the daily volatility multiplied by the
         # square root of the number of trading days (252)
-        yearly_historical_data["Volatility"] = daily_historical_data["Return"].groupby(
+        period_historical_data["Volatility"] = daily_historical_data["Return"].groupby(
             dates
-        ).agg(np.std) * np.sqrt(252)
+        ).agg(np.std) * np.sqrt(volatility_window)
 
-        yearly_historical_data["Excess Return"] = yearly_historical_data["Return"].sub(
-            yearly_risk_free_rate, axis=0
-        )
+        if not risk_free_rate.empty:
+            period_historical_data["Excess Return"] = period_historical_data[
+                "Return"
+            ].sub(risk_free_rate, axis=0)
 
-        yearly_historical_data["Excess Volatility"] = daily_historical_data[
-            "Excess Return"
-        ].groupby(dates).agg(np.std) * np.sqrt(252)
+            period_historical_data["Excess Volatility"] = daily_historical_data[
+                "Excess Return"
+            ].groupby(dates).agg(np.std) * np.sqrt(volatility_window)
 
-    if "Cumulative Return" in yearly_historical_data:
+    if "Cumulative Return" in period_historical_data:
         if start:
-            start = pd.Period(start).asfreq("Y")
+            start = pd.Period(start).asfreq(period_str)
 
-            if start < yearly_historical_data.index[0]:
-                start = yearly_historical_data.index[0]
+            if start < period_historical_data.index[0]:
+                start = period_historical_data.index[0]
         if end:
-            end = pd.Period(end).asfreq("Y")
+            end = pd.Period(end).asfreq(period_str)
 
-            if end > yearly_historical_data.index[-1]:
-                end = yearly_historical_data.index[-1]
+            if end > period_historical_data.index[-1]:
+                end = period_historical_data.index[-1]
 
-        adjusted_return = yearly_historical_data.loc[start:end, "Return"].copy()  # type: ignore
+        adjusted_return = period_historical_data.loc[start:end, "Return"].copy()  # type: ignore
         adjusted_return.iloc[0] = 0
 
-        yearly_historical_data["Cumulative Return"] = (1 + adjusted_return).cumprod()  # type: ignore
-        yearly_historical_data["Cumulative Return"] = yearly_historical_data[
+        period_historical_data["Cumulative Return"] = (1 + adjusted_return).cumprod()  # type: ignore
+        period_historical_data["Cumulative Return"] = period_historical_data[
             "Cumulative Return"
         ].fillna(1)
 
-    return yearly_historical_data.fillna(0)
+    period_historical_data = period_historical_data.sort_index()
 
-
-def convert_daily_to_quarterly(
-    daily_historical_data: pd.DataFrame,
-    start: str | None = None,
-    end: str | None = None,
-    quarterly_risk_free_rate: pd.Series | int = 0,
-):
-    """
-    Converts daily historical data to quarterly historical data.
-
-    Args:
-        daily_historical_data (pd.DataFrame): A DataFrame containing daily historical data.
-
-    Returns:
-        pd.DataFrame: A pandas DataFrame object containing the yearly historical stock data.
-        The index of the DataFrame is the date of the data and the columns are a multi-index
-        with the ticker symbol(s) as the first level and the OHLC data as the second level.
-    """
-    daily_historical_data.index.name = "Date"
-    daily_historical_data = daily_historical_data.reset_index()
-    dates = pd.to_datetime(daily_historical_data.Date).dt.to_period("Q")
-    quarterly_historical_data = daily_historical_data.groupby(dates).transform("last")
-
-    if "Dividends" in quarterly_historical_data:
-        quarterly_historical_data["Dividends"] = (
-            daily_historical_data["Dividends"].groupby(dates).transform("sum")
-        )
-
-    quarterly_historical_data["Date"] = quarterly_historical_data["Date"].str[:7]
-    quarterly_historical_data = quarterly_historical_data.drop_duplicates().set_index(
-        "Date"
-    )
-    quarterly_historical_data.index = pd.PeriodIndex(
-        quarterly_historical_data.index, freq="Q"
-    )
-
-    if "Return" in quarterly_historical_data:
-        quarterly_historical_data["Return"] = (
-            quarterly_historical_data["Adj Close"]
-            / quarterly_historical_data["Adj Close"].shift()
-            - 1
-        )
-
-        # Volatility is calculated as the daily volatility multiplied by the
-        # square root of the number of trading days divided by 4 (252 / 4)
-        quarterly_historical_data["Volatility"] = daily_historical_data[
-            "Return"
-        ].groupby(dates).agg(np.std) * np.sqrt(63)
-
-        quarterly_historical_data["Excess Return"] = quarterly_historical_data[
-            "Return"
-        ].sub(quarterly_risk_free_rate, axis=0)
-
-        quarterly_historical_data["Excess Volatility"] = daily_historical_data[
-            "Excess Return"
-        ].groupby(dates).agg(np.std) * np.sqrt(63)
-
-    if "Cumulative Return" in quarterly_historical_data:
-        if start:
-            start = pd.Period(start).asfreq("Q")
-
-            if start < quarterly_historical_data.index[0]:
-                start = quarterly_historical_data.index[0]
-        if end:
-            end = pd.Period(end).asfreq("Q")
-
-            if end > quarterly_historical_data.index[-1]:
-                end = quarterly_historical_data.index[-1]
-
-        adjusted_return = quarterly_historical_data.loc[start:end, "Return"].copy()  # type: ignore
-        adjusted_return.iloc[0] = 0
-
-        quarterly_historical_data["Cumulative Return"] = (1 + adjusted_return).cumprod()
-        quarterly_historical_data["Cumulative Return"] = quarterly_historical_data[
-            "Cumulative Return"
-        ].fillna(1)
-
-    return quarterly_historical_data.fillna(0)
+    return period_historical_data.fillna(0)

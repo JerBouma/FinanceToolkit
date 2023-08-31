@@ -113,7 +113,7 @@ def get_bollinger_bands(
     lower_band = rolling_mean - (num_std_dev * rolling_std)
 
     return pd.concat(
-        [upper_band, rolling_mean, lower_band],
+        [upper_band, rolling_mean, lower_band, prices],
         axis=1,
-        keys=["Upper Band", "Middle Band", "Lower Band"],
+        keys=["Upper Band", "Middle Band", "Lower Band", "Close"],
     )

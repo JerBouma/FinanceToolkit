@@ -146,10 +146,13 @@ def get_historical_data(
             historical_data_dict[ticker].loc[start:end, "Return"].std()  # type: ignore
         )
 
-        if risk_free_rate.empty:
+        if not risk_free_rate.empty:
+            risk_free_rate_subset = risk_free_rate[
+                risk_free_rate.index.isin(historical_data_dict[ticker].index)
+            ]
             historical_data_dict[ticker]["Excess Return"] = historical_data_dict[
                 ticker
-            ]["Return"].sub(risk_free_rate, axis=0)
+            ]["Return"].sub(risk_free_rate_subset)
 
             historical_data_dict[ticker]["Excess Volatility"] = (
                 historical_data_dict[ticker].loc[start:end, "Excess Return"].std()  # type: ignore
@@ -223,21 +226,23 @@ def get_treasury_rates(
     }
 
     end_date = (
-        datetime.strptime(end, "%Y-%m-%d") if end is not None else datetime.today()
+        datetime.strptime(end, "%Y-%m-%d")
+        if end is not None
+        else datetime.today() + timedelta(days=1 * 365)
     )
 
     if start is not None:
-        start_date = datetime.strptime(start, "%Y-%m-%d")
+        start_date = datetime.strptime(start, "%Y-%m-%d") - timedelta(days=1 * 365)
 
         if start_date > end_date:
             raise ValueError(
                 f"Start date ({start_date}) must be before end date ({end_date}))"
             )
     else:
-        start_date = datetime.now() - timedelta(days=100)
+        start_date = datetime.now() - timedelta(days=10 * 365)
 
         if start_date > end_date:
-            start_date = end_date - timedelta(days=100)
+            start_date = end_date - timedelta(days=10 * 365)
 
     if (end_date - start_date).days > TREASURY_LIMIT:
         # Given that the limit is set to 90 days, the requests need to be split to

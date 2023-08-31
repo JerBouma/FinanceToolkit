@@ -30,6 +30,7 @@ from financetoolkit.base.models.normalization_model import (
 )
 from financetoolkit.base.models_controller import Models
 from financetoolkit.base.ratios_controller import Ratios
+from financetoolkit.base.risk_controller import Risk
 from financetoolkit.base.technicals_controller import Technicals
 
 # pylint: disable=too-many-instance-attributes,too-many-lines,line-too-long,too-many-locals,too-many-function-args
@@ -547,6 +548,71 @@ class Toolkit:
                 self.get_historical_data(period="yearly")
 
         return Technicals(
+            self._tickers,
+            self._daily_historical_data,
+            self._weekly_historical_data,
+            self._monthly_historical_data,
+            self._quarterly_historical_data,
+            self._yearly_historical_data,
+            self._rounding,
+        )
+
+    @property
+    def risk(self) -> Risk:
+        """
+        This gives access to the Risk module. The Risk Module is meant to calculate metrics related to risk such as
+        Sharpe Ratio, Sortino Ratio, Value at Risk (VaR), Conditional Value at Risk (cVaR), EMWA/GARCH models and
+        similar models.
+
+        See the following link for more information: https://www.jeroenbouma.com/projects/financetoolkit/docs/risk
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+
+        toolkit.risk.get_sharpe_ratio(period='yearly')
+        ```
+
+        Which returns:
+
+        | Date   |    AAPL |    TSLA |
+        |:-------|--------:|--------:|
+        | 2012   |  0      |  0      |
+        | 2013   |  0.1754 |  4.96   |
+        | 2014   |  1.7515 |  0.9481 |
+        | 2015   | -0.1958 |  0.1454 |
+        | 2016   |  0.4177 | -0.3437 |
+        | 2017   |  2.6368 |  1.2225 |
+        | 2018   | -0.2786 |  0.0718 |
+        | 2019   |  3.2243 |  0.4707 |
+        | 2020   |  1.729  |  8.3319 |
+        | 2021   |  1.3179 |  0.8797 |
+        | 2022   | -0.8026 | -1.0046 |
+        | 2023   |  1.8549 |  1.8238 |
+        """
+        if not self._start_date:
+            self._start_date = (datetime.today() - timedelta(days=365 * 10)).strftime(
+                "%Y-%m-%d"
+            )
+        if not self._end_date:
+            self._end_date = datetime.today().strftime("%Y-%m-%d")
+
+        if self._historical.empty:
+            if self._daily_historical_data.empty:
+                self.get_historical_data(period="daily")
+            if self._weekly_historical_data.empty:
+                self.get_historical_data(period="weekly")
+            if self._monthly_historical_data.empty:
+                self.get_historical_data(period="monthly")
+            if self._quarterly_historical_data.empty:
+                self.get_historical_data(period="quarterly")
+            if self._yearly_historical_data.empty:
+                self.get_historical_data(period="yearly")
+
+        return Risk(
             self._tickers,
             self._daily_historical_data,
             self._weekly_historical_data,
@@ -1090,7 +1156,7 @@ class Toolkit:
         return_column: str = "Adj Close",
         fill_nan: bool = True,
         overwrite: bool = False,
-        excess_return: bool = False,
+        excess_return: bool = True,
     ):
         """
         Returns historical data for the specified tickers. This contains the following columns:
@@ -1104,9 +1170,9 @@ class Toolkit:
             - Return: The return for the period.
             - Volatility: The volatility for the period.
             - Excess Return: The excess return for the period. This is defined as the return minus
-            the 10-year treasury rate.
+            the a predefined risk free rate. Only calculated when excess_return is True.
             - Excess Volatility: The excess volatility for the period. This is defined as the volatility
-            of the excess return.
+            of the excess return. Only calculated when excess_return is True.
             - Cumulative Return: The cumulative return for the period.
 
         Args:
@@ -1118,6 +1184,9 @@ class Toolkit:
             fill_nan (bool): Defines whether to forward fill NaN values. This defaults
             to True to prevent holes in the dataset. This is especially relevant for
             technical indicators.
+            overwrite (bool): Defines whether to overwrite the existing data.
+            excess_return (bool): Defines whether to calculate the excess return and
+            excess volatility.
 
         Raises:
             ValueError: If an invalid value is specified for period.
@@ -1137,22 +1206,29 @@ class Toolkit:
 
         Which returns:
 
-        | Date   |   Adj Close |    Close |   Cumulative Return |   Dividends |     High |      Low |     Open |      Return |      Volume |
-        |:-------|------------:|---------:|--------------------:|------------:|---------:|---------:|---------:|------------:|------------:|
-        | 2013   |     17.5889 |  20.0364 |          nan        |    0.108929 |  20.0457 |  19.7857 |  19.7918 | nan         | 2.23084e+08 |
-        | 2014   |     24.734  |  27.595  |            0.406225 |    0.461429 |  28.2825 |  27.5525 |  28.205  |   0.406225  | 1.65614e+08 |
-        | 2015   |     23.9886 |  26.315  |            0.363845 |    0.5075   |  26.7575 |  26.205  |  26.7525 |  -0.0301371 | 1.63649e+08 |
-        | 2016   |     26.9824 |  28.955  |            0.534059 |    0.5575   |  29.3    |  28.8575 |  29.1625 |   0.124804  | 1.22345e+08 |
-        | 2017   |     40.0593 |  42.3075 |            1.27753  |    0.615    |  42.6475 |  42.305  |  42.63   |   0.484643  | 1.04e+08    |
-        | 2018   |     37.9    |  39.435  |            1.15477  |    0.705    |  39.84   |  39.12   |  39.6325 |  -0.0539018 | 1.40014e+08 |
-        | 2019   |     71.615  |  73.4125 |            3.0716   |    0.76     |  73.42   |  72.38   |  72.4825 |   0.889578  | 1.00806e+08 |
-        | 2020   |    130.559  | 132.69   |            6.4228   |    0.8075   | 134.74   | 131.72   | 134.08   |   0.823067  | 9.91166e+07 |
-        | 2021   |    175.795  | 177.57   |            8.99467  |    0.865    | 179.23   | 177.26   | 178.09   |   0.346482  | 6.40623e+07 |
-        | 2022   |    129.378  | 129.93   |            6.35566  |    0.91     | 129.95   | 127.43   | 128.41   |  -0.264042  | 7.70342e+07 |
-        | 2023   |    174.49   | 174.49   |            8.92046  |    0.71     | 175.1    | 171.96   | 172.3    |   0.348684  | 6.11142e+07 |
+        | Date   |     Open |     High |      Low |    Close |   Adj Close |      Volume |   Dividends |     Return |   Volatility |   Excess Return |   Excess Volatility |   Cumulative Return |
+        |:-------|---------:|---------:|---------:|---------:|------------:|------------:|------------:|-----------:|-------------:|----------------:|--------------------:|--------------------:|
+        | 2013   |  19.7918 |  20.0457 |  19.7857 |  20.0364 |     17.5889 | 2.23084e+08 |    0.108929 |  0         |     0.240641 |       0         |            0.244248 |             1       |
+        | 2014   |  28.205  |  28.2825 |  27.5525 |  27.595  |     24.734  | 1.65614e+08 |    0.461429 |  0.406225  |     0.216574 |       0.384525  |            0.219536 |             1.40623 |
+        | 2015   |  26.7525 |  26.7575 |  26.205  |  26.315  |     23.9886 | 1.63649e+08 |    0.5075   | -0.0301373 |     0.267373 |      -0.0528273 |            0.269845 |             1.36385 |
+        | 2016   |  29.1625 |  29.3    |  28.8575 |  28.955  |     26.9824 | 1.22345e+08 |    0.5575   |  0.124804  |     0.233383 |       0.100344  |            0.240215 |             1.53406 |
+        | 2017   |  42.63   |  42.6475 |  42.305  |  42.3075 |     40.0593 | 1.04e+08    |    0.615    |  0.484644  |     0.176058 |       0.460594  |            0.17468  |             2.27753 |
+        | 2018   |  39.6325 |  39.84   |  39.12   |  39.435  |     37.9    | 1.40014e+08 |    0.705    | -0.0539019 |     0.287421 |      -0.0807619 |            0.289905 |             2.15477 |
+        | 2019   |  72.4825 |  73.42   |  72.38   |  73.4125 |     71.615  | 1.00806e+08 |    0.76     |  0.889578  |     0.261384 |       0.870388  |            0.269945 |             4.0716  |
+        | 2020   | 134.08   | 134.74   | 131.72   | 132.69   |    130.559  | 9.91166e+07 |    0.8075   |  0.823067  |     0.466497 |       0.813897  |            0.470743 |             7.4228  |
+        | 2021   | 178.09   | 179.23   | 177.26   | 177.57   |    175.795  | 6.40623e+07 |    0.865    |  0.346482  |     0.251019 |       0.331362  |            0.251429 |             9.99467 |
+        | 2022   | 128.41   | 129.95   | 127.43   | 129.93   |    129.378  | 7.70342e+07 |    0.91     | -0.264042  |     0.356964 |      -0.302832  |            0.377293 |             7.35566 |
+        | 2023   | 187.84   | 188.51   | 187.68   | 188.108  |    188.108  | 4.72009e+06 |    0.71     |  0.453941  |     0.213359 |       0.412901  |            0.22327  |            10.6947  |
         """
         if (self._daily_risk_free_rate.empty or overwrite) and excess_return:
-            self.get_risk_free_rate(period="daily")
+            if self._risk_free_rate in ["5y", "10y", "30y"]:
+                self.get_risk_free_rate(
+                    period="daily", source="YahooFinance", fill_nan=fill_nan
+                )
+            else:
+                self.get_risk_free_rate(
+                    period="daily", source="FinancialModelingPrep", fill_nan=fill_nan
+                )
 
         if self._daily_historical_data.empty or overwrite:
             self._daily_historical_data, self._invalid_tickers = _get_historical_data(
@@ -1288,21 +1364,21 @@ class Toolkit:
         overwrite: bool = False,
     ):
         """
-        Retrieve the daily treasury rates for a maximum of 3 months. This gives the
-        ability to construct yield curves for any recent date given that several months
-        and years are included.
+        Retrieve daily, weekly, monthly, quarterly or yearly treasury data. This can be from FinancialModelingPrep
+        or from YahooFinance. FinancialModelingPrep is by far a more extensive dataset containing daily data from
+        1 month to 30 years. YahooFinance only contains daily data for 5, 10 and 30 years but is a free alternative.
 
         Args:
+            period (str): The interval at which the treasury data should be returned - daily, weekly, monthly, quarterly, or yearly.
             source (str): Defines the source of the data. Can be either "FinancialModelingPrep" or "YahooFinance".
             Defaults to "FinancialModelingPrep".
-            limit (int): Defines the maximum years or quarters to obtain.
+            fill_nan (bool): Defines whether to forward fill NaN values. This defaults
+            to True to prevent holes in the dataset. This is especially relevant for
+            technical indicators.
             overwrite (bool): Defines whether to overwrite the existing data.
-            rounding (int): Defines the number of decimal places to round the data to.
-            growth (bool): Defines whether to return the growth of the data.
-            lag (int | str): Defines the number of periods to lag the growth data by.
 
         Returns:
-            pd.DataFrame: A pandas DataFrame with the retrieved balance sheet statement data.
+            pd.DataFrame: A DataFrame containing the treasury data.
 
         As an example:
 
@@ -1318,15 +1394,21 @@ class Toolkit:
 
         | date       |   1 Month |   2 Month |   3 Month |   6 Month |   1 Year |   2 Year |   3 Year |   5 Year |   7 Year |   10 Year |   20 Year |   30 Year |
         |:-----------|----------:|----------:|----------:|----------:|---------:|---------:|---------:|---------:|---------:|----------:|----------:|----------:|
-        | 2023-08-10 |      5.55 |      5.52 |      5.54 |      5.52 |     5.33 |     4.82 |     4.47 |     4.21 |     4.17 |      4.09 |      4.41 |      4.24 |
-        | 2023-08-11 |      5.54 |      5.51 |      5.54 |      5.52 |     5.36 |     4.89 |     4.56 |     4.31 |     4.26 |      4.16 |      4.45 |      4.27 |
-        | 2023-08-14 |      5.55 |      5.52 |      5.56 |      5.56 |     5.37 |     4.96 |     4.64 |     4.36 |     4.29 |      4.19 |      4.46 |      4.29 |
-        | 2023-08-15 |      5.53 |      5.52 |      5.56 |      5.55 |     5.36 |     4.92 |     4.64 |     4.36 |     4.31 |      4.21 |      4.49 |      4.32 |
-        | 2023-08-16 |      5.52 |      5.53 |      5.56 |      5.54 |     5.37 |     4.97 |     4.68 |     4.42 |     4.37 |      4.28 |      4.55 |      4.38 |
-        | 2023-08-17 |      5.55 |      5.52 |      5.56 |      5.53 |     5.36 |     4.94 |     4.67 |     4.42 |     4.38 |      4.3  |      4.58 |      4.41 |
-        | 2023-08-18 |      5.53 |      5.52 |      5.55 |      5.52 |     5.35 |     4.92 |     4.63 |     4.38 |     4.34 |      4.26 |      4.55 |      4.38 |
-        | 2023-08-21 |      5.55 |      5.53 |      5.57 |      5.58 |     5.37 |     4.97 |     4.7  |     4.46 |     4.42 |      4.34 |      4.64 |      4.45 |
-
+        | 2023-08-10 |    0.0555 |    0.0552 |    0.0554 |    0.0552 |   0.0533 |   0.0482 |   0.0447 |   0.0421 |   0.0417 |    0.0409 |    0.0441 |    0.0424 |
+        | 2023-08-11 |    0.0554 |    0.0551 |    0.0554 |    0.0552 |   0.0536 |   0.0489 |   0.0456 |   0.0431 |   0.0426 |    0.0416 |    0.0445 |    0.0427 |
+        | 2023-08-14 |    0.0555 |    0.0552 |    0.0556 |    0.0556 |   0.0537 |   0.0496 |   0.0464 |   0.0436 |   0.0429 |    0.0419 |    0.0446 |    0.0429 |
+        | 2023-08-15 |    0.0553 |    0.0552 |    0.0556 |    0.0555 |   0.0536 |   0.0492 |   0.0464 |   0.0436 |   0.0431 |    0.0421 |    0.0449 |    0.0432 |
+        | 2023-08-16 |    0.0552 |    0.0553 |    0.0556 |    0.0554 |   0.0537 |   0.0497 |   0.0468 |   0.0442 |   0.0437 |    0.0428 |    0.0455 |    0.0438 |
+        | 2023-08-17 |    0.0555 |    0.0552 |    0.0556 |    0.0553 |   0.0536 |   0.0494 |   0.0467 |   0.0442 |   0.0438 |    0.043  |    0.0458 |    0.0441 |
+        | 2023-08-18 |    0.0553 |    0.0552 |    0.0555 |    0.0552 |   0.0535 |   0.0492 |   0.0463 |   0.0438 |   0.0434 |    0.0426 |    0.0455 |    0.0438 |
+        | 2023-08-21 |    0.0555 |    0.0553 |    0.0557 |    0.0558 |   0.0537 |   0.0497 |   0.047  |   0.0446 |   0.0442 |    0.0434 |    0.0464 |    0.0445 |
+        | 2023-08-22 |    0.0554 |    0.0553 |    0.0557 |    0.0557 |   0.0539 |   0.0502 |   0.0475 |   0.0449 |   0.0444 |    0.0434 |    0.0461 |    0.0442 |
+        | 2023-08-23 |    0.0554 |    0.0553 |    0.0557 |    0.0555 |   0.0535 |   0.0495 |   0.0464 |   0.0436 |   0.043  |    0.0419 |    0.0446 |    0.0427 |
+        | 2023-08-24 |    0.0555 |    0.0553 |    0.0558 |    0.0559 |   0.0539 |   0.0498 |   0.0469 |   0.0439 |   0.0434 |    0.0423 |    0.0449 |    0.043  |
+        | 2023-08-25 |    0.0556 |    0.0553 |    0.0561 |    0.0561 |   0.0544 |   0.0503 |   0.0472 |   0.0444 |   0.0437 |    0.0425 |    0.045  |    0.043  |
+        | 2023-08-28 |    0.0556 |    0.0553 |    0.0558 |    0.0556 |   0.0544 |   0.0498 |   0.0469 |   0.0438 |   0.0432 |    0.042  |    0.0448 |    0.0429 |
+        | 2023-08-29 |    0.0554 |    0.0553 |    0.0556 |    0.0552 |   0.0537 |   0.0487 |   0.0456 |   0.0426 |   0.0421 |    0.0412 |    0.0442 |    0.0423 |
+        | 2023-08-30 |    0.0555 |    0.0553 |    0.0556 |    0.0551 |   0.0539 |   0.049  |   0.0457 |   0.0427 |   0.0422 |    0.0412 |    0.0442 |    0.0423 |
         """
         if source == "FinancialModelingPrep":
             if not self._api_key:
@@ -1414,47 +1496,62 @@ class Toolkit:
         source: str = "FinancialModelingPrep",
         fill_nan: bool = True,
         overwrite: bool = False,
-    ):
+    ) -> pd.Series:
         """
-        Retrieve the daily treasury rates for a maximum of 3 months. This gives the
-        ability to construct yield curves for any recent date given that several months
-        and years are included.
+        Based on the treasury rates and the risk free parameter as defined within the Toolkit initialization,
+        obtain the risk free rate for the specified period. This can be daily, weekly, monthly, quarterly or yearly.
+
+        FinancialModelingPrep tends to be slower given that it requires more requests. If you are looking for speed,
+        select YahooFinance as source. Note that YahooFinance only contains daily data for 5, 10 and 30 years.
 
         Args:
+            period (str): The interval at which the treasury data should be returned - daily, weekly, monthly, quarterly, or yearly.
             source (str): Defines the source of the data. Can be either "FinancialModelingPrep" or "YahooFinance".
             Defaults to "FinancialModelingPrep".
-            limit (int): Defines the maximum years or quarters to obtain.
-            overwrite (bool): Defines whether to overwrite the existing data.
-            rounding (int): Defines the number of decimal places to round the data to.
-            growth (bool): Defines whether to return the growth of the data.
-            lag (int | str): Defines the number of periods to lag the growth data by.
+            fill_nan (bool): Defines whether to forward fill NaN values. This defaults
+            to True to prevent holes in the dataset. This is especially relevant for
 
         Returns:
-            pd.DataFrame: A pandas DataFrame with the retrieved balance sheet statement data.
+            pd.Series: A Series containing the risk free rate.
 
         As an example:
 
         ```python
         from financetoolkit import Toolkit
 
-        companies = Toolkit(["AAPL", "MSFT"], api_key=FMP_KEY, start_date="2023-08-10")
+        companies = Toolkit(["AAPL", "MSFT"], start_date="2000-08-10")
 
-        companies.get_treasury_data()
+        companies.get_risk_free_rate(period="yearly", source='YahooFinance')
         ```
 
         Which returns:
 
-        | date       |   1 Month |   2 Month |   3 Month |   6 Month |   1 Year |   2 Year |   3 Year |   5 Year |   7 Year |   10 Year |   20 Year |   30 Year |
-        |:-----------|----------:|----------:|----------:|----------:|---------:|---------:|---------:|---------:|---------:|----------:|----------:|----------:|
-        | 2023-08-10 |      5.55 |      5.52 |      5.54 |      5.52 |     5.33 |     4.82 |     4.47 |     4.21 |     4.17 |      4.09 |      4.41 |      4.24 |
-        | 2023-08-11 |      5.54 |      5.51 |      5.54 |      5.52 |     5.36 |     4.89 |     4.56 |     4.31 |     4.26 |      4.16 |      4.45 |      4.27 |
-        | 2023-08-14 |      5.55 |      5.52 |      5.56 |      5.56 |     5.37 |     4.96 |     4.64 |     4.36 |     4.29 |      4.19 |      4.46 |      4.29 |
-        | 2023-08-15 |      5.53 |      5.52 |      5.56 |      5.55 |     5.36 |     4.92 |     4.64 |     4.36 |     4.31 |      4.21 |      4.49 |      4.32 |
-        | 2023-08-16 |      5.52 |      5.53 |      5.56 |      5.54 |     5.37 |     4.97 |     4.68 |     4.42 |     4.37 |      4.28 |      4.55 |      4.38 |
-        | 2023-08-17 |      5.55 |      5.52 |      5.56 |      5.53 |     5.36 |     4.94 |     4.67 |     4.42 |     4.38 |      4.3  |      4.58 |      4.41 |
-        | 2023-08-18 |      5.53 |      5.52 |      5.55 |      5.52 |     5.35 |     4.92 |     4.63 |     4.38 |     4.34 |      4.26 |      4.55 |      4.38 |
-        | 2023-08-21 |      5.55 |      5.53 |      5.57 |      5.58 |     5.37 |     4.97 |     4.7  |     4.46 |     4.42 |      4.34 |      4.64 |      4.45 |
-
+        | Date   |   10 Year |
+        |:-------|----------:|
+        | 2000   |   0.0511  |
+        | 2001   |   0.05032 |
+        | 2002   |   0.03818 |
+        | 2003   |   0.04257 |
+        | 2004   |   0.04216 |
+        | 2005   |   0.04395 |
+        | 2006   |   0.0471  |
+        | 2007   |   0.04035 |
+        | 2008   |   0.02244 |
+        | 2009   |   0.03843 |
+        | 2010   |   0.03305 |
+        | 2011   |   0.01871 |
+        | 2012   |   0.01756 |
+        | 2013   |   0.03026 |
+        | 2014   |   0.0217  |
+        | 2015   |   0.02269 |
+        | 2016   |   0.02446 |
+        | 2017   |   0.02405 |
+        | 2018   |   0.02686 |
+        | 2019   |   0.01919 |
+        | 2020   |   0.00917 |
+        | 2021   |   0.01512 |
+        | 2022   |   0.03879 |
+        | 2023   |   0.04102 |
         """
         naming = {
             "1m": "1 Month",
@@ -1488,28 +1585,36 @@ class Toolkit:
             return self._daily_risk_free_rate.loc[self._start_date : self._end_date]  # type: ignore
         if period == "weekly":
             if self._weekly_treasury_data.empty or overwrite:
-                self.get_treasury_data(period="weekly")
+                self.get_treasury_data(
+                    period=period, source=source, fill_nan=fill_nan, overwrite=overwrite
+                )
 
             self._weekly_risk_free_rate = self._weekly_treasury_data[column_name]
 
             return self._weekly_risk_free_rate.loc[self._start_date : self._end_date]  # type: ignore
         if period == "monthly":
             if self._monthly_treasury_data.empty or overwrite:
-                self.get_treasury_data(period="monthly")
+                self.get_treasury_data(
+                    period=period, source=source, fill_nan=fill_nan, overwrite=overwrite
+                )
 
             self._monthly_risk_free_rate = self._monthly_treasury_data[column_name]
 
             return self._monthly_risk_free_rate.loc[self._start_date : self._end_date]  # type: ignore
         if period == "quarterly":
             if self._quarterly_treasury_data.empty or overwrite:
-                self.get_treasury_data(period="quarterly")
+                self.get_treasury_data(
+                    period=period, source=source, fill_nan=fill_nan, overwrite=overwrite
+                )
 
             self._quarterly_risk_free_rate = self._quarterly_treasury_data[column_name]
 
             return self._quarterly_risk_free_rate.loc[self._start_date : self._end_date]  # type: ignore
         if period == "yearly":
             if self._yearly_treasury_data.empty or overwrite:
-                self.get_treasury_data(period="yearly")
+                self.get_treasury_data(
+                    period=period, source=source, fill_nan=fill_nan, overwrite=overwrite
+                )
 
             self._yearly_risk_free_rate = self._yearly_treasury_data[column_name]
 

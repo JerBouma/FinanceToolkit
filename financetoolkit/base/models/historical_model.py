@@ -27,7 +27,7 @@ def get_historical_data(
     end: str | None = None,
     interval: str = "1d",
     return_column: str = "Adj Close",
-    risk_free_rate: pd.Series = pd.Series(),
+    risk_free_rate: pd.DataFrame = pd.DataFrame(),
     progress_bar: bool = True,
     fill_nan: bool = True,
     divide_ohlc_by: int | float | None = None,
@@ -45,6 +45,12 @@ def get_historical_data(
             in 'YYYY-MM-DD' format. Defaults to None.
         interval (str, optional): A string representing the interval to retrieve data for.
         return_column (str, optional): A string representing the column to use for return calculations.
+        risk_free_rate (pd.Series, optional): A pandas Series object containing the risk free rate data.
+        This is used to calculate the excess return and excess volatility. Defaults to pd.Series().
+        progress_bar (bool, optional): A boolean representing whether to show a progress bar or not.
+        fill_nan (bool, optional): A boolean representing whether to fill NaN values with the previous value.
+        divide_ohlc_by (int or float, optional): A number to divide the OHLC data by. Defaults to None.
+        rounding (int, optional): The number of decimal places to round the data to. Defaults to None.
 
     Raises:
         ValueError: If the start date is after the end date.
@@ -128,6 +134,13 @@ def get_historical_data(
             print(f"The given start and end date result in no data found for {ticker}")
             invalid_tickers.append(ticker)
             continue
+
+        historical_data_dict[ticker].index = pd.to_datetime(
+            historical_data_dict[ticker].index
+        )
+        historical_data_dict[ticker].index = historical_data_dict[
+            ticker
+        ].index.to_period(freq="D")
 
         if divide_ohlc_by:
             # Set divide by zero and invalid value warnings to ignore as it is fine that
@@ -359,8 +372,8 @@ def convert_daily_to_other_period(
     volatility_window = volatility_window_translation[period]
 
     daily_historical_data.index.name = "Date"
+    dates = daily_historical_data.index.asfreq(period_str)
     daily_historical_data = daily_historical_data.reset_index()
-    dates = pd.to_datetime(daily_historical_data.Date).dt.to_period(period_str)
     period_historical_data = daily_historical_data.groupby(dates).transform("last")
 
     if "Dividends" in period_historical_data:

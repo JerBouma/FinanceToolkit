@@ -28,6 +28,7 @@ from financetoolkit.base.models.normalization_model import (
     read_normalization_file as _read_normalization_file,
 )
 from financetoolkit.base.models_controller import Models
+from financetoolkit.base.performance_controller import Performance
 from financetoolkit.base.ratios_controller import Ratios
 from financetoolkit.base.risk_controller import Risk
 from financetoolkit.base.technicals_controller import Technicals
@@ -539,6 +540,71 @@ class Toolkit:
                 self.get_historical_data(period="yearly")
 
         return Technicals(
+            self._tickers,
+            self._daily_historical_data,
+            self._weekly_historical_data,
+            self._monthly_historical_data,
+            self._quarterly_historical_data,
+            self._yearly_historical_data,
+            self._rounding,
+        )
+
+    @property
+    def performance(self) -> Performance:
+        """
+        This gives access to the Risk module. The Risk Module is meant to calculate metrics related to risk such as
+        Sharpe Ratio, Sortino Ratio, Value at Risk (VaR), Conditional Value at Risk (cVaR), EMWA/GARCH models and
+        similar models.
+
+        See the following link for more information: https://www.jeroenbouma.com/projects/financetoolkit/docs/risk
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+
+        toolkit.risk.get_sharpe_ratio(period='yearly')
+        ```
+
+        Which returns:
+
+        | Date   |    AAPL |    TSLA |
+        |:-------|--------:|--------:|
+        | 2012   |  0      |  0      |
+        | 2013   |  0.1754 |  4.96   |
+        | 2014   |  1.7515 |  0.9481 |
+        | 2015   | -0.1958 |  0.1454 |
+        | 2016   |  0.4177 | -0.3437 |
+        | 2017   |  2.6368 |  1.2225 |
+        | 2018   | -0.2786 |  0.0718 |
+        | 2019   |  3.2243 |  0.4707 |
+        | 2020   |  1.729  |  8.3319 |
+        | 2021   |  1.3179 |  0.8797 |
+        | 2022   | -0.8026 | -1.0046 |
+        | 2023   |  1.8549 |  1.8238 |
+        """
+        if not self._start_date:
+            self._start_date = (datetime.today() - timedelta(days=365 * 10)).strftime(
+                "%Y-%m-%d"
+            )
+        if not self._end_date:
+            self._end_date = datetime.today().strftime("%Y-%m-%d")
+
+        if self._historical.empty:
+            if self._daily_historical_data.empty:
+                self.get_historical_data(period="daily")
+            if self._weekly_historical_data.empty:
+                self.get_historical_data(period="weekly")
+            if self._monthly_historical_data.empty:
+                self.get_historical_data(period="monthly")
+            if self._quarterly_historical_data.empty:
+                self.get_historical_data(period="quarterly")
+            if self._yearly_historical_data.empty:
+                self.get_historical_data(period="yearly")
+
+        return Performance(
             self._tickers,
             self._daily_historical_data,
             self._weekly_historical_data,
@@ -1147,7 +1213,6 @@ class Toolkit:
         return_column: str = "Adj Close",
         fill_nan: bool = True,
         overwrite: bool = False,
-        excess_return: bool = True,
     ):
         """
         Returns historical data for the specified tickers. This contains the following columns:
@@ -1211,7 +1276,7 @@ class Toolkit:
         | 2022   | 128.41   | 129.95   | 127.43   | 129.93   |    129.378  | 7.70342e+07 |    0.91     | -0.264042  |     0.356964 |      -0.302832  |            0.377293 |             7.35566 |
         | 2023   | 187.84   | 188.51   | 187.68   | 188.108  |    188.108  | 4.72009e+06 |    0.71     |  0.453941  |     0.213359 |       0.412901  |            0.22327  |            10.6947  |
         """
-        if (self._daily_risk_free_rate.empty or overwrite) and excess_return:
+        if self._daily_risk_free_rate.empty or overwrite:
             self.get_treasury_data()
 
         if self._daily_historical_data.empty or overwrite:
@@ -1221,10 +1286,7 @@ class Toolkit:
                 self._end_date,
                 interval="1d",
                 return_column=return_column,
-                risk_free_rate=self._daily_risk_free_rate
-                if excess_return
-                else pd.Series(),
-                progress_bar=self._progress_bar,
+                risk_free_rate=self._daily_risk_free_rate,
                 fill_nan=fill_nan,
             )
 
@@ -1247,7 +1309,7 @@ class Toolkit:
             return historical_data
 
         if period == "weekly":
-            if (self._weekly_risk_free_rate.empty or overwrite) and excess_return:
+            if self._weekly_risk_free_rate.empty or overwrite:
                 self.get_treasury_data(period="weekly")
 
             self._weekly_historical_data = _convert_daily_to_other_period(
@@ -1255,9 +1317,7 @@ class Toolkit:
                 daily_historical_data=self._daily_historical_data,
                 start=self._start_date,
                 end=self._end_date,
-                risk_free_rate=self._weekly_risk_free_rate
-                if excess_return
-                else pd.Series(),
+                risk_free_rate=self._weekly_risk_free_rate,
             )
 
             historical_data = self._weekly_historical_data.loc[
@@ -1271,7 +1331,7 @@ class Toolkit:
             return historical_data
 
         if period == "monthly":
-            if (self._monthly_risk_free_rate.empty or overwrite) and excess_return:
+            if self._monthly_risk_free_rate.empty or overwrite:
                 self.get_treasury_data(period="monthly")
 
             self._monthly_historical_data = _convert_daily_to_other_period(
@@ -1293,7 +1353,7 @@ class Toolkit:
             return historical_data
 
         if period == "quarterly":
-            if (self._quarterly_risk_free_rate.empty or overwrite) and excess_return:
+            if self._quarterly_risk_free_rate.empty or overwrite:
                 self.get_treasury_data(period="quarterly")
 
             self._quarterly_historical_data = _convert_daily_to_other_period(
@@ -1315,7 +1375,7 @@ class Toolkit:
             return historical_data
 
         if period == "yearly":
-            if (self._yearly_risk_free_rate.empty or overwrite) and excess_return:
+            if self._yearly_risk_free_rate.empty or overwrite:
                 self.get_treasury_data(period="yearly")
 
             self._yearly_historical_data = _convert_daily_to_other_period(

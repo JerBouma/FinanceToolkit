@@ -4,7 +4,7 @@ __docformat__ = "google"
 import pandas as pd
 
 from financetoolkit.base.helpers import calculate_growth, handle_errors
-from financetoolkit.risk import risk_return
+from financetoolkit.risk import risk
 
 # pylint: disable=too-many-instance-attributes,too-few-public-methods
 
@@ -44,67 +44,109 @@ class Risk:
         self._yearly_historical = yearly_historical
         self._rounding: int | None = rounding
 
+        # Return Calculations
+        self._daily_returns = self._daily_historical["Return"]
+        self._weekly_returns = (
+            self._daily_historical["Return"]
+            .groupby(pd.Grouper(freq="W"))
+            .apply(lambda x: x)
+        )
+        self._monthly_returns = (
+            self._daily_historical["Return"]
+            .groupby(pd.Grouper(freq="M"))
+            .apply(lambda x: x)
+        )
+        self._quarterly_returns = (
+            self._daily_historical["Return"]
+            .groupby(pd.Grouper(freq="Q"))
+            .apply(lambda x: x)
+        )
+        self._yearly_returns = (
+            self._daily_historical["Return"]
+            .groupby(pd.Grouper(freq="Y"))
+            .apply(lambda x: x)
+        )
+
     @handle_errors
-    def get_sharpe_ratio(
+    def get_value_at_risk(
         self,
-        period: str = "daily",
+        period: str = "quarterly",
+        alpha: float = 0.05,
         rounding: int | None = 4,
         growth: bool = False,
         lag: int | list[int] = 1,
     ):
         """
-        Calculate the Sharpe ratio, a measure of risk-adjusted return that evaluates the excess return
-        of an investment portfolio or asset per unit of risk taken.
+        Calculate the Value at Risk (VaR) of an investment portfolio or asset's returns.
 
-        The Sharpe ratio is calculated as the difference between the expected return of the asset or portfolio
-        and the risk-free rate of return, divided by the standard deviation of the asset or portfolio's excess return.
-        It quantifies the amount of return generated for each unit of risk assumed, providing insights into the
-        investment's performance relative to the risk taken.
+        Value at Risk (VaR) is a risk management metric that quantifies the maximum potential loss
+        an investment portfolio or asset may experience over a specified time horizon and confidence level.
+        It provides insights into the downside risk associated with an investment and helps investors make
+        informed decisions about risk tolerance.
+
+        The VaR is calculated as the quantile of the return distribution, representing the loss threshold
+        that is not expected to be exceeded with a given confidence level (e.g., 5% for alpha=0.05).
 
         Args:
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
-            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
-            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            period (str, optional): The data frequency for returns (daily, weekly, quarterly, or yearly).
+            Defaults to "daily".
+            alpha (float, optional): The confidence level for VaR calculation (e.g., 0.05 for 95% confidence).
+            Defaults to 0.05.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the VaR values over time. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
 
         Returns:
-            pd.DataFrame: Sharpe ratio values.
+            pd.Series: VaR values with time as the index.
 
         Notes:
-        - The method retrieves historical data and calculates the Sharpe ratio for each asset in the Toolkit instance.
-        - The risk-free rate is often represented by the return of a risk-free investment, such as a Treasury bond.
-        - If `growth` is set to True, the method calculates the growth of the ratio values using the specified `lag`.
+        - The method retrieves historical return data based on the specified `period` and calculates VaR for each
+        asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of VaR values using the specified `lag`.
 
-        As an example:
-
+        Example:
         ```python
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
 
-        sharpe_ratios = toolkit.ratios.get_sharpe_ratio()
+        var_values = toolkit.ratios.get_value_at_risk()
         ```
+
         """
         if period == "daily":
-            historical_data = self._daily_historical
+            returns = self._daily_returns
         elif period == "weekly":
-            historical_data = self._weekly_historical
+            returns = self._weekly_returns
+        elif period == "monthly":
+            returns = self._monthly_returns
         elif period == "quarterly":
-            historical_data = self._quarterly_historical
+            returns = self._quarterly_returns
         elif period == "yearly":
-            historical_data = self._yearly_historical
+            returns = self._yearly_returns
         else:
-            raise ValueError("Period must be daily, weekly, quarterly, or yearly.")
+            raise ValueError(
+                "Period must be daily, monthly, weekly, quarterly, or yearly."
+            )
 
-        excess_return = historical_data["Excess Return"]  # type: ignore
-        excess_volatility = historical_data["Excess Volatility"]  # type: ignore
+        if returns.index.nlevels > 1:
+            periods = returns.index.get_level_values(0).unique()
+            value_at_risk = pd.DataFrame()
 
-        sharpe_ratio = risk_return.get_sharpe_ratio(excess_return, excess_volatility)
+            for sub_period in periods:
+                period_data = risk.get_var(returns.loc[sub_period], 0.05)
+                period_data.name = sub_period
+
+                value_at_risk = pd.concat([value_at_risk, period_data], axis=1)
+        else:
+            value_at_risk = risk.get_var(returns, alpha)
 
         if growth:
             return calculate_growth(
-                sharpe_ratio,
+                value_at_risk,
                 lag=lag,
                 rounding=rounding if rounding else self._rounding,
+                axis="index",
             )
 
-        return sharpe_ratio.round(rounding if rounding else self._rounding)
+        return value_at_risk.T.round(rounding if rounding else self._rounding)

@@ -32,7 +32,7 @@ The Finance Toolkit is complimented very well with the [Finance Database 🌎](h
     1. [Financial Ratios](#financial-ratios)
     2. [Financial Models](#financial-models)
     3. [Technical Indicators](#technical-indicators)
-3. [Contributing](#contribute)
+3. [Contributing](#contributing)
 4. [Contact](#contact)
 
 # Installation

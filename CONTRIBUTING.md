@@ -1,13 +1,6 @@
-# CONTRIBUTING
-First off all, thank you for taking the time to contribute (or at least read the Contributing Guidelines)! 🚀
-
-The goal of the Finance Toolkit is to make any type of financial calculation as transparent and efficient as possible. I want to make these type of calculations as accessible to anyone as possible and seeing how many websites exists that do the same thing (but instead you have to pay) gave me plenty of reasons to work on this.
-
-The following is a set of guidelines for contributing to the Finance Toolkit.
-
 ## Structure
 
-The Finance Toolkit follows the Model, View, Controller model except it cuts out the View part being more focussed on calculations than on visusally depciting the data given that there are plenty of providers that offer this solution already. The MC model (as found in `financetoolkit/base`) is therefore constructed as follows:
+The Finance Toolkit follows the Model, View, Controller model except it cuts out the View part being more focussed on calculations than on visusally depicting the data given that there are plenty of providers that offer this solution already. The MC model (as found in `financetoolkit/base`) is therefore constructed as follows:
 
 - **_controller** modules (such as toolkit_controller and ratios_controller) orchestrate the data flow. Through the controller, the user can set parameters (such as tickers, start and end date) that define the data that needs to be obtained. E.g. in the controller classes you will be able to find the function `get_income_statement` which collects income statements via a **_model** that takes in the parameters set by the user.
 - **_model** modules (such as fundamentals_model and historical_model) are the modules that actually obtain the data. E.g in the fundamentals_model exists a function called `get_financial_statements` which would be executed by `get_income_statement` from the controller class to obtain the financial statement, in this case the income statement, for the selected parameters. These functions will also work separately, they do not need the controller to work but the controller needs them to work.
@@ -32,7 +25,9 @@ def get_price_to_book_ratio(
     return price_per_share / book_value_per_share
 ```
 
-This applies to any metric and this is also how the MC model retrieves the correct input. The `get_price_to_book_ratio` function is called by the `ratios_controller` which is called by the `toolkit_controller`. This is the flow of the data. This separation is done so that it becomes possible to call all functions separately making the Finance Toolkit incredibly flexible for any kind of data input.
+This applies to any metric and this is also how the MC model retrieves the correct input. The `get_price_to_book_ratio` function is called by the `ratios_controller` which is called by the `toolkit_controller`. This is the flow of the data.
+
+The separation is done so that it becomes possible to call all functions separately making the Finance Toolkit incredibly flexible for any kind of data input.
 
 ## Adding New Functionality
 
@@ -74,4 +69,4 @@ After setting up Git, you can fork and pull the project in.
 5. Push to your Branch (`git push origin feature/contribution`)
 6. Open a Pull Request
 
-**Note:** feel free to reach out if you run into any issues: jer.bouma@gmail.com or https://www.linkedin.com/in/boumajeroen/ or open a GitHub Issue.
+**Note:** feel free to reach out if you run into any issues: jer.bouma@gmail.com or [LinkedIn](https://www.linkedin.com/in/boumajeroen/) or open a GitHub Issue.

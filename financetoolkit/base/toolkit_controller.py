@@ -552,11 +552,15 @@ class Toolkit:
     @property
     def performance(self) -> Performance:
         """
-        This gives access to the Risk module. The Risk Module is meant to calculate metrics related to risk such as
-        Sharpe Ratio, Sortino Ratio, Value at Risk (VaR), Conditional Value at Risk (cVaR), EMWA/GARCH models and
-        similar models.
+        This gives access to the Performance class. The performance class is meant to measure performance based on
+        for example the risk-return relationships (Sharpe and Sortino Ratio) but also measurements such
+        as Omega Ratio and Calmar Ratio.
 
-        See the following link for more information: https://www.jeroenbouma.com/projects/financetoolkit/docs/risk
+        In other words, it highlights how well as stock is performing given it's risk characeristics. This class
+        is closely related to the Risk class which highlights things such as Value at Risk (VaR) and Conditional
+        Value at Risk (cVaR).
+
+        See the following link for more information: https://www.jeroenbouma.com/projects/financetoolkit/docs/performance
 
         As an example:
 
@@ -565,7 +569,7 @@ class Toolkit:
 
         toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
 
-        toolkit.risk.get_sharpe_ratio(period='yearly')
+        toolkit.performance.get_sharpe_ratio(period='yearly')
         ```
 
         Which returns:
@@ -617,9 +621,12 @@ class Toolkit:
     @property
     def risk(self) -> Risk:
         """
-        This gives access to the Risk module. The Risk Module is meant to calculate metrics related to risk such as
-        Sharpe Ratio, Sortino Ratio, Value at Risk (VaR), Conditional Value at Risk (cVaR), EMWA/GARCH models and
-        similar models.
+        This gives access to the Risk module. The Risk Module is meant to calculate metrics related to risk such
+        as Value at Risk (VaR), Conditional Value at Risk (cVaR), EMWA/GARCH models and similar models.
+
+        It gives insights in the risk a stock composes that is not perceived as easily by looking at the data.
+        This class is closely related to the Performance class which highlights things such as Sharpe Ratio and
+        Sortino Ratio.
 
         See the following link for more information: https://www.jeroenbouma.com/projects/financetoolkit/docs/risk
 
@@ -630,7 +637,7 @@ class Toolkit:
 
         toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
 
-        toolkit.risk.get_sharpe_ratio(period='yearly')
+        toolkit.risk.get_value_at_risk(period='yearly')
         ```
 
         Which returns:
@@ -1447,28 +1454,30 @@ class Toolkit:
             "^TNX": "10 Year",
             "^TYX": "30 Year",
         }
-        daily_treasury_data, _ = _get_historical_data(
-            ["^IRX", "^FVX", "^TNX", "^TYX"],
-            self._start_date,
-            self._end_date,
-            progress_bar=False,
-            divide_ohlc_by=divide_ohlc_by,
-            rounding=rounding if rounding else self._rounding,
-        )
 
         risk_free_rate = risk_free_names[self._risk_free_rate]
 
-        daily_treasury_data = daily_treasury_data.rename(
-            treasury_names, axis=1, level=1
-        )
+        if self._daily_treasury_data.empty:
+            daily_treasury_data, _ = _get_historical_data(
+                ["^IRX", "^FVX", "^TNX", "^TYX"],
+                self._start_date,
+                self._end_date,
+                progress_bar=False,
+                divide_ohlc_by=divide_ohlc_by,
+                rounding=rounding if rounding else self._rounding,
+            )
 
-        self._daily_treasury_data = daily_treasury_data
-        self._daily_risk_free_rate = self._daily_treasury_data.xs(
-            risk_free_rate, level=1, axis=1
-        )
+            daily_treasury_data = daily_treasury_data.rename(
+                treasury_names, axis=1, level=1
+            )
 
-        if fill_nan:
-            self._daily_treasury_data = self._daily_treasury_data.ffill()
+            self._daily_treasury_data = daily_treasury_data
+            self._daily_risk_free_rate = self._daily_treasury_data.xs(
+                risk_free_rate, level=1, axis=1
+            )
+
+            if fill_nan:
+                self._daily_treasury_data = self._daily_treasury_data.ffill()
 
         if period == "daily":
             return self._daily_treasury_data.loc[self._start_date : self._end_date, :]  # type: ignore

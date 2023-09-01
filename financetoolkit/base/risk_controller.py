@@ -72,6 +72,7 @@ class Risk:
         self,
         period: str = "quarterly",
         alpha: float = 0.05,
+        within_period: bool = True,
         rounding: int | None = 4,
         growth: bool = False,
         lag: int | list[int] = 1,
@@ -92,6 +93,9 @@ class Risk:
             Defaults to "daily".
             alpha (float, optional): The confidence level for VaR calculation (e.g., 0.05 for 95% confidence).
             Defaults to 0.05.
+            within_period (bool, optional): Whether to calculate VaR within the specified period or for the entire
+            period. Thus whether to look at the VaR within a specific year (if period = 'yearly') or look at the entirety
+            of all years. Defaults to True.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the VaR values over time. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
@@ -108,22 +112,58 @@ class Risk:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+        toolkit = Toolkit(["AMZN", "TSLA"], api_key=FMP_KEY)
 
-        var_values = toolkit.ratios.get_value_at_risk()
+        toolkit.risk.get_value_at_risk()
         ```
 
+        Which returns:
+
+        |      |    AMZN |    TSLA |
+        |:-----|--------:|--------:|
+        | 2012 | -0.0244 | -0.0343 |
+        | 2013 | -0.0204 | -0.0537 |
+        | 2014 | -0.0312 | -0.0423 |
+        | 2015 | -0.0208 | -0.0422 |
+        | 2016 | -0.0288 | -0.0394 |
+        | 2017 | -0.0154 | -0.0345 |
+        | 2018 | -0.0416 | -0.0503 |
+        | 2019 | -0.0232 | -0.0492 |
+        | 2020 | -0.0369 | -0.0741 |
+        | 2021 | -0.0252 | -0.0499 |
+        | 2022 | -0.0518 | -0.0713 |
+        | 2023 | -0.0271 | -0.054  |
         """
         if period == "daily":
-            returns = self._daily_returns
+            returns = (
+                self._daily_returns
+                if within_period
+                else self._daily_historical["Return"]
+            )
         elif period == "weekly":
-            returns = self._weekly_returns
+            returns = (
+                self._weekly_returns
+                if within_period
+                else self._weekly_historical["Return"]
+            )
         elif period == "monthly":
-            returns = self._monthly_returns
+            returns = (
+                self._monthly_returns
+                if within_period
+                else self._monthly_historical["Return"]
+            )
         elif period == "quarterly":
-            returns = self._quarterly_returns
+            returns = (
+                self._quarterly_returns
+                if within_period
+                else self._quarterly_historical["Return"]
+            )
         elif period == "yearly":
-            returns = self._yearly_returns
+            returns = (
+                self._yearly_returns
+                if within_period
+                else self._yearly_historical["Return"]
+            )
         else:
             raise ValueError(
                 "Period must be daily, monthly, weekly, quarterly, or yearly."
@@ -141,6 +181,9 @@ class Risk:
         else:
             value_at_risk = risk.get_var(returns, alpha)
 
+        # Transpose the DataFrame to have time as the index
+        value_at_risk = value_at_risk.T
+
         if growth:
             return calculate_growth(
                 value_at_risk,
@@ -149,4 +192,4 @@ class Risk:
                 axis="index",
             )
 
-        return value_at_risk.T.round(rounding if rounding else self._rounding)
+        return value_at_risk.round(rounding if rounding else self._rounding)

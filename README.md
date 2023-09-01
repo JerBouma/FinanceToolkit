@@ -198,7 +198,6 @@ Get Profitability Ratios based on the inputted balance sheet, income and cash fl
 | Free Cash Flow to Operating Cash Flow Ratio |   0.8281 |  0.8488 |  0.9094 |  0.8935 |  0.9123 |
 | EBT to EBIT Ratio                           |   0.9574 |  0.9484 |  0.9589 |  0.9764 |  0.976  |
 | EBIT to Revenue                             |   0.2867 |  0.2664 |  0.2549 |  0.3058 |  0.3095 |
-| Sharpe Ratio                                |  -0.1859 |  3.2954 |  1.7484 |  1.378  | -0.6998 |
 
 ### Financial Models
 
@@ -520,6 +519,25 @@ The Models module is meant to execute well-known models such as DUPONT and the D
 - DuPont Analysis
 - Extended DuPont Analysis
 - Enterprise Value Breakdown
+
+## Performance Metrics
+
+The Performance module is meant to calculate important performance metrics such Sharpe Ratio, Sortino Ratio, Alpha and similar. The emphasis within this class is really on understanding the performance of companies regarding their risk-return relationship. This differs from Risk Metrics that looks prodominantly at the downsides and potential losses. **This class is currently in active development and therefore not yet available**. 
+
+- Sharpe Ratio
+- Sortino Ratio
+- Treynor Ratio
+- ...
+
+## Risk Metrics
+
+The Risk module is meant to calculate important risk metrics such as Value at Risk (VaR), Conditional Value at Risk (cVaR), Maximum Drawdown, Correlations, Beta, GARCH, EWMA and more. **This class is currently in active development and therefore not yet available**. 
+
+- Value at Risk (VaR)
+- Conditional Value at Risk (cVaR)
+- Maximum Drawdown (MDD)
+- ...
+
 
 ## Technical Indicators
 

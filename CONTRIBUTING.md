@@ -1,3 +1,10 @@
+# Contributing
+First off all, thank you for taking the time to contribute (or at least read the Contributing Guidelines)! 🚀
+
+The goal of the Finance Toolkit is to make any type of financial calculation as transparent and efficient as possible. I want to make these type of calculations as accessible to anyone as possible and seeing how many websites exists that do the same thing (but instead you have to pay) gave me plenty of reasons to work on this.
+
+The following is a set of guidelines for contributing to the Finance Toolkit.
+
 ## Structure
 
 The Finance Toolkit follows the Model, View, Controller model except it cuts out the View part being more focussed on calculations than on visusally depicting the data given that there are plenty of providers that offer this solution already. The MC model (as found in `financetoolkit/base`) is therefore constructed as follows:

@@ -30,6 +30,8 @@ def get_historical_data(
     risk_free_rate: pd.Series = pd.Series(),
     progress_bar: bool = True,
     fill_nan: bool = True,
+    divide_ohlc_by: int | float | None = None,
+    rounding: int | None = None,
 ):
     """
     Retrieves historical stock data for the given ticker(s) from Yahoo! Finance API for a specified period.
@@ -127,6 +129,15 @@ def get_historical_data(
             invalid_tickers.append(ticker)
             continue
 
+        if divide_ohlc_by:
+            # Set divide by zero and invalid value warnings to ignore as it is fine that
+            # dividing NaN by divide_ohlc_by results in NaN
+            np.seterr(divide="ignore", invalid="ignore")
+            # In case tickers are presented in percentages or similar
+            historical_data_dict[ticker] = historical_data_dict[ticker].div(
+                divide_ohlc_by
+            )
+
         try:
             historical_data_dict[ticker]["Dividends"] = pd.read_csv(
                 dividend_url, index_col="Date"
@@ -147,12 +158,9 @@ def get_historical_data(
         )
 
         if not risk_free_rate.empty:
-            risk_free_rate_subset = risk_free_rate[
-                risk_free_rate.index.isin(historical_data_dict[ticker].index)
-            ]
             historical_data_dict[ticker]["Excess Return"] = historical_data_dict[
                 ticker
-            ]["Return"].sub(risk_free_rate_subset)
+            ]["Return"].sub(risk_free_rate["Adj Close"])
 
             historical_data_dict[ticker]["Excess Volatility"] = (
                 historical_data_dict[ticker].loc[start:end, "Excess Return"].std()  # type: ignore
@@ -181,6 +189,9 @@ def get_historical_data(
 
         if fill_nan:
             historical_data = historical_data.ffill()
+
+        if rounding:
+            historical_data = historical_data.round(rounding)
 
         return historical_data, invalid_tickers
 
@@ -312,6 +323,7 @@ def convert_daily_to_other_period(
     start: str | None = None,
     end: str | None = None,
     risk_free_rate: pd.Series = pd.Series(),
+    rounding: int | None = None,
 ):
     """
     Converts daily historical data to yearly historical data.
@@ -378,7 +390,7 @@ def convert_daily_to_other_period(
         if not risk_free_rate.empty:
             period_historical_data["Excess Return"] = period_historical_data[
                 "Return"
-            ].sub(risk_free_rate, axis=0)
+            ].sub(risk_free_rate["Adj Close"], axis=0)
 
             period_historical_data["Excess Volatility"] = daily_historical_data[
                 "Excess Return"
@@ -405,5 +417,8 @@ def convert_daily_to_other_period(
         ].fillna(1)
 
     period_historical_data = period_historical_data.sort_index()
+
+    if rounding:
+        period_historical_data = period_historical_data.round(rounding)
 
     return period_historical_data.fillna(0)

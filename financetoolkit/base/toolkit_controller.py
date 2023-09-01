@@ -20,7 +20,6 @@ from financetoolkit.base.models.fundamentals_model import (
 from financetoolkit.base.models.historical_model import (
     convert_daily_to_other_period as _convert_daily_to_other_period,
     get_historical_data as _get_historical_data,
-    get_treasury_rates as _get_treasury_rates,
 )
 from financetoolkit.base.models.normalization_model import (
     convert_date_label as _convert_date_label,
@@ -122,21 +121,13 @@ class Toolkit:
             )
 
         if risk_free_rate not in [
-            "1m",
-            "2m",
-            "3m",
-            "6m",
-            "1y",
-            "2y",
-            "3y",
+            "13w",
             "5y",
-            "7y",
             "10y",
-            "20y",
             "30y",
         ]:
             raise ValueError(
-                "Please select a valid risk free rate (1m, 2m, 3m, 6m, 1y, 2y, 3y, 5y, 7y, 10y, 20y, 30y)"
+                "Please select a valid risk free rate (13w, 5y, 10y or 30y)"
             )
 
         self._api_key = api_key
@@ -1221,14 +1212,7 @@ class Toolkit:
         | 2023   | 187.84   | 188.51   | 187.68   | 188.108  |    188.108  | 4.72009e+06 |    0.71     |  0.453941  |     0.213359 |       0.412901  |            0.22327  |            10.6947  |
         """
         if (self._daily_risk_free_rate.empty or overwrite) and excess_return:
-            if self._risk_free_rate in ["5y", "10y", "30y"]:
-                self.get_risk_free_rate(
-                    period="daily", source="YahooFinance", fill_nan=fill_nan
-                )
-            else:
-                self.get_risk_free_rate(
-                    period="daily", source="FinancialModelingPrep", fill_nan=fill_nan
-                )
+            self.get_treasury_data()
 
         if self._daily_historical_data.empty or overwrite:
             self._daily_historical_data, self._invalid_tickers = _get_historical_data(
@@ -1264,7 +1248,7 @@ class Toolkit:
 
         if period == "weekly":
             if (self._weekly_risk_free_rate.empty or overwrite) and excess_return:
-                self.get_risk_free_rate(period="weekly")
+                self.get_treasury_data(period="weekly")
 
             self._weekly_historical_data = _convert_daily_to_other_period(
                 period="weekly",
@@ -1288,7 +1272,7 @@ class Toolkit:
 
         if period == "monthly":
             if (self._monthly_risk_free_rate.empty or overwrite) and excess_return:
-                self.get_risk_free_rate(period="monthly")
+                self.get_treasury_data(period="monthly")
 
             self._monthly_historical_data = _convert_daily_to_other_period(
                 period="monthly",
@@ -1310,7 +1294,7 @@ class Toolkit:
 
         if period == "quarterly":
             if (self._quarterly_risk_free_rate.empty or overwrite) and excess_return:
-                self.get_risk_free_rate(period="quarterly")
+                self.get_treasury_data(period="quarterly")
 
             self._quarterly_historical_data = _convert_daily_to_other_period(
                 period="quarterly",
@@ -1332,7 +1316,7 @@ class Toolkit:
 
         if period == "yearly":
             if (self._yearly_risk_free_rate.empty or overwrite) and excess_return:
-                self.get_risk_free_rate(period="yearly")
+                self.get_treasury_data(period="yearly")
 
             self._yearly_historical_data = _convert_daily_to_other_period(
                 period="yearly",
@@ -1359,9 +1343,9 @@ class Toolkit:
     def get_treasury_data(
         self,
         period: str = "daily",
-        source: str = "FinancialModelingPrep",
         fill_nan: bool = True,
-        overwrite: bool = False,
+        divide_ohlc_by: int | float | None = 100,
+        rounding: int | None = None,
     ):
         """
         Retrieve daily, weekly, monthly, quarterly or yearly treasury data. This can be from FinancialModelingPrep
@@ -1370,12 +1354,9 @@ class Toolkit:
 
         Args:
             period (str): The interval at which the treasury data should be returned - daily, weekly, monthly, quarterly, or yearly.
-            source (str): Defines the source of the data. Can be either "FinancialModelingPrep" or "YahooFinance".
-            Defaults to "FinancialModelingPrep".
             fill_nan (bool): Defines whether to forward fill NaN values. This defaults
             to True to prevent holes in the dataset. This is especially relevant for
             technical indicators.
-            overwrite (bool): Defines whether to overwrite the existing data.
 
         Returns:
             pd.DataFrame: A DataFrame containing the treasury data.
@@ -1392,69 +1373,39 @@ class Toolkit:
 
         Which returns:
 
-        | date       |   1 Month |   2 Month |   3 Month |   6 Month |   1 Year |   2 Year |   3 Year |   5 Year |   7 Year |   10 Year |   20 Year |   30 Year |
-        |:-----------|----------:|----------:|----------:|----------:|---------:|---------:|---------:|---------:|---------:|----------:|----------:|----------:|
-        | 2023-08-10 |    0.0555 |    0.0552 |    0.0554 |    0.0552 |   0.0533 |   0.0482 |   0.0447 |   0.0421 |   0.0417 |    0.0409 |    0.0441 |    0.0424 |
-        | 2023-08-11 |    0.0554 |    0.0551 |    0.0554 |    0.0552 |   0.0536 |   0.0489 |   0.0456 |   0.0431 |   0.0426 |    0.0416 |    0.0445 |    0.0427 |
-        | 2023-08-14 |    0.0555 |    0.0552 |    0.0556 |    0.0556 |   0.0537 |   0.0496 |   0.0464 |   0.0436 |   0.0429 |    0.0419 |    0.0446 |    0.0429 |
-        | 2023-08-15 |    0.0553 |    0.0552 |    0.0556 |    0.0555 |   0.0536 |   0.0492 |   0.0464 |   0.0436 |   0.0431 |    0.0421 |    0.0449 |    0.0432 |
-        | 2023-08-16 |    0.0552 |    0.0553 |    0.0556 |    0.0554 |   0.0537 |   0.0497 |   0.0468 |   0.0442 |   0.0437 |    0.0428 |    0.0455 |    0.0438 |
-        | 2023-08-17 |    0.0555 |    0.0552 |    0.0556 |    0.0553 |   0.0536 |   0.0494 |   0.0467 |   0.0442 |   0.0438 |    0.043  |    0.0458 |    0.0441 |
-        | 2023-08-18 |    0.0553 |    0.0552 |    0.0555 |    0.0552 |   0.0535 |   0.0492 |   0.0463 |   0.0438 |   0.0434 |    0.0426 |    0.0455 |    0.0438 |
-        | 2023-08-21 |    0.0555 |    0.0553 |    0.0557 |    0.0558 |   0.0537 |   0.0497 |   0.047  |   0.0446 |   0.0442 |    0.0434 |    0.0464 |    0.0445 |
-        | 2023-08-22 |    0.0554 |    0.0553 |    0.0557 |    0.0557 |   0.0539 |   0.0502 |   0.0475 |   0.0449 |   0.0444 |    0.0434 |    0.0461 |    0.0442 |
-        | 2023-08-23 |    0.0554 |    0.0553 |    0.0557 |    0.0555 |   0.0535 |   0.0495 |   0.0464 |   0.0436 |   0.043  |    0.0419 |    0.0446 |    0.0427 |
-        | 2023-08-24 |    0.0555 |    0.0553 |    0.0558 |    0.0559 |   0.0539 |   0.0498 |   0.0469 |   0.0439 |   0.0434 |    0.0423 |    0.0449 |    0.043  |
-        | 2023-08-25 |    0.0556 |    0.0553 |    0.0561 |    0.0561 |   0.0544 |   0.0503 |   0.0472 |   0.0444 |   0.0437 |    0.0425 |    0.045  |    0.043  |
-        | 2023-08-28 |    0.0556 |    0.0553 |    0.0558 |    0.0556 |   0.0544 |   0.0498 |   0.0469 |   0.0438 |   0.0432 |    0.042  |    0.0448 |    0.0429 |
-        | 2023-08-29 |    0.0554 |    0.0553 |    0.0556 |    0.0552 |   0.0537 |   0.0487 |   0.0456 |   0.0426 |   0.0421 |    0.0412 |    0.0442 |    0.0423 |
-        | 2023-08-30 |    0.0555 |    0.0553 |    0.0556 |    0.0551 |   0.0539 |   0.049  |   0.0457 |   0.0427 |   0.0422 |    0.0412 |    0.0442 |    0.0423 |
+
         """
-        if source == "FinancialModelingPrep":
-            if not self._api_key:
-                return print(
-                    "The requested data requires the api_key parameter to be set, consider obtaining a key with the following link: https://financialmodelingprep.com/developer/docs/pricing/jeroen/"
-                    "\nThe free plan allows for 250 requests per day, a limit of 5 years and has no quarterly data. Consider upgrading "
-                    "your plan. You can get 15% off by using the above affiliate link which also supports the project."
-                )
+        risk_free_names = {
+            "13w": "13 Week",
+            "5y": "5 Year",
+            "10y": "10 Year",
+            "30y": "30 Year",
+        }
+        treasury_names = {
+            "^IRX": "13 Week",
+            "^FVX": "5 Year",
+            "^TNX": "10 Year",
+            "^TYX": "30 Year",
+        }
+        daily_treasury_data, _ = _get_historical_data(
+            ["^IRX", "^FVX", "^TNX", "^TYX"],
+            self._start_date,
+            self._end_date,
+            progress_bar=False,
+            divide_ohlc_by=divide_ohlc_by,
+            rounding=rounding if rounding else self._rounding,
+        )
 
-            if self._daily_treasury_data.empty or overwrite:
-                daily_treasury_data = _get_treasury_rates(
-                    self._api_key, self._start_date, self._end_date, self._rounding
-                )
+        risk_free_rate = risk_free_names[self._risk_free_rate]
 
-                if daily_treasury_data.empty or overwrite:
-                    print(
-                        "\nAs the dataset from FinancialModelingPrep is unavailable, reverting to source='YahooFinance' instead. "
-                        "Note that this dataset is much more limited."
-                    )
-                    return self.get_treasury_data(
-                        period=period, source="YahooFinance", fill_nan=fill_nan
-                    )
+        daily_treasury_data = daily_treasury_data.rename(
+            treasury_names, axis=1, level=1
+        )
 
-                self._daily_treasury_data = daily_treasury_data
-        elif source == "YahooFinance":
-            treasury_names = {
-                "^IRX": "13 Week",
-                "^FVX": "5 Year",
-                "^TNX": "10 Year",
-                "^TYX": "30 Year",
-            }
-            daily_treasury_data, _ = _get_historical_data(
-                ["^IRX", "^FVX", "^TNX", "^TYX"],
-                self._start_date,
-                self._end_date,
-                progress_bar=False,
-            )
-
-            daily_treasury_data = daily_treasury_data["Adj Close"] / 100
-            daily_treasury_data = daily_treasury_data.rename(treasury_names, axis=1)
-
-            self._daily_treasury_data = daily_treasury_data
-        else:
-            raise ValueError(
-                "Please choose from 'FinancialModelingPrep' or 'YahooFinance' as source."
-            )
+        self._daily_treasury_data = daily_treasury_data
+        self._daily_risk_free_rate = self._daily_treasury_data.xs(
+            risk_free_rate, level=1, axis=1
+        )
 
         if fill_nan:
             self._daily_treasury_data = self._daily_treasury_data.ffill()
@@ -1463,17 +1414,43 @@ class Toolkit:
             return self._daily_treasury_data.loc[self._start_date : self._end_date, :]  # type: ignore
         if period == "weekly":
             self._weekly_treasury_data = _convert_daily_to_other_period(
-                period, self._daily_treasury_data, self._start_date, self._end_date
+                period=period,
+                daily_historical_data=self._daily_treasury_data,
+                start=self._start_date,
+                end=self._end_date,
+                rounding=rounding if rounding else self._rounding,
             )
+
+            self._weekly_risk_free_rate = self._weekly_treasury_data.xs(
+                risk_free_rate, level=1, axis=1
+            )
+
             return self._weekly_treasury_data.loc[self._start_date : self._end_date, :]  # type: ignore
         if period == "monthly":
             self._monthly_treasury_data = _convert_daily_to_other_period(
-                period, self._daily_treasury_data, self._start_date, self._end_date
+                period=period,
+                daily_historical_data=self._daily_treasury_data,
+                start=self._start_date,
+                end=self._end_date,
+                rounding=rounding if rounding else self._rounding,
             )
+
+            self._monthly_risk_free_rate = self._monthly_treasury_data.xs(
+                risk_free_rate, level=1, axis=1
+            )
+
             return self._monthly_treasury_data.loc[self._start_date : self._end_date, :]  # type: ignore
         if period == "quarterly":
             self._quarterly_treasury_data = _convert_daily_to_other_period(
-                period, self._daily_treasury_data, self._start_date, self._end_date
+                period=period,
+                daily_historical_data=self._daily_treasury_data,
+                start=self._start_date,
+                end=self._end_date,
+                rounding=rounding if rounding else self._rounding,
+            )
+
+            self._quarterly_risk_free_rate = self._quarterly_treasury_data.xs(
+                risk_free_rate, level=1, axis=1
             )
 
             return self._quarterly_treasury_data.loc[
@@ -1481,144 +1458,18 @@ class Toolkit:
             ]
         if period == "yearly":
             self._yearly_treasury_data = _convert_daily_to_other_period(
-                period, self._daily_treasury_data, self._start_date, self._end_date
+                period=period,
+                daily_historical_data=self._daily_treasury_data,
+                start=self._start_date,
+                end=self._end_date,
+                rounding=rounding if rounding else self._rounding,
+            )
+
+            self._yearly_risk_free_rate = self._yearly_treasury_data.xs(
+                risk_free_rate, level=1, axis=1
             )
 
             return self._yearly_treasury_data.loc[self._start_date : self._end_date, :]  # type: ignore
-
-        raise ValueError(
-            "Please choose from daily, weekly, monthly, quarterly or yearly as period."
-        )
-
-    def get_risk_free_rate(
-        self,
-        period: str = "daily",
-        source: str = "FinancialModelingPrep",
-        fill_nan: bool = True,
-        overwrite: bool = False,
-    ) -> pd.Series:
-        """
-        Based on the treasury rates and the risk free parameter as defined within the Toolkit initialization,
-        obtain the risk free rate for the specified period. This can be daily, weekly, monthly, quarterly or yearly.
-
-        FinancialModelingPrep tends to be slower given that it requires more requests. If you are looking for speed,
-        select YahooFinance as source. Note that YahooFinance only contains daily data for 5, 10 and 30 years.
-
-        Args:
-            period (str): The interval at which the treasury data should be returned - daily, weekly, monthly, quarterly, or yearly.
-            source (str): Defines the source of the data. Can be either "FinancialModelingPrep" or "YahooFinance".
-            Defaults to "FinancialModelingPrep".
-            fill_nan (bool): Defines whether to forward fill NaN values. This defaults
-            to True to prevent holes in the dataset. This is especially relevant for
-
-        Returns:
-            pd.Series: A Series containing the risk free rate.
-
-        As an example:
-
-        ```python
-        from financetoolkit import Toolkit
-
-        companies = Toolkit(["AAPL", "MSFT"], start_date="2000-08-10")
-
-        companies.get_risk_free_rate(period="yearly", source='YahooFinance')
-        ```
-
-        Which returns:
-
-        | Date   |   10 Year |
-        |:-------|----------:|
-        | 2000   |   0.0511  |
-        | 2001   |   0.05032 |
-        | 2002   |   0.03818 |
-        | 2003   |   0.04257 |
-        | 2004   |   0.04216 |
-        | 2005   |   0.04395 |
-        | 2006   |   0.0471  |
-        | 2007   |   0.04035 |
-        | 2008   |   0.02244 |
-        | 2009   |   0.03843 |
-        | 2010   |   0.03305 |
-        | 2011   |   0.01871 |
-        | 2012   |   0.01756 |
-        | 2013   |   0.03026 |
-        | 2014   |   0.0217  |
-        | 2015   |   0.02269 |
-        | 2016   |   0.02446 |
-        | 2017   |   0.02405 |
-        | 2018   |   0.02686 |
-        | 2019   |   0.01919 |
-        | 2020   |   0.00917 |
-        | 2021   |   0.01512 |
-        | 2022   |   0.03879 |
-        | 2023   |   0.04102 |
-        """
-        naming = {
-            "1m": "1 Month",
-            "2m": "2 Month",
-            "3m": "3 Month",
-            "6m": "6 Month",
-            "1y": "1 Year",
-            "2y": "2 Year",
-            "3y": "3 Year",
-            "5y": "5 Year",
-            "7y": "7 Year",
-            "10y": "10 Year",
-            "30y": "30 Year",
-        }
-
-        column_name = naming[self._risk_free_rate]
-
-        if self._daily_treasury_data.empty or overwrite:
-            self.get_treasury_data(
-                period="daily", source=source, fill_nan=fill_nan, overwrite=overwrite
-            )
-        if column_name not in self._daily_treasury_data.columns:
-            raise ValueError(
-                f"{self._risk_free_rate} not available in the daily treasury data."
-                "Note that Yahoo Finance is limited to '5y', '10y' and '20y."
-            )
-
-        if period == "daily":
-            self._daily_risk_free_rate = self._daily_treasury_data[column_name]
-
-            return self._daily_risk_free_rate.loc[self._start_date : self._end_date]  # type: ignore
-        if period == "weekly":
-            if self._weekly_treasury_data.empty or overwrite:
-                self.get_treasury_data(
-                    period=period, source=source, fill_nan=fill_nan, overwrite=overwrite
-                )
-
-            self._weekly_risk_free_rate = self._weekly_treasury_data[column_name]
-
-            return self._weekly_risk_free_rate.loc[self._start_date : self._end_date]  # type: ignore
-        if period == "monthly":
-            if self._monthly_treasury_data.empty or overwrite:
-                self.get_treasury_data(
-                    period=period, source=source, fill_nan=fill_nan, overwrite=overwrite
-                )
-
-            self._monthly_risk_free_rate = self._monthly_treasury_data[column_name]
-
-            return self._monthly_risk_free_rate.loc[self._start_date : self._end_date]  # type: ignore
-        if period == "quarterly":
-            if self._quarterly_treasury_data.empty or overwrite:
-                self.get_treasury_data(
-                    period=period, source=source, fill_nan=fill_nan, overwrite=overwrite
-                )
-
-            self._quarterly_risk_free_rate = self._quarterly_treasury_data[column_name]
-
-            return self._quarterly_risk_free_rate.loc[self._start_date : self._end_date]  # type: ignore
-        if period == "yearly":
-            if self._yearly_treasury_data.empty or overwrite:
-                self.get_treasury_data(
-                    period=period, source=source, fill_nan=fill_nan, overwrite=overwrite
-                )
-
-            self._yearly_risk_free_rate = self._yearly_treasury_data[column_name]
-
-            return self._yearly_risk_free_rate.loc[self._start_date : self._end_date]  # type: ignore
 
         raise ValueError(
             "Please choose from daily, weekly, monthly, quarterly or yearly as period."

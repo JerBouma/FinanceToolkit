@@ -5,8 +5,6 @@ from financetoolkit import Toolkit
 
 historical = pd.read_pickle("tests/base/datasets/historical_dataset.pickle")
 
-print(historical)
-
 toolkit = Toolkit(tickers=["AAPL", "MSFT"], historical=historical)
 
 technical_module = toolkit.technicals

@@ -1,6 +1,6 @@
-,Upper Band,Middle Band,Lower Band
-0,,,
-1,,,
-2,,,
-3,,,
-4,,,
+,Upper Band,Middle Band,Lower Band,Close
+0,,,,0.01
+1,,,,-0.03
+2,,,,0.05
+3,,,,0.01
+4,,,,-0.02

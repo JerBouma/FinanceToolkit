@@ -3475,9 +3475,7 @@ class Ratios:
         if self._quarterly:
             share_prices = self._quarterly_historical_data.loc[begin:end, "Adj Close"].T
         else:
-            share_prices = self._yearly_historical_data.loc[
-                begin:end, "Adj Close"  #  type: ignore
-            ].T
+            share_prices = self._yearly_historical_data.loc[begin:end, "Adj Close"].T
 
         price_earnings_ratio = valuation.get_price_earnings_ratio(share_prices, eps)
 
@@ -3660,9 +3658,7 @@ class Ratios:
         if self._quarterly:
             share_prices = self._quarterly_historical_data.loc[begin:end, "Adj Close"].T
         else:
-            share_prices = self._yearly_historical_data.loc[
-                begin:end, "Adj Close"  #  type: ignore
-            ].T
+            share_prices = self._yearly_historical_data.loc[begin:end, "Adj Close"].T
 
         price_to_book_ratio = valuation.get_price_to_book_ratio(
             share_prices, book_value_per_share

@@ -267,9 +267,7 @@ class Models:
         if self._quarterly:
             share_prices = self._quarterly_historical_data.loc[begin:end, "Adj Close"].T
         else:
-            share_prices = self._yearly_historical_data.loc[
-                begin:end, "Adj Close"  #  type: ignore
-            ].T
+            share_prices = self._yearly_historical_data.loc[begin:end, "Adj Close"].T
 
         self._enterprise_value_breakdown = get_enterprise_value_breakdown(
             share_price=share_prices,

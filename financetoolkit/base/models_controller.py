@@ -21,21 +21,27 @@ class Models:
     def __init__(
         self,
         tickers: str | list[str],
-        historical: pd.DataFrame,
         balance: pd.DataFrame,
         income: pd.DataFrame,
         cash: pd.DataFrame,
+        quarterly_historical: pd.DataFrame = pd.DataFrame(),
+        yearly_historical: pd.DataFrame = pd.DataFrame(),
+        quarterly: bool = False,
         rounding: int | None = 4,
     ):
         """
         Initializes the Models Controller Class.
         """
         self._tickers = tickers
-        self._historical_data: pd.DataFrame = historical
         self._balance_sheet_statement: pd.DataFrame = balance
         self._income_statement: pd.DataFrame = income
         self._cash_flow_statement: pd.DataFrame = cash
+        self._quarterly = quarterly
         self._rounding = rounding
+
+        # Initilaization of Historical Data
+        self._quarterly_historical_data: pd.DataFrame = quarterly_historical
+        self._yearly_historical_data: pd.DataFrame = yearly_historical
 
         # Initialization of Model Variables
         self._dupont_analysis: pd.DataFrame = pd.DataFrame()
@@ -258,7 +264,10 @@ class Models:
         years = self._cash_flow_statement.columns
         begin, end = str(years[0]), str(years[-1])
 
-        share_prices = self._historical_data.loc[begin:end, "Adj Close"].T  # type: ignore
+        if self._quarterly:
+            share_prices = self._quarterly_historical_data.loc[begin:end, "Adj Close"].T
+        else:
+            share_prices = self._yearly_historical_data.loc[begin:end, "Adj Close"].T
 
         self._enterprise_value_breakdown = get_enterprise_value_breakdown(
             share_price=share_prices,

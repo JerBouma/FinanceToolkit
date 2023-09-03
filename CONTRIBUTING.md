@@ -72,8 +72,10 @@ After setting up Git, you can fork and pull the project in.
 4. Add your changes (`git add .`)
 5. Install pre-commit, this checks the code for any errors before committing (`pre-commit install`)
 6. Commit your Changes (`git commit -m 'Improve the Toolkit'`)
-7. Check whether the tests still pass (`pytest tests`)` and if not, correct then.
-5. Push to your Branch (`git push origin feature/contribution`)
-6. Open a Pull Request
+7. Check whether the tests still pass (`pytest tests`) and if not, correct then.
+    - When no formulas have changed or new tests have been added, you can use `pytest tests --record-mode=rewrite` (please do provide reasoning in this case).
+    - If formulas or calculations have changed, adjusts the tests inside the `tests` directory.
+8. Push to your Branch (`git push origin feature/contribution`)
+9. Open a Pull Request
 
 **Note:** feel free to reach out if you run into any issues: jer.bouma@gmail.com or [LinkedIn](https://www.linkedin.com/in/boumajeroen/) or open a GitHub Issue.

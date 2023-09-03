@@ -28,7 +28,6 @@ from financetoolkit.base.models.normalization_model import (
     read_normalization_file as _read_normalization_file,
 )
 from financetoolkit.base.models_controller import Models
-from financetoolkit.base.performance_controller import Performance
 from financetoolkit.base.ratios_controller import Ratios
 from financetoolkit.base.risk_controller import Risk
 from financetoolkit.base.technicals_controller import Technicals
@@ -348,20 +347,17 @@ class Toolkit:
                 f"{self._balance_sheet_statement.columns[-1].year + 5}-01-01"
             )
 
-        if self._quarterly:
-            if (
-                self._quarterly_historical_data.empty
-                and not self._balance_sheet_statement.empty
-            ):
+        if self._historical.empty:
+            if self._daily_historical_data.empty:
+                self.get_historical_data(period="daily")
+            if self._weekly_historical_data.empty:
+                self.get_historical_data(period="weekly")
+            if self._monthly_historical_data.empty:
+                self.get_historical_data(period="monthly")
+            if self._quarterly_historical_data.empty:
                 self.get_historical_data(period="quarterly")
-        elif not self._quarterly:
-            if (
-                self._yearly_historical_data.empty
-                and not self._balance_sheet_statement.empty
-            ):
+            if self._yearly_historical_data.empty:
                 self.get_historical_data(period="yearly")
-        else:
-            raise ValueError("Invalid value for the quarterly parameter.")
 
         if empty_data:
             print(
@@ -371,13 +367,16 @@ class Toolkit:
 
         return Ratios(
             self._tickers,
-            self._quarterly_historical_data
-            if self._quarterly
-            else self._yearly_historical_data,
             self._balance_sheet_statement,
             self._income_statement,
             self._cash_flow_statement,
             self._custom_ratios,
+            self._daily_historical_data,
+            self._weekly_historical_data,
+            self._monthly_historical_data,
+            self._quarterly_historical_data,
+            self._yearly_historical_data,
+            self._quarterly,
             self._rounding,
         )
 
@@ -453,20 +452,13 @@ class Toolkit:
                 f"{self._balance_sheet_statement.columns[-1].year + 5}-01-01"
             )
 
-        if self._quarterly:
-            if (
-                self._quarterly_historical_data.empty
-                and not self._balance_sheet_statement.empty
-            ):
+        if self._historical.empty:
+            if self._daily_historical_data.empty:
+                self.get_historical_data(period="daily")
+            if self._quarterly_historical_data.empty:
                 self.get_historical_data(period="quarterly")
-        elif not self._quarterly:
-            if (
-                self._yearly_historical_data.empty
-                and not self._balance_sheet_statement.empty
-            ):
+            if self._yearly_historical_data.empty:
                 self.get_historical_data(period="yearly")
-        else:
-            raise ValueError("Invalid value for the quarterly parameter.")
 
         if empty_data:
             print(
@@ -476,12 +468,12 @@ class Toolkit:
 
         return Models(
             self._tickers,
-            self._quarterly_historical_data
-            if self._quarterly
-            else self._yearly_historical_data,
             self._balance_sheet_statement,
             self._income_statement,
             self._cash_flow_statement,
+            self._quarterly_historical_data,
+            self._yearly_historical_data,
+            self._quarterly,
             self._rounding,
         )
 
@@ -547,75 +539,8 @@ class Toolkit:
             self._quarterly_historical_data,
             self._yearly_historical_data,
             self._rounding,
-        )
-
-    @property
-    def performance(self) -> Performance:
-        """
-        This gives access to the Performance class. The performance class is meant to measure performance based on
-        for example the risk-return relationships (Sharpe and Sortino Ratio) but also measurements such
-        as Omega Ratio and Calmar Ratio.
-
-        In other words, it highlights how well as stock is performing given it's risk characeristics. This class
-        is closely related to the Risk class which highlights things such as Value at Risk (VaR) and Conditional
-        Value at Risk (cVaR).
-
-        See the following link for more information: https://www.jeroenbouma.com/projects/financetoolkit/docs/performance
-
-        As an example:
-
-        ```python
-        from financetoolkit import Toolkit
-
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
-
-        toolkit.performance.get_sharpe_ratio(period='yearly')
-        ```
-
-        Which returns:
-
-        | Date   |    AAPL |    TSLA |
-        |:-------|--------:|--------:|
-        | 2012   |  0      |  0      |
-        | 2013   |  0.1754 |  4.96   |
-        | 2014   |  1.7515 |  0.9481 |
-        | 2015   | -0.1958 |  0.1454 |
-        | 2016   |  0.4177 | -0.3437 |
-        | 2017   |  2.6368 |  1.2225 |
-        | 2018   | -0.2786 |  0.0718 |
-        | 2019   |  3.2243 |  0.4707 |
-        | 2020   |  1.729  |  8.3319 |
-        | 2021   |  1.3179 |  0.8797 |
-        | 2022   | -0.8026 | -1.0046 |
-        | 2023   |  1.8549 |  1.8238 |
-        """
-        if not self._start_date:
-            self._start_date = (datetime.today() - timedelta(days=365 * 10)).strftime(
-                "%Y-%m-%d"
-            )
-        if not self._end_date:
-            self._end_date = datetime.today().strftime("%Y-%m-%d")
-
-        if self._historical.empty:
-            if self._daily_historical_data.empty:
-                self.get_historical_data(period="daily")
-            if self._weekly_historical_data.empty:
-                self.get_historical_data(period="weekly")
-            if self._monthly_historical_data.empty:
-                self.get_historical_data(period="monthly")
-            if self._quarterly_historical_data.empty:
-                self.get_historical_data(period="quarterly")
-            if self._yearly_historical_data.empty:
-                self.get_historical_data(period="yearly")
-
-        return Performance(
-            self._tickers,
-            self._daily_historical_data,
-            self._weekly_historical_data,
-            self._monthly_historical_data,
-            self._quarterly_historical_data,
-            self._yearly_historical_data,
-            self._rounding,
+            self._start_date,
+            self._end_date,
         )
 
     @property
@@ -1306,7 +1231,7 @@ class Toolkit:
 
         if period == "daily":
             historical_data = self._daily_historical_data.loc[
-                self._start_date : self._end_date, :  # type: ignore
+                self._start_date : self._end_date, :
             ].copy()
             historical_data.loc[historical_data.index[0], "Return"] = 0
 
@@ -1328,7 +1253,7 @@ class Toolkit:
             )
 
             historical_data = self._weekly_historical_data.loc[
-                self._start_date : self._end_date, :  # type: ignore
+                self._start_date : self._end_date, :
             ].copy()
             historical_data.loc[historical_data.index[0], "Return"] = 0
 
@@ -1350,7 +1275,7 @@ class Toolkit:
             )
 
             historical_data = self._monthly_historical_data.loc[
-                self._start_date : self._end_date, :  # type: ignore
+                self._start_date : self._end_date, :
             ].copy()
             historical_data.loc[historical_data.index[0], "Return"] = 0
 
@@ -1372,7 +1297,7 @@ class Toolkit:
             )
 
             historical_data = self._quarterly_historical_data.loc[
-                self._start_date : self._end_date, :  # type: ignore
+                self._start_date : self._end_date, :
             ].copy()
             historical_data.loc[historical_data.index[0], "Return"] = 0
 
@@ -1394,7 +1319,7 @@ class Toolkit:
             )
 
             historical_data = self._yearly_historical_data.loc[
-                self._start_date : self._end_date, :  # type: ignore
+                self._start_date : self._end_date, :
             ].copy()
             historical_data.loc[historical_data.index[0], "Return"] = 0
 
@@ -1480,7 +1405,7 @@ class Toolkit:
                 self._daily_treasury_data = self._daily_treasury_data.ffill()
 
         if period == "daily":
-            return self._daily_treasury_data.loc[self._start_date : self._end_date, :]  # type: ignore
+            return self._daily_treasury_data.loc[self._start_date : self._end_date, :]
         if period == "weekly":
             self._weekly_treasury_data = _convert_daily_to_other_period(
                 period=period,
@@ -1494,7 +1419,7 @@ class Toolkit:
                 risk_free_rate, level=1, axis=1
             )
 
-            return self._weekly_treasury_data.loc[self._start_date : self._end_date, :]  # type: ignore
+            return self._weekly_treasury_data.loc[self._start_date : self._end_date, :]
         if period == "monthly":
             self._monthly_treasury_data = _convert_daily_to_other_period(
                 period=period,
@@ -1508,7 +1433,7 @@ class Toolkit:
                 risk_free_rate, level=1, axis=1
             )
 
-            return self._monthly_treasury_data.loc[self._start_date : self._end_date, :]  # type: ignore
+            return self._monthly_treasury_data.loc[self._start_date : self._end_date, :]
         if period == "quarterly":
             self._quarterly_treasury_data = _convert_daily_to_other_period(
                 period=period,
@@ -1523,7 +1448,7 @@ class Toolkit:
             )
 
             return self._quarterly_treasury_data.loc[
-                self._start_date : self._end_date, :  # type: ignore
+                self._start_date : self._end_date, :
             ]
         if period == "yearly":
             self._yearly_treasury_data = _convert_daily_to_other_period(
@@ -1538,7 +1463,7 @@ class Toolkit:
                 risk_free_rate, level=1, axis=1
             )
 
-            return self._yearly_treasury_data.loc[self._start_date : self._end_date, :]  # type: ignore
+            return self._yearly_treasury_data.loc[self._start_date : self._end_date, :]
 
         raise ValueError(
             "Please choose from daily, weekly, monthly, quarterly or yearly as period."

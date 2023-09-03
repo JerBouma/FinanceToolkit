@@ -1,9 +1,7 @@
 ,Money Flow Index,Money Flow Index,Williams %R,Williams %R,Aroon Indicator Up,Aroon Indicator Up,Aroon Indicator Down,Aroon Indicator Down,Commodity Channel Index,Commodity Channel Index,Relative Vigor Index,Relative Vigor Index,Force Index,Force Index,Ultimate Oscillator,Ultimate Oscillator,Percentage Price Oscillator,Percentage Price Oscillator,Detrended Price Oscillator,Detrended Price Oscillator,Average Directional Index,Average Directional Index,Chande Momentum Oscillator,Chande Momentum Oscillator,Ichimoku Conversion Line,Ichimoku Conversion Line,Ichimoku Base Line,Ichimoku Base Line,Ichimoku Leading Span A,Ichimoku Leading Span A,Ichimoku Leading Span B,Ichimoku Leading Span B,Stochastic %K,Stochastic %K,Stochastic %D,Stochastic %D,MACD Line,MACD Line,MACD Signal Line,MACD Signal Line,Relative Strength Index,Relative Strength Index,Balance of Power,Balance of Power
 ,AAPL,MSFT,AAPL,MSFT,AAPL,MSFT,AAPL,MSFT,AAPL,MSFT,AAPL,MSFT,AAPL,MSFT,AAPL,MSFT,AAPL,MSFT,AAPL,MSFT,AAPL,MSFT,AAPL,MSFT,AAPL,MSFT,AAPL,MSFT,AAPL,MSFT,AAPL,MSFT,AAPL,MSFT,AAPL,MSFT,AAPL,MSFT,AAPL,MSFT,AAPL,MSFT,AAPL,MSFT
 Date,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
-2013-09-03,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
-2013-09-04,,,,,,,,,,,,,,,,,inf,-inf,,,,,,,,,,,,,,,,,,,inf,-inf,inf,-inf,,,1.1444,1.2565
-2013-09-05,,,,,,,,,,,,,,,,,0.3416,0.639,,,,,,,,,,,,,,,,,,,0.4343,0.7291,1.24,1.5275,,,-0.105,-0.3093
+2013-09-05,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
 2013-09-06,,,,,,,,,,,,,,,,,0.3766,0.3283,,,,,,,,,,,,,,,,,,,0.4306,0.3873,0.7232,0.7435,,,-0.3016,0.9901
 2013-09-09,,,,,,,,,,,,,,,,,0.5957,-0.1908,,,,,,,,,,,,,,,,,,,0.6078,-0.1065,0.658,0.2868,,,1.1112,-0.6029
 2013-09-10,,,,,,,,,,,,,,,,,-0.1413,-0.7933,,,,,,,,,,,,,,,,,,,-0.0616,-0.6053,0.2844,-0.0523,,,-0.7086,-0.0187

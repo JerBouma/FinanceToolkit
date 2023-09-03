@@ -49,6 +49,33 @@ def equal_length(dataset1: pd.Series, dataset2: pd.Series) -> pd.Series:
     return dataset1, dataset2
 
 
+def skewness(dataset: pd.Series | pd.DataFrame) -> pd.Series | pd.DataFrame:
+    """
+    Computes the skewness of dataset.
+
+    Args:
+        dataset (pd.Series | pd.Dataframe): A single index dataframe or series
+
+    Returns:
+        pd.Series | pd.Dataframe: Skewness of the dataset
+    """
+    return (((dataset - dataset.mean()) / dataset.std(ddof=0)) ** 3).mean()
+
+
+def kurtosis(dataset: pd.Series | pd.DataFrame) -> pd.Series | pd.DataFrame:
+    """
+    Computes the kurtosis of dataset.
+    Note that scipy.stats.kurtosis() computes "Excess Kurtosis", i.e., Kurtosis minus 3; thus this method should be used
+
+    Args:
+        dataset (pd.Series | pd.Dataframe): A single index dataframe or series
+
+    Returns:
+        pd.Series | pd.Dataframe: Kurtosis of the dataset
+    """
+    return (((dataset - dataset.mean()) / dataset.std(ddof=0)) ** 4).mean()
+
+
 def calculate_growth(
     dataset: pd.Series | pd.DataFrame,
     lag: int | list[int] = 1,
@@ -113,6 +140,35 @@ def calculate_growth(
         return dataset_lag.round(rounding)
 
     return dataset.pct_change(periods=lag, axis=axis).round(rounding)
+
+
+def handle_return_data_periods(self, period: str, within_period: bool):
+    if period == "daily":
+        return (
+            self._daily_returns if within_period else self._daily_historical["Return"]
+        )
+    elif period == "weekly":
+        return (
+            self._weekly_returns if within_period else self._weekly_historical["Return"]
+        )
+    elif period == "monthly":
+        return (
+            self._monthly_returns
+            if within_period
+            else self._monthly_historical["Return"]
+        )
+    elif period == "quarterly":
+        return (
+            self._quarterly_returns
+            if within_period
+            else self._quarterly_historical["Return"]
+        )
+    elif period == "yearly":
+        return (
+            self._yearly_returns if within_period else self._yearly_historical["Return"]
+        )
+    else:
+        raise ValueError("Period must be daily, monthly, weekly, quarterly, or yearly.")
 
 
 def handle_errors(func):

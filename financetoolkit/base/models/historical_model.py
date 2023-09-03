@@ -130,8 +130,9 @@ def get_historical_data(
             invalid_tickers.append(ticker)
             continue
 
-        if historical_data_dict[ticker].loc[start:end].empty:  # type: ignore
+        if historical_data_dict[ticker].loc[start:end].empty:
             print(f"The given start and end date result in no data found for {ticker}")
+            del historical_data_dict[ticker]
             invalid_tickers.append(ticker)
             continue
 
@@ -167,7 +168,7 @@ def get_historical_data(
         ].pct_change()
 
         historical_data_dict[ticker]["Volatility"] = (
-            historical_data_dict[ticker].loc[start:end, "Return"].std()  # type: ignore
+            historical_data_dict[ticker].loc[start:end, "Return"].std()
         )
 
         if not risk_free_rate.empty:
@@ -176,15 +177,15 @@ def get_historical_data(
             ]["Return"].sub(risk_free_rate["Adj Close"])
 
             historical_data_dict[ticker]["Excess Volatility"] = (
-                historical_data_dict[ticker].loc[start:end, "Excess Return"].std()  # type: ignore
+                historical_data_dict[ticker].loc[start:end, "Excess Return"].std()
             )
 
         historical_data_dict[ticker]["Cumulative Return"] = 1
 
-        adjusted_return = historical_data_dict[ticker].loc[start:end, "Return"].copy()  # type: ignore
+        adjusted_return = historical_data_dict[ticker].loc[start:end, "Return"].copy()
         adjusted_return.iloc[0] = 0
 
-        historical_data_dict[ticker].loc[start:end, "Cumulative Return"] = (  # type: ignore
+        historical_data_dict[ticker].loc[start:end, "Cumulative Return"] = (
             1 + adjusted_return
         ).cumprod()
 
@@ -335,7 +336,7 @@ def convert_daily_to_other_period(
     daily_historical_data: pd.DataFrame,
     start: str | None = None,
     end: str | None = None,
-    risk_free_rate: pd.Series = pd.Series(),
+    risk_free_rate: pd.Series = pd.DataFrame(),
     rounding: int | None = None,
 ):
     """
@@ -421,10 +422,10 @@ def convert_daily_to_other_period(
             if end > period_historical_data.index[-1]:
                 end = period_historical_data.index[-1]
 
-        adjusted_return = period_historical_data.loc[start:end, "Return"].copy()  # type: ignore
+        adjusted_return = period_historical_data.loc[start:end, "Return"].copy()
         adjusted_return.iloc[0] = 0
 
-        period_historical_data["Cumulative Return"] = (1 + adjusted_return).cumprod()  # type: ignore
+        period_historical_data["Cumulative Return"] = (1 + adjusted_return).cumprod()
         period_historical_data["Cumulative Return"] = period_historical_data[
             "Cumulative Return"
         ].fillna(1)

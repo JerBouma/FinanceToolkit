@@ -24,6 +24,8 @@ class Technicals:
         quarterly_historical: pd.DataFrame = pd.DataFrame(),
         yearly_historical: pd.DataFrame = pd.DataFrame(),
         rounding: int | None = 4,
+        start_date: str | None = None,
+        end_date: str | None = None,
     ):
         """
         Initializes the Technicals Controller Class.
@@ -44,6 +46,8 @@ class Technicals:
         self._quarterly_historical = quarterly_historical
         self._yearly_historical = yearly_historical
         self._rounding: int | None = rounding
+        self._start_date: str | None = start_date
+        self._end_date: str | None = end_date
 
         # Technical Indicators
         self._all_indicators: pd.DataFrame = pd.DataFrame()
@@ -115,7 +119,9 @@ class Technicals:
 
         self._all_indicators = self._all_indicators.round(
             rounding if rounding else self._rounding
-        )
+        ).loc[
+            self._start_date : self._end_date  #  type: ignore
+        ]
 
         if growth:
             self._all_indicators_growth = calculate_growth(
@@ -195,7 +201,9 @@ class Technicals:
 
         self._breadth_indicators = self._breadth_indicators.round(
             rounding if rounding else self._rounding
-        )
+        ).loc[
+            self._start_date : self._end_date  #  type: ignore
+        ]
 
         if growth:
             self._breadth_indicators_growth = calculate_growth(
@@ -354,7 +362,9 @@ class Technicals:
 
         self._momentum_indicators = self._momentum_indicators.round(
             rounding if rounding else self._rounding
-        )
+        ).loc[
+            self._start_date : self._end_date
+        ]  #  type: ignore
 
         if growth:
             self._momentum_indicators_growth = calculate_growth(
@@ -453,7 +463,9 @@ class Technicals:
 
         self._overlap_indicators = self._overlap_indicators.round(
             rounding if rounding else self._rounding
-        )
+        ).loc[
+            self._start_date : self._end_date
+        ]  #  type: ignore
 
         if growth:
             self._overlap_indicators_growth = calculate_growth(
@@ -550,7 +562,9 @@ class Technicals:
 
         self._volatility_indicators = self._volatility_indicators.round(
             rounding if rounding else self._rounding
-        )
+        ).loc[
+            self._start_date : self._end_date
+        ]  #  type: ignore
 
         if growth:
             self._volatility_indicators_growth = calculate_growth(
@@ -639,11 +653,15 @@ class Technicals:
         else:
             raise ValueError("Period must be daily, weekly, quarterly, or yearly.")
 
-        mcclellan_oscillator = pd.DataFrame(index=historical_data.index)
+        mcclellan_oscillator = pd.DataFrame(
+            index=historical_data.loc[self._start_date : self._end_date].index
+        )
         for ticker in self._tickers:
             mcclellan_oscillator[ticker] = breadth.get_mcclellan_oscillator(
                 historical_data[close_column][ticker], short_ema_window, long_ema_window
-            )
+            ).loc[
+                self._start_date : self._end_date
+            ]  #  type: ignore
 
         if growth:
             return calculate_growth(
@@ -715,7 +733,9 @@ class Technicals:
 
         advancers_decliners = breadth.get_advancers_decliners(
             historical_data[close_column],
-        )
+        ).loc[
+            self._start_date : self._end_date
+        ]  #  type: ignore
 
         if growth:
             return calculate_growth(
@@ -794,7 +814,9 @@ class Technicals:
             historical_data[close_column],
             historical_data["Volume"],
             window,
-        )
+        ).loc[
+            self._start_date : self._end_date
+        ]  #  type: ignore
 
         if growth:
             return calculate_growth(
@@ -871,7 +893,9 @@ class Technicals:
             historical_data["Low"],
             historical_data[close_column],
             window,
-        )
+        ).loc[
+            self._start_date : self._end_date
+        ]  #  type: ignore
 
         if growth:
             return calculate_growth(
@@ -952,7 +976,9 @@ class Technicals:
             pd.concat(aroon_indicator_dict, axis=1)
             .swaplevel(1, 0, axis=1)
             .sort_index(axis=1)
-        )
+        ).loc[
+            self._start_date : self._end_date
+        ]  #  type: ignore
 
         if growth:
             aroon_indicator_growth = calculate_growth(
@@ -1029,7 +1055,11 @@ class Technicals:
         else:
             raise ValueError("Period must be daily, weekly, quarterly, or yearly.")
 
-        commodity_channel_index = pd.DataFrame(index=historical_data.index)
+        commodity_channel_index = pd.DataFrame(
+            index=historical_data.loc[
+                self._start_date : self._end_date
+            ].index  #  type: ignore
+        )
 
         for ticker in self._tickers:
             commodity_channel_index[ticker] = momentum.get_commodity_channel_index(
@@ -1038,7 +1068,9 @@ class Technicals:
                 historical_data[close_column][ticker],
                 window,
                 constant,
-            )
+            ).loc[
+                self._start_date : self._end_date
+            ]  #  type: ignore
 
         if growth:
             return calculate_growth(
@@ -1115,7 +1147,9 @@ class Technicals:
             historical_data[close_column],
             historical_data["Volume"],
             window,
-        )
+        ).loc[
+            self._start_date : self._end_date
+        ]  #  type: ignore
 
         if growth:
             return calculate_growth(
@@ -1190,7 +1224,9 @@ class Technicals:
             historical_data[close_column],
             historical_data["Volume"],
             window,
-        )
+        ).loc[
+            self._start_date : self._end_date
+        ]  #  type: ignore
 
         if growth:
             return calculate_growth(
@@ -1268,7 +1304,11 @@ class Technicals:
         else:
             raise ValueError("Period must be daily, weekly, quarterly, or yearly.")
 
-        ultimate_oscillator = pd.DataFrame(index=historical_data.index)
+        ultimate_oscillator = pd.DataFrame(
+            index=historical_data.loc[
+                self._start_date : self._end_date
+            ].index  #  type: ignore
+        )
         for ticker in self._tickers:
             ultimate_oscillator[ticker] = momentum.get_ultimate_oscillator(
                 historical_data["High"][ticker],
@@ -1277,7 +1317,9 @@ class Technicals:
                 window_1,
                 window_2,
                 window_3,
-            )
+            ).loc[
+                self._start_date : self._end_date
+            ]  #  type: ignore
 
         if growth:
             ultimate_oscillator_growth = calculate_growth(
@@ -1357,7 +1399,9 @@ class Technicals:
             historical_data[close_column],
             short_window,
             long_window,
-        )
+        ).loc[
+            self._start_date : self._end_date
+        ]  #  type: ignore
 
         if growth:
             ppo_growth = calculate_growth(
@@ -1434,7 +1478,9 @@ class Technicals:
 
         detrended_price_oscillator = momentum.get_detrended_price_oscillator(
             historical_data[close_column], window
-        )
+        ).loc[
+            self._start_date : self._end_date
+        ]  #  type: ignore
 
         if growth:
             dpo_growth = calculate_growth(
@@ -1509,14 +1555,20 @@ class Technicals:
         else:
             raise ValueError("Period must be daily, weekly, quarterly, or yearly.")
 
-        average_directional_index = pd.DataFrame(index=historical_data.index)
+        average_directional_index = pd.DataFrame(
+            index=historical_data.loc[
+                self._start_date : self._end_date
+            ].index  #  type: ignore
+        )
         for ticker in self._tickers:
             average_directional_index[ticker] = momentum.get_average_directional_index(
                 historical_data["High"][ticker],
                 historical_data["Low"][ticker],
                 historical_data[close_column][ticker],
                 window,
-            )
+            ).loc[
+                self._start_date : self._end_date
+            ]  #  type: ignore
 
         if growth:
             adx_growth = calculate_growth(
@@ -1591,7 +1643,9 @@ class Technicals:
 
         chande_momentum_oscillator = momentum.get_chande_momentum_oscillator(
             historical_data[close_column], window
-        )
+        ).loc[
+            self._start_date : self._end_date
+        ]  #  type: ignore
 
         if growth:
             cmo_growth = calculate_growth(
@@ -1681,7 +1735,7 @@ class Technicals:
                 conversion_window,
                 base_window,
                 lead_span_b_window,
-            )
+            ).loc[self._start_date : self._end_date]
 
         ichimoku_cloud = (
             pd.concat(ichimoku_cloud_dict, axis=1)
@@ -1775,7 +1829,7 @@ class Technicals:
                 historical_data[close_column][ticker],
                 window,
                 smooth_widow,
-            )
+            ).loc[self._start_date : self._end_date]
 
         stochastic_osciallator = (
             pd.concat(stochastic_osciallator_dict, axis=1)
@@ -1871,7 +1925,7 @@ class Technicals:
                 short_window,
                 long_window,
                 signal_window,
-            )
+            ).loc[self._start_date : self._end_date]
 
         macd = pd.concat(macd_dict, axis=1).swaplevel(1, 0, axis=1).sort_index(axis=1)
 
@@ -1950,7 +2004,7 @@ class Technicals:
 
         relative_strength_index = momentum.get_relative_strength_index(
             historical_data[close_column], window
-        )
+        ).loc[self._start_date : self._end_date]
 
         if growth:
             return calculate_growth(
@@ -2025,7 +2079,7 @@ class Technicals:
             historical_data["High"],
             historical_data["Low"],
             historical_data[close_column],
-        )
+        ).loc[self._start_date : self._end_date]
 
         if growth:
             return calculate_growth(
@@ -2100,7 +2154,7 @@ class Technicals:
 
         moving_average = overlap.get_moving_average(
             historical_data[close_column], window
-        )
+        ).loc[self._start_date : self._end_date]
 
         if growth:
             return calculate_growth(
@@ -2175,7 +2229,7 @@ class Technicals:
 
         exponential_moving_average = overlap.get_exponential_moving_average(
             historical_data[close_column], window
-        )
+        ).loc[self._start_date : self._end_date]
 
         if growth:
             return calculate_growth(
@@ -2253,7 +2307,7 @@ class Technicals:
         double_exponential_moving_average = (
             overlap.get_double_exponential_moving_average(
                 historical_data[close_column], window
-            )
+            ).loc[self._start_date : self._end_date]
         )
 
         if growth:
@@ -2330,7 +2384,9 @@ class Technicals:
         else:
             raise ValueError("Period must be daily, weekly, quarterly, or yearly.")
 
-        trix = overlap.get_trix(historical_data[close_column], window)
+        trix = overlap.get_trix(historical_data[close_column], window).loc[
+            self._start_date : self._end_date
+        ]
 
         if growth:
             return calculate_growth(
@@ -2413,7 +2469,7 @@ class Technicals:
         for ticker in self._tickers:
             bollinger_bands_dict[ticker] = volatility.get_bollinger_bands(
                 historical_data[close_column][ticker], window, num_std_dev
-            )
+            ).loc[self._start_date : self._end_date]
 
         bollinger_bands = (
             pd.concat(bollinger_bands_dict, axis=1)
@@ -2495,7 +2551,7 @@ class Technicals:
 
         triangular_moving_average = overlap.get_triangular_moving_average(
             historical_data[close_column], window
-        )
+        ).loc[self._start_date : self._end_date]
 
         if growth:
             return calculate_growth(
@@ -2565,13 +2621,15 @@ class Technicals:
         else:
             raise ValueError("Period must be daily, weekly, quarterly, or yearly.")
 
-        true_range = pd.DataFrame(index=historical_data.index)
+        true_range = pd.DataFrame(
+            index=historical_data.loc[self._start_date : self._end_date].index
+        )
         for ticker in self._tickers:
             true_range[ticker] = volatility.get_true_range(
                 historical_data["High"][ticker],
                 historical_data["Low"][ticker],
                 historical_data[close_column][ticker],
-            )
+            ).loc[self._start_date : self._end_date]
 
         if growth:
             return calculate_growth(
@@ -2649,14 +2707,18 @@ class Technicals:
         else:
             raise ValueError("Period must be daily, weekly, quarterly or yearly.")
 
-        average_true_range = pd.DataFrame(index=historical_data.index)
+        average_true_range = pd.DataFrame(
+            index=historical_data.loc[self._start_date : self._end_date].index
+        )
         for ticker in self._tickers:
             average_true_range[ticker] = volatility.get_average_true_range(
                 historical_data["High"][ticker],
                 historical_data["Low"][ticker],
                 historical_data[close_column][ticker],
                 window,
-            )
+            ).loc[
+                self._start_date : self._end_date
+            ]  #  type: ignore
 
         if growth:
             return calculate_growth(
@@ -2745,7 +2807,9 @@ class Technicals:
                 window,
                 atr_window,
                 atr_multiplier,
-            )
+            ).loc[
+                self._start_date : self._end_date
+            ]  #  type: ignore
 
         kelter_channels = (
             pd.concat(keltner_channels_dict, axis=1)
@@ -2825,7 +2889,7 @@ class Technicals:
         on_balance_volume = breadth.get_on_balance_volume(
             historical_data[close_column],
             historical_data["Volume"],
-        )
+        ).loc[self._start_date : self._end_date]
 
         if growth:
             return calculate_growth(
@@ -2895,7 +2959,11 @@ class Technicals:
         else:
             raise ValueError("Period must be daily, weekly, quarterly, or yearly.")
 
-        accumulation_distribution_line = pd.DataFrame(index=historical_data.index)
+        accumulation_distribution_line = pd.DataFrame(
+            index=historical_data.loc[
+                self._start_date : self._end_date
+            ].index  #  type: ignore
+        )
         for ticker in self._tickers:
             accumulation_distribution_line[
                 ticker
@@ -2904,7 +2972,9 @@ class Technicals:
                 historical_data["Low"][ticker],
                 historical_data[close_column][ticker],
                 historical_data["Volume"][ticker],
-            )
+            ).loc[
+                self._start_date : self._end_date  #  type: ignore
+            ]
 
         if growth:
             return calculate_growth(
@@ -2989,7 +3059,9 @@ class Technicals:
             historical_data["Volume"],
             short_window,
             long_window,
-        )
+        ).loc[
+            self._start_date : self._end_date
+        ]  #  type: ignore
 
         if growth:
             return calculate_growth(

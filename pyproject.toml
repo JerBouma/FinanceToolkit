@@ -68,6 +68,9 @@ combine_as_imports = true
 ignore-words-list = 'zar,profund,basf,applicatio,ser,mone,vie,wew,ist,tre,ue,nd,fo,nwe,0t,Ot,ot,juni,acn,hve,te,hsa,fof,ege,bu,wya'
 skip = '*.json,./.git,pyproject.toml,poetry.lock'
 
+[tool.mypy]
+disable_error_code = "misc"
+
 [tool.pytest.ini_options]
 filterwarnings = [
     "ignore::pytest.PytestAssertRewriteWarning:",

@@ -29,7 +29,7 @@ from financetoolkit.base.models.normalization_model import (
 )
 from financetoolkit.base.models_controller import Models
 from financetoolkit.base.ratios_controller import Ratios
-from financetoolkit.base.risk_controller import Risk
+from financetoolkit.base.risk.risk_controller import Risk
 from financetoolkit.base.technicals_controller import Technicals
 
 # pylint: disable=too-many-instance-attributes,too-many-lines,line-too-long,too-many-locals,too-many-function-args
@@ -608,6 +608,7 @@ class Toolkit:
             self._monthly_historical_data,
             self._quarterly_historical_data,
             self._yearly_historical_data,
+            self._quarterly,
             self._rounding,
         )
 

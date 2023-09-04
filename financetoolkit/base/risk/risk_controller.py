@@ -6,8 +6,8 @@ import pandas as pd
 from financetoolkit.base.helpers import (
     calculate_growth,
     handle_errors,
-    handle_return_data_periods,
 )
+from financetoolkit.base.risk import helpers
 from financetoolkit.risk import risk
 
 # pylint: disable=too-many-instance-attributes,too-few-public-methods
@@ -26,6 +26,7 @@ class Risk:
         monthly_historical: pd.DataFrame = pd.DataFrame(),
         quarterly_historical: pd.DataFrame = pd.DataFrame(),
         yearly_historical: pd.DataFrame = pd.DataFrame(),
+        quarterly: bool = False,
         rounding: int | None = 4,
     ):
         """
@@ -46,6 +47,7 @@ class Risk:
         self._monthly_historical = monthly_historical
         self._quarterly_historical = quarterly_historical
         self._yearly_historical = yearly_historical
+        self._quarterly = quarterly
         self._rounding: int | None = rounding
 
         # Return Calculations
@@ -74,7 +76,7 @@ class Risk:
     @handle_errors
     def get_value_at_risk(
         self,
-        period: str = "yearly",
+        period: str | None = None,
         alpha: float = 0.05,
         within_period: bool = True,
         rounding: int | None = 4,
@@ -104,7 +106,8 @@ class Risk:
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the VaR values over time. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
-            distribution (str): The distribution to use for the VaR calculations (historic, gaussian, cf or studentt). Defaults to "historic".
+            distribution (str): The distribution to use for the VaR calculations (historic, gaussian, cf
+            or studentt). Defaults to "historic".
 
         Returns:
             pd.Series: VaR values with time as the index.
@@ -140,7 +143,8 @@ class Risk:
         | 2022 | -0.0518 | -0.0713 |
         | 2023 | -0.0271 | -0.054  |
         """
-        returns = handle_return_data_periods(self, period, within_period)
+        period = period if period else "quarterly" if self._quarterly else "yearly"
+        returns = helpers.handle_return_data_periods(self, period, within_period)
 
         if distribution == "historic":
             value_at_risk = risk.get_var_historic(returns, alpha)
@@ -166,7 +170,7 @@ class Risk:
     @handle_errors
     def get_conditional_value_at_risk(
         self,
-        period: str = "yearly",
+        period: str | None = None,
         alpha: float = 0.05,
         within_period: bool = True,
         rounding: int | None = 4,
@@ -182,7 +186,8 @@ class Risk:
         It provides insights into the downside risk associated with an investment and helps investors make
         informed decisions about risk tolerance.
 
-        The CVaR is calculated as the expected loss given that the loss threshold (VaR) with a given confidence level (e.g., 5% for alpha=0.05) is excceeded.
+        The CVaR is calculated as the expected loss given that the loss threshold (VaR) with a given confidence
+        level (e.g., 5% for alpha=0.05) is excceeded.
 
         Args:
             period (str, optional): The data frequency for returns (daily, weekly, quarterly, or yearly).
@@ -195,7 +200,8 @@ class Risk:
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the CVaR values over time. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
-            distribution (str): The distribution to use for the CVaR calculations (historic, gaussian, studentt, laplace or logistic). Defaults to "historic".
+            distribution (str): The distribution to use for the CVaR calculations (historic, gaussian, studentt, laplace
+            or logistic). Defaults to "historic".
 
         Returns:
             pd.Series: CVaR values with time as the index.
@@ -231,7 +237,8 @@ class Risk:
         | 2022 | -0.0685 | -0.0914 |
         | 2023 | -0.0397 | -0.0747 |
         """
-        returns = handle_return_data_periods(self, period, within_period)
+        period = period if period else "quarterly" if self._quarterly else "yearly"
+        returns = helpers.handle_return_data_periods(self, period, within_period)
 
         if distribution == "historic":
             conditional_value_at_risk = risk.get_cvar_historic(returns, alpha)
@@ -261,8 +268,7 @@ class Risk:
     @handle_errors
     def get_maximum_drawdown(
         self,
-        period: str = "yearly",
-        alpha: float = 0.05,
+        period: str | None = None,
         within_period: bool = True,
         rounding: int | None = 4,
         growth: bool = False,
@@ -271,10 +277,10 @@ class Risk:
         """
         Calculate the Maximum Drawdown (MDD) of an investment portfolio or asset's returns.
 
-        Maximum Drawdown (MDD) is a risk management metric that quantifies the largest historical loss of an investment portfolio or asset experienced over a specified time horizon.
-        It provides insights into the downside risk associated with an investment and helps investors make informed decisions about risk tolerance.
-
-        The CVaR is calculated as the expected loss given that the loss threshold (VaR) with a given confidence level (e.g., 5% for alpha=0.05) is excceeded.
+        Maximum Drawdown (MDD) is a risk management metric that quantifies the largest historical loss of
+        n investment portfolio or asset experienced over a specified time horizon. It provides insights into
+        the downside risk associated with an investment and helps investors make informed decisions about
+        risk tolerance.
 
         Args:
             period (str, optional): The data frequency for returns (daily, weekly, quarterly, or yearly).
@@ -322,7 +328,8 @@ class Risk:
         | 2022 | -0.5198 | -0.7272 |
         | 2023 | -0.1964 | -0.2823 |
         """
-        returns = handle_return_data_periods(self, period, within_period)
+        period = period if period else "quarterly" if self._quarterly else "yearly"
+        returns = helpers.handle_return_data_periods(self, period, within_period)
 
         maximum_drawdown = risk.get_max_drawdown(returns)
 
@@ -335,3 +342,156 @@ class Risk:
             )
 
         return maximum_drawdown.round(rounding if rounding else self._rounding)
+
+    @handle_errors
+    def get_skewness(
+        self,
+        period: str | None = None,
+        within_period: bool = True,
+        rounding: int | None = 4,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+    ):
+        """
+        Calculate the Skewness of an investment portfolio or asset's returns.
+
+        Skewness is a statistical measure used in finance to assess the asymmetry in the distribution of
+        returns for an investment portfolio or asset over a defined period. It offers valuable insights
+        into the shape of the return distribution, indicating whether returns are skewed towards the
+        positive or negative side of the mean. Skewness is a crucial tool for investors and analysts seeking
+        to understand the potential risk and return characteristics of an investment, aiding in the assessment
+        of the distribution's tails and potential outliers. It provides a means to gauge the level of
+        skew in returns, enabling more informed investment decisions and risk management strategies.
+
+        Args:
+            period (str, optional): The data frequency for returns (daily, weekly, quarterly, or yearly).
+            Defaults to "yearly".
+            alpha (float, optional): The confidence level for CVaR calculation (e.g., 0.05 for 95% confidence).
+            Defaults to 0.05.
+            within_period (bool, optional): Whether to calculate CVaR within the specified period or for the entire
+            period. Thus whether to look at the CVaR within a specific year (if period = 'yearly') or look at the entirety
+            of all years. Defaults to True.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the CVaR values over time. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+
+        Returns:
+            pd.Series: CVaR values with time as the index.
+
+        Notes:
+        - The method retrieves historical return data based on the specified `period` and calculates Skew for each
+        asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of VaR values using the specified `lag`.
+
+        Example:
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["MSFT", "AAPL", "TSLA"], api_key=FMP_KEY)
+
+        toolkit.risk.get_skewness()
+        ```
+
+        Which returns:
+
+        |      |    MSFT |    AAPL |    TSLA |
+        |:-----|--------:|--------:|--------:|
+        | 2019 | -0.194  | -0.9216 | -0.0646 |
+        | 2020 | -0.0747 | -0.0586 | -0.1824 |
+        | 2021 | -0.0194 | -0.0716 |  0.6572 |
+        | 2022 |  0.1478 |  0.3164 | -0.0263 |
+        | 2023 |  0.5252 |  0.0318 | -0.0972 |
+        """
+        period = period if period else "quarterly" if self._quarterly else "yearly"
+        returns = helpers.handle_return_data_periods(self, period, within_period)
+
+        skewness = risk.get_skewness(returns)
+
+        if growth:
+            return calculate_growth(
+                skewness,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
+                axis="index",
+            )
+
+        return skewness.round(rounding if rounding else self._rounding)
+
+    @handle_errors
+    def get_kurtosis(
+        self,
+        period: str | None = None,
+        within_period: bool = True,
+        fisher: bool = False,
+        rounding: int | None = 4,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+    ):
+        """
+        Calculate the Kurtosis of an investment portfolio or asset's returns.
+
+        Kurtosis is a statistical measure used in finance to evaluate the shape of the probability
+        distribution of returns for an investment portfolio or asset over a defined time period.
+        It assesses the "tailedness" of the return distribution, indicating whether returns have
+        fatter or thinner tails compared to a normal distribution. Kurtosis plays a critical role
+        in risk assessment by revealing the potential presence of extreme outliers or the likelihood
+        of heavy tails in the return data. This information aids investors and analysts in
+        understanding the degree of risk associated with an investment and assists in making
+        more informed decisions regarding risk tolerance. In essence, kurtosis serves as a valuable
+        tool for comprehending the distribution characteristics of returns, offering insights
+        into the potential for rare but significant events in the financial markets.
+
+        Args:
+            period (str, optional): The data frequency for returns (daily, weekly, quarterly, or yearly).
+            Defaults to "yearly".
+            within_period (bool, optional): Whether to calculate CVaR within the specified period or for the entire
+            period. Thus whether to look at the CVaR within a specific year (if period = 'yearly') or look at
+            the entirety of all years. Defaults to True.
+            fisher (bool, optional): Whether to use Fisher's definition of kurtosis (kurtosis = 0.0
+            for a normal distribution).
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the CVaR values over time.
+            efaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+
+        Returns:
+            pd.Series: CVaR values with time as the index.
+
+        Notes:
+        - The method retrieves historical return data based on the specified `period` and calculates VaR for each
+        asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of VaR values using the specified `lag`.
+
+        Example:
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["MSFT", "AAPL", "TSLA"]], api_key=FMP_KEY)
+
+        toolkit.risk.get_kurtosis()
+        ```
+
+        Which returns:
+
+        |      |   MSFT |    AAPL |   TSLA |
+        |:-----|-------:|--------:|-------:|
+        | 2019 | 4.0972 | 10.0741 | 9.128  |
+        | 2020 | 9.2914 |  6.6307 | 5.2189 |
+        | 2021 | 3.3152 |  3.3352 | 7.3197 |
+        | 2022 | 3.852  |  4.0085 | 3.3553 |
+        | 2023 | 4.2908 |  4.4568 | 4.07   |
+        """
+        period = period if period else "quarterly" if self._quarterly else "yearly"
+        returns = helpers.handle_return_data_periods(self, period, within_period)
+
+        kurtosis = risk.get_kurtosis(returns, fisher=fisher)
+
+        if growth:
+            return calculate_growth(
+                kurtosis,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
+                axis="index",
+            )
+
+        return kurtosis.round(rounding if rounding else self._rounding)

@@ -524,9 +524,11 @@ The Models module is meant to execute well-known models such as DUPONT and the D
 
 The Risk module is meant to calculate important risk metrics such as Value at Risk (VaR), Conditional Value at Risk (cVaR), Maximum Drawdown, Correlations, Beta, GARCH, EWMA and more. **This class is currently in active development and therefore not yet available**. 
 
-- Value at Risk (VaR)
-- Conditional Value at Risk (cVaR)
+- Value at Risk (VaR) with distributions Historical, Gaussian, Student-t, Cornish-Fisher.
+- Conditional Value at Risk (cVaR) with distributions Historical, Gaussian, Laplace, Logistic.
 - Maximum Drawdown (MDD)
+- Skewness
+- Kurtosis
 - ...
 
 

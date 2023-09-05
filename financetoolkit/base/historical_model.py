@@ -14,7 +14,7 @@ try:
 except ImportError:
     ENABLE_TQDM = False
 
-from financetoolkit.base.models import fundamentals_model
+from financetoolkit.base import fundamentals_model
 
 # pylint: disable=too-many-locals
 

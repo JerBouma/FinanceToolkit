@@ -17,7 +17,7 @@ try:
 except ImportError:
     ENABLE_TQDM = False
 
-from financetoolkit.base.models.normalization_model import (
+from financetoolkit.base.normalization_model import (
     convert_financial_statements,
 )
 

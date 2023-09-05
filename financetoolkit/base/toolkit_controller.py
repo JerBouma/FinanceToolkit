@@ -7,8 +7,7 @@ from datetime import datetime, timedelta
 
 import pandas as pd
 
-from financetoolkit.base.helpers import calculate_growth as _calculate_growth
-from financetoolkit.base.models.fundamentals_model import (
+from financetoolkit.base.fundamentals_model import (
     get_analyst_estimates as _get_analyst_estimates,
     get_earnings_calendar as _get_earnings_calendar,
     get_financial_statements as _get_financial_statements,
@@ -17,20 +16,22 @@ from financetoolkit.base.models.fundamentals_model import (
     get_rating as _get_rating,
     get_revenue_segmentation as _get_revenue_segmentation,
 )
-from financetoolkit.base.models.historical_model import (
+from financetoolkit.base.helpers import calculate_growth as _calculate_growth
+from financetoolkit.base.historical_model import (
     convert_daily_to_other_period as _convert_daily_to_other_period,
     get_historical_data as _get_historical_data,
 )
-from financetoolkit.base.models.normalization_model import (
+from financetoolkit.base.models.models_controller import Models
+from financetoolkit.base.normalization_model import (
     convert_date_label as _convert_date_label,
     convert_financial_statements as _convert_financial_statements,
     copy_normalization_files as _copy_normalization_files,
     read_normalization_file as _read_normalization_file,
 )
-from financetoolkit.base.models_controller import Models
-from financetoolkit.base.ratios_controller import Ratios
+from financetoolkit.base.performance.performance_controller import Performance
+from financetoolkit.base.ratios.ratios_controller import Ratios
 from financetoolkit.base.risk.risk_controller import Risk
-from financetoolkit.base.technicals_controller import Technicals
+from financetoolkit.base.technicals.technicals_controller import Technicals
 
 # pylint: disable=too-many-instance-attributes,too-many-lines,line-too-long,too-many-locals,too-many-function-args
 # ruff: noqa: E501
@@ -60,6 +61,7 @@ class Toolkit:
         end_date: str | None = None,
         quarterly: bool = False,
         risk_free_rate: str = "10y",
+        benchmark_ticker: str | None = "^GSPC",
         rounding: int | None = 4,
         format_location: str = "",
         reverse_dates: bool = False,
@@ -135,6 +137,7 @@ class Toolkit:
         self._end_date = end_date
         self._quarterly = quarterly
         self._risk_free_rate = risk_free_rate
+        self._benchmark_ticker = benchmark_ticker
         self._rounding = rounding
         self._remove_invalid_tickers = remove_invalid_tickers
         self._invalid_tickers: list = []
@@ -160,8 +163,26 @@ class Toolkit:
         self._daily_historical_data: pd.DataFrame = (
             historical if not historical.empty else pd.DataFrame()
         )
-        self._weekly_historical_data: pd.DataFrame = pd.DataFrame()
-        self._monthly_historical_data: pd.DataFrame = pd.DataFrame()
+        self._weekly_historical_data: pd.DataFrame = (
+            _convert_daily_to_other_period(
+                "weekly",
+                self._daily_historical_data,
+                self._start_date,
+                self._end_date,
+            )
+            if not historical.empty
+            else pd.DataFrame()
+        )
+        self._monthly_historical_data: pd.DataFrame = (
+            _convert_daily_to_other_period(
+                "monthly",
+                self._daily_historical_data,
+                self._start_date,
+                self._end_date,
+            )
+            if not historical.empty
+            else pd.DataFrame()
+        )
         self._quarterly_historical_data: pd.DataFrame = (
             _convert_daily_to_other_period(
                 "quarterly",
@@ -347,17 +368,10 @@ class Toolkit:
                 f"{self._balance_sheet_statement.columns[-1].year + 5}-01-01"
             )
 
-        if self._historical.empty:
-            if self._daily_historical_data.empty:
-                self.get_historical_data(period="daily")
-            if self._weekly_historical_data.empty:
-                self.get_historical_data(period="weekly")
-            if self._monthly_historical_data.empty:
-                self.get_historical_data(period="monthly")
-            if self._quarterly_historical_data.empty:
-                self.get_historical_data(period="quarterly")
-            if self._yearly_historical_data.empty:
-                self.get_historical_data(period="yearly")
+        if self._quarterly:
+            self.get_historical_data(period="quarterly")
+        else:
+            self.get_historical_data(period="yearly")
 
         if empty_data:
             print(
@@ -367,15 +381,13 @@ class Toolkit:
 
         return Ratios(
             self._tickers,
+            self._quarterly_historical_data
+            if self._quarterly
+            else self._yearly_historical_data,
             self._balance_sheet_statement,
             self._income_statement,
             self._cash_flow_statement,
             self._custom_ratios,
-            self._daily_historical_data,
-            self._weekly_historical_data,
-            self._monthly_historical_data,
-            self._quarterly_historical_data,
-            self._yearly_historical_data,
             self._quarterly,
             self._rounding,
         )
@@ -533,11 +545,106 @@ class Toolkit:
 
         return Technicals(
             self._tickers,
-            self._daily_historical_data,
-            self._weekly_historical_data,
-            self._monthly_historical_data,
-            self._quarterly_historical_data,
-            self._yearly_historical_data,
+            self._daily_historical_data.drop(
+                self._benchmark_ticker, axis=1, level=1, errors="ignore"
+            ),
+            self._weekly_historical_data.drop(
+                self._benchmark_ticker, axis=1, level=1, errors="ignore"
+            ),
+            self._monthly_historical_data.drop(
+                self._benchmark_ticker, axis=1, level=1, errors="ignore"
+            ),
+            self._quarterly_historical_data.drop(
+                self._benchmark_ticker, axis=1, level=1, errors="ignore"
+            ),
+            self._yearly_historical_data.drop(
+                self._benchmark_ticker, axis=1, level=1, errors="ignore"
+            ),
+            self._rounding,
+            self._start_date,
+            self._end_date,
+        )
+
+    @property
+    def performance(self) -> Performance:
+        """
+        This gives access to the Risk module. The Risk Module is meant to calculate metrics related to risk such
+        as Value at Risk (VaR), Conditional Value at Risk (cVaR), EMWA/GARCH models and similar models.
+
+        It gives insights in the risk a stock composes that is not perceived as easily by looking at the data.
+        This class is closely related to the Performance class which highlights things such as Sharpe Ratio and
+        Sortino Ratio.
+
+        See the following link for more information: https://www.jeroenbouma.com/projects/financetoolkit/docs/risk
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+
+        toolkit.risk.get_value_at_risk(period='yearly')
+        ```
+
+        Which returns:
+
+        | Date   |    AAPL |    TSLA |
+        |:-------|--------:|--------:|
+        | 2012   |  0      |  0      |
+        | 2013   |  0.1754 |  4.96   |
+        | 2014   |  1.7515 |  0.9481 |
+        | 2015   | -0.1958 |  0.1454 |
+        | 2016   |  0.4177 | -0.3437 |
+        | 2017   |  2.6368 |  1.2225 |
+        | 2018   | -0.2786 |  0.0718 |
+        | 2019   |  3.2243 |  0.4707 |
+        | 2020   |  1.729  |  8.3319 |
+        | 2021   |  1.3179 |  0.8797 |
+        | 2022   | -0.8026 | -1.0046 |
+        | 2023   |  1.8549 |  1.8238 |
+        """
+        if not self._start_date:
+            self._start_date = (datetime.today() - timedelta(days=365 * 10)).strftime(
+                "%Y-%m-%d"
+            )
+        if not self._end_date:
+            self._end_date = datetime.today().strftime("%Y-%m-%d")
+
+        if self._historical.empty:
+            if self._daily_historical_data.empty:
+                self.get_historical_data(period="daily")
+            if self._weekly_historical_data.empty:
+                self.get_historical_data(period="weekly")
+            if self._monthly_historical_data.empty:
+                self.get_historical_data(period="monthly")
+            if self._quarterly_historical_data.empty:
+                self.get_historical_data(period="quarterly")
+            if self._yearly_historical_data.empty:
+                self.get_historical_data(period="yearly")
+
+        historical_data = {
+            "daily": self._daily_historical_data,
+            "weekly": self._weekly_historical_data,
+            "monthly": self._monthly_historical_data,
+            "quarterly": self._quarterly_historical_data,
+            "yearly": self._yearly_historical_data,
+        }
+
+        risk_free_rate_data = {
+            "daily": self._daily_risk_free_rate["Adj Close"],
+            "weekly": self._weekly_risk_free_rate["Adj Close"],
+            "monthly": self._monthly_risk_free_rate["Adj Close"],
+            "quarterly": self._quarterly_risk_free_rate["Adj Close"],
+            "yearly": self._yearly_risk_free_rate["Adj Close"],
+        }
+
+        return Performance(
+            self._tickers,
+            historical_data,
+            risk_free_rate_data,
+            self._benchmark_ticker,
+            self._quarterly,
             self._rounding,
             self._start_date,
             self._end_date,
@@ -1164,6 +1271,10 @@ class Toolkit:
             of the excess return. Only calculated when excess_return is True.
             - Cumulative Return: The cumulative return for the period.
 
+        If a benchmark ticker is selected, it also calculates the benchmark ticker together with the results.
+        By default this is set to "SPY" (S&P 500 ETF) but can be any ticker. This is relevant for calculations
+        for models such as CAPM, Alpha and Beta.
+
         Args:
             start (str): The start date for the historical data. Defaults to None.
             end (str): The end date for the historical data. Defaults to None.
@@ -1214,7 +1325,9 @@ class Toolkit:
 
         if self._daily_historical_data.empty or overwrite:
             self._daily_historical_data, self._invalid_tickers = _get_historical_data(
-                self._tickers,
+                self._tickers + [self._benchmark_ticker]
+                if self._benchmark_ticker
+                else self._tickers,
                 self._start_date,
                 self._end_date,
                 interval="1d",

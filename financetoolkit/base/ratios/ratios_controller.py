@@ -8,7 +8,6 @@ from financetoolkit.base.helpers import calculate_growth, handle_errors
 from financetoolkit.ratios import (
     efficiency,
     liquidity,
-    performance,
     profitability,
     solvency,
     valuation,
@@ -25,15 +24,11 @@ class Ratios:
     def __init__(
         self,
         tickers: str | list[str],
+        historical: pd.DataFrame,
         balance: pd.DataFrame,
         income: pd.DataFrame,
         cash: pd.DataFrame,
         custom_ratios_dict: dict | None = None,
-        daily_historical: pd.DataFrame = pd.DataFrame(),
-        weekly_historical: pd.DataFrame = pd.DataFrame(),
-        monthly_historical: pd.DataFrame = pd.DataFrame(),
-        quarterly_historical: pd.DataFrame = pd.DataFrame(),
-        yearly_historical: pd.DataFrame = pd.DataFrame(),
         quarterly: bool = False,
         rounding: int | None = 4,
     ):
@@ -52,12 +47,8 @@ class Ratios:
         self._rounding: int | None = rounding
         self._quarterly: bool = quarterly
 
-        # Initilaization of Historical Data
-        self._daily_historical_data: pd.DataFrame = daily_historical
-        self._weekly_historical_data: pd.DataFrame = weekly_historical
-        self._monthly_historical_data: pd.DataFrame = monthly_historical
-        self._quarterly_historical_data: pd.DataFrame = quarterly_historical
-        self._yearly_historical_data: pd.DataFrame = yearly_historical
+        # Initialization of Historical Data
+        self._historical_data: pd.DataFrame = historical
 
         # Initialization of Fundamentals Variables
         self._all_ratios: pd.DataFrame = pd.DataFrame()
@@ -3014,10 +3005,9 @@ class Ratios:
         years = self._balance_sheet_statement.columns
         begin, end = str(years[0]), str(years[-1])
 
-        if self._quarterly:
-            share_prices = self._quarterly_historical_data.loc[begin:end, "Adj Close"].T
-        else:
-            share_prices = self._yearly_historical_data.loc[begin:end, "Adj Close"].T
+        share_prices = self._historical_data.loc[begin:end, "Adj Close"][
+            self._tickers
+        ].T
 
         average_shares = (
             self._income_statement.loc[:, "Weighted Average Shares Diluted", :]
@@ -3472,10 +3462,9 @@ class Ratios:
         years = eps.columns
         begin, end = str(years[0]), str(years[-1])
 
-        if self._quarterly:
-            share_prices = self._quarterly_historical_data.loc[begin:end, "Adj Close"].T
-        else:
-            share_prices = self._yearly_historical_data.loc[begin:end, "Adj Close"].T
+        share_prices = self._historical_data.loc[begin:end, "Adj Close"][
+            self._tickers
+        ].T
 
         price_earnings_ratio = valuation.get_price_earnings_ratio(share_prices, eps)
 
@@ -3655,10 +3644,9 @@ class Ratios:
         years = book_value_per_share.columns
         begin, end = str(years[0]), str(years[-1])
 
-        if self._quarterly:
-            share_prices = self._quarterly_historical_data.loc[begin:end, "Adj Close"].T
-        else:
-            share_prices = self._yearly_historical_data.loc[begin:end, "Adj Close"].T
+        share_prices = self._historical_data.loc[begin:end, "Adj Close"][
+            self._tickers
+        ].T
 
         price_to_book_ratio = valuation.get_price_to_book_ratio(
             share_prices, book_value_per_share
@@ -3834,12 +3822,10 @@ class Ratios:
         years = self._cash_flow_statement.columns
         begin, end = str(years[0]), str(years[-1])
 
-        if self._quarterly:
-            share_prices = self._quarterly_historical_data.loc[begin:end, "Adj Close"].T
-            dividends = self._quarterly_historical_data.loc[begin:end, "Dividends"].T
-        else:
-            share_prices = self._yearly_historical_data.loc[begin:end, "Adj Close"].T
-            dividends = self._yearly_historical_data.loc[begin:end, "Dividends"].T
+        share_prices = self._historical_data.loc[begin:end, "Adj Close"][
+            self._tickers
+        ].T
+        dividends = self._historical_data.loc[begin:end, "Dividends"][self._tickers].T
 
         dividend_yield = valuation.get_dividend_yield(
             dividends,
@@ -3905,10 +3891,9 @@ class Ratios:
         years = self._cash_flow_statement.columns
         begin, end = str(years[0]), str(years[-1])
 
-        if self._quarterly:
-            share_prices = self._quarterly_historical_data.loc[begin:end, "Adj Close"].T
-        else:
-            share_prices = self._yearly_historical_data.loc[begin:end, "Adj Close"].T
+        share_prices = self._historical_data.loc[begin:end, "Adj Close"][
+            self._tickers
+        ].T
 
         weighted_dividend_yield = valuation.get_weighted_dividend_yield(
             abs(self._cash_flow_statement.loc[:, "Dividends Paid", :]),
@@ -3971,10 +3956,9 @@ class Ratios:
         years = self._cash_flow_statement.columns
         begin, end = str(years[0]), str(years[-1])
 
-        if self._quarterly:
-            share_prices = self._quarterly_historical_data.loc[begin:end, "Adj Close"].T
-        else:
-            share_prices = self._yearly_historical_data.loc[begin:end, "Adj Close"].T
+        share_prices = self._historical_data.loc[begin:end, "Adj Close"][
+            self._tickers
+        ].T
 
         market_cap = valuation.get_market_cap(share_prices, average_shares)
 
@@ -4039,10 +4023,9 @@ class Ratios:
         years = self._cash_flow_statement.columns
         begin, end = str(years[0]), str(years[-1])
 
-        if self._quarterly:
-            share_prices = self._quarterly_historical_data.loc[begin:end, "Adj Close"].T
-        else:
-            share_prices = self._yearly_historical_data.loc[begin:end, "Adj Close"].T
+        share_prices = self._historical_data.loc[begin:end, "Adj Close"][
+            self._tickers
+        ].T
 
         market_cap = valuation.get_market_cap(share_prices, average_shares)
 
@@ -4106,10 +4089,9 @@ class Ratios:
         years = self._cash_flow_statement.columns
         begin, end = str(years[0]), str(years[-1])
 
-        if self._quarterly:
-            share_prices = self._quarterly_historical_data.loc[begin:end, "Adj Close"].T
-        else:
-            share_prices = self._yearly_historical_data.loc[begin:end, "Adj Close"].T
+        share_prices = self._historical_data.loc[begin:end, "Adj Close"][
+            self._tickers
+        ].T
 
         market_cap = valuation.get_market_cap(share_prices, average_shares)
 
@@ -4168,10 +4150,9 @@ class Ratios:
         years = self._cash_flow_statement.columns
         begin, end = str(years[0]), str(years[-1])
 
-        if self._quarterly:
-            share_prices = self._quarterly_historical_data.loc[begin:end, "Adj Close"].T
-        else:
-            share_prices = self._yearly_historical_data.loc[begin:end, "Adj Close"].T
+        share_prices = self._historical_data.loc[begin:end, "Adj Close"][
+            self._tickers
+        ].T
 
         market_cap = valuation.get_market_cap(share_prices, average_shares)
 
@@ -4398,10 +4379,9 @@ class Ratios:
         years = eps.columns
         begin, end = str(years[0]), str(years[-1])
 
-        if self._quarterly:
-            share_prices = self._quarterly_historical_data.loc[begin:end, "Adj Close"].T
-        else:
-            share_prices = self._yearly_historical_data.loc[begin:end, "Adj Close"].T
+        share_prices = self._historical_data.loc[begin:end, "Adj Close"][
+            self._tickers
+        ].T
 
         earnings_yield = valuation.get_earnings_yield(eps, share_prices)
 
@@ -4593,78 +4573,3 @@ class Ratios:
             )
 
         return ev_to_ebit.round(rounding if rounding else self._rounding)
-
-    @handle_errors
-    def get_sharpe_ratio(
-        self,
-        period: str | None = None,
-        rounding: int | None = 4,
-        growth: bool = False,
-        lag: int | list[int] = 1,
-    ):
-        """
-        Calculate the Sharpe ratio, a measure of risk-adjusted return that evaluates the excess return
-        of an investment portfolio or asset per unit of risk taken.
-
-        The Sharpe ratio is calculated as the difference between the expected return of the asset or portfolio
-        and the risk-free rate of return, divided by the standard deviation of the asset or portfolio's excess return.
-        It quantifies the amount of return generated for each unit of risk assumed, providing insights into the
-        investment's performance relative to the risk taken.
-
-        Args:
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
-            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
-            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
-
-        Returns:
-            pd.DataFrame: Sharpe ratio values.
-
-        Notes:
-        - Daily Sharpe Ratio is not an option as the standard deviation for 1 days is close to zero. Therefore, it does
-        not give any useful insights.
-        - The method retrieves historical data and calculates the Sharpe ratio for each asset in the Toolkit instance.
-        - The risk-free rate is often represented by the return of a risk-free investment, such as a Treasury bond.
-        - If `growth` is set to True, the method calculates the growth of the ratio values using the specified `lag`.
-
-        As an example:
-
-        ```python
-        from financetoolkit import Toolkit
-
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
-
-        toolkit.performance.get_sharpe_ratio()
-        ```
-        """
-        period = period if period else "quarterly" if self._quarterly else "yearly"
-
-        if period == "daily":
-            raise ValueError(
-                "Daily Sharpe Ratio is not an option as standard deviation for 1 day "
-                "is close to zero. Therefore, it does not give any useful insights."
-            )
-
-        if period == "weekly":
-            historical_data = self._weekly_historical_data
-        if period == "monthly":
-            historical_data = self._monthly_historical_data
-        elif period == "quarterly":
-            historical_data = self._quarterly_historical_data
-        elif period == "yearly":
-            historical_data = self._yearly_historical_data
-        else:
-            raise ValueError("Period must be weekly, monthly, quarterly, or yearly.")
-
-        excess_return = historical_data["Excess Return"]
-        excess_volatility = historical_data["Excess Volatility"]
-
-        sharpe_ratio = performance.get_sharpe_ratio(excess_return, excess_volatility)
-
-        if growth:
-            return calculate_growth(
-                sharpe_ratio,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-            )
-
-        return sharpe_ratio.round(rounding if rounding else self._rounding)

@@ -4,7 +4,8 @@ __docformat__ = "google"
 
 import pandas as pd
 
-from financetoolkit.base.helpers import calculate_growth, handle_technical_errors
+from financetoolkit.base.helpers import calculate_growth
+from financetoolkit.base.technicals.helpers import handle_errors
 from financetoolkit.technical import breadth, momentum, overlap, volatility
 
 # pylint: disable=too-many-lines,too-many-instance-attributes,too-many-public-methods,too-many-locals,eval-used
@@ -579,7 +580,7 @@ class Technicals:
             else self._volatility_indicators
         )
 
-    @handle_technical_errors
+    @handle_errors
     def get_mcclellan_oscillator(
         self,
         period: str = "daily",
@@ -661,7 +662,7 @@ class Technicals:
 
         return mcclellan_oscillator.round(rounding if rounding else self._rounding)
 
-    @handle_technical_errors
+    @handle_errors
     def get_advancers_decliners(
         self,
         period: str = "daily",
@@ -733,7 +734,7 @@ class Technicals:
 
         return advancers_decliners.round(rounding if rounding else self._rounding)
 
-    @handle_technical_errors
+    @handle_errors
     def get_money_flow_index(
         self,
         period: str = "daily",
@@ -812,7 +813,7 @@ class Technicals:
 
         return money_flow_index.round(rounding if rounding else self._rounding)
 
-    @handle_technical_errors
+    @handle_errors
     def get_williams_percent_r(
         self,
         period: str = "daily",
@@ -889,7 +890,7 @@ class Technicals:
 
         return williams_percent_r.round(rounding if rounding else self._rounding)
 
-    @handle_technical_errors
+    @handle_errors
     def get_aroon_indicator(
         self,
         period: str = "daily",
@@ -972,7 +973,7 @@ class Technicals:
 
         return aroon_indicator.round(rounding if rounding else self._rounding)
 
-    @handle_technical_errors
+    @handle_errors
     def get_commodity_channel_index(
         self,
         period: str = "daily",
@@ -1058,7 +1059,7 @@ class Technicals:
 
         return commodity_channel_index.round(rounding if rounding else self._rounding)
 
-    @handle_technical_errors
+    @handle_errors
     def get_relative_vigor_index(
         self,
         period: str = "daily",
@@ -1135,7 +1136,7 @@ class Technicals:
 
         return relative_vigor_index.round(rounding if rounding else self._rounding)
 
-    @handle_technical_errors
+    @handle_errors
     def get_force_index(
         self,
         period: str = "daily",
@@ -1210,7 +1211,7 @@ class Technicals:
 
         return force_index.round(rounding if rounding else self._rounding)
 
-    @handle_technical_errors
+    @handle_errors
     def get_ultimate_oscillator(
         self,
         period: str = "daily",
@@ -1300,7 +1301,7 @@ class Technicals:
 
         return ultimate_oscillator.round(rounding if rounding else self._rounding)
 
-    @handle_technical_errors
+    @handle_errors
     def get_percentage_price_oscillator(
         self,
         period: str = "daily",
@@ -1382,7 +1383,7 @@ class Technicals:
             rounding if rounding else self._rounding
         )
 
-    @handle_technical_errors
+    @handle_errors
     def get_detrended_price_oscillator(
         self,
         period: str = "daily",
@@ -1459,7 +1460,7 @@ class Technicals:
             rounding if rounding else self._rounding
         )
 
-    @handle_technical_errors
+    @handle_errors
     def get_average_directional_index(
         self,
         period: str = "daily",
@@ -1541,7 +1542,7 @@ class Technicals:
 
         return average_directional_index.round(rounding if rounding else self._rounding)
 
-    @handle_technical_errors
+    @handle_errors
     def get_chande_momentum_oscillator(
         self,
         period: str = "daily",
@@ -1618,7 +1619,7 @@ class Technicals:
             rounding if rounding else self._rounding
         )
 
-    @handle_technical_errors
+    @handle_errors
     def get_ichimoku_cloud(
         self,
         period: str = "daily",
@@ -1713,7 +1714,7 @@ class Technicals:
 
         return ichimoku_cloud.round(rounding if rounding else self._rounding)
 
-    @handle_technical_errors
+    @handle_errors
     def get_stochastic_oscillator(
         self,
         period: str = "daily",
@@ -1807,7 +1808,7 @@ class Technicals:
 
         return stochastic_osciallator.round(rounding if rounding else self._rounding)
 
-    @handle_technical_errors
+    @handle_errors
     def get_moving_average_convergence_divergence(
         self,
         period: str = "daily",
@@ -1899,7 +1900,7 @@ class Technicals:
 
         return macd.round(rounding if rounding else self._rounding)
 
-    @handle_technical_errors
+    @handle_errors
     def get_relative_strength_index(
         self,
         period: str = "daily",
@@ -1974,7 +1975,7 @@ class Technicals:
 
         return relative_strength_index.round(rounding if rounding else self._rounding)
 
-    @handle_technical_errors
+    @handle_errors
     def get_balance_of_power(
         self,
         period: str = "daily",
@@ -2049,7 +2050,7 @@ class Technicals:
 
         return balance_of_power.round(rounding if rounding else self._rounding)
 
-    @handle_technical_errors
+    @handle_errors
     def get_moving_average(
         self,
         period: str = "daily",
@@ -2124,7 +2125,7 @@ class Technicals:
 
         return moving_average.round(rounding if rounding else self._rounding)
 
-    @handle_technical_errors
+    @handle_errors
     def get_exponential_moving_average(
         self,
         period: str = "daily",
@@ -2201,7 +2202,7 @@ class Technicals:
             rounding if rounding else self._rounding
         )
 
-    @handle_technical_errors
+    @handle_errors
     def get_double_exponential_moving_average(
         self,
         period: str = "daily",
@@ -2280,7 +2281,7 @@ class Technicals:
             rounding if rounding else self._rounding
         )
 
-    @handle_technical_errors
+    @handle_errors
     def get_trix(
         self,
         period: str = "daily",
@@ -2356,7 +2357,7 @@ class Technicals:
 
         return trix.round(rounding if rounding else self._rounding)
 
-    @handle_technical_errors
+    @handle_errors
     def get_bollinger_bands(
         self,
         period: str = "daily",
@@ -2447,7 +2448,7 @@ class Technicals:
 
         return bollinger_bands.round(rounding if rounding else self._rounding)
 
-    @handle_technical_errors
+    @handle_errors
     def get_triangular_moving_average(
         self,
         period: str = "daily",
@@ -2521,7 +2522,7 @@ class Technicals:
 
         return triangular_moving_average.round(rounding if rounding else self._rounding)
 
-    @handle_technical_errors
+    @handle_errors
     def get_true_range(
         self,
         period: str = "daily",
@@ -2599,7 +2600,7 @@ class Technicals:
 
         return true_range.round(rounding if rounding else self._rounding)
 
-    @handle_technical_errors
+    @handle_errors
     def get_average_true_range(
         self,
         period: str = "daily",
@@ -2686,7 +2687,7 @@ class Technicals:
 
         return average_true_range.round(rounding if rounding else self._rounding)
 
-    @handle_technical_errors
+    @handle_errors
     def get_keltner_channels(
         self,
         period: str = "daily",
@@ -2783,7 +2784,7 @@ class Technicals:
 
         return kelter_channels.round(rounding if rounding else self._rounding)
 
-    @handle_technical_errors
+    @handle_errors
     def get_on_balance_volume(
         self,
         period: str = "daily",
@@ -2855,7 +2856,7 @@ class Technicals:
 
         return on_balance_volume.round(rounding if rounding else self._rounding)
 
-    @handle_technical_errors
+    @handle_errors
     def get_accumulation_distribution_line(
         self,
         period: str = "daily",
@@ -2940,7 +2941,7 @@ class Technicals:
             rounding if rounding else self._rounding
         )
 
-    @handle_technical_errors
+    @handle_errors
     def get_chaikin_oscillator(
         self,
         period: str = "daily",

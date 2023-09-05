@@ -114,7 +114,7 @@ bollinger_bands = companies.technicals.get_bollinger_bands()
 
 For each object, it returns a multi-index in which both Apple and Microsoft are presented. For this example, I've selected just Apple to keep things organized but in essence it can be any list of tickers (no limit). The filtering is done through using `.loc['AAPL']` and `.xs('AAPL', level=1, axis=1)` based on whether it's fundamental data or historical data respectively.
 
-### Historical Data
+### Obtaining Historical Data
 
 Obtain historical data on a daily, weekly, monthly or yearly basis. This includes OHLC, volumes, dividends, returns, cumulative returns and volatility calculations for each corresponding period.
 
@@ -176,7 +176,7 @@ Obtain a Balance Sheet Statement on an annual or quarterly basis. This can also 
 | Total Debt                               |  1.14483e+11 |  1.08047e+11 |  1.12436e+11 | 1.24719e+11 |  1.20069e+11 |
 | Net Debt                                 |  8.857e+10   |  5.9203e+10  |  7.442e+10   | 8.9779e+10  |  9.6423e+10  |
 
-### Financial Ratios
+### Obtaining Financial Ratios
 
 Get Profitability Ratios based on the inputted balance sheet, income and cash flow statements. This can be any of the 50+ ratios within the `ratios` module. The `get_` functions show a single ratio whereas the `collect_` functions show an aggregation of multiple ratios.
 
@@ -199,7 +199,7 @@ Get Profitability Ratios based on the inputted balance sheet, income and cash fl
 | EBT to EBIT Ratio                           |   0.9574 |  0.9484 |  0.9589 |  0.9764 |  0.976  |
 | EBIT to Revenue                             |   0.2867 |  0.2664 |  0.2549 |  0.3058 |  0.3095 |
 
-### Financial Models
+### Obtaining Financial Models
 
 Get an Extended DuPont Analysis based on the inputted balance sheet, income and cash flow statements. This can also be for example an Enterprise Value Breakdown (`companies.models.get_enterprise_value_breakdown()`).
 
@@ -212,7 +212,7 @@ Get an Extended DuPont Analysis based on the inputted balance sheet, income and 
 | Equity Multiplier       | nan      | 3.0724 | 3.5633 | 4.2509 | 5.255  | 6.1862 |
 | Return on Equity        | nan      | 0.4936 | 0.5592 | 0.7369 | 1.4744 | 1.7546 |
 
-### Technical Indicators
+### Obtaining Technical Indicators
 
 Get Bollinger Bands based on the historical market data. This can be any of the 30+ technical indicators within the `technicals` module. The `get_` functions show a single indicator whereas the `collect_` functions show an aggregation of multiple indicators.
 
@@ -519,6 +519,16 @@ The Models module is meant to execute well-known models such as DUPONT and the D
 - DuPont Analysis
 - Extended DuPont Analysis
 - Enterprise Value Breakdown
+
+## Performance Metrics
+
+The Performance module is meant to calculate important performance metrics such as Sharpe Ratio, Sortino Ratio, Treynor Ratio, Information Ratio, Jensen's Alpha, Beta, Capital Asset Pricing Model, R-Squared and more. **This class is currently in active development and therefore not yet available**. 
+
+- Beta
+- Capital Asset Pricing Model (CAPM)
+- Sharpe Ratio
+- Sortino Ratio
+- ...
 
 ## Risk Metrics
 

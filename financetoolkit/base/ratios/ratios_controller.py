@@ -755,7 +755,9 @@ class Ratios:
                         break
 
             if formula_adjusted:
-                total_financials.loc[:, name, :] = eval(formula_adjusted).to_numpy()
+                total_financials.loc[:, name, :] = eval(
+                    formula_adjusted
+                ).to_numpy()  # ruff: noqa
 
                 self._custom_ratios = total_financials.loc[
                     :, list(custom_ratios_dict.keys()), :

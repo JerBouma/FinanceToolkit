@@ -10,6 +10,8 @@ import pandas as pd
 # (e.g. 2020Q1) and the second index the days within that period (January to March)
 MULTI_PERIOD_INDEX_LEVELS = 2
 
+# pylint: disable=isinstance-second-argument-not-valid-type
+
 
 def get_covariance(
     returns: pd.Series | pd.DataFrame, benchmark_returns: pd.Series | pd.DataFrame
@@ -44,7 +46,7 @@ def get_covariance(
 
             return covariance
 
-        if isinstance(returns, pd.Series | pd.DataFrame.rolling | pd.Series.rolling):
+        if isinstance(returns, pd.Series | pd.core.window.rolling.Rolling):
             return returns.cov(benchmark_returns)
 
     return returns.cov(benchmark_returns)

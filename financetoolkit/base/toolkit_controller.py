@@ -568,14 +568,15 @@ class Toolkit:
     @property
     def performance(self) -> Performance:
         """
-        This gives access to the Risk module. The Risk Module is meant to calculate metrics related to risk such
-        as Value at Risk (VaR), Conditional Value at Risk (cVaR), EMWA/GARCH models and similar models.
+        This gives access to the Performance module. The Performance Module is meant to calculate metrics related
+        to the risk-return relationship. These are things such as Beta, Sharpe Ratio, Sortino Ratio, CAPM,
+        Alpha and the Treynor Ratio.
 
-        It gives insights in the risk a stock composes that is not perceived as easily by looking at the data.
-        This class is closely related to the Performance class which highlights things such as Sharpe Ratio and
-        Sortino Ratio.
+        It gives insights in the performance a stock has to e.g. a benchmark that is not easily identified by
+        looking at the raw data. This class is closely related to the Risk class which highlights things
+        such as Value at Risk (VaR) and Maximum Drawdown.
 
-        See the following link for more information: https://www.jeroenbouma.com/projects/financetoolkit/docs/risk
+        See the following link for more information: https://www.jeroenbouma.com/projects/financetoolkit/docs/performance
 
         As an example:
 
@@ -584,25 +585,18 @@ class Toolkit:
 
         toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
 
-        toolkit.risk.get_value_at_risk(period='yearly')
+        toolkit.performance.get_capital_asset_pricing_model(period='quarterly')
         ```
 
         Which returns:
 
         | Date   |    AAPL |    TSLA |
         |:-------|--------:|--------:|
-        | 2012   |  0      |  0      |
-        | 2013   |  0.1754 |  4.96   |
-        | 2014   |  1.7515 |  0.9481 |
-        | 2015   | -0.1958 |  0.1454 |
-        | 2016   |  0.4177 | -0.3437 |
-        | 2017   |  2.6368 |  1.2225 |
-        | 2018   | -0.2786 |  0.0718 |
-        | 2019   |  3.2243 |  0.4707 |
-        | 2020   |  1.729  |  8.3319 |
-        | 2021   |  1.3179 |  0.8797 |
-        | 2022   | -0.8026 | -1.0046 |
-        | 2023   |  1.8549 |  1.8238 |
+        | 2022Q3 | -0.0684 | -0.1047 |
+        | 2022Q4 |  0.0857 |  0.0828 |
+        | 2023Q1 |  0.075  |  0.1121 |
+        | 2023Q2 |  0.0922 |  0.1342 |
+        | 2023Q3 |  0.0052 | -0.0482 |
         """
         if not self._start_date:
             self._start_date = (datetime.today() - timedelta(days=365 * 10)).strftime(

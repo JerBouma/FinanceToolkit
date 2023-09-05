@@ -193,8 +193,6 @@ def get_sortino_ratio(excess_returns: pd.Series | pd.DataFrame) -> pd.Series:
     Returns:
         pd.Series: A Series of Sortino ratios with time as index and assets as columns.
     """
-    excess_returns = excess_returns.dropna()
-
     if isinstance(excess_returns, pd.DataFrame):
         if excess_returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS:
             # Calculate Sortino ratio for each asset (ticker) in the DataFrame

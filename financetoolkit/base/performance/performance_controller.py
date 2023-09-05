@@ -77,13 +77,13 @@ class Performance:
         lag: int | list[int] = 1,
     ):
         """
-        Calculate the Sharpe ratio, a measure of risk-adjusted return that evaluates the excess return
-        of an investment portfolio or asset per unit of risk taken.
+        Calculate the Beta, a measurement that assess the systematic risk of a stock or investment.
 
-        The Sharpe ratio is calculated as the difference between the expected return of the asset or portfolio
-        and the risk-free rate of return, divided by the standard deviation of the asset or portfolio's excess return.
-        It quantifies the amount of return generated for each unit of risk assumed, providing insights into the
-        investment's performance relative to the risk taken.
+        Beta is a financial metric used to assess the systematic risk of a stock or investment in
+        relation to the overall market. It provides valuable insights into how a particular asset's
+        returns tend to move in response to fluctuations in the broader market. A stock's Beta is
+        calculated by analyzing its historical price movements and their correlation with the
+        movements of a market index, typically the benchmark index like the S&P 500.
 
         Formula is as follows:
 
@@ -109,9 +109,9 @@ class Performance:
             pd.DataFrame: Sharpe ratio values.
 
         Notes:
-        - Daily Sharpe Ratio is not an option as the standard deviation for 1 days is close to zero. Therefore, it does
+        - Daily Beta is not an option as the standard deviation for 1 days is close to zero. Therefore, it does
         not give any useful insights.
-        - The method retrieves historical data and calculates the Sharpe ratio for each asset in the Toolkit instance.
+        - The method retrieves historical data and calculates the Beta for each asset in the Toolkit instance.
         - The risk-free rate is often represented by the return of a risk-free investment, such as a Treasury bond.
         - If `growth` is set to True, the method calculates the growth of the ratio values using the specified `lag`.
 
@@ -120,18 +120,12 @@ class Performance:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+        toolkit = Toolkit(["AAPL", "AMZN"], api_key=FMP_KEY)
 
-        toolkit.performance.get_sharpe_ratio()
+        toolkit.performance.get_beta()
         ```
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
-
-        if period == "daily":
-            raise ValueError(
-                "Daily Beta is not an option as standard deviation for 1 day "
-                "is close to zero. Therefore, it does not give any useful insights."
-            )
 
         historical_data = handle_return_data_periods(
             self, period, within_period=not rolling
@@ -168,13 +162,14 @@ class Performance:
         lag: int | list[int] = 1,
     ):
         """
-        Calculate the Sharpe ratio, a measure of risk-adjusted return that evaluates the excess return
-        of an investment portfolio or asset per unit of risk taken.
+        Compute the Capital Asset Pricing Model (CAPM), a financial framework used to
+        determine an asset's expected return based on its risk and the risk-free rate.
 
-        The Sharpe ratio is calculated as the difference between the expected return of the asset or portfolio
-        and the risk-free rate of return, divided by the standard deviation of the asset or portfolio's excess return.
-        It quantifies the amount of return generated for each unit of risk assumed, providing insights into the
-        investment's performance relative to the risk taken.
+        The Capital Asset Pricing Model (CAPM) is a widely used financial model that helps in
+        determining the expected return of an asset or portfolio based on its systematic risk and
+        the prevailing risk-free rate in the market. CAPM provides insights into how an asset or
+        investment should be priced in order to offer an appropriate rate of return, given its
+        level of risk compared to the overall market.
 
         Formula is as follows:
 
@@ -194,9 +189,9 @@ class Performance:
             pd.DataFrame: Sharpe ratio values.
 
         Notes:
-        - Daily Sharpe Ratio is not an option as the standard deviation for 1 days is close to zero. Therefore, it does
+        - Daily CAPM is not an option as the standard deviation for 1 days is close to zero. Therefore, it does
         not give any useful insights.
-        - The method retrieves historical data and calculates the Sharpe ratio for each asset in the Toolkit instance.
+        - The method retrieves historical data and calculates the CAPM for each asset in the Toolkit instance.
         - The risk-free rate is often represented by the return of a risk-free investment, such as a Treasury bond.
         - If `growth` is set to True, the method calculates the growth of the ratio values using the specified `lag`.
 
@@ -207,7 +202,7 @@ class Performance:
 
         toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
 
-        toolkit.performance.get_sharpe_ratio()
+        toolkit.performance.gget_capital_asset_pricing_model()
         ```
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"

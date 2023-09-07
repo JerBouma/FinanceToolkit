@@ -1,5 +1,5 @@
 ,Open,Open,Open,High,High,High,Low,Low,Low,Close,Close,Close,Adj Close,Adj Close,Adj Close,Volume,Volume,Volume,Dividends,Dividends,Dividends,Return,Return,Return,Volatility,Volatility,Volatility,Excess Return,Excess Return,Excess Return,Excess Volatility,Excess Volatility,Excess Volatility,Cumulative Return,Cumulative Return,Cumulative Return
-,AAPL,MSFT,^GSPC,AAPL,MSFT,^GSPC,AAPL,MSFT,^GSPC,AAPL,MSFT,^GSPC,AAPL,MSFT,^GSPC,AAPL,MSFT,^GSPC,AAPL,MSFT,^GSPC,AAPL,MSFT,^GSPC,AAPL,MSFT,^GSPC,AAPL,MSFT,^GSPC,AAPL,MSFT,^GSPC,AAPL,MSFT,^GSPC
+,AAPL,MSFT,Benchmark,AAPL,MSFT,Benchmark,AAPL,MSFT,Benchmark,AAPL,MSFT,Benchmark,AAPL,MSFT,Benchmark,AAPL,MSFT,Benchmark,AAPL,MSFT,Benchmark,AAPL,MSFT,Benchmark,AAPL,MSFT,Benchmark,AAPL,MSFT,Benchmark,AAPL,MSFT,Benchmark,AAPL,MSFT,Benchmark
 Date,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
 2010,12.0,28.0,1257.0,12.0,28.0,1259.0,11.0,28.0,1254.0,12.0,28.0,1258.0,10.0,22.0,1258.0,193508000,24752000,1799770000,0.0,0.0,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,-0.0,0.0,0.0,0.0,0.0,1.0,1.0,1.0
 2011,14.0,26.0,1263.0,15.0,26.0,1264.0,14.0,26.0,1257.0,14.0,26.0,1258.0,12.0,21.0,1258.0,179662000,27395700,2271850000,0.0,0.0,0,0.0,-0.0,-0.0,0.0,0.0,0.0,0.0,-0.0,-0.0,0.0,0.0,0.0,1.0,1.0,1.0

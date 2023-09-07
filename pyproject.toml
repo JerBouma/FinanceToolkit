@@ -24,10 +24,10 @@ classifiers = [
 
 [tool.poetry.dependencies]
 python = ">=3.10, <3.13"
+requests = "^2.31.0"
+scipy = "^1.11.2"
 numpy = "^1.25.2"
 pandas = "^2.1.0"
-scipy = "^1.11.2"
-requests = "^2.31.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^7.4.1"
@@ -66,7 +66,7 @@ skip_gitignore = true
 combine_as_imports = true
 
 [tool.codespell]
-ignore-words-list = 'zar,profund,basf,applicatio,ser,mone,vie,wew,ist,tre,ue,nd,fo,nwe,0t,Ot,ot,juni,acn,hve,te,hsa,fof,ege,bu,wya,esy'
+ignore-words-list = 'zar,profund,basf,applicatio,ser,mone,vie,wew,ist,tre,ue,nd,fo,nwe,0t,Ot,ot,juni,acn,hve,te,hsa,fof,ege,bu,wya,esy,whn,ned,4rd,wih,mke,caf,fpr,hav,coo'
 skip = '*.json,./.git,pyproject.toml,poetry.lock'
 
 [tool.mypy]

@@ -1845,8 +1845,8 @@ class Technicals:
 
         The formula is a follows:
 
-            %K = 100 * ((Close - Lowest Low) / (Highest High - Lowest Low))
-            %D = SMA(%K)
+            - %K = 100 * ((Close - Lowest Low) / (Highest High - Lowest Low))
+            - %D = SMA(%K)
 
         Args:
             period (str, optional): The time period to consider for historical data.
@@ -1945,8 +1945,8 @@ class Technicals:
 
         The formula is a follows:
 
-            MACD Line = Short-term EMA - Long-term EMA
-            Signal Line = SMA(MACD Line)
+            - MACD Line = Short-term EMA - Long-term EMA
+            - Signal Line = SMA(MACD Line)
 
         Args:
             period (str, optional): The time period to consider for historical data.
@@ -2538,10 +2538,10 @@ class Technicals:
 
         The formula is a follows:
 
-            EMA1 = EMA(Close, Window)
-            EMA2 = EMA(EMA1, Window)
-            EMA3 = EMA(EMA2, Window)
-            TRIX = 100 * ((EMA3 - EMA3[-1]) / EMA3[-1])
+            - EMA1 = EMA(Close, Window)
+            - EMA2 = EMA(EMA1, Window)
+            - EMA3 = EMA(EMA2, Window)
+            - TRIX = 100 * ((EMA3 - EMA3[-1]) / EMA3[-1])
 
         Args:
             period (str, optional): The time period to consider for historical data.
@@ -2623,9 +2623,9 @@ class Technicals:
 
         The formula is a follows:
 
-            Middle Band = SMA(Close, Window)
-            Upper Band = Middle Band + (Num Std Dev * Std Dev)
-            Lower Band = Middle Band - (Num Std Dev * Std Dev)
+            - Middle Band = SMA(Close, Window)
+            - Upper Band = Middle Band + (Num Std Dev * Std Dev)
+            - Lower Band = Middle Band - (Num Std Dev * Std Dev)
 
         Args:
             period (str, optional): The time period to consider for historical data.
@@ -2980,8 +2980,8 @@ class Technicals:
 
         The formula is a follows:
 
-            TR = max(high - low, abs(high - previous_close), abs(low - previous_close))
-            ATR = EMA(TR, Window)
+            - TR = max(high - low, abs(high - previous_close), abs(low - previous_close))
+            - ATR = EMA(TR, Window)
 
         Args:
             period (str): Period for which to calculate the ATR.
@@ -3074,11 +3074,11 @@ class Technicals:
 
         The formula is a follows:
 
-            EMA = (Close - Previous EMA) * (2 / (1 + Window)) + Previous EMA
-            ATR = EMA(TR, ATR Window)
-            Upper Channel Line = EMA(High, Window) + ATR * ATR Multiplier
-            Middle Channel Line = EMA(Close, Window)
-            Lower Channel Line = EMA(Low, Window) - ATR * ATR Multiplier
+            - EMA = (Close - Previous EMA) * (2 / (1 + Window)) + Previous EMA
+            - ATR = EMA(TR, ATR Window)
+            - Upper Channel Line = EMA(High, Window) + ATR * ATR Multiplier
+            - Middle Channel Line = EMA(Close, Window)
+            - Lower Channel Line = EMA(Low, Window) - ATR * ATR Multiplier
 
         Args:
             period (str, optional): The time period to consider for historical data.

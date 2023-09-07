@@ -68,10 +68,10 @@ class Models:
 
         The formula is as follows:
 
-            Profit Margin = Net Income / Revenue
-            Asset Turnover = Revenue / Average Total Assets
-            Financial Leverage = Average Total Assets / Average Total Equity
-            ROE = Profit Margin * Asset Turnover * Financial Leverage
+            - Profit Margin = Net Income / Revenue
+            - Asset Turnover = Revenue / Average Total Assets
+            - Financial Leverage = Average Total Assets / Average Total Equity
+            - ROE = Profit Margin * Asset Turnover * Financial Leverage
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
@@ -147,12 +147,12 @@ class Models:
 
         The formula is as follows:
 
-            Profit Margin = Net Income / Revenue
-            Asset Turnover = Revenue / Average Total Assets
-            Financial Leverage = Average Total Assets / Average Total Equity
-            ROA = Net Income / Average Total Assets
-            Total Asset Turnover = Revenue / Average Total Assets
-            ROE = Profit Margin * Asset Turnover * Financial Leverage * ROA * Total Asset Turnover
+            - Profit Margin = Net Income / Revenue
+            - Asset Turnover = Revenue / Average Total Assets
+            - Financial Leverage = Average Total Assets / Average Total Equity
+            - ROA = Net Income / Average Total Assets
+            - Total Asset Turnover = Revenue / Average Total Assets
+            - ROE = Profit Margin * Asset Turnover * Financial Leverage * ROA * Total Asset Turnover
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
@@ -231,13 +231,14 @@ class Models:
         Calculate the Enterprise Value (EV) breakdown, providing a detailed view of its components.
 
         The Enterprise Value breakdown includes the following components for each quarter or year:
-        - Share Price: The market price per share of the company's stock.
-        - Market Capitalization (Market Cap): The total value of a company's outstanding common and preferred shares.
-        - Debt: The sum of long-term and short-term debt on the company's balance sheet.
-        - Preferred Equity: The value of preferred shares, if applicable.
-        - Minority Interest: The equity value of a subsidiary with less than 50% ownership.
-        - Cash and Cash Equivalents: The total amount of liquid assets including cash, marketable securities,
-        and short-term investments.
+
+            - Share Price: The market price per share of the company's stock.
+            - Market Capitalization (Market Cap): The total value of a company's outstanding common and preferred shares.
+            - Debt: The sum of long-term and short-term debt on the company's balance sheet.
+            - Preferred Equity: The value of preferred shares, if applicable.
+            - Minority Interest: The equity value of a subsidiary with less than 50% ownership.
+            - Cash and Cash Equivalents: The total amount of liquid assets including cash, marketable securities,
+            and short-term investments.
 
         The Enterprise Value is calculated as the sum of Market Cap, Debt, Preferred Equity,
         Minority Interest, minus Cash and Cash Equivalents.

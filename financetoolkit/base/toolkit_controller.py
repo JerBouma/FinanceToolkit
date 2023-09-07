@@ -546,19 +546,19 @@ class Toolkit:
         return Technicals(
             self._tickers,
             self._daily_historical_data.drop(
-                self._benchmark_ticker, axis=1, level=1, errors="ignore"
+                "Benchmark", axis=1, level=1, errors="ignore"
             ),
             self._weekly_historical_data.drop(
-                self._benchmark_ticker, axis=1, level=1, errors="ignore"
+                "Benchmark", axis=1, level=1, errors="ignore"
             ),
             self._monthly_historical_data.drop(
-                self._benchmark_ticker, axis=1, level=1, errors="ignore"
+                "Benchmark", axis=1, level=1, errors="ignore"
             ),
             self._quarterly_historical_data.drop(
-                self._benchmark_ticker, axis=1, level=1, errors="ignore"
+                "Benchmark", axis=1, level=1, errors="ignore"
             ),
             self._yearly_historical_data.drop(
-                self._benchmark_ticker, axis=1, level=1, errors="ignore"
+                "Benchmark", axis=1, level=1, errors="ignore"
             ),
             self._rounding,
             self._start_date,
@@ -637,7 +637,6 @@ class Toolkit:
             self._tickers,
             historical_data,
             risk_free_rate_data,
-            self._benchmark_ticker,
             self._quarterly,
             self._rounding,
             self._start_date,
@@ -1330,6 +1329,11 @@ class Toolkit:
                 fill_nan=fill_nan,
             )
 
+            # Change the benchmark ticker name to Benchmark
+            self._daily_historical_data = self._daily_historical_data.rename(
+                columns={self._benchmark_ticker: "Benchmark"}, level=1
+            )
+
         if self._remove_invalid_tickers:
             self._tickers = [
                 ticker
@@ -1343,7 +1347,7 @@ class Toolkit:
             ].copy()
             historical_data.loc[historical_data.index[0], "Return"] = 0
 
-            if len(self._tickers) == 1:
+            if len(self._tickers) == 1 and not self._benchmark_ticker:
                 return historical_data.xs(self._tickers[0], level=1, axis="columns")
 
             return historical_data
@@ -1365,7 +1369,7 @@ class Toolkit:
             ].copy()
             historical_data.loc[historical_data.index[0], "Return"] = 0
 
-            if len(self._tickers) == 1:
+            if len(self._tickers) == 1 and not self._benchmark_ticker:
                 return historical_data.xs(self._tickers[0], level=1, axis="columns")
 
             return historical_data
@@ -1387,7 +1391,7 @@ class Toolkit:
             ].copy()
             historical_data.loc[historical_data.index[0], "Return"] = 0
 
-            if len(self._tickers) == 1:
+            if len(self._tickers) == 1 and not self._benchmark_ticker:
                 return historical_data.xs(self._tickers[0], level=1, axis="columns")
 
             return historical_data
@@ -1409,7 +1413,7 @@ class Toolkit:
             ].copy()
             historical_data.loc[historical_data.index[0], "Return"] = 0
 
-            if len(self._tickers) == 1:
+            if len(self._tickers) == 1 and not self._benchmark_ticker:
                 return historical_data.xs(self._tickers[0], level=1, axis="columns")
 
             return historical_data
@@ -1431,7 +1435,7 @@ class Toolkit:
             ].copy()
             historical_data.loc[historical_data.index[0], "Return"] = 0
 
-            if len(self._tickers) == 1:
+            if len(self._tickers) == 1 and not self._benchmark_ticker:
                 return historical_data.xs(self._tickers[0], level=1, axis="columns")
 
             return historical_data

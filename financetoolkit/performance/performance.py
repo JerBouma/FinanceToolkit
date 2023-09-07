@@ -2,7 +2,6 @@
 
 import warnings
 
-import numpy as np
 import pandas as pd
 
 # This is meant for calculations in which a Multi Index exists. This is the case
@@ -114,25 +113,142 @@ def get_rolling_beta(
 
 
 def get_capital_asset_pricing_model(
-    risk_free_rate: pd.Series | pd.DataFrame,
-    beta: pd.Series,
-    benchmark_returns: pd.Series,
+    risk_free_rate: pd.Series | float,
+    beta: pd.Series | pd.DataFrame | float,
+    benchmark_returns: pd.Series | float,
 ) -> pd.Series | pd.DataFrame:
-    """_summary_
+    """
+    CAPM, or the Capital Asset Pricing Model, is a financial model used to estimate the expected return on an investment,
+    such as a stock or portfolio of stocks. It provides a framework for evaluating the risk and return trade-off of
+    an asset or portfolio in relation to the overall market. CAPM is based on the following key components:
+
+        - Risk-Free Rate (Rf): This is the theoretical return an investor could earn from an investment with no
+        risk of financial loss. It is typically based on the yield of a government bond.
+        - Market Risk Premium (Rm - Rf): This represents the additional return that investors expect to earn
+        for taking on the risk of investing in the overall market as opposed to a risk-free asset. It
+        is calculated as the difference between the expected return of the market (Rm) and the risk-free rate (Rf).
+        - Beta (β): Beta is a measure of an asset's or portfolio's sensitivity to market movements. It
+        quantifies how much an asset's returns are expected to move in relation to changes in the
+        overall market. A beta of 1 indicates that the asset moves in line with the market, while a
+        beta greater than 1 suggests higher volatility, and a beta less than 1 indicates lower volatility.
+
+    The formula is as follows:
+
+    Expected Return (ER) = Rf + β * (Rm - Rf)
 
     Args:
-        returns (pd.Series | pd.DataFrame): _description_
-        benchmark_returns (pd.Series | pd.DataFrame): _description_
+        risk_free_rate (pd.Series | float): the risk free rate.
+        beta (pd.Series | pd.DataFrame | float): the beta.
+        benchmark_returns (pd.Series | float): the benchmark returns.
 
     Returns:
-        pd.Series | pd.DataFrame: _description_
+        pd.Series | pd.DataFrame | float: the capital asset pricing model.
     """
-    # Slightly different order with same result: Beta * (Benchmark - Risk Free) + Risk Free
-    capital_asset_pricing_model = beta.multiply(
-        (benchmark_returns - risk_free_rate), axis=0
-    ).add(risk_free_rate, axis=0)
+    if isinstance(beta, pd.DataFrame):
+        capital_asset_pricing_model = pd.DataFrame(columns=beta.columns)
+        for column in capital_asset_pricing_model.columns:
+            capital_asset_pricing_model.loc[:, column] = risk_free_rate + beta[
+                column
+            ] * (benchmark_returns - risk_free_rate)
+    if isinstance(beta, (pd.Series | float)):
+        capital_asset_pricing_model = risk_free_rate + beta * (
+            benchmark_returns - risk_free_rate
+        )
 
     return capital_asset_pricing_model
+
+
+def get_alpha(
+    asset_returns: pd.Series | float,
+    benchmark_returns: pd.Series | float,
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate the Alpha.
+
+    Args:
+        excess_returns (pd.Series): A Series of returns with risk-free rate subtracted.
+
+    Returns:
+        pd.Series: A Series of Sharpe ratios with time as index and assets as columns.
+    """
+    if isinstance(asset_returns, pd.DataFrame):
+        alpha = pd.DataFrame(columns=asset_returns.columns)
+        for column in alpha.columns:
+            alpha.loc[:, column] = asset_returns[column] - benchmark_returns
+    if isinstance(asset_returns, (pd.Series | float)):
+        alpha = asset_returns - benchmark_returns
+
+    return alpha
+
+
+def get_jensens_alpha(
+    asset_returns: pd.Series | float,
+    risk_free_rate: pd.Series | float,
+    beta: pd.Series | pd.DataFrame | float,
+    benchmark_returns: pd.Series | float,
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate Jensen's Alpha.
+
+    Args:
+        excess_returns (pd.Series): A Series of returns with risk-free rate subtracted.
+
+    Returns:
+        pd.Series: A Series of Sharpe ratios with time as index and assets as columns.
+    """
+    if isinstance(beta, pd.DataFrame) and isinstance(asset_returns, pd.DataFrame):
+        jensens_alpha = pd.DataFrame(columns=beta.columns)
+        for column in jensens_alpha.columns:
+            jensens_alpha.loc[:, column] = asset_returns[column] - (
+                risk_free_rate + beta[column] * (benchmark_returns - risk_free_rate)
+            )
+    elif isinstance(beta, (pd.Series | float)) and isinstance(
+        beta, (pd.Series | float)
+    ):
+        jensens_alpha = asset_returns - (
+            risk_free_rate + beta * (benchmark_returns - risk_free_rate)
+        )
+    else:
+        raise TypeError(
+            "Expects pd.DataFrame for both Asset Returns and Beta or pd.Series / Float "
+            "for both Asset Returns and Beta"
+        )
+
+    return jensens_alpha
+
+
+def get_treynor_ratio(
+    asset_returns: pd.Series | float,
+    risk_free_rate: pd.Series | float,
+    beta: pd.Series | pd.DataFrame | float,
+) -> pd.Series:
+    """
+    Calculate the Treynor ratio of returns.
+
+    Args:
+        excess_returns (pd.Series): A Series of returns with risk-free rate subtracted.
+        beta (float): The portfolio's beta (systematic risk).
+
+    Returns:
+        pd.Series: A Series of Treynor ratios with time as index and assets as columns.
+    """
+    if isinstance(beta, pd.DataFrame) and isinstance(asset_returns, pd.DataFrame):
+        treynor_ratio = pd.DataFrame(columns=beta.columns)
+        for column in treynor_ratio.columns:
+            treynor_ratio.loc[:, column] = (
+                asset_returns[column] - risk_free_rate
+            ) / beta[column]
+    elif isinstance(beta, (pd.Series | float)) and isinstance(
+        asset_returns, (pd.Series | float)
+    ):
+        treynor_ratio = (asset_returns - risk_free_rate) / beta
+    else:
+        raise TypeError(
+            "Expects pd.DataFrame for both Asset Returns and Beta or pd.Series / Float "
+            "for both Asset Returns and Beta"
+        )
+
+    return treynor_ratio
 
 
 def get_sharpe_ratio(excess_returns: pd.Series | pd.DataFrame) -> pd.Series:
@@ -217,65 +333,104 @@ def get_sortino_ratio(excess_returns: pd.Series | pd.DataFrame) -> pd.Series:
     raise TypeError("Expects pd.DataFrame, pd.Series inputs, no other value.")
 
 
-def get_treynor_ratio(excess_returns: pd.Series, beta: float) -> pd.Series:
-    """
-    Calculate the Treynor ratio of returns.
-
-    Args:
-        excess_returns (pd.Series): A Series of returns with risk-free rate subtracted.
-        beta (float): The portfolio's beta (systematic risk).
-
-    Returns:
-        pd.Series: A Series of Treynor ratios with time as index and assets as columns.
-    """
-    return excess_returns / beta
-
-
-def get_calmar_ratio(annualized_returns: pd.Series, max_drawdown: float) -> pd.Series:
-    """
-    Calculate the Calmar ratio of returns.
-
-    Args:
-        annualized_returns (pd.Series): A Series of annualized returns.
-        max_drawdown (float): The maximum drawdown of the portfolio.
-
-    Returns:
-        pd.Series: A Series of Calmar ratios with time as index and assets as columns.
-    """
-    return annualized_returns / abs(max_drawdown)
-
-
-def get_upside_capture_ratio(
-    portfolio_returns: pd.Series, benchmark_returns: pd.Series
+def get_m2_ratio(
+    asset_returns: pd.Series | pd.DataFrame,
+    risk_free_rate: pd.Series,
+    asset_standard_deviation: pd.Series | pd.DataFrame,
 ) -> pd.Series:
     """
-    Calculate the Upside Capture Ratio.
+    Calculate the M2 Ratio (Modigliani-Modigliani Measure) of returns.
 
     Args:
-        portfolio_returns (pd.Series): A Series of portfolio returns.
-        benchmark_returns (pd.Series): A Series of benchmark returns.
+        excess_returns (pd.Series | pd.DataFrame): A Series or DataFrame of returns with risk-free
+        rate already subtracted.
 
     Returns:
-        pd.Series: A Series of Upside Capture Ratios with time as index.
+        pd.Series: A Series of M2 ratios with time as index and assets as columns.
     """
-    upside_returns = np.maximum(portfolio_returns, 0)
-    upside_capture = np.sum(upside_returns) / np.sum(benchmark_returns)
-    return upside_capture
+    if isinstance(asset_returns, pd.DataFrame) and isinstance(
+        asset_standard_deviation, pd.DataFrame
+    ):
+        m2_ratio = pd.DataFrame(columns=asset_returns.columns)
+        for column in m2_ratio.columns:
+            m2_ratio.loc[:, column] = (
+                asset_returns[column] - risk_free_rate
+            ) / asset_standard_deviation[column]
+    elif isinstance(asset_returns, (pd.Series | float)) and isinstance(
+        asset_standard_deviation, (pd.Series | float)
+    ):
+        m2_ratio = (asset_returns - risk_free_rate) / asset_standard_deviation
+    else:
+        raise TypeError(
+            "Expects pd.DataFrame for both Asset Returns and Asset Standard Deviations or pd.Series / Float "
+            "for both Asset Returns and Asset Standed Deviations."
+        )
+
+    return m2_ratio
 
 
-def get_downside_capture_ratio(
-    portfolio_returns: pd.Series, benchmark_returns: pd.Series
+def get_tracking_error(
+    asset_returns: pd.Series | pd.DataFrame, benchmark_returns: pd.Series
 ) -> pd.Series:
     """
-    Calculate the Downside Capture Ratio.
+    Calculate the Tracking Error of returns.
 
     Args:
-        portfolio_returns (pd.Series): A Series of portfolio returns.
-        benchmark_returns (pd.Series): A Series of benchmark returns.
+        excess_returns (pd.Series | pd.DataFrame): A Series or DataFrame of returns with risk-free
+        rate already subtracted.
 
     Returns:
-        pd.Series: A Series of Downside Capture Ratios with time as index.
+        pd.Series: A Series of Sortino ratios with time as index and assets as columns.
     """
-    downside_returns = np.minimum(portfolio_returns, 0)
-    downside_capture = np.sum(downside_returns) / np.sum(benchmark_returns)
-    return downside_capture
+    if isinstance(asset_returns, pd.DataFrame):
+        if asset_returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS:
+            tracking_error = asset_returns.groupby(level=0).apply(
+                lambda x: (x.sub(benchmark_returns, axis=0)).std()
+            )
+
+            return tracking_error
+
+        tracking_error = pd.DataFrame(columns=asset_returns.columns)
+        for column in tracking_error.columns:
+            tracking_error.loc[:, column] = (asset_returns - benchmark_returns).std()
+
+    if isinstance(asset_returns, (pd.Series | float)):
+        tracking_error = (asset_returns - benchmark_returns).std()
+
+    return tracking_error
+
+
+def get_information_ratio(
+    asset_returns: pd.Series | pd.DataFrame, benchmark_returns: pd.Series
+) -> pd.Series:
+    """
+    Calculate the Information Ratio of returns.
+
+    Args:
+        excess_returns (pd.Series | pd.DataFrame): A Series or DataFrame of returns with risk-free
+        rate already subtracted.
+
+    Returns:
+        pd.Series: A Series of Sortino ratios with time as index and assets as columns.
+    """
+    if isinstance(asset_returns, pd.DataFrame):
+        if asset_returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS:
+            information_ratio = asset_returns.groupby(level=0).apply(
+                lambda x: (
+                    x.sub(benchmark_returns, axis=0).mean()
+                    / (x.sub(benchmark_returns, axis=0)).std()
+                )
+            )
+
+            return information_ratio
+
+        information_ratio = pd.DataFrame(columns=asset_returns.columns)
+        for column in information_ratio.columns:
+            difference = asset_returns[column] - benchmark_returns
+            information_ratio.loc[:, column] = difference.mean() / difference.std()
+
+    if isinstance(asset_returns, (pd.Series | float)):
+        difference = asset_returns - benchmark_returns
+        information_ratio = difference.mean() / difference.std()
+
+    return information_ratio

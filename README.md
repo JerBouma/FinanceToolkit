@@ -524,11 +524,16 @@ The Models module is meant to execute well-known models such as DUPONT and the D
 
 The Performance module is meant to calculate important performance metrics such as Sharpe Ratio, Sortino Ratio, Treynor Ratio, Information Ratio, Jensen's Alpha, Beta, Capital Asset Pricing Model, R-Squared and more. **This class is currently in active development and therefore not yet available**. 
 
+- Alpha
+- Jensen's Alpha 
 - Beta
 - Capital Asset Pricing Model (CAPM)
+- Treynor Ratio
 - Sharpe Ratio
 - Sortino Ratio
-- ...
+- M2 Ratio
+- Tracking Error
+- Information Error
 
 ## Risk Metrics
 

@@ -31,6 +31,8 @@ The Finance Toolkit is complimented very well with the [Finance Database 🌎](h
 3. [Available Ratios and Indicators](#available-ratios-and-indicators)
     1. [Financial Ratios](#financial-ratios)
     2. [Financial Models](#financial-models)
+    3. [Performance Metrics](#performance-metrics)
+    4. [Risk Metrics](#risk-metrics)
     3. [Technical Indicators](#technical-indicators)
 3. [Contributing](#contributing)
 4. [Contact](#contact)
@@ -522,7 +524,7 @@ The Models module is meant to execute well-known models such as DUPONT and the D
 
 ## Performance Metrics
 
-The Performance module is meant to calculate important performance metrics such as Sharpe Ratio, Sortino Ratio, Treynor Ratio, Information Ratio, Jensen's Alpha, Beta, Capital Asset Pricing Model, R-Squared and more. **This class is currently in active development and therefore not yet available**. 
+The Performance module is meant to calculate important performance metrics such as Sharpe Ratio, Sortino Ratio, Treynor Ratio, Information Ratio, Jensen's Alpha, Beta, Capital Asset Pricing Model and more. **Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/performance) which includes an explanation about the performance metrics, the parameters and an example.**
 
 - Alpha
 - Jensen's Alpha 
@@ -537,15 +539,13 @@ The Performance module is meant to calculate important performance metrics such 
 
 ## Risk Metrics
 
-The Risk module is meant to calculate important risk metrics such as Value at Risk (VaR), Conditional Value at Risk (cVaR), Maximum Drawdown, Correlations, Beta, GARCH, EWMA and more. **This class is currently in active development and therefore not yet available**. 
+The Risk module is meant to calculate important risk metrics such as Value at Risk (VaR), Conditional Value at Risk (cVaR), Maximum Drawdown, Correlations, Beta, GARCH, EWMA and more. **Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/risk) which includes an explanation about the risk metrics, the parameters and an example.**
 
 - Value at Risk (VaR) with distributions Historical, Gaussian, Student-t, Cornish-Fisher.
 - Conditional Value at Risk (cVaR) with distributions Historical, Gaussian, Laplace, Logistic.
 - Maximum Drawdown (MDD)
 - Skewness
 - Kurtosis
-- ...
-
 
 ## Technical Indicators
 

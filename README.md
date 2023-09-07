@@ -110,6 +110,12 @@ profitability_ratios = companies.ratios.collect_profitability_ratios()
 # a Models example
 extended_dupont_analysis = companies.models.get_extended_dupont_analysis()
 
+# a Performance example
+capital_asset_pricing_model = companies.performance.get_capital_asset_pricing_model(show_full_results=True)
+
+# a Risk example
+value_at_risk = companies.risk.get_value_at_risk(period='quarterly')
+
 # a Technical example
 bollinger_bands = companies.technicals.get_bollinger_bands()
 ````
@@ -213,6 +219,55 @@ Get an Extended DuPont Analysis based on the inputted balance sheet, income and 
 | Asset Turnover          | nan      | 0.7168 | 0.7389 | 0.8288 | 1.0841 | 1.1206 |
 | Equity Multiplier       | nan      | 3.0724 | 3.5633 | 4.2509 | 5.255  | 6.1862 |
 | Return on Equity        | nan      | 0.4936 | 0.5592 | 0.7369 | 1.4744 | 1.7546 |
+
+### Obtaining Performance Metrics
+
+Get the Expected Return as defined by the Capital Asset Pricing Model. Here with the `show_full_results=True` parameter not only the expected return is found but also the Betas. The beauty of this is that it can be based on any period as the function also accepts the period 'weekly', 'monthly', 'quarterly' and 'yearly' (as shown below).
+
+
+| Date   |   Risk Free Rate |   Beta AAPL |   Beta MSFT |   Benchmark Returns |   CAPM AAPL |   CAPM MSFT |
+|:-------|-----------------:|------------:|------------:|--------------------:|------------:|------------:|
+| 2017   |           0.024  |     1.36406 |     1.29979 |           0.1942    |      0.2562 |    0.245223 |
+| 2018   |           0.0269 |     1.25651 |     1.44686 |          -0.0623726 |     -0.0853 |   -0.102265 |
+| 2019   |           0.0192 |     1.5572  |     1.2942  |           0.288781  |      0.439  |    0.36809  |
+| 2020   |           0.0092 |     1.12329 |     1.1204  |           0.162589  |      0.1815 |    0.181058 |
+| 2021   |           0.0151 |     1.3144  |     1.1523  |           0.268927  |      0.3487 |    0.307586 |
+| 2022   |           0.0388 |     1.30786 |     1.2829  |          -0.194428  |     -0.2662 |   -0.260409 |
+| 2023   |           0.0427 |     1.20463 |     1.2727  |           0.157231  |      0.1807 |    0.188465 |
+
+### Obtaining Risk Metrics
+
+Get the Value at Risk for each quarter. Here, the days within each quarter are considered for the Value at Risk. This makes it so that you can understand within each period what is the expected Value at Risk (VaR) which can again be any period but also based on distributions such as Historical, Gaussian, Student-t, Cornish-Fisher.
+
+|        |    AAPL |    MSFT |   Benchmark |
+|:-------|--------:|--------:|------------:|
+| 2017Q1 | -0.0042 | -0.0098 |     -0.0036 |
+| 2017Q2 | -0.0147 | -0.0182 |     -0.0068 |
+| 2017Q3 | -0.0171 | -0.0119 |     -0.0071 |
+| 2017Q4 | -0.0149 | -0.0084 |     -0.0041 |
+| 2018Q1 | -0.025  | -0.0291 |     -0.0212 |
+| 2018Q2 | -0.016  | -0.0228 |     -0.0131 |
+| 2018Q3 | -0.0163 | -0.0135 |     -0.0065 |
+| 2018Q4 | -0.0461 | -0.0394 |     -0.0267 |
+| 2019Q1 | -0.0189 | -0.0195 |     -0.0094 |
+| 2019Q2 | -0.0204 | -0.0208 |     -0.0117 |
+| 2019Q3 | -0.0216 | -0.0268 |     -0.0121 |
+| 2019Q4 | -0.0137 | -0.0138 |     -0.0083 |
+| 2020Q1 | -0.0653 | -0.0668 |     -0.0517 |
+| 2020Q2 | -0.0297 | -0.0257 |     -0.0278 |
+| 2020Q3 | -0.0406 | -0.0326 |     -0.0168 |
+| 2020Q4 | -0.0296 | -0.0279 |     -0.0137 |
+| 2021Q1 | -0.0348 | -0.0267 |     -0.0148 |
+| 2021Q2 | -0.0176 | -0.0159 |     -0.0092 |
+| 2021Q3 | -0.0234 | -0.0167 |     -0.0117 |
+| 2021Q4 | -0.0204 | -0.0206 |     -0.0118 |
+| 2022Q1 | -0.0258 | -0.0374 |     -0.0194 |
+| 2022Q2 | -0.0396 | -0.0424 |     -0.0355 |
+| 2022Q3 | -0.029  | -0.029  |     -0.0205 |
+| 2022Q4 | -0.0364 | -0.0314 |     -0.0234 |
+| 2023Q1 | -0.018  | -0.0257 |     -0.0156 |
+| 2023Q2 | -0.01   | -0.0191 |     -0.0076 |
+| 2023Q3 | -0.0314 | -0.0226 |     -0.0105 |
 
 ### Obtaining Technical Indicators
 

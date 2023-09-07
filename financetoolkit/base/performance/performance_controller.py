@@ -85,7 +85,7 @@ class Performance:
         calculated by analyzing its historical price movements and their correlation with the
         movements of a market index, typically the benchmark index like the S&P 500.
 
-        Formula is as follows:
+        The formula is as follows:
 
             Beta = Covariance of Asset Returns and Benchmark Returns / Variance of Benchmark Returns
 
@@ -171,7 +171,7 @@ class Performance:
         investment should be priced in order to offer an appropriate rate of return, given its
         level of risk compared to the overall market.
 
-        Formula is as follows:
+        The formula is as follows:
 
             Capital Asset Pricing Model = Risk Free Rate + Beta * (Benchmark Returns - Risk Free Rate)
 
@@ -267,7 +267,7 @@ class Performance:
         It quantifies the amount of return generated for each unit of risk assumed, providing insights into the
         investment's performance relative to the risk taken.
 
-        Formula is as follows:
+        The formula is as follows:
 
             Sharpe Ratio = Excess Return / Excess Standard Deviation
 
@@ -361,7 +361,7 @@ class Performance:
         It quantifies the amount of return generated for each unit of risk assumed, providing insights into the
         investment's performance relative to the risk taken.
 
-        Formula is as follows:
+        The formula is as follows:
 
             Sortino Ratio = Excess Return / Excess Downside Risk
 

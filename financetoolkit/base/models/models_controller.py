@@ -66,6 +66,13 @@ class Models:
         return on equity (ROE). It breaks down the ROE into three key components: Profit Margin, Asset
         Turnover, and Financial Leverage.
 
+        The formula is as follows:
+
+            Profit Margin = Net Income / Revenue
+            Asset Turnover = Revenue / Average Total Assets
+            Financial Leverage = Average Total Assets / Average Total Equity
+            ROE = Profit Margin * Asset Turnover * Financial Leverage
+
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the values. Defaults to False.
@@ -137,6 +144,15 @@ class Models:
         into multiple components, providing a more detailed insight into the factors influencing a
         company's profitability. It considers additional metrics such as Return on Assets (ROA),
         Total Asset Turnover, Financial Leverage, and more.
+
+        The formula is as follows:
+
+            Profit Margin = Net Income / Revenue
+            Asset Turnover = Revenue / Average Total Assets
+            Financial Leverage = Average Total Assets / Average Total Equity
+            ROA = Net Income / Average Total Assets
+            Total Asset Turnover = Revenue / Average Total Assets
+            ROE = Profit Margin * Asset Turnover * Financial Leverage * ROA * Total Asset Turnover
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.

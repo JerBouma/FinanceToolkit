@@ -130,465 +130,6 @@ class Ratios:
 
         return self._all_ratios_growth if growth else self._all_ratios
 
-    def collect_efficiency_ratios(
-        self,
-        days: int = 365,
-        rounding: int | None = 4,
-        growth: bool = False,
-        lag: int | list[int] = 1,
-    ) -> pd.Series | pd.DataFrame:
-        """
-        Calculates and collects all Efficiency Ratios based on the provided data.
-
-        Args:
-            days (int, optional): The number of days to use for the calculation. Defaults to 365.
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
-            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
-            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
-
-        Returns:
-            pd.Series or pd.DataFrame: Efficiency ratios calculated based on the specified parameters.
-
-        Notes:
-        - The method calculates various efficiency ratios for each asset in the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of the ratio values
-          using the specified `lag`.
-
-        As an example:
-
-        ```python
-        from financetoolkit import Toolkit
-
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
-
-        toolkit.ratios.collect_efficiency_ratios()
-        ```
-        """
-        efficiency_ratios: dict = {}
-
-        efficiency_ratios[
-            "Days of Inventory Outstanding (DIO)"
-        ] = self.get_days_of_inventory_outstanding(days=days)
-        efficiency_ratios[
-            "Days of Sales Outstanding (DSO)"
-        ] = self.get_days_of_sales_outstanding(days=days)
-        efficiency_ratios["Operating Cycle (CC)"] = self.get_operating_cycle()
-        efficiency_ratios[
-            "Days of Accounts Payable Outstanding (DPO)"
-        ] = self.get_days_of_accounts_payable_outstanding(days=days)
-        efficiency_ratios[
-            "Cash Conversion Cycle (CCC)"
-        ] = self.get_cash_conversion_cycle(days=days)
-        efficiency_ratios["Receivables Turnover"] = self.get_receivables_turnover()
-        efficiency_ratios[
-            "Inventory Turnover Ratio"
-        ] = self.get_inventory_turnover_ratio()
-        efficiency_ratios[
-            "Accounts Payable Turnover Ratio"
-        ] = self.get_accounts_payables_turnover_ratio()
-        efficiency_ratios["SGA-to-Revenue Ratio"] = self.get_sga_to_revenue_ratio()
-        efficiency_ratios["Fixed Asset Turnover"] = self.get_fixed_asset_turnover()
-        efficiency_ratios["Asset Turnover Ratio"] = self.get_asset_turnover_ratio()
-        efficiency_ratios["Operating Ratio"] = self.get_operating_ratio()
-
-        self._efficiency_ratios = (
-            pd.concat(efficiency_ratios)
-            .swaplevel(0, 1)
-            .sort_index(level=0, sort_remaining=False)
-            .dropna(axis="columns", how="all")
-        )
-
-        self._efficiency_ratios = self._efficiency_ratios.round(
-            rounding if rounding else self._rounding
-        )
-
-        if growth:
-            self._efficiency_ratios_growth = calculate_growth(
-                self._efficiency_ratios,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-            )
-
-        if len(self._tickers) == 1:
-            return (
-                self._efficiency_ratios_growth[self._tickers[0]]
-                if growth
-                else self._efficiency_ratios.loc[self._tickers[0]]
-            )
-
-        return self._efficiency_ratios_growth if growth else self._efficiency_ratios
-
-    def collect_liquidity_ratios(
-        self,
-        rounding: int | None = 4,
-        growth: bool = False,
-        lag: int | list[int] = 1,
-    ) -> pd.DataFrame:
-        """
-        Calculates and collects all Liquidity Ratios based on the provided data.
-
-        Args:
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
-            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
-            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
-
-        Returns:
-            pd.DataFrame: Liquidity ratios calculated based on the specified parameters.
-
-        Notes:
-        - The method calculates various liquidity ratios for each asset in the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of the ratio values
-          using the specified `lag`.
-
-        As an example:
-
-        ```python
-        from financetoolkit import Toolkit
-
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
-
-        liquidity_ratios = toolkit.ratios.collect_liquidity_ratios()
-        ```
-        """
-        liquidity_ratios: dict = {}
-
-        liquidity_ratios["Current Ratio"] = self.get_current_ratio()
-        liquidity_ratios["Quick Ratio"] = self.get_quick_ratio()
-        liquidity_ratios["Cash Ratio"] = self.get_cash_ratio()
-        liquidity_ratios["Working Capital"] = self.get_working_capital()
-        liquidity_ratios[
-            "Operating Cash Flow Ratio"
-        ] = self.get_operating_cash_flow_ratio()
-        liquidity_ratios[
-            "Operating Cash Flow to Sales Ratio"
-        ] = self.get_operating_cash_flow_sales_ratio()
-        liquidity_ratios[
-            "Short Term Coverage Ratio"
-        ] = self.get_short_term_coverage_ratio()
-
-        self._liquidity_ratios = (
-            pd.concat(liquidity_ratios)
-            .swaplevel(0, 1)
-            .sort_index(level=0, sort_remaining=False)
-            .dropna(axis="columns", how="all")
-        )
-
-        self._liquidity_ratios = self._liquidity_ratios.round(
-            rounding if rounding else self._rounding
-        )
-
-        if growth:
-            self._liquidity_ratios_growth = calculate_growth(
-                self._liquidity_ratios,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-            )
-
-        if len(self._tickers) == 1:
-            return (
-                self._liquidity_ratios_growth[self._tickers[0]]
-                if growth
-                else self._liquidity_ratios.loc[self._tickers[0]]
-            )
-
-        return self._liquidity_ratios_growth if growth else self._liquidity_ratios
-
-    def collect_profitability_ratios(
-        self,
-        rounding: int | None = 4,
-        growth: bool = False,
-        lag: int | list[int] = 1,
-    ) -> pd.DataFrame:
-        """
-        Calculates and collects all Profitability Ratios based on the provided data.
-
-        Args:
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
-            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
-            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
-
-        Returns:
-            pd.DataFrame: Profitability ratios calculated based on the specified parameters.
-
-        Notes:
-        - The method calculates various profitability ratios for each asset in the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of the ratio values
-          using the specified `lag`.
-
-        As an example:
-
-        ```python
-        from financetoolkit import Toolkit
-
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
-
-        profitability_ratios = toolkit.ratios.collect_profitability_ratios()
-        ```
-        """
-        profitability_ratios: dict = {}
-
-        profitability_ratios["Gross Margin"] = self.get_gross_margin()
-        profitability_ratios["Operating Margin"] = self.get_operating_margin()
-        profitability_ratios["Net Profit Margin"] = self.get_net_profit_margin()
-        profitability_ratios[
-            "Interest Coverage Ratio"
-        ] = self.get_interest_coverage_ratio()
-        profitability_ratios[
-            "Income Before Tax Profit Margin"
-        ] = self.get_income_before_tax_profit_margin()
-        profitability_ratios["Effective Tax Rate"] = self.get_effective_tax_rate()
-        profitability_ratios["Return on Assets (ROA)"] = self.get_return_on_assets()
-        profitability_ratios["Return on Equity (ROE)"] = self.get_return_on_equity()
-        profitability_ratios[
-            "Return on Invested Capital (ROIC)"
-        ] = self.get_return_on_invested_capital()
-        profitability_ratios[
-            "Return on Capital Employed (ROCE)"
-        ] = self.get_return_on_capital_employed()
-        profitability_ratios[
-            "Return on Tangible Assets"
-        ] = self.get_return_on_tangible_assets()
-        profitability_ratios["Income Quality Ratio"] = self.get_income_quality_ratio()
-        profitability_ratios["Net Income per EBT"] = self.get_net_income_per_ebt()
-        profitability_ratios[
-            "Free Cash Flow to Operating Cash Flow Ratio"
-        ] = self.get_free_cash_flow_operating_cash_flow_ratio()
-        profitability_ratios["EBT to EBIT Ratio"] = self.get_EBT_to_EBIT()
-        profitability_ratios["EBIT to Revenue"] = self.get_EBIT_to_revenue()
-
-        self._profitability_ratios = (
-            pd.concat(profitability_ratios)
-            .swaplevel(0, 1)
-            .sort_index(level=0, sort_remaining=False)
-            .dropna(axis="columns", how="all")
-        )
-
-        self._profitability_ratios = self._profitability_ratios.round(
-            rounding if rounding else self._rounding
-        )
-
-        if growth:
-            self._profitability_ratios_growth = calculate_growth(
-                self._profitability_ratios,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-            )
-
-        if len(self._tickers) == 1:
-            return (
-                self._profitability_ratios_growth[self._tickers[0]]
-                if growth
-                else self._profitability_ratios.loc[self._tickers[0]]
-            )
-
-        return (
-            self._profitability_ratios_growth if growth else self._profitability_ratios
-        )
-
-    def collect_solvency_ratios(
-        self,
-        diluted: bool = True,
-        rounding: int | None = 4,
-        growth: bool = False,
-        lag: int | list[int] = 1,
-    ) -> pd.DataFrame:
-        """
-        Calculates and collects all Solvency Ratios based on the provided data.
-
-        Args:
-            diluted (bool, optional): Whether to use diluted shares for the calculation. Defaults to True.
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
-            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
-            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
-
-        Returns:
-            pd.DataFrame: Solvency ratios calculated based on the specified parameters.
-
-        Notes:
-        - The method calculates various solvency ratios for each asset in the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of the ratio values
-          using the specified `lag`.
-
-        As an example:
-
-        ```python
-        from financetoolkit import Toolkit
-
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
-
-        solvency_ratios = toolkit.ratios.collect_solvency_ratios()
-        ```
-        """
-        solvency_ratios: dict = {}
-
-        solvency_ratios["Debt-to-Assets Ratio"] = self.get_debt_to_assets_ratio()
-        solvency_ratios["Debt-to-Equity Ratio"] = self.get_debt_to_equity_ratio()
-        solvency_ratios[
-            "Debt Service Coverage Ratio"
-        ] = self.get_debt_service_coverage_ratio()
-        solvency_ratios["Equity Multiplier"] = self.get_equity_multiplier()
-        solvency_ratios["Free Cash Flow Yield"] = self.get_free_cash_flow_yield(
-            diluted=diluted
-        )
-        solvency_ratios[
-            "Net-Debt to EBITDA Ratio"
-        ] = self.get_net_debt_to_ebitda_ratio()
-        solvency_ratios["Cash Flow Coverage Ratio"] = self.get_free_cash_flow_yield(
-            diluted=diluted
-        )
-        solvency_ratios["CAPEX Coverage Ratio"] = self.get_capex_coverage_ratio()
-        solvency_ratios[
-            "Dividend CAPEX Coverage Ratio"
-        ] = self.get_capex_dividend_coverage_ratio()
-
-        self._solvency_ratios = (
-            pd.concat(solvency_ratios)
-            .swaplevel(0, 1)
-            .sort_index(level=0, sort_remaining=False)
-            .dropna(axis="columns", how="all")
-        )
-
-        self._solvency_ratios = self._solvency_ratios.round(
-            rounding if rounding else self._rounding
-        )
-
-        if growth:
-            self._solvency_ratios_growth = calculate_growth(
-                self._solvency_ratios,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-            )
-
-        if len(self._tickers) == 1:
-            return (
-                self._solvency_ratios_growth[self._tickers[0]]
-                if growth
-                else self._solvency_ratios.loc[self._tickers[0]]
-            )
-
-        return self._solvency_ratios_growth if growth else self._solvency_ratios
-
-    def collect_valuation_ratios(
-        self,
-        include_dividends: bool = False,
-        diluted: bool = True,
-        rounding: int | None = 4,
-        growth: bool = False,
-        lag: int | list[int] = 1,
-    ) -> pd.DataFrame:
-        """
-        Calculates and collects all Valuation Ratios based on the provided data.
-
-        Args:
-            include_dividends (bool, optional): Whether to include dividends in the calculations. Defaults to False.
-            diluted (bool, optional): Whether to use diluted shares for the calculation. Defaults to True.
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
-            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
-            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
-
-        Returns:
-            pd.DataFrame: Valuation ratios calculated based on the specified parameters.
-
-        Notes:
-        - The method calculates various valuation ratios for each asset in the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of the ratio values
-          using the specified `lag`.
-
-        As an example:
-
-        ```python
-        from financetoolkit import Toolkit
-
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
-
-        valuation_ratios = toolkit.ratios.collect_valuation_ratios()
-        ```
-        """
-        valuation_ratios: dict = {}
-
-        valuation_ratios["Earnings per Share (EPS)"] = self.get_earnings_per_share(
-            include_dividends=include_dividends, diluted=diluted
-        )
-        valuation_ratios["Revenue per Share (RPS)"] = self.get_revenue_per_share(
-            diluted=diluted
-        )
-        valuation_ratios["Price-to-Earnings (PE)"] = self.get_price_earnings_ratio(
-            include_dividends=include_dividends, diluted=diluted
-        )
-        valuation_ratios[
-            "Earnings per Share Growth"
-        ] = self.get_earnings_per_share_growth(
-            include_dividends=include_dividends, diluted=diluted
-        )
-        valuation_ratios[
-            "Price-to-Earnings-Growth (PEG)"
-        ] = self.get_price_to_earnings_growth_ratio(
-            include_dividends=include_dividends, diluted=diluted
-        )
-        valuation_ratios["Book Value per Share"] = self.get_book_value_per_share(
-            diluted=diluted
-        )
-        valuation_ratios["Price-to-Book (PB)"] = self.get_price_to_book_ratio(
-            diluted=diluted
-        )
-        valuation_ratios["Interest Debt per Share"] = self.get_interest_debt_per_share(
-            diluted=diluted
-        )
-        valuation_ratios["CAPEX per Share"] = self.get_capex_per_share(diluted=diluted)
-        valuation_ratios["Earnings Yield"] = self.get_earnings_yield(
-            include_dividends=include_dividends, diluted=diluted
-        )
-        valuation_ratios["Payout Ratio"] = self.get_payout_ratio()
-        valuation_ratios["Dividend Yield"] = self.get_dividend_yield()
-        valuation_ratios["Weighted Dividend Yield"] = self.get_weighted_dividend_yield(
-            diluted=diluted
-        )
-        valuation_ratios[
-            "Price-to-Cash-Flow (P/CF)"
-        ] = self.get_price_to_cash_flow_ratio(diluted=diluted)
-        valuation_ratios[
-            "Price-to-Free-Cash-Flow (P/FCF)"
-        ] = self.get_price_to_free_cash_flow_ratio(diluted=diluted)
-        valuation_ratios["Market Cap"] = self.get_market_cap(diluted=diluted)
-        valuation_ratios["Enterprise Value"] = self.get_enterprise_value(
-            diluted=diluted
-        )
-        valuation_ratios["EV-to-Sales"] = self.get_ev_to_sales_ratio(diluted=diluted)
-        valuation_ratios["EV-to-EBIT"] = self.get_ev_to_ebit(diluted=diluted)
-        valuation_ratios["EV-to-EBITDA"] = self.get_ev_to_ebitda_ratio(diluted=diluted)
-        valuation_ratios[
-            "EV-to-Operating-Cash-Flow"
-        ] = self.get_ev_to_operating_cashflow_ratio(diluted=diluted)
-        valuation_ratios["Tangible Asset Value"] = self.get_tangible_asset_value()
-        valuation_ratios["Net Current Asset Value"] = self.get_net_current_asset_value()
-
-        self._valuation_ratios = (
-            pd.concat(valuation_ratios)
-            .swaplevel(0, 1)
-            .sort_index(level=0, sort_remaining=False)
-            .dropna(axis="columns", how="all")
-        )
-
-        self._valuation_ratios = self._valuation_ratios.round(
-            rounding if rounding else self._rounding
-        )
-
-        if growth:
-            self._valuation_ratios_growth = calculate_growth(
-                self._valuation_ratios,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-            )
-
-        if len(self._tickers) == 1:
-            return (
-                self._valuation_ratios_growth[self._tickers[0]]
-                if growth
-                else self._valuation_ratios.loc[self._tickers[0]]
-            )
-
-        return self._valuation_ratios_growth if growth else self._valuation_ratios
-
     @handle_errors
     def collect_custom_ratios(
         self,
@@ -784,6 +325,94 @@ class Ratios:
 
         return self._custom_ratios_growth if growth else self._custom_ratios
 
+    def collect_efficiency_ratios(
+        self,
+        days: int = 365,
+        rounding: int | None = 4,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+    ) -> pd.Series | pd.DataFrame:
+        """
+        Calculates and collects all Efficiency Ratios based on the provided data.
+
+        Args:
+            days (int, optional): The number of days to use for the calculation. Defaults to 365.
+            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+
+        Returns:
+            pd.Series or pd.DataFrame: Efficiency ratios calculated based on the specified parameters.
+
+        Notes:
+        - The method calculates various efficiency ratios for each asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the ratio values
+          using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+
+        toolkit.ratios.collect_efficiency_ratios()
+        ```
+        """
+        efficiency_ratios: dict = {}
+
+        efficiency_ratios[
+            "Days of Inventory Outstanding (DIO)"
+        ] = self.get_days_of_inventory_outstanding(days=days)
+        efficiency_ratios[
+            "Days of Sales Outstanding (DSO)"
+        ] = self.get_days_of_sales_outstanding(days=days)
+        efficiency_ratios["Operating Cycle (CC)"] = self.get_operating_cycle()
+        efficiency_ratios[
+            "Days of Accounts Payable Outstanding (DPO)"
+        ] = self.get_days_of_accounts_payable_outstanding(days=days)
+        efficiency_ratios[
+            "Cash Conversion Cycle (CCC)"
+        ] = self.get_cash_conversion_cycle(days=days)
+        efficiency_ratios["Receivables Turnover"] = self.get_receivables_turnover()
+        efficiency_ratios[
+            "Inventory Turnover Ratio"
+        ] = self.get_inventory_turnover_ratio()
+        efficiency_ratios[
+            "Accounts Payable Turnover Ratio"
+        ] = self.get_accounts_payables_turnover_ratio()
+        efficiency_ratios["SGA-to-Revenue Ratio"] = self.get_sga_to_revenue_ratio()
+        efficiency_ratios["Fixed Asset Turnover"] = self.get_fixed_asset_turnover()
+        efficiency_ratios["Asset Turnover Ratio"] = self.get_asset_turnover_ratio()
+        efficiency_ratios["Operating Ratio"] = self.get_operating_ratio()
+
+        self._efficiency_ratios = (
+            pd.concat(efficiency_ratios)
+            .swaplevel(0, 1)
+            .sort_index(level=0, sort_remaining=False)
+            .dropna(axis="columns", how="all")
+        )
+
+        self._efficiency_ratios = self._efficiency_ratios.round(
+            rounding if rounding else self._rounding
+        )
+
+        if growth:
+            self._efficiency_ratios_growth = calculate_growth(
+                self._efficiency_ratios,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
+            )
+
+        if len(self._tickers) == 1:
+            return (
+                self._efficiency_ratios_growth[self._tickers[0]]
+                if growth
+                else self._efficiency_ratios.loc[self._tickers[0]]
+            )
+
+        return self._efficiency_ratios_growth if growth else self._efficiency_ratios
+
     @handle_errors
     def get_asset_turnover_ratio(
         self, rounding: int | None = 4, growth: bool = False, lag: int | list[int] = 1
@@ -797,6 +426,10 @@ class Ratios:
         its assets to generate revenue. A higher asset turnover ratio indicates that the
         company is generating more revenue per unit of assets, which is generally seen
         as a positive sign of operational efficiency.
+
+        The formula is as follows:
+
+            Asset Turnover Ratio = Net Sales / Average Total Assets
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
@@ -850,6 +483,10 @@ class Ratios:
         inventory is sold and replaced over a period. A higher inventory turnover ratio
         suggests that a company is effectively managing its inventory by quickly
         converting it into sales.
+
+        The formula is as follows:
+
+            Inventory Turnover Ratio = Cost of Goods Sold / Average Inventory
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
@@ -907,6 +544,10 @@ class Ratios:
         of days in the period. It represents the average number of days it takes for
         a company to sell its inventory. A lower DSI indicates that the company is
         selling its inventory more quickly.
+
+        The formula is as follows:
+
+            Days Sales in Inventory Ratio = (Average Inventory / Cost of Goods Sold) * Days
 
         Args:
             days (int, optional): The number of days to use for the calculation. Defaults to 365.
@@ -970,6 +611,10 @@ class Ratios:
         to collect payment on its credit sales. A lower DSO indicates that the company
         is collecting payments more quickly.
 
+        The formula is as follows:
+
+            Days of Sales Outstanding Ratio = (Accounts Receivable / Total Credit Sales) * Days
+
         Args:
             days (int, optional): The number of days to use for the calculation. Defaults to 365.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
@@ -1029,6 +674,10 @@ class Ratios:
         convert it into finished goods, sell the goods to customers, and collect the
         accounts receivable. It is calculated by adding the days sales in inventory (DSI)
         and the days of sales outstanding (DSO).
+
+        The formula is as follows:
+
+            Operating Cycle Ratio = Days of Sales in Inventory + Days of Sales Outstanding
 
         Args:
             days (int, optional): The number of days to use for the calculation. Defaults to 365.
@@ -1097,6 +746,10 @@ class Ratios:
         generally favorable, as it suggests that the company is efficiently managing its
         payments to suppliers.
 
+        The formula is as follows:
+
+            Accounts Payable Turnover Ratio = Cost of Goods Sold / Average Accounts Payable
+
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
@@ -1159,6 +812,10 @@ class Ratios:
         a company to pay its suppliers after receiving an invoice. A higher DPO ratio indicates
         that the company is taking longer to pay its suppliers, which may have implications for
         its relationships with suppliers.
+
+        The formula is as follows:
+
+            Days Payables Outstanding = (Average Accounts Payable / Cost of Goods Sold) * Days
 
         Args:
             days (int, optional): The number of days to use for the calculation. Defaults to 365.
@@ -1224,6 +881,11 @@ class Ratios:
         in managing its working capital. It takes into account the time it takes to sell inventory, collect payments
         from customers, and pay suppliers. A shorter CCC indicates that a company is able to quickly convert its
         investments into cash, which can be a positive sign of efficient operations.
+
+        The formula is as follows:
+
+            Cash Conversion Cycle = Days of Sales in Inventory + Days of Sales Outstanding - Days of Accounts Payable
+            Outstanding
 
         Args:
             days (int, optional): The number of days to use for the calculation. Defaults to 365.
@@ -1297,6 +959,10 @@ class Ratios:
         A higher turnover ratio is generally favorable as it suggests that the company is collecting
         payments more quickly, which improves its cash flow and working capital management.
 
+        The formula is as follows:
+
+            Receivables Turnover Ratio = Net Credit Sales / Average Accounts Receivable
+
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
@@ -1348,6 +1014,10 @@ class Ratios:
         company's revenue and then multiplying by 100 to express it as a percentage. It
         provides insight into the efficiency of a company's cost management and its ability
         to control its overhead costs.
+
+        The formula is as follows:
+
+            SG&A to Revenue Ratio = SG&A Expenses / Revenue
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
@@ -1402,6 +1072,10 @@ class Ratios:
         assets to generate revenue. A higher ratio suggests more efficient utilization of
         fixed assets.
 
+        The formula is as follows:
+
+            Fixed Asset Turnover Ratio = Net Sales / Average Fixed Assets
+
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
@@ -1453,6 +1127,10 @@ class Ratios:
         its net sales and multiplying by 100 to express it as a percentage. It provides
         insight into how efficiently a company is managing its operations.
 
+        The formula is as follows:
+
+            Operating Ratio = (Operating Expenses + Cost of Goods Sold) / Revenue
+
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
@@ -1492,6 +1170,81 @@ class Ratios:
 
         return operating_ratio.round(rounding if rounding else self._rounding)
 
+    def collect_liquidity_ratios(
+        self,
+        rounding: int | None = 4,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+    ) -> pd.DataFrame:
+        """
+        Calculates and collects all Liquidity Ratios based on the provided data.
+
+        Args:
+            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+
+        Returns:
+            pd.DataFrame: Liquidity ratios calculated based on the specified parameters.
+
+        Notes:
+        - The method calculates various liquidity ratios for each asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the ratio values
+          using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+
+        liquidity_ratios = toolkit.ratios.collect_liquidity_ratios()
+        ```
+        """
+        liquidity_ratios: dict = {}
+
+        liquidity_ratios["Current Ratio"] = self.get_current_ratio()
+        liquidity_ratios["Quick Ratio"] = self.get_quick_ratio()
+        liquidity_ratios["Cash Ratio"] = self.get_cash_ratio()
+        liquidity_ratios["Working Capital"] = self.get_working_capital()
+        liquidity_ratios[
+            "Operating Cash Flow Ratio"
+        ] = self.get_operating_cash_flow_ratio()
+        liquidity_ratios[
+            "Operating Cash Flow to Sales Ratio"
+        ] = self.get_operating_cash_flow_sales_ratio()
+        liquidity_ratios[
+            "Short Term Coverage Ratio"
+        ] = self.get_short_term_coverage_ratio()
+
+        self._liquidity_ratios = (
+            pd.concat(liquidity_ratios)
+            .swaplevel(0, 1)
+            .sort_index(level=0, sort_remaining=False)
+            .dropna(axis="columns", how="all")
+        )
+
+        self._liquidity_ratios = self._liquidity_ratios.round(
+            rounding if rounding else self._rounding
+        )
+
+        if growth:
+            self._liquidity_ratios_growth = calculate_growth(
+                self._liquidity_ratios,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
+            )
+
+        if len(self._tickers) == 1:
+            return (
+                self._liquidity_ratios_growth[self._tickers[0]]
+                if growth
+                else self._liquidity_ratios.loc[self._tickers[0]]
+            )
+
+        return self._liquidity_ratios_growth if growth else self._liquidity_ratios
+
     @handle_errors
     def get_current_ratio(
         self, rounding: int | None = 4, growth: bool = False, lag: int | list[int] = 1
@@ -1503,6 +1256,10 @@ class Ratios:
         The current ratio is calculated by dividing a company's current assets by its
         current liabilities. It indicates whether a company can meet its short-term
         obligations using its short-term assets.
+
+        The formula is as follows:
+
+            Current Ratio = Current Assets / Current Liabilities
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
@@ -1557,6 +1314,10 @@ class Ratios:
         company's ability to cover its short-term liabilities using its most liquid
         assets without relying on inventory.
 
+        The formula is as follows:
+
+            Quick Ratio = (Cash and Cash Equivalents + Short Term Investments + Accounts Receivable) / Current Liabilities
+
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
@@ -1606,6 +1367,10 @@ class Ratios:
         by current liabilities. It provides insight into a company's immediate ability
         to cover its short-term obligations using its most liquid assets.
 
+        The formula is as follows:
+
+            Cash Ratio = (Cash and Cash Equivalents + Short Term Investments) / Current Liabilities
+
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
@@ -1654,6 +1419,10 @@ class Ratios:
         The working capital is calculated by subtracting total current liabilities from total
         current assets. It represents the company's short-term financial health and its ability
         to cover its current obligations using its liquid assets.
+
+        The formula is as follows:
+
+            Working Capital = Current Assets - Current Liabilities
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
@@ -1705,6 +1474,10 @@ class Ratios:
         current liabilities. It indicates whether a company's operating cash flow is
         sufficient to cover its short-term obligations.
 
+        The formula is as follows:
+
+            Operating Cash Flow Ratio = Cash Flow from Operations / Current Liabilities
+
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
@@ -1754,6 +1527,10 @@ class Ratios:
         The operating cash flow to sales ratio is calculated by dividing operating cash flow by
         sales revenue. It indicates the proportion of sales revenue that is converted into cash
         from operating activities.
+
+        The formula is as follows:
+
+            Operating Cash Flow to Sales Ratio = Cash Flow from Operations / Revenue
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
@@ -1806,6 +1583,10 @@ class Ratios:
         The short-term coverage ratio is calculated by dividing operating cash flow by short-term debt.
         It assesses the company's ability to meet its short-term obligations using its operating cash flow.
 
+        The formula is as follows:
+
+            Short Term Coverage Ratio = Cash Flow from Operations / (Accounts Receivable + Inventory - Accounts Payable)
+
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
@@ -1837,6 +1618,98 @@ class Ratios:
 
         return short_term_coverage_ratio.round(rounding if rounding else self._rounding)
 
+    def collect_profitability_ratios(
+        self,
+        rounding: int | None = 4,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+    ) -> pd.DataFrame:
+        """
+        Calculates and collects all Profitability Ratios based on the provided data.
+
+        Args:
+            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+
+        Returns:
+            pd.DataFrame: Profitability ratios calculated based on the specified parameters.
+
+        Notes:
+        - The method calculates various profitability ratios for each asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the ratio values
+          using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+
+        profitability_ratios = toolkit.ratios.collect_profitability_ratios()
+        ```
+        """
+        profitability_ratios: dict = {}
+
+        profitability_ratios["Gross Margin"] = self.get_gross_margin()
+        profitability_ratios["Operating Margin"] = self.get_operating_margin()
+        profitability_ratios["Net Profit Margin"] = self.get_net_profit_margin()
+        profitability_ratios[
+            "Interest Coverage Ratio"
+        ] = self.get_interest_coverage_ratio()
+        profitability_ratios[
+            "Income Before Tax Profit Margin"
+        ] = self.get_income_before_tax_profit_margin()
+        profitability_ratios["Effective Tax Rate"] = self.get_effective_tax_rate()
+        profitability_ratios["Return on Assets (ROA)"] = self.get_return_on_assets()
+        profitability_ratios["Return on Equity (ROE)"] = self.get_return_on_equity()
+        profitability_ratios[
+            "Return on Invested Capital (ROIC)"
+        ] = self.get_return_on_invested_capital()
+        profitability_ratios[
+            "Return on Capital Employed (ROCE)"
+        ] = self.get_return_on_capital_employed()
+        profitability_ratios[
+            "Return on Tangible Assets"
+        ] = self.get_return_on_tangible_assets()
+        profitability_ratios["Income Quality Ratio"] = self.get_income_quality_ratio()
+        profitability_ratios["Net Income per EBT"] = self.get_net_income_per_ebt()
+        profitability_ratios[
+            "Free Cash Flow to Operating Cash Flow Ratio"
+        ] = self.get_free_cash_flow_operating_cash_flow_ratio()
+        profitability_ratios["EBT to EBIT Ratio"] = self.get_EBT_to_EBIT()
+        profitability_ratios["EBIT to Revenue"] = self.get_EBIT_to_revenue()
+
+        self._profitability_ratios = (
+            pd.concat(profitability_ratios)
+            .swaplevel(0, 1)
+            .sort_index(level=0, sort_remaining=False)
+            .dropna(axis="columns", how="all")
+        )
+
+        self._profitability_ratios = self._profitability_ratios.round(
+            rounding if rounding else self._rounding
+        )
+
+        if growth:
+            self._profitability_ratios_growth = calculate_growth(
+                self._profitability_ratios,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
+            )
+
+        if len(self._tickers) == 1:
+            return (
+                self._profitability_ratios_growth[self._tickers[0]]
+                if growth
+                else self._profitability_ratios.loc[self._tickers[0]]
+            )
+
+        return (
+            self._profitability_ratios_growth if growth else self._profitability_ratios
+        )
+
     @handle_errors
     def get_gross_margin(
         self, rounding: int | None = 4, growth: bool = False, lag: int | list[int] = 1
@@ -1848,6 +1721,10 @@ class Ratios:
         The gross margin ratio is calculated by subtracting the cost of goods sold (COGS) from
         the total revenue and then dividing the result by the total revenue. It represents the
         portion of revenue that contributes to covering other expenses and generating profit.
+
+        The formula is as follows:
+
+            Gross Margin Ratio = (Revenue - Cost of Goods Sold) / Revenue
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
@@ -1896,6 +1773,10 @@ class Ratios:
         The operating margin ratio is calculated by subtracting the operating expenses from the
         total revenue and then dividing the result by the total revenue. It indicates how efficiently
         a company is managing its operating expenses in relation to its revenue.
+
+        The formula is as follows:
+
+            Operating Margin Ratio = Operating Income / Revenue
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
@@ -1946,6 +1827,10 @@ class Ratios:
         The net profit margin ratio is calculated by dividing the net income by the total revenue.
         It indicates the portion of each dollar of revenue that represents profit after all expenses
         have been deducted. A higher net profit margin is generally considered favorable.
+
+        The formula is as follows:
+
+            Net Profit Margin Ratio = Net Income / Revenue
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
@@ -2001,6 +1886,10 @@ class Ratios:
         that the company has more earnings to cover its interest expenses, which is
         generally considered favorable.
 
+        The formula is as follows:
+
+            Interest Coverage Ratio = EBIT (or Operating Income) / Interest Expenses
+
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
@@ -2049,6 +1938,10 @@ class Ratios:
 
         The Pretax Profit Margin is calculated by dividing the pre-tax profit by the revenue.
         It provides insight into how efficiently a company is able to generate profits from its revenue.
+
+        The formula is as follows:
+
+            Pretax Profit Margin = Income Before Tax / Revenue
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
@@ -2103,6 +1996,10 @@ class Ratios:
         The effective tax rate is calculated by dividing the income tax expense by the
         pre-tax income.
 
+        The formula is as follows:
+
+            Effective Tax Rate = Income Tax Expense / Income Before Tax
+
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
@@ -2149,7 +2046,13 @@ class Ratios:
         Calculate the return on assets (ROA), a profitability ratio that measures how
         efficiently a company uses its assets to generate profits.
 
-        The return on assets is calculated by dividing the net income by the average total assets
+        The return on assets is calculated by dividing the net income by the average total assets. Note
+        that it is false to take the total assets at the end of the period given that income statements
+        report over the period whereas a balance sheet reports on the period.
+
+        The formula is as follows:
+
+            Return on Assets = Net Income / Average Total Assets
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
@@ -2177,6 +2080,7 @@ class Ratios:
         """
         return_on_assets = profitability.get_return_on_assets(
             self._income_statement.loc[:, "Net Income", :],
+            self._balance_sheet_statement.loc[:, "Total Assets", :].shift(axis=1),
             self._balance_sheet_statement.loc[:, "Total Assets", :],
         )
 
@@ -2199,10 +2103,16 @@ class Ratios:
 
         The return on equity is calculated by dividing the net income by the average shareholders' equity.
         Shareholders' equity represents the residual interest in the assets of a company after deducting liabilities.
+        Note that it is false to take the total assets at the end of the period given that income statements report
+        over the period whereas a balance sheet reports on the period.
 
         ROE provides insight into the company's ability to generate profits from the investments made by
         its shareholders. A higher ROE indicates that the company is using its equity effectively to generate
         higher returns for its shareholders.
+
+        The formula is as follows:
+
+            Return on Equity = Net Income / Average Shareholders' Equity (or Total Equity)
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
@@ -2253,6 +2163,10 @@ class Ratios:
         by the average invested capital. Invested capital includes both equity and debt, making this ratio
         a valuable measure of how efficiently a company generates returns for all of its investors.
 
+        The formula is as follows:
+
+            Return on Invested Capital = Net Operating Profit After Taxes / Average Invested Capital
+
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
@@ -2281,7 +2195,9 @@ class Ratios:
             self._income_statement.loc[:, "Net Income", :],
             self._cash_flow_statement.loc[:, "Dividends Paid", :],
             effective_tax_rate,
+            self._balance_sheet_statement.loc[:, "Total Equity", :].shift(axis=1),
             self._balance_sheet_statement.loc[:, "Total Equity", :],
+            self._balance_sheet_statement.loc[:, "Total Debt", :].shift(axis=1),
             self._balance_sheet_statement.loc[:, "Total Debt", :],
         )
 
@@ -2308,6 +2224,10 @@ class Ratios:
         By comparing the cash flow from operating activities to the net income, this ratio helps assess
         whether a company's reported profits are backed by actual cash flow. A higher income quality
         ratio suggests higher earnings quality and a better ability to convert profits into cash flow.
+
+        The formula is as follows:
+
+            Income Quality Ratio = Cash Flow from Operations / Net Income
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
@@ -2359,6 +2279,10 @@ class Ratios:
         buildings, machinery, and equipment. ROTA indicates how well a company can generate profits from
         its core operational assets.
 
+        The formula is as follows:
+
+            Return on Tangible Assets = Net Income / Average Tangible Assets
+
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
@@ -2383,8 +2307,11 @@ class Ratios:
         """
         return_on_tangible_assets = profitability.get_return_on_tangible_assets(
             self._income_statement.loc[:, "Net Income", :],
+            self._balance_sheet_statement.loc[:, "Total Assets", :].shift(axis=1),
             self._balance_sheet_statement.loc[:, "Total Assets", :],
+            self._balance_sheet_statement.loc[:, "Intangible Assets", :].shift(axis=1),
             self._balance_sheet_statement.loc[:, "Intangible Assets", :],
+            self._balance_sheet_statement.loc[:, "Total Liabilities", :].shift(axis=1),
             self._balance_sheet_statement.loc[:, "Total Liabilities", :],
         )
 
@@ -2408,6 +2335,10 @@ class Ratios:
         Return on capital employed (ROCE) is a crucial financial metric that evaluates the efficiency and profitability
         of a company's utilization of both equity and debt capital to generate profits. It assesses how well the company
         generates earnings relative to the total capital invested in the business.
+
+        The formula is as follows:
+
+            Return on Capital Employed = EBIT / (Total Assets - Current Liabilities)
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
@@ -2462,6 +2393,10 @@ class Ratios:
         income is generated from its operating activities before considering the impact of income taxes. It gives
         insights into how effectively a company generates profit relative to its taxable income.
 
+        The formula is as follows:
+
+            Net Income per EBT = Net Income / Income Before Tax
+
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
@@ -2512,6 +2447,10 @@ class Ratios:
         translate into free cash flow, which is the cash available after all expenses and investments. A higher
         ratio indicates that the company is generating strong free cash flow relative to its operating cash flow,
         which could signify efficient capital management.
+
+        The formula is as follows:
+
+            Free Cash Flow to Operating Cash Flow Ratio = Free Cash Flow / Cash Flow from Operations
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
@@ -2568,6 +2507,10 @@ class Ratios:
         insights into the tax efficiency of the company and its ability to manage
         its tax liabilities.
 
+        The formula is as follows:
+
+            Tax Burden Ratio = Net Income / Income Before Tax
+
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
@@ -2618,6 +2561,10 @@ class Ratios:
         performance is impacted by interest expenses and tax obligations. A higher ratio indicates
         that a larger portion of the company's earnings is generated from its core operations
         before considering interest payments and taxes.
+
+        The formula is as follows:
+
+            EBT to EBIT = (Net Income + Income Tax Expense) / (Net Income + Income Tax Expense + Interest Expense)
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
@@ -2673,6 +2620,10 @@ class Ratios:
         indicates that a larger portion of the company's revenue is converted into
         operating profit.
 
+        The formula is as follows:
+
+            EBIT to Revenue = EBIT / Revenue
+
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
@@ -2711,6 +2662,89 @@ class Ratios:
 
         return EBIT_to_revenue.round(rounding if rounding else self._rounding)
 
+    def collect_solvency_ratios(
+        self,
+        diluted: bool = True,
+        rounding: int | None = 4,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+    ) -> pd.DataFrame:
+        """
+        Calculates and collects all Solvency Ratios based on the provided data.
+
+        Args:
+            diluted (bool, optional): Whether to use diluted shares for the calculation. Defaults to True.
+            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+
+        Returns:
+            pd.DataFrame: Solvency ratios calculated based on the specified parameters.
+
+        Notes:
+        - The method calculates various solvency ratios for each asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the ratio values
+          using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+
+        solvency_ratios = toolkit.ratios.collect_solvency_ratios()
+        ```
+        """
+        solvency_ratios: dict = {}
+
+        solvency_ratios["Debt-to-Assets Ratio"] = self.get_debt_to_assets_ratio()
+        solvency_ratios["Debt-to-Equity Ratio"] = self.get_debt_to_equity_ratio()
+        solvency_ratios[
+            "Debt Service Coverage Ratio"
+        ] = self.get_debt_service_coverage_ratio()
+        solvency_ratios["Equity Multiplier"] = self.get_equity_multiplier()
+        solvency_ratios["Free Cash Flow Yield"] = self.get_free_cash_flow_yield(
+            diluted=diluted
+        )
+        solvency_ratios[
+            "Net-Debt to EBITDA Ratio"
+        ] = self.get_net_debt_to_ebitda_ratio()
+        solvency_ratios["Cash Flow Coverage Ratio"] = self.get_free_cash_flow_yield(
+            diluted=diluted
+        )
+        solvency_ratios["CAPEX Coverage Ratio"] = self.get_capex_coverage_ratio()
+        solvency_ratios[
+            "Dividend CAPEX Coverage Ratio"
+        ] = self.get_capex_dividend_coverage_ratio()
+
+        self._solvency_ratios = (
+            pd.concat(solvency_ratios)
+            .swaplevel(0, 1)
+            .sort_index(level=0, sort_remaining=False)
+            .dropna(axis="columns", how="all")
+        )
+
+        self._solvency_ratios = self._solvency_ratios.round(
+            rounding if rounding else self._rounding
+        )
+
+        if growth:
+            self._solvency_ratios_growth = calculate_growth(
+                self._solvency_ratios,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
+            )
+
+        if len(self._tickers) == 1:
+            return (
+                self._solvency_ratios_growth[self._tickers[0]]
+                if growth
+                else self._solvency_ratios.loc[self._tickers[0]]
+            )
+
+        return self._solvency_ratios_growth if growth else self._solvency_ratios
+
     @handle_errors
     def get_debt_to_assets_ratio(
         self, rounding: int | None = 4, growth: bool = False, lag: int | list[int] = 1
@@ -2724,6 +2758,10 @@ class Ratios:
         leverage and indicates the extent to which a company relies on borrowed funds to
         finance its operations. A higher ratio implies a higher level of debt in the company's
         capital structure, which could increase financial risk.
+
+        The formula is as follows:
+
+            Debt to Assets Ratio = Total Debt / Total Assets
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
@@ -2775,6 +2813,10 @@ class Ratios:
         ratio implies a higher reliance on debt to finance the business, which could increase
         risk but also potentially lead to higher returns for shareholders.
 
+        The formula is as follows:
+
+            Debt to Equity Ratio = Total Debt / Total Equity
+
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
@@ -2824,6 +2866,10 @@ class Ratios:
         ability to cover its interest payments using its earnings, implying lower financial risk.
         Conversely, a lower ratio suggests a company may have difficulty meeting its interest
         obligations and could be at higher risk of default.
+
+        The formula is as follows:
+
+            Interest Coverage Ratio = Operating Income / (Interest Expense + Depreciation and Amortization)
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
@@ -2876,6 +2922,10 @@ class Ratios:
         also increases financial risk. Conversely, a lower equity multiplier indicates a
         larger portion of assets is financed by equity, potentially lowering financial risk.
 
+        The formula is as follows:
+
+            Equity Multiplier = Average Total Assets / Average Total Equity
+
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
@@ -2926,6 +2976,10 @@ class Ratios:
         debt obligations from its operating income. It is especially important for companies
         with significant debt obligations, as a lower ratio indicates higher financial risk and
         potential difficulties in servicing debt payments.
+
+        The formula is as follows:
+
+            Debt Service Coverage Ratio = Operating Income / Total Current Liabilities
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
@@ -2980,6 +3034,10 @@ class Ratios:
         The free cash flow yield ratio is a measure of how efficiently a company generates
         free cash flow relative to its market value. It provides insights into whether the
         company's valuation is reasonable compared to the amount of cash it generates.
+
+        The formula is as follows:
+
+            Free Cash Flow Yield Ratio = Free Cash Flow / Market Capitalization
 
         Args:
             diluted (bool, optional): Whether to use diluted shares for market capitalization. Defaults to True.
@@ -3045,6 +3103,10 @@ class Ratios:
         obligations in relation to its earnings and cash flow. A lower ratio indicates better
         financial health and a stronger ability to manage debt.
 
+        The formula is as follows:
+
+            Net Debt to EBITDA Ratio = Net Debt / EBITDA
+
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
@@ -3093,6 +3155,10 @@ class Ratios:
         The cash flow coverage ratio assesses a company's ability to meet its debt obligations
         by comparing its operating cash flow to its total debt. A higher ratio indicates a
         stronger ability to cover its debt with cash generated from operations.
+
+        The formula is as follows:
+
+            Cash Flow Coverage Ratio = Cash Flow from Operations / Total Debt
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
@@ -3143,6 +3209,10 @@ class Ratios:
         expenditures, which are essential for maintaining and growing its business,
         using the cash generated from its operations. A higher ratio indicates a
         stronger ability to fund capital investments from operating cash flow.
+
+        The formula is as follows:
+
+            Capital Expenditure Coverage Ratio = Cash Flow from Operations / Capital Expenditure
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
@@ -3195,6 +3265,11 @@ class Ratios:
         A higher ratio indicates a stronger ability to fund both capex and dividends from
         operating cash flow.
 
+        The formula is as follows:
+
+            Dividend Paid and Capital Expenditure Coverage Ratio = Cash Flow from Operations /
+            (Capital Expenditure + Dividends Paid)
+
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
@@ -3234,6 +3309,127 @@ class Ratios:
             rounding if rounding else self._rounding
         )
 
+    def collect_valuation_ratios(
+        self,
+        include_dividends: bool = False,
+        diluted: bool = True,
+        rounding: int | None = 4,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+    ) -> pd.DataFrame:
+        """
+        Calculates and collects all Valuation Ratios based on the provided data.
+
+        Args:
+            include_dividends (bool, optional): Whether to include dividends in the calculations. Defaults to False.
+            diluted (bool, optional): Whether to use diluted shares for the calculation. Defaults to True.
+            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+
+        Returns:
+            pd.DataFrame: Valuation ratios calculated based on the specified parameters.
+
+        Notes:
+        - The method calculates various valuation ratios for each asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the ratio values
+          using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+
+        valuation_ratios = toolkit.ratios.collect_valuation_ratios()
+        ```
+        """
+        valuation_ratios: dict = {}
+
+        valuation_ratios["Earnings per Share (EPS)"] = self.get_earnings_per_share(
+            include_dividends=include_dividends, diluted=diluted
+        )
+        valuation_ratios["Revenue per Share (RPS)"] = self.get_revenue_per_share(
+            diluted=diluted
+        )
+        valuation_ratios["Price-to-Earnings (PE)"] = self.get_price_earnings_ratio(
+            include_dividends=include_dividends, diluted=diluted
+        )
+        valuation_ratios[
+            "Earnings per Share Growth"
+        ] = self.get_earnings_per_share_growth(
+            include_dividends=include_dividends, diluted=diluted
+        )
+        valuation_ratios[
+            "Price-to-Earnings-Growth (PEG)"
+        ] = self.get_price_to_earnings_growth_ratio(
+            include_dividends=include_dividends, diluted=diluted
+        )
+        valuation_ratios["Book Value per Share"] = self.get_book_value_per_share(
+            diluted=diluted
+        )
+        valuation_ratios["Price-to-Book (PB)"] = self.get_price_to_book_ratio(
+            diluted=diluted
+        )
+        valuation_ratios["Interest Debt per Share"] = self.get_interest_debt_per_share(
+            diluted=diluted
+        )
+        valuation_ratios["CAPEX per Share"] = self.get_capex_per_share(diluted=diluted)
+        valuation_ratios["Earnings Yield"] = self.get_earnings_yield(
+            include_dividends=include_dividends, diluted=diluted
+        )
+        valuation_ratios["Payout Ratio"] = self.get_payout_ratio()
+        valuation_ratios["Dividend Yield"] = self.get_dividend_yield()
+        valuation_ratios["Weighted Dividend Yield"] = self.get_weighted_dividend_yield(
+            diluted=diluted
+        )
+        valuation_ratios[
+            "Price-to-Cash-Flow (P/CF)"
+        ] = self.get_price_to_cash_flow_ratio(diluted=diluted)
+        valuation_ratios[
+            "Price-to-Free-Cash-Flow (P/FCF)"
+        ] = self.get_price_to_free_cash_flow_ratio(diluted=diluted)
+        valuation_ratios["Market Cap"] = self.get_market_cap(diluted=diluted)
+        valuation_ratios["Enterprise Value"] = self.get_enterprise_value(
+            diluted=diluted
+        )
+        valuation_ratios["EV-to-Sales"] = self.get_ev_to_sales_ratio(diluted=diluted)
+        valuation_ratios["EV-to-EBIT"] = self.get_ev_to_ebit(diluted=diluted)
+        valuation_ratios["EV-to-EBITDA"] = self.get_ev_to_ebitda_ratio(diluted=diluted)
+        valuation_ratios[
+            "EV-to-Operating-Cash-Flow"
+        ] = self.get_ev_to_operating_cashflow_ratio(diluted=diluted)
+        valuation_ratios["Tangible Asset Value"] = self.get_tangible_asset_value()
+        valuation_ratios["Net Current Asset Value"] = self.get_net_current_asset_value()
+
+        self._valuation_ratios = (
+            pd.concat(valuation_ratios)
+            .swaplevel(0, 1)
+            .sort_index(level=0, sort_remaining=False)
+            .dropna(axis="columns", how="all")
+        )
+
+        self._valuation_ratios = self._valuation_ratios.round(
+            rounding if rounding else self._rounding
+        )
+
+        if growth:
+            self._valuation_ratios_growth = calculate_growth(
+                self._valuation_ratios,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
+            )
+
+        if len(self._tickers) == 1:
+            return (
+                self._valuation_ratios_growth[self._tickers[0]]
+                if growth
+                else self._valuation_ratios.loc[self._tickers[0]]
+            )
+
+        return self._valuation_ratios_growth if growth else self._valuation_ratios
+
     @handle_errors
     def get_earnings_per_share(
         self,
@@ -3252,6 +3448,10 @@ class Ratios:
         into the portion of a company's earnings that is allocated to each outstanding share
         of its common stock. EPS is an important measure for investors and analysts when
         assessing a company's financial performance and comparing it to other companies.
+
+        The formula is as follows:
+
+            Earnings per Share (EPS) = (Net Income - Preferred Dividends Paid) / Weighted Average Shares
 
         Args:
             include_dividends (bool, optional): Whether to include dividends in the EPS calculation. Defaults to False.
@@ -3320,6 +3520,10 @@ class Ratios:
         increasing profits on a per-share basis. Positive EPS growth is often considered favorable,
         while negative growth might raise concerns about the company's financial performance.
 
+        The formula is as follows:
+
+            Earnings per Share (EPS) Growth = (Current EPS - Previous EPS) / Previous EPS
+
         Args:
             include_dividends (bool, optional): Whether to include dividends in the calculation. Defaults to False.
             diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
@@ -3372,6 +3576,10 @@ class Ratios:
         The revenue per share is an important metric that provides insight into a
         company's ability to generate revenue on a per-share basis. It can help investors
         understand the company's revenue-generation efficiency and its overall financial health.
+
+        The formula is as follows:
+
+            Revenue per Share = Revenue / Weighted Average (Diluted) Shares
 
         Args:
             diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
@@ -3435,6 +3643,10 @@ class Ratios:
         that the market has high expectations for the company's future growth, while a
         lower P/E ratio may suggest that the company is undervalued.
 
+        The formula is as follows:
+
+            Price Earnings Ratio (P/E) = Share Price / Earnings per Share (EPS)
+
         Args:
             include_dividends (bool, optional): Whether to include dividends in the calculation. Defaults to False.
             diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
@@ -3497,6 +3709,10 @@ class Ratios:
         growth rate, allowing investors to assess whether a stock is overvalued or undervalued
         relative to its growth prospects.
 
+        The formula is as follows:
+
+            Price Earnings to Growth Ratio (PEG) = Price Earnings Ratio (P/E) / Earnings per Share Growth
+
         Args:
             include_dividends (bool, optional): Whether to include dividends in the calculation. Defaults to False.
             diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
@@ -3553,6 +3769,10 @@ class Ratios:
 
         The book value per share is a fundamental valuation metric that reflects
         the net worth of a company attributed to each outstanding share of common stock.
+
+        The formula is as follows:
+
+            Book Value per Share = (Total Shareholder Equity - Preferred Stock) / Weighted Average (Diluted) Shares
 
         Args:
             diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
@@ -3615,6 +3835,10 @@ class Ratios:
         The price to book ratio is a key valuation metric that helps investors
         assess whether a company's stock is overvalued or undervalued relative to its
         underlying net asset value.
+
+        The formula is as follows:
+
+            Price to Book Ratio = Share Price / Book Value per Share
 
         Args:
             diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
@@ -3679,6 +3903,10 @@ class Ratios:
         pays on its debt relative to its shareholder base. It can help investors assess
         the financial burden of interest expenses on the company's profitability.
 
+        The formula is as follows:
+
+            Interest Debt per Share = (Interest Expense / Total Debt) / Weighted Average (Diluted) Shares
+
         Args:
             diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
@@ -3741,6 +3969,10 @@ class Ratios:
         in its operations and growth initiatives relative to its shareholder base. It can
         help investors assess the level of reinvestment into the business.
 
+        The formula is as follows:
+
+            CAPEX per Share = Capital Expenditure / Weighted Average (Diluted) Shares
+
         Args:
             diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
@@ -3796,6 +4028,10 @@ class Ratios:
         The dividend yield ratio is used by investors to assess the income potential
         of an investment in a company's stock based on the dividends it pays out. A higher
         dividend yield can be attractive to income-seeking investors.
+
+        The formula is as follows:
+
+            Dividend Yield = Dividends per Share / Share Price
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
@@ -3858,6 +4094,10 @@ class Ratios:
         This dividend yield ratio takes into account the (diluted) weighted average shares and actual
         dividends paid as found in the cash flow statement. It provides a more accurate reflection
         of the dividends paid out per share, considering any changes in the number of shares.
+
+        The formula is as follows:
+
+            Weighted Dividend Yield = Dividends Paid / Weighted Average (Diluted) Shares * Share Price
 
         Args:
             diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
@@ -3923,6 +4163,14 @@ class Ratios:
         """
         Calculate the price to cash flow ratio, a valuation ratio that compares a
         company's market price to its operating cash flow per share.
+
+        The price to cash flow ratio is a key valuation metric that helps investors
+        assess the relative value of a company's stock. It is similar to the price to
+        earnings ratio, but uses cash flow instead of earnings in the denominator.
+
+        The formula is as follows:
+
+            Price to Cash Flow Ratio = Share Price / Cash Flow from Operations per Share
 
         Args:
             diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
@@ -3990,6 +4238,10 @@ class Ratios:
         company's market price to its free cash flow per share.
 
         This ratio provides insight into how the market values a company's ability to generate free cash flow.
+
+        The formula is as follows:
+
+            Price to Free Cash Flow Ratio = Market Cap / Free Cash Flow
 
         Args:
             diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
@@ -4061,7 +4313,9 @@ class Ratios:
         outstanding shares of stock in the stock market. It is calculated by multiplying the current
         market price per share by the total number of outstanding shares.
 
-        Notes: All the inputs must be in the same currency and unit for accurate calculations.
+        The formula is as follows:
+
+            Market Capitalization = Share Price * Weighted Average (Diluted) Shares
 
         Args:
             diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
@@ -4119,10 +4373,10 @@ class Ratios:
         market capitalization, outstanding debt, minority interest, and
         preferred equity, minus the cash and cash equivalents.
 
-        Enterprise Value = Market Capitalization + Total Debt + Minority Interest + Preferred Equity
-        - Cash and Cash Equivalents
+        The formula is as follows:
 
-        Notes: All the inputs must be in the same currency and unit for accurate calculations.
+            Enterprise Value = Market Capitalization + Total Debt + Minority Interest + Preferred Equity
+            - Cash and Cash Equivalents
 
         Args:
             diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
@@ -4191,7 +4445,9 @@ class Ratios:
         by the company. It can provide insights into how efficiently a company is using
         its revenue to generate value for its investors.
 
-        Enterprise Value to Sales Ratio = Enterprise Value / Total Revenue
+        The formula is as follows:
+
+            Enterprise Value to Sales Ratio = Enterprise Value / Total Revenue
 
         Args:
             diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
@@ -4242,7 +4498,9 @@ class Ratios:
         This ratio helps investors understand how many times the enterprise value exceeds the
         company's EBITDA, providing insights into the company's debt load and operating performance.
 
-        Enterprise Value to EBITDA Ratio = Enterprise Value / EBITDA
+        The formula is as follows:
+
+            Enterprise Value to EBITDA Ratio = Enterprise Value / EBITDA
 
         Args:
             diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
@@ -4297,7 +4555,9 @@ class Ratios:
         the enterprise value exceeds the company's operating cash flow, indicating the company's
         ability to generate cash from its operations.
 
-        Enterprise Value to Operating Cash Flow Ratio = Enterprise Value / Operating Cash Flow
+        The formula is as follows:
+
+            Enterprise Value to Operating Cash Flow Ratio = Enterprise Value / Operating Cash Flow
 
         Args:
             diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
@@ -4354,7 +4614,9 @@ class Ratios:
         to the market price per share, helping investors understand the earnings potential of
         the company relative to its current market value
 
-        Earnings Yield Ratio = Earnings Per Share / Price Per Share
+        The formula is as follows:
+
+            Earnings Yield Ratio = Earnings per Share / Share Price
 
         Args:
             include_dividends (bool, optional): Whether to include dividends in the calculation. Defaults to False.
@@ -4410,6 +4672,10 @@ class Ratios:
         it indicates the sustainability of dividend payments and the company's
         approach to distributing profits.
 
+        The formula is as follows:
+
+            Payout Ratio = Dividends per Share / Earnings per Share
+
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
@@ -4449,7 +4715,9 @@ class Ratios:
         of a company's assets that can be used to generate revenue. Tangible assets are those
         physical assets that have a finite monetary value and can be sold, used, or consumed.
 
-        Tangible Asset Value = Total Assets - Intangible Assets - Goodwill
+        The formula is as follows:
+
+            Tangible Asset Value = Total Assets - Total Liabilities - Goodwill
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
@@ -4494,7 +4762,9 @@ class Ratios:
         of a company's current assets minus its current liabilities. It indicates the extent to
         which a company's short-term assets exceed its short-term liabilities.
 
-        Net Current Asset Value = Current Assets - Current Liabilities
+        The formula is as follows:
+
+            Net Current Asset Value = Total Current Assets - Total Current Liabilities
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
@@ -4540,6 +4810,10 @@ class Ratios:
         Calculate the enterprise value over earnings before interest and taxes (EBIT) ratio,
         which is a valuation metric that compares a company's total value (including debt and equity)
         relative to its earnings before interest and taxes.
+
+        The formula is as follows:
+
+            Enterprise Value to EBIT Ratio = Enterprise Value / EBIT
 
         Args:
             diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.

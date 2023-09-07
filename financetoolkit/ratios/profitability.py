@@ -123,19 +123,22 @@ def get_effective_tax_rate(
     return income_tax_expense / income_before_tax
 
 
-def get_return_on_assets(net_income: pd.Series, total_assets: pd.Series) -> pd.Series:
+def get_return_on_assets(
+    net_income: pd.Series, total_assets_begin: pd.Series, total_assets_end: pd.Series
+) -> pd.Series:
     """
     Calculate the return on assets (ROA), a profitability ratio that measures how
     efficiently a company uses its assets to generate profits.
 
     Args:
         net_income (float or pd.Series): Net income of the company.
-        total_assets (float or pd.Series): Total assets of the company.
+        total_assets_begin (float or pd.Series): Total equity at the beginning of the period.
+        total_assets_end (float or pd.Series): Total equity at the end of the period.
 
     Returns:
         float | pd.Series: The ROA percentage value.
     """
-    return net_income / total_assets
+    return net_income / ((total_assets_begin + total_assets_end) / 2)
 
 
 def get_return_on_equity(
@@ -162,8 +165,10 @@ def get_return_on_invested_capital(
     net_income: pd.Series,
     dividends: pd.Series,
     effective_tax_rate: pd.Series,
-    total_equity: pd.Series,
-    total_debt: pd.Series,
+    total_equity_begin: pd.Series,
+    totaL_equity_end: pd.Series,
+    total_debt_begin: pd.Series,
+    total_debt_end: pd.Series,
 ) -> pd.Series:
     """
     Calculate the return on invested capital, a financial ratio that measures the company's return on
@@ -173,14 +178,16 @@ def get_return_on_invested_capital(
         net_income (float or pd.Series): The company's net income.
         dividends (float or pd.Series): The dividends paid by the company.
         effective_tax_rate (float or pd.Series): The effective tax rate of the company.
-        total_equity (float or pd.Series): The total equity of the company.
-        total_debt (float or pd.Series): The total debt of the company.
+        total_equity_begin (float or pd.Series): The total equity at the beginning of the period.
+        totaL_equity_end (float or pd.Series): The total equity at the end of the period.
+        total_debt_begin (float or pd.Series): The total debt at the beginning of the period.
+        total_debt_end (float or pd.Series): The total debt at the end of the period.
 
     Returns:
         float | pd.Series: The return on invested capital value.
     """
     return ((net_income - dividends) * (1 - effective_tax_rate)) / (
-        total_equity + total_debt
+        (total_equity_begin + totaL_equity_end + total_debt_begin + total_debt_end) / 2
     )
 
 
@@ -205,9 +212,12 @@ def get_income_quality_ratio(
 
 def get_return_on_tangible_assets(
     net_income: pd.Series,
-    total_assets: pd.Series,
-    intangible_assets: pd.Series,
-    total_liabilities: pd.Series,
+    total_assets_begin: pd.Series,
+    total_assets_end: pd.Series,
+    intangible_assets_begin: pd.Series,
+    intangible_assets_end: pd.Series,
+    total_liabilities_begin: pd.Series,
+    total_liabilities_end: pd.Series,
 ) -> pd.Series:
     """
     Calculate the return on tangible assets, which measures the amount of profit
@@ -222,9 +232,16 @@ def get_return_on_tangible_assets(
     Returns:
         float | pd.Series: The return on tangible assets value.
     """
-    tangible_assets = total_assets - intangible_assets - total_liabilities
+    average_tangible_assets = (
+        total_assets_begin
+        + total_assets_end
+        + intangible_assets_begin
+        + intangible_assets_end
+        + total_liabilities_begin
+        + total_liabilities_end
+    ) / 2
 
-    return net_income / tangible_assets
+    return net_income / average_tangible_assets
 
 
 def get_return_on_capital_employed(

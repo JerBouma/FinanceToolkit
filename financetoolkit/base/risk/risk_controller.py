@@ -207,9 +207,9 @@ class Risk:
             pd.Series: CVaR values with time as the index.
 
         Notes:
-        - The method retrieves historical return data based on the specified `period` and calculates VaR for each
+        - The method retrieves historical return data based on the specified `period` and calculates CVaR for each
         asset in the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of VaR values using the specified `lag`.
+        - If `growth` is set to True, the method calculates the growth of CVaR values using the specified `lag`.
 
         Example:
         ```python
@@ -266,6 +266,88 @@ class Risk:
         return conditional_value_at_risk.round(rounding if rounding else self._rounding)
 
     @handle_errors
+    def get_entropic_value_at_risk(
+        self,
+        period: str | None = None,
+        alpha: float = 0.05,
+        within_period: bool = True,
+        rounding: int | None = 4,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+    ):
+        """
+        Calculate the Entropic Value at Risk (EVaR) of an investment portfolio or asset's returns.
+
+        Entropic Value at Risk (EVaR) is a risk management metric that quantifies upper bound for the value
+        at risk (VaR) and the conditional value at risk (CVaR) over a specified time horizon and confidence
+        level. EVaR is obtained from the Chernoff inequality. It provides insights into the downside risk
+        associated with an investment and helps investors make informed decisions about risk tolerance.
+
+        The EVaR is calculated as the upper bound of VaR and CVaR with a given confidence level (e.g., 5% for
+        alpha=0.05).
+
+        Args:
+            period (str, optional): The data frequency for returns (daily, weekly, quarterly, or yearly).
+            Defaults to "yearly".
+            alpha (float, optional): The confidence level for EVaR calculation (e.g., 0.05 for 95% confidence).
+            Defaults to 0.05.
+            within_period (bool, optional): Whether to calculate EVaR within the specified period or for the entire
+            period. Thus whether to look at the CVaR within a specific year (if period = 'yearly') or look at the entirety
+            of all years. Defaults to True.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the CVaR values over time. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+
+        Returns:
+            pd.Series: EVaR values with time as the index.
+
+        Notes:
+        - The method retrieves historical return data based on the specified `period` and calculates EVaR for each
+        asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of EVaR values using the specified `lag`.
+
+        Example:
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AMZN", "TSLA"], api_key=FMP_KEY)
+
+        toolkit.risk.get_entropic_value_at_risk()
+        ```
+
+        Which returns:
+
+        |      |    AMZN |    TSLA |   ^GSPC |
+        |:-----|--------:|--------:|--------:|
+        | 2012 | -0.0392 | -0.0604 | -0.0177 |
+        | 2013 | -0.0377 | -0.0928 | -0.0152 |
+        | 2014 | -0.0481 | -0.0689 | -0.0162 |
+        | 2015 | -0.046  | -0.0564 | -0.0227 |
+        | 2016 | -0.043  | -0.0571 | -0.0188 |
+        | 2017 | -0.0289 | -0.0501 | -0.0091 |
+        | 2018 | -0.0518 | -0.085  | -0.0252 |
+        | 2019 | -0.0327 | -0.071  | -0.0173 |
+        | 2020 | -0.054  | -0.1211 | -0.0497 |
+        | 2021 | -0.0352 | -0.0782 | -0.0183 |
+        | 2022 | -0.0758 | -0.1012 | -0.0362 |
+        | 2023 | -0.0471 | -0.0793 | -0.0188 |
+        """
+        period = period if period else "quarterly" if self._quarterly else "yearly"
+        returns = helpers.handle_return_data_periods(self, period, within_period)
+
+        entropic_value_at_risk = risk.get_evar_gaussian(returns, alpha)
+
+        if growth:
+            return calculate_growth(
+                entropic_value_at_risk,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
+                axis="index",
+            )
+
+        return entropic_value_at_risk.round(rounding if rounding else self._rounding)
+
+    @handle_errors
     def get_maximum_drawdown(
         self,
         period: str | None = None,
@@ -298,9 +380,9 @@ class Risk:
             pd.Series: CVaR values with time as the index.
 
         Notes:
-        - The method retrieves historical return data based on the specified `period` and calculates VaR for each
+        - The method retrieves historical return data based on the specified `period` and calculates MMD for each
         asset in the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of VaR values using the specified `lag`.
+        - If `growth` is set to True, the method calculates the growth of MMD values using the specified `lag`.
 
         Example:
         ```python
@@ -342,6 +424,85 @@ class Risk:
             )
 
         return maximum_drawdown.round(rounding if rounding else self._rounding)
+
+    @handle_errors
+    def get_ulcer_index(
+        self,
+        rolling: int | None = None,
+        period: str | None = None,
+        rounding: int | None = 4,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+    ):
+        """
+        Calculate the Entropic Value at Risk (EVaR) of an investment portfolio or asset's returns.
+
+        Entropic Value at Risk (EVaR) is a risk management metric that quantifies upper bound for the value
+        at risk (VaR) and the conditional value at risk (CVaR) over a specified time horizon and confidence
+        level. EVaR is obtained from the Chernoff inequality. It provides insights into the downside risk
+        associated with an investment and helps investors make informed decisions about risk tolerance.
+
+        The EVaR is calculated as the upper bound of VaR and CVaR with a given confidence level (e.g., 5% for
+        alpha=0.05).
+
+        Args:
+            period (str, optional): The data frequency for returns (daily, weekly, quarterly, or yearly).
+            Defaults to "yearly".
+            rolling (int, optional): The rolling period to use for the calculation. If you select period = 'monthly'
+            and set rolling to 12 you obtain the rolling 12-month Sharpe Ratio. If no value is given, then it
+            calculates it for the entire period. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the UI values over time. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+
+        Returns:
+            pd.Series: UI values with time as the index.
+
+        Notes:
+        - The method retrieves historical return data based on the specified `period` and calculates UI for each
+        asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of VaR values using the specified `lag`.
+
+        Example:
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AMZN", "TSLA"], api_key=FMP_KEY)
+
+        toolkit.risk.get_ulcer_index()
+        ```
+
+        Which returns:
+
+        | Date       |   AMZN |   TSLA |   Benchmark |
+        |:-----------|-------:|-------:|------------:|
+        | 2012-12-31 | 0.4739 | 0.4584 |      0.3097 |
+        | 2013-12-31 | 0.0872 | 1.3989 |      0      |
+        | 2014-12-31 | 1.4965 | 1.4013 |      0.0954 |
+        | 2015-12-31 | 0.1641 | 0.9429 |      0.2568 |
+        | 2016-12-30 | 0.7049 | 1.2277 |      0.0912 |
+        | 2017-12-29 | 0.1391 | 1.2075 |      0.0388 |
+        | 2018-12-31 | 1.6636 | 0.7777 |      0.913  |
+        | 2019-12-31 | 0.5397 | 0.1843 |      0.018  |
+        | 2020-12-31 | 0.4887 | 0      |      0      |
+        | 2021-12-31 | 0.6703 | 0.8867 |      0.0353 |
+        | 2022-12-30 | 3.2005 | 4.3678 |      1.2594 |
+        | 2023-09-08 | 0.2139 | 1.1655 |      0.2184 |
+        """
+        period = period if period else "quarterly" if self._quarterly else "yearly"
+        returns = helpers.handle_return_data_periods(self, period, not rolling)
+
+        ulcer_index = risk.get_ui(returns, rolling)
+
+        if growth:
+            return calculate_growth(
+                ulcer_index,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
+                axis="index",
+            )
+
+        return ulcer_index.round(rounding if rounding else self._rounding)
 
     @handle_errors
     def get_skewness(

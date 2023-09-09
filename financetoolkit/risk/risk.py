@@ -311,6 +311,39 @@ def get_cvar_logistic(
     return -scale * np.log(((1 - alpha) ** (1 - 1 / alpha)) / alpha) + returns.mean()
 
 
+def get_evar_gaussian(
+    returns: pd.Series | pd.DataFrame, alpha: float
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate the Entropic Value at Risk (EVaR) of returns based on the gaussian distribution.
+
+    Args:
+        returns (pd.Series | pd.DataFrame): A Series or Dataframe of returns.
+        alpha (float): The confidence level (e.g., 0.05 for 95% confidence).
+
+    Returns:
+        pd.Series | pd.DataFrame: EVaR values as float if returns is a pd.Series,
+        otherwise as pd.Series or pd.DataFrame with time as index.
+    """
+    returns = returns.dropna()
+    if isinstance(returns, pd.DataFrame) and returns.index.nlevels > 1:
+        periods = returns.index.get_level_values(0).unique()
+        value_at_risk = pd.DataFrame()
+        for sub_period in periods:
+            period_data = get_cvar_laplace(returns.loc[sub_period], alpha)
+            period_data.name = sub_period
+
+            value_at_risk = pd.concat([value_at_risk, period_data], axis=1)
+
+        return value_at_risk.T
+
+    # For more information see: https://en.wikipedia.org/wiki/Entropic_value_at_risk
+
+    return returns.mean() + returns.std(ddof=0) * np.sqrt(
+        -2 * np.log(returns.std(ddof=0))
+    )
+
+
 def get_max_drawdown(
     returns: pd.Series | pd.DataFrame,
 ) -> pd.Series | pd.DataFrame:
@@ -339,6 +372,59 @@ def get_max_drawdown(
     cum_returns = (1 + returns).cumprod()
 
     return (cum_returns / cum_returns.cummax() - 1).min()
+
+
+def get_ui(
+    returns: pd.Series | pd.DataFrame, rolling: int | None = None
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculates the Ulcer Index (UI), a measure of downside volatility.
+
+    Args:
+        returns (pd.Series | pd.DataFrame): A Series or Dataframe of returns.
+        rolling (int, optional): The rolling period to use for the calculation.
+        If you select period = 'monthly' and set rolling to 12 you obtain the rolling
+        12-month Ulcer Index. If no value is given, then it calculates it for the
+        entire period. Defaults to None.
+
+    Returns:
+        pd.Series | pd.DataFrame: UI values as float if returns is a pd.Series,
+        otherwise as pd.Series or pd.DataFrame with time as index, if.
+    """
+    returns = returns.dropna()
+    if isinstance(returns, pd.DataFrame) and returns.index.nlevels > 1:
+        periods = returns.index.get_level_values(0).unique()
+        ulcer_index = pd.DataFrame()
+        for sub_period in periods:
+            period_data = get_ui(returns.loc[sub_period], rolling)
+            period_data.name = sub_period
+            ulcer_index = pd.concat([ulcer_index, period_data])
+
+        return ulcer_index
+
+    # For more information see:
+    # - http://www.tangotools.com/ui/ui.htm
+    # - https://en.wikipedia.org/wiki/Ulcer_index
+
+    if rolling is None:
+        rolling = max(len(returns), 1)
+
+    returns = (1 + returns).cumprod().dropna()
+    peak = returns.rolling(rolling).max()
+    downside = 100 * (returns - peak) / peak
+    downside_sq = (downside * downside).dropna()
+    return (
+        (
+            downside_sq.rolling(
+                rolling
+                if rolling < max(len(downside_sq), 1)
+                else max(len(downside_sq), 1)
+            ).sum()
+            / rolling
+        )
+        .apply(np.sqrt)
+        .dropna()
+    )
 
 
 def get_skewness(returns: pd.Series | pd.DataFrame) -> pd.Series | pd.DataFrame:

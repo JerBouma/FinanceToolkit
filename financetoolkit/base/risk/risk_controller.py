@@ -377,7 +377,7 @@ class Risk:
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
 
         Returns:
-            pd.Series: CVaR values with time as the index.
+            pd.Series: Maximum Drawdown values with time as the index.
 
         Notes:
         - The method retrieves historical return data based on the specified `period` and calculates MMD for each
@@ -428,29 +428,29 @@ class Risk:
     @handle_errors
     def get_ulcer_index(
         self,
-        rolling: int | None = None,
         period: str | None = None,
+        rolling: int = 14,
         rounding: int | None = 4,
         growth: bool = False,
         lag: int | list[int] = 1,
     ):
         """
-        Calculate the Entropic Value at Risk (EVaR) of an investment portfolio or asset's returns.
+        The Ulcer Index is a financial metric used to assess the risk and volatility of an
+        investment portfolio or asset. Developed by Peter Martin in the 1980s, the Ulcer Index
+        is particularly useful for evaluating the downside risk and drawdowns associated with investments.
 
-        Entropic Value at Risk (EVaR) is a risk management metric that quantifies upper bound for the value
-        at risk (VaR) and the conditional value at risk (CVaR) over a specified time horizon and confidence
-        level. EVaR is obtained from the Chernoff inequality. It provides insights into the downside risk
-        associated with an investment and helps investors make informed decisions about risk tolerance.
+        The Ulcer Index differs from traditional volatility measures like standard deviation or variance
+        because it focuses on the depth and duration of drawdowns rather than the dispersion of
+        returns.
 
-        The EVaR is calculated as the upper bound of VaR and CVaR with a given confidence level (e.g., 5% for
-        alpha=0.05).
+        The formula is a follows:
+
+        Ulcer Index = SQRT(SUM[(Pn / Highest High)^2] / n)
 
         Args:
             period (str, optional): The data frequency for returns (daily, weekly, quarterly, or yearly).
             Defaults to "yearly".
-            rolling (int, optional): The rolling period to use for the calculation. If you select period = 'monthly'
-            and set rolling to 12 you obtain the rolling 12-month Sharpe Ratio. If no value is given, then it
-            calculates it for the entire period. Defaults to None.
+            rolling (int, optional): The rolling period to use for the calculation. Defaults to 14.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the UI values over time. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
@@ -474,23 +474,23 @@ class Risk:
 
         Which returns:
 
-        | Date       |   AMZN |   TSLA |   Benchmark |
-        |:-----------|-------:|-------:|------------:|
-        | 2012-12-31 | 0.4739 | 0.4584 |      0.3097 |
-        | 2013-12-31 | 0.0872 | 1.3989 |      0      |
-        | 2014-12-31 | 1.4965 | 1.4013 |      0.0954 |
-        | 2015-12-31 | 0.1641 | 0.9429 |      0.2568 |
-        | 2016-12-30 | 0.7049 | 1.2277 |      0.0912 |
-        | 2017-12-29 | 0.1391 | 1.2075 |      0.0388 |
-        | 2018-12-31 | 1.6636 | 0.7777 |      0.913  |
-        | 2019-12-31 | 0.5397 | 0.1843 |      0.018  |
-        | 2020-12-31 | 0.4887 | 0      |      0      |
-        | 2021-12-31 | 0.6703 | 0.8867 |      0.0353 |
-        | 2022-12-30 | 3.2005 | 4.3678 |      1.2594 |
-        | 2023-09-08 | 0.2139 | 1.1655 |      0.2184 |
+        |      |   AMZN |   TSLA |   Benchmark |
+        |:-----|-------:|-------:|------------:|
+        | 2012 | 0.0497 | 0.0454 |      0.0234 |
+        | 2013 | 0.035  | 0.0829 |      0.0142 |
+        | 2014 | 0.0659 | 0.0746 |      0.0174 |
+        | 2015 | 0.0273 | 0.0624 |      0.0238 |
+        | 2016 | 0.0519 | 0.0799 |      0.0151 |
+        | 2017 | 0.0241 | 0.0616 |      0.0067 |
+        | 2018 | 0.0619 | 0.0892 |      0.0356 |
+        | 2019 | 0.0373 | 0.0839 |      0.016  |
+        | 2020 | 0.0536 | 0.1205 |      0.0594 |
+        | 2021 | 0.0427 | 0.085  |      0.0136 |
+        | 2022 | 0.1081 | 0.1373 |      0.0492 |
+        | 2023 | 0.0475 | 0.0815 |      0.0186 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
-        returns = helpers.handle_return_data_periods(self, period, not rolling)
+        returns = helpers.handle_return_data_periods(self, period, True)
 
         ulcer_index = risk.get_ui(returns, rolling)
 

@@ -9,10 +9,10 @@ from financetoolkit.base.performance.helpers import (
     handle_return_data_periods,
     handle_risk_free_data_periods,
 )
-from financetoolkit.risk.risk import get_ui
 from financetoolkit.performance import performance
+from financetoolkit.risk.risk import get_ui
 
-# pylint: disable=too-many-instance-attributes,too-few-public-methods
+# pylint: disable=too-many-instance-attributes,too-few-public-methods,too-many-lines
 
 
 class Performance:
@@ -722,24 +722,23 @@ class Performance:
     def get_ulcer_performance_index(
         self,
         period: str | None = None,
-        rolling: int | None = None,
-        rounding: int | None = 4,
+        rolling: int = 14,
+        rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
     ):
         """
-        Calculate the Ulcer Performance Index (UPI), alternativly called Martin ratio, a measure of risk-adjusted
+        Calculate the Ulcer Performance Index (UPI), alternatively called Martin ratio, a measure of risk-adjusted
         return that evaluates the excess return of an investment portfolio or asset per unit of risk taken.
 
-        It can be used to compare volatilities in different stocks or show stocks go into ulcer territory.
+        It can be used to compare volatilities in different stocks or show stocks go into Ulcer territory.
         Similair to the Sharpe Ratio, a higher UPI is better than a lower one (since investors prefer more return
         for less risk).
 
         Args:
             period (str, optional): The period to use for the calculation. Defaults to None which
             results in basing it off the quarterly parameter as defined in the class instance.
-            rolling (int, optional): The rolling period to use for the ulcer index calculation. If
-            you select period = 'monthly' and set rolling to 12 you obtain the rolling 12-month UPI.
+            rolling (int): The rolling period to use to calculate the Ulcer Index. Defaults to 14.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
@@ -765,20 +764,14 @@ class Performance:
 
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
-        historical_data = handle_return_data_periods(
-            self, period, within_period=not rolling
-        )
+        historical_data = handle_return_data_periods(self, period, True)
         returns = historical_data.loc[:, "Return"][self._tickers]
-        historical_data_within_period = handle_return_data_periods(
-            self, period, within_period=False
-        )
+        historical_data_within_period = handle_return_data_periods(self, period, False)
         excess_return = historical_data_within_period.loc[:, "Excess Return"][
             self._tickers
         ]
 
         ulcer_index = get_ui(returns, rolling)
-        if not rolling:
-            excess_return.index = ulcer_index.index
 
         ulcer_performance_index = performance.get_ulcer_performance_index(
             excess_return, ulcer_index

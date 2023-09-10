@@ -317,9 +317,9 @@ class Ratios:
                         break
 
             if formula_adjusted:
-                calculation = eval(formula_adjusted).astype(np.float64)
+                calculation = eval(formula_adjusted).astype(np.float64)  # ruff: noqa
 
-                total_financials.loc[:, name, :] = calculation.to_numpy()  # ruff: noqa
+                total_financials.loc[:, name, :] = calculation.to_numpy()
 
                 self._custom_ratios = total_financials.loc[
                     :, list(custom_ratios_dict.keys()), :

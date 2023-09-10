@@ -4,6 +4,7 @@ __docformat__ = "google"
 import inspect
 import warnings
 
+import numpy as np
 import pandas as pd
 
 
@@ -87,7 +88,9 @@ def calculate_growth(
                     )
 
             dataset_lag = pd.DataFrame(
-                index=pd.MultiIndex.from_tuples(new_index), columns=dataset.columns
+                index=pd.MultiIndex.from_tuples(new_index),
+                columns=dataset.columns,
+                dtype=np.float64,
             )
 
             for new_index in dataset_lag.index:
@@ -110,7 +113,9 @@ def calculate_growth(
                     )
 
             dataset_lag = pd.DataFrame(
-                columns=pd.MultiIndex.from_tuples(new_index), index=dataset.index
+                columns=pd.MultiIndex.from_tuples(new_index),
+                index=dataset.index,
+                dtype=np.float64,
             )
 
             for new_index in dataset_lag.columns:

@@ -67,7 +67,7 @@ class Technicals:
         period: str = "daily",
         window: int = 14,
         close_column: str = "Adj Close",
-        rounding: int | None = 4,
+        rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
     ) -> pd.Series | pd.DataFrame:
@@ -136,7 +136,7 @@ class Technicals:
         self,
         period: str = "daily",
         close_column: str = "Adj Close",
-        rounding: int | None = 4,
+        rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
     ) -> pd.Series | pd.DataFrame:
@@ -230,7 +230,7 @@ class Technicals:
         close_column: str = "Adj Close",
         short_ema_window: int = 19,
         long_ema_window: int = 39,
-        rounding: int | None = 4,
+        rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
     ) -> pd.Series | pd.DataFrame:
@@ -314,7 +314,7 @@ class Technicals:
         self,
         period: str = "daily",
         close_column: str = "Adj Close",
-        rounding: int | None = 4,
+        rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
     ) -> pd.Series | pd.DataFrame:
@@ -390,7 +390,7 @@ class Technicals:
         self,
         period: str = "daily",
         close_column: str = "Adj Close",
-        rounding: int | None = 4,
+        rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
     ) -> pd.Series | pd.DataFrame:
@@ -466,7 +466,7 @@ class Technicals:
         self,
         period: str = "daily",
         close_column: str = "Adj Close",
-        rounding: int | None = 4,
+        rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
     ) -> pd.Series | pd.DataFrame:
@@ -557,7 +557,7 @@ class Technicals:
         close_column: str = "Adj Close",
         short_window: int = 3,
         long_window: int = 10,
-        rounding: int | None = 4,
+        rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
     ) -> pd.Series | pd.DataFrame:
@@ -642,7 +642,7 @@ class Technicals:
         period: str = "daily",
         window: int = 14,
         close_column: str = "Adj Close",
-        rounding: int | None = 4,
+        rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
     ) -> pd.Series | pd.DataFrame:
@@ -802,7 +802,7 @@ class Technicals:
         period: str = "daily",
         close_column: str = "Adj Close",
         window: int = 14,
-        rounding: int | None = 4,
+        rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
     ) -> pd.Series | pd.DataFrame:
@@ -885,7 +885,7 @@ class Technicals:
         period: str = "daily",
         close_column: str = "Adj Close",
         window: int = 14,
-        rounding: int | None = 4,
+        rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
     ) -> pd.Series | pd.DataFrame:
@@ -965,7 +965,7 @@ class Technicals:
         self,
         period: str = "daily",
         window: int = 14,
-        rounding: int | None = 4,
+        rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
     ) -> tuple[pd.Series, pd.Series] | tuple[pd.DataFrame, pd.DataFrame]:
@@ -1054,7 +1054,7 @@ class Technicals:
         close_column: str = "Adj Close",
         window: int = 14,
         constant: float = 0.015,
-        rounding: int | None = 4,
+        rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
     ) -> pd.Series | pd.DataFrame:
@@ -1143,7 +1143,7 @@ class Technicals:
         period: str = "daily",
         close_column: str = "Adj Close",
         window: int = 14,
-        rounding: int | None = 4,
+        rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
     ) -> pd.Series | pd.DataFrame:
@@ -1224,7 +1224,7 @@ class Technicals:
         period: str = "daily",
         close_column: str = "Adj Close",
         window: int = 14,
-        rounding: int | None = 4,
+        rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
     ) -> pd.Series | pd.DataFrame:
@@ -1305,7 +1305,7 @@ class Technicals:
         window_1: int = 7,
         window_2: int = 14,
         window_3: int = 28,
-        rounding: int | None = 4,
+        rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
     ) -> pd.Series | pd.DataFrame:
@@ -1398,7 +1398,7 @@ class Technicals:
         close_column: str = "Adj Close",
         short_window: int = 7,
         long_window: int = 28,
-        rounding: int | None = 4,
+        rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
     ) -> pd.Series | pd.DataFrame:
@@ -1483,7 +1483,7 @@ class Technicals:
         period: str = "daily",
         close_column: str = "Adj Close",
         window: int = 14,
-        rounding: int | None = 4,
+        rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
     ) -> pd.Series | pd.DataFrame:
@@ -1564,7 +1564,7 @@ class Technicals:
         period: str = "daily",
         close_column: str = "Adj Close",
         window: int = 14,
-        rounding: int | None = 4,
+        rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
     ) -> pd.Series | pd.DataFrame:
@@ -1650,7 +1650,7 @@ class Technicals:
         period: str = "daily",
         close_column: str = "Adj Close",
         window: int = 14,
-        rounding: int | None = 4,
+        rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
     ) -> pd.Series | pd.DataFrame:
@@ -1733,7 +1733,7 @@ class Technicals:
         conversion_window: int = 9,
         base_window: int = 20,
         lead_span_b_window: int = 40,
-        rounding: int | None = 4,
+        rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
     ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
@@ -1832,7 +1832,7 @@ class Technicals:
         close_column: str = "Adj Close",
         window: int = 14,
         smooth_widow: int = 3,
-        rounding: int | None = 4,
+        rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
     ) -> tuple[pd.DataFrame, pd.DataFrame]:
@@ -1932,7 +1932,7 @@ class Technicals:
         short_window: int = 12,
         long_window: int = 26,
         signal_window: int = 9,
-        rounding: int | None = 4,
+        rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
     ) -> tuple[pd.Series, pd.Series] | tuple[pd.DataFrame, pd.DataFrame]:
@@ -2027,7 +2027,7 @@ class Technicals:
         period: str = "daily",
         close_column: str = "Adj Close",
         window: int = 14,
-        rounding: int | None = 4,
+        rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
     ) -> pd.Series | pd.DataFrame:
@@ -2105,7 +2105,7 @@ class Technicals:
         self,
         period: str = "daily",
         close_column: str = "Adj Close",
-        rounding: int | None = 4,
+        rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
     ) -> pd.Series | pd.DataFrame:
@@ -2184,7 +2184,7 @@ class Technicals:
         period: str = "daily",
         window: int = 14,
         close_column: str = "Adj Close",
-        rounding: int | None = 4,
+        rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
     ) -> pd.Series | pd.DataFrame:
@@ -2282,7 +2282,7 @@ class Technicals:
         period: str = "daily",
         close_column: str = "Adj Close",
         window: int = 14,
-        rounding: int | None = 4,
+        rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
     ) -> pd.Series | pd.DataFrame:
@@ -2361,7 +2361,7 @@ class Technicals:
         period: str = "daily",
         close_column: str = "Adj Close",
         window: int = 14,
-        rounding: int | None = 4,
+        rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
     ) -> pd.Series | pd.DataFrame:
@@ -2442,7 +2442,7 @@ class Technicals:
         period: str = "daily",
         close_column: str = "Adj Close",
         window: int = 14,
-        rounding: int | None = 4,
+        rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
     ) -> pd.Series | pd.DataFrame:
@@ -2525,7 +2525,7 @@ class Technicals:
         period: str = "daily",
         close_column: str = "Adj Close",
         window: int = 14,
-        rounding: int | None = 4,
+        rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
     ) -> pd.Series | pd.DataFrame:
@@ -2609,7 +2609,7 @@ class Technicals:
         close_column: str = "Adj Close",
         window: int = 14,
         num_std_dev: int = 2,
-        rounding: int | None = 4,
+        rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
     ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
@@ -2705,7 +2705,7 @@ class Technicals:
         period: str = "daily",
         close_column: str = "Adj Close",
         window: int = 14,
-        rounding: int | None = 4,
+        rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
     ) -> pd.Series | pd.DataFrame:
@@ -2782,7 +2782,7 @@ class Technicals:
         period: str = "daily",
         window: int = 14,
         close_column: str = "Adj Close",
-        rounding: int | None = 4,
+        rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
     ) -> pd.Series | pd.DataFrame:
@@ -2883,7 +2883,7 @@ class Technicals:
         self,
         period: str = "daily",
         close_column: str = "Adj Close",
-        rounding: int | None = 4,
+        rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
     ) -> pd.Series | pd.DataFrame:
@@ -2966,7 +2966,7 @@ class Technicals:
         period: str = "daily",
         close_column: str = "Adj Close",
         window: int = 14,
-        rounding: int | None = 4,
+        rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
     ) -> pd.Series:
@@ -3060,7 +3060,7 @@ class Technicals:
         window: int = 14,
         atr_window: int = 14,
         atr_multiplier: int = 2,
-        rounding: int | None = 4,
+        rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
     ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:

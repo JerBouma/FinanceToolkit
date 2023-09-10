@@ -55,7 +55,7 @@ class Models:
     @handle_errors
     def get_dupont_analysis(
         self,
-        rounding: int | None = 4,
+        rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
     ) -> pd.DataFrame:
@@ -133,7 +133,7 @@ class Models:
     @handle_errors
     def get_extended_dupont_analysis(
         self,
-        rounding: int | None = 4,
+        rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
     ) -> pd.DataFrame:
@@ -225,7 +225,7 @@ class Models:
     def get_enterprise_value_breakdown(
         self,
         diluted: bool = True,
-        rounding: int | None = 4,
+        rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
     ) -> pd.DataFrame:

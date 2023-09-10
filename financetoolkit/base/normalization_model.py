@@ -2,11 +2,11 @@
 __docformat__ = "google"
 
 import shutil
+from importlib import resources
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
-import pkg_resources
 
 
 def read_normalization_file(statement: str, format_location: str = ""):
@@ -29,9 +29,9 @@ def read_normalization_file(statement: str, format_location: str = ""):
     if format_location:
         file_location = f"{format_location}/{statement}.csv"
     else:
-        file_location = pkg_resources.resource_stream(
-            __name__, f"normalization/{statement}.csv"
-        ).name
+        file_location = resources.files(__package__).joinpath(  # type: ignore
+            f"normalization/{statement}.csv"
+        )
 
     return pd.read_csv(file_location, index_col=[0]).iloc[:, 0]
 
@@ -155,8 +155,8 @@ def copy_normalization_files(
         if format_location:
             file_location = f"{format_location}/{statement}.csv"
         else:
-            file_location = pkg_resources.resource_stream(
-                __name__, f"normalization/{statement}.csv"
-            ).name
+            file_location = resources.files(__package__).joinpath(  # type: ignore
+                f"normalization/{statement}.csv"
+            )
 
         shutil.copyfile(file_location, Path(save_location, f"{statement}.csv"))

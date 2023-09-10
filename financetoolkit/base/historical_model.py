@@ -163,9 +163,9 @@ def get_historical_data(
             print(f"No dividend data found for {ticker}")
             continue
 
-        historical_data_dict[ticker]["Return"] = historical_data_dict[ticker][
-            return_column
-        ].pct_change()
+        historical_data_dict[ticker]["Return"] = (
+            historical_data_dict[ticker][return_column].ffill().pct_change()
+        )
 
         historical_data_dict[ticker]["Volatility"] = (
             historical_data_dict[ticker].loc[start:end, "Return"].std()
@@ -185,8 +185,12 @@ def get_historical_data(
         adjusted_return = historical_data_dict[ticker].loc[start:end, "Return"].copy()
         adjusted_return.iloc[0] = 0
 
+        historical_data_dict[ticker]["Cumulative Return"] = pd.Series(np.nan).astype(
+            float
+        )
+
         historical_data_dict[ticker].loc[start:end, "Cumulative Return"] = (
-            1 + adjusted_return
+            1.0 + adjusted_return
         ).cumprod()
 
     if historical_data_dict:
@@ -399,7 +403,7 @@ def convert_daily_to_other_period(
         # square root of the number of trading days (252)
         period_historical_data["Volatility"] = daily_historical_data["Return"].groupby(
             dates
-        ).agg(np.std) * np.sqrt(volatility_window)
+        ).std() * np.sqrt(volatility_window)
 
         if not risk_free_rate.empty:
             period_historical_data["Excess Return"] = period_historical_data[
@@ -408,7 +412,7 @@ def convert_daily_to_other_period(
 
             period_historical_data["Excess Volatility"] = daily_historical_data[
                 "Excess Return"
-            ].groupby(dates).agg(np.std) * np.sqrt(volatility_window)
+            ].groupby(dates).std() * np.sqrt(volatility_window)
 
     if "Cumulative Return" in period_historical_data:
         if start:

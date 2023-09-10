@@ -149,7 +149,6 @@ class Toolkit:
             # Initialization of FinancialModelingPrep Variables
             self._profile: pd.DataFrame = pd.DataFrame()
             self._quote: pd.DataFrame = pd.DataFrame()
-            self._enterprise: pd.DataFrame = pd.DataFrame()
             self._rating: pd.DataFrame = pd.DataFrame()
             self._analyst_estimates: pd.DataFrame = pd.DataFrame()
             self._analyst_estimates_growth: pd.DataFrame = pd.DataFrame()
@@ -846,8 +845,6 @@ class Toolkit:
                 self._tickers, self._api_key
             )
 
-        pd.options.display.float_format = "{:.2f}".format
-
         if self._remove_invalid_tickers:
             self._tickers = [
                 ticker
@@ -1020,7 +1017,12 @@ class Toolkit:
 
         return self._analyst_estimates_growth if growth else self._analyst_estimates
 
-    def get_earnings_calendar(self, actual_dates: bool = True, overwrite: bool = False):
+    def get_earnings_calendar(
+        self,
+        actual_dates: bool = True,
+        overwrite: bool = False,
+        rounding: int | None = None,
+    ):
         """
         Obtain Earnings Calendars for any range of companies. You have the option to
         obtain the actual dates or to convert to the corresponding quarters.
@@ -1082,6 +1084,10 @@ class Toolkit:
                 self._progress_bar,
             )
 
+        earnings_calendar = self._earnings_calendar.round(
+            rounding if rounding else self._rounding
+        ).loc[self._start_date : self._end_date]
+
         if self._remove_invalid_tickers:
             self._tickers = [
                 ticker
@@ -1090,9 +1096,9 @@ class Toolkit:
             ]
 
         if len(self._tickers) == 1:
-            return self._earnings_calendar.loc[self._tickers[0]]
+            return earnings_calendar.loc[self._tickers[0]]
 
-        return self._earnings_calendar
+        return earnings_calendar
 
     def get_revenue_geographic_segmentation(self, overwrite: bool = False):
         """
@@ -1699,6 +1705,7 @@ class Toolkit:
                 self._balance_sheet_statement,
                 lag=lag,
                 rounding=rounding if rounding else self._rounding,
+                axis="columns",
             )
 
         if len(self._tickers) == 1:
@@ -1817,6 +1824,7 @@ class Toolkit:
                 self._income_statement,
                 lag=lag,
                 rounding=rounding if rounding else self._rounding,
+                axis="columns",
             )
 
         if len(self._tickers) == 1:
@@ -1933,6 +1941,7 @@ class Toolkit:
                 self._cash_flow_statement,
                 lag=lag,
                 rounding=rounding if rounding else self._rounding,
+                axis="columns",
             )
 
         if len(self._tickers) == 1:

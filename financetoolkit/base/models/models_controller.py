@@ -55,7 +55,7 @@ class Models:
     @handle_errors
     def get_dupont_analysis(
         self,
-        rounding: int | None = 4,
+        rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
     ) -> pd.DataFrame:
@@ -114,6 +114,7 @@ class Models:
                 self._dupont_analysis,
                 lag=lag,
                 rounding=rounding if rounding else self._rounding,
+                axis="index",
             )
 
         self._dupont_analysis = self._dupont_analysis.round(
@@ -132,7 +133,7 @@ class Models:
     @handle_errors
     def get_extended_dupont_analysis(
         self,
-        rounding: int | None = 4,
+        rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
     ) -> pd.DataFrame:
@@ -200,6 +201,7 @@ class Models:
                 self._extended_dupont_analysis,
                 lag=lag,
                 rounding=rounding if rounding else self._rounding,
+                axis="columns",
             )
 
         self._extended_dupont_analysis = self._extended_dupont_analysis.round(
@@ -223,7 +225,7 @@ class Models:
     def get_enterprise_value_breakdown(
         self,
         diluted: bool = True,
-        rounding: int | None = 4,
+        rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
     ) -> pd.DataFrame:
@@ -311,7 +313,7 @@ class Models:
             )
 
         self._enterprise_value_breakdown = self._enterprise_value_breakdown.round(
-            rounding
+            rounding if rounding else self._rounding
         )
 
         if len(self._tickers) == 1:

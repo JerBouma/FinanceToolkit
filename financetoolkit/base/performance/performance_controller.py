@@ -73,7 +73,7 @@ class Performance:
         self,
         period: str | None = None,
         rolling: int | None = None,
-        rounding: int | None = 4,
+        rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
     ):
@@ -165,7 +165,7 @@ class Performance:
         self,
         period: str | None = None,
         show_full_results: bool = False,
-        rounding: int | None = 4,
+        rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
     ):
@@ -265,6 +265,8 @@ class Performance:
                 + [f"CAPM {ticker}" for ticker in self._tickers]
             )
 
+            full_results = full_results.round(rounding if rounding else self._rounding)
+
             return full_results
 
         if growth:
@@ -282,7 +284,7 @@ class Performance:
         self,
         period: str | None = None,
         show_full_results: bool = False,
-        rounding: int | None = 4,
+        rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
     ):
@@ -359,7 +361,7 @@ class Performance:
     def get_jensens_alpha(
         self,
         period: str | None = None,
-        rounding: int | None = 4,
+        rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
     ):
@@ -422,6 +424,7 @@ class Performance:
             self, period, within_period=False
         )
         period_returns = historical_period_data.loc[:, "Return"][self._tickers]
+
         risk_free_rate = handle_risk_free_data_periods(self, period)
         benchmark_returns = handle_return_data_periods(
             self, period, within_period=False
@@ -449,7 +452,7 @@ class Performance:
     def get_treynor_ratio(
         self,
         period: str | None = None,
-        rounding: int | None = 4,
+        rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
     ):
@@ -537,7 +540,7 @@ class Performance:
         self,
         period: str | None = None,
         rolling: int | None = None,
-        rounding: int | None = 4,
+        rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
     ):
@@ -632,7 +635,7 @@ class Performance:
     def get_sortino_ratio(
         self,
         period: str | None = None,
-        rounding: int | None = 4,
+        rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
     ):
@@ -798,7 +801,7 @@ class Performance:
     def get_m2_ratio(
         self,
         period: str | None = None,
-        rounding: int | None = 4,
+        rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
     ):
@@ -883,7 +886,7 @@ class Performance:
     def get_tracking_error(
         self,
         period: str | None = None,
-        rounding: int | None = 4,
+        rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
     ):
@@ -961,7 +964,7 @@ class Performance:
     def get_information_ratio(
         self,
         period: str | None = None,
-        rounding: int | None = 4,
+        rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
     ):

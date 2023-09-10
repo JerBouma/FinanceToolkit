@@ -2,7 +2,9 @@
 __docformat__ = "google"
 
 import inspect
+import warnings
 
+import numpy as np
 import pandas as pd
 
 
@@ -67,6 +69,11 @@ def calculate_growth(
     Returns:
         pd.Series | pd.DataFrame: _description_
     """
+    # With Pandas 2.1, pct_change will no longer automatically forward fill
+    # given that this has been solved within the code already but the warning
+    # still appears, this is a temporary fix to ignore the warning
+    warnings.simplefilter(action="ignore", category=FutureWarning)
+
     if isinstance(lag, list):
         new_index = []
         lag_dict = {f"Lag {lag_value}": lag_value for lag_value in lag}
@@ -80,7 +87,11 @@ def calculate_growth(
                         else (old_index, lag_value)
                     )
 
-            dataset_lag = dataset.reindex(index=pd.MultiIndex.from_tuples(new_index))
+            dataset_lag = pd.DataFrame(
+                index=pd.MultiIndex.from_tuples(new_index),
+                columns=dataset.columns,
+                dtype=np.float64,
+            )
 
             for new_index in dataset_lag.index:
                 lag_key = new_index[-1]
@@ -88,6 +99,7 @@ def calculate_growth(
 
                 dataset_lag.loc[new_index] = (
                     dataset.loc[other_indices]
+                    .ffill()
                     .pct_change(periods=lag_dict[lag_key])  # type: ignore
                     .to_numpy()
                 )
@@ -100,7 +112,11 @@ def calculate_growth(
                         else (old_index, lag_value)
                     )
 
-            dataset_lag = dataset.reindex(columns=pd.MultiIndex.from_tuples(new_index))
+            dataset_lag = pd.DataFrame(
+                columns=pd.MultiIndex.from_tuples(new_index),
+                index=dataset.index,
+                dtype=np.float64,
+            )
 
             for new_index in dataset_lag.columns:
                 lag_key = new_index[-1]
@@ -108,13 +124,14 @@ def calculate_growth(
 
                 dataset_lag.loc[:, new_index] = (
                     dataset.loc[:, other_indices]
+                    .ffill()
                     .pct_change(periods=lag_dict[lag_key])  # type: ignore
                     .to_numpy()
                 )
 
         return dataset_lag.round(rounding)
 
-    return dataset.pct_change(periods=lag, axis=axis).round(rounding)
+    return dataset.ffill().pct_change(periods=lag, axis=axis).round(rounding)
 
 
 def handle_errors(func):

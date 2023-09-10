@@ -1,10 +1,7 @@
 ,Simple Moving Average (SMA),Simple Moving Average (SMA),Exponential Moving Average (EMA),Exponential Moving Average (EMA),Double Exponential Moving Average (DEMA),Double Exponential Moving Average (DEMA),TRIX,TRIX,Triangular Moving Average,Triangular Moving Average
 ,AAPL,MSFT,AAPL,MSFT,AAPL,MSFT,AAPL,MSFT,AAPL,MSFT
 Date,,,,,,,,,,
-2013-09-09,,,,,,,,,,
-2013-09-10,,,-0.003,0.0031,-0.0057,0.0057,,,0.9772,1.0231
-2013-09-11,,,-0.0098,0.0041,-0.0179,0.0073,3.9444,2.0545,0.4673,0.5112
-2013-09-12,,,-0.0072,0.0034,-0.0121,0.0054,1.0524,0.8512,0.3219,0.3377
+2013-09-12,,,,,,,,,,
 2013-09-13,,,-0.0084,0.0043,-0.0138,0.0069,0.635,0.5723,0.2395,0.2551
 2013-09-16,,,-0.0113,0.0028,-0.0187,0.0037,0.4944,0.3599,0.1871,0.2018
 2013-09-17,,,-0.0085,0.0029,-0.0125,0.0039,0.3406,0.2586,0.1594,0.1686

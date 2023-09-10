@@ -3,6 +3,7 @@ __docformat__ = "google"
 
 
 import time
+from io import StringIO
 
 import numpy as np
 import pandas as pd
@@ -51,7 +52,9 @@ def get_financial_data(
             if raw:
                 return response.json()
 
-            financial_data = pd.read_json(response.text)
+            json_io = StringIO(response.text)
+
+            financial_data = pd.read_json(json_io)
 
             return financial_data
 

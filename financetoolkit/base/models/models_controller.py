@@ -114,6 +114,7 @@ class Models:
                 self._dupont_analysis,
                 lag=lag,
                 rounding=rounding if rounding else self._rounding,
+                axis="index",
             )
 
         self._dupont_analysis = self._dupont_analysis.round(
@@ -200,6 +201,7 @@ class Models:
                 self._extended_dupont_analysis,
                 lag=lag,
                 rounding=rounding if rounding else self._rounding,
+                axis="columns",
             )
 
         self._extended_dupont_analysis = self._extended_dupont_analysis.round(

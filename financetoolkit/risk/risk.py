@@ -27,7 +27,7 @@ def get_var_historic(
             return returns.aggregate(get_var_historic, alpha=alpha)
 
         periods = returns.index.get_level_values(0).unique()
-        value_at_risk = pd.DataFrame()
+        period_data_list = []
 
         for sub_period in periods:
             period_data = returns.loc[sub_period].aggregate(
@@ -35,7 +35,10 @@ def get_var_historic(
             )
             period_data.name = sub_period
 
-            value_at_risk = pd.concat([value_at_risk, period_data], axis=1)
+            if not period_data.empty:
+                period_data_list.append(period_data)
+
+        value_at_risk = pd.concat(period_data_list, axis=1)
         return value_at_risk.T
     if isinstance(returns, pd.Series):
         return np.percentile(

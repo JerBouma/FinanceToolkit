@@ -126,6 +126,7 @@ class Ratios:
                 self._all_ratios,
                 lag=lag,
                 rounding=rounding if rounding else self._rounding,
+                axis="columns",
             )
 
         return self._all_ratios_growth if growth else self._all_ratios
@@ -314,6 +315,7 @@ class Ratios:
                 self._custom_ratios,
                 lag=lag,
                 rounding=rounding if rounding else self._rounding,
+                axis="columns",
             )
 
         if len(self._tickers) == 1:
@@ -402,6 +404,7 @@ class Ratios:
                 self._efficiency_ratios,
                 lag=lag,
                 rounding=rounding if rounding else self._rounding,
+                axis="columns",
             )
 
         if len(self._tickers) == 1:
@@ -1234,6 +1237,7 @@ class Ratios:
                 self._liquidity_ratios,
                 lag=lag,
                 rounding=rounding if rounding else self._rounding,
+                axis="columns",
             )
 
         if len(self._tickers) == 1:
@@ -1697,6 +1701,7 @@ class Ratios:
                 self._profitability_ratios,
                 lag=lag,
                 rounding=rounding if rounding else self._rounding,
+                axis="columns",
             )
 
         if len(self._tickers) == 1:
@@ -2734,6 +2739,7 @@ class Ratios:
                 self._solvency_ratios,
                 lag=lag,
                 rounding=rounding if rounding else self._rounding,
+                axis="index",
             )
 
         if len(self._tickers) == 1:
@@ -3419,6 +3425,7 @@ class Ratios:
                 self._valuation_ratios,
                 lag=lag,
                 rounding=rounding if rounding else self._rounding,
+                axis="columns",
             )
 
         if len(self._tickers) == 1:

@@ -1699,6 +1699,7 @@ class Toolkit:
                 self._balance_sheet_statement,
                 lag=lag,
                 rounding=rounding if rounding else self._rounding,
+                axis="columns",
             )
 
         if len(self._tickers) == 1:
@@ -1817,6 +1818,7 @@ class Toolkit:
                 self._income_statement,
                 lag=lag,
                 rounding=rounding if rounding else self._rounding,
+                axis="columns",
             )
 
         if len(self._tickers) == 1:
@@ -1933,6 +1935,7 @@ class Toolkit:
                 self._cash_flow_statement,
                 lag=lag,
                 rounding=rounding if rounding else self._rounding,
+                axis="columns",
             )
 
         if len(self._tickers) == 1:

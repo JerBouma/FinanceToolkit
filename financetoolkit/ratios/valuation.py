@@ -73,7 +73,7 @@ def get_earnings_per_share_growth(
     if isinstance(earnings_per_share, pd.Series):
         return earnings_per_share.pct_change()
     if isinstance(earnings_per_share, pd.DataFrame):
-        return earnings_per_share.pct_change(axis="columns")
+        return earnings_per_share.ffill().pct_change(axis="columns")
 
     raise TypeError("earnings_per_share must be a pd.Series or pd.DataFrame object.")
 

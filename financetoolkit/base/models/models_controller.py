@@ -313,7 +313,7 @@ class Models:
             )
 
         self._enterprise_value_breakdown = self._enterprise_value_breakdown.round(
-            rounding
+            rounding if rounding else self._rounding
         )
 
         if len(self._tickers) == 1:

@@ -2,6 +2,7 @@
 __docformat__ = "google"
 
 
+import numpy as np
 import pandas as pd
 
 from financetoolkit.base.helpers import calculate_growth, handle_errors
@@ -105,15 +106,26 @@ class Ratios:
         toolkit.ratios.collect_all_ratios()
         ```
         """
+        if self._efficiency_ratios.empty:
+            self.collect_efficiency_ratios(days=days)
+        if self._liquidity_ratios.empty:
+            self.collect_liquidity_ratios()
+        if self._profitability_ratios.empty:
+            self.collect_profitability_ratios()
+        if self._solvency_ratios.empty:
+            self.collect_solvency_ratios(diluted=diluted)
+        if self._valuation_ratios.empty:
+            self.collect_valuation_ratios(
+                include_dividends=include_dividends, diluted=diluted
+            )
+
         self._all_ratios = pd.concat(
             [
-                self.collect_efficiency_ratios(days=days),
-                self.collect_liquidity_ratios(),
-                self.collect_profitability_ratios(),
-                self.collect_solvency_ratios(diluted=diluted),
-                self.collect_valuation_ratios(
-                    include_dividends=include_dividends, diluted=diluted
-                ),
+                self._efficiency_ratios,
+                self._liquidity_ratios,
+                self._profitability_ratios,
+                self._solvency_ratios,
+                self._valuation_ratios,
             ]
         )
 
@@ -127,6 +139,13 @@ class Ratios:
                 lag=lag,
                 rounding=rounding if rounding else self._rounding,
                 axis="columns",
+            )
+
+        if len(self._tickers) == 1:
+            return (
+                self._all_ratios_growth[self._tickers[0]]
+                if growth
+                else self._all_ratios.loc[self._tickers[0]]
             )
 
         return self._all_ratios_growth if growth else self._all_ratios
@@ -209,9 +228,10 @@ class Ratios:
         )
 
         if self._all_ratios.empty:
-            self._all_ratios = self.collect_all_ratios()
+            self.collect_all_ratios()
 
         custom_ratios = pd.DataFrame(
+            0,
             index=pd.MultiIndex.from_product(
                 [self._tickers, custom_ratios_dict.keys()]
             ),
@@ -297,14 +317,16 @@ class Ratios:
                         break
 
             if formula_adjusted:
-                total_financials.loc[:, name, :] = eval(
-                    formula_adjusted
-                ).to_numpy()  # ruff: noqa
+                calculation = eval(formula_adjusted).astype(np.float64)
+
+                total_financials.loc[:, name, :] = calculation.to_numpy()  # ruff: noqa
 
                 self._custom_ratios = total_financials.loc[
                     :, list(custom_ratios_dict.keys()), :
                 ]
-                self._custom_ratios = self._custom_ratios.sort_index(axis=0)
+                self._custom_ratios = self._custom_ratios.sort_index(
+                    axis=0, level=0, sort_remaining=False
+                )
 
                 self._custom_ratios = self._custom_ratios.round(
                     rounding if rounding else self._rounding

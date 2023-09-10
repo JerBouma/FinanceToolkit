@@ -1,6 +1,8 @@
 """Valuation Module"""
 __docformat__ = "google"
 
+import warnings
+
 import pandas as pd
 
 
@@ -73,7 +75,11 @@ def get_earnings_per_share_growth(
     if isinstance(earnings_per_share, pd.Series):
         return earnings_per_share.pct_change()
     if isinstance(earnings_per_share, pd.DataFrame):
-        return earnings_per_share.ffill().pct_change(axis="columns")
+        # With Pandas 2.1, pct_change will no longer automatically forward fill
+        # given that this has been solved within the code already but the warning
+        # still appears, this is a temporary fix to ignore the warning
+        warnings.simplefilter(action="ignore", category=FutureWarning)
+        return earnings_per_share.ffill(axis="columns").pct_change(axis="columns")
 
     raise TypeError("earnings_per_share must be a pd.Series or pd.DataFrame object.")
 

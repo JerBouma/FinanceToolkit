@@ -67,7 +67,7 @@ skip_gitignore = true
 combine_as_imports = true
 
 [tool.codespell]
-ignore-words-list = 'zar,profund,basf,applicatio,ser,mone,vie,wew,ist,tre,ue,nd,fo,nwe,0t,Ot,ot,juni,acn,hve,te,hsa,fof,ege,bu,wya,esy,whn,ned,4rd,wih,mke,caf,fpr,hav,coo'
+ignore-words-list = 'zar,profund,basf,applicatio,ser,mone,vie,wew,ist,tre,ue,nd,fo,nwe,0t,Ot,ot,juni,acn,hve,te,hsa,fof,ege,bu,wya,esy,whn,ned,4rd,wih,mke,caf,fpr,hav,coo,sdae,ues,onl,som'
 skip = '*.json,./.git,pyproject.toml,poetry.lock'
 
 [tool.mypy]

@@ -6,6 +6,11 @@ from scipy import stats
 
 ALPHA_CONSTRAINT = 0.5
 
+# This is meant for calculations in which a Multi Index exists. This is the case
+# when calculating a "within period" in which the first index represents the period
+# (e.g. 2020Q1) and the second index the days within that period (January to March)
+MULTI_PERIOD_INDEX_LEVELS = 2
+
 
 def get_var_historic(
     returns: pd.Series | pd.DataFrame, alpha: float
@@ -23,23 +28,24 @@ def get_var_historic(
     """
     returns = returns.dropna()
     if isinstance(returns, pd.DataFrame):
-        if returns.index.nlevels == 1:
-            return returns.aggregate(get_var_historic, alpha=alpha)
+        if returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS:
+            periods = returns.index.get_level_values(0).unique()
+            period_data_list = []
 
-        periods = returns.index.get_level_values(0).unique()
-        period_data_list = []
+            for sub_period in periods:
+                period_data = returns.loc[sub_period].aggregate(
+                    get_var_historic, alpha=alpha
+                )
+                period_data.name = sub_period
 
-        for sub_period in periods:
-            period_data = returns.loc[sub_period].aggregate(
-                get_var_historic, alpha=alpha
-            )
-            period_data.name = sub_period
+                if not period_data.empty:
+                    period_data_list.append(period_data)
 
-            if not period_data.empty:
-                period_data_list.append(period_data)
+            value_at_risk = pd.concat(period_data_list, axis=1)
 
-        value_at_risk = pd.concat(period_data_list, axis=1)
-        return value_at_risk.T
+            return value_at_risk.T
+
+        return returns.aggregate(get_var_historic, alpha=alpha)
     if isinstance(returns, pd.Series):
         return np.percentile(
             returns, alpha * 100
@@ -73,16 +79,23 @@ def get_var_gaussian(
         otherwise as pd.Series or pd.DataFrame with time as index.
     """
     returns = returns.dropna()
-    if isinstance(returns, pd.DataFrame) and returns.index.nlevels > 1:
+    if (
+        isinstance(returns, pd.DataFrame)
+        and returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS
+    ):
         periods = returns.index.get_level_values(0).unique()
-        value_at_risk = pd.DataFrame()
+        period_data_list = []
+
         for sub_period in periods:
             period_data = get_var_gaussian(
                 returns.loc[sub_period], alpha, cornish_fisher
             )
             period_data.name = sub_period
 
-            value_at_risk = pd.concat([value_at_risk, period_data], axis=1)
+            if not period_data.empty:
+                period_data_list.append(period_data)
+
+        value_at_risk = pd.concat(period_data_list, axis=1)
 
         return value_at_risk.T
 
@@ -114,14 +127,21 @@ def get_var_studentt(returns, alpha: float) -> pd.Series | pd.DataFrame:
         otherwise as pd.Series or pd.DataFrame with time as index.
     """
     returns = returns.dropna()
-    if isinstance(returns, pd.DataFrame) and returns.index.nlevels > 1:
+    if (
+        isinstance(returns, pd.DataFrame)
+        and returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS
+    ):
         periods = returns.index.get_level_values(0).unique()
-        value_at_risk = pd.DataFrame()
+        period_data_list = []
+
         for sub_period in periods:
             period_data = get_var_studentt(returns.loc[sub_period], alpha)
             period_data.name = sub_period
 
-            value_at_risk = pd.concat([value_at_risk, period_data], axis=1)
+            if not period_data.empty:
+                period_data_list.append(period_data)
+
+        value_at_risk = pd.concat(period_data_list, axis=1)
 
         return value_at_risk.T
 
@@ -149,20 +169,23 @@ def get_cvar_historic(returns: pd.Series | pd.DataFrame, alpha: float) -> pd.Ser
     """
     returns = returns.dropna()
     if isinstance(returns, pd.DataFrame):
-        if returns.index.nlevels == 1:
-            return returns.aggregate(get_cvar_historic, alpha=alpha)
+        if returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS:
+            periods = returns.index.get_level_values(0).unique()
+            period_data_list = []
 
-        periods = returns.index.get_level_values(0).unique()
-        value_at_risk = pd.DataFrame()
+            for sub_period in periods:
+                period_data = returns.loc[sub_period].aggregate(
+                    get_cvar_historic, alpha=alpha
+                )
+                period_data.name = sub_period
 
-        for sub_period in periods:
-            period_data = returns.loc[sub_period].aggregate(
-                get_cvar_historic, alpha=alpha
-            )
-            period_data.name = sub_period
+                if not period_data.empty:
+                    period_data_list.append(period_data)
 
-            value_at_risk = pd.concat([value_at_risk, period_data], axis=1)
-        return value_at_risk.T
+            value_at_risk = pd.concat(period_data_list, axis=1)
+
+            return value_at_risk.T
+        return returns.aggregate(get_cvar_historic, alpha=alpha)
     if isinstance(returns, pd.Series):
         return returns[
             returns <= get_var_historic(returns, alpha)
@@ -186,14 +209,21 @@ def get_cvar_gaussian(
         otherwise as pd.Series or pd.DataFrame with time as index.
     """
     returns = returns.dropna()
-    if isinstance(returns, pd.DataFrame) and returns.index.nlevels > 1:
+    if (
+        isinstance(returns, pd.DataFrame)
+        and returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS
+    ):
         periods = returns.index.get_level_values(0).unique()
-        value_at_risk = pd.DataFrame()
+        period_data_list = []
+
         for sub_period in periods:
             period_data = get_cvar_gaussian(returns.loc[sub_period], alpha)
             period_data.name = sub_period
 
-            value_at_risk = pd.concat([value_at_risk, period_data], axis=1)
+            if not period_data.empty:
+                period_data_list.append(period_data)
+
+        value_at_risk = pd.concat(period_data_list, axis=1)
 
         return value_at_risk.T
 
@@ -216,14 +246,21 @@ def get_cvar_studentt(
         otherwise as pd.Series or pd.DataFrame with time as index.
     """
     returns = returns.dropna()
-    if isinstance(returns, pd.DataFrame) and returns.index.nlevels > 1:
+    if (
+        isinstance(returns, pd.DataFrame)
+        and returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS
+    ):
         periods = returns.index.get_level_values(0).unique()
-        value_at_risk = pd.DataFrame()
+        period_data_list = []
+
         for sub_period in periods:
             period_data = get_cvar_studentt(returns.loc[sub_period], alpha)
             period_data.name = sub_period
 
-            value_at_risk = pd.concat([value_at_risk, period_data], axis=1)
+            if not period_data.empty:
+                period_data_list.append(period_data)
+
+        value_at_risk = pd.concat(period_data_list, axis=1)
 
         return value_at_risk.T
 
@@ -255,14 +292,21 @@ def get_cvar_laplace(
         otherwise as pd.Series or pd.DataFrame with time as index.
     """
     returns = returns.dropna()
-    if isinstance(returns, pd.DataFrame) and returns.index.nlevels > 1:
+    if (
+        isinstance(returns, pd.DataFrame)
+        and returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS
+    ):
         periods = returns.index.get_level_values(0).unique()
-        value_at_risk = pd.DataFrame()
+        period_data_list = []
+
         for sub_period in periods:
             period_data = get_cvar_laplace(returns.loc[sub_period], alpha)
             period_data.name = sub_period
 
-            value_at_risk = pd.concat([value_at_risk, period_data], axis=1)
+            if not period_data.empty:
+                period_data_list.append(period_data)
+
+        value_at_risk = pd.concat(period_data_list, axis=1)
 
         return value_at_risk.T
 
@@ -294,14 +338,21 @@ def get_cvar_logistic(
         otherwise as pd.Series or pd.DataFrame with time as index.
     """
     returns = returns.dropna()
-    if isinstance(returns, pd.DataFrame) and returns.index.nlevels > 1:
+    if (
+        isinstance(returns, pd.DataFrame)
+        and returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS
+    ):
         periods = returns.index.get_level_values(0).unique()
-        value_at_risk = pd.DataFrame()
+        period_data_list = []
+
         for sub_period in periods:
             period_data = get_cvar_logistic(returns.loc[sub_period], alpha)
             period_data.name = sub_period
 
-            value_at_risk = pd.concat([value_at_risk, period_data], axis=1)
+            if not period_data.empty:
+                period_data_list.append(period_data)
+
+        value_at_risk = pd.concat(period_data_list, axis=1)
 
         return value_at_risk.T
 
@@ -312,6 +363,46 @@ def get_cvar_logistic(
     scale = np.sqrt(3 * returns.std(ddof=0) ** 2 / np.pi**2)
 
     return -scale * np.log(((1 - alpha) ** (1 - 1 / alpha)) / alpha) + returns.mean()
+
+
+def get_evar_gaussian(
+    returns: pd.Series | pd.DataFrame, alpha: float
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate the Entropic Value at Risk (EVaR) of returns based on the gaussian distribution.
+
+    For more information see: https://en.wikipedia.org/wiki/Entropic_value_at_risk
+
+    Args:
+        returns (pd.Series | pd.DataFrame): A Series or Dataframe of returns.
+        alpha (float): The confidence level (e.g., 0.05 for 95% confidence).
+
+    Returns:
+        pd.Series | pd.DataFrame: EVaR values as float if returns is a pd.Series,
+        otherwise as pd.Series or pd.DataFrame with time as index.
+    """
+    returns = returns.dropna()
+    if (
+        isinstance(returns, pd.DataFrame)
+        and returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS
+    ):
+        periods = returns.index.get_level_values(0).unique()
+        period_data_list = []
+
+        for sub_period in periods:
+            period_data = get_cvar_laplace(returns.loc[sub_period], alpha)
+            period_data.name = sub_period
+
+            if not period_data.empty:
+                period_data_list.append(period_data)
+
+        value_at_risk = pd.concat(period_data_list, axis=1)
+
+        return value_at_risk.T
+
+    return returns.mean() + returns.std(ddof=0) * np.sqrt(
+        -2 * np.log(returns.std(ddof=0))
+    )
 
 
 def get_max_drawdown(
@@ -328,20 +419,80 @@ def get_max_drawdown(
         otherwise as pd.Series or pd.DataFrame with time as index.
     """
     returns = returns.dropna()
-    if isinstance(returns, pd.DataFrame) and returns.index.nlevels > 1:
+    if (
+        isinstance(returns, pd.DataFrame)
+        and returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS
+    ):
         periods = returns.index.get_level_values(0).unique()
-        max_drawdown = pd.DataFrame()
+        period_data_list = []
+
         for sub_period in periods:
             period_data = get_max_drawdown(returns.loc[sub_period])
             period_data.name = sub_period
 
-            max_drawdown = pd.concat([max_drawdown, period_data], axis=1)
+            if not period_data.empty:
+                period_data_list.append(period_data)
+
+        max_drawdown = pd.concat(period_data_list, axis=1)
 
         return max_drawdown.T
 
     cum_returns = (1 + returns).cumprod()
 
     return (cum_returns / cum_returns.cummax() - 1).min()
+
+
+def get_ui(
+    returns: pd.Series | pd.DataFrame, rolling: int = 14
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculates the Ulcer Index (UI), a measure of downside volatility.
+
+    For more information see:
+     - http://www.tangotools.com/ui/ui.htm
+     - https://en.wikipedia.org/wiki/Ulcer_index
+
+    Args:
+        returns (pd.Series | pd.DataFrame): A Series or Dataframe of returns.
+        rolling (int, optional): The rolling period to use for the calculation.
+        If you select period = 'monthly' and set rolling to 12 you obtain the rolling
+        12-month Ulcer Index. If no value is given, then it calculates it for the
+        entire period. Defaults to None.
+
+    Returns:
+        pd.Series | pd.DataFrame: UI values as float if returns is a pd.Series,
+        otherwise as pd.Series or pd.DataFrame with time as index, if.
+    """
+    returns = returns.dropna()
+
+    if isinstance(returns, pd.DataFrame):
+        if returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS:
+            periods = returns.index.get_level_values(0).unique()
+            period_data_list = []
+
+            for sub_period in periods:
+                period_data = returns.loc[sub_period].aggregate(get_ui)
+                period_data.name = sub_period
+
+                if not period_data.empty:
+                    period_data_list.append(period_data)
+
+            ulcer_index = pd.concat(period_data_list, axis=1)
+
+            return ulcer_index.T
+
+        return returns.aggregate(get_ui)
+
+    if isinstance(returns, pd.Series):
+        cumulative_returns = (1 + returns).cumprod()
+        cumulative_max = cumulative_returns.rolling(window=rolling).max()
+        drawdowns = (cumulative_returns - cumulative_max) / cumulative_max
+
+        ulcer_index_value = np.sqrt((drawdowns**2).mean())
+
+        return ulcer_index_value
+
+    raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
 
 
 def get_skewness(returns: pd.Series | pd.DataFrame) -> pd.Series | pd.DataFrame:
@@ -356,17 +507,21 @@ def get_skewness(returns: pd.Series | pd.DataFrame) -> pd.Series | pd.DataFrame:
     """
     returns = returns.dropna()
     if isinstance(returns, pd.DataFrame):
-        if returns.index.nlevels == 1:
-            return returns.aggregate(get_skewness)
-        periods = returns.index.get_level_values(0).unique()
-        skewness = pd.DataFrame()
+        if returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS:
+            periods = returns.index.get_level_values(0).unique()
+            period_data_list = []
 
-        for sub_period in periods:
-            period_data = returns.loc[sub_period].aggregate(get_skewness)
-            period_data.name = sub_period
+            for sub_period in periods:
+                period_data = returns.loc[sub_period].aggregate(get_skewness)
+                period_data.name = sub_period
 
-            skewness = pd.concat([skewness, period_data], axis=1)
-        return skewness.T
+                if not period_data.empty:
+                    period_data_list.append(period_data)
+
+            skewness = pd.concat(period_data_list, axis=1)
+
+            return skewness.T
+        return returns.aggregate(get_skewness)
     if isinstance(returns, pd.Series):
         return returns.skew()
 
@@ -387,18 +542,23 @@ def get_kurtosis(
     """
     returns = returns.dropna()
     if isinstance(returns, pd.DataFrame):
-        if returns.index.nlevels == 1:
-            return returns.aggregate(get_kurtosis, fisher=fisher)
+        if returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS:
+            periods = returns.index.get_level_values(0).unique()
+            period_data_list = []
 
-        periods = returns.index.get_level_values(0).unique()
-        kurtosis = pd.DataFrame()
+            for sub_period in periods:
+                period_data = returns.loc[sub_period].aggregate(
+                    get_kurtosis, fisher=fisher
+                )
+                period_data.name = sub_period
 
-        for sub_period in periods:
-            period_data = returns.loc[sub_period].aggregate(get_kurtosis, fisher=fisher)
-            period_data.name = sub_period
+                if not period_data.empty:
+                    period_data_list.append(period_data)
 
-            kurtosis = pd.concat([kurtosis, period_data], axis=1)
-        return kurtosis.T
+            kurtosis = pd.concat(period_data_list, axis=1)
+
+            return kurtosis.T
+        return returns.aggregate(get_kurtosis, fisher=fisher)
     if isinstance(returns, pd.Series):
         if fisher:
             return returns.kurtosis()

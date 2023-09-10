@@ -336,6 +336,22 @@ def get_sortino_ratio(excess_returns: pd.Series | pd.DataFrame) -> pd.Series:
     raise TypeError("Expects pd.DataFrame, pd.Series inputs, no other value.")
 
 
+def get_ulcer_performance_index(
+    excess_returns: pd.Series | pd.DataFrame, ulcer_index: pd.Series | pd.DataFrame
+) -> pd.Series:
+    """
+    Calculate the Ulcer Performance Index (UPI) of returns.
+
+    Args:
+        excess_returns (pd.Series | pd.DataFrame): A Series of returns with risk-free rate subtracted.
+        ulcer_index (pd.Series | pd.DataFrame): The corresponding
+
+    Returns:
+        pd.Series: A Series of Ulcer Performance Index values with time as index and assets as columns.
+    """
+    return (excess_returns / ulcer_index).dropna()
+
+
 def get_m2_ratio(
     asset_returns: pd.Series | pd.DataFrame,
     risk_free_rate: pd.Series,

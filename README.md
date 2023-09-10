@@ -588,6 +588,7 @@ The Performance module is meant to calculate important performance metrics such 
 - Treynor Ratio
 - Sharpe Ratio
 - Sortino Ratio
+- Ulcer Performance Index (UPI)
 - M2 Ratio
 - Tracking Error
 - Information Error
@@ -598,6 +599,8 @@ The Risk module is meant to calculate important risk metrics such as Value at Ri
 
 - Value at Risk (VaR) with distributions Historical, Gaussian, Student-t, Cornish-Fisher.
 - Conditional Value at Risk (cVaR) with distributions Historical, Gaussian, Laplace, Logistic.
+- Entropic Value at Risk (eVaR) with a Gaussian distribution. 
+- Ulcer Index (UI)
 - Maximum Drawdown (MDD)
 - Skewness
 - Kurtosis

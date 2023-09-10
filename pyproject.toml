@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "financetoolkit"
-version = "1.3.12"
+version = "1.3.13"
 description = "Transparent and Efficient Financial Analysis"
 license = "MIT"
 authors = ["Jeroen Bouma"]
@@ -67,8 +67,8 @@ skip_gitignore = true
 combine_as_imports = true
 
 [tool.codespell]
-ignore-words-list = 'zar,profund,basf,applicatio,ser,mone,vie,wew,ist,tre,ue,nd,fo,nwe,0t,Ot,ot,juni,acn,hve,te,hsa,fof,ege,bu,wya,esy,whn,ned,4rd,wih,mke,caf,fpr,hav,coo'
-skip = '*.json,./.git,pyproject.toml,poetry.lock'
+ignore-words-list = 'te'
+skip = '*.json,./.git,pyproject.toml,poetry.lock,examples'
 
 [tool.mypy]
 disable_error_code = "misc"

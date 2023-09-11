@@ -15,7 +15,9 @@ from financetoolkit.risk import risk
 
 class Risk:
     """
-    Risk Controller Class
+    The Risk module is meant to calculate important risk metrics such
+    as Value at Risk (VaR), Conditional Value at Risk (cVaR), Maximum
+    Drawdown, Correlations, GARCH, EWMA and more.
     """
 
     def __init__(
@@ -31,6 +33,33 @@ class Risk:
     ):
         """
         Initializes the Risk Controller Class.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+
+        toolkit.risk.get_value_at_risk(period='yearly')
+        ```
+
+        Which returns:
+
+        | Date   |    AAPL |    TSLA |
+        |:-------|--------:|--------:|
+        | 2012   |  0      |  0      |
+        | 2013   |  0.1754 |  4.96   |
+        | 2014   |  1.7515 |  0.9481 |
+        | 2015   | -0.1958 |  0.1454 |
+        | 2016   |  0.4177 | -0.3437 |
+        | 2017   |  2.6368 |  1.2225 |
+        | 2018   | -0.2786 |  0.0718 |
+        | 2019   |  3.2243 |  0.4707 |
+        | 2020   |  1.729  |  8.3319 |
+        | 2021   |  1.3179 |  0.8797 |
+        | 2022   | -0.8026 | -1.0046 |
+        | 2023   |  1.8549 |  1.8238 |
         """
         if (
             daily_historical.empty

@@ -13,7 +13,10 @@ from financetoolkit.technical import breadth, momentum, overlap, volatility
 
 class Technicals:
     """
-    Technicals Controller Class
+    The Technicals Module contains 30+ Technical Indicators that can
+    be used to analyse companies. These ratios are divided into 4
+    categories which are breadth, momentum, overlap and volatility.
+    Each indicator is calculated using the data from the Toolkit module.
     """
 
     def __init__(
@@ -30,6 +33,26 @@ class Technicals:
     ):
         """
         Initializes the Technicals Controller Class.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+
+        average_directional_index = toolkit.technical.get_average_directional_index()
+        ```
+
+        Which returns:
+
+        | Date       |    AAPL |    MSFT |
+        |:-----------|--------:|--------:|
+        | 2023-08-21 | 62.8842 | 36.7468 |
+        | 2023-08-22 | 65.7063 | 36.5525 |
+        | 2023-08-23 | 67.3596 | 35.5149 |
+        | 2023-08-24 | 66.4527 | 35.4399 |
+        | 2023-08-25 | 63.4837 | 32.3323 |
         """
         if (
             daily_historical.empty

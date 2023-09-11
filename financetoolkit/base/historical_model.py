@@ -163,35 +163,13 @@ def get_historical_data(
             print(f"No dividend data found for {ticker}")
             continue
 
-        historical_data_dict[ticker]["Return"] = (
-            historical_data_dict[ticker][return_column].ffill().pct_change()
+        historical_data_dict[ticker] = enrich_historical_data(
+            historical_data=historical_data_dict[ticker],
+            start=start,
+            end=end,
+            return_column=return_column,
+            risk_free_rate=risk_free_rate,
         )
-
-        historical_data_dict[ticker]["Volatility"] = (
-            historical_data_dict[ticker].loc[start:end, "Return"].std()
-        )
-
-        if not risk_free_rate.empty:
-            historical_data_dict[ticker]["Excess Return"] = historical_data_dict[
-                ticker
-            ]["Return"].sub(risk_free_rate["Adj Close"])
-
-            historical_data_dict[ticker]["Excess Volatility"] = (
-                historical_data_dict[ticker].loc[start:end, "Excess Return"].std()
-            )
-
-        historical_data_dict[ticker]["Cumulative Return"] = 1
-
-        adjusted_return = historical_data_dict[ticker].loc[start:end, "Return"].copy()
-        adjusted_return.iloc[0] = 0
-
-        historical_data_dict[ticker]["Cumulative Return"] = pd.Series(np.nan).astype(
-            float
-        )
-
-        historical_data_dict[ticker].loc[start:end, "Cumulative Return"] = (
-            1.0 + adjusted_return
-        ).cumprod()
 
     if historical_data_dict:
         historical_data = pd.concat(historical_data_dict, axis=1)
@@ -214,6 +192,75 @@ def get_historical_data(
         return historical_data, invalid_tickers
 
     return pd.DataFrame(), invalid_tickers
+
+
+def enrich_historical_data(
+    historical_data: pd.DataFrame,
+    start: str | None = None,
+    end: str | None = None,
+    return_column: str = "Adj Close",
+    risk_free_rate: pd.DataFrame = pd.DataFrame(),
+):
+    """
+    Retrieves enriched historical stock data for the given ticker(s) from Yahoo! Finance API for
+    a specified period. It calculates the following:
+
+        - Return: The return for the given period.
+        - Volatility: The volatility for the given period.
+        - Excess Return: The excess return for the given period.
+        - Excess Volatility: The excess volatility for the given period.
+        - Cumulative Return: The cumulative return for the given period.
+
+    The return is calculated as the percentage change in the given return column and the excess return
+    is calculated as the percentage change in the given return column minus the risk free rate.
+
+    The volatility is calculated as the standard deviation of the daily returns and the excess volatility
+    is calculated as the standard deviation of the excess returns.
+
+    The cumulative return is calculated as the cumulative product of the percentage change in the given
+    return column.
+
+    Args:
+        historical_data (pd.DataFrame): A pandas DataFrame object containing the historical stock data
+        for the given ticker(s).
+        start (str, optional): A string representing the start date of the period to retrieve data for
+            in 'YYYY-MM-DD' format. Defaults to None.
+        end (str, optional): A string representing the end date of the period to retrieve data for
+            in 'YYYY-MM-DD' format. Defaults to None.
+        return_column (str, optional): A string representing the column to use for return calculations.
+        risk_free_rate (pd.Series, optional): A pandas Series object containing the risk free rate data.
+        This is used to calculate the excess return and excess volatility. Defaults to pd.Series().
+
+
+    Returns:
+        pd.DataFrame: A pandas DataFrame object containing the enriched historical stock data for the given ticker(s).
+    """
+
+    historical_data["Return"] = historical_data[return_column].ffill().pct_change()
+
+    historical_data["Volatility"] = historical_data.loc[start:end, "Return"].std()
+
+    if not risk_free_rate.empty:
+        historical_data["Excess Return"] = historical_data["Return"].sub(
+            risk_free_rate["Adj Close"]
+        )
+
+        historical_data["Excess Volatility"] = historical_data.loc[
+            start:end, "Excess Return"
+        ].std()
+
+    historical_data["Cumulative Return"] = 1
+
+    adjusted_return = historical_data.loc[start:end, "Return"].copy()
+    adjusted_return.iloc[0] = 0
+
+    historical_data["Cumulative Return"] = pd.Series(np.nan).astype(float)
+
+    historical_data.loc[start:end, "Cumulative Return"] = (
+        1.0 + adjusted_return
+    ).cumprod()
+
+    return historical_data
 
 
 def get_treasury_rates(

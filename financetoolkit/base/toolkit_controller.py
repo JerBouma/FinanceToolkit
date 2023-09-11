@@ -52,42 +52,60 @@ class Toolkit:
         self,
         tickers: list | str,
         api_key: str = "",
-        historical: pd.DataFrame = pd.DataFrame(),
-        balance: pd.DataFrame = pd.DataFrame(),
-        income: pd.DataFrame = pd.DataFrame(),
-        cash: pd.DataFrame = pd.DataFrame(),
-        custom_ratios: dict | None = None,
         start_date: str | None = None,
         end_date: str | None = None,
         quarterly: bool = False,
         risk_free_rate: str = "10y",
         benchmark_ticker: str | None = "^GSPC",
-        rounding: int | None = 4,
+        custom_ratios: dict | None = None,
+        historical: pd.DataFrame = pd.DataFrame(),
+        balance: pd.DataFrame = pd.DataFrame(),
+        income: pd.DataFrame = pd.DataFrame(),
+        cash: pd.DataFrame = pd.DataFrame(),
         format_location: str = "",
         reverse_dates: bool = False,
+        rounding: int | None = 4,
         remove_invalid_tickers: bool = True,
         sleep_timer: bool = False,
         progress_bar: bool = True,
     ):
         """
-        Initializes an Toolkit object with a ticker or a list of tickers. The way the Toolkit is initialized will define how the data is collected. For example, if you enable the quarterly flag, you will be able to collect quarterly data. Next to that, you can define the start and end date to specify a specific range. Another options is to define the custom ratios you want to calculate. This can be done by passing a dictionary.
+        Initializes an Toolkit object with a ticker or a list of tickers. The way the Toolkit is initialized
+        will define how the data is collected. For example, if you enable the quarterly flag, you will
+        be able to collect quarterly data. Next to that, you can define the start and end date to specify
+        a specific range. Another option is to define the custom ratios you want to calculate.
+        This can be done by passing a dictionary.
 
         See for more information on all of this, the following link: https://www.jeroenbouma.com/projects/financetoolkit
 
         Args:
-        tickers (str or list): A string or a list of strings containing the company ticker(s).
-        api_key (str): An API key from FinancialModelingPrep.
-        historical (pd.DataFrame): A DataFrame containing historical data.
-        balance (pd.DataFrame): A DataFrame containing balance sheet data.
-        income (pd.DataFrame): A DataFrame containing income statement data.
-        cash (pd.DataFrame): A DataFrame containing cash flow statement data.
-        custom_ratios (dict): A dictionary containing custom ratios.
-        start_date (str): A string containing the start date of the data.
-        end_date (str): A string containing the end date of the data.
-        quarterly (bool): A boolean indicating whether to collect quarterly data.
-        rounding (int): An integer indicating the number of decimals to round the results to.
+        tickers (str or list): A string or a list of strings containing the company ticker(s). E.g. 'TSLA' or 'MSFT'
+        Find the tickers on a variety of websites or via the FinanceDatabase: https://github.com/JerBouma/financedatabase
+        api_key (str): An API key from FinancialModelingPrep. Obtain one here:
+        https://site.financialmodelingprep.com/developer/docs/pricing/jeroen/
+        start_date (str): A string containing the start date of the data. This needs to be formatted as YYYY-MM-DD.
+        end_date (str): A string containing the end date of the data. This needs to be formatted as YYYY-MM-DD.
+        quarterly (bool): A boolean indicating whether to collect quarterly data. This defaults to False and thus
+        collects yearly financial statements. Note that historical data can still be collected for
+        any period and interval.
+        risk_free_rate (str): A string containing the risk free rate. This can be 13w, 5y, 10y or 30y. This is
+        based on the US Treasury Yields and is used to calculate various ratios and Excess Returns.
+        benchmark_ticker (str): A string containing the benchmark ticker. Defaults to ^GSPC (S&P 500). This is
+        meant to calculate ratios and indicators such as the CAPM and Jensen's Alpha but also serves as purpose to
+        give insights in the performance of a stock compared to a benchmark.
+        custom_ratios (dict): A dictionary containing custom ratios. This is meant to define your own ratios. See
+        the following Notebook how to set this up: https://www.jeroenbouma.com/projects/financetoolkit/custom-ratios
+        historical (pd.DataFrame): A DataFrame containing historical data. This is a custom dataset only relevant if
+        you are looking to use custom data. See for more information the following Notebook:
+        https://www.jeroenbouma.com/projects/financetoolkit/external-datasets
+        balance (pd.DataFrame): A DataFrame containing balance sheet data. This is a custom dataset only
+        relevant if you are looking to use custom data. See for more information the notebook as mentioned at historical.
+        relevant if you are looking to use custom data. See for more information the notebook as mentioned at historical.
+        cash (pd.DataFrame): A DataFrame containing cash flow statement data. This is a custom dataset only
+        relevant if you are looking to use custom data. See for more information the notebook as mentioned at historical.
         format_location (str): A string containing the location of the normalization files.
         reverse_dates (bool): A boolean indicating whether to reverse the dates in the financial statements.
+        rounding (int): An integer indicating the number of decimals to round the results to.
         remove_invalid_tickers (bool): A boolean indicating whether to remove invalid tickers.
         sleep_timer (bool): Whether to set a sleep timer when the rate limit is reached. Note that this only works
         if you have a Premium subscription (Starter or higher) from FinancialModelingPrep. Defaults to False.
@@ -98,7 +116,17 @@ class Toolkit:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["MSFT", "AAPL"], quarterly=True, start_date="2020-01-01", api_key=FMP_KEY)
+        # Simple example
+        toolkit = Toolkit(["TSLA", "ASML"], api_key=FMP_KEY)
+
+        # Obtaining quarterly data
+        toolkit = Toolkit(["AAPL", "GOOGL"], quarterly=True, api_key=FMP_KEY)
+
+        # Including a start and end date
+        toolkit = Toolkit(["MSFT", "MU"], start_date="2020-01-01", end_date="2023-01-01", quarterly=True, api_key=FMP_KEY)
+
+        # Changing the benchmark and risk free rate
+        toolkit = Toolkit("AMZN", benchmark_ticker="^DJI", risk_free_rate="30y", api_key=FMP_KEY)
         ```
 
         """
@@ -284,10 +312,11 @@ class Toolkit:
         are divided into 5 categories which are efficiency, liquidity, profitability, solvency and
         valuation. Each ratio is calculated using the data from the Toolkit module.
 
-        Some examples of ratios are the Current Ratio, Debt to Equity Ratio, Return on Assets (ROA), Return on Equity (ROE),
-        Return on Invested Capital (ROIC), Return on Capital Employed (ROCE), Price to Earnings Ratio (P/E),
-        Price to Book Ratio (P/B), Price to Sales Ratio (P/S), Price to Cash Flow Ratio (P/CF),
-        Price to Free Cash Flow Ratio (P/FCF), Dividend Yield and Dividend Payout Ratio.
+        Some examples of ratios are the Current Ratio, Debt to Equity Ratio, Return on Assets (ROA),
+        Return on Equity (ROE), Return on Invested Capital (ROIC), Return on Capital Employed (ROCE),
+        Price to Earnings Ratio (P/E), Price to Book Ratio (P/B), Price to Sales Ratio (P/S), Price
+        to Cash Flow Ratio (P/CF), Price to Free Cash Flow Ratio (P/FCF), Dividend Yield and
+        Dividend Payout Ratio.
 
         Next to that, it is also possible to define custom ratios.
 
@@ -394,8 +423,9 @@ class Toolkit:
     @property
     def models(self) -> Models:
         """
-        Gives access to the Models module. The Models module is meant to execute well-known models such as DUPONT and the Discounted Cash Flow (DCF) model.
-        These models are also directly related to the data retrieved from the Toolkit module.
+        Gives access to the Models module. The Models module is meant to execute well-known models
+        such as DUPONT and the Discounted Cash Flow (DCF) model. These models are also directly
+        related to the data retrieved from the Toolkit module.
 
         See the following link for more information: https://www.jeroenbouma.com/projects/financetoolkit/docs/models
 
@@ -491,13 +521,15 @@ class Toolkit:
     @property
     def technicals(self) -> Technicals:
         """
-        This gives access to the Technicals module. The Technicals Module contains nearly 50 Technical Indicators that can be used to
-        analyse companies. These indicators are divided into 3 categories: breadth, overlap and volatility. Each indicator is calculated
-        using the data from the Toolkit module.
+        This gives access to the Technicals module. The Technicals Module contains
+        nearly 50 Technical Indicators that can be used to analyse companies. These indicators are
+        divided into 3 categories: breadth, overlap and volatility. Each indicator is calculated using
+        the data from the Toolkit module.
 
-        Some examples of technical indicators are the Average Directional Index (ADX), the Accumulation/Distribution Line (ADL),
-        the Average True Range (ATR), the Bollinger Bands (BBANDS), the Commodity Channel Index (CCI), the Chaikin Oscillator (CHO),
-        the Chaikin Money Flow (CMF), the Double Exponential Moving Average (DEMA), the Exponential Moving Average (EMA) and
+        Some examples of technical indicators are the Average Directional Index (ADX), the
+        Accumulation/Distribution Line (ADL), the Average True Range (ATR), the Bollinger Bands (BBANDS),
+        the Commodity Channel Index (CCI), the Chaikin Oscillator (CHO), the Chaikin Money Flow (CMF),
+        the Double Exponential Moving Average (DEMA), the Exponential Moving Average (EMA) and
         the Moving Average Convergence Divergence (MACD).
 
         See the following link for more information: https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals
@@ -767,9 +799,12 @@ class Toolkit:
         """
         if not self._api_key:
             return print(
-                "The requested data requires the api_key parameter to be set, consider obtaining a key with the following link: https://financialmodelingprep.com/developer/docs/pricing/jeroen/"
-                "\nThe free plan allows for 250 requests per day, a limit of 5 years and has no quarterly data. Consider upgrading "
-                "your plan. You can get 15% off by using the above affiliate link which also supports the project."
+                "The requested data requires the api_key parameter to be set, consider "
+                "obtaining a key with the following link: "
+                "https://financialmodelingprep.com/developer/docs/pricing/jeroen/"
+                "\nThe free plan allows for 250 requests per day, a limit of 5 years and has no "
+                "quarterly data. Consider upgrading your plan. You can get 15% off by using the "
+                "above affiliate link which also supports the project."
             )
 
         if self._profile.empty:
@@ -835,9 +870,12 @@ class Toolkit:
         """
         if not self._api_key:
             return print(
-                "The requested data requires the api_key parameter to be set, consider obtaining a key with the following link: https://financialmodelingprep.com/developer/docs/pricing/jeroen/"
-                "\nThe free plan allows for 250 requests per day, a limit of 5 years and has no quarterly data. Consider upgrading "
-                "your plan. You can get 15% off by using the above affiliate link which also supports the project."
+                "The requested data requires the api_key parameter to be set, consider "
+                "obtaining a key with the following link: "
+                "https://financialmodelingprep.com/developer/docs/pricing/jeroen/"
+                "\nThe free plan allows for 250 requests per day, a limit of 5 years and has no "
+                "quarterly data. Consider upgrading your plan. You can get 15% off by using the "
+                "above affiliate link which also supports the project."
             )
 
         if self._quote.empty:
@@ -892,9 +930,12 @@ class Toolkit:
         """
         if not self._api_key:
             return print(
-                "The requested data requires the api_key parameter to be set, consider obtaining a key with the following link: https://financialmodelingprep.com/developer/docs/pricing/jeroen/"
-                "\nThe free plan allows for 250 requests per day, a limit of 5 years and has no quarterly data. Consider upgrading "
-                "your plan. You can get 15% off by using the above affiliate link which also supports the project."
+                "The requested data requires the api_key parameter to be set, consider "
+                "obtaining a key with the following link: "
+                "https://financialmodelingprep.com/developer/docs/pricing/jeroen/"
+                "\nThe free plan allows for 250 requests per day, a limit of 5 years and has no "
+                "quarterly data. Consider upgrading your plan. You can get 15% off by using the "
+                "above affiliate link which also supports the project."
             )
 
         if self._rating.empty:
@@ -1052,16 +1093,16 @@ class Toolkit:
 
         Which returns:
 
-        | date                |    EPS |   Estimated EPS |       Revenue |   Estimated Revenue | Fiscal Date Ending   | Time   |
-        |:--------------------|-------:|----------------:|--------------:|--------------------:|:---------------------|:-------|
-        | 2022-10-27 00:00:00 |   0.17 |            0.22 |   1.27101e+11 |       nan           | 2022-09-30           | amc    |
-        | 2023-02-02 00:00:00 |   0.25 |            0.18 |   1.49204e+11 |         1.5515e+11  | 2022-12-31           | amc    |
-        | 2023-04-27 00:00:00 |   0.31 |            0.21 |   1.27358e+11 |         1.24551e+11 | 2023-03-31           | amc    |
-        | 2023-08-03 00:00:00 |   0.65 |            0.35 |   1.34383e+11 |         1.19573e+11 | 2023-06-30           | amc    |
-        | 2023-10-25 00:00:00 | nan    |            0.56 | nan           |         1.41407e+11 | 2023-09-30           | amc    |
-        | 2024-01-31 00:00:00 | nan    |          nan    | nan           |       nan           | 2023-12-30           | amc    |
-        | 2024-04-25 00:00:00 | nan    |          nan    | nan           |       nan           | 2024-03-30           | amc    |
-        | 2024-08-01 00:00:00 | nan    |          nan    | nan           |       nan           | 2024-06-30           | amc    |
+        | date        |    EPS |   Estimated EPS |       Revenue |   Estimated Revenue | Fiscal Date Ending   | Time   |
+        |:------------|-------:|----------------:|--------------:|--------------------:|:---------------------|:-------|
+        | 2022-10-27  |   0.17 |            0.22 |   1.27101e+11 |       nan           | 2022-09-30           | amc    |
+        | 2023-02-02  |   0.25 |            0.18 |   1.49204e+11 |         1.5515e+11  | 2022-12-31           | amc    |
+        | 2023-04-27  |   0.31 |            0.21 |   1.27358e+11 |         1.24551e+11 | 2023-03-31           | amc    |
+        | 2023-08-03  |   0.65 |            0.35 |   1.34383e+11 |         1.19573e+11 | 2023-06-30           | amc    |
+        | 2023-10-25  | nan    |            0.56 | nan           |         1.41407e+11 | 2023-09-30           | amc    |
+        | 2024-01-31  | nan    |          nan    | nan           |       nan           | 2023-12-30           | amc    |
+        | 2024-04-25  | nan    |          nan    | nan           |       nan           | 2024-03-30           | amc    |
+        | 2024-08-01  | nan    |          nan    | nan           |       nan           | 2024-06-30           | amc    |
         """
         if not self._api_key:
             return print(
@@ -1141,8 +1182,8 @@ class Toolkit:
             return print(
                 "The requested data requires the api_key parameter to be set, consider obtaining a key with the "
                 "following link: https://financialmodelingprep.com/developer/docs/pricing/jeroen/"
-                "\nThis functionality also requires a Professional or Enterprise subscription. You can get 15% off by using "
-                "the above affiliate link which also supports the project."
+                "\nThis functionality also requires a Professional or Enterprise subscription. "
+                "You can get 15% off by using the above affiliate link which also supports the project."
             )
         if self._revenue_geographic_segmentation.empty or overwrite:
             (
@@ -1252,6 +1293,7 @@ class Toolkit:
         return_column: str = "Adj Close",
         fill_nan: bool = True,
         overwrite: bool = False,
+        rounding: int | None = None,
     ):
         """
         Returns historical data for the specified tickers. This contains the following columns:
@@ -1284,8 +1326,7 @@ class Toolkit:
             to True to prevent holes in the dataset. This is especially relevant for
             technical indicators.
             overwrite (bool): Defines whether to overwrite the existing data.
-            excess_return (bool): Defines whether to calculate the excess return and
-            excess volatility.
+            rounding (int): Defines the number of decimal places to round the data to.
 
         Raises:
             ValueError: If an invalid value is specified for period.
@@ -1332,7 +1373,9 @@ class Toolkit:
                 interval="1d",
                 return_column=return_column,
                 risk_free_rate=self._daily_risk_free_rate,
+                progress_bar=self._progress_bar,
                 fill_nan=fill_nan,
+                rounding=rounding if rounding else self._rounding,
             )
 
             # Change the benchmark ticker name to Benchmark
@@ -1368,6 +1411,7 @@ class Toolkit:
                 start=self._start_date,
                 end=self._end_date,
                 risk_free_rate=self._weekly_risk_free_rate,
+                rounding=rounding if rounding else self._rounding,
             )
 
             historical_data = self._weekly_historical_data.loc[
@@ -1390,6 +1434,7 @@ class Toolkit:
                 start=self._start_date,
                 end=self._end_date,
                 risk_free_rate=self._monthly_risk_free_rate,
+                rounding=rounding if rounding else self._rounding,
             )
 
             historical_data = self._monthly_historical_data.loc[
@@ -1412,6 +1457,7 @@ class Toolkit:
                 start=self._start_date,
                 end=self._end_date,
                 risk_free_rate=self._quarterly_risk_free_rate,
+                rounding=rounding if rounding else self._rounding,
             )
 
             historical_data = self._quarterly_historical_data.loc[
@@ -1434,6 +1480,7 @@ class Toolkit:
                 start=self._start_date,
                 end=self._end_date,
                 risk_free_rate=self._yearly_risk_free_rate,
+                rounding=rounding if rounding else self._rounding,
             )
 
             historical_data = self._yearly_historical_data.loc[
@@ -1669,9 +1716,12 @@ class Toolkit:
         """
         if not self._api_key and self._balance_sheet_statement.empty:
             return print(
-                "The requested data requires the api_key parameter to be set, consider obtaining a key with the following link: https://financialmodelingprep.com/developer/docs/pricing/jeroen/"
-                "\nThe free plan allows for 250 requests per day, a limit of 5 years and has no quarterly data. Consider upgrading "
-                "your plan. You can get 15% off by using the above affiliate link which also supports the project."
+                "The requested data requires the api_key parameter to be set, consider "
+                "obtaining a key with the following link: "
+                "https://financialmodelingprep.com/developer/docs/pricing/jeroen/"
+                "\nThe free plan allows for 250 requests per day, a limit of 5 years and has no "
+                "quarterly data. Consider upgrading your plan. You can get 15% off by using the "
+                "above affiliate link which also supports the project."
             )
 
         if self._balance_sheet_statement.empty or overwrite:
@@ -1788,9 +1838,12 @@ class Toolkit:
         """
         if not self._api_key and self._income_statement.empty:
             return print(
-                "The requested data requires the api_key parameter to be set, consider obtaining a key with the following link: https://financialmodelingprep.com/developer/docs/pricing/jeroen/"
-                "\nThe free plan allows for 250 requests per day, a limit of 5 years and has no quarterly data. Consider upgrading "
-                "your plan. You can get 15% off by using the above affiliate link which also supports the project."
+                "The requested data requires the api_key parameter to be set, consider "
+                "obtaining a key with the following link: "
+                "https://financialmodelingprep.com/developer/docs/pricing/jeroen/"
+                "\nThe free plan allows for 250 requests per day, a limit of 5 years and has no "
+                "quarterly data. Consider upgrading your plan. You can get 15% off by using the "
+                "above affiliate link which also supports the project."
             )
 
         if self._income_statement.empty or overwrite:
@@ -1905,9 +1958,12 @@ class Toolkit:
         """
         if not self._api_key and self._cash_flow_statement.empty:
             return print(
-                "The requested data requires the api_key parameter to be set, consider obtaining a key with the following link: https://financialmodelingprep.com/developer/docs/pricing/jeroen/"
-                "\nThe free plan allows for 250 requests per day, a limit of 5 years and has no quarterly data. Consider upgrading "
-                "your plan. You can get 15% off by using the above affiliate link which also supports the project."
+                "The requested data requires the api_key parameter to be set, consider "
+                "obtaining a key with the following link: "
+                "https://financialmodelingprep.com/developer/docs/pricing/jeroen/"
+                "\nThe free plan allows for 250 requests per day, a limit of 5 years and has no "
+                "quarterly data. Consider upgrading your plan. You can get 15% off by using the "
+                "above affiliate link which also supports the project."
             )
 
         if self._cash_flow_statement.empty or overwrite:
@@ -1996,9 +2052,12 @@ class Toolkit:
         """
         if not self._api_key and self._statistics_statement.empty:
             return print(
-                "The requested data requires the api_key parameter to be set, consider obtaining a key with the following link: https://financialmodelingprep.com/developer/docs/pricing/jeroen/"
-                "\nThe free plan allows for 250 requests per day, a limit of 5 years and has no quarterly data. Consider upgrading "
-                "your plan. You can get 15% off by using the above affiliate link which also supports the project."
+                "The requested data requires the api_key parameter to be set, consider "
+                "obtaining a key with the following link: "
+                "https://financialmodelingprep.com/developer/docs/pricing/jeroen/"
+                "\nThe free plan allows for 250 requests per day, a limit of 5 years and has no "
+                "quarterly data. Consider upgrading your plan. You can get 15% off by using the "
+                "above affiliate link which also supports the project."
             )
 
         if self._statistics_statement.empty or overwrite:

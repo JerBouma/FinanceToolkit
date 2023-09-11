@@ -17,7 +17,9 @@ from financetoolkit.risk.risk import get_ui
 
 class Performance:
     """
-    Performance Controller Class
+    The Performance module is meant to calculate important performance metrics such
+    as Sharpe Ratio, Sortino Ratio, Treynor Ratio, Information Ratio, Jensen’s
+    Alpha, Beta, Capital Asset Pricing Model, R-Squared and more.
     """
 
     def __init__(
@@ -32,6 +34,26 @@ class Performance:
     ):
         """
         Initializes the Performance Controller Class.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+
+        toolkit.performance.get_capital_asset_pricing_model(period='quarterly')
+        ```
+
+        Which returns:
+
+        | Date   |    AAPL |    TSLA |
+        |:-------|--------:|--------:|
+        | 2022Q3 | -0.0684 | -0.1047 |
+        | 2022Q4 |  0.0857 |  0.0828 |
+        | 2023Q1 |  0.075  |  0.1121 |
+        | 2023Q2 |  0.0922 |  0.1342 |
+        | 2023Q3 |  0.0052 | -0.0482 |
         """
         self._tickers = tickers
         self._benchmark_name = "Benchmark"

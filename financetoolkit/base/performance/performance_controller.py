@@ -129,7 +129,7 @@ class Performance:
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
 
         Returns:
-            pd.DataFrame: Sharpe ratio values.
+            pd.DataFrame: Beta values.
 
         Notes:
         - Daily Beta is not an option as the standard deviation for 1 day is close to zero. Therefore, it does
@@ -229,7 +229,7 @@ class Performance:
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
 
         Returns:
-            pd.DataFrame: Sharpe ratio values.
+            pd.DataFrame: CAPM values.
 
         Notes:
         - Daily CAPM is not an option as the standard deviation for 1 day is close to zero. Therefore, it does
@@ -424,7 +424,7 @@ class Performance:
 
         toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
 
-        toolkit.performance.get_capital_asset_pricing_model()
+        toolkit.performance.get_jensens_alpha()
         ```
         """
         if period == "daily":
@@ -499,7 +499,7 @@ class Performance:
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
 
         Returns:
-            pd.DataFrame: Jensen's Alpha values.
+            pd.DataFrame: Treynor Ratio values.
 
         Notes:
         - Daily Treynor Ratio is not an option as the standard deviation for 1 day is close to zero. Therefore,

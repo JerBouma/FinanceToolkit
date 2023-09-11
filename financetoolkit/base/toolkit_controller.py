@@ -128,7 +128,6 @@ class Toolkit:
         # Changing the benchmark and risk free rate
         toolkit = Toolkit("AMZN", benchmark_ticker="^DJI", risk_free_rate="30y", api_key=FMP_KEY)
         ```
-
         """
         if isinstance(tickers, str):
             self._tickers = [tickers.upper()]

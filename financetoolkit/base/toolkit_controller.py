@@ -972,6 +972,7 @@ class Toolkit:
             rounding (int): Defines the number of decimal places to round the data to.
             growth (bool): Defines whether to return the growth of the data.
             lag (int | str): Defines the number of periods to lag the growth data by.
+            trailing (int): Defines whether to select a trailing period. E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
         Returns:
             pandas.DataFrame: The analyst estimates for the specified tickers.
@@ -1641,6 +1642,7 @@ class Toolkit:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        trailing: int | None = None,
     ):
         """
         Retrieves the balance sheet statement financial data for the company(s) from the specified source.
@@ -1651,6 +1653,8 @@ class Toolkit:
             rounding (int): Defines the number of decimal places to round the data to.
             growth (bool): Defines whether to return the growth of the data.
             lag (int | str): Defines the number of periods to lag the growth data by.
+            trailing (int): Defines whether to select a trailing period.
+            E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
         Returns:
             pd.DataFrame: A pandas DataFrame with the retrieved balance sheet statement data.
@@ -1751,9 +1755,16 @@ class Toolkit:
                 if ticker not in self._invalid_tickers
             ]
 
+        balance_sheet_statement = self._balance_sheet_statement
+
+        if trailing:
+            balance_sheet_statement = (
+                self._balance_sheet_statement.T.rolling(trailing).sum().T
+            )
+
         if growth:
             self._balance_sheet_statement_growth = _calculate_growth(
-                self._balance_sheet_statement,
+                balance_sheet_statement,
                 lag=lag,
                 rounding=rounding if rounding else self._rounding,
                 axis="columns",
@@ -1763,13 +1774,11 @@ class Toolkit:
             return (
                 self._balance_sheet_statement_growth.loc[self._tickers[0]]
                 if growth
-                else self._balance_sheet_statement.loc[self._tickers[0]]
+                else balance_sheet_statement.loc[self._tickers[0]]
             )
 
         return (
-            self._balance_sheet_statement_growth
-            if growth
-            else self._balance_sheet_statement
+            self._balance_sheet_statement_growth if growth else balance_sheet_statement
         )
 
     def get_income_statement(
@@ -1778,6 +1787,7 @@ class Toolkit:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        trailing: int | None = None,
     ):
         """
         Retrieves the income statement financial data for the company(s) from the specified source.
@@ -1788,6 +1798,8 @@ class Toolkit:
             rounding (int): Defines the number of decimal places to round the data to.
             growth (bool): Defines whether to return the growth of the data.
             lag (int | str): Defines the number of periods to lag the growth data by.
+            trailing (int): Defines whether to select a trailing period.
+            E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
         Returns:
             pd.DataFrame: A pandas DataFrame with the retrieved income statement data.
@@ -1873,9 +1885,14 @@ class Toolkit:
                 if ticker not in self._invalid_tickers
             ]
 
+        income_statement = self._income_statement
+
+        if trailing:
+            income_statement = self._income_statement.T.rolling(trailing).sum().T
+
         if growth:
             self._income_statement_growth = _calculate_growth(
-                self._income_statement,
+                income_statement,
                 lag=lag,
                 rounding=rounding if rounding else self._rounding,
                 axis="columns",
@@ -1885,10 +1902,10 @@ class Toolkit:
             return (
                 self._income_statement_growth.loc[self._tickers[0]]
                 if growth
-                else self._income_statement.loc[self._tickers[0]]
+                else income_statement.loc[self._tickers[0]]
             )
 
-        return self._income_statement_growth if growth else self._income_statement
+        return self._income_statement_growth if growth else income_statement
 
     def get_cash_flow_statement(
         self,
@@ -1896,6 +1913,7 @@ class Toolkit:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        trailing: int | None = None,
     ):
         """
         Retrieves the cash flow statement financial data for the company(s) from the specified source.
@@ -1906,6 +1924,8 @@ class Toolkit:
             rounding (int): Defines the number of decimal places to round the data to.
             growth (bool): Defines whether to return the growth of the data.
             lag (int | str): Defines the number of periods to lag the growth data by.
+            trailing (int): Defines whether to select a trailing period.
+            E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
         Returns:
             pd.DataFrame: A pandas DataFrame with the retrieved cash flow statement data.
@@ -1993,9 +2013,14 @@ class Toolkit:
                 if ticker not in self._invalid_tickers
             ]
 
+        cash_flow_statement = self._cash_flow_statement
+
+        if trailing:
+            cash_flow_statement = self._cash_flow_statement.T.rolling(trailing).sum().T
+
         if growth:
             self._cash_flow_statement_growth = _calculate_growth(
-                self._cash_flow_statement,
+                cash_flow_statement,
                 lag=lag,
                 rounding=rounding if rounding else self._rounding,
                 axis="columns",
@@ -2005,10 +2030,10 @@ class Toolkit:
             return (
                 self._cash_flow_statement_growth.loc[self._tickers[0]]
                 if growth
-                else self._cash_flow_statement.loc[self._tickers[0]]
+                else cash_flow_statement.loc[self._tickers[0]]
             )
 
-        return self._cash_flow_statement_growth if growth else self._cash_flow_statement
+        return self._cash_flow_statement_growth if growth else cash_flow_statement
 
     def get_statistics_statement(
         self,

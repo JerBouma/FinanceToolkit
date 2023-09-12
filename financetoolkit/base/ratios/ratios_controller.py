@@ -114,6 +114,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        trailing: int | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
         Calculates and collects all ratios based on the provided data.
@@ -127,6 +128,8 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            trailing (int): Defines whether to select a trailing period.
+            E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
         Returns:
             pd.Series or pd.DataFrame: Ratios calculated based on the specified parameters.
@@ -173,9 +176,14 @@ class Ratios:
             rounding if rounding else self._rounding
         )
 
+        all_ratios = self._all_ratios
+
+        if trailing:
+            all_ratios = self._all_ratios.T.rolling(trailing).sum().T
+
         if growth:
             self._all_ratios_growth = calculate_growth(
-                self._all_ratios,
+                all_ratios,
                 lag=lag,
                 rounding=rounding if rounding else self._rounding,
                 axis="columns",
@@ -185,10 +193,10 @@ class Ratios:
             return (
                 self._all_ratios_growth[self._tickers[0]]
                 if growth
-                else self._all_ratios.loc[self._tickers[0]]
+                else all_ratios.loc[self._tickers[0]]
             )
 
-        return self._all_ratios_growth if growth else self._all_ratios
+        return self._all_ratios_growth if growth else all_ratios
 
     @handle_errors
     def collect_custom_ratios(
@@ -211,6 +219,8 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            trailing (int): Defines whether to select a trailing period.
+            E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
         Returns:
             pd.DataFrame: Custom ratios calculated based on the specified parameters.
@@ -397,6 +407,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        trailing: int | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
         Calculates and collects all Efficiency Ratios based on the provided data.
@@ -406,6 +417,8 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            trailing (int): Defines whether to select a trailing period.
+            E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
         Returns:
             pd.Series or pd.DataFrame: Efficiency ratios calculated based on the specified parameters.
@@ -463,9 +476,14 @@ class Ratios:
             rounding if rounding else self._rounding
         )
 
+        efficiency_ratios_df = self._efficiency_ratios
+
+        if trailing:
+            efficiency_ratios_df = self._efficiency_ratios.T.rolling(trailing).sum().T
+
         if growth:
             self._efficiency_ratios_growth = calculate_growth(
-                self._efficiency_ratios,
+                efficiency_ratios_df,
                 lag=lag,
                 rounding=rounding if rounding else self._rounding,
                 axis="columns",
@@ -475,10 +493,10 @@ class Ratios:
             return (
                 self._efficiency_ratios_growth[self._tickers[0]]
                 if growth
-                else self._efficiency_ratios.loc[self._tickers[0]]
+                else efficiency_ratios_df.loc[self._tickers[0]]
             )
 
-        return self._efficiency_ratios_growth if growth else self._efficiency_ratios
+        return self._efficiency_ratios_growth if growth else efficiency_ratios_df
 
     @handle_errors
     def get_asset_turnover_ratio(
@@ -486,6 +504,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        trailing: int | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the asset turnover ratio, an efficiency ratio that measures how
@@ -505,6 +524,8 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            trailing (int): Defines whether to select a trailing period.
+            E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
         Returns:
             pd.Series: Asset turnover ratio values.
@@ -531,6 +552,9 @@ class Ratios:
             self._balance_sheet_statement.loc[:, "Total Assets", :],
         )
 
+        if trailing:
+            asset_turnover_ratio = asset_turnover_ratio.T.rolling(trailing).sum().T
+
         if growth:
             return calculate_growth(
                 asset_turnover_ratio,
@@ -546,6 +570,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        trailing: int | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the inventory turnover ratio, an efficiency ratio that measures
@@ -565,6 +590,8 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            trailing (int): Defines whether to select a trailing period.
+            E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
         Returns:
             pd.Series: Inventory turnover ratio values.
@@ -591,6 +618,11 @@ class Ratios:
             self._balance_sheet_statement.loc[:, "Inventory", :],
         )
 
+        if trailing:
+            inventory_turnover_ratio = (
+                inventory_turnover_ratio.T.rolling(trailing).sum().T
+            )
+
         if growth:
             return calculate_growth(
                 inventory_turnover_ratio,
@@ -607,6 +639,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        trailing: int | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the days sales in inventory ratio, an efficiency ratio that measures
@@ -627,6 +660,8 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            trailing (int): Defines whether to select a trailing period.
+            E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
         Returns:
             pd.DataFrame: Days sales in inventory ratio values.
@@ -654,6 +689,11 @@ class Ratios:
             days,
         )
 
+        if trailing:
+            days_of_inventory_outstanding = (
+                days_of_inventory_outstanding.T.rolling(trailing).sum().T
+            )
+
         if growth:
             return calculate_growth(
                 days_of_inventory_outstanding,
@@ -672,6 +712,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        trailing: int | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the days of sales outstanding ratio, an efficiency ratio that measures
@@ -693,6 +734,8 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            trailing (int): Defines whether to select a trailing period.
+            E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
         Returns:
             pd.DataFrame: Days of sales outstanding ratio values.
@@ -722,6 +765,11 @@ class Ratios:
             days,
         )
 
+        if trailing:
+            days_of_sales_outstanding = (
+                days_of_sales_outstanding.T.rolling(trailing).sum().T
+            )
+
         if growth:
             return calculate_growth(
                 days_of_sales_outstanding,
@@ -738,6 +786,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        trailing: int | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the operating cycle ratio, an efficiency ratio that measures the average
@@ -757,6 +806,8 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            trailing (int): Defines whether to select a trailing period.
+            E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
         Returns:
             pd.DataFrame: Operating cycle ratio values.
@@ -797,6 +848,9 @@ class Ratios:
             days_of_inventory, days_of_sales
         )
 
+        if trailing:
+            operating_cycle = operating_cycle.T.rolling(trailing).sum().T
+
         if growth:
             return calculate_growth(
                 operating_cycle,
@@ -812,6 +866,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        trailing: int | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the accounts payable turnover ratio, an efficiency ratio that measures how
@@ -830,6 +885,8 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            trailing (int): Defines whether to select a trailing period.
+            E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
         Returns:
             pd.DataFrame: Accounts payable turnover ratio values.
@@ -860,6 +917,11 @@ class Ratios:
             )
         )
 
+        if trailing:
+            accounts_payables_turnover_ratio = (
+                accounts_payables_turnover_ratio.T.rolling(trailing).sum().T
+            )
+
         if growth:
             return calculate_growth(
                 accounts_payables_turnover_ratio,
@@ -878,6 +940,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        trailing: int | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the days payables outstanding, an efficiency ratio that measures the
@@ -898,6 +961,8 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            trailing (int): Defines whether to select a trailing period.
+            E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
         Returns:
             pd.DataFrame: Days payables outstanding (DPO) ratio values.
@@ -929,6 +994,11 @@ class Ratios:
             )
         )
 
+        if trailing:
+            days_of_accounts_payable_outstanding = (
+                days_of_accounts_payable_outstanding.T.rolling(trailing).sum().T
+            )
+
         if growth:
             return calculate_growth(
                 days_of_accounts_payable_outstanding,
@@ -947,6 +1017,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        trailing: int | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the Cash Conversion Cycle, which measures the amount of time it takes for a company to convert
@@ -968,6 +1039,8 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            trailing (int): Defines whether to select a trailing period.
+            E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
         Returns:
             pd.DataFrame: Cash Conversion Cycle (CCC) values.
@@ -1012,6 +1085,9 @@ class Ratios:
             days_of_inventory, days_of_sales, days_of_payables
         )
 
+        if trailing:
+            cash_conversion_cycle = cash_conversion_cycle.T.rolling(trailing).sum().T
+
         if growth:
             return calculate_growth(
                 cash_conversion_cycle,
@@ -1027,6 +1103,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        trailing: int | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the receivables turnover, a ratio that measures how efficiently a
@@ -1046,6 +1123,8 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            trailing (int): Defines whether to select a trailing period.
+            E.g. when selecting 4 with quarterly data, the TTM is calculated.
         Returns:
             pd.DataFrame: Receivables turnover ratio values.
 
@@ -1072,6 +1151,9 @@ class Ratios:
             self._income_statement.loc[:, "Revenue", :],
         )
 
+        if trailing:
+            receivables_turnover = receivables_turnover.T.rolling(trailing).sum().T
+
         if growth:
             return calculate_growth(
                 receivables_turnover,
@@ -1087,6 +1169,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        trailing: int | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the sales, general, and administrative (SG&A) expenses to revenue ratio,
@@ -1105,6 +1188,8 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            trailing (int): Defines whether to select a trailing period.
+            E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
         Returns:
             pd.DataFrame: SG&A to revenue ratio values.
@@ -1132,6 +1217,9 @@ class Ratios:
             self._income_statement.loc[:, "Revenue", :],
         )
 
+        if trailing:
+            sga_to_revenue_ratio = sga_to_revenue_ratio.T.rolling(trailing).sum().T
+
         if growth:
             return calculate_growth(
                 sga_to_revenue_ratio,
@@ -1147,6 +1235,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        trailing: int | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the Fixed Asset Turnover ratio, an efficiency ratio that
@@ -1165,6 +1254,8 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            trailing (int): Defines whether to select a trailing period.
+            E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
         Returns:
             pd.DataFrame: Fixed Asset Turnover ratio values.
@@ -1191,6 +1282,9 @@ class Ratios:
             self._balance_sheet_statement.loc[:, "Fixed Assets", :],
         )
 
+        if trailing:
+            fixed_asset_turnover = fixed_asset_turnover.T.rolling(trailing).sum().T
+
         if growth:
             return calculate_growth(
                 fixed_asset_turnover,
@@ -1206,6 +1300,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        trailing: int | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the operating ratio, a financial metric that measures the efficiency
@@ -1223,6 +1318,8 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            trailing (int): Defines whether to select a trailing period.
+            E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
         Returns:
             pd.DataFrame: Operating ratio values.
@@ -1249,6 +1346,9 @@ class Ratios:
             self._income_statement.loc[:, "Revenue", :],
         )
 
+        if trailing:
+            operating_ratio = operating_ratio.T.rolling(trailing).sum().T
+
         if growth:
             return calculate_growth(
                 operating_ratio,
@@ -1263,6 +1363,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        trailing: int | None = None,
     ) -> pd.DataFrame:
         """
         Calculates and collects all Liquidity Ratios based on the provided data.
@@ -1271,6 +1372,8 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            trailing (int): Defines whether to select a trailing period.
+            E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
         Returns:
             pd.DataFrame: Liquidity ratios calculated based on the specified parameters.
@@ -1317,6 +1420,9 @@ class Ratios:
             rounding if rounding else self._rounding
         )
 
+        if trailing:
+            self._liquidity_ratios = self._liquidity_ratios.T.rolling(trailing).sum().T
+
         if growth:
             self._liquidity_ratios_growth = calculate_growth(
                 self._liquidity_ratios,
@@ -1340,6 +1446,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        trailing: int | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the current ratio, a liquidity ratio that measures a company's ability
@@ -1357,6 +1464,8 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            trailing (int): Defines whether to select a trailing period.
+            E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
         Returns:
             pd.DataFrame: Current ratio values.
@@ -1382,6 +1491,9 @@ class Ratios:
             self._balance_sheet_statement.loc[:, "Total Current Liabilities", :],
         )
 
+        if trailing:
+            current_ratio = current_ratio.T.rolling(trailing).sum().T
+
         if growth:
             return calculate_growth(
                 current_ratio,
@@ -1397,6 +1509,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        trailing: int | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the quick ratio (also known as the acid-test ratio), a more stringent
@@ -1417,6 +1530,8 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            trailing (int): Defines whether to select a trailing period.
+            E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
         Returns:
             pd.DataFrame: Quick ratio values.
@@ -1443,6 +1558,9 @@ class Ratios:
             self._balance_sheet_statement.loc[:, "Total Current Liabilities", :],
         )
 
+        if trailing:
+            quick_ratio = quick_ratio.T.rolling(trailing).sum().T
+
         if growth:
             return calculate_growth(
                 quick_ratio, lag=lag, rounding=rounding if rounding else self._rounding
@@ -1456,6 +1574,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        trailing: int | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the cash ratio, a liquidity ratio that measures a company's ability
@@ -1473,6 +1592,8 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            trailing (int): Defines whether to select a trailing period.
+            E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
         Returns:
             pd.DataFrame: Cash ratio values.
@@ -1499,6 +1620,9 @@ class Ratios:
             self._balance_sheet_statement.loc[:, "Total Current Liabilities", :],
         )
 
+        if trailing:
+            cash_ratio = cash_ratio.T.rolling(trailing).sum().T
+
         if growth:
             return calculate_growth(
                 cash_ratio, lag=lag, rounding=rounding if rounding else self._rounding
@@ -1512,6 +1636,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        trailing: int | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the working capital, which is the difference between a company's current assets
@@ -1529,6 +1654,8 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            trailing (int): Defines whether to select a trailing period.
+            E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
         Returns:
             pd.DataFrame: Working capital values.
@@ -1554,6 +1681,9 @@ class Ratios:
             self._balance_sheet_statement.loc[:, "Total Current Liabilities", :],
         )
 
+        if trailing:
+            working_capital = working_capital.T.rolling(trailing).sum().T
+
         if growth:
             return calculate_growth(
                 working_capital,
@@ -1569,6 +1699,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        trailing: int | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the operating cash flow ratio, a liquidity ratio that measures a company's
@@ -1586,6 +1717,8 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            trailing (int): Defines whether to select a trailing period.
+            E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
         Returns:
             pd.DataFrame: Operating cash flow ratio values.
@@ -1611,6 +1744,11 @@ class Ratios:
             self._balance_sheet_statement.loc[:, "Total Current Liabilities", :],
         )
 
+        if trailing:
+            operating_cash_flow_ratio = (
+                operating_cash_flow_ratio.T.rolling(trailing).sum().T
+            )
+
         if growth:
             return calculate_growth(
                 operating_cash_flow_ratio,
@@ -1626,6 +1764,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        trailing: int | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the operating cash flow to sales ratio, a liquidity ratio that
@@ -1643,6 +1782,8 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            trailing (int): Defines whether to select a trailing period.
+            E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
         Returns:
             pd.DataFrame: Operating cash flow to sales ratio values.
@@ -1668,6 +1809,11 @@ class Ratios:
             self._income_statement.loc[:, "Revenue", :],
         )
 
+        if trailing:
+            operating_cash_flow_sales_ratio = (
+                operating_cash_flow_sales_ratio.T.rolling(trailing).sum().T
+            )
+
         if growth:
             return calculate_growth(
                 operating_cash_flow_sales_ratio,
@@ -1685,6 +1831,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        trailing: int | None = None,
     ):
         """
         Calculate the short-term coverage ratio, a liquidity ratio that measures a company's
@@ -1701,6 +1848,8 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            trailing (int): Defines whether to select a trailing period.
+            E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
         As an example:
 
@@ -1719,6 +1868,11 @@ class Ratios:
             self._balance_sheet_statement.loc[:, "Accounts Payable", :],
         )
 
+        if trailing:
+            short_term_coverage_ratio = (
+                short_term_coverage_ratio.T.rolling(trailing).sum().T
+            )
+
         if growth:
             return calculate_growth(
                 short_term_coverage_ratio,
@@ -1733,6 +1887,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        trailing: int | None = None,
     ) -> pd.DataFrame:
         """
         Calculates and collects all Profitability Ratios based on the provided data.
@@ -1741,6 +1896,8 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            trailing (int): Defines whether to select a trailing period.
+            E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
         Returns:
             pd.DataFrame: Profitability ratios calculated based on the specified parameters.
@@ -1802,6 +1959,11 @@ class Ratios:
             rounding if rounding else self._rounding
         )
 
+        if trailing:
+            self._profitability_ratios = (
+                self._profitability_ratios.T.rolling(trailing).sum().T
+            )
+
         if growth:
             self._profitability_ratios_growth = calculate_growth(
                 self._profitability_ratios,
@@ -1827,6 +1989,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        trailing: int | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the gross margin, a profitability ratio that measures the percentage of
@@ -1844,6 +2007,8 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            trailing (int): Defines whether to select a trailing period.
+            E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
         Returns:
             pd.DataFrame: Gross margin ratio values.
@@ -1869,6 +2034,9 @@ class Ratios:
             self._income_statement.loc[:, "Cost of Goods Sold", :],
         )
 
+        if trailing:
+            gross_margin = gross_margin.T.rolling(trailing).sum().T
+
         if growth:
             return calculate_growth(
                 gross_margin, lag=lag, rounding=rounding if rounding else self._rounding
@@ -1882,6 +2050,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        trailing: int | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the operating margin, a profitability ratio that measures the percentage of
@@ -1899,6 +2068,8 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            trailing (int): Defines whether to select a trailing period.
+            E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
         Returns:
             pd.DataFrame: Operating margin ratio values.
@@ -1924,6 +2095,9 @@ class Ratios:
             self._income_statement.loc[:, "Revenue", :],
         )
 
+        if trailing:
+            operating_margin = operating_margin.T.rolling(trailing).sum().T
+
         if growth:
             return calculate_growth(
                 operating_margin,
@@ -1939,6 +2113,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        trailing: int | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the net profit margin, a profitability ratio that measures the percentage
@@ -1956,6 +2131,8 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            trailing (int): Defines whether to select a trailing period.
+            E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
         Returns:
             pd.DataFrame: Net profit margin ratio values.
@@ -1981,6 +2158,9 @@ class Ratios:
             self._income_statement.loc[:, "Revenue", :],
         )
 
+        if trailing:
+            net_profit_margin = net_profit_margin.T.rolling(trailing).sum().T
+
         if growth:
             return calculate_growth(
                 net_profit_margin,
@@ -1996,6 +2176,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        trailing: int | None = None,
     ) -> pd.DataFrame:
         """
         Compute the Interest Coverage Ratio, a metric that reveals a company's
@@ -2017,6 +2198,8 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            trailing (int): Defines whether to select a trailing period.
+            E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
         Returns:
             pd.DataFrame: Interest Coverage Ratio values.
@@ -2042,6 +2225,9 @@ class Ratios:
             self._income_statement.loc[:, "Interest Expense", :],
         )
 
+        if trailing:
+            interest_burden_ratio = interest_burden_ratio.T.rolling(trailing).sum().T
+
         if growth:
             return calculate_growth(
                 interest_burden_ratio,
@@ -2057,6 +2243,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        trailing: int | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the Pretax Profit Margin, which is the ratio of a company's pre-tax profit to
@@ -2073,6 +2260,8 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            trailing (int): Defines whether to select a trailing period.
+            E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
         Returns:
             pd.DataFrame: Pretax Profit Margin values.
@@ -2100,6 +2289,11 @@ class Ratios:
             )
         )
 
+        if trailing:
+            income_before_tax_profit_margin = (
+                income_before_tax_profit_margin.T.rolling(trailing).sum().T
+            )
+
         if growth:
             return calculate_growth(
                 income_before_tax_profit_margin,
@@ -2117,6 +2311,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        trailing: int | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the effective tax rate, a financial ratio that measures the
@@ -2133,6 +2328,8 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            trailing (int): Defines whether to select a trailing period.
+            E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
         Returns:
             pd.DataFrame: Effective tax rate values.
@@ -2158,6 +2355,9 @@ class Ratios:
             self._income_statement.loc[:, "Income Before Tax", :],
         )
 
+        if trailing:
+            effective_tax_rate = effective_tax_rate.T.rolling(trailing).sum().T
+
         if growth:
             return calculate_growth(
                 effective_tax_rate,
@@ -2173,6 +2373,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        trailing: int | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the return on assets (ROA), a profitability ratio that measures how
@@ -2190,6 +2391,8 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            trailing (int): Defines whether to select a trailing period.
+            E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
         Returns:
             pd.DataFrame: Return on assets (ROA) values.
@@ -2216,6 +2419,9 @@ class Ratios:
             self._balance_sheet_statement.loc[:, "Total Assets", :],
         )
 
+        if trailing:
+            return_on_assets = return_on_assets.T.rolling(trailing).sum().T
+
         if growth:
             return calculate_growth(
                 return_on_assets,
@@ -2231,6 +2437,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        trailing: int | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the return on equity (ROE), a profitability ratio that measures how
@@ -2253,6 +2460,8 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            trailing (int): Defines whether to select a trailing period.
+            E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
         Returns:
             pd.DataFrame: Return on equity (ROE) values.
@@ -2277,6 +2486,9 @@ class Ratios:
             self._balance_sheet_statement.loc[:, "Total Equity", :],
         )
 
+        if trailing:
+            return_on_equity = return_on_equity.T.rolling(trailing).sum().T
+
         if growth:
             return calculate_growth(
                 return_on_equity,
@@ -2292,6 +2504,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        trailing: int | None = None,
     ):
         """
         Calculate the return on invested capital (ROIC), a financial ratio that measures
@@ -2309,6 +2522,8 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            trailing (int): Defines whether to select a trailing period.
+            E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
         Returns:
             pd.DataFrame: Return on invested capital (ROIC) values.
@@ -2339,6 +2554,11 @@ class Ratios:
             self._balance_sheet_statement.loc[:, "Total Debt", :],
         )
 
+        if trailing:
+            return_on_invested_capital = (
+                return_on_invested_capital.T.rolling(trailing).sum().T
+            )
+
         if growth:
             return calculate_growth(
                 return_on_invested_capital,
@@ -2356,6 +2576,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        trailing: int | None = None,
     ):
         """
         Calculate the income quality ratio, a financial metric that measures the cash flow from
@@ -2374,6 +2595,8 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            trailing (int): Defines whether to select a trailing period.
+            E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
         Returns:
             pd.DataFrame: Income quality ratio values.
@@ -2398,6 +2621,9 @@ class Ratios:
             self._cash_flow_statement.loc[:, "Net Income", :],
         )
 
+        if trailing:
+            income_quality_ratio = income_quality_ratio.T.rolling(trailing).sum().T
+
         if growth:
             return calculate_growth(
                 income_quality_ratio,
@@ -2413,6 +2639,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        trailing: int | None = None,
     ):
         """
         Calculate the return on tangible assets, a financial ratio that measures the amount of profit
@@ -2431,6 +2658,8 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            trailing (int): Defines whether to select a trailing period.
+            E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
         Returns:
             pd.DataFrame: Return on tangible assets (ROTA) values.
@@ -2459,6 +2688,11 @@ class Ratios:
             self._balance_sheet_statement.loc[:, "Total Liabilities", :],
         )
 
+        if trailing:
+            return_on_tangible_assets = (
+                return_on_tangible_assets.T.rolling(trailing).sum().T
+            )
+
         if growth:
             return calculate_growth(
                 return_on_tangible_assets,
@@ -2474,6 +2708,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        trailing: int | None = None,
     ):
         """
         Calculate the return on capital employed (ROCE), a profitability ratio that measures the amount of return
@@ -2491,6 +2726,8 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            trailing (int): Defines whether to select a trailing period.
+            E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
         Returns:
             pd.DataFrame: Return on capital employed (ROCE) values.
@@ -2517,6 +2754,11 @@ class Ratios:
             self._balance_sheet_statement.loc[:, "Total Current Liabilities", :],
         )
 
+        if trailing:
+            return_on_capital_employed = (
+                return_on_capital_employed.T.rolling(trailing).sum().T
+            )
+
         if growth:
             return calculate_growth(
                 return_on_capital_employed,
@@ -2534,6 +2776,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        trailing: int | None = None,
     ):
         """
         Calculate the net income per earnings before taxes (EBT), a profitability ratio that measures
@@ -2551,6 +2794,8 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            trailing (int): Defines whether to select a trailing period.
+            E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
         Returns:
             pd.DataFrame: Net income per earnings before taxes (EBT) values.
@@ -2576,6 +2821,9 @@ class Ratios:
             self._income_statement.loc[:, "Income Tax Expense", :],
         )
 
+        if trailing:
+            net_income_per_ebt = net_income_per_ebt.T.rolling(trailing).sum().T
+
         if growth:
             return calculate_growth(
                 net_income_per_ebt,
@@ -2591,6 +2839,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        trailing: int | None = None,
     ):
         """
         Calculate the free cash flow to operating cash flow ratio, a profitability ratio that measures
@@ -2609,6 +2858,8 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            trailing (int): Defines whether to select a trailing period.
+            E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
         Returns:
             pd.DataFrame: Free cash flow to operating cash flow ratio values.
@@ -2634,6 +2885,11 @@ class Ratios:
             )
         )
 
+        if trailing:
+            free_cash_flow_operating_cash_flow_ratio = (
+                free_cash_flow_operating_cash_flow_ratio.T.rolling(trailing).sum().T
+            )
+
         if growth:
             return calculate_growth(
                 free_cash_flow_operating_cash_flow_ratio,
@@ -2651,6 +2907,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        trailing: int | None = None,
     ):
         """
         Calculate the tax burden ratio, which is the ratio of a company's
@@ -2671,6 +2928,8 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            trailing (int): Defines whether to select a trailing period.
+            E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
         Returns:
             pd.DataFrame: Tax burden ratio values.
@@ -2694,6 +2953,9 @@ class Ratios:
             self._income_statement.loc[:, "Income Before Tax", :],
         )
 
+        if trailing:
+            tax_burden_ratio = tax_burden_ratio.T.rolling(trailing).sum().T
+
         if growth:
             return calculate_growth(
                 tax_burden_ratio,
@@ -2709,6 +2971,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        trailing: int | None = None,
     ):
         """
         Calculate the EBT to EBIT, which is the ratio of a company's earnings before tax to its
@@ -2729,6 +2992,8 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            trailing (int): Defines whether to select a trailing period.
+            E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
         Returns:
             pd.DataFrame: EBT to EBIT ratio values.
@@ -2755,6 +3020,9 @@ class Ratios:
             + self._income_statement.loc[:, "Interest Expense", :],
         )
 
+        if trailing:
+            EBT_to_EBIT = EBT_to_EBIT.T.rolling(trailing).sum().T
+
         if growth:
             return calculate_growth(
                 EBT_to_EBIT, lag=lag, rounding=rounding if rounding else self._rounding
@@ -2768,6 +3036,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        trailing: int | None = None,
     ):
         """
         Calculate the EBIT per Revenue, which is the ratio of a company's earnings
@@ -2790,6 +3059,8 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            trailing (int): Defines whether to select a trailing period.
+            E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
         Returns:
             pd.DataFrame: EBIT to Revenue ratio values.
@@ -2815,6 +3086,9 @@ class Ratios:
             self._income_statement.loc[:, "Revenue", :],
         )
 
+        if trailing:
+            EBIT_to_revenue = EBIT_to_revenue.T.rolling(trailing).sum().T
+
         if growth:
             return calculate_growth(
                 EBIT_to_revenue,
@@ -2830,6 +3104,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        trailing: int | None = None,
     ) -> pd.DataFrame:
         """
         Calculates and collects all Solvency Ratios based on the provided data.
@@ -2839,6 +3114,8 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            trailing (int): Defines whether to select a trailing period.
+            E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
         Returns:
             pd.DataFrame: Solvency ratios calculated based on the specified parameters.
@@ -2891,6 +3168,9 @@ class Ratios:
             rounding if rounding else self._rounding
         )
 
+        if trailing:
+            self._solvency_ratios = self._solvency_ratios.T.rolling(trailing).sum().T
+
         if growth:
             self._solvency_ratios_growth = calculate_growth(
                 self._solvency_ratios,
@@ -2914,6 +3194,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        trailing: int | None = None,
     ):
         """
         Calculate the debt to assets ratio, a solvency ratio that measures the proportion
@@ -2933,6 +3214,8 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            trailing (int): Defines whether to select a trailing period.
+            E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
         Returns:
             pd.DataFrame: Debt to assets ratio values.
@@ -2956,6 +3239,9 @@ class Ratios:
             self._balance_sheet_statement.loc[:, "Total Assets", :],
         )
 
+        if trailing:
+            debt_to_assets_ratio = debt_to_assets_ratio.T.rolling(trailing).sum().T
+
         if growth:
             return calculate_growth(
                 debt_to_assets_ratio,
@@ -2971,6 +3257,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        trailing: int | None = None,
     ):
         """
         Calculate the debt to equity ratio, a solvency ratio that measures the
@@ -2990,6 +3277,8 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            trailing (int): Defines whether to select a trailing period.
+            E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
         Returns:
             pd.DataFrame: Debt to equity ratio values.
@@ -3013,6 +3302,9 @@ class Ratios:
             self._balance_sheet_statement.loc[:, "Total Equity", :],
         )
 
+        if trailing:
+            debt_to_equity_ratio = debt_to_equity_ratio.T.rolling(trailing).sum().T
+
         if growth:
             return calculate_growth(
                 debt_to_equity_ratio,
@@ -3028,6 +3320,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        trailing: int | None = None,
     ):
         """
         Calculate the interest coverage ratio, a solvency ratio that measures a company's
@@ -3047,6 +3340,8 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            trailing (int): Defines whether to select a trailing period.
+            E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
         Returns:
             pd.DataFrame: Interest coverage ratio values.
@@ -3071,6 +3366,11 @@ class Ratios:
             self._income_statement.loc[:, "Interest Expense", :],
         )
 
+        if trailing:
+            interest_coverage_ratio = (
+                interest_coverage_ratio.T.rolling(trailing).sum().T
+            )
+
         if growth:
             return calculate_growth(
                 interest_coverage_ratio,
@@ -3086,6 +3386,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        trailing: int | None = None,
     ):
         """
         Calculate the equity multiplier, a solvency ratio that measures the degree to which
@@ -3105,6 +3406,8 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            trailing (int): Defines whether to select a trailing period.
+            E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
         Returns:
             pd.DataFrame: Equity multiplier values.
@@ -3130,6 +3433,9 @@ class Ratios:
             self._balance_sheet_statement.loc[:, "Total Equity", :],
         )
 
+        if trailing:
+            equity_multiplier = equity_multiplier.T.rolling(trailing).sum().T
+
         if growth:
             return calculate_growth(
                 equity_multiplier,
@@ -3145,6 +3451,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        trailing: int | None = None,
     ):
         """
         Calculate the debt service coverage ratio, a solvency ratio that measures a company's
@@ -3163,6 +3470,8 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            trailing (int): Defines whether to select a trailing period.
+            E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
         Returns:
             pd.DataFrame: Debt service coverage ratio values.
@@ -3186,6 +3495,11 @@ class Ratios:
             self._balance_sheet_statement.loc[:, "Total Current Liabilities", :],
         )
 
+        if trailing:
+            debt_service_coverage_ratio = (
+                debt_service_coverage_ratio.T.rolling(trailing).sum().T
+            )
+
         if growth:
             return calculate_growth(
                 debt_service_coverage_ratio,
@@ -3204,6 +3518,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        trailing: int | None = None,
     ):
         """
         Calculates the free cash flow yield ratio, which measures the free cash flow
@@ -3222,6 +3537,8 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            trailing (int): Defines whether to select a trailing period.
+            E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
         Returns:
             pd.DataFrame: Free cash flow yield ratio values.
@@ -3260,6 +3577,9 @@ class Ratios:
             market_cap,
         )
 
+        if trailing:
+            free_cash_flow_yield = free_cash_flow_yield.T.rolling(trailing).sum().T
+
         if growth:
             return calculate_growth(
                 free_cash_flow_yield,
@@ -3275,6 +3595,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        trailing: int | None = None,
     ):
         """
         Calculates the net debt to EBITDA ratio, which measures the net debt of the company
@@ -3292,6 +3613,8 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            trailing (int): Defines whether to select a trailing period.
+            E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
         Returns:
             pd.DataFrame: Net debt to EBITDA ratio values.
@@ -3316,6 +3639,11 @@ class Ratios:
             self._balance_sheet_statement.loc[:, "Net Debt", :],
         )
 
+        if trailing:
+            net_debt_to_ebitda_ratio = (
+                net_debt_to_ebitda_ratio.T.rolling(trailing).sum().T
+            )
+
         if growth:
             return calculate_growth(
                 net_debt_to_ebitda_ratio,
@@ -3331,6 +3659,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        trailing: int | None = None,
     ):
         """
         Calculate the cash flow coverage ratio, a solvency ratio that measures a company's
@@ -3348,6 +3677,8 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            trailing (int): Defines whether to select a trailing period.
+            E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
         Returns:
             pd.DataFrame: Cash flow coverage ratio values.
@@ -3371,6 +3702,11 @@ class Ratios:
             self._balance_sheet_statement.loc[:, "Total Debt", :],
         )
 
+        if trailing:
+            cash_flow_coverage_ratio = (
+                cash_flow_coverage_ratio.T.rolling(trailing).sum().T
+            )
+
         if growth:
             return calculate_growth(
                 cash_flow_coverage_ratio,
@@ -3386,6 +3722,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        trailing: int | None = None,
     ):
         """
         Calculate the capital expenditure coverage ratio, a solvency ratio that
@@ -3405,6 +3742,8 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            trailing (int): Defines whether to select a trailing period.
+            E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
         Returns:
             pd.DataFrame: Capital expenditure coverage ratio values.
@@ -3428,6 +3767,9 @@ class Ratios:
             self._cash_flow_statement.loc[:, "Capital Expenditure", :],
         )
 
+        if trailing:
+            capex_coverage_ratio = capex_coverage_ratio.T.rolling(trailing).sum().T
+
         if growth:
             return calculate_growth(
                 capex_coverage_ratio,
@@ -3443,6 +3785,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        trailing: int | None = None,
     ):
         """
         Calculate the dividend paid and capital expenditure coverage ratio, a solvency ratio
@@ -3464,6 +3807,8 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            trailing (int): Defines whether to select a trailing period.
+            E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
         Returns:
             pd.DataFrame: Dividend paid and capex coverage ratio values.
@@ -3488,6 +3833,11 @@ class Ratios:
             self._cash_flow_statement.loc[:, "Dividends Paid", :],
         )
 
+        if trailing:
+            dividend_capex_coverage_ratio = (
+                dividend_capex_coverage_ratio.T.rolling(trailing).sum().T
+            )
+
         if growth:
             return calculate_growth(
                 dividend_capex_coverage_ratio,
@@ -3506,6 +3856,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        trailing: int | None = None,
     ) -> pd.DataFrame:
         """
         Calculates and collects all Valuation Ratios based on the provided data.
@@ -3516,6 +3867,8 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            trailing (int): Defines whether to select a trailing period.
+            E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
         Returns:
             pd.DataFrame: Valuation ratios calculated based on the specified parameters.
@@ -3604,6 +3957,9 @@ class Ratios:
             rounding if rounding else self._rounding
         )
 
+        if trailing:
+            self._valuation_ratios = self._valuation_ratios.T.rolling(trailing).sum().T
+
         if growth:
             self._valuation_ratios_growth = calculate_growth(
                 self._valuation_ratios,
@@ -3629,6 +3985,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        trailing: int | None = None,
     ):
         """
         Calculate the earnings per share (EPS), a valuation ratio that measures the amount
@@ -3650,6 +4007,8 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            trailing (int): Defines whether to select a trailing period.
+            E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
         Returns:
             pd.DataFrame: Earnings per share (EPS) values.
@@ -3684,6 +4043,9 @@ class Ratios:
             self._income_statement.loc[:, "Net Income", :], dividends, average_shares
         )
 
+        if trailing:
+            earnings_per_share = earnings_per_share.T.rolling(trailing).sum().T
+
         if growth:
             return calculate_growth(
                 earnings_per_share,
@@ -3701,6 +4063,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        trailing: int | None = None,
     ):
         """
         Calculate the earnings per share growth.
@@ -3721,6 +4084,8 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            trailing (int): Defines whether to select a trailing period.
+            E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
         Returns:
             pd.DataFrame: Earnings per share (EPS) growth values.
@@ -3743,6 +4108,11 @@ class Ratios:
 
         earnings_per_share_growth = valuation.get_earnings_per_share_growth(eps)
 
+        if trailing:
+            earnings_per_share_growth = (
+                earnings_per_share_growth.T.rolling(trailing).sum().T
+            )
+
         if growth:
             return calculate_growth(
                 earnings_per_share_growth,
@@ -3759,6 +4129,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        trailing: int | None = None,
     ):
         """
         Calculate the revenue per share, a valuation ratio that measures the amount
@@ -3777,6 +4148,8 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            trailing (int): Defines whether to select a trailing period.
+            E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
         Returns:
             pd.DataFrame: Revenue per share values.
@@ -3807,6 +4180,9 @@ class Ratios:
             self._income_statement.loc[:, "Revenue", :], average_shares
         )
 
+        if trailing:
+            revenue_per_share = revenue_per_share.T.rolling(trailing).sum().T
+
         if growth:
             return calculate_growth(
                 revenue_per_share,
@@ -3824,6 +4200,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        trailing: int | None = None,
     ):
         """
         Calculate the price earnings ratio (P/E), a valuation ratio that compares a
@@ -3844,6 +4221,8 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            trailing (int): Defines whether to select a trailing period.
+            E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
         Returns:
             pd.DataFrame: Price earnings ratio (P/E) values.
@@ -3862,7 +4241,7 @@ class Ratios:
         pe_ratio = toolkit.ratios.get_price_earnings_ratio()
         ```
         """
-        eps = self.get_earnings_per_share(include_dividends, diluted)
+        eps = self.get_earnings_per_share(include_dividends, diluted, trailing=trailing)
 
         years = eps.columns
         begin, end = str(years[0]), str(years[-1])
@@ -3890,6 +4269,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        trailing: int | None = None,
     ):
         """
         Calculate the price earnings to growth (PEG) ratio, a valuation metric that
@@ -3910,6 +4290,8 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            trailing (int): Defines whether to select a trailing period.
+            E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
         Returns:
             pd.DataFrame: Price earnings to growth (PEG) ratio values.
@@ -3935,6 +4317,11 @@ class Ratios:
             price_earnings, eps_growth
         )
 
+        if trailing:
+            price_to_earnings_growth_ratio = (
+                price_to_earnings_growth_ratio.T.rolling(trailing).sum().T
+            )
+
         if growth:
             return calculate_growth(
                 price_to_earnings_growth_ratio,
@@ -3953,6 +4340,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        trailing: int | None = None,
     ):
         """
         Calculate the book value per share, a valuation ratio that measures the
@@ -3970,6 +4358,8 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            trailing (int): Defines whether to select a trailing period.
+            E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
         Returns:
             pd.DataFrame: Book value per share values.
@@ -4002,6 +4392,9 @@ class Ratios:
             average_shares,
         )
 
+        if trailing:
+            book_value_per_share = book_value_per_share.T.rolling(trailing).sum().T
+
         if growth:
             return calculate_growth(
                 book_value_per_share,
@@ -4018,6 +4411,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        trailing: int | None = None,
     ):
         """
         Calculate the price to book ratio, a valuation ratio that compares a
@@ -4036,6 +4430,8 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            trailing (int): Defines whether to select a trailing period.
+            E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
         Returns:
             pd.DataFrame: Price to book ratio values.
@@ -4069,6 +4465,9 @@ class Ratios:
             share_prices, book_value_per_share
         )
 
+        if trailing:
+            price_to_book_ratio = price_to_book_ratio.T.rolling(trailing).sum().T
+
         if growth:
             return calculate_growth(
                 price_to_book_ratio,
@@ -4085,6 +4484,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        trailing: int | None = None,
     ):
         """
         Calculate the interest debt per share, a valuation ratio that measures the
@@ -4103,6 +4503,8 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            trailing (int): Defines whether to select a trailing period.
+            E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
         Returns:
             pd.DataFrame: Interest debt per share values.
@@ -4135,6 +4537,11 @@ class Ratios:
             average_shares,
         )
 
+        if trailing:
+            interest_debt_per_share = (
+                interest_debt_per_share.T.rolling(trailing).sum().T
+            )
+
         if growth:
             return calculate_growth(
                 interest_debt_per_share,
@@ -4151,6 +4558,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        trailing: int | None = None,
     ):
         """
         Calculate the capex per share, a valuation ratio that measures the amount of
@@ -4169,6 +4577,8 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            trailing (int): Defines whether to select a trailing period.
+            E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
         Returns:
             pd.DataFrame: Capex per share values.
@@ -4199,6 +4609,9 @@ class Ratios:
             self._cash_flow_statement.loc[:, "Capital Expenditure", :], average_shares
         )
 
+        if trailing:
+            capex_per_share = capex_per_share.T.rolling(trailing).sum().T
+
         if growth:
             return calculate_growth(
                 capex_per_share,
@@ -4214,6 +4627,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        trailing: int | None = None,
     ):
         """
         Calculate the dividend yield ratio, a valuation ratio that measures the
@@ -4231,6 +4645,8 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            trailing (int): Defines whether to select a trailing period.
+            E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
         Returns:
             pd.DataFrame: Dividend yield values.
@@ -4264,6 +4680,9 @@ class Ratios:
             share_prices,
         )
 
+        if trailing:
+            dividend_yield = dividend_yield.T.rolling(trailing).sum().T
+
         if growth:
             return calculate_growth(
                 dividend_yield,
@@ -4280,6 +4699,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        trailing: int | None = None,
     ):
         """
         Calculate the weighted dividend yield ratio, a valuation ratio that measures the
@@ -4298,6 +4718,8 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            trailing (int): Defines whether to select a trailing period.
+            E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
         Returns:
             pd.DataFrame: Weighted dividend yield values.
@@ -4337,6 +4759,11 @@ class Ratios:
             share_prices,
         )
 
+        if trailing:
+            weighted_dividend_yield = (
+                weighted_dividend_yield.T.rolling(trailing).sum().T
+            )
+
         if growth:
             return calculate_growth(
                 weighted_dividend_yield,
@@ -4353,6 +4780,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        trailing: int | None = None,
     ):
         """
         Calculate the price to cash flow ratio, a valuation ratio that compares a
@@ -4371,6 +4799,8 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            trailing (int): Defines whether to select a trailing period.
+            E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
         Returns:
             pd.DataFrame: Price to cash flow ratio values.
@@ -4410,6 +4840,11 @@ class Ratios:
             market_cap, self._cash_flow_statement.loc[:, "Cash Flow from Operations", :]
         )
 
+        if trailing:
+            price_to_cash_flow_ratio = (
+                price_to_cash_flow_ratio.T.rolling(trailing).sum().T
+            )
+
         if growth:
             return calculate_growth(
                 price_to_cash_flow_ratio,
@@ -4426,6 +4861,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        trailing: int | None = None,
     ):
         """
         Calculate the price to free cash flow ratio, a valuation ratio that compares a
@@ -4442,6 +4878,8 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            trailing (int): Defines whether to select a trailing period.
+            E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
         Returns:
             pd.DataFrame: Price to free cash flow ratio values.
@@ -4481,6 +4919,11 @@ class Ratios:
             market_cap, self._cash_flow_statement.loc[:, "Free Cash Flow", :]
         )
 
+        if trailing:
+            price_to_free_cash_flow_ratio = (
+                price_to_free_cash_flow_ratio.T.rolling(trailing).sum().T
+            )
+
         if growth:
             return calculate_growth(
                 price_to_free_cash_flow_ratio,
@@ -4499,6 +4942,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        trailing: int | None = None,
     ):
         """
         Calculates the market capitalization of the company.
@@ -4516,6 +4960,8 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            trailing (int): Defines whether to select a trailing period.
+            E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
         Returns:
             pd.DataFrame: Market capitalization values.
@@ -4545,6 +4991,9 @@ class Ratios:
 
         market_cap = valuation.get_market_cap(share_prices, average_shares)
 
+        if trailing:
+            market_cap = market_cap.T.rolling(trailing).sum().T
+
         if growth:
             return calculate_growth(
                 market_cap, lag=lag, rounding=rounding if rounding else self._rounding
@@ -4559,6 +5008,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        trailing: int | None = None,
     ):
         """
         Calculates the Enterprise Value (EV) of a company. The Enterprise Value (EV)
@@ -4577,6 +5027,8 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            trailing (int): Defines whether to select a trailing period.
+            E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
         Returns:
             pd.DataFrame: Enterprise Value values.
@@ -4614,6 +5066,9 @@ class Ratios:
             self._balance_sheet_statement.loc[:, "Cash and Cash Equivalents", :],
         )
 
+        if trailing:
+            enterprise_value = enterprise_value.T.rolling(trailing).sum().T
+
         if growth:
             return calculate_growth(
                 enterprise_value,
@@ -4630,6 +5085,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        trailing: int | None = None,
     ):
         """
         Calculate the EV to sales ratio, a valuation ratio that compares a company's
@@ -4648,6 +5104,8 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            trailing (int): Defines whether to select a trailing period.
+            E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
         Returns:
             pd.DataFrame: EV to Sales Ratio values.
@@ -4668,6 +5126,9 @@ class Ratios:
             enterprise_value, self._income_statement.loc[:, "Revenue", :]
         )
 
+        if trailing:
+            ev_to_sales_ratio = ev_to_sales_ratio.T.rolling(trailing).sum().T
+
         if growth:
             return calculate_growth(
                 ev_to_sales_ratio,
@@ -4684,6 +5145,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        trailing: int | None = None,
     ):
         """
         Calculate the enterprise value over EBITDA ratio, a valuation ratio that
@@ -4701,6 +5163,8 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            trailing (int): Defines whether to select a trailing period.
+            E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
         Returns:
             pd.DataFrame: EV to EBITDA Ratio values.
@@ -4723,6 +5187,9 @@ class Ratios:
             self._income_statement.loc[:, "Depreciation and Amortization", :],
         )
 
+        if trailing:
+            ev_to_ebitda_ratio = ev_to_ebitda_ratio.T.rolling(trailing).sum().T
+
         if growth:
             return calculate_growth(
                 ev_to_ebitda_ratio,
@@ -4739,6 +5206,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        trailing: int | None = None,
     ):
         """
         Calculate the enterprise value over operating cash flow ratio, a valuation ratio that
@@ -4758,6 +5226,8 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            trailing (int): Defines whether to select a trailing period.
+            E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
         Returns:
             pd.DataFrame: EV to Operating Cash Flow Ratio values.
@@ -4779,6 +5249,11 @@ class Ratios:
             self._cash_flow_statement.loc[:, "Cash Flow from Operations", :],
         )
 
+        if trailing:
+            ev_to_operating_cashflow_ratio = (
+                ev_to_operating_cashflow_ratio.T.rolling(trailing).sum().T
+            )
+
         if growth:
             return calculate_growth(
                 ev_to_operating_cashflow_ratio,
@@ -4798,6 +5273,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        trailing: int | None = None,
     ):
         """
         Calculate the earnings yield ratio, a valuation ratio that measures the earnings per share
@@ -4818,6 +5294,8 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            trailing (int): Defines whether to select a trailing period.
+            E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
         Returns:
             pd.DataFrame: Earnings Yield Ratio values.
@@ -4843,6 +5321,9 @@ class Ratios:
 
         earnings_yield = valuation.get_earnings_yield(eps, share_prices)
 
+        if trailing:
+            earnings_yield = earnings_yield.T.rolling(trailing).sum().T
+
         if growth:
             return calculate_growth(
                 earnings_yield,
@@ -4858,6 +5339,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        trailing: int | None = None,
     ):
         """
         Calculate the (dividend) payout ratio, a financial metric that measures the proportion
@@ -4877,6 +5359,8 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            trailing (int): Defines whether to select a trailing period.
+            E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
         Returns:
             pd.DataFrame: Payout Ratio values.
@@ -4896,6 +5380,9 @@ class Ratios:
             self._income_statement.loc[:, "Net Income", :],
         )
 
+        if trailing:
+            payout_ratio = payout_ratio.T.rolling(trailing).sum().T
+
         if growth:
             return calculate_growth(
                 payout_ratio, lag=lag, rounding=rounding if rounding else self._rounding
@@ -4909,6 +5396,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        trailing: int | None = None,
     ):
         """
         Calculate the tangible asset value, a financial metric that represents the total value
@@ -4923,6 +5411,8 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            trailing (int): Defines whether to select a trailing period.
+            E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
         Returns:
             pd.DataFrame: Tangible Asset Value values.
@@ -4944,6 +5434,9 @@ class Ratios:
             self._balance_sheet_statement.loc[:, "Goodwill", :],
         )
 
+        if trailing:
+            tangible_asset_value = tangible_asset_value.T.rolling(trailing).sum().T
+
         if growth:
             return calculate_growth(
                 tangible_asset_value,
@@ -4959,6 +5452,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        trailing: int | None = None,
     ):
         """
         Calculate the net current asset value, a financial metric that represents the total value
@@ -4973,6 +5467,8 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            trailing (int): Defines whether to select a trailing period.
+            E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
         Returns:
             pd.DataFrame: Net Current Asset Value values.
@@ -4992,6 +5488,11 @@ class Ratios:
             self._balance_sheet_statement.loc[:, "Total Current Liabilities", :],
         )
 
+        if trailing:
+            net_current_asset_value = (
+                net_current_asset_value.T.rolling(trailing).sum().T
+            )
+
         if growth:
             return calculate_growth(
                 net_current_asset_value,
@@ -5008,6 +5509,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        trailing: int | None = None,
     ):
         """
         Calculate the enterprise value over earnings before interest and taxes (EBIT) ratio,
@@ -5023,6 +5525,8 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            trailing (int): Defines whether to select a trailing period.
+            E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
         Returns:
             pd.DataFrame: Enterprise Value over EBIT values.
@@ -5045,6 +5549,9 @@ class Ratios:
             + self._income_statement.loc[:, "Income Tax Expense", :]
             + +self._income_statement.loc[:, "Interest Expense", :],
         )
+
+        if trailing:
+            ev_to_ebit = ev_to_ebit.T.rolling(trailing).sum().T
 
         if growth:
             return calculate_growth(

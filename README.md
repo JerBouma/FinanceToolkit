@@ -372,6 +372,8 @@ The Models module is meant to execute well-known models such as DUPONT and the D
 - DuPont Analysis
 - Extended DuPont Analysis
 - Enterprise Value Breakdown
+- Weighted Average Cost of Capital (WACC)
+- Intrinsic Valuation
 
 ## Performance Metrics
 

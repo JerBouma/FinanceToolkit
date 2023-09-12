@@ -390,6 +390,9 @@ class Models:
         both through equity and debt.
 
         Args:
+            show_full_results (bool, optional): Whether to show the full results or just the WACC values.
+            Defaults to True.
+            diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the values. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
@@ -490,7 +493,7 @@ class Models:
             ]
         )
 
-    def get_intrisic_valuation(
+    def get_intrinsic_valuation(
         self,
         growth_rate: float | list | dict[str, float],
         perpetual_growth_rate: float | list | dict[str, float],
@@ -555,7 +558,7 @@ class Models:
 
         toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
 
-        toolkit.models.get_intrisic_valuation(0.05, 0.025, 0.094)
+        toolkit.models.get_intrinsic_valuation(0.05, 0.025, 0.094)
         ```
         """
         if cash_flow_type not in [

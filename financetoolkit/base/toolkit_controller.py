@@ -492,13 +492,10 @@ class Toolkit:
                 f"{self._balance_sheet_statement.columns[-1].year + 5}-01-01"
             )
 
-        if self._historical.empty:
-            if self._daily_historical_data.empty:
-                self.get_historical_data(period="daily")
-            if self._quarterly_historical_data.empty:
-                self.get_historical_data(period="quarterly")
-            if self._yearly_historical_data.empty:
-                self.get_historical_data(period="yearly")
+        if self._quarterly:
+            self.get_historical_data(period="quarterly")
+        else:
+            self.get_historical_data(period="yearly")
 
         if empty_data:
             print(
@@ -508,11 +505,16 @@ class Toolkit:
 
         return Models(
             self._tickers,
+            self._daily_historical_data,
+            self._quarterly_historical_data
+            if self._quarterly
+            else self._yearly_historical_data,
+            self._quarterly_risk_free_rate
+            if self._quarterly
+            else self._yearly_risk_free_rate,
             self._balance_sheet_statement,
             self._income_statement,
             self._cash_flow_statement,
-            self._quarterly_historical_data,
-            self._yearly_historical_data,
             self._quarterly,
             self._rounding,
         )

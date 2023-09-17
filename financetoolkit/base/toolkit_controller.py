@@ -407,16 +407,16 @@ class Toolkit:
             )
 
         return Ratios(
-            self._tickers,
-            self._quarterly_historical_data
+            tickers=self._tickers,
+            historical=self._quarterly_historical_data
             if self._quarterly
             else self._yearly_historical_data,
-            self._balance_sheet_statement,
-            self._income_statement,
-            self._cash_flow_statement,
-            self._custom_ratios,
-            self._quarterly,
-            self._rounding,
+            balance=self._balance_sheet_statement,
+            income=self._income_statement,
+            cash=self._cash_flow_statement,
+            custom_ratios_dict=self._custom_ratios,
+            quarterly=self._quarterly,
+            rounding=self._rounding,
         )
 
     @property
@@ -504,19 +504,19 @@ class Toolkit:
             )
 
         return Models(
-            self._tickers,
-            self._daily_historical_data,
-            self._quarterly_historical_data
+            tickers=self._tickers,
+            daily_historical=self._daily_historical_data,
+            period_historical=self._quarterly_historical_data
             if self._quarterly
             else self._yearly_historical_data,
-            self._quarterly_risk_free_rate
+            risk_free_rate=self._quarterly_risk_free_rate
             if self._quarterly
             else self._yearly_risk_free_rate,
-            self._balance_sheet_statement,
-            self._income_statement,
-            self._cash_flow_statement,
-            self._quarterly,
-            self._rounding,
+            balance=self._balance_sheet_statement,
+            income=self._income_statement,
+            cash=self._cash_flow_statement,
+            quarterly=self._quarterly,
+            rounding=self._rounding,
         )
 
     @property
@@ -576,25 +576,25 @@ class Toolkit:
                 self.get_historical_data(period="yearly")
 
         return Technicals(
-            self._tickers,
-            self._daily_historical_data.drop(
+            tickers=self._tickers,
+            daily_historical=self._daily_historical_data.drop(
                 "Benchmark", axis=1, level=1, errors="ignore"
             ),
-            self._weekly_historical_data.drop(
+            weekly_historical=self._weekly_historical_data.drop(
                 "Benchmark", axis=1, level=1, errors="ignore"
             ),
-            self._monthly_historical_data.drop(
+            monthly_historical=self._monthly_historical_data.drop(
                 "Benchmark", axis=1, level=1, errors="ignore"
             ),
-            self._quarterly_historical_data.drop(
+            quarterly_historical=self._quarterly_historical_data.drop(
                 "Benchmark", axis=1, level=1, errors="ignore"
             ),
-            self._yearly_historical_data.drop(
+            yearly_historical=self._yearly_historical_data.drop(
                 "Benchmark", axis=1, level=1, errors="ignore"
             ),
-            self._rounding,
-            self._start_date,
-            self._end_date,
+            rounding=self._rounding,
+            start_date=self._start_date,
+            end_date=self._end_date,
         )
 
     @property
@@ -666,13 +666,13 @@ class Toolkit:
         }
 
         return Performance(
-            self._tickers,
-            historical_data,
-            risk_free_rate_data,
-            self._quarterly,
-            self._rounding,
-            self._start_date,
-            self._end_date,
+            tickers=self._tickers,
+            historical_data=historical_data,
+            risk_free_rate_data=risk_free_rate_data,
+            quarterly=self._quarterly,
+            rounding=self._rounding,
+            start_date=self._start_date,
+            end_date=self._end_date,
         )
 
     @property
@@ -734,14 +734,14 @@ class Toolkit:
                 self.get_historical_data(period="yearly")
 
         return Risk(
-            self._tickers,
-            self._daily_historical_data,
-            self._weekly_historical_data,
-            self._monthly_historical_data,
-            self._quarterly_historical_data,
-            self._yearly_historical_data,
-            self._quarterly,
-            self._rounding,
+            tickers=self._tickers,
+            daily_historical=self._daily_historical_data,
+            weekly_historical=self._weekly_historical_data,
+            monthly_historical=self._monthly_historical_data,
+            quarterly_historical=self._quarterly_historical_data,
+            yearly_historical=self._yearly_historical_data,
+            quarterly=self._quarterly,
+            rounding=self._rounding,
         )
 
     def get_profile(self):
@@ -810,7 +810,7 @@ class Toolkit:
 
         if self._profile.empty:
             self._profile, self._invalid_tickers = _get_profile(
-                self._tickers, self._api_key
+                tickers=self._tickers, api_key=self._api_key
             )
 
         if self._remove_invalid_tickers:
@@ -881,7 +881,7 @@ class Toolkit:
 
         if self._quote.empty:
             self._quote, self._invalid_tickers = _get_quote(
-                self._tickers, self._api_key
+                tickers=self._tickers, api_key=self._api_key
             )
 
         if self._remove_invalid_tickers:
@@ -941,7 +941,7 @@ class Toolkit:
 
         if self._rating.empty:
             self._rating, self._invalid_tickers = _get_rating(
-                self._tickers, self._api_key
+                tickers=self._tickers, api_key=self._api_key
             )
 
         if self._remove_invalid_tickers:
@@ -1027,14 +1027,14 @@ class Toolkit:
                 self._analyst_estimates,
                 self._invalid_tickers,
             ) = _get_analyst_estimates(
-                self._tickers,
-                self._api_key,
-                self._quarterly,
-                self._start_date,
-                self._end_date,
-                rounding if rounding else self._rounding,
-                self._sleep_timer,
-                self._progress_bar,
+                tickers=self._tickers,
+                api_key=self._api_key,
+                quarter=self._quarterly,
+                start_date=self._start_date,
+                end_date=self._end_date,
+                rounding=rounding if rounding else self._rounding,
+                sleep_timer=self._sleep_timer,
+                progress_bar=self._progress_bar,
             )
 
         if self._remove_invalid_tickers:
@@ -1118,13 +1118,13 @@ class Toolkit:
                 self._earnings_calendar,
                 self._invalid_tickers,
             ) = _get_earnings_calendar(
-                self._tickers,
-                self._api_key,
-                self._start_date,
-                self._end_date,
-                actual_dates,
-                self._sleep_timer,
-                self._progress_bar,
+                tickers=self._tickers,
+                api_key=self._api_key,
+                start_date=self._start_date,
+                end_date=self._end_date,
+                actual_dates=actual_dates,
+                sleep_timer=self._sleep_timer,
+                progress_bar=self._progress_bar,
             )
 
         earnings_calendar = self._earnings_calendar.round(
@@ -1192,14 +1192,14 @@ class Toolkit:
                 self._revenue_geographic_segmentation,
                 self._invalid_tickers,
             ) = _get_revenue_segmentation(
-                self._tickers,
-                "geographic",
-                self._api_key,
-                self._quarterly,
-                self._start_date,
-                self._end_date,
-                self._sleep_timer,
-                self._progress_bar,
+                tickers=self._tickers,
+                method="geographic",
+                api_key=self._api_key,
+                quarter=self._quarterly,
+                start_date=self._start_date,
+                end_date=self._end_date,
+                sleep_timer=self._sleep_timer,
+                progress_bar=self._progress_bar,
             )
 
         if self._remove_invalid_tickers:
@@ -1267,14 +1267,14 @@ class Toolkit:
                 self._revenue_product_segmentation,
                 self._invalid_tickers,
             ) = _get_revenue_segmentation(
-                self._tickers,
-                "product",
-                self._api_key,
-                self._quarterly,
-                self._start_date,
-                self._end_date,
-                self._sleep_timer,
-                self._progress_bar,
+                tickers=self._tickers,
+                method="product",
+                api_key=self._api_key,
+                quarter=self._quarterly,
+                start_date=self._start_date,
+                end_date=self._end_date,
+                sleep_timer=self._sleep_timer,
+                progress_bar=self._progress_bar,
             )
 
         if self._remove_invalid_tickers:
@@ -1367,11 +1367,11 @@ class Toolkit:
 
         if self._daily_historical_data.empty or overwrite:
             self._daily_historical_data, self._invalid_tickers = _get_historical_data(
-                self._tickers + [self._benchmark_ticker]
+                tickers=self._tickers + [self._benchmark_ticker]
                 if self._benchmark_ticker
                 else self._tickers,
-                self._start_date,
-                self._end_date,
+                start=self._start_date,
+                end=self._end_date,
                 interval="1d",
                 return_column=return_column,
                 risk_free_rate=self._daily_risk_free_rate,
@@ -1551,9 +1551,9 @@ class Toolkit:
 
         if self._daily_treasury_data.empty:
             daily_treasury_data, _ = _get_historical_data(
-                ["^IRX", "^FVX", "^TNX", "^TYX"],
-                self._start_date,
-                self._end_date,
+                tickers=["^IRX", "^FVX", "^TNX", "^TYX"],
+                start=self._start_date,
+                end=self._end_date,
                 progress_bar=False,
                 divide_ohlc_by=divide_ohlc_by,
                 rounding=rounding if rounding else self._rounding,
@@ -1735,17 +1735,17 @@ class Toolkit:
                 self._statistics_statement,
                 self._invalid_tickers,
             ) = _get_financial_statements(
-                self._tickers,
-                "balance",
-                self._api_key,
-                self._quarterly,
-                self._start_date,
-                self._end_date,
-                rounding if rounding else self._rounding,
-                self._balance_sheet_statement_generic,
-                self._statistics_statement_generic,
-                self._sleep_timer,
-                self._progress_bar,
+                tickers=self._tickers,
+                statement="balance",
+                api_key=self._api_key,
+                quarter=self._quarterly,
+                start_date=self._start_date,
+                end_date=self._end_date,
+                rounding=rounding if rounding else self._rounding,
+                statement_format=self._balance_sheet_statement_generic,
+                statistics_format=self._statistics_statement_generic,
+                sleep_timer=self._sleep_timer,
+                progress_bar=self._progress_bar,
             )
 
         if self._remove_invalid_tickers:
@@ -1865,17 +1865,17 @@ class Toolkit:
                 self._statistics_statement,
                 self._invalid_tickers,
             ) = _get_financial_statements(
-                self._tickers,
-                "income",
-                self._api_key,
-                self._quarterly,
-                self._start_date,
-                self._end_date,
-                rounding if rounding else self._rounding,
-                self._income_statement_generic,
-                self._statistics_statement_generic,
-                self._sleep_timer,
-                self._progress_bar,
+                tickers=self._tickers,
+                statement="income",
+                api_key=self._api_key,
+                quarter=self._quarterly,
+                start_date=self._start_date,
+                end_date=self._end_date,
+                rounding=rounding if rounding else self._rounding,
+                statement_format=self._income_statement_generic,
+                statistics_format=self._statistics_statement_generic,
+                sleep_timer=self._sleep_timer,
+                progress_bar=self._progress_bar,
             )
 
         if self._remove_invalid_tickers:
@@ -1993,17 +1993,17 @@ class Toolkit:
                 self._statistics_statement,
                 self._invalid_tickers,
             ) = _get_financial_statements(
-                self._tickers,
-                "cashflow",
-                self._api_key,
-                self._quarterly,
-                self._start_date,
-                self._end_date,
-                rounding if rounding else self._rounding,
-                self._cash_flow_statement_generic,
-                self._statistics_statement_generic,
-                self._sleep_timer,
-                self._progress_bar,
+                tickers=self._tickers,
+                statement="cashflow",
+                api_key=self._api_key,
+                quarter=self._quarterly,
+                start_date=self._start_date,
+                end_date=self._end_date,
+                rounding=rounding if rounding else self._rounding,
+                statement_format=self._cash_flow_statement_generic,
+                statistics_format=self._statistics_statement_generic,
+                sleep_timer=self._sleep_timer,
+                progress_bar=self._progress_bar,
             )
 
         if self._remove_invalid_tickers:
@@ -2092,16 +2092,16 @@ class Toolkit:
                 self._statistics_statement,
                 self._invalid_tickers,
             ) = _get_financial_statements(
-                self._tickers,
-                "balance",
-                self._api_key,
-                self._quarterly,
-                self._start_date,
-                self._end_date,
-                self._balance_sheet_statement_generic,
-                self._statistics_statement_generic,
-                self._sleep_timer,
-                self._progress_bar,
+                tickers=self._tickers,
+                statement="balance",
+                api_key=self._api_key,
+                quarter=self._quarterly,
+                start_date=self._start_date,
+                end_date=self._end_date,
+                statement_format=self._balance_sheet_statement_generic,
+                statistics_format=self._statistics_statement_generic,
+                sleep_timer=self._sleep_timer,
+                progress_bar=self._progress_bar,
             )
 
         if self._remove_invalid_tickers:

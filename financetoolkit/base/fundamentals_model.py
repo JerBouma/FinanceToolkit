@@ -700,11 +700,12 @@ def get_profile(tickers: list[str] | str, api_key: str) -> pd.DataFrame:
             print(f"No profile data found for {ticker}")
             invalid_tickers.append(ticker)
 
-    profile_dataframe = profile_dataframe.rename(index=naming)
-    profile_dataframe = profile_dataframe.drop(
-        ["image", "defaultImage", "isEtf", "isActivelyTrading", "isAdr", "isFund"],
-        axis=0,
-    )
+    if not profile_dataframe.empty:
+        profile_dataframe = profile_dataframe.rename(index=naming)
+        profile_dataframe = profile_dataframe.drop(
+            ["image", "defaultImage", "isEtf", "isActivelyTrading", "isAdr", "isFund"],
+            axis=0,
+        )
 
     return profile_dataframe, invalid_tickers
 
@@ -800,6 +801,7 @@ def get_rating(tickers: list[str] | str, api_key: str):
         except ValueError:
             print(f"No rating data found for {ticker}")
             invalid_tickers.append(ticker)
+            break
         except Exception as error:
             raise ValueError(error) from error
 
@@ -836,12 +838,14 @@ def get_rating(tickers: list[str] | str, api_key: str):
 
         ratings_dict[ticker] = ratings
 
-    ratings_dataframe = pd.concat(ratings_dict, axis=0).dropna()
+    if not ratings.empty:
+        ratings_dataframe = pd.concat(ratings_dict, axis=0).dropna()
 
-    if len(ticker_list) == 1:
-        ratings_dataframe = ratings_dataframe.loc[ticker_list[0]]
+        if len(ticker_list) == 1:
+            ratings_dataframe = ratings_dataframe.loc[ticker_list[0]]
 
-    return ratings_dataframe, invalid_tickers
+        return ratings_dataframe, invalid_tickers
+    return pd.DataFrame(), invalid_tickers
 
 
 def get_earnings_calendar(

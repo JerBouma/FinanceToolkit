@@ -5,7 +5,12 @@ from financetoolkit import Toolkit
 
 historical = pd.read_pickle("tests/base/datasets/historical_dataset.pickle")
 
-toolkit = Toolkit(tickers=["AAPL", "MSFT"], historical=historical)
+toolkit = Toolkit(
+    tickers=["AAPL", "MSFT"],
+    historical=historical,
+    start_date="2013-09-09",
+    end_date="2023-09-07",
+)
 
 technical_module = toolkit.technicals
 

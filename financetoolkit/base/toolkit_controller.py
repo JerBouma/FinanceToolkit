@@ -2,12 +2,11 @@
 __docformat__ = "google"
 
 
-import json
 import re
-import urllib
 from datetime import datetime, timedelta
 
 import pandas as pd
+import requests
 
 from financetoolkit.base.fundamentals_model import (
     get_analyst_estimates as _get_analyst_estimates,
@@ -141,16 +140,24 @@ class Toolkit:
         self._tickers: list[str] = []
         for ticker in tickers:
             if bool(re.match("^([A-Z]{2})([A-Z0-9]{9})([0-9])$", ticker)):
-                url = f"https://query2.finance.yahoo.com/v1/finance/search?q={ticker}"
+                response = requests.get(
+                    f"https://query2.finance.yahoo.com/v1/finance/search?q={ticker}",
+                    timeout=60,
+                    headers={
+                        "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit"
+                        "/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36"
+                    },
+                )
 
-                with urllib.request.urlopen(url) as response:
-                    data = response.read().decode("utf-8")
-                    data = json.loads(data)
+                if response.status_code == 200:  # noqa
+                    data = response.json()
 
-                try:
-                    print(f"Converted {ticker} to {data['quotes'][0]['symbol']}")
-                    self._tickers.append(data["quotes"][0]["symbol"])
-                except (KeyError, ValueError, IndexError):
+                    try:
+                        print(f"Converted {ticker} to {data['quotes'][0]['symbol']}")
+                        self._tickers.append(data["quotes"][0]["symbol"])
+                    except (KeyError, ValueError, IndexError):
+                        print(f"Could not convert {ticker}")
+                else:
                     print(f"Could not convert {ticker}")
             else:
                 self._tickers.append(ticker)

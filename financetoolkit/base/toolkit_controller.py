@@ -2,7 +2,9 @@
 __docformat__ = "google"
 
 
+import json
 import re
+import urllib
 from datetime import datetime, timedelta
 
 import pandas as pd
@@ -130,11 +132,28 @@ class Toolkit:
         ```
         """
         if isinstance(tickers, str):
-            self._tickers = [tickers.upper()]
+            tickers = [tickers.upper()]
         elif isinstance(tickers, list):
-            self._tickers = [ticker.upper() for ticker in tickers]
+            tickers = [ticker.upper() for ticker in tickers]
         else:
             raise TypeError("Tickers must be a string or a list of strings.")
+
+        self._tickers: list[str] = []
+        for ticker in tickers:
+            if bool(re.match("^([A-Z]{2})([A-Z0-9]{9})([0-9])$", ticker)):
+                url = f"https://query2.finance.yahoo.com/v1/finance/search?q={ticker}"
+
+                with urllib.request.urlopen(url) as response:
+                    data = response.read().decode("utf-8")
+                    data = json.loads(data)
+
+                try:
+                    print(f"Converted {ticker} to {data['quotes'][0]['symbol']}")
+                    self._tickers.append(data["quotes"][0]["symbol"])
+                except (KeyError, ValueError, IndexError):
+                    print(f"Could not convert {ticker}")
+            else:
+                self._tickers.append(ticker)
 
         if start_date and re.match(r"^\d{4}-\d{2}-\d{2}$", start_date) is None:
             raise ValueError(

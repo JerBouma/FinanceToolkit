@@ -21,6 +21,7 @@ from financetoolkit.base.helpers import calculate_growth as _calculate_growth
 from financetoolkit.base.historical_model import (
     convert_daily_to_other_period as _convert_daily_to_other_period,
     get_historical_data as _get_historical_data,
+    get_historical_statistics as _get_historical_statistics,
 )
 from financetoolkit.base.models.models_controller import Models
 from financetoolkit.base.normalization_model import (
@@ -252,6 +253,8 @@ class Toolkit:
             if not historical.empty
             else pd.DataFrame()
         )
+
+        self._historical_statistics: pd.DataFrame = pd.DataFrame()
 
         # Initialization of Risk Free Rate
         self._daily_risk_free_rate: pd.DataFrame = pd.DataFrame()
@@ -1524,6 +1527,60 @@ class Toolkit:
         raise ValueError(
             "Please choose from daily, weekly, monthly, quarterly or yearly as period."
         )
+
+    def get_historical_statistics(self):
+        """
+        Retrieve statistics about each ticker's historical data. This is especially useful to understand why certain
+        tickers might fluctuate more than others as it could be due to local regulations or the currency the instrument
+        is denoted in. It returns:
+
+            - Currency: The currency the instrument is denoted in.
+            - Symbol: The symbol of the instrument.
+            - Exchange Name: The name of the exchange the instrument is listed on.
+            - Instrument Type: The type of instrument.
+            - First Trade Date: The date the instrument was first traded.
+            - Regular Market Time: The time the instrument is traded.
+            - GMT Offset: The GMT offset.
+            - Timezone: The timezone the instrument is traded in.
+            - Exchange Timezone Name: The name of the timezone the instrument is traded in.
+
+        Returns:
+            pd.DataFrame: A DataFrame containing the statistics for each ticker.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        companies = Toolkit(["AMZN", "^HSI", "IWDA.AS", "0P0000Z8RO.T"])
+
+        companies.get_historical_statistics()
+        ```
+
+        Which returns:
+
+        |                        | AMZN             | ^HSI           | IWDA.AS          | 0P0000Z8RO.T   |
+        |:-----------------------|:-----------------|:---------------|:-----------------|:---------------|
+        | Currency               | USD              | HKD            | EUR              | JPY            |
+        | Symbol                 | AMZN             | ^HSI           | IWDA.AS          | 0P0000Z8RO.T   |
+        | Exchange Name          | NMS              | HKG            | AMS              | JPX            |
+        | Instrument Type        | EQUITY           | INDEX          | ETF              | MUTUALFUND     |
+        | First Trade Date       | 1997-05-15       | 1986-12-31     | 2009-09-25       | 2018-01-04     |
+        | Regular Market Time    | 2023-09-22       | 2023-09-22     | 2023-09-22       | 2023-09-21     |
+        | GMT Offset             | -14400           | 28800          | 7200             | 32400          |
+        | Timezone               | EDT              | HKT            | CEST             | JST            |
+        | Exchange Timezone Name | America/New_York | Asia/Hong_Kong | Europe/Amsterdam | Asia/Tokyo     |
+        """
+
+        if self._historical_statistics.empty:
+            self._historical_statistics = _get_historical_statistics(
+                tickers=self._tickers
+            )
+
+        if len(self._tickers) == 1:
+            return self._historical_statistics[self._tickers[0]]
+
+        return self._historical_statistics
 
     def get_treasury_data(
         self,

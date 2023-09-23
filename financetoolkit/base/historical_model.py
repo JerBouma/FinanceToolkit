@@ -6,6 +6,7 @@ from urllib.error import HTTPError
 
 import numpy as np
 import pandas as pd
+import requests
 
 try:
     from tqdm import tqdm
@@ -487,3 +488,76 @@ def convert_daily_to_other_period(
         period_historical_data = period_historical_data.round(rounding)
 
     return period_historical_data.fillna(0)
+
+
+def get_historical_statistics(
+    tickers: list[str],
+):
+    """
+    Retrieve statistics about each ticker's historical data. This is especially useful to understand why certain
+    tickers might fluctuate more than others as it could be due to local regulations or the currency the instrument
+    is denoted in. It returns:
+
+        - Currency: The currency the instrument is denoted in.
+        - Symbol: The symbol of the instrument.
+        - Exchange Name: The name of the exchange the instrument is listed on.
+        - Instrument Type: The type of instrument.
+        - First Trade Date: The date the instrument was first traded.
+        - Regular Market Time: The time the instrument is traded.
+        - GMT Offset: The GMT offset.
+        - Timezone: The timezone the instrument is traded in.
+        - Exchange Timezone Name: The name of the timezone the instrument is traded in.
+
+    Args:
+        tickers (list): A list of one or more ticker symbols to retrieve data for.
+
+    Returns:
+        pd.DataFrame: A DataFrame containing the statistics for each ticker.
+    """
+    columns = {
+        "currency": "Currency",
+        "symbol": "Symbol",
+        "exchangeName": "Exchange Name",
+        "instrumentType": "Instrument Type",
+        "firstTradeDate": "First Trade Date",
+        "regularMarketTime": "Regular Market Time",
+        "gmtoffset": "GMT Offset",
+        "timezone": "Timezone",
+        "exchangeTimezoneName": "Exchange Timezone Name",
+    }
+
+    stats_dict: dict = {}
+
+    for ticker in tickers:
+        response = requests.get(
+            f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?interval=1d&range=None",
+            timeout=60,
+            headers={
+                "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit"
+                "/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36"
+            },
+        )
+
+        if response.status_code == 200:  # noqa
+            data = response.json()
+
+            try:
+                statistics = data["chart"]["result"][0]["meta"]
+
+                for timestamp_data in ["firstTradeDate", "regularMarketTime"]:
+                    if timestamp_data in statistics and statistics[timestamp_data]:
+                        timestamp = datetime.fromtimestamp(
+                            statistics[timestamp_data]
+                        ).strftime("%Y-%m-%d")
+                        statistics[timestamp_data] = timestamp
+
+                stats_dict[ticker] = statistics
+            except (KeyError, ValueError):
+                print(f"No statistics found for {ticker}")
+        else:
+            print(f"No statistics found for {ticker}")
+
+    stats_df = pd.DataFrame.from_dict(stats_dict).loc[columns.keys()]
+    stats_df = stats_df.rename(index=columns)
+
+    return stats_df

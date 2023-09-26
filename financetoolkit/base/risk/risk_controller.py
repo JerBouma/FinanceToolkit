@@ -34,6 +34,21 @@ class Risk:
         """
         Initializes the Risk Controller Class.
 
+        Args:
+            tickers (str | list[str]): The tickers to use for the Toolkit instance.
+            daily_historical (pd.DataFrame, optional): The daily historical data for the tickers.
+            Defaults to pd.DataFrame().
+            weekly_historical (pd.DataFrame, optional): The weekly historical data for the tickers.
+            Defaults to pd.DataFrame().
+            monthly_historical (pd.DataFrame, optional): The monthly historical data for the tickers.
+            Defaults to pd.DataFrame().
+            quarterly_historical (pd.DataFrame, optional): The quarterly historical data for the tickers.
+            Defaults to pd.DataFrame().
+            yearly_historical (pd.DataFrame, optional): The yearly historical data for the tickers.
+            Defaults to pd.DataFrame().
+            quarterly (bool, optional): Whether to use quarterly data. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+
         As an example:
 
         ```python

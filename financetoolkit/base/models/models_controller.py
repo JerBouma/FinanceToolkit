@@ -389,15 +389,10 @@ class Models:
         The formula is as follows:
 
             - Market Value of Equity = Share Price * Total Shares Outstanding
-
             - Market Value of Debt = Total Debt
-
             - Total Market Value = Market Value of Equity + Market Value of Debt
-
             - Cost of Equity = Risk Free Rate + Beta * (Benchmark Return - Risk Free Rate)
-
             - Cost of Debt = Interest Expense / Total Debt
-
             - WACC = (Market Value of Equity / Total Market Value) * Cost of Equity +
             (Market Value of Debt / Total Market Value) * Cost of Debt * (1 - Corporate Tax Rate)
 

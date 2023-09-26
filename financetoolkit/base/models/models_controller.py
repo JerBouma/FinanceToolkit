@@ -18,7 +18,10 @@ from financetoolkit.performance.performance import get_beta
 
 class Models:
     """
-    Models Controller Class
+    The Models module is meant to execute well-known models such
+    as DUPONT and the Discounted Cash Flow (DCF) model. These models
+    are also directly related to the data retrieved from the Toolkit module.
+
     """
 
     def __init__(
@@ -35,6 +38,40 @@ class Models:
     ):
         """
         Initializes the Models Controller Class.
+
+        Args:
+            tickers (str | list[str]): The ticker(s) to use for the models.
+            daily_historical (pd.DataFrame): The daily historical data.
+            period_historical (pd.DataFrame): The period historical data.
+            risk_free_rate (pd.DataFrame): The risk free rate data.
+            balance (pd.DataFrame): The balance sheet data.
+            income (pd.DataFrame): The income statement data.
+            cash (pd.DataFrame): The cash flow statement data.
+            quarterly (bool, optional): Whether to use quarterly or yearly data. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["TSLA", "AMZN"], api_key=FMP_KEY, quarterly=True, start_date='2022-12-31')
+
+        dupont_analysis = toolkit.models.get_extended_dupont_analysis()
+
+        dupont_analysis.loc['AMZN']
+        ```
+
+        Which returns:
+
+        |                         |      2022Q2 |    2022Q3 |      2022Q4 |    2023Q1 |    2023Q2 |
+        |:------------------------|------------:|----------:|------------:|----------:|----------:|
+        | Interest Burden Ratio   |  -1.24465   | 0.858552  | -2.88409    | 1.20243   | 1.01681   |
+        | Tax Burden Ratio        |  -0.611396  | 1.13743   |  0.101571   | 0.640291  | 0.878792  |
+        | Operating Profit Margin |  -0.0219823 | 0.0231391 | -0.00636042 | 0.0323498 | 0.0562125 |
+        | Asset Turnover          | nan         | 0.299735  |  0.3349     | 0.274759  | 0.285319  |
+        | Equity Multiplier       | nan         | 3.15403   |  3.14263    | 3.08433   | 2.91521   |
+        | Return on Equity        | nan         | 0.0213618 |  0.00196098 | 0.0211066 | 0.0417791 |
         """
         self._tickers = tickers
         self._benchmark_name = "Benchmark"
@@ -351,17 +388,17 @@ class Models:
 
         The formula is as follows:
 
-            Market Value of Equity = Share Price * Total Shares Outstanding
+            - Market Value of Equity = Share Price * Total Shares Outstanding
 
-            Market Value of Debt = Total Debt
+            - Market Value of Debt = Total Debt
 
-            Total Market Value = Market Value of Equity + Market Value of Debt
+            - Total Market Value = Market Value of Equity + Market Value of Debt
 
-            Cost of Equity = Risk Free Rate + Beta * (Benchmark Return - Risk Free Rate)
+            - Cost of Equity = Risk Free Rate + Beta * (Benchmark Return - Risk Free Rate)
 
-            Cost of Debt = Interest Expense / Total Debt
+            - Cost of Debt = Interest Expense / Total Debt
 
-            WACC = (Market Value of Equity / Total Market Value) * Cost of Equity +
+            - WACC = (Market Value of Equity / Total Market Value) * Cost of Equity +
             (Market Value of Debt / Total Market Value) * Cost of Debt * (1 - Corporate Tax Rate)
 
         Cost of Equity (Re): The cost of equity represents the return required by the company's shareholders or
@@ -518,16 +555,12 @@ class Models:
 
         The formula is as follows:
 
-            Cash Flow Projection_t = Cash Flow_t-1 * (1 + Growth Rate)
-
-            Terminal Value = Last Cash Flow Projection * (1 + Perpetual Growth Rate) /
+            - Cash Flow Projection_t = Cash Flow_t-1 * (1 + Growth Rate)
+            - Terminal Value = Last Cash Flow Projection * (1 + Perpetual Growth Rate) /
             (Weighted Average Cost of Capital - Perpetual Growth Rate)
-
-            Enterprise Value = Sum of Present Value of Cash Flow Projections + Terminal Value
-
-            Equity Value = Enterprise Value - Total Debt + Cash and Cash Equivalents
-
-            Intrinsic Value = Equity Value / Total Shares Outstanding
+            - Enterprise Value = Sum of Present Value of Cash Flow Projections + Terminal Value
+            - Equity Value = Enterprise Value - Total Debt + Cash and Cash Equivalents
+            - Intrinsic Value = Equity Value / Total Shares Outstanding
 
         Args:
             growth_rate (float, list or dict): The growth rate to use for the cash flow projections. Can be one number

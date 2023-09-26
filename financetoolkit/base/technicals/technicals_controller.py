@@ -34,6 +34,25 @@ class Technicals:
         """
         Initializes the Technicals Controller Class.
 
+        Args:
+            tickers (str | list[str]): The tickers to use for the calculation.
+            daily_historical (pd.DataFrame, optional): The daily historical data to use for the calculation.
+                Defaults to pd.DataFrame().
+            weekly_historical (pd.DataFrame, optional): The weekly historical data to use for the calculation.
+                Defaults to pd.DataFrame().
+            monthly_historical (pd.DataFrame, optional): The monthly historical data to use for the calculation.
+                Defaults to pd.DataFrame().
+            quarterly_historical (pd.DataFrame, optional): The quarterly historical data to use for the calculation.
+                Defaults to pd.DataFrame().
+            yearly_historical (pd.DataFrame, optional): The yearly historical data to use for the calculation.
+                Defaults to pd.DataFrame().
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to 4.
+            start_date (str | None, optional): The start date to use for the calculation.
+                Defaults to None.
+            end_date (str | None, optional): The end date to use for the calculation.
+                Defaults to None.
+
         As an example:
 
         ```python

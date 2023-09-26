@@ -39,9 +39,17 @@ class Ratios:
         """
         Initializes the Ratios Controller Class.
 
-        As an example:
+        Args:
+            tickers (str | list[str]): The tickers to use for the calculations.
+            historical (pd.DataFrame): The historical data to use for the calculations.
+            balance (pd.DataFrame): The balance sheet data to use for the calculations.
+            income (pd.DataFrame): The income statement data to use for the calculations.
+            cash (pd.DataFrame): The cash flow statement data to use for the calculations.
+            custom_ratios_dict (dict, optional): A dictionary containing the custom ratios to calculate. This is
+            an optional parameter given that you can also define the custom ratios through the Toolkit initialization.
+            quarterly (bool, optional): Whether to use quarterly data. Defaults to False.
+            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
 
-        ```python
         As an example:
 
         ```python

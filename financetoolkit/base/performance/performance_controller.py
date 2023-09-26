@@ -35,6 +35,15 @@ class Performance:
         """
         Initializes the Performance Controller Class.
 
+        Args:
+            tickers (str | list[str]): The tickers to use for the calculations.
+            historical_data (dict[str, pd.DataFrame]): The historical data to use for the calculations.
+            risk_free_rate_data (pd.DataFrame): The risk free rate data to use for the calculations.
+            quarterly (bool | None, optional): Whether to use quarterly data. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            start_date (str | None, optional): The start date to use for the calculations. Defaults to None.
+            end_date (str | None, optional): The end date to use for the calculations. Defaults to None.
+
         As an example:
 
         ```python

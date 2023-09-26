@@ -154,9 +154,13 @@ def get_historical_data(
             )
 
         try:
-            historical_data_dict[ticker]["Dividends"] = pd.read_csv(
-                dividend_url, index_col="Date"
-            )["Dividends"]
+            dividends = pd.read_csv(dividend_url, index_col="Date")["Dividends"]
+
+            dividends.index = pd.to_datetime(dividends.index)
+            dividends.index = dividends.index.to_period(freq="D")
+
+            historical_data_dict[ticker]["Dividends"] = dividends
+
             historical_data_dict[ticker]["Dividends"] = historical_data_dict[ticker][
                 "Dividends"
             ].fillna(0)

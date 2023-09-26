@@ -119,11 +119,11 @@ class Performance:
 
         The formula is as follows:
 
-            Beta = Covariance of Asset Returns and Benchmark Returns / Variance of Benchmark Returns
+            - Beta = Covariance of Asset Returns and Benchmark Returns / Variance of Benchmark Returns
 
         For a given period, for example monthly, this translates into the following:
 
-            Beta = Monthly Covariance of Asset Returns and Benchmark Returns
+            - Beta = Monthly Covariance of Asset Returns and Benchmark Returns
             / Monthly Variance of Benchmark Returns
 
         See definition: https://en.wikipedia.org/wiki/Beta_(finance)
@@ -326,7 +326,7 @@ class Performance:
 
         The formula is as follows:
 
-            Alpha = Asset's Actual Return - Benchmark's Actual Return
+            - Alpha = Asset's Actual Return - Benchmark's Actual Return
 
         See definition: https://en.wikipedia.org/wiki/Alpha_(finance)
 
@@ -405,7 +405,7 @@ class Performance:
 
         The formula for Jensen's Alpha is as follows:
 
-            Jensen's Alpha = Asset's Actual Return - [Risk-Free Rate + Beta * (Benchmark Return - Risk-Free Rate)]
+            - Jensen's Alpha = Asset's Actual Return - [Risk-Free Rate + Beta * (Benchmark Return - Risk-Free Rate)]
 
         See definition: https://en.wikipedia.org/wiki/Jensen%27s_alpha
 
@@ -496,7 +496,7 @@ class Performance:
 
         The formula is as follows:
 
-            Treynor Ratio = (Portfolio's Return - Risk-Free Rate) / Portfolio Beta
+            - Treynor Ratio = (Portfolio's Return - Risk-Free Rate) / Portfolio Beta
 
         See definition: https://en.wikipedia.org/wiki/Treynor_ratio
 
@@ -586,15 +586,15 @@ class Performance:
 
         The formula is as follows:
 
-            Sharpe Ratio = Excess Return / Excess Standard Deviation
+            - Sharpe Ratio = Excess Return / Excess Standard Deviation
 
         For a given period, for example monthly, this translates into the following:
 
-            Sharpe Ratio = Average Monthly Excess Return / Standard Deviation of Monthly Excess Returns
+            - Sharpe Ratio = Average Monthly Excess Return / Standard Deviation of Monthly Excess Returns
 
         For a rolling period, this translates into the following:
 
-            Sharpe Ratio = Average Rolling Excess Return / Standard Deviation of Rolling Excess Returns
+            - Sharpe Ratio = Average Rolling Excess Return / Standard Deviation of Rolling Excess Returns
 
         Note that this is explicitly already subtracts the Risk Free Rate.
 
@@ -680,15 +680,15 @@ class Performance:
 
         The formula is as follows:
 
-            Sortino Ratio = Excess Return / Excess Downside Risk
+            - Sortino Ratio = Excess Return / Excess Downside Risk
 
         For a given period, for example monthly, this translates into the following:
 
-            Sortino Ratio = Average Monthly Excess Return / Average Monthly Excess Downside Risk
+            - Sortino Ratio = Average Monthly Excess Return / Average Monthly Excess Downside Risk
 
         For a rolling period, this translates into the following:
 
-            Sortino Ratio = Average Rolling Excess Return / Rolling Downside Risk
+            - Sortino Ratio = Average Rolling Excess Return / Rolling Downside Risk
 
         Note that this is explicitly already subtracts the Risk Free Rate.
 
@@ -839,7 +839,7 @@ class Performance:
 
         The formula is as follows:
 
-            M2 Ratio = (Portfolio's Return - Risk-Free Rate) / Portfolio Standard Deviation
+            - M2 Ratio = (Portfolio's Return - Risk-Free Rate) / Portfolio Standard Deviation
 
         See definition: https://en.wikipedia.org/wiki/Modigliani_risk-adjusted_performance
 
@@ -924,7 +924,7 @@ class Performance:
 
         The formula is as follows:
 
-            Tracking Error (TE) = Standard Deviation of (Portfolio Returns - Benchmark Returns)
+            - Tracking Error (TE) = Standard Deviation of (Portfolio Returns - Benchmark Returns)
 
         See definition: https://en.wikipedia.org/wiki/Tracking_error
 
@@ -1011,7 +1011,7 @@ class Performance:
 
         The formula is as follows:
 
-            Information Ratio (IR) = (Portfolio's Excess Return - Benchmark's Excess Return) / Tracking Error
+            - Information Ratio (IR) = (Portfolio's Excess Return - Benchmark's Excess Return) / Tracking Error
 
         See definition: https://en.wikipedia.org/wiki/Information_ratio
 

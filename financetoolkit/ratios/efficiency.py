@@ -46,7 +46,7 @@ def get_days_of_inventory_outstanding(
     inventory_begin: pd.Series,
     inventory_end: pd.Series,
     cost_of_goods_sold: pd.Series,
-    days: int = 365,
+    days: int | float = 365,
 ) -> pd.Series:
     """
     Calculate the days sales in inventory ratio, an efficiency ratio that measures
@@ -68,7 +68,7 @@ def get_days_of_sales_outstanding(
     accounts_receivable_begin: pd.Series,
     accounts_receivable_end: pd.Series,
     net_credit_sales: pd.Series,
-    days: int = 365,
+    days: int | float = 365,
 ) -> pd.Series:
     """
     Calculate the days of sales outstanding, an efficiency ratio that measures
@@ -133,7 +133,7 @@ def get_days_of_accounts_payable_outstanding(
     cost_of_goods_sold: pd.Series,
     accounts_payable_begin: pd.Series,
     accounts_payable_end: pd.Series,
-    days: int = 365,
+    days: int | float = 365,
 ) -> pd.Series:
     """
     Calculate the days payables outstanding, an efficiency ratio that measures the

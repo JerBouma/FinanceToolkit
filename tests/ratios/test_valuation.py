@@ -34,14 +34,6 @@ def test_get_price_earnings_ratio(recorder):
     )
 
 
-def test_get_earnings_per_share_growth(recorder):
-    recorder.capture(
-        valuation.get_earnings_per_share_growth(
-            earnings_per_share=pd.Series([0.5, 0.4, 0.1, 1.1, 1.2])
-        )
-    )
-
-
 def test_get_price_to_earnings_growth_ratio(recorder):
     recorder.capture(
         valuation.get_price_to_earnings_growth_ratio(

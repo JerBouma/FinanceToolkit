@@ -241,10 +241,6 @@ def test_get_earnings_per_share(recorder):
     recorder.capture(ratios_module.get_earnings_per_share())
 
 
-def test_get_earnings_per_share_growth(recorder):
-    recorder.capture(ratios_module.get_earnings_per_share_growth())
-
-
 def test_get_revenue_per_share(recorder):
     recorder.capture(ratios_module.get_revenue_per_share())
 

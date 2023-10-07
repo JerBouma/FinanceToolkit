@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "financetoolkit"
-version = "1.3.9"
+version = "1.3.10"
 description = "Transparent and Efficient Financial Analysis"
 license = "MIT"
 authors = ["Jeroen Bouma"]
@@ -20,6 +20,23 @@ classifiers = [
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+]
+keywords = [
+    "Finance",
+    "Toolkit",
+    "Financial",
+    "Analysis",
+    "Fundamental",
+    "Technical",
+    "Quantitative",
+    "Database",
+    "Equities",
+    "Currencies",
+    "ETFs",
+    "Funds",
+    "Indices",
+    "Moneymarkets",
+    "Commodities"
 ]
 
 [tool.poetry.dependencies]

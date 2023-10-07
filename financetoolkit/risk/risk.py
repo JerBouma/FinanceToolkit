@@ -26,9 +26,9 @@ def get_var_historic(
         pd.Series | pd.DataFrame: VaR values as float if returns is a pd.Series,
         otherwise as pd.Series or pd.DataFrame with time as index.
     """
-    returns = returns.dropna()
     if isinstance(returns, pd.DataFrame):
         if returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS:
+            print(returns)
             periods = returns.index.get_level_values(0).unique()
             period_data_list = []
 
@@ -78,7 +78,6 @@ def get_var_gaussian(
         pd.Series | pd.DataFrame: VaR values as float if returns is a pd.Series,
         otherwise as pd.Series or pd.DataFrame with time as index.
     """
-    returns = returns.dropna()
     if (
         isinstance(returns, pd.DataFrame)
         and returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS
@@ -126,7 +125,6 @@ def get_var_studentt(returns, alpha: float) -> pd.Series | pd.DataFrame:
         pd.Series | pd.DataFrame: VaR values as float if returns is a pd.Series,
         otherwise as pd.Series or pd.DataFrame with time as index.
     """
-    returns = returns.dropna()
     if (
         isinstance(returns, pd.DataFrame)
         and returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS
@@ -167,7 +165,6 @@ def get_cvar_historic(returns: pd.Series | pd.DataFrame, alpha: float) -> pd.Ser
         pd.Series | pd.DataFrame: CVaR values as float if returns is a pd.Series,
         otherwise as pd.Series or pd.DataFrame with time as index.
     """
-    returns = returns.dropna()
     if isinstance(returns, pd.DataFrame):
         if returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS:
             periods = returns.index.get_level_values(0).unique()
@@ -208,7 +205,6 @@ def get_cvar_gaussian(
         pd.Series | pd.DataFrame: CVaR values as float if returns is a pd.Series,
         otherwise as pd.Series or pd.DataFrame with time as index.
     """
-    returns = returns.dropna()
     if (
         isinstance(returns, pd.DataFrame)
         and returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS
@@ -245,7 +241,6 @@ def get_cvar_studentt(
         pd.Series | pd.DataFrame: CVaR values as float if returns is a pd.Series,
         otherwise as pd.Series or pd.DataFrame with time as index.
     """
-    returns = returns.dropna()
     if (
         isinstance(returns, pd.DataFrame)
         and returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS
@@ -291,7 +286,6 @@ def get_cvar_laplace(
         pd.Series | pd.DataFrame: CVaR values as float if returns is a pd.Series,
         otherwise as pd.Series or pd.DataFrame with time as index.
     """
-    returns = returns.dropna()
     if (
         isinstance(returns, pd.DataFrame)
         and returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS
@@ -337,7 +331,6 @@ def get_cvar_logistic(
         pd.Series | pd.DataFrame: CVaR values as float if returns is a pd.Series,
         otherwise as pd.Series or pd.DataFrame with time as index.
     """
-    returns = returns.dropna()
     if (
         isinstance(returns, pd.DataFrame)
         and returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS
@@ -381,7 +374,6 @@ def get_evar_gaussian(
         pd.Series | pd.DataFrame: EVaR values as float if returns is a pd.Series,
         otherwise as pd.Series or pd.DataFrame with time as index.
     """
-    returns = returns.dropna()
     if (
         isinstance(returns, pd.DataFrame)
         and returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS
@@ -418,7 +410,6 @@ def get_max_drawdown(
         pd.Series | pd.DataFrame | float: MDD values as float if returns is a pd.Series,
         otherwise as pd.Series or pd.DataFrame with time as index.
     """
-    returns = returns.dropna()
     if (
         isinstance(returns, pd.DataFrame)
         and returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS
@@ -437,7 +428,7 @@ def get_max_drawdown(
 
         return max_drawdown.T
 
-    cum_returns = (1 + returns).cumprod()
+    cum_returns = (1 + returns).cumprod()  # type: ignore
 
     return (cum_returns / cum_returns.cummax() - 1).min()
 
@@ -463,8 +454,6 @@ def get_ui(
         pd.Series | pd.DataFrame: UI values as float if returns is a pd.Series,
         otherwise as pd.Series or pd.DataFrame with time as index, if.
     """
-    returns = returns.dropna()
-
     if isinstance(returns, pd.DataFrame):
         if returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS:
             periods = returns.index.get_level_values(0).unique()
@@ -505,7 +494,6 @@ def get_skewness(returns: pd.Series | pd.DataFrame) -> pd.Series | pd.DataFrame:
     Returns:
         pd.Series | pd.Dataframe: Skewness of the dataset
     """
-    returns = returns.dropna()
     if isinstance(returns, pd.DataFrame):
         if returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS:
             periods = returns.index.get_level_values(0).unique()
@@ -540,7 +528,6 @@ def get_kurtosis(
     Returns:
         pd.Series | pd.Dataframe: Kurtosis of the dataset
     """
-    returns = returns.dropna()
     if isinstance(returns, pd.DataFrame):
         if returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS:
             periods = returns.index.get_level_values(0).unique()

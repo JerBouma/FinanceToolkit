@@ -168,6 +168,10 @@ def get_historical_data(
             print(f"No dividend data found for {ticker}")
             continue
 
+        historical_data_dict[ticker] = historical_data_dict[ticker].loc[
+            ~historical_data_dict[ticker].index.duplicated(keep="first")
+        ]
+
         historical_data_dict[ticker] = enrich_historical_data(
             historical_data=historical_data_dict[ticker],
             start=start,
@@ -246,13 +250,20 @@ def enrich_historical_data(
     historical_data["Volatility"] = historical_data.loc[start:end, "Return"].std()
 
     if not risk_free_rate.empty:
-        historical_data["Excess Return"] = historical_data["Return"].sub(
-            risk_free_rate["Adj Close"]
-        )
+        try:
+            historical_data["Excess Return"] = historical_data["Return"].sub(
+                risk_free_rate["Adj Close"]
+            )
 
-        historical_data["Excess Volatility"] = historical_data.loc[
-            start:end, "Excess Return"
-        ].std()
+            historical_data["Excess Volatility"] = historical_data.loc[
+                start:end, "Excess Return"
+            ].std()
+        except ValueError as error:
+            print(
+                f"Not able to calculate excess return and excess volatility due to {error}."
+            )
+            historical_data["Excess Return"] = 0
+            historical_data["Excess Volatility"] = 0
 
     historical_data["Cumulative Return"] = 1
 

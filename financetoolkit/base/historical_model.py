@@ -561,8 +561,9 @@ def get_historical_statistics(
 
                 for timestamp_data in ["firstTradeDate", "regularMarketTime"]:
                     if timestamp_data in statistics and statistics[timestamp_data]:
-                        timestamp = datetime.fromtimestamp(
-                            statistics[timestamp_data]
+                        timestamp = (
+                            datetime.fromtimestamp(0)
+                            + timedelta(seconds=statistics[timestamp_data])
                         ).strftime("%Y-%m-%d")
                         statistics[timestamp_data] = timestamp
 

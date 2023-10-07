@@ -9,7 +9,7 @@ packages = [
 ]
 include = ['normalization/*.csv']
 readme = "README.md"
-homepage = "https://www.jeroenbouma.com/"
+homepage = "https://www.jeroenbouma.com/projects/financetoolkit"
 repository = "https://github.com/JerBouma/FinanceToolkit"
 classifiers = [
     "Development Status :: 5 - Production/Stable",

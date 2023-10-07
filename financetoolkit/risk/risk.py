@@ -28,7 +28,6 @@ def get_var_historic(
     """
     if isinstance(returns, pd.DataFrame):
         if returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS:
-            print(returns)
             periods = returns.index.get_level_values(0).unique()
             period_data_list = []
 

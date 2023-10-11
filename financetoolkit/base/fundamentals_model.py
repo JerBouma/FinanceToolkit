@@ -67,7 +67,8 @@ def get_financial_data(
                     f"The requested data for {ticker} is part of the {subscription_type} Subscription from "
                     "FinancialModelingPrep. If you wish to access this data, consider upgrading "
                     "your plan.\nYou can get 15% off by using the following affiliate link which "
-                    "also supports the project: https://site.financialmodelingprep.com/developer/docs/pricing/jeroen/"
+                    "also supports the project: "
+                    "https://intelligence.financialmodelingprep.com/pricing-plans?couponCode=jeroen"
                 )
                 return pd.DataFrame(columns=["ERROR_MESSAGE"])
 
@@ -76,7 +77,7 @@ def get_financial_data(
                     "You have reached the rate limit of your subscription, set sleep_timer in the Toolkit class "
                     "to True to continue collecting data (Premium only). If you use the Free plan, consider upgrading "
                     "your plan.\nYou can get 15% off by using the following affiliate link which also supports the "
-                    "project: https://site.financialmodelingprep.com/developer/docs/pricing/jeroen/"
+                    "project: https://intelligence.financialmodelingprep.com/pricing-plans?couponCode=jeroen"
                 )
 
                 if sleep_timer:
@@ -91,7 +92,7 @@ def get_financial_data(
                     f"The Free plan is limited to US stocks only (therefore, {ticker} is unavailable), consider "
                     "upgrading your plan to Starter or higher.\nYou can get 15% off by using the following affiliate "
                     "link which also supports the project: "
-                    "https://site.financialmodelingprep.com/developer/docs/pricing/jeroen/"
+                    "https://intelligence.financialmodelingprep.com/pricing-plans?couponCode=jeroen"
                 )
                 return pd.DataFrame(columns=["ERROR_MESSAGE"])
 
@@ -99,7 +100,7 @@ def get_financial_data(
                 print(
                     "You have entered an invalid API key from FinancialModelingPrep. Obtain your API key for free "
                     "and get 15% off the Premium plans by using the following affiliate link.\nThis also supports "
-                    "the project: https://site.financialmodelingprep.com/developer/docs/pricing/jeroen/"
+                    "the project: https://intelligence.financialmodelingprep.com/pricing-plans?couponCode=jeroen"
                 )
                 return pd.DataFrame(columns=["ERROR_MESSAGE"])
 
@@ -170,7 +171,8 @@ def get_financial_statements(
     if not api_key:
         raise ValueError(
             "Please enter an API key from FinancialModelingPrep. "
-            "For more information, look here: https://site.financialmodelingprep.com/developer/docs/pricing/jeroen/"
+            "For more information, look here: "
+            "https://intelligence.financialmodelingprep.com/pricing-plans?couponCode=jeroen"
         )
 
     period = "quarter" if quarter else "annual"
@@ -354,7 +356,8 @@ def get_revenue_segmentation(
     if not api_key:
         raise ValueError(
             "Please enter an API key from FinancialModelingPrep. "
-            "For more information, look here: https://site.financialmodelingprep.com/developer/docs/pricing/jeroen/"
+            "For more information, look here: "
+            "https://intelligence.financialmodelingprep.com/pricing-plans?couponCode=jeroen"
         )
 
     period = "quarter" if quarter else "annual"
@@ -536,7 +539,8 @@ def get_analyst_estimates(
     if not api_key:
         raise ValueError(
             "Please enter an API key from FinancialModelingPrep. "
-            "For more information, look here: https://site.financialmodelingprep.com/developer/docs/pricing/jeroen/"
+            "For more information, look here: "
+            "https://intelligence.financialmodelingprep.com/pricing-plans?couponCode=jeroen"
         )
 
     period = "quarter" if quarter else "annual"
@@ -643,7 +647,8 @@ def get_profile(tickers: list[str] | str, api_key: str) -> pd.DataFrame:
 
     Args:
         ticker (list or string): the company ticker (for example: "AAPL")
-        api_key (string): the API Key obtained from https://site.financialmodelingprep.com/developer/docs/pricing/jeroen/
+        api_key (string): the API Key obtained from
+        https://intelligence.financialmodelingprep.com/pricing-plans?couponCode=jeroen
 
     Returns:
         pd.DataFrame: the profile data.
@@ -717,7 +722,8 @@ def get_quote(tickers: list[str] | str, api_key: str) -> pd.DataFrame:
 
     Args:
         ticker (list or string): the company ticker (for example: "AMD")
-        api_key (string): the API Key obtained from https://site.financialmodelingprep.com/developer/docs/pricing/jeroen/
+        api_key (string): the API Key obtained from
+        https://intelligence.financialmodelingprep.com/pricing-plans?couponCode=jeroen
 
     Returns:
         pd.DataFrame: the quote data.
@@ -779,7 +785,8 @@ def get_rating(tickers: list[str] | str, api_key: str):
 
     Args:
         ticker (list or string): the company ticker (for example: "MSFT")
-        api_key (string): the API Key obtained from https://site.financialmodelingprep.com/developer/docs/pricing/jeroen/
+        api_key (string): the API Key obtained from
+        https://intelligence.financialmodelingprep.com/pricing-plans?couponCode=jeroen
 
     Returns:
         pd.DataFrame: the rating data.
@@ -862,7 +869,8 @@ def get_earnings_calendar(
 
     Args:
         ticker (list or string): the company ticker (for example: "MSFT")
-        api_key (string): the API Key obtained from https://site.financialmodelingprep.com/developer/docs/pricing/jeroen/
+        api_key (string): the API Key obtained from
+        https://intelligence.financialmodelingprep.com/pricing-plans?couponCode=jeroen
         start_date (str): The start date to filter data with.
         end_date (str): The end date to filter data with.
         actual_dates (bool): Whether to retrieve actual dates. Defaults to False (converted to quarterly). This is the
@@ -893,7 +901,8 @@ def get_earnings_calendar(
     if not api_key:
         raise ValueError(
             "Please enter an API key from FinancialModelingPrep. "
-            "For more information, look here: https://site.financialmodelingprep.com/developer/docs/pricing/jeroen/"
+            "For more information, look here: "
+            "https://intelligence.financialmodelingprep.com/pricing-plans?couponCode=jeroen"
         )
 
     earnings_calendar_dict: dict = {}

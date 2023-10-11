@@ -65,7 +65,7 @@ build-backend = "poetry.core.masonry.api"
 [tool.ruff]
 line-length = 122
 select = ["E", "W", "F", "Q", "W", "S", "UP", "I", "PD", "SIM", "PLC", "PLE", "PLR", "PLW"]
-ignore = ["S105", "S106", "S107", "PLR0913", "PLR0912", "PLR0911","PLR0915"]
+ignore = ["S105", "S106", "S107", "PLR0913", "PLR0912", "PLR0911","PLR0915","PD010","PD013"]
 exclude = ["conftest.py"]
 
 [tool.pylint]

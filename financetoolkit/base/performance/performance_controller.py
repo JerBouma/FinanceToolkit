@@ -6,13 +6,21 @@ import pandas as pd
 from financetoolkit.base.helpers import calculate_growth
 from financetoolkit.base.performance.helpers import (
     handle_errors,
+    handle_fama_and_french_data,
     handle_return_data_periods,
     handle_risk_free_data_periods,
 )
 from financetoolkit.performance import performance
 from financetoolkit.risk.risk import get_ui
 
-# pylint: disable=too-many-instance-attributes,too-few-public-methods,too-many-lines
+try:
+    from tqdm import tqdm
+
+    ENABLE_TQDM = True
+except ImportError:
+    ENABLE_TQDM = False
+
+# pylint: disable=too-many-instance-attributes,too-few-public-methods,too-many-lines,too-many-locals
 
 
 class Performance:
@@ -31,6 +39,7 @@ class Performance:
         rounding: int | None = 4,
         start_date: str | None = None,
         end_date: str | None = None,
+        progress_bar: bool = True,
     ):
         """
         Initializes the Performance Controller Class.
@@ -70,6 +79,7 @@ class Performance:
         self._rounding: int | None = rounding
         self._start_date: str | None = start_date
         self._end_date: str | None = end_date
+        self._progress_bar: bool = progress_bar
 
         # Historical Data
         self._daily_historical_data = historical_data["daily"]
@@ -84,6 +94,11 @@ class Performance:
         self._monthly_risk_free_rate_data = risk_free_rate_data["monthly"]
         self._quarterly_risk_free_rate_data = risk_free_rate_data["quarterly"]
         self._yearly_risk_free_rate_data = risk_free_rate_data["yearly"]
+
+        # Fama and French
+        self._fama_and_french_dataset: pd.DataFrame = pd.DataFrame()
+        self._fama_and_french_model: pd.DataFrame = pd.DataFrame()
+        self._fama_and_french_residuals: pd.DataFrame = pd.DataFrame()
 
         # Within Period Calculations
         self._weekly_within_historical_data = self._daily_historical_data.groupby(
@@ -309,6 +324,222 @@ class Performance:
             )
 
         return capm
+
+    def get_fama_and_french_model(
+        self,
+        period: str | None = None,
+        factors_to_calculate: list[str] | None = None,
+        include_daily_residuals: bool = False,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+    ):
+        """
+        Calculate Fama and French 5 Factor model scores and residuals for a set of financial assets.
+
+        The Fama and French 5 Factor model is a widely used financial model that helps estimate the expected return
+        of financial assets, such as stocks or portfolios, based on five key factors:
+
+            - Market Risk Premium (Mkt-RF): Represents the additional return that investors expect to earn for taking
+            on the risk of investing in the overall market as opposed to a risk-free asset.
+            - Size Premium (SMB): Reflects the historical excess return of small-cap stocks over large-cap stocks.
+            - Value Premium (HML): Captures the historical excess return of value stocks over growth stocks.
+            - Profitability (RMW): Measures the historical excess return of high profitability stocks over
+            low profitability stocks.
+            - Investment (CMA): Quantifies the historical excess return of low investment stocks over
+            high investment stocks.
+
+        The model performs a Linear Regression on each factor and defines the regression parameters and residuals
+        for each asset over time based on its exposure to these factors.
+
+        These results can be validated by comparing them to the period returns obtained from the historical data. E.g.
+        the regression formula is as follows:
+
+            - Excess Return = Intercept + Slope * Factor Value + Residuals
+
+        So for a given factor, it should hold that the Excess Return equals the Intercept + Slope *
+        Factor Value + Residuals. Note that in this calculation the Excess Return refers to the Asset Return minus
+        the Risk Free Rate as reported in the Fama and French dataset and will not be the same as the defined Excess
+        Return in the historical data given that this is based on the Risk Free Rate defined in the initialization.
+
+        What is relevant to look at is the influence these factors have on each stock and how much each factor explains
+        the stock return. E.g. you will generally see a pretty high R-squared for the Market Risk Premium (Mkt-RF) factor
+        as this is the main factor that explains the stock return (as also prevalent in the CAPM). The other factors
+        can fluctuate greatly between stocks depending on which stocks you look at.
+
+        Args:
+            period (str, optional): The period for the calculation (e.g., "weekly", "monthly", "quarterly", "yearly").
+                Defaults to None, using class-defined quarterly or yearly period.
+            factors_to_calculate (list of str, optional): List of factors to calculate scores and residuals for.
+                Defaults to ["Mkt-RF", "SMB", "HML", "RMW", "CMA"].
+            include_residuals (bool, optional): Whether to include residuals in the results. Defaults to False.
+            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the ratio values. Defaults to False.
+            lag (int or list of int, optional): The lag to use for the growth calculation. Defaults to 1.
+
+        Returns:
+            pd.DataFrame: Fama and French 5 Factor model scores for the specified assets.
+
+        Notes:
+        - The dataset from Fama and French is not always fully up to date. Therefore, some periods could be excluded.
+        - Daily Fama and French results is not an option as it would attempt to do a linear regression on a
+        single data point which will not give any meaningful results.
+        - The method retrieves historical data and calculates regression parameters and residuals for each asset.
+        - The risk-free rate is typically represented by the return of a risk-free investment, such as a Treasury bond.
+        In this case, the Risk Free Rate from the Fama and French dataset is used.
+        - If `growth` is set to True, the method calculates the growth of the ratio values using the specified `lag`.
+
+        Example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+
+        # Calculate Fama and French 5 Factor model scores
+        toolkit.performance.get_fama_and_french_model()
+        ```
+        """
+        if period == "daily":
+            print(
+                "Daily Fama and French results is not an option as it would attempt to do a linear regression on "
+                "a single data point which will not give any meaningful results."
+            )
+            return pd.DataFrame(dtype="object")
+
+        factors_to_calculate = (
+            factors_to_calculate
+            if factors_to_calculate
+            else ["Mkt-RF", "SMB", "HML", "RMW", "CMA"]
+        )
+
+        for factor in factors_to_calculate:
+            if factor not in ["Mkt-RF", "SMB", "HML", "RMW", "CMA"]:
+                raise ValueError(
+                    f"Factor {factor} is not a valid factor. Please select from: Mkt-RF, SMB, HML, RMW, CMA."
+                )
+
+        period = period if period else "quarterly" if self._quarterly else "yearly"
+
+        historical_data_within = handle_return_data_periods(
+            self, period, within_period=True
+        )
+        returns = historical_data_within.loc[:, "Return"][self._tickers]
+
+        historical_data = handle_return_data_periods(self, period, within_period=False)
+        returns_total = historical_data.loc[:, "Return"][self._tickers]
+
+        self._fama_and_french_dataset = performance.obtain_fama_and_french_dataset()
+        fama_and_french_period = handle_fama_and_french_data(
+            self._fama_and_french_dataset, period
+        )
+
+        merged_df = fama_and_french_period.merge(
+            returns, left_index=True, right_index=True
+        )
+        factor_scores: dict = {}
+        daily_residuals: dict = {}
+
+        ticker_list_iterator = (
+            tqdm(self._tickers, desc="Calculating Factor Exposures")
+            if ENABLE_TQDM & self._progress_bar
+            else self._tickers
+        )
+
+        for ticker in ticker_list_iterator:
+            factor_scores[ticker] = {}
+            daily_residuals[ticker] = {}
+            for factor in factors_to_calculate:
+                factor_scores[ticker][factor] = {}
+                daily_residuals[ticker][factor] = {}
+                for dataset_period in merged_df.index.get_level_values(0):
+                    factor_data = merged_df.loc[dataset_period][factor]
+                    excess_returns = (
+                        merged_df.loc[dataset_period][ticker]
+                        - merged_df.loc[dataset_period]["RF"]
+                    )
+
+                    (
+                        factor_scores[ticker][factor][dataset_period],
+                        daily_residuals[ticker][factor][dataset_period],
+                    ) = performance.get_fama_and_french_model(
+                        excess_returns=excess_returns, factor=factor_data
+                    )
+
+                    factor_scores[ticker][factor][dataset_period][
+                        "Factor Value"
+                    ] = factor_data.iloc[-1]
+
+                    factor_scores[ticker][factor][dataset_period][
+                        "Residuals"
+                    ] = returns_total.loc[dataset_period][ticker] - (
+                        factor_scores[ticker][factor][dataset_period]["Slope"]
+                        * factor_data.iloc[-1]
+                        + factor_scores[ticker][factor][dataset_period]["Intercept"]
+                    )
+
+        fama_and_french_model = pd.DataFrame.from_dict(
+            {
+                (period, factor, ticker): value
+                for ticker, factor_scores_ticker in factor_scores.items()
+                for factor, factor_scores_factor in factor_scores_ticker.items()
+                for period, value in factor_scores_factor.items()
+            },
+            orient="index",
+        )
+
+        fama_and_french_model = fama_and_french_model.unstack(level=[1, 2])
+
+        # Sort the DataFrame with respect to the original column order
+        parameters_column_order = fama_and_french_model.columns.get_level_values(
+            0
+        ).unique()
+        factor_column_order = fama_and_french_model.columns.get_level_values(1).unique()
+        ticker_column_order = fama_and_french_model.columns.get_level_values(2).unique()
+
+        fama_and_french_model = (
+            fama_and_french_model.sort_index(axis=1)
+            .reindex(parameters_column_order, level=0, axis=1)
+            .reindex(factor_column_order, level=1, axis=1)
+            .reindex(ticker_column_order, level=2, axis=1)
+        )
+
+        self._fama_and_french_model = fama_and_french_model.round(
+            rounding if rounding else self._rounding
+        ).loc[self._start_date : self._end_date]
+
+        daily_residuals_df = pd.DataFrame.from_dict(
+            {
+                (period, factor, ticker): value
+                for ticker, residuals_ticker in daily_residuals.items()
+                for factor, residuals_factor in residuals_ticker.items()
+                for period, value in residuals_factor.items()
+            },
+            orient="index",
+        )
+
+        daily_residuals_df = (
+            daily_residuals_df.unstack(level=[1, 2])
+            .stack(level=0)
+            .sort_index(axis=1, sort_remaining=False)
+        )
+
+        self._fama_and_french_residuals = daily_residuals_df.round(
+            rounding if rounding else self._rounding
+        ).loc[:, self._start_date : self._end_date, :]
+
+        if include_daily_residuals:
+            return self._fama_and_french_model, self._fama_and_french_residuals
+
+        if growth:
+            return calculate_growth(
+                self._fama_and_french_model,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
+                axis="index",
+            )
+
+        return self._fama_and_french_model
 
     @handle_errors
     def get_alpha(

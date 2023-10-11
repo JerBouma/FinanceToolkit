@@ -84,6 +84,36 @@ def handle_risk_free_data_periods(self, period: str):
     raise ValueError("Period must be daily, monthly, weekly, quarterly, or yearly.")
 
 
+def handle_fama_and_french_data(dataset, period: str):
+    """
+    This function is a specific function solely related to the Ratios controller. It
+    therefore also requires a self instance to exists with specific parameters.
+
+    Args:
+        period (str): the period to return the data for.
+        within_period (bool): whether to return the data within the period or the
+        entire period.
+
+    Raises:
+        ValueError: if the period is not daily, monthly, weekly, quarterly, or yearly.
+
+    Returns:
+        pd.Series: the returns for the period.
+    """
+    if period == "daily":
+        return dataset
+    if period == "weekly":
+        return dataset.groupby(pd.Grouper(freq="W")).apply(lambda x: x)
+    if period == "monthly":
+        return dataset.groupby(pd.Grouper(freq="M")).apply(lambda x: x)
+    if period == "quarterly":
+        return dataset.groupby(pd.Grouper(freq="Q")).apply(lambda x: x)
+    if period == "yearly":
+        return dataset.groupby(pd.Grouper(freq="Y")).apply(lambda x: x)
+
+    raise ValueError("Period must be weekly, monthly, quarterly, or yearly.")
+
+
 def handle_errors(func):
     """
     Decorator to handle specific performance errors that may occur in a function and provide informative messages.

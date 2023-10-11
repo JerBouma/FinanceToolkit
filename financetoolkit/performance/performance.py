@@ -1,9 +1,13 @@
 """Performance Model"""
 
+import io
+import urllib.request
 import warnings
+import zipfile
 
 import numpy as np
 import pandas as pd
+from scipy.stats import linregress
 
 # This is meant for calculations in which a Multi Index exists. This is the case
 # when calculating a "within period" in which the first index represents the period
@@ -159,6 +163,102 @@ def get_capital_asset_pricing_model(
         )
 
     return capital_asset_pricing_model
+
+
+def obtain_fama_and_french_dataset(fama_and_french_url: str | None = None):
+    """
+    This functionality returns the Fama and French 5 Factor Model dataset. It is a dataset that contains the
+    excess returns of the 5 factors that are used in the Fama and French 5 Factor Model. The factors are:
+
+        - Market (MKT): The excess return of the market.
+        - Size (SMB): Small companies tend to outperform large companies.
+        - Value (HML): Value stocks tend to outperform growth stocks.
+        - Investment (CMA): Companies that invest conservatively tend to outperform companies that invest aggressively.
+        - Profitability (RMW): Companies with high operating profitability tend to outperform companies with low
+        operating profitability.
+
+    Next to that, it also includes the Risk Free Rate. The dataset is available on the website of Dartmouth College
+    and is updated on a monthly basis. The dataset is packaged in a ZIP file, so it needs to be extracted first.
+    The ZIP file contains a CSV file with the dataset.
+
+    It is also possible to read other datasets from Fama and French with this functionality.
+
+    Args:
+        fama_and_french_url (str): the URL of the ZIP file that contains the dataset. If no URL is provided, the
+        default URL (Fama and French 5 Factor) is used.
+
+    Returns:
+        pd.DataFrame: the Fama and French 5 Factor Model dataset.
+    """
+    # Define the URL of the ZIP file
+    fama_and_french_url = (
+        fama_and_french_url
+        if fama_and_french_url
+        else "https://mba.tuck.dartmouth.edu/pages/faculty/ken.french/ftp/F-F_Research_Data_5_Factors_2x3_daily_CSV.zip"
+    )
+
+    with urllib.request.urlopen(fama_and_french_url) as response:
+        zip_data = response.read()
+
+    with zipfile.ZipFile(io.BytesIO(zip_data)) as zip_file:
+        # The dataset is packaged in a ZIP file, so it needs to be extracted first
+        zip_file_contents = zip_file.namelist()
+
+        csv_file_name = zip_file_contents[0]
+
+        with zip_file.open(csv_file_name) as csv_file:
+            # Skip the first 3 rows which are header information
+            fama_and_french_dataset = pd.read_csv(csv_file, skiprows=3, index_col=0)
+
+        fama_and_french_dataset.index = pd.to_datetime(
+            fama_and_french_dataset.index, format="%Y%m%d"
+        ).to_period(freq="D")
+        fama_and_french_dataset.index.name = "Date"
+
+    return fama_and_french_dataset
+
+
+def get_fama_and_french_model(
+    excess_returns: pd.Series,
+    factor: pd.Series,
+) -> pd.Series | pd.DataFrame:
+    """
+    The Fama and French 5 Factor Model is an extension of the CAPM model. It adds four additional factors to the
+    regression analysis to better describe asset returns:
+        - Size (SMB): Small companies tend to outperform large companies.
+        - Value (HML): Value stocks tend to outperform growth stocks.
+        - Investment (CMA): Companies that invest conservatively tend to outperform companies that invest aggressively.
+        - Profitability (RMW): Companies with high operating profitability tend to outperform companies with low
+        operating profitability.
+
+    This functionality performs the regression analysis and returns the regression parameters for a given return
+    and factor series.
+
+    The formula is as follows:
+
+        - Excess Return = Intercept + Slope * Factor Value + Residuals
+
+    Args:
+        excess_returns (pd.Series): the excess returns.
+        factor (pd.Series): the factor series.
+
+    Returns:
+        dict: the regression results.
+        pd.Series: the residuals.
+    """
+    result = linregress(excess_returns, factor)
+
+    regression_results = {
+        "Intercept": result.intercept,
+        "Slope": result.slope,
+        "R Squared": result.rvalue**2,
+        "P Value": result.pvalue,
+        "Standard Error": result.stderr,
+    }
+
+    residuals = excess_returns - (result.slope * factor + result.intercept)
+
+    return regression_results, residuals
 
 
 def get_alpha(

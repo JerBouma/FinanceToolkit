@@ -84,7 +84,7 @@ class Toolkit:
         tickers (str or list): A string or a list of strings containing the company ticker(s). E.g. 'TSLA' or 'MSFT'
         Find the tickers on a variety of websites or via the FinanceDatabase: https://github.com/JerBouma/financedatabase
         api_key (str): An API key from FinancialModelingPrep. Obtain one here:
-        https://site.financialmodelingprep.com/developer/docs/pricing/jeroen/
+        https://intelligence.financialmodelingprep.com/pricing-plans?couponCode=jeroen
         start_date (str): A string containing the start date of the data. This needs to be formatted as YYYY-MM-DD.
         end_date (str): A string containing the end date of the data. This needs to be formatted as YYYY-MM-DD.
         quarterly (bool): A boolean indicating whether to collect quarterly data. This defaults to False and thus
@@ -712,6 +712,7 @@ class Toolkit:
             rounding=self._rounding,
             start_date=self._start_date,
             end_date=self._end_date,
+            progress_bar=self._progress_bar,
         )
 
     @property

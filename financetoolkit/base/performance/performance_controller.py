@@ -662,7 +662,7 @@ class Performance:
         ticker_list_iterator = (
             tqdm(
                 self._tickers,
-                desc=f"Calculating {'Multi' if method == 'multi' else 'Individual'} Factor Exposurs",
+                desc=f"Calculating {'Multi' if method == 'multi' else 'Individual'} Factor Exposures",
             )
             if ENABLE_TQDM & self._progress_bar
             else self._tickers

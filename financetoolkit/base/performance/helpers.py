@@ -84,7 +84,7 @@ def handle_risk_free_data_periods(self, period: str):
     raise ValueError("Period must be daily, monthly, weekly, quarterly, or yearly.")
 
 
-def handle_fama_and_french_data(dataset, period: str):
+def handle_fama_and_french_data(dataset, period: str, correlation: bool = False):
     """
     This function is a specific function solely related to the Ratios controller. It
     therefore also requires a self instance to exists with specific parameters.
@@ -101,15 +101,23 @@ def handle_fama_and_french_data(dataset, period: str):
         pd.Series: the returns for the period.
     """
     if period == "daily":
-        return dataset
+        return dataset.corr() if correlation else dataset
     if period == "weekly":
-        return dataset.groupby(pd.Grouper(freq="W")).apply(lambda x: x)
+        return dataset.groupby(pd.Grouper(freq="W")).apply(
+            lambda x: x.corr() if correlation else x
+        )
     if period == "monthly":
-        return dataset.groupby(pd.Grouper(freq="M")).apply(lambda x: x)
+        return dataset.groupby(pd.Grouper(freq="M")).apply(
+            lambda x: x.corr() if correlation else x
+        )
     if period == "quarterly":
-        return dataset.groupby(pd.Grouper(freq="Q")).apply(lambda x: x)
+        return dataset.groupby(pd.Grouper(freq="Q")).apply(
+            lambda x: x.corr() if correlation else x
+        )
     if period == "yearly":
-        return dataset.groupby(pd.Grouper(freq="Y")).apply(lambda x: x)
+        return dataset.groupby(pd.Grouper(freq="Y")).apply(
+            lambda x: x.corr() if correlation else x
+        )
 
     raise ValueError("Period must be weekly, monthly, quarterly, or yearly.")
 

@@ -8,6 +8,8 @@ import zipfile
 import numpy as np
 import pandas as pd
 from scipy.stats import linregress
+from sklearn.linear_model import LinearRegression
+from sklearn.metrics import mean_squared_error
 
 # This is meant for calculations in which a Multi Index exists. This is the case
 # when calculating a "within period" in which the first index represents the period
@@ -59,11 +61,13 @@ def get_covariance(
 def get_beta(
     returns: pd.Series | pd.DataFrame, benchmark_returns: pd.Series
 ) -> pd.Series | pd.DataFrame:
-    """_summary_
+    """
+    Calculate beta. Beta represents the slope in the linear regression between
+    the asset returns and the benchmark returns.
 
     Args:
-        returns (pd.Series | pd.DataFrame): _description_
-        benchmark_returns (pd.Series | pd.DataFrame): _description_
+        returns (pd.Series | pd.DataFrame): return series.
+        benchmark_returns (pd.Series | pd.DataFrame): benchmark return series.
 
     Returns:
         pd.Series | pd.DataFrame: _description_
@@ -93,7 +97,11 @@ def get_rolling_beta(
     returns: pd.Series | pd.DataFrame, benchmark_returns: pd.Series, window_size: int
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate rolling beta.
+    Calculate rolling beta. Beta represents the slope in the linear regression between
+    the asset returns and the benchmark returns.
+
+    Rolling beta is calculated by calculating the covariance between the asset returns
+    and the benchmark returns over a rolling window and dividing this by the variance
 
     Args:
         returns (pd.Series | pd.DataFrame): Asset returns.
@@ -218,7 +226,99 @@ def obtain_fama_and_french_dataset(fama_and_french_url: str | None = None):
     return fama_and_french_dataset
 
 
-def get_fama_and_french_model(
+def get_factor_asset_correlations(
+    factors: pd.DataFrame,
+    excess_return: pd.Series,
+) -> pd.DataFrame:
+    """
+    Calculates factor exposures for each asset.
+
+    The major difference between the Fama and French Model here is that the correlation
+    is taken as opposed to a Linear Regression in which the R-squared or Slope can be used to
+    understand the exposure to each factor.
+
+    For assessing the exposure or influence of a stock to external factors, it's often preferable
+    to use R-squared (R²) or Beta because it explicitly measures how well the factors explain the stock's
+    returns. A higher R² indicates that the stock's returns are more closely related to the factors,
+    and thus, the factors have a greater influence on the stock's performance.
+
+    However, since the results are closely related and tend to point into the same direction it could
+    be fine to use correlations as well depending on the level of accuracy required.
+
+    Args:
+        factors (pd.DataFrame): the factor dataset with each factor in a column.
+        excess_returns (pd.Series): the excess returns.
+
+    Returns:
+        pd.DataFrame: the factor asset correlations.
+    """
+    correlations = factors.corrwith(excess_return)
+
+    return correlations
+
+
+def get_fama_and_french_model_multi(
+    excess_returns: pd.Series,
+    factor_dataset: pd.DataFrame,
+) -> pd.Series | pd.DataFrame:
+    """
+    The Fama and French 5 Factor Model is an extension of the CAPM model. It adds four additional factors to the
+    regression analysis to better describe asset returns:
+        - Size (SMB): Small companies tend to outperform large companies.
+        - Value (HML): Value stocks tend to outperform growth stocks.
+        - Investment (CMA): Companies that invest conservatively tend to outperform companies that invest aggressively.
+        - Profitability (RMW): Companies with high operating profitability tend to outperform companies with low
+        operating profitability.
+
+    This functionality performs the regression analysis and returns the regression parameters for a given return
+    and factor series.
+
+    The formula is as follows:
+
+        - Excess Return = Intercept + Beta1 * Mkt-RF + Beta2 * SMB + Beta3 * HML +
+            Beta4 * RMW + Beta5 * CMA + Residuals
+
+    Args:
+        excess_returns (pd.Series): the excess returns.
+        factor_dataset (pd.DataFrame): the factor dataset with each factor in a column.
+
+    Returns:
+        dict: the regression results.
+        pd.Series: the residuals.
+    """
+    if excess_returns.isna().any():
+        excess_returns = excess_returns.bfill(limit=None)
+        excess_returns = excess_returns.ffill(limit=None)
+
+    if factor_dataset.isna().any().any():
+        excess_returns = excess_returns.bfill(limit=None, axis=1)
+        factor_dataset = factor_dataset.ffill(limit=None, axis=1)
+
+    model = LinearRegression()
+    model.fit(factor_dataset, excess_returns)
+
+    r_squared = model.score(factor_dataset, excess_returns)
+
+    y_pred = model.predict(factor_dataset)
+
+    residuals = excess_returns - y_pred
+
+    mse = mean_squared_error(excess_returns, y_pred)
+
+    regression_results = {"Intercept": model.intercept_}
+
+    for factor in factor_dataset.columns:
+        regression_results[f"{factor} Slope"] = model.coef_[
+            factor_dataset.columns.get_loc(factor)
+        ]
+
+    regression_results["Mean Squared Error (MSE)"] = mse
+    regression_results["R Squared"] = r_squared
+
+    return regression_results, residuals
+
+
+def get_fama_and_french_model_single(
     excess_returns: pd.Series,
     factor: pd.Series,
 ) -> pd.Series | pd.DataFrame:

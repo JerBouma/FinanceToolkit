@@ -99,6 +99,8 @@ class Performance:
         self._fama_and_french_dataset: pd.DataFrame = pd.DataFrame()
         self._fama_and_french_model: pd.DataFrame = pd.DataFrame()
         self._fama_and_french_residuals: pd.DataFrame = pd.DataFrame()
+        self._factor_asset_correlations: pd.DataFrame = pd.DataFrame()
+        self._factor_correlations: pd.DataFrame = pd.DataFrame()
 
         # Within Period Calculations
         self._weekly_within_historical_data = self._daily_historical_data.groupby(
@@ -269,7 +271,7 @@ class Performance:
 
         toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
 
-        toolkit.performance.gget_capital_asset_pricing_model()
+        toolkit.performance.get_capital_asset_pricing_model()
         ```
         """
         if period == "daily":
@@ -325,9 +327,211 @@ class Performance:
 
         return capm
 
+    def get_factor_asset_correlations(
+        self,
+        period: str | None = None,
+        factors_to_calculate: list[str] | None = None,
+        rounding: int | None = None,
+    ):
+        """
+        Calculates factor exposures for each asset.
+
+        The major difference between the Fama and French Model here is that the correlation
+        is taken as opposed to a Linear Regression in which the R-squared or Slope can be used to
+        understand the exposure to each factor.
+
+        For assessing the exposure or influence of a stock to external factors, it's often preferable
+        to use R-squared (R²) or Beta because it explicitly measures how well the factors explain the stock's
+        returns. A higher R² indicates that the stock's returns are more closely related to the factors,
+        and thus, the factors have a greater influence on the stock's performance.
+
+        However, since the results are closely related and tend to point into the same direction it could
+        be fine to use correlations as well depending on the level of accuracy required.
+
+        Args:
+            period (str, optional): The period to use for the calculation. Defaults to None which
+            results in basing it off the quarterly parameter as defined in the class instance.
+            factors_to_calculate (list of str, optional): List of factors to calculate scores and residuals for.
+                Defaults to ["Mkt-RF", "SMB", "HML", "RMW", "CMA"].
+            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+
+        Returns:
+            pd.DataFrame: Factor Asset Correlations.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+
+        toolkit.performance.get_factor_asset_correlations()
+        ```
+        """
+        if period == "daily":
+            raise ValueError(
+                "Daily results is not an option as it would attempt to calculate the correlation between "
+                "two numbers which will not give any meaningful results."
+            )
+
+        factors_to_calculate = (
+            factors_to_calculate
+            if factors_to_calculate
+            else ["Mkt-RF", "SMB", "HML", "RMW", "CMA"]
+        )
+
+        for factor in factors_to_calculate:
+            if factor not in ["Mkt-RF", "SMB", "HML", "RMW", "CMA"]:
+                raise ValueError(
+                    f"Factor {factor} is not a valid factor. Please select from: Mkt-RF, SMB, HML, RMW, CMA."
+                )
+
+        period = period if period else "quarterly" if self._quarterly else "yearly"
+
+        historical_data_within = handle_return_data_periods(
+            self, period, within_period=True
+        )
+        returns = historical_data_within.loc[:, "Return"][self._tickers]
+
+        if self._fama_and_french_dataset.empty:
+            self._fama_and_french_dataset = performance.obtain_fama_and_french_dataset()
+
+        fama_and_french_period = handle_fama_and_french_data(
+            self._fama_and_french_dataset, period
+        )
+
+        merged_df = fama_and_french_period.merge(
+            returns, left_index=True, right_index=True
+        )
+
+        factor_correlations: dict = {}
+
+        ticker_list_iterator = (
+            tqdm(self._tickers, desc="Calculating Factor Asset Correlations")
+            if ENABLE_TQDM & self._progress_bar
+            else self._tickers
+        )
+
+        for ticker in ticker_list_iterator:
+            factor_correlations[ticker] = {}
+            for dataset_period in merged_df.index.get_level_values(0):
+                factor_data = merged_df.loc[dataset_period][factors_to_calculate]
+                excess_returns = (
+                    merged_df.loc[dataset_period][ticker]
+                    - merged_df.loc[dataset_period]["RF"]
+                )
+
+                factor_correlations[ticker][
+                    dataset_period
+                ] = performance.get_factor_asset_correlations(
+                    factors=factor_data, excess_return=excess_returns
+                )
+
+        factor_asset_correlations = pd.DataFrame.from_dict(
+            {
+                (ticker, dataset_period): value
+                for ticker, factor_scores_ticker in factor_correlations.items()
+                for dataset_period, value in factor_scores_ticker.items()
+            },
+        )
+
+        factor_order = factor_asset_correlations.index
+
+        factor_asset_correlations = (
+            factor_asset_correlations.stack(level=1)
+            .unstack(level=0)
+            .reindex(factor_order, level=1, axis=1)
+            .reindex(self._tickers, level=0, axis=1)
+        )
+
+        self._factor_asset_correlations = factor_asset_correlations.round(
+            rounding if rounding else self._rounding
+        ).loc[self._start_date : self._end_date]
+
+        return self._factor_asset_correlations
+
+    def get_factor_correlations(
+        self,
+        period: str | None = None,
+        factors_to_calculate: list[str] | None = None,
+        exclude_risk_free: bool = True,
+        rounding: int | None = None,
+    ):
+        """
+        Calculates factor correlations between each factor. This is useful to understand how correlated
+        each factor is to each other. This is based off the Fama and French 5 Factor model which includes:
+
+            - Market Risk Premium (Mkt-RF): Represents the additional return that investors expect to earn for taking
+            on the risk of investing in the overall market as opposed to a risk-free asset.
+            - Size Premium (SMB): Reflects the historical excess return of small-cap stocks over large-cap stocks.
+            - Value Premium (HML): Captures the historical excess return of value stocks over growth stocks.
+            - Profitability (RMW): Measures the historical excess return of high profitability stocks over
+            low profitability stocks.
+            - Investment (CMA): Quantifies the historical excess return of low investment stocks over
+            high investment stocks.
+
+        Optionally, it is also possible to see the correlation between the risk-free rate and each factor.
+
+        Args:
+            period (str, optional): The period to use for the calculation. Defaults to None which
+            results in basing it off the quarterly parameter as defined in the class instance.
+            factors_to_calculate (list of str, optional): List of factors to calculate scores and residuals for.
+                Defaults to ["Mkt-RF", "SMB", "HML", "RMW", "CMA"].
+            exclude_risk_free (bool, optional): Whether to exclude the risk-free rate from the results. Defaults to True.
+            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+
+        Returns:
+            pd.DataFrame: Factor Correlations.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+
+        toolkit.performance.get_factor_correlations()
+        ```
+        """
+        factors_to_calculate = (
+            factors_to_calculate
+            if factors_to_calculate
+            else ["Mkt-RF", "SMB", "HML", "RMW", "CMA"]
+        )
+
+        for factor in factors_to_calculate:
+            if factor not in ["Mkt-RF", "SMB", "HML", "RMW", "CMA"]:
+                raise ValueError(
+                    f"Factor {factor} is not a valid factor. Please select from: Mkt-RF, SMB, HML, RMW, CMA."
+                )
+
+        period = period if period else "quarterly" if self._quarterly else "yearly"
+
+        factors_to_calculate = (
+            factors_to_calculate + ["RF"]
+            if not exclude_risk_free
+            else factors_to_calculate
+        )
+
+        if self._fama_and_french_dataset.empty:
+            self._fama_and_french_dataset = performance.obtain_fama_and_french_dataset()
+
+        fama_and_french_period = handle_fama_and_french_data(
+            self._fama_and_french_dataset[factors_to_calculate],
+            period,
+            correlation=True,
+        )
+
+        self._factor_correlations = fama_and_french_period.round(
+            rounding if rounding else self._rounding
+        )
+
+        return self._factor_correlations
+
     def get_fama_and_french_model(
         self,
         period: str | None = None,
+        method: str = "multi",
         factors_to_calculate: list[str] | None = None,
         include_daily_residuals: bool = False,
         rounding: int | None = None,
@@ -349,27 +553,37 @@ class Performance:
             - Investment (CMA): Quantifies the historical excess return of low investment stocks over
             high investment stocks.
 
+        The model can perform both a Simple Linear Regression on each factor as well as a Multi Linear Regression
+        which includes all factors. Generally, a multi linear regression is applied but if you wish to see individual
+        R-squared values for each factor you can select the simple linear regression method.
+
         The model performs a Linear Regression on each factor and defines the regression parameters and residuals
         for each asset over time based on its exposure to these factors.
 
         These results can be validated by comparing them to the period returns obtained from the historical data. E.g.
-        the regression formula is as follows:
+        the regression formula is as follows for the Multi Linear Regression:
+
+            - Excess Return = Intercept + Beta1 * Mkt-RF + Beta2 * SMB + Beta3 * HML + Beta4 * RMW
+                + Beta5 * CMA + Residuals
+
+        And the following for the Simple Linear Regression:
 
             - Excess Return = Intercept + Slope * Factor Value + Residuals
 
-        So for a given factor, it should hold that the Excess Return equals the Intercept + Slope *
-        Factor Value + Residuals. Note that in this calculation the Excess Return refers to the Asset Return minus
-        the Risk Free Rate as reported in the Fama and French dataset and will not be the same as the defined Excess
-        Return in the historical data given that this is based on the Risk Free Rate defined in the initialization.
+        So for a given factor, it should hold that the Excess Return equals the entire regression. Note that in this
+        calculation the Excess Return refers to the Asset Return minus the Risk Free Rate as reported in the Fama and
+        French dataset and will not be the same as the defined Excess Return in the historical data given that this is
+        based on the Risk Free Rate defined in the initialization.
 
         What is relevant to look at is the influence these factors have on each stock and how much each factor explains
-        the stock return. E.g. you will generally see a pretty high R-squared for the Market Risk Premium (Mkt-RF) factor
-        as this is the main factor that explains the stock return (as also prevalent in the CAPM). The other factors
-        can fluctuate greatly between stocks depending on which stocks you look at.
+        the stock return. E.g. you will generally see a pretty high influence (Beta or Slope) for the Market Risk Premium
+        (Mkt-RF) factor as this is the main factor that explains the stock return (as also prevalent in the CAPM).
+        The other factors can fluctuate greatly between stocks depending on which stocks you look at.
 
         Args:
             period (str, optional): The period for the calculation (e.g., "weekly", "monthly", "quarterly", "yearly").
                 Defaults to None, using class-defined quarterly or yearly period.
+            method (str, optional): The regression method to use for the calculation. Defaults to 'multi'.
             factors_to_calculate (list of str, optional): List of factors to calculate scores and residuals for.
                 Defaults to ["Mkt-RF", "SMB", "HML", "RMW", "CMA"].
             include_residuals (bool, optional): Whether to include residuals in the results. Defaults to False.
@@ -400,12 +614,17 @@ class Performance:
         toolkit.performance.get_fama_and_french_model()
         ```
         """
+        if method not in ["simple", "multi"]:
+            raise ValueError(
+                f"Method {method} is not a valid method. Please select from: simple or multi (default). "
+                "This refers to a simple linear regression (regression of each factor on each asset return series) "
+                "or a multi linear regression (regression of all factors on each asset return series) respectively"
+            )
         if period == "daily":
-            print(
+            raise ValueError(
                 "Daily Fama and French results is not an option as it would attempt to do a linear regression on "
                 "a single data point which will not give any meaningful results."
             )
-            return pd.DataFrame(dtype="object")
 
         factors_to_calculate = (
             factors_to_calculate
@@ -441,7 +660,10 @@ class Performance:
         daily_residuals: dict = {}
 
         ticker_list_iterator = (
-            tqdm(self._tickers, desc="Calculating Factor Exposures")
+            tqdm(
+                self._tickers,
+                desc=f"Calculating {'Multi' if method == 'multi' else 'Individual'} Factor Exposurs",
+            )
             if ENABLE_TQDM & self._progress_bar
             else self._tickers
         )
@@ -449,86 +671,153 @@ class Performance:
         for ticker in ticker_list_iterator:
             factor_scores[ticker] = {}
             daily_residuals[ticker] = {}
-            for factor in factors_to_calculate:
-                factor_scores[ticker][factor] = {}
-                daily_residuals[ticker][factor] = {}
+
+            if method == "multi":
                 for dataset_period in merged_df.index.get_level_values(0):
-                    factor_data = merged_df.loc[dataset_period][factor]
+                    factor_data = merged_df.loc[dataset_period][factors_to_calculate]
                     excess_returns = (
                         merged_df.loc[dataset_period][ticker]
                         - merged_df.loc[dataset_period]["RF"]
                     )
 
                     (
-                        factor_scores[ticker][factor][dataset_period],
-                        daily_residuals[ticker][factor][dataset_period],
-                    ) = performance.get_fama_and_french_model(
-                        excess_returns=excess_returns, factor=factor_data
+                        factor_scores[ticker][dataset_period],
+                        daily_residuals[ticker][dataset_period],
+                    ) = performance.get_fama_and_french_model_multi(
+                        excess_returns=excess_returns, factor_dataset=factor_data
                     )
 
-                    factor_scores[ticker][factor][dataset_period][
-                        "Factor Value"
-                    ] = factor_data.iloc[-1]
-
-                    factor_scores[ticker][factor][dataset_period][
-                        "Residuals"
-                    ] = returns_total.loc[dataset_period][ticker] - (
-                        factor_scores[ticker][factor][dataset_period]["Slope"]
-                        * factor_data.iloc[-1]
-                        + factor_scores[ticker][factor][dataset_period]["Intercept"]
+                    fama_and_french_model = pd.DataFrame.from_dict(
+                        {
+                            (ticker, factor): value
+                            for ticker, factor_scores_ticker in factor_scores.items()
+                            for factor, value in factor_scores_ticker.items()
+                        },
+                        orient="index",
                     )
 
-        fama_and_french_model = pd.DataFrame.from_dict(
-            {
-                (period, factor, ticker): value
-                for ticker, factor_scores_ticker in factor_scores.items()
-                for factor, factor_scores_factor in factor_scores_ticker.items()
-                for period, value in factor_scores_factor.items()
-            },
-            orient="index",
-        )
+                fama_and_french_model = fama_and_french_model.unstack(
+                    level=0, sort=False
+                ).swaplevel(0, 1, axis=1)
 
-        fama_and_french_model = fama_and_french_model.unstack(level=[1, 2])
+                # Sort the DataFrame with respect to the original column order
+                tickers_column_order = fama_and_french_model.columns.get_level_values(
+                    0
+                ).unique()
+                parameters_column_order = (
+                    fama_and_french_model.columns.get_level_values(1).unique()
+                )
 
-        # Sort the DataFrame with respect to the original column order
-        parameters_column_order = fama_and_french_model.columns.get_level_values(
-            0
-        ).unique()
-        factor_column_order = fama_and_french_model.columns.get_level_values(1).unique()
-        ticker_column_order = fama_and_french_model.columns.get_level_values(2).unique()
+                fama_and_french_model = (
+                    fama_and_french_model.sort_index(axis=1)
+                    .reindex(tickers_column_order, level=0, axis=1)
+                    .reindex(parameters_column_order, level=1, axis=1)
+                )
 
-        fama_and_french_model = (
-            fama_and_french_model.sort_index(axis=1)
-            .reindex(parameters_column_order, level=0, axis=1)
-            .reindex(factor_column_order, level=1, axis=1)
-            .reindex(ticker_column_order, level=2, axis=1)
-        )
+            elif method == "simple":
+                for factor in factors_to_calculate:
+                    factor_scores[ticker][factor] = {}
+                    daily_residuals[ticker][factor] = {}
+                    for dataset_period in merged_df.index.get_level_values(0):
+                        factor_data = merged_df.loc[dataset_period][factor]
+                        excess_returns = (
+                            merged_df.loc[dataset_period][ticker]
+                            - merged_df.loc[dataset_period]["RF"]
+                        )
+
+                        (
+                            factor_scores[ticker][factor][dataset_period],
+                            daily_residuals[ticker][factor][dataset_period],
+                        ) = performance.get_fama_and_french_model_single(
+                            excess_returns=excess_returns, factor=factor_data
+                        )
+
+                        factor_scores[ticker][factor][dataset_period][
+                            "Factor Value"
+                        ] = factor_data.iloc[-1]
+
+                        factor_scores[ticker][factor][dataset_period][
+                            "Residuals"
+                        ] = returns_total.loc[dataset_period][ticker] - (
+                            factor_scores[ticker][factor][dataset_period]["Slope"]
+                            * factor_data.iloc[-1]
+                            + factor_scores[ticker][factor][dataset_period]["Intercept"]
+                        )
+
+                fama_and_french_model = pd.DataFrame.from_dict(
+                    {
+                        (period, factor, ticker): value
+                        for ticker, factor_scores_ticker in factor_scores.items()
+                        for factor, factor_scores_factor in factor_scores_ticker.items()
+                        for period, value in factor_scores_factor.items()
+                    },
+                    orient="index",
+                )
+
+                # Sort the DataFrame with respect to the original column order
+                parameters_column_order = fama_and_french_model.columns.unique()
+                factor_column_order = fama_and_french_model.index.get_level_values(
+                    1
+                ).unique()
+                ticker_column_order = fama_and_french_model.index.get_level_values(
+                    2
+                ).unique()
+
+                fama_and_french_model = fama_and_french_model.stack(sort=False).unstack(
+                    level=[2, 1, 3]
+                )
+
+                fama_and_french_model = (
+                    fama_and_french_model.sort_index(axis=1)
+                    .reindex(parameters_column_order, level=2, axis=1)
+                    .reindex(factor_column_order, level=1, axis=1)
+                    .reindex(ticker_column_order, level=0, axis=1)
+                )
 
         self._fama_and_french_model = fama_and_french_model.round(
             rounding if rounding else self._rounding
         ).loc[self._start_date : self._end_date]
 
-        daily_residuals_df = pd.DataFrame.from_dict(
-            {
-                (period, factor, ticker): value
-                for ticker, residuals_ticker in daily_residuals.items()
-                for factor, residuals_factor in residuals_ticker.items()
-                for period, value in residuals_factor.items()
-            },
-            orient="index",
-        )
-
-        daily_residuals_df = (
-            daily_residuals_df.unstack(level=[1, 2])
-            .stack(level=0)
-            .sort_index(axis=1, sort_remaining=False)
-        )
-
-        self._fama_and_french_residuals = daily_residuals_df.round(
-            rounding if rounding else self._rounding
-        ).loc[:, self._start_date : self._end_date, :]
-
         if include_daily_residuals:
+            if method == "multi":
+                daily_residuals_df = pd.DataFrame.from_dict(
+                    {
+                        (ticker, factor): value
+                        for ticker, residuals_ticker in daily_residuals.items()
+                        for factor, value in residuals_ticker.items()
+                    },
+                    orient="index",
+                )
+
+                daily_residuals_df = (
+                    daily_residuals_df.stack()
+                    .unstack(level=0)
+                    .sort_index(axis=1, sort_remaining=False)
+                )
+                daily_residuals_df = daily_residuals_df.reset_index(level=0, drop=True)
+            else:
+                daily_residuals_df = pd.DataFrame.from_dict(
+                    {
+                        (period, factor, ticker): value
+                        for ticker, residuals_ticker in daily_residuals.items()
+                        for factor, residuals_factor in residuals_ticker.items()
+                        for period, value in residuals_factor.items()
+                    },
+                    orient="index",
+                )
+
+                daily_residuals_df = (
+                    daily_residuals_df.unstack(level=[1, 2])
+                    .stack(level=0)
+                    .sort_index(axis=1, sort_remaining=False)
+                )
+
+                daily_residuals_df = daily_residuals_df.reset_index(level=0, drop=True)
+
+            self._fama_and_french_residuals = daily_residuals_df.round(
+                rounding if rounding else self._rounding
+            ).loc[self._start_date : self._end_date]
+
             return self._fama_and_french_model, self._fama_and_french_residuals
 
         if growth:

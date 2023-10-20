@@ -10,6 +10,7 @@ import requests
 
 from financetoolkit.base.fundamentals_model import (
     get_analyst_estimates as _get_analyst_estimates,
+    get_dividend_calendar as _get_dividend_calendar,
     get_earnings_calendar as _get_earnings_calendar,
     get_financial_statements as _get_financial_statements,
     get_profile as _get_profile,
@@ -20,7 +21,8 @@ from financetoolkit.base.fundamentals_model import (
 from financetoolkit.base.helpers import calculate_growth as _calculate_growth
 from financetoolkit.base.historical_model import (
     convert_daily_to_other_period as _convert_daily_to_other_period,
-    get_historical_data as _get_historical_data,
+    get_historical_data_from_financial_modeling_prep as _get_historical_data_from_financial_modeling_prep,
+    get_historical_data_from_yahoo_finance as _get_historical_data_from_yahoo_finance,
     get_historical_statistics as _get_historical_statistics,
 )
 from financetoolkit.base.models.models_controller import Models
@@ -35,7 +37,8 @@ from financetoolkit.base.ratios.ratios_controller import Ratios
 from financetoolkit.base.risk.risk_controller import Risk
 from financetoolkit.base.technicals.technicals_controller import Technicals
 
-# pylint: disable=too-many-instance-attributes,too-many-lines,line-too-long,too-many-locals,too-many-function-args
+# pylint: disable=too-many-instance-attributes,too-many-lines,line-too-long,too-many-locals
+# pylint: disable=too-many-function-args,too-many-public-methods)
 # ruff: noqa: E501
 
 
@@ -59,6 +62,8 @@ class Toolkit:
         quarterly: bool = False,
         risk_free_rate: str = "10y",
         benchmark_ticker: str | None = "^GSPC",
+        historical_source: str | None = None,
+        check_asset_class: bool = True,
         custom_ratios: dict | None = None,
         historical: pd.DataFrame = pd.DataFrame(),
         balance: pd.DataFrame = pd.DataFrame(),
@@ -81,36 +86,62 @@ class Toolkit:
         See for more information on all of this, the following link: https://www.jeroenbouma.com/projects/financetoolkit
 
         Args:
+
         tickers (str or list): A string or a list of strings containing the company ticker(s). E.g. 'TSLA' or 'MSFT'
         Find the tickers on a variety of websites or via the FinanceDatabase: https://github.com/JerBouma/financedatabase
         api_key (str): An API key from FinancialModelingPrep. Obtain one here:
         https://intelligence.financialmodelingprep.com/pricing-plans?couponCode=jeroen
+
         start_date (str): A string containing the start date of the data. This needs to be formatted as YYYY-MM-DD.
+
         end_date (str): A string containing the end date of the data. This needs to be formatted as YYYY-MM-DD.
+
         quarterly (bool): A boolean indicating whether to collect quarterly data. This defaults to False and thus
         collects yearly financial statements. Note that historical data can still be collected for
         any period and interval.
+
         risk_free_rate (str): A string containing the risk free rate. This can be 13w, 5y, 10y or 30y. This is
         based on the US Treasury Yields and is used to calculate various ratios and Excess Returns.
+
         benchmark_ticker (str): A string containing the benchmark ticker. Defaults to ^GSPC (S&P 500). This is
         meant to calculate ratios and indicators such as the CAPM and Jensen's Alpha but also serves as purpose to
         give insights in the performance of a stock compared to a benchmark.
+
+        historical_source (str): A string containing the historical source. This can be either FinancialModelingPrep
+        or YahooFinance. Defaults to FinancialModelingPrep. It is automatically defined if you enter an API Key from
+        FinancialModelingPrep. You can overwrite this by filling this parameter. Note that for the Free plan the amount
+        of historical data is limited to 5 years. If you want to collect more data, you need to upgrade to a paid plan.
+
+        check_asset_class (bool): Whether to check if the asset class will work for the function you are trying to
+        execute. Defaults to True. If you are trying to execute a function that requires a specific asset class, this
+        will raise an error if the asset class is not correct. If you set this to False, it will simply make an attempt
+        to collect data but could lead to confusing results. The parameter is built in to limit the API calls as it
+        needs to acquire the data from Yahoo Finance.
+
         custom_ratios (dict): A dictionary containing custom ratios. This is meant to define your own ratios. See
         the following Notebook how to set this up: https://www.jeroenbouma.com/projects/financetoolkit/custom-ratios
+
         historical (pd.DataFrame): A DataFrame containing historical data. This is a custom dataset only relevant if
         you are looking to use custom data. See for more information the following Notebook:
         https://www.jeroenbouma.com/projects/financetoolkit/external-datasets
+
         balance (pd.DataFrame): A DataFrame containing balance sheet data. This is a custom dataset only
         relevant if you are looking to use custom data. See for more information the notebook as mentioned at historical.
-        relevant if you are looking to use custom data. See for more information the notebook as mentioned at historical.
+
         cash (pd.DataFrame): A DataFrame containing cash flow statement data. This is a custom dataset only
         relevant if you are looking to use custom data. See for more information the notebook as mentioned at historical.
+
         format_location (str): A string containing the location of the normalization files.
+
         reverse_dates (bool): A boolean indicating whether to reverse the dates in the financial statements.
+
         rounding (int): An integer indicating the number of decimals to round the results to.
+
         remove_invalid_tickers (bool): A boolean indicating whether to remove invalid tickers. Defaults to False.
+
         sleep_timer (bool): Whether to set a sleep timer when the rate limit is reached. Note that this only works
         if you have a Premium subscription (Starter or higher) from FinancialModelingPrep. Defaults to False.
+
         progress_bar (bool): Whether to enable the progress bar when ticker amount is over 10. Defaults to True.
 
         As an example:
@@ -192,6 +223,7 @@ class Toolkit:
         self._quarterly = quarterly
         self._risk_free_rate = risk_free_rate
         self._benchmark_ticker = benchmark_ticker
+        self._check_asset_class = check_asset_class
         self._rounding = rounding
         self._remove_invalid_tickers = remove_invalid_tickers
         self._invalid_tickers: list = []
@@ -206,11 +238,30 @@ class Toolkit:
             self._rating: pd.DataFrame = pd.DataFrame()
             self._analyst_estimates: pd.DataFrame = pd.DataFrame()
             self._analyst_estimates_growth: pd.DataFrame = pd.DataFrame()
+            self._dividend_calendar: pd.DataFrame = pd.DataFrame()
             self._earnings_calendar: pd.DataFrame = pd.DataFrame()
             self._revenue_geographic_segmentation: pd.DataFrame = pd.DataFrame()
             self._revenue_geographic_segmentation_growth: pd.DataFrame = pd.DataFrame()
             self._revenue_product_segmentation: pd.DataFrame = pd.DataFrame()
             self._revenue_product_segmentation_growth: pd.DataFrame = pd.DataFrame()
+            self._historical_source = (
+                historical_source if historical_source else "FinancialModelingPrep"
+            )
+        else:
+            self._historical_source = (
+                historical_source if historical_source else "YahooFinance"
+            )
+
+        if self._historical_source not in ["FinancialModelingPrep", "YahooFinance"]:
+            raise ValueError(
+                "Please select either FinancialModelingPrep or YahooFinance as the "
+                "historical source."
+            )
+        if self._historical_source == "FinancialModelingPrep" and not self._api_key:
+            raise ValueError(
+                "Please input an API key from FinancialModelingPrep if you wish to use "
+                "historical data from FinancialModelingPrep."
+            )
 
         # Initialization of Historical Variables
         self._daily_historical_data: pd.DataFrame = (
@@ -840,22 +891,26 @@ class Toolkit:
             return print(
                 "The requested data requires the api_key parameter to be set, consider "
                 "obtaining a key with the following link: "
-                "https://financialmodelingprep.com/developer/docs/pricing/jeroen/"
+                "https://intelligence.financialmodelingprep.com/pricing-plans?couponCode=jeroen"
                 "\nThe free plan allows for 250 requests per day, a limit of 5 years and has no "
                 "quarterly data. Consider upgrading your plan. You can get 15% off by using the "
                 "above affiliate link which also supports the project."
             )
 
-        if self._historical_statistics.empty:
-            self.get_historical_statistics()
+        if self._check_asset_class:
+            if self._historical_statistics.empty:
+                self.get_historical_statistics()
 
-        tickers = [
-            ticker
-            for ticker in self._historical_statistics.columns
-            if self._historical_statistics.loc["Instrument Type", ticker]
-            in ["EQUITY", "ETF", "MUTUALFUND"]
-        ]
-        no_data_tickers = set(self._tickers) - set(tickers)
+            tickers = [
+                ticker
+                for ticker in self._historical_statistics.columns
+                if self._historical_statistics.loc["Instrument Type", ticker]
+                == "EQUITY"
+            ]
+            no_data_tickers = set(self._tickers) - set(tickers)
+        else:
+            tickers = self._tickers
+            no_data_tickers = set([])
 
         if not tickers:
             raise ValueError(
@@ -933,7 +988,7 @@ class Toolkit:
             return print(
                 "The requested data requires the api_key parameter to be set, consider "
                 "obtaining a key with the following link: "
-                "https://financialmodelingprep.com/developer/docs/pricing/jeroen/"
+                "https://intelligence.financialmodelingprep.com/pricing-plans?couponCode=jeroen"
                 "\nThe free plan allows for 250 requests per day, a limit of 5 years and has no "
                 "quarterly data. Consider upgrading your plan. You can get 15% off by using the "
                 "above affiliate link which also supports the project."
@@ -993,21 +1048,26 @@ class Toolkit:
             return print(
                 "The requested data requires the api_key parameter to be set, consider "
                 "obtaining a key with the following link: "
-                "https://financialmodelingprep.com/developer/docs/pricing/jeroen/"
+                "https://intelligence.financialmodelingprep.com/pricing-plans?couponCode=jeroen"
                 "\nThe free plan allows for 250 requests per day, a limit of 5 years and has no "
                 "quarterly data. Consider upgrading your plan. You can get 15% off by using the "
                 "above affiliate link which also supports the project."
             )
 
-        if self._historical_statistics.empty:
-            self.get_historical_statistics()
+        if self._check_asset_class:
+            if self._historical_statistics.empty:
+                self.get_historical_statistics()
 
-        tickers = [
-            ticker
-            for ticker in self._historical_statistics.columns
-            if self._historical_statistics.loc["Instrument Type", ticker] == "EQUITY"
-        ]
-        no_data_tickers = set(self._tickers) - set(tickers)
+            tickers = [
+                ticker
+                for ticker in self._historical_statistics.columns
+                if self._historical_statistics.loc["Instrument Type", ticker]
+                == "EQUITY"
+            ]
+            no_data_tickers = set(self._tickers) - set(tickers)
+        else:
+            tickers = self._tickers
+            no_data_tickers = set([])
 
         if not tickers:
             raise ValueError(
@@ -1099,20 +1159,25 @@ class Toolkit:
         if not self._api_key:
             return print(
                 "The requested data requires the api_key parameter to be set, consider obtaining "
-                "a key with the following link: https://financialmodelingprep.com/developer/docs/pricing/jeroen/"
+                "a key with the following link: https://intelligence.financialmodelingprep.com/pricing-plans?couponCode=jeroen"
                 "\nThis functionality also requires a Premium subscription. You can get 15% off by "
                 "using the above affiliate link which also supports the project."
             )
 
-        if self._historical_statistics.empty:
-            self.get_historical_statistics()
+        if self._check_asset_class:
+            if self._historical_statistics.empty:
+                self.get_historical_statistics()
 
-        tickers = [
-            ticker
-            for ticker in self._historical_statistics.columns
-            if self._historical_statistics.loc["Instrument Type", ticker] == "EQUITY"
-        ]
-        no_data_tickers = set(self._tickers) - set(tickers)
+            tickers = [
+                ticker
+                for ticker in self._historical_statistics.columns
+                if self._historical_statistics.loc["Instrument Type", ticker]
+                == "EQUITY"
+            ]
+            no_data_tickers = set(self._tickers) - set(tickers)
+        else:
+            tickers = self._tickers
+            no_data_tickers = set([])
 
         if not tickers:
             raise ValueError(
@@ -1154,7 +1219,7 @@ class Toolkit:
                 rounding=rounding if rounding else self._rounding,
             )
 
-        if len(tickers) == 1:
+        if len(tickers) == 1 and not self._analyst_estimates.empty:
             return (
                 self._analyst_estimates_growth.loc[tickers[0]]
                 if growth
@@ -1212,20 +1277,25 @@ class Toolkit:
         if not self._api_key:
             return print(
                 "The requested data requires the api_key parameter to be set, consider obtaining a key with the "
-                "following link: https://financialmodelingprep.com/developer/docs/pricing/jeroen/"
+                "following link: https://intelligence.financialmodelingprep.com/pricing-plans?couponCode=jeroen"
                 "\nThis functionality also requires a Premium subscription. You can get 15% off by using "
                 "the above affiliate link which also supports the project."
             )
 
-        if self._historical_statistics.empty:
-            self.get_historical_statistics()
+        if self._check_asset_class:
+            if self._historical_statistics.empty:
+                self.get_historical_statistics()
 
-        tickers = [
-            ticker
-            for ticker in self._historical_statistics.columns
-            if self._historical_statistics.loc["Instrument Type", ticker] == "EQUITY"
-        ]
-        no_data_tickers = set(self._tickers) - set(tickers)
+            tickers = [
+                ticker
+                for ticker in self._historical_statistics.columns
+                if self._historical_statistics.loc["Instrument Type", ticker]
+                == "EQUITY"
+            ]
+            no_data_tickers = set(self._tickers) - set(tickers)
+        else:
+            tickers = self._tickers
+            no_data_tickers = set([])
 
         if not tickers:
             raise ValueError(
@@ -1263,7 +1333,7 @@ class Toolkit:
                 if ticker not in self._invalid_tickers
             ]
 
-        if len(tickers) == 1:
+        if len(tickers) == 1 and not self._earnings_calendar.empty:
             return earnings_calendar.loc[tickers[0]]
 
         return earnings_calendar
@@ -1308,20 +1378,25 @@ class Toolkit:
         if not self._api_key:
             return print(
                 "The requested data requires the api_key parameter to be set, consider obtaining a key with the "
-                "following link: https://financialmodelingprep.com/developer/docs/pricing/jeroen/"
+                "following link: https://intelligence.financialmodelingprep.com/pricing-plans?couponCode=jeroen"
                 "\nThis functionality also requires a Professional or Enterprise subscription. "
                 "You can get 15% off by using the above affiliate link which also supports the project."
             )
 
-        if self._historical_statistics.empty:
-            self.get_historical_statistics()
+        if self._check_asset_class:
+            if self._historical_statistics.empty:
+                self.get_historical_statistics()
 
-        tickers = [
-            ticker
-            for ticker in self._historical_statistics.columns
-            if self._historical_statistics.loc["Instrument Type", ticker] == "EQUITY"
-        ]
-        no_data_tickers = set(self._tickers) - set(tickers)
+            tickers = [
+                ticker
+                for ticker in self._historical_statistics.columns
+                if self._historical_statistics.loc["Instrument Type", ticker]
+                == "EQUITY"
+            ]
+            no_data_tickers = set(self._tickers) - set(tickers)
+        else:
+            tickers = self._tickers
+            no_data_tickers = set([])
 
         if not tickers:
             raise ValueError(
@@ -1356,7 +1431,7 @@ class Toolkit:
                 if ticker not in self._invalid_tickers
             ]
 
-        if len(tickers) == 1:
+        if len(tickers) == 1 and not self._revenue_geographic_segmentation.empty:
             return self._revenue_geographic_segmentation.loc[tickers[0]]
 
         return self._revenue_geographic_segmentation
@@ -1405,20 +1480,25 @@ class Toolkit:
         if not self._api_key:
             return print(
                 "The requested data requires the api_key parameter to be set, consider obtaining a key with the "
-                "following link: https://financialmodelingprep.com/developer/docs/pricing/jeroen/"
+                "following link: https://intelligence.financialmodelingprep.com/pricing-plans?couponCode=jeroen"
                 "\nThis functionality also requires a Professional or Enterprise subscription. You can get 15% off by using "
                 "the above affiliate link which also supports the project."
             )
 
-        if self._historical_statistics.empty:
-            self.get_historical_statistics()
+        if self._check_asset_class:
+            if self._historical_statistics.empty:
+                self.get_historical_statistics()
 
-        tickers = [
-            ticker
-            for ticker in self._historical_statistics.columns
-            if self._historical_statistics.loc["Instrument Type", ticker] == "EQUITY"
-        ]
-        no_data_tickers = set(self._tickers) - set(tickers)
+            tickers = [
+                ticker
+                for ticker in self._historical_statistics.columns
+                if self._historical_statistics.loc["Instrument Type", ticker]
+                == "EQUITY"
+            ]
+            no_data_tickers = set(self._tickers) - set(tickers)
+        else:
+            tickers = self._tickers
+            no_data_tickers = set([])
 
         if not tickers:
             raise ValueError(
@@ -1453,8 +1533,8 @@ class Toolkit:
                 if ticker not in self._invalid_tickers
             ]
 
-        if len(self._tickers) == 1:
-            return self._revenue_product_segmentation.loc[self._tickers[0]]
+        if len(tickers) == 1 and not self._revenue_product_segmentation.empty:
+            return self._revenue_product_segmentation.loc[tickers[0]]
 
         return self._revenue_product_segmentation
 
@@ -1462,6 +1542,7 @@ class Toolkit:
         self,
         period: str = "daily",
         return_column: str = "Adj Close",
+        include_dividends: bool = True,
         fill_nan: bool = True,
         overwrite: bool = False,
         rounding: int | None = None,
@@ -1487,12 +1568,20 @@ class Toolkit:
         By default this is set to "SPY" (S&P 500 ETF) but can be any ticker. This is relevant for calculations
         for models such as CAPM, Alpha and Beta.
 
+        Important to note is that when an api_key is included in the Toolkit initialization that the data
+        collection defaults to FinancialModelingPrep which is a more stable source and utilises your subscription.
+        However, if this is undesired, it can be disabled by setting historical_data_source to "YahooFinance". If
+        data collection fails from FinancialModelingPrep it automatically reverts back to YahooFinance.
+
         Args:
             start (str): The start date for the historical data. Defaults to None.
             end (str): The end date for the historical data. Defaults to None.
             period (str): The interval at which the historical data should be
             returned - daily, weekly, monthly, quarterly, or yearly.
             Defaults to "daily".
+            return_column (str): The column to use for the return calculation. Defaults to "Adj Close".
+            include_dividends (bool): Defines whether to include dividends in the return calculation.
+            Defaults to True.
             fill_nan (bool): Defines whether to forward fill NaN values. This defaults
             to True to prevent holes in the dataset. This is especially relevant for
             technical indicators.
@@ -1532,22 +1621,107 @@ class Toolkit:
         | 2023   | 187.84   | 188.51   | 187.68   | 188.108  |    188.108  | 4.72009e+06 |    0.71     |  0.453941  |     0.213359 |       0.412901  |            0.22327  |            10.6947  |
         """
         if self._daily_risk_free_rate.empty or overwrite:
-            self.get_treasury_data()
+            self.get_treasury_data(
+                risk_free_rate=self._risk_free_rate, show_errors=False
+            )
+
+        benchmark_data = pd.DataFrame()
 
         if self._daily_historical_data.empty or overwrite:
-            self._daily_historical_data, self._invalid_tickers = _get_historical_data(
-                tickers=self._tickers + [self._benchmark_ticker]
-                if self._benchmark_ticker
-                else self._tickers,
-                start=self._start_date,
-                end=self._end_date,
-                interval="1d",
-                return_column=return_column,
-                risk_free_rate=self._daily_risk_free_rate,
-                progress_bar=self._progress_bar,
-                fill_nan=fill_nan,
-                rounding=rounding if rounding else self._rounding,
-            )
+            if self._historical_source == "FinancialModelingPrep" and self._api_key:
+                (
+                    self._daily_historical_data,
+                    self._invalid_tickers,
+                ) = _get_historical_data_from_financial_modeling_prep(
+                    tickers=self._tickers,
+                    api_key=self._api_key,
+                    start=self._start_date,
+                    end=self._end_date,
+                    interval="1d",
+                    return_column=return_column,
+                    risk_free_rate=self._daily_risk_free_rate,
+                    include_dividends=include_dividends,
+                    progress_bar=self._progress_bar,
+                    fill_nan=fill_nan,
+                    rounding=rounding if rounding else self._rounding,
+                )
+
+                if self._benchmark_ticker:
+                    # It attempts to acquire the benchmark from FinancialModelingPrep. This is generally
+                    # not possible if you use a Free plan.
+                    (
+                        benchmark_data,
+                        _,
+                    ) = _get_historical_data_from_financial_modeling_prep(
+                        tickers=self._benchmark_ticker,
+                        api_key=self._api_key,
+                        start=self._start_date,
+                        end=self._end_date,
+                        interval="1d",
+                        return_column=return_column,
+                        risk_free_rate=self._daily_risk_free_rate,
+                        include_dividends=include_dividends,
+                        progress_bar=False,
+                        fill_nan=fill_nan,
+                        rounding=rounding if rounding else self._rounding,
+                        show_errors=False,
+                    )
+
+            if (
+                self._daily_historical_data.empty
+                or self._historical_source == "YahooFinance"
+            ):
+                (
+                    self._daily_historical_data,
+                    self._invalid_tickers,
+                ) = _get_historical_data_from_yahoo_finance(
+                    tickers=self._tickers,
+                    start=self._start_date,
+                    end=self._end_date,
+                    interval="1d",
+                    return_column=return_column,
+                    risk_free_rate=self._daily_risk_free_rate,
+                    progress_bar=self._progress_bar,
+                    fill_nan=fill_nan,
+                    rounding=rounding if rounding else self._rounding,
+                )
+
+            if benchmark_data.empty and self._benchmark_ticker:
+                start_date = self._daily_historical_data.index[0].strftime("%Y-%m-%d")
+                end_date = self._daily_historical_data.index[-1].strftime("%Y-%m-%d")
+
+                # In the case it was not unable to retrieve the benchmark data, it will
+                # obtain the data from Yahoo Finance instead
+                benchmark_data, _ = _get_historical_data_from_yahoo_finance(
+                    tickers=self._benchmark_ticker,
+                    start=start_date,
+                    end=end_date,
+                    interval="1d",
+                    return_column=return_column,
+                    risk_free_rate=self._daily_risk_free_rate,
+                    progress_bar=False,
+                    fill_nan=fill_nan,
+                    rounding=rounding if rounding else self._rounding,
+                )
+
+            if self._benchmark_ticker:
+                self._daily_historical_data = (
+                    self._daily_historical_data.merge(
+                        benchmark_data,
+                        left_index=True,
+                        right_index=True,
+                        how="left",
+                    )
+                    .sort_index(axis=1)
+                    .reindex(
+                        self._daily_historical_data.columns.get_level_values(
+                            0
+                        ).unique(),
+                        axis=1,
+                        level=0,
+                    )
+                    .reindex(self._tickers + [self._benchmark_ticker], axis=1, level=1)
+                )
 
             # Change the benchmark ticker name to Benchmark
             self._daily_historical_data = self._daily_historical_data.rename(
@@ -1668,6 +1842,117 @@ class Toolkit:
             "Please choose from daily, weekly, monthly, quarterly or yearly as period."
         )
 
+    def get_dividend_calendar(
+        self,
+        overwrite: bool = False,
+        rounding: int | None = None,
+    ):
+        """
+        Obtain Dividend Calendars for any range of companies. It includes the following columns:
+            - Date: The date of the dividend.
+            - Adj Dividend: The adjusted dividend amount.
+            - Dividend: The dividend amount.
+            - Record Date: The record date of the dividend.
+            - Payment Date: The payment date of the dividend.
+            - Declaration Date: The declaration date of the dividend.
+
+        If a company does not pay any dividend, the function will mention that it was not able
+        to find any dividend data for that company.
+
+        Args:
+            overwrite (bool): Defines whether to overwrite the existing data.
+            rounding (int): Defines the number of decimal places to round the data to.
+
+        Returns:
+            pd.DataFrame: The earnings calendar for the specified tickers.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["AAPL", "MSFT", "GOOGL", "AMZN"], api_key=FMP_KEY, start_date="2022-08-01", quarterly=False
+        )
+
+        dividend_calendar = toolkit.get_dividend_calendar()
+
+        dividend_calendar.loc['AAPl']
+        ```
+
+        Which returns:
+
+        | date       |   Adj Dividend |   Dividend | Record Date   | Payment Date   | Declaration Date   |
+        |:-----------|---------------:|-----------:|:--------------|:---------------|:-------------------|
+        | 2022-08-05 |           0.23 |       0.23 | 2022-08-08    | 2022-08-11     | 2022-07-28         |
+        | 2022-11-04 |           0.23 |       0.23 | 2022-11-07    | 2022-11-10     | 2022-10-27         |
+        | 2023-02-10 |           0.23 |       0.23 | 2022-12-28    | 2023-02-16     | 2022-12-19         |
+        | 2023-05-12 |           0.24 |       0.24 | 2023-05-15    | 2023-05-18     | 2023-05-04         |
+        | 2023-08-11 |           0.24 |       0.24 | 2023-08-14    | 2023-08-17     | 2023-08-03         |
+        """
+        if not self._api_key:
+            return print(
+                "The requested data requires the api_key parameter to be set, consider obtaining a key with the "
+                "following link: https://intelligence.financialmodelingprep.com/pricing-plans?couponCode=jeroen"
+                "\nThis functionality also requires a Premium subscription. You can get 15% off by using "
+                "the above affiliate link which also supports the project."
+            )
+
+        if self._check_asset_class:
+            if self._historical_statistics.empty:
+                self.get_historical_statistics()
+
+            tickers = [
+                ticker
+                for ticker in self._historical_statistics.columns
+                if self._historical_statistics.loc["Instrument Type", ticker]
+                == "EQUITY"
+            ]
+            no_data_tickers = set(self._tickers) - set(tickers)
+        else:
+            tickers = self._tickers
+            no_data_tickers = set([])
+
+        if not tickers:
+            raise ValueError(
+                "Only for Equities it is possible to acquire the Dividend Calendar. None of the inputted tickers "
+                "are considered an Equity."
+            )
+        if no_data_tickers:
+            print(
+                f"Only for Equities it is possible to acquire the Dividend Calendar. Therefore, the "
+                f"following tickers yield no data: {', '.join(no_data_tickers)}"
+            )
+
+        if self._dividend_calendar.empty or overwrite:
+            (
+                self._dividend_calendar,
+                self._invalid_tickers,
+            ) = _get_dividend_calendar(
+                tickers=tickers,
+                api_key=self._api_key,
+                start_date=self._start_date,
+                end_date=self._end_date,
+                sleep_timer=self._sleep_timer,
+                progress_bar=self._progress_bar,
+            )
+
+        dividend_calendar = self._dividend_calendar.round(
+            rounding if rounding else self._rounding
+        ).loc[self._start_date : self._end_date]
+
+        if self._remove_invalid_tickers:
+            self._tickers = [
+                ticker
+                for ticker in self._tickers
+                if ticker not in self._invalid_tickers
+            ]
+
+        if len(tickers) == 1 and not self._dividend_calendar.empty:
+            return dividend_calendar.loc[tickers[0]]
+
+        return dividend_calendar
+
     def get_historical_statistics(self):
         """
         Retrieve statistics about each ticker's historical data. This is especially useful to understand why certain
@@ -1717,7 +2002,7 @@ class Toolkit:
                 tickers=self._tickers
             )
 
-        if len(self._tickers) == 1:
+        if len(self._tickers) == 1 and not self._historical_statistics.empty:
             return self._historical_statistics[self._tickers[0]]
 
         return self._historical_statistics
@@ -1725,9 +2010,11 @@ class Toolkit:
     def get_treasury_data(
         self,
         period: str = "daily",
+        risk_free_rate: str | None = None,
         fill_nan: bool = True,
         divide_ohlc_by: int | float | None = 100,
         rounding: int | None = None,
+        show_errors: bool = True,
     ):
         """
         Retrieve daily, weekly, monthly, quarterly or yearly treasury data. This can be from FinancialModelingPrep
@@ -1770,17 +2057,59 @@ class Toolkit:
             "^TYX": "30 Year",
         }
 
-        risk_free_rate = risk_free_names[self._risk_free_rate]
+        if risk_free_rate:
+            if risk_free_rate not in ["13w", "5y", "10y", "30y"]:
+                raise ValueError(
+                    "Please choose from 13w, 5y, 10y or 30y as risk_free_rate."
+                )
 
-        if self._daily_treasury_data.empty:
-            daily_treasury_data, _ = _get_historical_data(
-                tickers=["^IRX", "^FVX", "^TNX", "^TYX"],
-                start=self._start_date,
-                end=self._end_date,
-                progress_bar=False,
-                divide_ohlc_by=divide_ohlc_by,
-                rounding=rounding if rounding else self._rounding,
+            risk_free_rate = (
+                "^IRX"
+                if risk_free_rate == "13w"
+                else (
+                    "^FVX"
+                    if risk_free_rate == "5y"
+                    else ("^TNX" if risk_free_rate == "10y" else "^TYX")
+                )
             )
+
+        risk_free_rate_tickers = (
+            ["^IRX", "^FVX", "^TNX", "^TYX"] if not risk_free_rate else [risk_free_rate]
+        )
+
+        risk_free_rate = risk_free_names[self._risk_free_rate]
+        daily_treasury_data = pd.DataFrame()
+
+        if (
+            self._daily_treasury_data.empty
+            or len(self._daily_treasury_data.columns.get_level_values(1).unique()) == 1
+        ):
+            # It collects data in the scenarios where the treasury data is empty or only contains one column which generally
+            # means the data was collected for the historical data functionality which only requires a subselection
+            if self._historical_source == "FinancialModelingPrep" and self._api_key:
+                (
+                    daily_treasury_data,
+                    _,
+                ) = _get_historical_data_from_financial_modeling_prep(
+                    tickers=risk_free_rate_tickers,
+                    api_key=self._api_key,
+                    start=self._start_date,
+                    end=self._end_date,
+                    progress_bar=False,
+                    divide_ohlc_by=divide_ohlc_by,
+                    rounding=rounding if rounding else self._rounding,
+                    show_errors=show_errors,
+                )
+
+            if self._historical_source == "YahooFinance" or daily_treasury_data.empty:
+                daily_treasury_data, _ = _get_historical_data_from_yahoo_finance(
+                    tickers=risk_free_rate_tickers,
+                    start=self._start_date,
+                    end=self._end_date,
+                    progress_bar=False,
+                    divide_ohlc_by=divide_ohlc_by,
+                    rounding=rounding if rounding else self._rounding,
+                )
 
             daily_treasury_data = daily_treasury_data.rename(
                 treasury_names, axis=1, level=1
@@ -1946,21 +2275,26 @@ class Toolkit:
             return print(
                 "The requested data requires the api_key parameter to be set, consider "
                 "obtaining a key with the following link: "
-                "https://financialmodelingprep.com/developer/docs/pricing/jeroen/"
+                "https://intelligence.financialmodelingprep.com/pricing-plans?couponCode=jeroen"
                 "\nThe free plan allows for 250 requests per day, a limit of 5 years and has no "
                 "quarterly data. Consider upgrading your plan. You can get 15% off by using the "
                 "above affiliate link which also supports the project."
             )
 
-        if self._historical_statistics.empty:
-            self.get_historical_statistics()
+        if self._check_asset_class:
+            if self._historical_statistics.empty:
+                self.get_historical_statistics()
 
-        tickers = [
-            ticker
-            for ticker in self._historical_statistics.columns
-            if self._historical_statistics.loc["Instrument Type", ticker] == "EQUITY"
-        ]
-        no_data_tickers = set(self._tickers) - set(tickers)
+            tickers = [
+                ticker
+                for ticker in self._historical_statistics.columns
+                if self._historical_statistics.loc["Instrument Type", ticker]
+                == "EQUITY"
+            ]
+            no_data_tickers = set(self._tickers) - set(tickers)
+        else:
+            tickers = self._tickers
+            no_data_tickers = set([])
 
         if not tickers:
             raise ValueError(
@@ -2014,7 +2348,7 @@ class Toolkit:
                 axis="columns",
             )
 
-        if len(tickers) == 1:
+        if len(tickers) == 1 and not self._balance_sheet_statement.empty:
             return (
                 self._balance_sheet_statement_growth.loc[tickers[0]]
                 if growth
@@ -2097,21 +2431,26 @@ class Toolkit:
             return print(
                 "The requested data requires the api_key parameter to be set, consider "
                 "obtaining a key with the following link: "
-                "https://financialmodelingprep.com/developer/docs/pricing/jeroen/"
+                "https://intelligence.financialmodelingprep.com/pricing-plans?couponCode=jeroen"
                 "\nThe free plan allows for 250 requests per day, a limit of 5 years and has no "
                 "quarterly data. Consider upgrading your plan. You can get 15% off by using the "
                 "above affiliate link which also supports the project."
             )
 
-        if self._historical_statistics.empty:
-            self.get_historical_statistics()
+        if self._check_asset_class:
+            if self._historical_statistics.empty:
+                self.get_historical_statistics()
 
-        tickers = [
-            ticker
-            for ticker in self._historical_statistics.columns
-            if self._historical_statistics.loc["Instrument Type", ticker] == "EQUITY"
-        ]
-        no_data_tickers = set(self._tickers) - set(tickers)
+            tickers = [
+                ticker
+                for ticker in self._historical_statistics.columns
+                if self._historical_statistics.loc["Instrument Type", ticker]
+                == "EQUITY"
+            ]
+            no_data_tickers = set(self._tickers) - set(tickers)
+        else:
+            tickers = self._tickers
+            no_data_tickers = set([])
 
         if not tickers:
             raise ValueError(
@@ -2163,7 +2502,7 @@ class Toolkit:
                 axis="columns",
             )
 
-        if len(tickers) == 1:
+        if len(tickers) == 1 and not self._income_statement.empty:
             return (
                 self._income_statement_growth.loc[tickers[0]]
                 if growth
@@ -2246,21 +2585,26 @@ class Toolkit:
             return print(
                 "The requested data requires the api_key parameter to be set, consider "
                 "obtaining a key with the following link: "
-                "https://financialmodelingprep.com/developer/docs/pricing/jeroen/"
+                "https://intelligence.financialmodelingprep.com/pricing-plans?couponCode=jeroen"
                 "\nThe free plan allows for 250 requests per day, a limit of 5 years and has no "
                 "quarterly data. Consider upgrading your plan. You can get 15% off by using the "
                 "above affiliate link which also supports the project."
             )
 
-        if self._historical_statistics.empty:
-            self.get_historical_statistics()
+        if self._check_asset_class:
+            if self._historical_statistics.empty:
+                self.get_historical_statistics()
 
-        tickers = [
-            ticker
-            for ticker in self._historical_statistics.columns
-            if self._historical_statistics.loc["Instrument Type", ticker] == "EQUITY"
-        ]
-        no_data_tickers = set(self._tickers) - set(tickers)
+            tickers = [
+                ticker
+                for ticker in self._historical_statistics.columns
+                if self._historical_statistics.loc["Instrument Type", ticker]
+                == "EQUITY"
+            ]
+            no_data_tickers = set(self._tickers) - set(tickers)
+        else:
+            tickers = self._tickers
+            no_data_tickers = set([])
 
         if not tickers:
             raise ValueError(
@@ -2312,7 +2656,7 @@ class Toolkit:
                 axis="columns",
             )
 
-        if len(tickers) == 1:
+        if len(tickers) == 1 and not self._cash_flow_statement.empty:
             return (
                 self._cash_flow_statement_growth.loc[tickers[0]]
                 if growth
@@ -2366,21 +2710,26 @@ class Toolkit:
             return print(
                 "The requested data requires the api_key parameter to be set, consider "
                 "obtaining a key with the following link: "
-                "https://financialmodelingprep.com/developer/docs/pricing/jeroen/"
+                "https://intelligence.financialmodelingprep.com/pricing-plans?couponCode=jeroen"
                 "\nThe free plan allows for 250 requests per day, a limit of 5 years and has no "
                 "quarterly data. Consider upgrading your plan. You can get 15% off by using the "
                 "above affiliate link which also supports the project."
             )
 
-        if self._historical_statistics.empty:
-            self.get_historical_statistics()
+        if self._check_asset_class:
+            if self._historical_statistics.empty:
+                self.get_historical_statistics()
 
-        tickers = [
-            ticker
-            for ticker in self._historical_statistics.columns
-            if self._historical_statistics.loc["Instrument Type", ticker] == "EQUITY"
-        ]
-        no_data_tickers = set(self._tickers) - set(tickers)
+            tickers = [
+                ticker
+                for ticker in self._historical_statistics.columns
+                if self._historical_statistics.loc["Instrument Type", ticker]
+                == "EQUITY"
+            ]
+            no_data_tickers = set(self._tickers) - set(tickers)
+        else:
+            tickers = self._tickers
+            no_data_tickers = set([])
 
         if not tickers:
             raise ValueError(
@@ -2418,7 +2767,7 @@ class Toolkit:
                 if ticker not in self._invalid_tickers
             ]
 
-        if len(tickers) == 1:
+        if len(tickers) == 1 and not self._statistics_statement.empty:
             return self._statistics_statement.loc[tickers[0]]
 
         return self._statistics_statement

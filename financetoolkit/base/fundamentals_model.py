@@ -9,7 +9,7 @@ import numpy as np
 import pandas as pd
 import requests
 
-# pylint: disable=no-member,too-many-locals
+# pylint: disable=no-member,too-many-locals,too-many-lines
 
 try:
     from tqdm import tqdm
@@ -18,6 +18,7 @@ try:
 except ImportError:
     ENABLE_TQDM = False
 
+from financetoolkit.base import helpers
 from financetoolkit.base.normalization_model import (
     convert_financial_statements,
 )
@@ -29,6 +30,7 @@ def get_financial_data(
     sleep_timer: bool = False,
     subscription_type: str = "Premium",
     raw: bool = False,
+    show_errors: bool = True,
 ) -> pd.DataFrame:
     """
     Collects the financial data from the FinancialModelingPrep API. This is a
@@ -59,6 +61,9 @@ def get_financial_data(
             return financial_data
 
         except requests.exceptions.HTTPError:
+            if not show_errors:
+                return pd.DataFrame(columns=["ERROR_MESSAGE"])
+
             if (
                 "not available under your current subscription"
                 in response.json()["Error Message"]
@@ -83,7 +88,7 @@ def get_financial_data(
                 if sleep_timer:
                     time.sleep(60)
                 else:
-                    return pd.DataFrame(columns=["ERROR_MESSAGE"])
+                    return pd.DataFrame(["Limit Reach"], columns=["ERROR_MESSAGE"])
             if (
                 "Free plan is limited to US stocks only"
                 in response.json()["Error Message"]
@@ -102,7 +107,7 @@ def get_financial_data(
                     "and get 15% off the Premium plans by using the following affiliate link.\nThis also supports "
                     "the project: https://intelligence.financialmodelingprep.com/pricing-plans?couponCode=jeroen"
                 )
-                return pd.DataFrame(columns=["ERROR_MESSAGE"])
+                return pd.DataFrame(["Invalid API Key"], columns=["ERROR_MESSAGE"])
 
             print(
                 "This is an undefined error, please report to the author at https://github.com/JerBouma/FinanceToolkit"
@@ -196,6 +201,14 @@ def get_financial_statements(
             url=url,
             sleep_timer=sleep_timer,
         )
+
+        break_loop = helpers.check_for_loop_break(
+            values=financial_statement.to_numpy(),
+            errors=["Limit Reach", "Invalid API Key"],
+        )
+
+        if break_loop:
+            break
 
         if "ERROR_MESSAGE" in financial_statement:
             invalid_tickers.append(ticker)
@@ -384,6 +397,15 @@ def get_revenue_segmentation(
             raw=True,
         )
 
+        if isinstance(revenue_segmentation_json, pd.DataFrame):
+            break_loop = helpers.check_for_loop_break(
+                values=revenue_segmentation_json.to_numpy(),
+                errors=["Limit Reach", "Invalid API Key"],
+            )
+
+            if break_loop:
+                break
+
         if "ERROR_MESSAGE" in revenue_segmentation_json:
             invalid_tickers.append(ticker)
             continue
@@ -563,6 +585,14 @@ def get_analyst_estimates(
             ticker=ticker, url=url, sleep_timer=sleep_timer
         )
 
+        break_loop = helpers.check_for_loop_break(
+            values=analyst_estimates.to_numpy(),
+            errors=["Limit Reach", "Invalid API Key"],
+        )
+
+        if break_loop:
+            break
+
         if "ERROR_MESSAGE" in analyst_estimates:
             invalid_tickers.append(ticker)
             continue
@@ -701,6 +731,16 @@ def get_profile(tickers: list[str] | str, api_key: str) -> pd.DataFrame:
         try:
             url = f"https://financialmodelingprep.com/api/v3/profile/{ticker}?apikey={api_key}"
             profile_dataframe[ticker] = get_financial_data(ticker=ticker, url=url).T
+
+            break_loop = helpers.check_for_loop_break(
+                values=profile_dataframe[ticker].to_numpy(),
+                errors=["Limit Reach", "Invalid API Key"],
+            )
+
+            if break_loop:
+                del profile_dataframe[ticker]
+                break
+
         except ValueError:
             print(f"No profile data found for {ticker}")
             invalid_tickers.append(ticker)
@@ -767,6 +807,15 @@ def get_quote(tickers: list[str] | str, api_key: str) -> pd.DataFrame:
         try:
             url = f"https://financialmodelingprep.com/api/v3/quote/{ticker}?apikey={api_key}"
             quote_dataframe[ticker] = get_financial_data(ticker=ticker, url=url).T
+
+            break_loop = helpers.check_for_loop_break(
+                values=quote_dataframe[ticker].to_numpy(),
+                errors=["Limit Reach", "Invalid API Key"],
+            )
+
+            if break_loop:
+                del quote_dataframe[ticker]
+                break
         except ValueError:
             print(f"No quote data found for {ticker}")
             invalid_tickers.append(ticker)
@@ -804,6 +853,14 @@ def get_rating(tickers: list[str] | str, api_key: str):
         try:
             url = f"https://financialmodelingprep.com/api/v3/historical-rating/{ticker}?l&apikey={api_key}"
             ratings = get_financial_data(ticker=ticker, url=url)
+
+            break_loop = helpers.check_for_loop_break(
+                values=ratings.to_numpy(),
+                errors=["Limit Reach", "Invalid API Key"],
+            )
+
+            if break_loop:
+                break
 
         except ValueError:
             print(f"No rating data found for {ticker}")
@@ -880,7 +937,7 @@ def get_earnings_calendar(
         progress_bar (bool): Whether to show a progress bar when retrieving data over 10 tickers. Defaults to True.
 
     Returns:
-        pd.DataFrame: the rating data.
+        pd.DataFrame: the earnings calendar data.
     """
     naming: dict = {
         "eps": "EPS",
@@ -923,6 +980,14 @@ def get_earnings_calendar(
             ticker=ticker, url=url, sleep_timer=sleep_timer
         )
 
+        break_loop = helpers.check_for_loop_break(
+            values=earnings_calendar.to_numpy(),
+            errors=["Limit Reach", "Invalid API Key"],
+        )
+
+        if break_loop:
+            break
+
         if "ERROR_MESSAGE" in earnings_calendar:
             invalid_tickers.append(ticker)
             continue
@@ -964,6 +1029,121 @@ def get_earnings_calendar(
 
         return (
             earnings_calendar_total,
+            invalid_tickers,
+        )
+
+    return pd.DataFrame(), invalid_tickers
+
+
+def get_dividend_calendar(
+    tickers: list[str] | str,
+    api_key: str,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    sleep_timer: bool = False,
+    progress_bar: bool = True,
+):
+    """
+    Obtains Dividend Calendar which shows the dividends and related dates.
+
+    Args:
+        ticker (list or string): the company ticker (for example: "MSFT")
+        api_key (string): the API Key obtained from
+        https://intelligence.financialmodelingprep.com/pricing-plans?couponCode=jeroen
+        start_date (str): The start date to filter data with.
+        end_date (str): The end date to filter data with.
+        sleep_timer (bool): Whether to set a sleep timer when the rate limit is reached. Note that this only works
+        if you have a Premium subscription (Starter or higher) from FinancialModelingPrep. Defaults to False.
+        progress_bar (bool): Whether to show a progress bar when retrieving data over 10 tickers. Defaults to True.
+
+    Returns:
+        pd.DataFrame: the earnings calendar data.
+    """
+    naming: dict = {
+        "adjDividend": "Adj Dividend",
+        "dividend": "Dividend",
+        "recordDate": "Record Date",
+        "paymentDate": "Payment Date",
+        "declarationDate": "Declaration Date",
+    }
+
+    if isinstance(tickers, str):
+        ticker_list = [tickers]
+    elif isinstance(tickers, list):
+        ticker_list = tickers
+    else:
+        raise ValueError(f"Type for the tickers ({type(tickers)}) variable is invalid.")
+
+    if not api_key:
+        raise ValueError(
+            "Please enter an API key from FinancialModelingPrep. "
+            "For more information, look here: "
+            "https://intelligence.financialmodelingprep.com/pricing-plans?couponCode=jeroen"
+        )
+
+    dividend_calendar_dict: dict = {}
+    invalid_tickers = []
+
+    ticker_list_iterator = (
+        tqdm(ticker_list, desc="Obtaining dividend calendars")
+        if (ENABLE_TQDM & progress_bar)
+        else ticker_list
+    )
+
+    for ticker in ticker_list_iterator:
+        url = (
+            "https://financialmodelingprep.com/api/v3/historical-price-full/stock_dividend/"
+            f"{ticker}?apikey={api_key}&from={start_date}&to={end_date}"
+        )
+        dividend_calendar = get_financial_data(
+            ticker=ticker, url=url, sleep_timer=sleep_timer, raw=True
+        )
+
+        if isinstance(dividend_calendar, pd.DataFrame):
+            break_loop = helpers.check_for_loop_break(
+                values=dividend_calendar.to_numpy(),
+                errors=["Limit Reach", "Invalid API Key"],
+            )
+
+            if break_loop:
+                break
+
+        if (
+            "ERROR_MESSAGE" in dividend_calendar
+            or "historical" not in dividend_calendar
+        ):
+            invalid_tickers.append(ticker)
+            continue
+
+        try:
+            dividend_calendar = pd.DataFrame(dividend_calendar["historical"]).set_index(
+                "date"
+            )
+        except KeyError:
+            invalid_tickers.append(ticker)
+            continue
+
+        dividend_calendar.index = pd.to_datetime(dividend_calendar.index)
+        dividend_calendar.index = dividend_calendar.index.to_period(freq="D")
+
+        dividend_calendar = dividend_calendar.sort_index()
+
+        dividend_calendar = dividend_calendar.drop(["label"], axis=1)
+        dividend_calendar = dividend_calendar.rename(columns=naming)
+
+        dividend_calendar = dividend_calendar.sort_index(axis=0).truncate(
+            before=start_date, after=end_date, axis=0
+        )
+
+        dividend_calendar_dict[ticker] = dividend_calendar[naming.values()]
+
+    print(f"No dividend calendar found for {', '.join(invalid_tickers)}")
+
+    if dividend_calendar_dict:
+        dividend_calendar_total = pd.concat(dividend_calendar_dict, axis=0)
+
+        return (
+            dividend_calendar_total,
             invalid_tickers,
         )
 

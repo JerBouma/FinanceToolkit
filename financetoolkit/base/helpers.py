@@ -191,3 +191,19 @@ def handle_errors(func):
     wrapper.__module__ = func.__module__
 
     return wrapper
+
+
+def check_for_loop_break(values, errors: list[str]):
+    """
+    Simple code that checks if any of the matching errors are in the values.
+
+    This is meant to break a loop that would otherwise keep duplicating the same error.
+
+    Args:
+        values: The values to check for errors.
+        errors (list[str]): The errors to check for.
+
+    Returns:
+        bool: True if there is an error, False otherwise
+    """
+    return any(error in values for error in errors)

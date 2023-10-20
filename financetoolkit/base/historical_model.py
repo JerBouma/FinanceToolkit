@@ -15,20 +15,243 @@ try:
 except ImportError:
     ENABLE_TQDM = False
 
-from financetoolkit.base import fundamentals_model
+from financetoolkit.base import fundamentals_model, helpers
 
-# pylint: disable=too-many-locals
+# pylint: disable=too-many-locals,unsubscriptable-object
 
 TREASURY_LIMIT = 90
 
 
-def get_historical_data(
+def get_historical_data_from_financial_modeling_prep(
+    tickers: list[str] | str,
+    api_key: str,
+    start: str | None = None,
+    end: str | None = None,
+    interval: str = "1d",
+    return_column: str = "Adj Close",
+    risk_free_rate: pd.DataFrame = pd.DataFrame(),
+    include_dividends: bool = True,
+    progress_bar: bool = True,
+    fill_nan: bool = True,
+    divide_ohlc_by: int | float | None = None,
+    rounding: int | None = None,
+    show_errors: bool = True,
+):
+    """
+    Retrieves historical stock data for the given ticker(s) from Financial MOdeling Prep for a specified period.
+    If start and/or end date are not provided, it defaults to 10 years from the current date.
+
+    Note that when using a Free API key from FinancialModelingPrep it will be limited to 5 years.
+
+    Args:
+        tickers (list of str): A list of one or more ticker symbols to retrieve data for.
+        start (str, optional): A string representing the start date of the period to retrieve data for
+            in 'YYYY-MM-DD' format. Defaults to None.
+        end (str, optional): A string representing the end date of the period to retrieve data for
+            in 'YYYY-MM-DD' format. Defaults to None.
+        interval (str, optional): A string representing the interval to retrieve data for.
+        return_column (str, optional): A string representing the column to use for return calculations.
+        risk_free_rate (pd.Series, optional): A pandas Series object containing the risk free rate data.
+        This is used to calculate the excess return and excess volatility. Defaults to pd.Series().
+        include_dividends (bool, optional): A boolean representing whether to include dividends in the
+        historical data. Defaults to True.
+        progress_bar (bool, optional): A boolean representing whether to show a progress bar or not.
+        fill_nan (bool, optional): A boolean representing whether to fill NaN values with the previous value.
+        divide_ohlc_by (int or float, optional): A number to divide the OHLC data by. Defaults to None.
+        rounding (int, optional): The number of decimal places to round the data to. Defaults to None.
+
+    Raises:
+        ValueError: If the start date is after the end date.
+
+    Returns:
+        pd.DataFrame: A pandas DataFrame object containing the historical stock data for the given ticker(s).
+        The index of the DataFrame is the date of the data and the columns are a multi-index
+        with the ticker symbol(s) as the first level and the OHLC data as the second level.
+    """
+    if isinstance(tickers, str):
+        ticker_list = [tickers]
+    elif isinstance(tickers, list):
+        ticker_list = tickers
+    else:
+        raise ValueError(f"Type for the tickers ({type(tickers)}) variable is invalid.")
+
+    # Additional data is collected to ensure return calculations are correct
+    end_date_value = (
+        datetime.strptime(end, "%Y-%m-%d") + timedelta(days=1 * 365)
+        if end is not None
+        else datetime.today()
+    )
+
+    if start is not None:
+        # Additional data is collected to ensure return calculations are correct
+        start_date_value = datetime.strptime(start, "%Y-%m-%d") - timedelta(
+            days=1 * 365
+        )
+
+        if start_date_value > end_date_value:
+            raise ValueError(
+                f"Start date ({start_date_value}) must be before end date ({end_date_value}))"
+            )
+    else:
+        start_date_value = datetime.now() - timedelta(days=10 * 365)
+
+        if start_date_value > end_date_value:
+            start_date_value = end_date_value - timedelta(days=10 * 365)
+
+    end_date_string = end_date_value.strftime("%Y-%m-%d")
+    start_date_string = start_date_value.strftime("%Y-%m-%d")
+
+    historical_data_dict: dict = {}
+
+    if interval in ["yearly", "quarterly"]:
+        interval = "1d"
+
+    invalid_tickers = []
+
+    ticker_list_iterator = (
+        tqdm(ticker_list, desc="Obtaining historical data from FinancialModelingPrep")
+        if (ENABLE_TQDM & progress_bar)
+        else ticker_list
+    )
+
+    for ticker in ticker_list_iterator:
+        historical_data_url = (
+            f"https://financialmodelingprep.com/api/v3/historical-price-full/{ticker}?"
+            f"apikey={api_key}&from={start_date_string}&to={end_date_string}"
+        )
+
+        dividend_url = (
+            f"https://financialmodelingprep.com/api/v3/historical-price-full/stock_dividend/{ticker}?"
+            f"apikey={api_key}&from={start_date_string}&to={end_date_string}"
+        )
+
+        try:
+            historical_data_dict[ticker] = fundamentals_model.get_financial_data(
+                ticker, historical_data_url, raw=True, show_errors=show_errors
+            )
+
+            if isinstance(historical_data_dict[ticker], pd.DataFrame):
+                break_loop = helpers.check_for_loop_break(
+                    values=historical_data_dict[ticker].to_numpy(),
+                    errors=["Limit Reach", "Invalid API Key"],
+                )
+
+                if break_loop:
+                    del historical_data_dict[ticker]
+                    break
+
+            if (
+                not historical_data_dict[ticker]
+                or "historical" not in historical_data_dict[ticker]
+            ):
+                print(f"No historical data found for {ticker}")
+                invalid_tickers.append(ticker)
+                continue
+
+            historical_data_dict[ticker] = pd.DataFrame(
+                historical_data_dict[ticker]["historical"]
+            ).set_index("date")
+        except (HTTPError, KeyError, ValueError):
+            invalid_tickers.append(ticker)
+            continue
+
+        historical_data_dict[ticker] = historical_data_dict[ticker].sort_index()
+
+        if historical_data_dict[ticker].loc[start_date_string:end_date_string].empty:
+            print(f"The given start and end date result in no data found for {ticker}")
+            del historical_data_dict[ticker]
+            invalid_tickers.append(ticker)
+            continue
+
+        historical_data_dict[ticker].index = pd.to_datetime(
+            historical_data_dict[ticker].index
+        )
+        historical_data_dict[ticker].index = historical_data_dict[
+            ticker
+        ].index.to_period(freq="D")
+
+        historical_data_dict[ticker] = historical_data_dict[ticker].rename(
+            columns={
+                "open": "Open",
+                "high": "High",
+                "low": "Low",
+                "close": "Close",
+                "adjClose": "Adj Close",
+                "volume": "Volume",
+            }
+        )
+
+        historical_data_dict[ticker] = historical_data_dict[ticker][
+            ["Open", "High", "Low", "Close", "Adj Close", "Volume"]
+        ]
+
+        if divide_ohlc_by:
+            # Set divide by zero and invalid value warnings to ignore as it is fine that
+            # dividing NaN by divide_ohlc_by results in NaN
+            np.seterr(divide="ignore", invalid="ignore")
+            # In case tickers are presented in percentages or similar
+            historical_data_dict[ticker] = historical_data_dict[ticker].div(
+                divide_ohlc_by
+            )
+
+        if include_dividends:
+            try:
+                dividends = fundamentals_model.get_financial_data(
+                    ticker, dividend_url, raw=True, show_errors=show_errors
+                )
+
+                try:
+                    dividends_df = pd.DataFrame(dividends["historical"]).set_index(
+                        "date"
+                    )
+
+                    dividends_df.index = pd.to_datetime(dividends_df.index)
+                    dividends_df.index = dividends_df.index.to_period(freq="D")
+
+                    historical_data_dict[ticker]["Dividends"] = dividends_df["dividend"]
+                except KeyError:
+                    historical_data_dict[ticker]["Dividends"] = 0
+            except HTTPError:
+                historical_data_dict[ticker]["Dividends"] = 0
+                continue
+
+        historical_data_dict[ticker] = historical_data_dict[ticker].loc[
+            ~historical_data_dict[ticker].index.duplicated(keep="first")
+        ]
+
+        historical_data_dict[ticker] = enrich_historical_data(
+            historical_data=historical_data_dict[ticker],
+            start=start,
+            end=end,
+            return_column=return_column,
+            risk_free_rate=risk_free_rate,
+        )
+
+    if historical_data_dict:
+        historical_data = pd.concat(historical_data_dict).unstack(level=0).sort_index()
+
+        if "Dividends" in historical_data.columns:
+            historical_data["Dividends"] = historical_data["Dividends"].fillna(0)
+
+        if fill_nan:
+            historical_data = historical_data.ffill()
+
+        if rounding:
+            historical_data = historical_data.round(rounding)
+
+        return historical_data, invalid_tickers
+
+    return pd.DataFrame(), invalid_tickers
+
+
+def get_historical_data_from_yahoo_finance(
     tickers: list[str] | str,
     start: str | None = None,
     end: str | None = None,
     interval: str = "1d",
     return_column: str = "Adj Close",
     risk_free_rate: pd.DataFrame = pd.DataFrame(),
+    include_dividends: bool = True,
     progress_bar: bool = True,
     fill_nan: bool = True,
     divide_ohlc_by: int | float | None = None,
@@ -47,6 +270,8 @@ def get_historical_data(
         interval (str, optional): A string representing the interval to retrieve data for.
         return_column (str, optional): A string representing the column to use for return calculations.
         risk_free_rate (pd.Series, optional): A pandas Series object containing the risk free rate data.
+        include_dividends (bool, optional): A boolean representing whether to include dividends in the
+        historical data. Defaults to True.
         This is used to calculate the excess return and excess volatility. Defaults to pd.Series().
         progress_bar (bool, optional): A boolean representing whether to show a progress bar or not.
         fill_nan (bool, optional): A boolean representing whether to fill NaN values with the previous value.
@@ -104,7 +329,7 @@ def get_historical_data(
     invalid_tickers = []
 
     ticker_list_iterator = (
-        tqdm(ticker_list, desc="Obtaining historical data")
+        tqdm(ticker_list, desc="Obtaining historical data from Yahoo Finance")
         if (ENABLE_TQDM & progress_bar)
         else ticker_list
     )
@@ -153,20 +378,21 @@ def get_historical_data(
                 divide_ohlc_by
             )
 
-        try:
-            dividends = pd.read_csv(dividend_url, index_col="Date")["Dividends"]
+        if include_dividends:
+            try:
+                dividends = pd.read_csv(dividend_url, index_col="Date")["Dividends"]
 
-            dividends.index = pd.to_datetime(dividends.index)
-            dividends.index = dividends.index.to_period(freq="D")
+                dividends.index = pd.to_datetime(dividends.index)
+                dividends.index = dividends.index.to_period(freq="D")
 
-            historical_data_dict[ticker]["Dividends"] = dividends
+                historical_data_dict[ticker]["Dividends"] = dividends
 
-            historical_data_dict[ticker]["Dividends"] = historical_data_dict[ticker][
-                "Dividends"
-            ].fillna(0)
-        except HTTPError:
-            print(f"No dividend data found for {ticker}")
-            continue
+                historical_data_dict[ticker]["Dividends"] = historical_data_dict[
+                    ticker
+                ]["Dividends"].fillna(0)
+            except HTTPError:
+                print(f"No dividend data found for {ticker}")
+                continue
 
         historical_data_dict[ticker] = historical_data_dict[ticker].loc[
             ~historical_data_dict[ticker].index.duplicated(keep="first")

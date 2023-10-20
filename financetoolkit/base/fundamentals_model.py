@@ -245,7 +245,7 @@ def get_financial_statements(
         except ValueError as error:
             print(
                 f"Not able to convert DataFrame to float64 due to {error}. This could result in"
-                "issues when values are zero and is predominently relevant for "
+                "issues when values are zero and is predominantly relevant for "
                 "ratio calculations."
             )
 
@@ -430,7 +430,7 @@ def get_revenue_segmentation(
         except ValueError as error:
             print(
                 f"Not able to convert DataFrame to float64 due to {error}. This could result in"
-                "issues when values are zero and is predominently relevant for "
+                "issues when values are zero and is predominantly relevant for "
                 "ratio calculations."
             )
 
@@ -614,7 +614,7 @@ def get_analyst_estimates(
         except ValueError as error:
             print(
                 f"Not able to convert DataFrame to float64 and int due to {error}. This could result in"
-                "issues when values are zero and is predominently relevant for "
+                "issues when values are zero and is predominantly relevant for "
                 "ratio calculations."
             )
 

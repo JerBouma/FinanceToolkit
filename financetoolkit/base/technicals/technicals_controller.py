@@ -1937,10 +1937,10 @@ class Technicals:
         else:
             raise ValueError("Period must be daily, weekly, quarterly, or yearly.")
 
-        stochastic_osciallator_dict = {}
+        stochastic_oscillator_dict = {}
 
         for ticker in self._tickers:
-            stochastic_osciallator_dict[ticker] = momentum.get_stochastic_oscillator(
+            stochastic_oscillator_dict[ticker] = momentum.get_stochastic_oscillator(
                 historical_data["High"][ticker],
                 historical_data["Low"][ticker],
                 historical_data[close_column][ticker],
@@ -1948,23 +1948,23 @@ class Technicals:
                 smooth_widow,
             ).loc[self._start_date : self._end_date]
 
-        stochastic_osciallator = (
-            pd.concat(stochastic_osciallator_dict, axis=1)
+        stochastic_oscillator = (
+            pd.concat(stochastic_oscillator_dict, axis=1)
             .swaplevel(1, 0, axis=1)
             .sort_index(axis=1)
         )
 
         if growth:
-            stochastic_osciallator_growth = calculate_growth(
-                stochastic_osciallator,
+            stochastic_oscillator_growth = calculate_growth(
+                stochastic_oscillator,
                 lag=lag,
                 rounding=rounding if rounding else self._rounding,
                 axis="index",
             )
 
-            return stochastic_osciallator_growth
+            return stochastic_oscillator_growth
 
-        return stochastic_osciallator.round(rounding if rounding else self._rounding)
+        return stochastic_oscillator.round(rounding if rounding else self._rounding)
 
     @handle_errors
     def get_moving_average_convergence_divergence(

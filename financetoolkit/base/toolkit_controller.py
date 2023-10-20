@@ -1748,7 +1748,9 @@ class Toolkit:
 
         if period == "weekly":
             if self._weekly_risk_free_rate.empty or overwrite:
-                self.get_treasury_data(period="weekly")
+                self.get_treasury_data(
+                    period="weekly", risk_free_rate=self._risk_free_rate
+                )
 
             self._weekly_historical_data = _convert_daily_to_other_period(
                 period="weekly",
@@ -1771,7 +1773,9 @@ class Toolkit:
 
         if period == "monthly":
             if self._monthly_risk_free_rate.empty or overwrite:
-                self.get_treasury_data(period="monthly")
+                self.get_treasury_data(
+                    period="monthly", risk_free_rate=self._risk_free_rate
+                )
 
             self._monthly_historical_data = _convert_daily_to_other_period(
                 period="monthly",
@@ -1794,7 +1798,9 @@ class Toolkit:
 
         if period == "quarterly":
             if self._quarterly_risk_free_rate.empty or overwrite:
-                self.get_treasury_data(period="quarterly")
+                self.get_treasury_data(
+                    period="quarterly", risk_free_rate=self._risk_free_rate
+                )
 
             self._quarterly_historical_data = _convert_daily_to_other_period(
                 period="quarterly",
@@ -1817,7 +1823,9 @@ class Toolkit:
 
         if period == "yearly":
             if self._yearly_risk_free_rate.empty or overwrite:
-                self.get_treasury_data(period="yearly")
+                self.get_treasury_data(
+                    period="yearly", risk_free_rate=self._risk_free_rate
+                )
 
             self._yearly_historical_data = _convert_daily_to_other_period(
                 period="yearly",
@@ -2080,10 +2088,13 @@ class Toolkit:
         risk_free_rate = risk_free_names[self._risk_free_rate]
         daily_treasury_data = pd.DataFrame()
 
-        if (
-            self._daily_treasury_data.empty
-            or len(self._daily_treasury_data.columns.get_level_values(1).unique()) == 1
-        ):
+        if not self._daily_treasury_data.empty:
+            specific_rates = [
+                ticker in self._daily_treasury_data.columns.get_level_values(1)
+                for ticker in risk_free_rate_tickers
+            ]
+
+        if self._daily_treasury_data.empty or False in specific_rates:
             # It collects data in the scenarios where the treasury data is empty or only contains one column which generally
             # means the data was collected for the historical data functionality which only requires a subselection
             if self._historical_source == "FinancialModelingPrep" and self._api_key:

@@ -386,7 +386,7 @@ def get_treasury_rates(
     except ValueError as error:
         print(
             f"Not able to convert DataFrame to float64 due to {error}. This could result in"
-            "issues when values are zero and is predominently relevant for "
+            "issues when values are zero and is predominantly relevant for "
             "ratio calculations."
         )
 

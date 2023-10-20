@@ -1283,7 +1283,7 @@ class Performance:
         return that evaluates the excess return of an investment portfolio or asset per unit of risk taken.
 
         It can be used to compare volatilities in different stocks or show stocks go into Ulcer territory.
-        Similair to the Sharpe Ratio, a higher UPI is better than a lower one (since investors prefer more return
+        Similar to the Sharpe Ratio, a higher UPI is better than a lower one (since investors prefer more return
         for less risk).
 
         Args:

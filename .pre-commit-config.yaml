@@ -14,7 +14,7 @@ repos:
     hooks:
       - id: black
   - repo: https://github.com/charliermarsh/ruff-pre-commit
-    rev: "v0.0.256"
+    rev: "v0.1.1"
     hooks:
       - id: ruff
         entry: ruff --ignore PLR0915

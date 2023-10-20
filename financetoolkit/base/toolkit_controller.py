@@ -1885,7 +1885,7 @@ class Toolkit:
 
         dividend_calendar = toolkit.get_dividend_calendar()
 
-        dividend_calendar.loc['AAPl']
+        dividend_calendar.loc['AAPL']
         ```
 
         Which returns:
@@ -2050,6 +2050,13 @@ class Toolkit:
 
         Which returns:
 
+        | date       |   13 Week |   5 Year |   10 Year |   30 Year |
+        |:-----------|----------:|---------:|----------:|----------:|
+        | 2023-10-16 |    0.0533 |   0.0472 |    0.0471 |    0.0487 |
+        | 2023-10-17 |    0.0534 |   0.0487 |    0.0485 |    0.0495 |
+        | 2023-10-18 |    0.0533 |   0.0492 |    0.049  |    0.05   |
+        | 2023-10-19 |    0.0531 |   0.0496 |    0.0499 |    0.051  |
+        | 2023-10-20 |    0.053  |   0.0491 |    0.0496 |    0.0512 |
 
         """
         risk_free_names = {

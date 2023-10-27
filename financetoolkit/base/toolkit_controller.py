@@ -21,8 +21,7 @@ from financetoolkit.base.fundamentals_model import (
 from financetoolkit.base.helpers import calculate_growth as _calculate_growth
 from financetoolkit.base.historical_model import (
     convert_daily_to_other_period as _convert_daily_to_other_period,
-    get_historical_data_from_financial_modeling_prep as _get_historical_data_from_financial_modeling_prep,
-    get_historical_data_from_yahoo_finance as _get_historical_data_from_yahoo_finance,
+    get_historical_data as _get_historical_data,
     get_historical_statistics as _get_historical_statistics,
 )
 from financetoolkit.base.models.models_controller import Models
@@ -40,6 +39,8 @@ from financetoolkit.base.technicals.technicals_controller import Technicals
 # pylint: disable=too-many-instance-attributes,too-many-lines,line-too-long,too-many-locals
 # pylint: disable=too-many-function-args,too-many-public-methods)
 # ruff: noqa: E501
+
+TICKER_LIMIT = 20
 
 
 class Toolkit:
@@ -61,9 +62,9 @@ class Toolkit:
         end_date: str | None = None,
         quarterly: bool = False,
         risk_free_rate: str = "10y",
-        benchmark_ticker: str | None = "^GSPC",
+        benchmark_ticker: str | None = "SPY",
         historical_source: str | None = None,
-        check_asset_class: bool = True,
+        check_asset_class: bool = False,
         custom_ratios: dict | None = None,
         historical: pd.DataFrame = pd.DataFrame(),
         balance: pd.DataFrame = pd.DataFrame(),
@@ -73,7 +74,7 @@ class Toolkit:
         reverse_dates: bool = False,
         rounding: int | None = 4,
         remove_invalid_tickers: bool = False,
-        sleep_timer: bool = False,
+        sleep_timer: bool = True,
         progress_bar: bool = True,
     ):
         """
@@ -90,7 +91,7 @@ class Toolkit:
         tickers (str or list): A string or a list of strings containing the company ticker(s). E.g. 'TSLA' or 'MSFT'
         Find the tickers on a variety of websites or via the FinanceDatabase: https://github.com/JerBouma/financedatabase
         api_key (str): An API key from FinancialModelingPrep. Obtain one here:
-        https://intelligence.financialmodelingprep.com/pricing-plans?couponCode=jeroen
+        https://www.jeroenbouma.com/fmp
 
         start_date (str): A string containing the start date of the data. This needs to be formatted as YYYY-MM-DD.
 
@@ -103,7 +104,7 @@ class Toolkit:
         risk_free_rate (str): A string containing the risk free rate. This can be 13w, 5y, 10y or 30y. This is
         based on the US Treasury Yields and is used to calculate various ratios and Excess Returns.
 
-        benchmark_ticker (str): A string containing the benchmark ticker. Defaults to ^GSPC (S&P 500). This is
+        benchmark_ticker (str): A string containing the benchmark ticker. Defaults to SPY (S&P 500). This is
         meant to calculate ratios and indicators such as the CAPM and Jensen's Alpha but also serves as purpose to
         give insights in the performance of a stock compared to a benchmark.
 
@@ -113,10 +114,11 @@ class Toolkit:
         of historical data is limited to 5 years. If you want to collect more data, you need to upgrade to a paid plan.
 
         check_asset_class (bool): Whether to check if the asset class will work for the function you are trying to
-        execute. Defaults to True. If you are trying to execute a function that requires a specific asset class, this
+        execute. Defaults to None. If you are trying to execute a function that requires a specific asset class, this
         will raise an error if the asset class is not correct. If you set this to False, it will simply make an attempt
         to collect data but could lead to confusing results. The parameter is built in to limit the API calls as it
-        needs to acquire the data from Yahoo Finance.
+        needs to acquire the data from Yahoo Finance. It is turned on when the amount of tickers are < 20 and turned
+        off when the amount of tickers is higher than 20. Can be overridden when you set it to True or False.
 
         custom_ratios (dict): A dictionary containing custom ratios. This is meant to define your own ratios. See
         the following Notebook how to set this up: https://www.jeroenbouma.com/projects/financetoolkit/custom-ratios
@@ -140,7 +142,7 @@ class Toolkit:
         remove_invalid_tickers (bool): A boolean indicating whether to remove invalid tickers. Defaults to False.
 
         sleep_timer (bool): Whether to set a sleep timer when the rate limit is reached. Note that this only works
-        if you have a Premium subscription (Starter or higher) from FinancialModelingPrep. Defaults to False.
+        if you have a Premium subscription (Starter or higher) from FinancialModelingPrep. Defaults to True.
 
         progress_bar (bool): Whether to enable the progress bar when ticker amount is over 10. Defaults to True.
 
@@ -223,7 +225,9 @@ class Toolkit:
         self._quarterly = quarterly
         self._risk_free_rate = risk_free_rate
         self._benchmark_ticker = benchmark_ticker
-        self._check_asset_class = check_asset_class
+        self._check_asset_class = (
+            True if len(tickers) < TICKER_LIMIT else check_asset_class
+        )
         self._rounding = rounding
         self._remove_invalid_tickers = remove_invalid_tickers
         self._invalid_tickers: list = []
@@ -443,9 +447,10 @@ class Toolkit:
             or self._cash_flow_statement.empty
         ):
             raise ValueError(
-                "The ratios property requires manual addition of balance, income "
+                "The ratios class requires manual addition of balance, income "
                 "and cash flow statements or an API key from FinancialModelPrep "
-                "within the Toolkit class."
+                "within the Toolkit class. Get an API key here: "
+                "https://www.jeroenbouma.com/fmp"
             )
         if self._balance_sheet_statement.empty:
             empty_data.append("Balance Sheet Statement")
@@ -545,9 +550,10 @@ class Toolkit:
             or self._cash_flow_statement.empty
         ):
             raise ValueError(
-                "The model property requires manual addition of balance, income "
+                "The models class requires manual addition of balance, income "
                 "and cash flow statements or an API key from FinancialModelPrep "
-                "within the Toolkit class."
+                "within the Toolkit class. Get an API key here: "
+                "https://www.jeroenbouma.com/fmp"
             )
 
         if self._balance_sheet_statement.empty:
@@ -891,7 +897,7 @@ class Toolkit:
             return print(
                 "The requested data requires the api_key parameter to be set, consider "
                 "obtaining a key with the following link: "
-                "https://intelligence.financialmodelingprep.com/pricing-plans?couponCode=jeroen"
+                "https://www.jeroenbouma.com/fmp"
                 "\nThe free plan allows for 250 requests per day, a limit of 5 years and has no "
                 "quarterly data. Consider upgrading your plan. You can get 15% off by using the "
                 "above affiliate link which also supports the project."
@@ -988,7 +994,7 @@ class Toolkit:
             return print(
                 "The requested data requires the api_key parameter to be set, consider "
                 "obtaining a key with the following link: "
-                "https://intelligence.financialmodelingprep.com/pricing-plans?couponCode=jeroen"
+                "https://www.jeroenbouma.com/fmp"
                 "\nThe free plan allows for 250 requests per day, a limit of 5 years and has no "
                 "quarterly data. Consider upgrading your plan. You can get 15% off by using the "
                 "above affiliate link which also supports the project."
@@ -1048,7 +1054,7 @@ class Toolkit:
             return print(
                 "The requested data requires the api_key parameter to be set, consider "
                 "obtaining a key with the following link: "
-                "https://intelligence.financialmodelingprep.com/pricing-plans?couponCode=jeroen"
+                "https://www.jeroenbouma.com/fmp"
                 "\nThe free plan allows for 250 requests per day, a limit of 5 years and has no "
                 "quarterly data. Consider upgrading your plan. You can get 15% off by using the "
                 "above affiliate link which also supports the project."
@@ -1159,7 +1165,7 @@ class Toolkit:
         if not self._api_key:
             return print(
                 "The requested data requires the api_key parameter to be set, consider obtaining "
-                "a key with the following link: https://intelligence.financialmodelingprep.com/pricing-plans?couponCode=jeroen"
+                "a key with the following link: https://www.jeroenbouma.com/fmp"
                 "\nThis functionality also requires a Premium subscription. You can get 15% off by "
                 "using the above affiliate link which also supports the project."
             )
@@ -1277,7 +1283,7 @@ class Toolkit:
         if not self._api_key:
             return print(
                 "The requested data requires the api_key parameter to be set, consider obtaining a key with the "
-                "following link: https://intelligence.financialmodelingprep.com/pricing-plans?couponCode=jeroen"
+                "following link: https://www.jeroenbouma.com/fmp"
                 "\nThis functionality also requires a Premium subscription. You can get 15% off by using "
                 "the above affiliate link which also supports the project."
             )
@@ -1378,7 +1384,7 @@ class Toolkit:
         if not self._api_key:
             return print(
                 "The requested data requires the api_key parameter to be set, consider obtaining a key with the "
-                "following link: https://intelligence.financialmodelingprep.com/pricing-plans?couponCode=jeroen"
+                "following link: https://www.jeroenbouma.com/fmp"
                 "\nThis functionality also requires a Professional or Enterprise subscription. "
                 "You can get 15% off by using the above affiliate link which also supports the project."
             )
@@ -1480,7 +1486,7 @@ class Toolkit:
         if not self._api_key:
             return print(
                 "The requested data requires the api_key parameter to be set, consider obtaining a key with the "
-                "following link: https://intelligence.financialmodelingprep.com/pricing-plans?couponCode=jeroen"
+                "following link: https://www.jeroenbouma.com/fmp"
                 "\nThis functionality also requires a Professional or Enterprise subscription. You can get 15% off by using "
                 "the above affiliate link which also supports the project."
             )
@@ -1546,6 +1552,8 @@ class Toolkit:
         fill_nan: bool = True,
         overwrite: bool = False,
         rounding: int | None = None,
+        sleep_timer: bool = True,
+        show_ticker_seperation: bool = True,
     ):
         """
         Returns historical data for the specified tickers. This contains the following columns:
@@ -1565,12 +1573,12 @@ class Toolkit:
             - Cumulative Return: The cumulative return for the period.
 
         If a benchmark ticker is selected, it also calculates the benchmark ticker together with the results.
-        By default this is set to "SPY" (S&P 500 ETF) but can be any ticker. This is relevant for calculations
+        By default this is set to "SPY" (S&P 500 Index) but can be any ticker. This is relevant for calculations
         for models such as CAPM, Alpha and Beta.
 
         Important to note is that when an api_key is included in the Toolkit initialization that the data
         collection defaults to FinancialModelingPrep which is a more stable source and utilises your subscription.
-        However, if this is undesired, it can be disabled by setting historical_data_source to "YahooFinance". If
+        However, if this is undesired, it can be disabled by setting historical_source to "YahooFinance". If
         data collection fails from FinancialModelingPrep it automatically reverts back to YahooFinance.
 
         Args:
@@ -1625,103 +1633,25 @@ class Toolkit:
                 risk_free_rate=self._risk_free_rate, show_errors=False
             )
 
-        benchmark_data = pd.DataFrame()
-
         if self._daily_historical_data.empty or overwrite:
-            if self._historical_source == "FinancialModelingPrep" and self._api_key:
-                (
-                    self._daily_historical_data,
-                    self._invalid_tickers,
-                ) = _get_historical_data_from_financial_modeling_prep(
-                    tickers=self._tickers,
-                    api_key=self._api_key,
-                    start=self._start_date,
-                    end=self._end_date,
-                    interval="1d",
-                    return_column=return_column,
-                    risk_free_rate=self._daily_risk_free_rate,
-                    include_dividends=include_dividends,
-                    progress_bar=self._progress_bar,
-                    fill_nan=fill_nan,
-                    rounding=rounding if rounding else self._rounding,
-                )
-
-                if self._benchmark_ticker:
-                    # It attempts to acquire the benchmark from FinancialModelingPrep. This is generally
-                    # not possible if you use a Free plan.
-                    (
-                        benchmark_data,
-                        _,
-                    ) = _get_historical_data_from_financial_modeling_prep(
-                        tickers=self._benchmark_ticker,
-                        api_key=self._api_key,
-                        start=self._start_date,
-                        end=self._end_date,
-                        interval="1d",
-                        return_column=return_column,
-                        risk_free_rate=self._daily_risk_free_rate,
-                        include_dividends=include_dividends,
-                        progress_bar=False,
-                        fill_nan=fill_nan,
-                        rounding=rounding if rounding else self._rounding,
-                        show_errors=False,
-                    )
-
-            if (
-                self._daily_historical_data.empty
-                or self._historical_source == "YahooFinance"
-            ):
-                (
-                    self._daily_historical_data,
-                    self._invalid_tickers,
-                ) = _get_historical_data_from_yahoo_finance(
-                    tickers=self._tickers,
-                    start=self._start_date,
-                    end=self._end_date,
-                    interval="1d",
-                    return_column=return_column,
-                    risk_free_rate=self._daily_risk_free_rate,
-                    progress_bar=self._progress_bar,
-                    fill_nan=fill_nan,
-                    rounding=rounding if rounding else self._rounding,
-                )
-
-            if benchmark_data.empty and self._benchmark_ticker:
-                start_date = self._daily_historical_data.index[0].strftime("%Y-%m-%d")
-                end_date = self._daily_historical_data.index[-1].strftime("%Y-%m-%d")
-
-                # In the case it was not unable to retrieve the benchmark data, it will
-                # obtain the data from Yahoo Finance instead
-                benchmark_data, _ = _get_historical_data_from_yahoo_finance(
-                    tickers=self._benchmark_ticker,
-                    start=start_date,
-                    end=end_date,
-                    interval="1d",
-                    return_column=return_column,
-                    risk_free_rate=self._daily_risk_free_rate,
-                    progress_bar=False,
-                    fill_nan=fill_nan,
-                    rounding=rounding if rounding else self._rounding,
-                )
-
-            if self._benchmark_ticker:
-                self._daily_historical_data = (
-                    self._daily_historical_data.merge(
-                        benchmark_data,
-                        left_index=True,
-                        right_index=True,
-                        how="left",
-                    )
-                    .sort_index(axis=1)
-                    .reindex(
-                        self._daily_historical_data.columns.get_level_values(
-                            0
-                        ).unique(),
-                        axis=1,
-                        level=0,
-                    )
-                    .reindex(self._tickers + [self._benchmark_ticker], axis=1, level=1)
-                )
+            self._daily_historical_data, self._invalid_tickers = _get_historical_data(
+                tickers=list(self._tickers) + list(self._benchmark_ticker)
+                if self._benchmark_ticker
+                else self._tickers,
+                api_key=self._api_key,
+                source=self._historical_source,
+                start=self._start_date,
+                end=self._end_date,
+                interval="1d",
+                return_column=return_column,
+                risk_free_rate=self._daily_risk_free_rate,
+                include_dividends=include_dividends,
+                progress_bar=self._progress_bar,
+                fill_nan=fill_nan,
+                rounding=rounding if rounding else self._rounding,
+                sleep_timer=sleep_timer,
+                show_ticker_seperation=show_ticker_seperation,
+            )
 
             # Change the benchmark ticker name to Benchmark
             self._daily_historical_data = self._daily_historical_data.rename(
@@ -1901,7 +1831,7 @@ class Toolkit:
         if not self._api_key:
             return print(
                 "The requested data requires the api_key parameter to be set, consider obtaining a key with the "
-                "following link: https://intelligence.financialmodelingprep.com/pricing-plans?couponCode=jeroen"
+                "following link: https://www.jeroenbouma.com/fmp"
                 "\nThis functionality also requires a Premium subscription. You can get 15% off by using "
                 "the above affiliate link which also supports the project."
             )
@@ -2019,10 +1949,9 @@ class Toolkit:
         self,
         period: str = "daily",
         risk_free_rate: str | None = None,
-        fill_nan: bool = True,
         divide_ohlc_by: int | float | None = 100,
         rounding: int | None = None,
-        show_errors: bool = True,
+        show_errors: bool = False,
     ):
         """
         Retrieve daily, weekly, monthly, quarterly or yearly treasury data. This can be from FinancialModelingPrep
@@ -2093,7 +2022,6 @@ class Toolkit:
         )
 
         risk_free_rate = risk_free_names[self._risk_free_rate]
-        daily_treasury_data = pd.DataFrame()
 
         if not self._daily_treasury_data.empty:
             specific_rates = [
@@ -2104,42 +2032,28 @@ class Toolkit:
         if self._daily_treasury_data.empty or False in specific_rates:
             # It collects data in the scenarios where the treasury data is empty or only contains one column which generally
             # means the data was collected for the historical data functionality which only requires a subselection
-            if self._historical_source == "FinancialModelingPrep" and self._api_key:
-                (
-                    daily_treasury_data,
-                    _,
-                ) = _get_historical_data_from_financial_modeling_prep(
-                    tickers=risk_free_rate_tickers,
-                    api_key=self._api_key,
-                    start=self._start_date,
-                    end=self._end_date,
-                    progress_bar=False,
-                    divide_ohlc_by=divide_ohlc_by,
-                    rounding=rounding if rounding else self._rounding,
-                    show_errors=show_errors,
-                )
-
-            if self._historical_source == "YahooFinance" or daily_treasury_data.empty:
-                daily_treasury_data, _ = _get_historical_data_from_yahoo_finance(
-                    tickers=risk_free_rate_tickers,
-                    start=self._start_date,
-                    end=self._end_date,
-                    progress_bar=False,
-                    divide_ohlc_by=divide_ohlc_by,
-                    rounding=rounding if rounding else self._rounding,
-                )
-
-            daily_treasury_data = daily_treasury_data.rename(
-                treasury_names, axis=1, level=1
+            (
+                self._daily_treasury_data,
+                _,
+            ) = _get_historical_data(
+                tickers=risk_free_rate_tickers,
+                api_key=self._api_key,
+                source=self._historical_source,
+                start=self._start_date,
+                end=self._end_date,
+                progress_bar=False,
+                divide_ohlc_by=divide_ohlc_by,
+                rounding=rounding if rounding else self._rounding,
+                show_errors=show_errors,
             )
 
-            self._daily_treasury_data = daily_treasury_data
+            self._daily_treasury_data = self._daily_treasury_data.rename(
+                columns=treasury_names, level=1
+            )
+
             self._daily_risk_free_rate = self._daily_treasury_data.xs(
                 risk_free_rate, level=1, axis=1
             )
-
-            if fill_nan:
-                self._daily_treasury_data = self._daily_treasury_data.ffill()
 
         if period == "daily":
             return self._daily_treasury_data.loc[self._start_date : self._end_date, :]
@@ -2293,7 +2207,7 @@ class Toolkit:
             return print(
                 "The requested data requires the api_key parameter to be set, consider "
                 "obtaining a key with the following link: "
-                "https://intelligence.financialmodelingprep.com/pricing-plans?couponCode=jeroen"
+                "https://www.jeroenbouma.com/fmp"
                 "\nThe free plan allows for 250 requests per day, a limit of 5 years and has no "
                 "quarterly data. Consider upgrading your plan. You can get 15% off by using the "
                 "above affiliate link which also supports the project."
@@ -2449,7 +2363,7 @@ class Toolkit:
             return print(
                 "The requested data requires the api_key parameter to be set, consider "
                 "obtaining a key with the following link: "
-                "https://intelligence.financialmodelingprep.com/pricing-plans?couponCode=jeroen"
+                "https://www.jeroenbouma.com/fmp"
                 "\nThe free plan allows for 250 requests per day, a limit of 5 years and has no "
                 "quarterly data. Consider upgrading your plan. You can get 15% off by using the "
                 "above affiliate link which also supports the project."
@@ -2603,7 +2517,7 @@ class Toolkit:
             return print(
                 "The requested data requires the api_key parameter to be set, consider "
                 "obtaining a key with the following link: "
-                "https://intelligence.financialmodelingprep.com/pricing-plans?couponCode=jeroen"
+                "https://www.jeroenbouma.com/fmp"
                 "\nThe free plan allows for 250 requests per day, a limit of 5 years and has no "
                 "quarterly data. Consider upgrading your plan. You can get 15% off by using the "
                 "above affiliate link which also supports the project."
@@ -2727,8 +2641,7 @@ class Toolkit:
         if not self._api_key and self._statistics_statement.empty:
             return print(
                 "The requested data requires the api_key parameter to be set, consider "
-                "obtaining a key with the following link: "
-                "https://intelligence.financialmodelingprep.com/pricing-plans?couponCode=jeroen"
+                "obtaining a key with the following link: https://www.jeroenbouma.com/fmp"
                 "\nThe free plan allows for 250 requests per day, a limit of 5 years and has no "
                 "quarterly data. Consider upgrading your plan. You can get 15% off by using the "
                 "above affiliate link which also supports the project."

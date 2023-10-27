@@ -2,10 +2,73 @@
 __docformat__ = "google"
 
 import inspect
+import time
 import warnings
+from io import StringIO
 
 import numpy as np
 import pandas as pd
+import requests
+from urllib3.exceptions import MaxRetryError
+
+
+def get_financial_data(
+    url: str,
+    sleep_timer: bool = True,
+    raw: bool = False,
+) -> pd.DataFrame:
+    """
+    Collects the financial data from the FinancialModelingPrep API. This is a
+    separate function to properly segregate the different types of errors that can occur.
+
+    Args:
+        ticker (str): The company ticker (for example: "AAPL")
+        url (str): The url to retrieve the data from.
+        sleep_timer (bool): Whether to set a sleep timer when the rate limit is reached. Note that this only works
+        if you have a Premium subscription (Starter or higher) from FinancialModelingPrep. Defaults to False.
+        raw (bool): Whether to return the raw JSON data. Defaults to False.
+
+    Returns:
+        pd.DataFrame: A DataFrame containing the financial data.
+    """
+    while True:
+        try:
+            response = requests.get(url, timeout=60)
+            response.raise_for_status()
+
+            if raw:
+                return response.json()
+
+            json_io = StringIO(response.text)
+
+            financial_data = pd.read_json(json_io)
+
+            return financial_data
+
+        except requests.exceptions.HTTPError:
+            if (
+                "not available under your current subscription"
+                in response.json()["Error Message"]
+            ):
+                return pd.DataFrame(columns=["NOT AVAILABLE"])
+
+            if "Limit Reach" in response.json()["Error Message"]:
+                if sleep_timer:
+                    time.sleep(61)
+                    sleep_timer = False
+                else:
+                    return pd.DataFrame(columns=["LIMIT REACH"])
+            if (
+                "Free plan is limited to US stocks only"
+                in response.json()["Error Message"]
+            ):
+                return pd.DataFrame(columns=["US STOCKS ONLY"])
+
+            if "Invalid API KEY." in response.json()["Error Message"]:
+                return pd.DataFrame(columns=["INVALID API KEY"])
+
+        except MaxRetryError:
+            time.sleep(5)
 
 
 def combine_dataframes(dataset_dictionary: dict[str, pd.DataFrame]) -> pd.DataFrame:
@@ -193,17 +256,77 @@ def handle_errors(func):
     return wrapper
 
 
-def check_for_loop_break(values, errors: list[str]):
+def check_for_error_messages(
+    dataset_dictionary: dict[str, pd.DataFrame],
+    subscription_type: str = "Premium",
+    delete_tickers: bool = True,
+):
     """
-    Simple code that checks if any of the matching errors are in the values.
-
-    This is meant to break a loop that would otherwise keep duplicating the same error.
+    This functionality checks whether any of the defined errors are found in the
+    dataset and if they are, report them accordingly. This function is written
+    to prevent spamming the command line with error messages.
 
     Args:
-        values: The values to check for errors.
-        errors (list[str]): The errors to check for.
-
-    Returns:
-        bool: True if there is an error, False otherwise
+        dataset_dictionary (dict[str, pd.DataFrame]): a dictionary with the ticker
+        as key and the dataframe as value.
     """
-    return any(error in values for error in errors)
+
+    not_available = []
+    limit_reach = []
+    us_stocks_only = []
+    invalid_api_key = []
+    no_errors = []
+
+    for ticker, dataframe in dataset_dictionary.items():
+        if "NOT AVAILABLE" in dataframe.columns:
+            not_available.append(ticker)
+        if "LIMIT REACH" in dataframe.columns:
+            limit_reach.append(ticker)
+        if "US STOCKS ONLY" in dataframe.columns:
+            us_stocks_only.append(ticker)
+        if "INVALID API KEY" in dataframe.columns:
+            invalid_api_key.append(ticker)
+        if "NO ERRORS" in dataframe.columns:
+            no_errors.append(ticker)
+
+    if not_available:
+        print(
+            f"The requested data for is part of the {subscription_type} Subscription from "
+            f"FinancialModelingPrep: {', '.join(not_available)}.\nIf you wish to access "
+            "this data, consider upgrading your plan.\nYou can get 15% off by using the "
+            "following affiliate link which also supports the project: "
+            "https://www.jeroenbouma.com/fmp"
+        )
+
+    if limit_reach:
+        print(
+            "You have reached the rate limit of your subscription. This resulted in no "
+            f"data for {', '.join(limit_reach)}\nIf you use the Free plan, consider "
+            "upgrading your plan. You can get 15% off by using the following affiliate "
+            "link which also supports the project: https://www.jeroenbouma.com/fmp"
+        )
+
+    if us_stocks_only:
+        print(
+            "The Free plan is limited to US stocks only. Therefore the following tickers are not "
+            f"available: {', '.join(us_stocks_only)}, consider upgrading your plan to Starter or "
+            "higher.\nYou can get 15% off by using the following affiliate link which also "
+            "supports the project: https://www.jeroenbouma.com/fmp"
+        )
+
+    if invalid_api_key:
+        print(
+            "You have entered an invalid API key from FinancialModelingPrep. Obtain your API key for free "
+            "and get 15% off the Premium plans by using the following affiliate link.\nThis also supports "
+            "the project: https://www.jeroenbouma.com/fmp"
+        )
+
+    if delete_tickers:
+        removed_tickers = set(
+            not_available + limit_reach + us_stocks_only + invalid_api_key + no_errors
+        )
+
+        for ticker in removed_tickers:
+            del dataset_dictionary[ticker]
+
+    return dataset_dictionary

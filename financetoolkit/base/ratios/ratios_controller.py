@@ -277,8 +277,8 @@ class Ratios:
         if not self._custom_ratios_dict and not custom_ratios_dict:
             print(
                 "Please define custom ratios through the Toolkit initialization or include a "
-                "dictionary to the custom_ratios_dict parameter. "
-                "See https://github.com/JerBouma/FinanceToolkit how to do this."
+                "dictionary to the custom_ratios_dict parameter.\nSee "
+                "https://www.jeroenbouma.com/projects/financetoolkit/custom-ratios how to do this."
             )
 
         custom_ratios_dict = (

@@ -1635,7 +1635,7 @@ class Toolkit:
 
         if self._daily_historical_data.empty or overwrite:
             self._daily_historical_data, self._invalid_tickers = _get_historical_data(
-                tickers=list(self._tickers) + list(self._benchmark_ticker)
+                tickers=self._tickers + [self._benchmark_ticker]
                 if self._benchmark_ticker
                 else self._tickers,
                 api_key=self._api_key,

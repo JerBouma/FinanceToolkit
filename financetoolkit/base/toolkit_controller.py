@@ -1595,6 +1595,10 @@ class Toolkit:
             technical indicators.
             overwrite (bool): Defines whether to overwrite the existing data.
             rounding (int): Defines the number of decimal places to round the data to.
+            sleep_timer (bool): Defines whether to include a sleep timer to prevent
+            overloading the API. Defaults to True.
+            show_ticker_seperation (bool, optional): A boolean representing whether to show which tickers
+            acquired data from FinancialModelingPrep and which tickers acquired data from YahooFinance.
 
         Raises:
             ValueError: If an invalid value is specified for period.

@@ -73,6 +73,10 @@ def get_historical_data(
         divide_ohlc_by (int, optional): An integer representing the value to divide the OHLC data by.
         This is useful if the OHLC data is presented in percentages or similar. Defaults to None.
         rounding (int, optional): The number of decimal places to round the data to. Defaults to None.
+        sleep_timer (bool, optional): A boolean representing whether to introduce a sleep timer to prevent
+        rate limit errors. Defaults to True.
+        show_ticker_seperation (bool, optional): A boolean representing whether to show which tickers
+        acquired data from FinancialModelingPrep and which tickers acquired data from YahooFinance.
         show_errors (bool, optional): A boolean representing whether to show errors. Defaults to True.
 
     Raises:
@@ -222,6 +226,8 @@ def get_historical_data_from_financial_modeling_prep(
         ohlc_divide_by (int, optional): An integer representing the value to divide the OHLC data by.
         This is useful if the OHLC data is presented in percentages or similar. Defaults to None.
         show_errors (bool, optional): A boolean representing whether to show errors. Defaults to True.
+        sleep_timer (bool, optional): A boolean representing whether to introduce a sleep timer to prevent
+        rate limit errors. Defaults to True.
 
     Raises:
         ValueError: If the start date is after the end date.

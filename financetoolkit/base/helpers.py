@@ -269,6 +269,9 @@ def check_for_error_messages(
     Args:
         dataset_dictionary (dict[str, pd.DataFrame]): a dictionary with the ticker
         as key and the dataframe as value.
+        subscription_type (str): the subscription type of the user. Defaults to "Premium".
+        delete_tickers (bool): whether to delete the tickers that have an error from the
+        dataset dictionary. Defaults to True.
     """
 
     not_available = []
@@ -293,7 +296,7 @@ def check_for_error_messages(
         print(
             f"The requested data for is part of the {subscription_type} Subscription from "
             f"FinancialModelingPrep: {', '.join(not_available)}.\nIf you wish to access "
-            "this data, consider upgrading your plan.\nYou can get 15% off by using the "
+            "this data, consider upgrading your plan. You can get 15% off by using the "
             "following affiliate link which also supports the project: "
             "https://www.jeroenbouma.com/fmp"
         )
@@ -309,8 +312,8 @@ def check_for_error_messages(
     if us_stocks_only:
         print(
             "The Free plan is limited to US stocks only. Therefore the following tickers are not "
-            f"available: {', '.join(us_stocks_only)}, consider upgrading your plan to Starter or "
-            "higher.\nYou can get 15% off by using the following affiliate link which also "
+            f"available: {', '.join(us_stocks_only)}\nConsider upgrading your plan to Starter or "
+            "higher. You can get 15% off by using the following affiliate link which also "
             "supports the project: https://www.jeroenbouma.com/fmp"
         )
 

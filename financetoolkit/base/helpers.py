@@ -11,6 +11,8 @@ import pandas as pd
 import requests
 from urllib3.exceptions import MaxRetryError
 
+RETRY_LIMIT = 3
+
 
 def get_financial_data(
     url: str,
@@ -31,6 +33,8 @@ def get_financial_data(
     Returns:
         pd.DataFrame: A DataFrame containing the financial data.
     """
+    retry_counter = 0
+
     while True:
         try:
             response = requests.get(url, timeout=60)
@@ -67,7 +71,13 @@ def get_financial_data(
             if "Invalid API KEY." in response.json()["Error Message"]:
                 return pd.DataFrame(columns=["INVALID API KEY"])
 
-        except MaxRetryError:
+        except (MaxRetryError, requests.exceptions.SSLError):
+            # When the connection is refused, retry the request 3 times
+            # and if it doesn't work, then return an empty dataframe
+            if retry_counter == RETRY_LIMIT:
+                return pd.DataFrame(columns=["NO ERRORS"])
+
+            retry_counter += 1
             time.sleep(5)
 
 

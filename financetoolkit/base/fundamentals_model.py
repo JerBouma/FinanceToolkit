@@ -154,8 +154,6 @@ def get_financial_statements(
         financial_statement_dict
     )
 
-    # return financial_statement_dict, pd.DataFrame(), no_data
-
     if no_data:
         print(f"No data found for the following tickers: {', '.join(no_data)}")
 
@@ -179,16 +177,6 @@ def get_financial_statements(
                 "ratio calculations."
             )
 
-        financial_statement_statistics = financial_statement_statistics.sort_index(
-            axis=1
-        ).truncate(before=start_date, after=end_date, axis=1)
-
-        financial_statement_total = financial_statement_total.sort_index(
-            axis=1
-        ).truncate(before=start_date, after=end_date, axis=1)
-
-        financial_statement_total = financial_statement_total.round(rounding)
-
         if quarter:
             financial_statement_statistics.columns = pd.PeriodIndex(
                 financial_statement_statistics.columns, freq="Q"
@@ -203,6 +191,16 @@ def get_financial_statements(
             financial_statement_total.columns = pd.PeriodIndex(
                 financial_statement_total.columns, freq="Y"
             )
+
+        financial_statement_statistics = financial_statement_statistics.sort_index(
+            axis=1
+        ).truncate(before=start_date, after=end_date, axis=1)
+
+        financial_statement_total = financial_statement_total.sort_index(
+            axis=1
+        ).truncate(before=start_date, after=end_date, axis=1)
+
+        financial_statement_total = financial_statement_total.round(rounding)
 
         return (
             financial_statement_total,

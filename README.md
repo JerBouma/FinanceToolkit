@@ -60,7 +60,7 @@ To be able to get started, you need to obtain an API Key from FinancialModelingP
 
 ___ 
 
-<b><div align="center">Obtain an API Key from FinancialModelingPrep <a href="https://intelligence.financialmodelingprep.com/pricing-plans?couponCode=jeroen">here</a>.</div></b>
+<b><div align="center">Obtain an API Key from FinancialModelingPrep <a href="https://www.jeroenbouma.com/fmp">here</a>.</div></b>
 ___
 
 Through the link you are able to subscribe for the free plan and also premium plans at a **15% discount**. This is an affiliate link and thus supports the project at the same time. I have chosen FinancialModelingPrep as a source as I find it to be the most transparent, reliable and at an affordable price. I have yet to find a platform offering such low prices for the amount of data offered. When you notice that the data is inaccurate or have any other issue related to the data, note that I simply provide the means to access this data and I am not responsible for the accuracy of the data itself. For this, use [their contact form](https://site.financialmodelingprep.com/contact) or provide the data yourself. 

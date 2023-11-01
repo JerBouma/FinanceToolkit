@@ -497,11 +497,15 @@ class Toolkit:
                 f"thus was retrieved from FinancialModelingPrep: {', '.join(empty_data)}."
             )
 
-        tickers = [
-            ticker
-            for ticker in self._historical_statistics.columns
-            if self._historical_statistics.loc["Instrument Type", ticker] == "EQUITY"
-        ]
+        if not self._historical_statistics.empty:
+            tickers = [
+                ticker
+                for ticker in self._historical_statistics.columns
+                if self._historical_statistics.loc["Instrument Type", ticker]
+                == "EQUITY"
+            ]
+        else:
+            tickers = self._tickers
 
         return Ratios(
             tickers=tickers,
@@ -601,11 +605,15 @@ class Toolkit:
                 f"thus was retrieved from FinancialModelingPrep: {', '.join(empty_data)}."
             )
 
-        tickers = [
-            ticker
-            for ticker in self._historical_statistics.columns
-            if self._historical_statistics.loc["Instrument Type", ticker] == "EQUITY"
-        ]
+        if not self._historical_statistics.empty:
+            tickers = [
+                ticker
+                for ticker in self._historical_statistics.columns
+                if self._historical_statistics.loc["Instrument Type", ticker]
+                == "EQUITY"
+            ]
+        else:
+            tickers = self._tickers
 
         return Models(
             tickers=tickers,

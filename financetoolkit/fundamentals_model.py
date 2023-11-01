@@ -202,6 +202,10 @@ def get_financial_statements(
 
         financial_statement_total = financial_statement_total.round(rounding)
 
+        # In the case there are columns that have no data over the entire period,
+        # these are dropped automatically
+        financial_statement_total = financial_statement_total.dropna(axis=1, how="all")
+
         return (
             financial_statement_total,
             financial_statement_statistics,

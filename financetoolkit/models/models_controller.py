@@ -4,14 +4,15 @@ __docformat__ = "google"
 import pandas as pd
 
 from financetoolkit.helpers import calculate_growth, handle_errors
-from financetoolkit.models.dupont_model import (
-    get_dupont_analysis,
-    get_extended_dupont_analysis,
+from financetoolkit.models import (
+    altman_model,
+    dupont_model,
+    enterprise_model,
+    intrinsic_model,
+    wacc_model,
 )
-from financetoolkit.models.enterprise_model import get_enterprise_value_breakdown
-from financetoolkit.models.intrinsic_model import get_intrinsic_value
-from financetoolkit.models.wacc_model import get_weighted_average_cost_of_capital
 from financetoolkit.performance.performance_model import get_beta
+from financetoolkit.ratios import liquidity_model, valuation_model
 
 # pylint: disable=too-many-instance-attributes,too-many-locals
 
@@ -148,7 +149,7 @@ class Models:
         dupont_analysis = toolkit.models.get_dupont_analysis()
         ```
         """
-        self._dupont_analysis = get_dupont_analysis(
+        self._dupont_analysis = dupont_model.get_dupont_analysis(
             self._income_statement.loc[:, "Net Income", :],
             self._income_statement.loc[:, "Revenue", :],
             self._balance_sheet_statement.loc[:, "Total Assets", :].shift(axis=1),
@@ -233,7 +234,7 @@ class Models:
         extended_dupont_analysis = toolkit.models.get_extended_dupont_analysis()
         ```
         """
-        self._extended_dupont_analysis = get_extended_dupont_analysis(
+        self._extended_dupont_analysis = dupont_model.get_extended_dupont_analysis(
             self._income_statement.loc[:, "Income Before Tax", :],
             self._income_statement.loc[:, "Operating Income", :],
             self._income_statement.loc[:, "Net Income", :],
@@ -334,17 +335,21 @@ class Models:
             self._tickers
         ].T
 
-        self._enterprise_value_breakdown = get_enterprise_value_breakdown(
-            share_price=share_prices,
-            shares_outstanding=average_shares,
-            total_debt=self._balance_sheet_statement.loc[:, "Total Debt", :],
-            minority_interest=self._balance_sheet_statement.loc[
-                :, "Minority Interest", :
-            ],
-            preferred_equity=self._balance_sheet_statement.loc[:, "Preferred Stock", :],
-            cash_and_cash_equivalents=self._balance_sheet_statement.loc[
-                :, "Cash and Cash Equivalents", :
-            ],
+        self._enterprise_value_breakdown = (
+            enterprise_model.get_enterprise_value_breakdown(
+                share_price=share_prices,
+                shares_outstanding=average_shares,
+                total_debt=self._balance_sheet_statement.loc[:, "Total Debt", :],
+                minority_interest=self._balance_sheet_statement.loc[
+                    :, "Minority Interest", :
+                ],
+                preferred_equity=self._balance_sheet_statement.loc[
+                    :, "Preferred Stock", :
+                ],
+                cash_and_cash_equivalents=self._balance_sheet_statement.loc[
+                    :, "Cash and Cash Equivalents", :
+                ],
+            )
         )
 
         if growth:
@@ -475,16 +480,20 @@ class Models:
             self._benchmark_name
         ]
 
-        self._weighted_average_cost_of_capital = get_weighted_average_cost_of_capital(
-            share_price=share_prices,
-            total_shares_outstanding=average_shares,
-            interest_expense=self._income_statement.loc[:, "Interest Expense", :],
-            total_debt=self._balance_sheet_statement.loc[:, "Total Debt", :],
-            risk_free_rate=risk_free_rate,
-            beta=beta,
-            benchmark_returns=benchmark_returns,
-            income_tax_expense=self._income_statement.loc[:, "Income Tax Expense", :],
-            income_before_tax=self._income_statement.loc[:, "Income Before Tax", :],
+        self._weighted_average_cost_of_capital = (
+            wacc_model.get_weighted_average_cost_of_capital(
+                share_price=share_prices,
+                total_shares_outstanding=average_shares,
+                interest_expense=self._income_statement.loc[:, "Interest Expense", :],
+                total_debt=self._balance_sheet_statement.loc[:, "Total Debt", :],
+                risk_free_rate=risk_free_rate,
+                beta=beta,
+                benchmark_returns=benchmark_returns,
+                income_tax_expense=self._income_statement.loc[
+                    :, "Income Tax Expense", :
+                ],
+                income_before_tax=self._income_statement.loc[:, "Income Before Tax", :],
+            )
         )
 
         if growth:
@@ -655,7 +664,7 @@ class Models:
 
         intrinsic_values_dict = {}
         for ticker in self._tickers:
-            intrinsic_values_dict[ticker] = get_intrinsic_value(
+            intrinsic_values_dict[ticker] = intrinsic_model.get_intrinsic_value(
                 cash_flow=self._cash_flow_statement.loc[ticker, cash_flow_type]
                 .dropna()
                 .iloc[-1],
@@ -690,3 +699,156 @@ class Models:
         self._intrinsic_values = pd.concat(intrinsic_values_dict)
 
         return self._intrinsic_values
+
+    @handle_errors
+    def get_altman_z_score(
+        self,
+        diluted: bool = True,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+    ) -> pd.DataFrame:
+        """
+        Calculates the Altman Z-Score, a financial metric used to predict the likelihood of a company going bankrupt.
+        The Altman Z-Score is calculated using several financial ratios, including working capital to total assets,
+        retained earnings to total assets, earnings before interest and taxes (EBIT) to total assets, market value
+        of equity to book value of total liabilities, and sales to total assets.
+
+        The formula is as follows:
+
+            - Working Capital to Total Assets = Working Capital / Total Assets
+            - Retained Earnings to Total Assets = Retained Earnings / Total Assets
+            - EBIT to Total Assets = EBIT / Total Assets
+            - Market Value to Total Liabilities = Market Value of Equity / Total Liabilities
+            - Sales to Total Assets = Sales / Total Assets
+            - Altman Z-Score = 1.2 * Working Capital to Total Assets + 1.4 * Retained Earnings to Total Assets +
+            3.3 * EBIT to Total Assets + 0.6 * Market Value to Total Liabilities + 1.0 * Sales to Total Assets
+
+        The Altman Z-Score can be interpreted as follows:
+
+            - A Z-Score of less than 1.81 indicates a high likelihood of bankruptcy.
+            - A Z-Score between 1.81 and 2.99 indicates a gray area.
+            - A Z-Score of greater than 2.99 indicates a low likelihood of bankruptcy.
+
+        Args:
+            diluted (bool, optional): Whether to use diluted shares outstanding in the calculation. Defaults to True.
+            rounding (int, optional): The number of decimals to round the results to. Defaults to None.
+            growth (bool, optional): Whether to calculate the growth of the values. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+
+        Returns:
+            pd.DataFrame: DataFrame containing the Altman Z-Score and its components.
+
+        Notes:
+            - The Altman Z-Score is a financial metric used to predict the likelihood of a company going bankrupt.
+            - The Z-Score is calculated using several financial ratios, including working capital to total assets,
+            retained earnings to total assets, earnings before interest and taxes (EBIT) to total assets, market value
+            of equity to book value of total liabilities, and sales to total assets.
+            - A Z-Score of less than 1.81 indicates a high likelihood of bankruptcy, while a Z-Score of greater than 2.99
+            indicates a low likelihood of bankruptcy.
+            - The Z-Score is most effective when used to analyze manufacturing companies with assets of
+            $1 million or more.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+
+        altman_z_score = toolkit.models.get_altman_z_score()
+        ```
+        """
+        altman_z_score = {}
+
+        working_capital = liquidity_model.get_working_capital(
+            self._balance_sheet_statement.loc[:, "Total Current Assets", :],
+            self._balance_sheet_statement.loc[:, "Total Current Liabilities", :],
+        )
+
+        altman_z_score[
+            "Working Capital to Total Assets"
+        ] = altman_model.get_working_capital_to_total_assets_ratio(
+            working_capital=working_capital,
+            total_assets=self._balance_sheet_statement.loc[:, "Total Assets", :],
+        )
+
+        altman_z_score[
+            "Retained Earnings to Total Assets"
+        ] = altman_model.get_retained_earnings_to_total_assets_ratio(
+            retained_earnings=self._balance_sheet_statement.loc[
+                :, "Retained Earnings", :
+            ],
+            total_assets=self._balance_sheet_statement.loc[:, "Total Assets", :],
+        )
+
+        altman_z_score[
+            "EBIT to Total Assets"
+        ] = altman_model.get_earnings_before_interest_and_taxes_to_total_assets_ratio(
+            ebit=(
+                self._income_statement.loc[:, "Net Income", :]
+                + self._income_statement.loc[:, "Income Tax Expense", :]
+                + self._income_statement.loc[:, "Interest Expense", :]
+            ),
+            total_assets=self._balance_sheet_statement.loc[:, "Total Assets", :],
+        )
+
+        years = self._balance_sheet_statement.columns
+        begin, end = str(years[0]), str(years[-1])
+
+        share_prices = self._historical_data.loc[begin:end, "Adj Close"][
+            self._tickers
+        ].T
+
+        average_shares = (
+            self._income_statement.loc[:, "Weighted Average Shares Diluted", :]
+            if diluted
+            else self._income_statement.loc[:, "Weighted Average Shares", :]
+        )
+
+        market_cap = valuation_model.get_market_cap(
+            share_price=share_prices, total_shares_outstanding=average_shares
+        )
+
+        altman_z_score[
+            "Market Value to Total Liabilities"
+        ] = altman_model.get_market_value_of_equity_to_book_value_of_total_liabilities_ratio(
+            market_value_of_equity=market_cap,
+            total_liabilities=self._balance_sheet_statement.loc[
+                :, "Total Liabilities", :
+            ],
+        )
+
+        altman_z_score[
+            "Sales to Total Assets"
+        ] = altman_model.get_sales_to_total_assets_ratio(
+            sales=self._income_statement.loc[:, "Revenue", :],
+            total_assets=self._balance_sheet_statement.loc[:, "Total Assets", :],
+        )
+
+        altman_z_score["Altman Z-Score"] = altman_model.get_altman_z_score(
+            altman_z_score["Working Capital to Total Assets"],
+            altman_z_score["Retained Earnings to Total Assets"],
+            altman_z_score["EBIT to Total Assets"],
+            altman_z_score["Market Value to Total Liabilities"],
+            altman_z_score["Sales to Total Assets"],
+        )
+
+        altman_results = (
+            pd.concat(altman_z_score)
+            .dropna(axis=1, how="all")
+            .swaplevel(0, 1)
+            .reindex(self._tickers, level=0)
+        )
+
+        if growth:
+            return calculate_growth(
+                altman_results,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
+                axis="columns",
+            )
+
+        altman_results = altman_results.round(rounding if rounding else self._rounding)
+
+        return altman_results

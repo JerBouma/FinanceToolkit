@@ -90,12 +90,14 @@ class Toolkit:
 
         tickers (str or list): A string or a list of strings containing the company ticker(s). E.g. 'TSLA' or 'MSFT'
         Find the tickers on a variety of websites or via the FinanceDatabase: https://github.com/JerBouma/financedatabase
-        api_key (str): An API key from FinancialModelingPrep. Obtain one here:
-        https://www.jeroenbouma.com/fmp
+
+        api_key (str): An API key from FinancialModelingPrep. Obtain one here: https://www.jeroenbouma.com/fmp
 
         start_date (str): A string containing the start date of the data. This needs to be formatted as YYYY-MM-DD.
+            The default is today minus 10 years which can be freely changed to extend the period.
 
         end_date (str): A string containing the end date of the data. This needs to be formatted as YYYY-MM-DD.
+            The default is today which can be freely changed to extend the period.
 
         quarterly (bool): A boolean indicating whether to collect quarterly data. This defaults to False and thus
         collects yearly financial statements. Note that historical data can still be collected for
@@ -220,8 +222,12 @@ class Toolkit:
             )
 
         self._api_key = api_key
-        self._start_date = start_date
-        self._end_date = end_date
+        self._start_date = (
+            start_date
+            if start_date
+            else (datetime.now() - timedelta(days=365 * 10)).strftime("%Y-%m-%d")
+        )
+        self._end_date = end_date if end_date else datetime.now().strftime("%Y-%m-%d")
         self._quarterly = quarterly
         self._risk_free_rate = risk_free_rate
         self._benchmark_ticker = benchmark_ticker

@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 import pandas as pd
 import requests
 
-from financetoolkit.base.fundamentals_model import (
+from financetoolkit.fundamentals_model import (
     get_analyst_estimates as _get_analyst_estimates,
     get_dividend_calendar as _get_dividend_calendar,
     get_earnings_calendar as _get_earnings_calendar,
@@ -18,23 +18,23 @@ from financetoolkit.base.fundamentals_model import (
     get_rating as _get_rating,
     get_revenue_segmentation as _get_revenue_segmentation,
 )
-from financetoolkit.base.helpers import calculate_growth as _calculate_growth
-from financetoolkit.base.historical_model import (
+from financetoolkit.helpers import calculate_growth as _calculate_growth
+from financetoolkit.historical_model import (
     convert_daily_to_other_period as _convert_daily_to_other_period,
     get_historical_data as _get_historical_data,
     get_historical_statistics as _get_historical_statistics,
 )
-from financetoolkit.base.models.models_controller import Models
-from financetoolkit.base.normalization_model import (
+from financetoolkit.models.models_controller import Models
+from financetoolkit.normalization_model import (
     convert_date_label as _convert_date_label,
     convert_financial_statements as _convert_financial_statements,
     copy_normalization_files as _copy_normalization_files,
     read_normalization_file as _read_normalization_file,
 )
-from financetoolkit.base.performance.performance_controller import Performance
-from financetoolkit.base.ratios.ratios_controller import Ratios
-from financetoolkit.base.risk.risk_controller import Risk
-from financetoolkit.base.technicals.technicals_controller import Technicals
+from financetoolkit.performance.performance_controller import Performance
+from financetoolkit.ratios.ratios_controller import Ratios
+from financetoolkit.risk.risk_controller import Risk
+from financetoolkit.technical.technicals_controller import Technicals
 
 # pylint: disable=too-many-instance-attributes,too-many-lines,line-too-long,too-many-locals
 # pylint: disable=too-many-function-args,too-many-public-methods)

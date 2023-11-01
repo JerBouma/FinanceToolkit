@@ -3,7 +3,7 @@ __docformat__ = "google"
 
 import pandas as pd
 
-from financetoolkit.ratios import valuation
+from financetoolkit.ratios import valuation_model
 
 
 def get_enterprise_value_breakdown(
@@ -37,12 +37,12 @@ def get_enterprise_value_breakdown(
         pd.DataFrame: the Enterprise Value breakdown.
     """
     # Calculate the net profit margin
-    market_cap = valuation.get_market_cap(
+    market_cap = valuation_model.get_market_cap(
         share_price=share_price, total_shares_outstanding=shares_outstanding
     )
 
     # Calculate the market cap
-    enterprise_value = valuation.get_enterprise_value(
+    enterprise_value = valuation_model.get_enterprise_value(
         market_cap=market_cap,
         total_debt=total_debt,
         minority_interest=minority_interest,

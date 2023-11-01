@@ -3,15 +3,15 @@ __docformat__ = "google"
 
 import pandas as pd
 
-from financetoolkit.base.helpers import calculate_growth
-from financetoolkit.base.performance.helpers import (
+from financetoolkit.helpers import calculate_growth
+from financetoolkit.performance import performance_model
+from financetoolkit.performance.helpers import (
     handle_errors,
     handle_fama_and_french_data,
     handle_return_data_periods,
     handle_risk_free_data_periods,
 )
-from financetoolkit.performance import performance
-from financetoolkit.risk.risk import get_ui
+from financetoolkit.risk.risk_model import get_ui
 
 try:
     from tqdm import tqdm
@@ -190,9 +190,11 @@ class Performance:
         benchmark_returns = historical_data.loc[:, "Return"][self._benchmark_name]
 
         if rolling:
-            beta = performance.get_rolling_beta(returns, benchmark_returns, rolling)
+            beta = performance_model.get_rolling_beta(
+                returns, benchmark_returns, rolling
+            )
         else:
-            beta = performance.get_beta(returns, benchmark_returns)
+            beta = performance_model.get_beta(returns, benchmark_returns)
 
         beta = beta.round(rounding if rounding else self._rounding).loc[
             self._start_date : self._end_date
@@ -287,14 +289,14 @@ class Performance:
         returns = historical_data.loc[:, "Return"][self._tickers]
         benchmark_returns = historical_data.loc[:, "Return"][self._benchmark_name]
 
-        beta = performance.get_beta(returns, benchmark_returns)
+        beta = performance_model.get_beta(returns, benchmark_returns)
 
         risk_free_rate = handle_risk_free_data_periods(self, period)
         benchmark_returns = handle_return_data_periods(
             self, period, within_period=False
         ).loc[:, "Return"][self._benchmark_name]
 
-        capm = performance.get_capital_asset_pricing_model(
+        capm = performance_model.get_capital_asset_pricing_model(
             risk_free_rate, beta, benchmark_returns
         )
 
@@ -394,7 +396,9 @@ class Performance:
         returns = historical_data_within.loc[:, "Return"][self._tickers]
 
         if self._fama_and_french_dataset.empty:
-            self._fama_and_french_dataset = performance.obtain_fama_and_french_dataset()
+            self._fama_and_french_dataset = (
+                performance_model.obtain_fama_and_french_dataset()
+            )
 
         fama_and_french_period = handle_fama_and_french_data(
             self._fama_and_french_dataset, period
@@ -423,7 +427,7 @@ class Performance:
 
                 factor_correlations[ticker][
                     dataset_period
-                ] = performance.get_factor_asset_correlations(
+                ] = performance_model.get_factor_asset_correlations(
                     factors=factor_data, excess_return=excess_returns
                 )
 
@@ -514,7 +518,9 @@ class Performance:
         )
 
         if self._fama_and_french_dataset.empty:
-            self._fama_and_french_dataset = performance.obtain_fama_and_french_dataset()
+            self._fama_and_french_dataset = (
+                performance_model.obtain_fama_and_french_dataset()
+            )
 
         fama_and_french_period = handle_fama_and_french_data(
             self._fama_and_french_dataset[factors_to_calculate],
@@ -648,7 +654,9 @@ class Performance:
         historical_data = handle_return_data_periods(self, period, within_period=False)
         returns_total = historical_data.loc[:, "Return"][self._tickers]
 
-        self._fama_and_french_dataset = performance.obtain_fama_and_french_dataset()
+        self._fama_and_french_dataset = (
+            performance_model.obtain_fama_and_french_dataset()
+        )
         fama_and_french_period = handle_fama_and_french_data(
             self._fama_and_french_dataset, period
         )
@@ -683,7 +691,7 @@ class Performance:
                     (
                         factor_scores[ticker][dataset_period],
                         daily_residuals[ticker][dataset_period],
-                    ) = performance.get_fama_and_french_model_multi(
+                    ) = performance_model.get_fama_and_french_model_multi(
                         excess_returns=excess_returns, factor_dataset=factor_data
                     )
 
@@ -728,7 +736,7 @@ class Performance:
                         (
                             factor_scores[ticker][factor][dataset_period],
                             daily_residuals[ticker][factor][dataset_period],
-                        ) = performance.get_fama_and_french_model_single(
+                        ) = performance_model.get_fama_and_french_model_single(
                             excess_returns=excess_returns, factor=factor_data
                         )
 
@@ -880,7 +888,7 @@ class Performance:
         returns = historical_data.loc[:, "Return"][self._tickers]
         benchmark_returns = historical_data.loc[:, "Return"][self._benchmark_name]
 
-        alpha = performance.get_alpha(returns, benchmark_returns)
+        alpha = performance_model.get_alpha(returns, benchmark_returns)
 
         alpha = alpha.round(rounding if rounding else self._rounding).loc[
             self._start_date : self._end_date
@@ -969,7 +977,7 @@ class Performance:
         returns = historical_data.loc[:, "Return"][self._tickers]
         benchmark_returns = historical_data.loc[:, "Return"][self._benchmark_name]
 
-        beta = performance.get_beta(returns, benchmark_returns)
+        beta = performance_model.get_beta(returns, benchmark_returns)
 
         historical_period_data = handle_return_data_periods(
             self, period, within_period=False
@@ -981,7 +989,7 @@ class Performance:
             self, period, within_period=False
         ).loc[:, "Return"][self._benchmark_name]
 
-        jensens_alpha = performance.get_jensens_alpha(
+        jensens_alpha = performance_model.get_jensens_alpha(
             period_returns, risk_free_rate, beta, benchmark_returns
         )
 
@@ -1060,7 +1068,7 @@ class Performance:
         returns = historical_data.loc[:, "Return"][self._tickers]
         benchmark_returns = historical_data.loc[:, "Return"][self._benchmark_name]
 
-        beta = performance.get_beta(returns, benchmark_returns)
+        beta = performance_model.get_beta(returns, benchmark_returns)
 
         historical_period_data = handle_return_data_periods(
             self, period, within_period=False
@@ -1068,7 +1076,7 @@ class Performance:
         period_returns = historical_period_data.loc[:, "Return"][self._tickers]
         risk_free_rate = handle_risk_free_data_periods(self, period)
 
-        treynor_ratio = performance.get_treynor_ratio(
+        treynor_ratio = performance_model.get_treynor_ratio(
             period_returns, risk_free_rate, beta
         )
 
@@ -1164,9 +1172,11 @@ class Performance:
         excess_return = historical_data.loc[:, "Excess Return"][self._tickers]
 
         if rolling:
-            sharpe_ratio = performance.get_rolling_sharpe_ratio(excess_return, rolling)
+            sharpe_ratio = performance_model.get_rolling_sharpe_ratio(
+                excess_return, rolling
+            )
         else:
-            sharpe_ratio = performance.get_sharpe_ratio(excess_return)
+            sharpe_ratio = performance_model.get_sharpe_ratio(excess_return)
 
         sharpe_ratio = sharpe_ratio.round(rounding if rounding else self._rounding).loc[
             self._start_date : self._end_date
@@ -1253,7 +1263,7 @@ class Performance:
         historical_data = handle_return_data_periods(self, period, within_period=True)
         excess_return = historical_data.loc[:, "Excess Return"][self._tickers]
 
-        sortino_ratio = performance.get_sortino_ratio(excess_return)
+        sortino_ratio = performance_model.get_sortino_ratio(excess_return)
 
         sortino_ratio = sortino_ratio.round(
             rounding if rounding else self._rounding
@@ -1324,7 +1334,7 @@ class Performance:
 
         ulcer_index = get_ui(returns, rolling)
 
-        ulcer_performance_index = performance.get_ulcer_performance_index(
+        ulcer_performance_index = performance_model.get_ulcer_performance_index(
             excess_return, ulcer_index
         )
         ulcer_performance_index = ulcer_performance_index.round(
@@ -1408,7 +1418,7 @@ class Performance:
         ]
         risk_free_rate = handle_risk_free_data_periods(self, period)
 
-        m2_ratio = performance.get_m2_ratio(
+        m2_ratio = performance_model.get_m2_ratio(
             period_returns, risk_free_rate, period_standard_deviation
         )
 
@@ -1488,7 +1498,9 @@ class Performance:
         returns = historical_data.loc[:, "Return"][self._tickers]
         benchmark_returns = historical_data.loc[:, "Return"][self._benchmark_name]
 
-        tracking_error = performance.get_tracking_error(returns, benchmark_returns)
+        tracking_error = performance_model.get_tracking_error(
+            returns, benchmark_returns
+        )
 
         tracking_error = tracking_error.round(
             rounding if rounding else self._rounding
@@ -1564,7 +1576,7 @@ class Performance:
         """
         if period == "daily":
             print(
-                "Daily Tracking Error is not an option as the standard deviation for 1 day is close to zero. "
+                "Daily Information Ratio is not an option as the standard deviation for 1 day is close to zero. "
                 "Therefore, it does not give any useful insights."
             )
             return pd.Series(dtype="object")
@@ -1575,7 +1587,7 @@ class Performance:
         returns = historical_data.loc[:, "Return"][self._tickers]
         benchmark_returns = historical_data.loc[:, "Return"][self._benchmark_name]
 
-        information_ratio = performance.get_information_ratio(
+        information_ratio = performance_model.get_information_ratio(
             returns, benchmark_returns
         )
 
@@ -1592,3 +1604,91 @@ class Performance:
             )
 
         return information_ratio
+
+    @handle_errors
+    def get_compound_growth_rate(
+        self,
+        rounding: int | None = None,
+    ):
+        """
+        This function calculates the Compound Growth Rate (CGR) for different periods: yearly, quarterly, monthly,
+        weekly, and daily.
+
+        The CGR is a measure that provides the mean growth rate of an investment over a specified period of time.
+        It is a useful measure for comparing the performance of investments over different time periods or across
+        different asset classes. The CGR is calculated by taking the ratio of the final value to the initial value,
+        raising it to the inverse of the number of periods, and then subtracting one.
+
+        The formula is as follows:
+
+            - CGR = (Final Value / Initial Value) ^ (1 / Number of Periods) - 1
+
+        Args:
+            rounding (int, optional): The number of decimals to round the results to. If not provided,
+            the function will use the default rounding value set in the class instance.
+
+        Returns:
+            pd.DataFrame: A DataFrame containing the CGR for each period. The DataFrame has the periods
+            as the index and the CGR values as the column.
+
+        Notes:
+        - When verifying the calculation, note that rounding applies and it could be slightly off because of that
+        This is mostly noticeable when looking at the Compound Daily Growth Rate. Adjust the rounding with the
+        rounding parameter accordingly to get a more precise figure.
+
+        Example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+
+        toolkit.performance.get_compound_growth_rate()
+        ```
+        """
+        prices = self._yearly_historical_data.loc[:, "Adj Close"].loc[
+            self._start_date : self._end_date
+        ]
+
+        cagr = performance_model.get_compound_growth_rate(prices, len(prices))
+
+        prices = self._quarterly_historical_data.loc[:, "Adj Close"].loc[
+            self._start_date : self._end_date
+        ]
+
+        cqgr = performance_model.get_compound_growth_rate(prices, len(prices))
+
+        prices = self._monthly_historical_data.loc[:, "Adj Close"].loc[
+            self._start_date : self._end_date
+        ]
+
+        cqgr = performance_model.get_compound_growth_rate(prices, len(prices))
+
+        prices = self._weekly_historical_data.loc[:, "Adj Close"].loc[
+            self._start_date : self._end_date
+        ]
+
+        cwgr = performance_model.get_compound_growth_rate(prices, len(prices))
+
+        prices = self._daily_historical_data.loc[:, "Adj Close"].loc[
+            self._start_date : self._end_date
+        ]
+
+        cdgr = performance_model.get_compound_growth_rate(prices, len(prices))
+
+        compound_growth_rate = pd.DataFrame(
+            [cagr, cqgr, cqgr, cwgr, cdgr],
+            index=[
+                "Compound Annual Growth Rate (CAGR)",
+                "Compound Quarterly Growth Rate (CQGR)",
+                "Compound Monthly Growth Rate (CMGR)",
+                "Compound Weekly Growth Rate (CWGR)",
+                "Compound Daily Growth Rate (CDGR)",
+            ],
+        )
+
+        compound_growth_rate = compound_growth_rate.round(
+            rounding if rounding else self._rounding
+        )
+
+        return compound_growth_rate

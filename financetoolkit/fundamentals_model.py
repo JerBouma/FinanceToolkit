@@ -8,8 +8,8 @@ import time
 import numpy as np
 import pandas as pd
 
-from financetoolkit.base import helpers
-from financetoolkit.base.normalization_model import (
+from financetoolkit import helpers
+from financetoolkit.normalization_model import (
     convert_financial_statements,
 )
 

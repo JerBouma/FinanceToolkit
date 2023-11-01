@@ -3,15 +3,15 @@ __docformat__ = "google"
 
 import pandas as pd
 
-from financetoolkit.base.helpers import calculate_growth, handle_errors
-from financetoolkit.models.dupont import (
+from financetoolkit.helpers import calculate_growth, handle_errors
+from financetoolkit.models.dupont_model import (
     get_dupont_analysis,
     get_extended_dupont_analysis,
 )
-from financetoolkit.models.enterprise import get_enterprise_value_breakdown
-from financetoolkit.models.intrinsic import get_intrinsic_value
-from financetoolkit.models.wacc import get_weighted_average_cost_of_capital
-from financetoolkit.performance.performance import get_beta
+from financetoolkit.models.enterprise_model import get_enterprise_value_breakdown
+from financetoolkit.models.intrinsic_model import get_intrinsic_value
+from financetoolkit.models.wacc_model import get_weighted_average_cost_of_capital
+from financetoolkit.performance.performance_model import get_beta
 
 # pylint: disable=too-many-instance-attributes,too-many-locals
 

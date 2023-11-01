@@ -11,7 +11,7 @@ import numpy as np
 import pandas as pd
 import requests
 
-from financetoolkit.base import helpers
+from financetoolkit import helpers
 
 try:
     from tqdm import tqdm

@@ -3,7 +3,7 @@ __docformat__ = "google"
 
 import pandas as pd
 
-from financetoolkit.technical.overlap import get_exponential_moving_average
+from financetoolkit.technical.overlap_model import get_exponential_moving_average
 
 
 def get_true_range(

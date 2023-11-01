@@ -111,6 +111,7 @@ def get_rolling_beta(
     Returns:
         pd.Series | pd.DataFrame: Rolling beta values.
     """
+    returns = pd.DataFrame(returns) if isinstance(returns, pd.Series) else returns
     rolling_cov = pd.DataFrame(columns=returns.columns, dtype=np.float64)
 
     for column in returns.columns:
@@ -655,3 +656,21 @@ def get_information_ratio(
         information_ratio = difference.mean() / difference.std()
 
     return information_ratio
+
+
+def get_compound_growth_rate(
+    prices: pd.Series | pd.DataFrame, periods: int
+) -> float | pd.Series:
+    """
+    Calculate the Compound Growth Rate of a given data series.
+
+    CGR is the mean growth rate of an investment over a specified period. Typically,
+    the Compound Annual Growth Rate (CAGR) is used.
+
+    Args:
+        prices (pd.Series): Series of data points.
+
+    Returns:
+        float: CGR value.
+    """
+    return (prices.iloc[-1] / prices.iloc[0]) ** (1 / periods) - 1

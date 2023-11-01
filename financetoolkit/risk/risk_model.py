@@ -258,6 +258,8 @@ def get_cvar_studentt(
 
         return value_at_risk.T
 
+    returns = pd.DataFrame(returns)
+
     # Fitting student-t parameters to the data
     v, scale = np.array([]), np.array([])
     for col in returns.columns:

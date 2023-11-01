@@ -3,12 +3,11 @@ __docformat__ = "google"
 
 import pandas as pd
 
-from financetoolkit.base.helpers import (
+from financetoolkit.helpers import (
     calculate_growth,
     handle_errors,
 )
-from financetoolkit.base.risk import helpers
-from financetoolkit.risk import risk
+from financetoolkit.risk import helpers, risk_model
 
 # pylint: disable=too-many-instance-attributes,too-few-public-methods
 
@@ -191,13 +190,13 @@ class Risk:
         returns = helpers.handle_return_data_periods(self, period, within_period)
 
         if distribution == "historic":
-            value_at_risk = risk.get_var_historic(returns, alpha)
+            value_at_risk = risk_model.get_var_historic(returns, alpha)
         elif distribution == "gaussian":
-            value_at_risk = risk.get_var_gaussian(returns, alpha)
+            value_at_risk = risk_model.get_var_gaussian(returns, alpha)
         elif distribution == "cf":
-            value_at_risk = risk.get_var_gaussian(returns, alpha, True)
+            value_at_risk = risk_model.get_var_gaussian(returns, alpha, True)
         elif distribution == "studentt":
-            value_at_risk = risk.get_var_studentt(returns, alpha)
+            value_at_risk = risk_model.get_var_studentt(returns, alpha)
         else:
             raise ValueError("Distribution must be historic, gaussian, cf or studentt.")
 
@@ -285,15 +284,15 @@ class Risk:
         returns = helpers.handle_return_data_periods(self, period, within_period)
 
         if distribution == "historic":
-            conditional_value_at_risk = risk.get_cvar_historic(returns, alpha)
+            conditional_value_at_risk = risk_model.get_cvar_historic(returns, alpha)
         elif distribution == "gaussian":
-            conditional_value_at_risk = risk.get_cvar_gaussian(returns, alpha)
+            conditional_value_at_risk = risk_model.get_cvar_gaussian(returns, alpha)
         elif distribution == "studentt":
-            conditional_value_at_risk = risk.get_var_studentt(returns, alpha)
+            conditional_value_at_risk = risk_model.get_var_studentt(returns, alpha)
         elif distribution == "laplace":
-            conditional_value_at_risk = risk.get_cvar_laplace(returns, alpha)
+            conditional_value_at_risk = risk_model.get_cvar_laplace(returns, alpha)
         elif distribution == "logistic":
-            conditional_value_at_risk = risk.get_cvar_logistic(returns, alpha)
+            conditional_value_at_risk = risk_model.get_cvar_logistic(returns, alpha)
         else:
             raise ValueError(
                 "Distribution must be historic, gaussian, studentt, laplace or logistic."
@@ -379,7 +378,7 @@ class Risk:
         period = period if period else "quarterly" if self._quarterly else "yearly"
         returns = helpers.handle_return_data_periods(self, period, within_period)
 
-        entropic_value_at_risk = risk.get_evar_gaussian(returns, alpha)
+        entropic_value_at_risk = risk_model.get_evar_gaussian(returns, alpha)
 
         if growth:
             return calculate_growth(
@@ -457,7 +456,7 @@ class Risk:
         period = period if period else "quarterly" if self._quarterly else "yearly"
         returns = helpers.handle_return_data_periods(self, period, within_period)
 
-        maximum_drawdown = risk.get_max_drawdown(returns)
+        maximum_drawdown = risk_model.get_max_drawdown(returns)
 
         if growth:
             return calculate_growth(
@@ -536,7 +535,7 @@ class Risk:
         period = period if period else "quarterly" if self._quarterly else "yearly"
         returns = helpers.handle_return_data_periods(self, period, True)
 
-        ulcer_index = risk.get_ui(returns, rolling)
+        ulcer_index = risk_model.get_ui(returns, rolling)
 
         if growth:
             return calculate_growth(
@@ -610,7 +609,7 @@ class Risk:
         period = period if period else "quarterly" if self._quarterly else "yearly"
         returns = helpers.handle_return_data_periods(self, period, within_period)
 
-        skewness = risk.get_skewness(returns)
+        skewness = risk_model.get_skewness(returns)
 
         if growth:
             return calculate_growth(
@@ -689,7 +688,7 @@ class Risk:
         period = period if period else "quarterly" if self._quarterly else "yearly"
         returns = helpers.handle_return_data_periods(self, period, within_period)
 
-        kurtosis = risk.get_kurtosis(returns, fisher=fisher)
+        kurtosis = risk_model.get_kurtosis(returns, fisher=fisher)
 
         if growth:
             return calculate_growth(

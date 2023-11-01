@@ -3,8 +3,8 @@ __docformat__ = "google"
 
 import pandas as pd
 
-from financetoolkit.performance import performance
-from financetoolkit.ratios import profitability, valuation
+from financetoolkit.performance import performance_model
+from financetoolkit.ratios import profitability_model, valuation_model
 
 # pylint: disable=too-many-locals
 
@@ -36,7 +36,7 @@ def get_cost_of_equity(
     Returns:
         pd.DataFrame: A DataFrame containing Cost of Equity
     """
-    cost_of_equity = performance.get_capital_asset_pricing_model(
+    cost_of_equity = performance_model.get_capital_asset_pricing_model(
         risk_free_rate=risk_free_rate, beta=beta, benchmark_returns=benchmark_returns
     )
 
@@ -116,7 +116,7 @@ def get_weighted_average_cost_of_capital(
     - The corporate tax rate is calculated as the income tax expense divided by the income before taxes.
     """
     # Calculate the Market Value of Equity
-    market_value_equity = valuation.get_market_cap(
+    market_value_equity = valuation_model.get_market_cap(
         share_price, total_shares_outstanding
     )
 
@@ -137,7 +137,7 @@ def get_weighted_average_cost_of_capital(
     cost_of_debt = get_cost_of_debt(interest_expense, total_debt)
 
     # Calculate the Corporate Tax Rate
-    corporate_tax_rate = profitability.get_effective_tax_rate(
+    corporate_tax_rate = profitability_model.get_effective_tax_rate(
         income_tax_expense, income_before_tax
     )
 

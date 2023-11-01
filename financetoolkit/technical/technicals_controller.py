@@ -4,9 +4,14 @@ __docformat__ = "google"
 
 import pandas as pd
 
-from financetoolkit.base.helpers import calculate_growth
-from financetoolkit.base.technicals.helpers import handle_errors
-from financetoolkit.technical import breadth, momentum, overlap, volatility
+from financetoolkit.helpers import calculate_growth
+from financetoolkit.technical import (
+    breadth_model,
+    momentum_model,
+    overlap_model,
+    volatility_model,
+)
+from financetoolkit.technical.helpers import handle_errors
 
 # pylint: disable=too-many-lines,too-many-instance-attributes,too-many-public-methods,too-many-locals,eval-used
 
@@ -337,7 +342,7 @@ class Technicals:
             index=historical_data.loc[self._start_date : self._end_date].index
         )
         for ticker in self._tickers:
-            mcclellan_oscillator[ticker] = breadth.get_mcclellan_oscillator(
+            mcclellan_oscillator[ticker] = breadth_model.get_mcclellan_oscillator(
                 historical_data[close_column][ticker], short_ema_window, long_ema_window
             ).loc[self._start_date : self._end_date]
 
@@ -413,7 +418,7 @@ class Technicals:
         else:
             raise ValueError("Period must be daily, weekly, quarterly, or yearly.")
 
-        advancers_decliners = breadth.get_advancers_decliners(
+        advancers_decliners = breadth_model.get_advancers_decliners(
             historical_data[close_column],
         ).loc[self._start_date : self._end_date]
 
@@ -488,7 +493,7 @@ class Technicals:
         else:
             raise ValueError("Period must be daily, weekly, quarterly, or yearly.")
 
-        on_balance_volume = breadth.get_on_balance_volume(
+        on_balance_volume = breadth_model.get_on_balance_volume(
             historical_data[close_column],
             historical_data["Volume"],
         ).loc[self._start_date : self._end_date]
@@ -571,7 +576,7 @@ class Technicals:
         for ticker in self._tickers:
             accumulation_distribution_line[
                 ticker
-            ] = breadth.get_accumulation_distribution_line(
+            ] = breadth_model.get_accumulation_distribution_line(
                 historical_data["High"][ticker],
                 historical_data["Low"][ticker],
                 historical_data[close_column][ticker],
@@ -660,7 +665,7 @@ class Technicals:
         else:
             raise ValueError("Period must be daily, weekly, quarterly, or yearly.")
 
-        chaikin_oscillator = breadth.get_chaikin_oscillator(
+        chaikin_oscillator = breadth_model.get_chaikin_oscillator(
             historical_data["High"],
             historical_data["Low"],
             historical_data[close_column],
@@ -903,7 +908,7 @@ class Technicals:
         else:
             raise ValueError("Period must be daily, weekly, quarterly, or yearly.")
 
-        money_flow_index = momentum.get_money_flow_index(
+        money_flow_index = momentum_model.get_money_flow_index(
             historical_data["High"],
             historical_data["Low"],
             historical_data[close_column],
@@ -985,7 +990,7 @@ class Technicals:
         else:
             raise ValueError("Period must be daily, weekly, quarterly, or yearly.")
 
-        williams_percent_r = momentum.get_williams_percent_r(
+        williams_percent_r = momentum_model.get_williams_percent_r(
             historical_data["High"],
             historical_data["Low"],
             historical_data[close_column],
@@ -1067,7 +1072,7 @@ class Technicals:
         aroon_indicator_dict = {}
 
         for ticker in self._tickers:
-            aroon_indicator_dict[ticker] = momentum.get_aroon_indicator(
+            aroon_indicator_dict[ticker] = momentum_model.get_aroon_indicator(
                 historical_data["High"][ticker], historical_data["Low"][ticker], window
             )
 
@@ -1161,13 +1166,17 @@ class Technicals:
         )
 
         for ticker in self._tickers:
-            commodity_channel_index[ticker] = momentum.get_commodity_channel_index(
+            commodity_channel_index[
+                ticker
+            ] = momentum_model.get_commodity_channel_index(
                 historical_data["High"][ticker],
                 historical_data["Low"][ticker],
                 historical_data[close_column][ticker],
                 window,
                 constant,
-            ).loc[self._start_date : self._end_date]
+            ).loc[
+                self._start_date : self._end_date
+            ]
 
         if growth:
             return calculate_growth(
@@ -1243,7 +1252,7 @@ class Technicals:
         else:
             raise ValueError("Period must be daily, weekly, quarterly, or yearly.")
 
-        relative_vigor_index = momentum.get_relative_vigor_index(
+        relative_vigor_index = momentum_model.get_relative_vigor_index(
             historical_data["Open"],
             historical_data[close_column],
             historical_data["Volume"],
@@ -1323,7 +1332,7 @@ class Technicals:
         else:
             raise ValueError("Period must be daily, weekly, quarterly, or yearly.")
 
-        force_index = momentum.get_force_index(
+        force_index = momentum_model.get_force_index(
             historical_data[close_column],
             historical_data["Volume"],
             window,
@@ -1413,7 +1422,7 @@ class Technicals:
             index=historical_data.loc[self._start_date : self._end_date].index
         )
         for ticker in self._tickers:
-            ultimate_oscillator[ticker] = momentum.get_ultimate_oscillator(
+            ultimate_oscillator[ticker] = momentum_model.get_ultimate_oscillator(
                 historical_data["High"][ticker],
                 historical_data["Low"][ticker],
                 historical_data[close_column][ticker],
@@ -1500,7 +1509,7 @@ class Technicals:
         else:
             raise ValueError("Period must be daily, weekly, quarterly, or yearly.")
 
-        percentage_price_oscillator = momentum.get_percentage_price_oscillator(
+        percentage_price_oscillator = momentum_model.get_percentage_price_oscillator(
             historical_data[close_column],
             short_window,
             long_window,
@@ -1583,7 +1592,7 @@ class Technicals:
         else:
             raise ValueError("Period must be daily, weekly, quarterly, or yearly.")
 
-        detrended_price_oscillator = momentum.get_detrended_price_oscillator(
+        detrended_price_oscillator = momentum_model.get_detrended_price_oscillator(
             historical_data[close_column], window
         ).loc[self._start_date : self._end_date]
 
@@ -1668,12 +1677,16 @@ class Technicals:
             index=historical_data.loc[self._start_date : self._end_date].index
         )
         for ticker in self._tickers:
-            average_directional_index[ticker] = momentum.get_average_directional_index(
+            average_directional_index[
+                ticker
+            ] = momentum_model.get_average_directional_index(
                 historical_data["High"][ticker],
                 historical_data["Low"][ticker],
                 historical_data[close_column][ticker],
                 window,
-            ).loc[self._start_date : self._end_date]
+            ).loc[
+                self._start_date : self._end_date
+            ]
 
         if growth:
             adx_growth = calculate_growth(
@@ -1751,7 +1764,7 @@ class Technicals:
         else:
             raise ValueError("Period must be daily, weekly, quarterly, or yearly.")
 
-        chande_momentum_oscillator = momentum.get_chande_momentum_oscillator(
+        chande_momentum_oscillator = momentum_model.get_chande_momentum_oscillator(
             historical_data[close_column], window
         ).loc[self._start_date : self._end_date]
 
@@ -1841,7 +1854,7 @@ class Technicals:
         ichimoku_cloud_dict = {}
 
         for ticker in self._tickers:
-            ichimoku_cloud_dict[ticker] = momentum.get_ichimoku_cloud(
+            ichimoku_cloud_dict[ticker] = momentum_model.get_ichimoku_cloud(
                 historical_data["High"][ticker],
                 historical_data["Low"][ticker],
                 conversion_window,
@@ -1940,13 +1953,17 @@ class Technicals:
         stochastic_oscillator_dict = {}
 
         for ticker in self._tickers:
-            stochastic_oscillator_dict[ticker] = momentum.get_stochastic_oscillator(
+            stochastic_oscillator_dict[
+                ticker
+            ] = momentum_model.get_stochastic_oscillator(
                 historical_data["High"][ticker],
                 historical_data["Low"][ticker],
                 historical_data[close_column][ticker],
                 window,
                 smooth_widow,
-            ).loc[self._start_date : self._end_date]
+            ).loc[
+                self._start_date : self._end_date
+            ]
 
         stochastic_oscillator = (
             pd.concat(stochastic_oscillator_dict, axis=1)
@@ -2042,12 +2059,16 @@ class Technicals:
         macd_dict = {}
 
         for ticker in self._tickers:
-            macd_dict[ticker] = momentum.get_moving_average_convergence_divergence(
+            macd_dict[
+                ticker
+            ] = momentum_model.get_moving_average_convergence_divergence(
                 historical_data[close_column][ticker],
                 short_window,
                 long_window,
                 signal_window,
-            ).loc[self._start_date : self._end_date]
+            ).loc[
+                self._start_date : self._end_date
+            ]
 
         macd = pd.concat(macd_dict, axis=1).swaplevel(1, 0, axis=1).sort_index(axis=1)
 
@@ -2128,7 +2149,7 @@ class Technicals:
         else:
             raise ValueError("Period must be daily, weekly, quarterly, or yearly.")
 
-        relative_strength_index = momentum.get_relative_strength_index(
+        relative_strength_index = momentum_model.get_relative_strength_index(
             historical_data[close_column], window
         ).loc[self._start_date : self._end_date]
 
@@ -2204,7 +2225,7 @@ class Technicals:
         else:
             raise ValueError("Period must be daily, weekly, quarterly, or yearly.")
 
-        balance_of_power = momentum.get_balance_of_power(
+        balance_of_power = momentum_model.get_balance_of_power(
             historical_data["Open"],
             historical_data["High"],
             historical_data["Low"],
@@ -2383,7 +2404,7 @@ class Technicals:
         else:
             raise ValueError("Period must be daily, weekly, quarterly, or yearly.")
 
-        moving_average = overlap.get_moving_average(
+        moving_average = overlap_model.get_moving_average(
             historical_data[close_column], window
         ).loc[self._start_date : self._end_date]
 
@@ -2462,7 +2483,7 @@ class Technicals:
         else:
             raise ValueError("Period must be daily, weekly, quarterly, or yearly.")
 
-        exponential_moving_average = overlap.get_exponential_moving_average(
+        exponential_moving_average = overlap_model.get_exponential_moving_average(
             historical_data[close_column], window
         ).loc[self._start_date : self._end_date]
 
@@ -2544,7 +2565,7 @@ class Technicals:
             raise ValueError("Period must be daily, weekly, quarterly, or yearly.")
 
         double_exponential_moving_average = (
-            overlap.get_double_exponential_moving_average(
+            overlap_model.get_double_exponential_moving_average(
                 historical_data[close_column], window
             ).loc[self._start_date : self._end_date]
         )
@@ -2630,7 +2651,7 @@ class Technicals:
         else:
             raise ValueError("Period must be daily, weekly, quarterly, or yearly.")
 
-        trix = overlap.get_trix(historical_data[close_column], window).loc[
+        trix = overlap_model.get_trix(historical_data[close_column], window).loc[
             self._start_date : self._end_date
         ]
 
@@ -2719,7 +2740,7 @@ class Technicals:
         bollinger_bands_dict = {}
 
         for ticker in self._tickers:
-            bollinger_bands_dict[ticker] = volatility.get_bollinger_bands(
+            bollinger_bands_dict[ticker] = volatility_model.get_bollinger_bands(
                 historical_data[close_column][ticker], window, num_std_dev
             ).loc[self._start_date : self._end_date]
 
@@ -2805,7 +2826,7 @@ class Technicals:
         else:
             raise ValueError("Period must be daily, weekly, quarterly, or yearly.")
 
-        triangular_moving_average = overlap.get_triangular_moving_average(
+        triangular_moving_average = overlap_model.get_triangular_moving_average(
             historical_data[close_column], window
         ).loc[self._start_date : self._end_date]
 
@@ -2986,7 +3007,7 @@ class Technicals:
             index=historical_data.loc[self._start_date : self._end_date].index
         )
         for ticker in self._tickers:
-            true_range[ticker] = volatility.get_true_range(
+            true_range[ticker] = volatility_model.get_true_range(
                 historical_data["High"][ticker],
                 historical_data["Low"][ticker],
                 historical_data[close_column][ticker],
@@ -3077,7 +3098,7 @@ class Technicals:
             index=historical_data.loc[self._start_date : self._end_date].index
         )
         for ticker in self._tickers:
-            average_true_range[ticker] = volatility.get_average_true_range(
+            average_true_range[ticker] = volatility_model.get_average_true_range(
                 historical_data["High"][ticker],
                 historical_data["Low"][ticker],
                 historical_data[close_column][ticker],
@@ -3172,7 +3193,7 @@ class Technicals:
         keltner_channels_dict = {}
 
         for ticker in self._tickers:
-            keltner_channels_dict[ticker] = volatility.get_keltner_channels(
+            keltner_channels_dict[ticker] = volatility_model.get_keltner_channels(
                 historical_data["High"][ticker],
                 historical_data["Low"][ticker],
                 historical_data[close_column][ticker],

@@ -132,7 +132,7 @@ def test_get_rolling_sharpe_ratio(recorder):
 def test_get_sortino_ratio(recorder):
     recorder.capture(
         performance_model.get_sortino_ratio(
-            excess_returns=pd.Series([0.3, 0.2, 0.1, 0, 0.06])
+            excess_returns=pd.Series([0.3, 0.2, 0.1, -0.05, 0.06])
         )
     )
 
@@ -170,5 +170,14 @@ def test_get_information_ratio(recorder):
         performance_model.get_information_ratio(
             asset_returns=pd.Series([0.3, 0.2, 0.1, 0, 0.06]),
             benchmark_returns=pd.Series([0.31, 0.19, 0.5, 0, 0.03]),
+        )
+    )
+
+
+def test_get_compound_growth_rate(recorder):
+    recorder.capture(
+        performance_model.get_compound_growth_rate(
+            prices=pd.Series([100, 200, 300, 400, 500]),
+            periods=5,
         )
     )

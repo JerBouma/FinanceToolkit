@@ -49,3 +49,9 @@ def test_get_weighted_average_cost_of_capital(recorder):
     recorder.capture(
         models_module.get_weighted_average_cost_of_capital(growth=True, lag=[1, 2, 3])
     )
+
+
+def test_get_altman_z_score(recorder):
+    recorder.capture(models_module.get_altman_z_score())
+    recorder.capture(models_module.get_altman_z_score(growth=True))
+    recorder.capture(models_module.get_altman_z_score(growth=True, lag=[1, 2, 3]))

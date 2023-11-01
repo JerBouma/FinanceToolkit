@@ -146,3 +146,8 @@ def test_get_information_ratio(recorder):
     recorder.capture(
         performance_module.get_information_ratio(growth=True, lag=[1, 2, 3])
     )
+
+
+def test_compount_growth_rate(recorder):
+    recorder.capture(performance_module.get_compound_growth_rate())
+    recorder.capture(performance_module.get_compound_growth_rate(rounding=10))

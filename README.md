@@ -179,7 +179,7 @@ And below a few of the profitability ratios are plotted for Microsoft.
 
 ### Obtaining Financial Models
 
-Get an Extended DuPont Analysis based on the inputted balance sheet, income and cash flow statements. This can also be for example an Enterprise Value Breakdown (`companies.models.get_enterprise_value_breakdown()`). For example, this shows the Extended DuPont Analysis for Apple:
+Get an Extended DuPont Analysis based on the inputted balance sheet, income and cash flow statements. This can also be an Enterprise Value Breakdown, Weighted Average Cost of Capital (WACC), Altman Z-Score and many more models. For example, this shows the Extended DuPont Analysis for Apple:
 
 |                         |     2017 |   2018 |   2019 |   2020 |   2021 |   2022 |   2023 |
 |:------------------------|---------:|-------:|-------:|-------:|-------:|-------:|-------:|

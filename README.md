@@ -78,6 +78,7 @@ The Finance Toolkit features the following functionality, also see [Basic Usage]
 - **Analyst Estimates** (`get_analyst_estimates`) that show the expected EPS and Revenue from the past and future from a range of analysts (from FinancialModelingPrep)
 - **Earnings Calendar**(`get_earnings_calendar`) which shows the exact dates earnings are released in the past and in the future including expectations (from FinancialModelingPrep)
 - **Revenue Geographic Segmentation** (`get_revenue_geographic_segmentation`) which shows the revenue per company from each country and **Revenue Product Segmentation** (`get_revenue_product_segmenttion`) which shows the revenue per company from each product (from FinancialModelingPrep)
+- **ESG Scores** (`get_esg_scores`) which shows the Environmental, Social and Governance (ESG) scores for each company (from FinancialModelingPrep)
 - **Balance Sheet Statements** (`get_balance_sheet_statement`), **Income Statements** (`get_income_statement`), **Cash Flow Statements** (`get_cash_flow_statement`) and **Statistics Statements** (`get_statistics_statement`), obtainable from FinancialModelingPrep or the source of your choosing through custom input. These functions are accompanied with a normalization function so that for any source, the same ratio analysis can be performed. Next to that, you can obtain growth and trailing (TTM) results as well. Please see [this Jupyter Notebook](https://www.jeroenbouma.com/projects/financetoolkit/external-datasets) that explains how to use a custom source.
 - **Efficiency ratios** (`ratios.collect_efficiency_ratios`), **liquidity ratios** (`ratios.collect_liquidity_ratios`), **profitability ratios** (`ratios._collect_profitability_ratios`), **solvency ratios** (`ratios.collect_solvency_ratios`) and **valuation ratios** (`ratios.collect_valuation_ratios`) functionality that automatically calculates the most important ratios (50+) based on the inputted balance sheet, income and cash flow statements. Any of the underlying ratios can also be called individually such as `ratios.get_return_on_equity` and it is possible to calculate their growth with lags as well as calculate trailing metrics (TTM). Next to that, it is also possible to input your own **custom ratios** (`ratios.collect_custom_ratios`). See also [this Notebook](https://www.jeroenbouma.com/projects/financetoolkit/custom-ratios) for more information.
 - **Models** like DUPONT analysis (`models.get_extended_dupont_analysis`) or Enterprise Breakdown (`models.get_enterprise_value_breakdown`) that can be used to perform in-depth financial analysis through a single function. These functions combine much of the functionality throughout the Toolkit to provide advanced calculations. 
@@ -101,15 +102,13 @@ A basic example of how to use the Finance Toolkit is shown below.
 
 
 ````python
-from financetoolkit import Toolkit
-
-companies = Toolkit(['AAPL', 'MSFT'], api_key="FINANCIAL_MODELING_PREP_KEY", start_date='2017-12-31')
+companies = Toolkit(["AAPL", "MSFT"], api_key=API_KEY, start_date="2017-12-31")
 
 # a Historical example
 historical_data = companies.get_historical_data()
 
 # a Financial Statement example
-balance_sheet_statement = companies.get_balance_sheet_statement()
+income_statement = companies.get_income_statement()
 
 # a Ratios example
 profitability_ratios = companies.ratios.collect_profitability_ratios()
@@ -118,175 +117,102 @@ profitability_ratios = companies.ratios.collect_profitability_ratios()
 extended_dupont_analysis = companies.models.get_extended_dupont_analysis()
 
 # a Performance example
-capital_asset_pricing_model = companies.performance.get_capital_asset_pricing_model(show_full_results=True)
+factor_asset_correlations = companies.performance.get_factor_asset_correlations(period='quarterly')
 
 # a Risk example
-value_at_risk = companies.risk.get_value_at_risk(period='quarterly')
+value_at_risk = companies.risk.get_value_at_risk(period="weekly")
 
 # a Technical example
-bollinger_bands = companies.technicals.get_bollinger_bands()
+ichimoku_cloud = companies.technicals.get_ichimoku_cloud()
 ````
 
 Generally, the functions return a DataFrame with a multi-index in which all tickers, in this case Apple and Microsoft, are presented. To keep things manageable for this README, I've selected just Apple but in essence it can be any list of tickers (no limit). The filtering is done through using `.loc['AAPL']` and `.xs('AAPL', level=1, axis=1)` based on whether it's fundamental data or historical data respectively.
 
 ### Obtaining Historical Data
 
-Obtain historical data on a daily, weekly, monthly or yearly basis. This includes OHLC, volumes, dividends, returns, cumulative returns and volatility calculations for each corresponding period.
+Obtain historical data on a daily, weekly, monthly or yearly basis. This includes OHLC, volumes, dividends, returns, cumulative returns and volatility calculations for each corresponding period. For example, the historical data for Apple is shown below.
 
-| Date       |    Open |    High |     Low |   Close |   Adj Close |      Volume |   Dividends |       Return |   Volatility |   Excess Return |   Excess Volatility |   Cumulative Return |
-|:-----------|--------:|--------:|--------:|--------:|------------:|------------:|------------:|-------------:|-------------:|----------------:|--------------------:|--------------------:|
-| 2018-01-02 | 42.54   | 43.075  | 42.315  | 43.065  |     40.7765 | 1.02224e+08 |           0 |  0           |    0.0203524 |     -0.00674528 |           0.0231223 |            1        |
-| 2018-01-03 | 43.1325 | 43.6375 | 42.99   | 43.0575 |     40.7694 | 1.18072e+08 |           0 | -0.000173997 |    0.0203524 |     -0.024644   |           0.0231223 |            0.999826 |
-| 2018-01-04 | 43.135  | 43.3675 | 43.02   | 43.2575 |     40.9588 | 8.97384e+07 |           0 |  0.00464441  |    0.0203524 |     -0.0198856  |           0.0231223 |            1.00447  |
-| 2018-01-05 | 43.36   | 43.8425 | 43.2625 | 43.75   |     41.4251 | 9.464e+07   |           0 |  0.0113856   |    0.0203524 |     -0.0133744  |           0.0231223 |            1.01591  |
-| 2018-01-08 | 43.5875 | 43.9025 | 43.4825 | 43.5875 |     41.2713 | 8.22712e+07 |           0 | -0.00371412  |    0.0203524 |     -0.0285141  |           0.0231223 |            1.01213  |
+| date       |    Open |    High |     Low |   Close |   Adj Close |      Volume |   Dividends |   Return |   Volatility |   Excess Return |   Excess Volatility |   Cumulative Return |
+|:-----------|--------:|--------:|--------:|--------:|------------:|------------:|------------:|---------:|-------------:|----------------:|--------------------:|--------------------:|
+| 2018-01-02 | 42.54   | 43.075  | 42.315  | 43.065  |       40.78 | 1.02224e+08 |           0 |   0      |       0.0202 |         -0.0067 |              0.0233 |              1      |
+| 2018-01-03 | 43.1325 | 43.6375 | 42.99   | 43.0575 |       40.77 | 1.17982e+08 |           0 |  -0.0002 |       0.0202 |         -0.0247 |              0.0233 |              0.9998 |
+| 2018-01-04 | 43.135  | 43.3675 | 43.02   | 43.2575 |       40.96 | 8.97384e+07 |           0 |   0.0047 |       0.0202 |         -0.0198 |              0.0233 |              1.0044 |
+| 2018-01-05 | 43.36   | 43.8425 | 43.2625 | 43.75   |       41.43 | 9.46401e+07 |           0 |   0.0115 |       0.0202 |         -0.0133 |              0.0233 |              1.0159 |
+| 2018-01-08 | 43.5875 | 43.9025 | 43.4825 | 43.5875 |       41.27 | 8.22711e+07 |           0 |  -0.0039 |       0.0202 |         -0.0287 |              0.0233 |              1.012  |
 
 ### Obtaining Financial Statements
 
-Obtain a Balance Sheet Statement on an annual or quarterly basis. This can also be an income statement (`companies.get_income_statement()`) or cash flow statement (`companies.get_cash_flow_statement()`).
+Obtain an Income Statement on an annual or quarterly basis. This can also be an income statement (`companies.get_income_statement()`) or cash flow statement (`companies.get_cash_flow_statement()`). For example, the first 5 rows of the Income Statement for Apple are shown below.
 
-|                                          |         2018 |         2019 |         2020 |        2021 |         2022 |
-|:-----------------------------------------|-------------:|-------------:|-------------:|------------:|-------------:|
-| Cash and Cash Equivalents                |  2.5913e+10  |  4.8844e+10  |  3.8016e+10  | 3.494e+10   |  2.3646e+10  |
-| Short Term Investments                   |  4.0388e+10  |  5.1713e+10  |  5.2927e+10  | 2.7699e+10  |  2.4658e+10  |
-| Cash and Short Term Investments          |  6.6301e+10  |  1.00557e+11 |  9.0943e+10  | 6.2639e+10  |  4.8304e+10  |
-| Accounts Receivable                      |  4.8995e+10  |  4.5804e+10  |  3.7445e+10  | 5.1506e+10  |  6.0932e+10  |
-| Inventory                                |  3.956e+09   |  4.106e+09   |  4.061e+09   | 6.58e+09    |  4.946e+09   |
-| Other Current Assets                     |  1.2087e+10  |  1.2352e+10  |  1.1264e+10  | 1.4111e+10  |  2.1223e+10  |
-| Total Current Assets                     |  1.31339e+11 |  1.62819e+11 |  1.43713e+11 | 1.34836e+11 |  1.35405e+11 |
-| Property, Plant and Equipment            |  4.1304e+10  |  3.7378e+10  |  3.6766e+10  | 3.944e+10   |  4.2117e+10  |
-| Goodwill                                 |  0           |  0           |  0           | 0           |  0           |
-| Intangible Assets                        |  0           |  0           |  0           | 0           |  0           |
-| Long Term Investments                    |  1.70799e+11 |  1.05341e+11 |  1.00887e+11 | 1.27877e+11 |  1.20805e+11 |
-| Tax Assets                               |  0           |  0           |  0           | 0           |  0           |
-| Other Fixed Assets                       |  2.2283e+10  |  3.2978e+10  |  4.2522e+10  | 4.8849e+10  |  5.4428e+10  |
-| Fixed Assets                             |  2.34386e+11 |  1.75697e+11 |  1.80175e+11 | 2.16166e+11 |  2.1735e+11  |
-| Other Assets                             |  0           |  0           |  0           | 0           |  0           |
-| Total Assets                             |  3.65725e+11 |  3.38516e+11 |  3.23888e+11 | 3.51002e+11 |  3.52755e+11 |
-| Accounts Payable                         |  5.5888e+10  |  4.6236e+10  |  4.2296e+10  | 5.4763e+10  |  6.4115e+10  |
-| Short Term Debt                          |  2.0748e+10  |  1.624e+10   |  1.3769e+10  | 1.5613e+10  |  2.111e+10   |
-| Tax Payables                             |  0           |  0           |  0           | 0           |  0           |
-| Deferred Revenue                         |  7.543e+09   |  5.522e+09   |  6.643e+09   | 7.612e+09   |  7.912e+09   |
-| Other Current Liabilities                |  3.2687e+10  |  3.772e+10   |  4.2684e+10  | 4.7493e+10  |  6.0845e+10  |
-| Total Current Liabilities                |  1.16866e+11 |  1.05718e+11 |  1.05392e+11 | 1.25481e+11 |  1.53982e+11 |
-| Long Term Debt                           |  9.3735e+10  |  9.1807e+10  |  9.8667e+10  | 1.09106e+11 |  9.8959e+10  |
-| Deferred Revenue Non Current             |  2.797e+09   |  0           |  0           | 0           |  0           |
-| Deferred Tax Liabilities                 |  4.26e+08    |  0           |  0           | 0           |  0           |
-| Other Non Current Liabilities            |  4.4754e+10  |  5.0503e+10  |  5.449e+10   | 5.3325e+10  |  4.9142e+10  |
-| Total Non Current Liabilities            |  1.41712e+11 |  1.4231e+11  |  1.53157e+11 | 1.62431e+11 |  1.48101e+11 |
-| Other Liabilities                        |  0           |  0           |  0           | 0           |  0           |
-| Capital Lease Obligations                |  0           |  0           |  0           | 0           |  0           |
-| Total Liabilities                        |  2.58578e+11 |  2.48028e+11 |  2.58549e+11 | 2.87912e+11 |  3.02083e+11 |
-| Preferred Stock                          |  0           |  0           |  0           | 0           |  0           |
-| Common Stock                             |  4.0201e+10  |  4.5174e+10  |  5.0779e+10  | 5.7365e+10  |  6.4849e+10  |
-| Retained Earnings                        |  7.04e+10    |  4.5898e+10  |  1.4966e+10  | 5.562e+09   | -3.068e+09   |
-| Accumulated Other Comprehensive Income   | -3.454e+09   | -5.84e+08    | -4.06e+08    | 1.63e+08    | -1.1109e+10  |
-| Other Total Shareholder Equity           |  0           |  0           |  0           | 0           |  0           |
-| Total Shareholder Equity                 |  1.07147e+11 |  9.0488e+10  |  6.5339e+10  | 6.309e+10   |  5.0672e+10  |
-| Total Equity                             |  1.07147e+11 |  9.0488e+10  |  6.5339e+10  | 6.309e+10   |  5.0672e+10  |
-| Total Liabilities and Shareholder Equity |  3.65725e+11 |  3.38516e+11 |  3.23888e+11 | 3.51002e+11 |  3.52755e+11 |
-| Minority Interest                        |  0           |  0           |  0           | 0           |  0           |
-| Total Liabilities and Equity             |  3.65725e+11 |  3.38516e+11 |  3.23888e+11 | 3.51002e+11 |  3.52755e+11 |
-| Total Investments                        |  2.11187e+11 |  1.57054e+11 |  1.53814e+11 | 1.55576e+11 |  1.45463e+11 |
-| Total Debt                               |  1.14483e+11 |  1.08047e+11 |  1.12436e+11 | 1.24719e+11 |  1.20069e+11 |
-| Net Debt                                 |  8.857e+10   |  5.9203e+10  |  7.442e+10   | 8.9779e+10  |  9.6423e+10  |
+|                                   |        2017 |        2018 |        2019 |        2020 |        2021 |        2022 |        2023 |
+|:----------------------------------|------------:|------------:|------------:|------------:|------------:|------------:|------------:|
+| Revenue                           | 2.29234e+11 | 2.65595e+11 | 2.60174e+11 | 2.74515e+11 | 3.65817e+11 | 3.94328e+11 | 3.83285e+11 |
+| Cost of Goods Sold                | 1.41048e+11 | 1.63756e+11 | 1.61782e+11 | 1.69559e+11 | 2.12981e+11 | 2.23546e+11 | 2.14137e+11 |
+| Gross Profit                      | 8.8186e+10  | 1.01839e+11 | 9.8392e+10  | 1.04956e+11 | 1.52836e+11 | 1.70782e+11 | 1.69148e+11 |
+| Gross Profit Ratio                | 0.3847      | 0.3834      | 0.3782      | 0.3823      | 0.4178      | 0.4331      | 0.4413      |
+| Research and Development Expenses | 1.1581e+10  | 1.4236e+10  | 1.6217e+10  | 1.8752e+10  | 2.1914e+10  | 2.6251e+10  | 2.9915e+10  |
 
 ### Obtaining Financial Ratios
 
-Get Profitability Ratios based on the inputted balance sheet, income and cash flow statements. This can be any of the 50+ ratios within the `ratios` module. The `get_` functions show a single ratio whereas the `collect_` functions show an aggregation of multiple ratios.
+Get Profitability Ratios based on the inputted balance sheet, income and cash flow statements. This can be any of the 50+ ratios within the `ratios` module. The `get_` functions show a single ratio whereas the `collect_` functions show an aggregation of multiple ratios. For example, see some of the profitability ratios of Microsoft below.
 
-|                                             |     2018 |    2019 |    2020 |    2021 |    2022 |
-|:--------------------------------------------|---------:|--------:|--------:|--------:|--------:|
-| Gross Margin                                |   0.3834 |  0.3782 |  0.3823 |  0.4178 |  0.4331 |
-| Operating Margin                            |   0.2669 |  0.2457 |  0.2415 |  0.2978 |  0.3029 |
-| Net Profit Margin                           |   0.2241 |  0.2124 |  0.2091 |  0.2588 |  0.2531 |
-| Interest Coverage Ratio                     |  25.2472 | 21.3862 | 26.921  | 45.4567 | 44.538  |
-| Income Before Tax Profit Margin             |   0.2745 |  0.2527 |  0.2444 |  0.2985 |  0.302  |
-| Effective Tax Rate                          |   0.1834 |  0.1594 |  0.1443 |  0.133  |  0.162  |
-| Return on Assets (ROA)                      |   0.1628 |  0.1632 |  0.1773 |  0.2697 |  0.2829 |
-| Return on Equity (ROE)                      | nan      |  0.5592 |  0.7369 |  1.4744 |  1.7546 |
-| Return on Invested Capital (ROIC)           |   0.2699 |  0.2937 |  0.3441 |  0.5039 |  0.5627 |
-| Return on Capital Employed (ROCE)           |   0.306  |  0.2977 |  0.3202 |  0.496  |  0.6139 |
-| Return on Tangible Assets                   |   0.5556 |  0.6106 |  0.8787 |  1.5007 |  1.9696 |
-| Income Quality Ratio                        |   1.3007 |  1.2558 |  1.4052 |  1.0988 |  1.2239 |
-| Net Income per EBT                          |   0.8166 |  0.8406 |  0.8557 |  0.867  |  0.838  |
-| Free Cash Flow to Operating Cash Flow Ratio |   0.8281 |  0.8488 |  0.9094 |  0.8935 |  0.9123 |
-| EBT to EBIT Ratio                           |   0.9574 |  0.9484 |  0.9589 |  0.9764 |  0.976  |
-| EBIT to Revenue                             |   0.2867 |  0.2664 |  0.2549 |  0.3058 |  0.3095 |
+|                                             |   2017 |   2018 |   2019 |   2020 |   2021 |   2022 |   2023 |
+|:--------------------------------------------|-------:|-------:|-------:|-------:|-------:|-------:|-------:|
+| Income Quality Ratio                        | 1.8632 | 2.6482 | 1.3299 | 1.3702 | 1.2525 | 1.2241 | 1.2103 |
+| Net Income per EBT                          | 0.916  | 0.4543 | 0.8982 | 0.8349 | 0.8617 | 0.8689 | 0.8102 |
+| Free Cash Flow to Operating Cash Flow Ratio | 0.7942 | 0.7349 | 0.7332 | 0.7455 | 0.7313 | 0.7317 | 0.6791 |
+| EBT to EBIT Ratio                           | 0.9124 | 0.9303 | 0.9421 | 0.9534 | 0.9681 | 0.9759 | 0.9784 |
+| EBIT to Revenue                             | 0.2821 | 0.3553 | 0.3685 | 0.389  | 0.437  | 0.4326 | 0.4307 |
+
 
 ### Obtaining Financial Models
 
-Get an Extended DuPont Analysis based on the inputted balance sheet, income and cash flow statements. This can also be for example an Enterprise Value Breakdown (`companies.models.get_enterprise_value_breakdown()`).
+Get an Extended DuPont Analysis based on the inputted balance sheet, income and cash flow statements. This can also be for example an Enterprise Value Breakdown (`companies.models.get_enterprise_value_breakdown()`). For example, this shows the Extended DuPont Analysis for Microsoft:
 
-|                         |     2017 |   2018 |   2019 |   2020 |   2021 |   2022 |
-|:------------------------|---------:|-------:|-------:|-------:|-------:|-------:|
-| Interest Burden Ratio   |   0.9572 | 0.9725 | 0.9725 | 0.988  | 0.9976 | 1.0028 |
-| Tax Burden Ratio        |   0.7882 | 0.8397 | 0.8643 | 0.8661 | 0.869  | 0.8356 |
-| Operating Profit Margin |   0.2796 | 0.2745 | 0.2527 | 0.2444 | 0.2985 | 0.302  |
-| Asset Turnover          | nan      | 0.7168 | 0.7389 | 0.8288 | 1.0841 | 1.1206 |
-| Equity Multiplier       | nan      | 3.0724 | 3.5633 | 4.2509 | 5.255  | 6.1862 |
-| Return on Equity        | nan      | 0.4936 | 0.5592 | 0.7369 | 1.4744 | 1.7546 |
+|                         |     2017 |   2018 |   2019 |   2020 |   2021 |   2022 |   2023 |
+|:------------------------|---------:|-------:|-------:|-------:|-------:|-------:|-------:|
+| Interest Burden Ratio   |   0.9644 | 0.9612 | 0.9833 | 0.9985 | 0.9833 | 0.996  | 0.9912 |
+| Tax Burden Ratio        |   0.9497 | 0.4727 | 0.9134 | 0.8361 | 0.8764 | 0.8723 | 0.8174 |
+| Operating Profit Margin |   0.2574 | 0.3305 | 0.3472 | 0.3708 | 0.423  | 0.4222 | 0.4214 |
+| Asset Turnover          | nan      | 0.4415 | 0.4615 | 0.4866 | 0.5293 | 0.5676 | 0.5456 |
+| Equity Multiplier       | nan      | 3.2231 | 2.9474 | 2.6644 | 2.4399 | 2.2643 | 2.0839 |
+| Return on Equity        | nan      | 0.2137 | 0.4241 | 0.4014 | 0.4708 | 0.4715 | 0.3882 |
 
 ### Obtaining Performance Metrics
 
-Get the Expected Return as defined by the Capital Asset Pricing Model. Here with the `show_full_results=True` parameter not only the expected return is found but also the Betas. The beauty of this is that it can be based on any period as the function also accepts the period 'weekly', 'monthly', 'quarterly' and 'yearly' (as shown below).
+Get the correlations with the factors as defined by Fama-and-French. These include market, size, value, operating profitability and investment. The beauty of all functionality here is that it can be based on any period as the function accepts the period 'weekly', 'monthly', 'quarterly' and 'yearly'. For example, this shows the quarterly correlations for Apple:
 
-
-| Date   |   Risk Free Rate |   Beta AAPL |   Beta MSFT |   Benchmark Returns |   CAPM AAPL |   CAPM MSFT |
-|:-------|-----------------:|------------:|------------:|--------------------:|------------:|------------:|
-| 2017   |           0.024  |     1.36406 |     1.29979 |           0.1942    |      0.2562 |    0.245223 |
-| 2018   |           0.0269 |     1.25651 |     1.44686 |          -0.0623726 |     -0.0853 |   -0.102265 |
-| 2019   |           0.0192 |     1.5572  |     1.2942  |           0.288781  |      0.439  |    0.36809  |
-| 2020   |           0.0092 |     1.12329 |     1.1204  |           0.162589  |      0.1815 |    0.181058 |
-| 2021   |           0.0151 |     1.3144  |     1.1523  |           0.268927  |      0.3487 |    0.307586 |
-| 2022   |           0.0388 |     1.30786 |     1.2829  |          -0.194428  |     -0.2662 |   -0.260409 |
-| 2023   |           0.0427 |     1.20463 |     1.2727  |           0.157231  |      0.1807 |    0.188465 |
+|        |   Mkt-RF |     SMB |     HML |     RMW |     CMA |
+|:-------|---------:|--------:|--------:|--------:|--------:|
+| 2022Q2 |   0.9177 | -0.1248 | -0.5077 | -0.3202 | -0.2624 |
+| 2022Q3 |   0.8092 |  0.1528 | -0.5046 | -0.1997 | -0.5231 |
+| 2022Q4 |   0.8998 |  0.2309 | -0.5968 | -0.1868 | -0.5946 |
+| 2023Q1 |   0.7737 |  0.1606 | -0.3775 | -0.228  | -0.5707 |
+| 2023Q2 |   0.7416 | -0.1166 | -0.2722 |  0.0093 | -0.4745 |
 
 ### Obtaining Risk Metrics
 
 Get the Value at Risk for each quarter. Here, the days within each quarter are considered for the Value at Risk. This makes it so that you can understand within each period what is the expected Value at Risk (VaR) which can again be any period but also based on distributions such as Historical, Gaussian, Student-t, Cornish-Fisher.
 
-|        |    AAPL |    MSFT |   Benchmark |
-|:-------|--------:|--------:|------------:|
-| 2017Q1 | -0.0042 | -0.0098 |     -0.0036 |
-| 2017Q2 | -0.0147 | -0.0182 |     -0.0068 |
-| 2017Q3 | -0.0171 | -0.0119 |     -0.0071 |
-| 2017Q4 | -0.0149 | -0.0084 |     -0.0041 |
-| 2018Q1 | -0.025  | -0.0291 |     -0.0212 |
-| 2018Q2 | -0.016  | -0.0228 |     -0.0131 |
-| 2018Q3 | -0.0163 | -0.0135 |     -0.0065 |
-| 2018Q4 | -0.0461 | -0.0394 |     -0.0267 |
-| 2019Q1 | -0.0189 | -0.0195 |     -0.0094 |
-| 2019Q2 | -0.0204 | -0.0208 |     -0.0117 |
-| 2019Q3 | -0.0216 | -0.0268 |     -0.0121 |
-| 2019Q4 | -0.0137 | -0.0138 |     -0.0083 |
-| 2020Q1 | -0.0653 | -0.0668 |     -0.0517 |
-| 2020Q2 | -0.0297 | -0.0257 |     -0.0278 |
-| 2020Q3 | -0.0406 | -0.0326 |     -0.0168 |
-| 2020Q4 | -0.0296 | -0.0279 |     -0.0137 |
-| 2021Q1 | -0.0348 | -0.0267 |     -0.0148 |
-| 2021Q2 | -0.0176 | -0.0159 |     -0.0092 |
-| 2021Q3 | -0.0234 | -0.0167 |     -0.0117 |
-| 2021Q4 | -0.0204 | -0.0206 |     -0.0118 |
-| 2022Q1 | -0.0258 | -0.0374 |     -0.0194 |
-| 2022Q2 | -0.0396 | -0.0424 |     -0.0355 |
-| 2022Q3 | -0.029  | -0.029  |     -0.0205 |
-| 2022Q4 | -0.0364 | -0.0314 |     -0.0234 |
-| 2023Q1 | -0.018  | -0.0257 |     -0.0156 |
-| 2023Q2 | -0.01   | -0.0191 |     -0.0076 |
-| 2023Q3 | -0.0314 | -0.0226 |     -0.0105 |
+|                       |    AAPL |    MSFT |   Benchmark |
+|:----------------------|--------:|--------:|------------:|
+| 2023-09-25/2023-10-01 | -0.0205 | -0.0133 |     -0.0122 |
+| 2023-10-02/2023-10-08 | -0.0048 | -0.0206 |     -0.0108 |
+| 2023-10-09/2023-10-15 | -0.0089 | -0.0092 |     -0.0059 |
+| 2023-10-16/2023-10-22 | -0.0135 | -0.0124 |     -0.0131 |
+| 2023-10-23/2023-10-29 | -0.0224 | -0.0293 |     -0.0139 |
 
 ### Obtaining Technical Indicators
 
-Get Bollinger Bands based on the historical market data. This can be any of the 30+ technical indicators within the `technicals` module. The `get_` functions show a single indicator whereas the `collect_` functions show an aggregation of multiple indicators.
+Get the Ichimoku Cloud parameters based on the historical market data. This can be any of the 30+ technical indicators within the `technicals` module. The `get_` functions show a single indicator whereas the `collect_` functions show an aggregation of multiple indicators. For example, see some of the parameters for Apple below:
 
-| Date       |   Lower Band |   Middle Band |   Upper Band |
-|:-----------|-------------:|--------------:|-------------:|
-| 2023-08-22 |      170.336 |       178.524 |      186.712 |
-| 2023-08-23 |      173.376 |       177.824 |      182.272 |
-| 2023-08-24 |      173.56  |       177.441 |      181.322 |
-| 2023-08-25 |      173.56  |       177.441 |      181.323 |
-| 2023-08-28 |      173.486 |       177.486 |      181.487 |
+| Date       |   Base Line |   Conversion Line |   Leading Span A |   Leading Span B |
+|:-----------|------------:|------------------:|-----------------:|-----------------:|
+| 2023-10-30 |     174.005 |           171.755 |          176.245 |            178.8 |
+| 2023-10-31 |     174.005 |           171.755 |          176.37  |            178.8 |
+| 2023-11-01 |     174.005 |           170.545 |          176.775 |            178.8 |
+| 2023-11-02 |     174.005 |           171.725 |          176.235 |            178.8 |
+| 2023-11-03 |     174.005 |           171.725 |          175.558 |            178.8 |
 
 # Available Metrics
 
@@ -387,6 +313,8 @@ The Models module is meant to execute well-known models such as DUPONT and the D
 - Enterprise Value Breakdown
 - Weighted Average Cost of Capital (WACC)
 - Intrinsic Valuation
+- Altman Z-Score
+- Piotroski F-Score
 
 ## Performance Metrics
 
@@ -406,6 +334,7 @@ The Performance module is meant to calculate important performance metrics such 
 - M2 Ratio
 - Tracking Error
 - Information Error
+- Compound Annual Growth Rate (CAGR)
 
 ## Risk Metrics
 

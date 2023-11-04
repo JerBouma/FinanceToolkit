@@ -179,20 +179,20 @@ And below a few of the profitability ratios are plotted for Microsoft.
 
 ### Obtaining Financial Models
 
-Get an Extended DuPont Analysis based on the inputted balance sheet, income and cash flow statements. This can also be for example an Enterprise Value Breakdown (`companies.models.get_enterprise_value_breakdown()`). For example, this shows the Extended DuPont Analysis for Microsoft:
+Get an Extended DuPont Analysis based on the inputted balance sheet, income and cash flow statements. This can also be for example an Enterprise Value Breakdown (`companies.models.get_enterprise_value_breakdown()`). For example, this shows the Extended DuPont Analysis for Apple:
 
 |                         |     2017 |   2018 |   2019 |   2020 |   2021 |   2022 |   2023 |
 |:------------------------|---------:|-------:|-------:|-------:|-------:|-------:|-------:|
-| Interest Burden Ratio   |   0.9644 | 0.9612 | 0.9833 | 0.9985 | 0.9833 | 0.996  | 0.9912 |
-| Tax Burden Ratio        |   0.9497 | 0.4727 | 0.9134 | 0.8361 | 0.8764 | 0.8723 | 0.8174 |
-| Operating Profit Margin |   0.2574 | 0.3305 | 0.3472 | 0.3708 | 0.423  | 0.4222 | 0.4214 |
-| Asset Turnover          | nan      | 0.4415 | 0.4615 | 0.4866 | 0.5293 | 0.5676 | 0.5456 |
-| Equity Multiplier       | nan      | 3.2231 | 2.9474 | 2.6644 | 2.4399 | 2.2643 | 2.0839 |
-| Return on Equity        | nan      | 0.2137 | 0.4241 | 0.4014 | 0.4708 | 0.4715 | 0.3882 |
+| Interest Burden Ratio   |   0.9572 | 0.9725 | 0.9725 | 0.988  | 0.9976 | 1.0028 | 1.005  |
+| Tax Burden Ratio        |   0.7882 | 0.8397 | 0.8643 | 0.8661 | 0.869  | 0.8356 | 0.8486 |
+| Operating Profit Margin |   0.2796 | 0.2745 | 0.2527 | 0.2444 | 0.2985 | 0.302  | 0.2967 |
+| Asset Turnover          | nan      | 0.7168 | 0.7389 | 0.8288 | 1.0841 | 1.1206 | 1.0868 |
+| Equity Multiplier       | nan      | 3.0724 | 3.5633 | 4.2509 | 5.255  | 6.1862 | 6.252  |
+| Return on Equity        | nan      | 0.4936 | 0.5592 | 0.7369 | 1.4744 | 1.7546 | 1.7195 |
 
 And below each component of the Extended Dupont Analysis is plotted including the resulting Return on Equity (ROE).
 
-![Models](https://github.com/JerBouma/FinanceToolkit/assets/46355364/0016a932-f3a0-4055-94f2-a969eb531165)
+![Models](https://github.com/JerBouma/FinanceToolkit/assets/46355364/f5e1cab3-d1bd-455d-a4ba-92e1348163be)
 
 ### Obtaining Performance Metrics
 

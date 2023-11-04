@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "financetoolkit"
-version = "1.5.0"
+version = "1.6.0"
 description = "Transparent and Efficient Financial Analysis"
 license = "MIT"
 authors = ["Jeroen Bouma"]
@@ -66,7 +66,7 @@ build-backend = "poetry.core.masonry.api"
 [tool.ruff]
 line-length = 122
 select = ["E", "W", "F", "Q", "W", "S", "UP", "I", "PD", "SIM", "PLC", "PLE", "PLR", "PLW"]
-ignore = ["S105", "S106", "S107", "PLR0913", "PLR0912", "PLR0911", "PLR0915", "PD010", "PD013", "S310"]
+ignore = ["S105", "S106", "S107", "PLR0913", "PLR0912", "PLR0911", "PLR0915", "PD010", "PD013", "S310", "S301"]
 exclude = ["conftest.py"]
 
 [tool.pylint]

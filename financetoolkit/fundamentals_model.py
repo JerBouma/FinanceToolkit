@@ -1213,7 +1213,7 @@ def get_esg_scores(
                 # second quarter of 2023. This usually happens when companies
                 # have a different financial year than the calendar year. It doesn't
                 # matter for others that are correctly reporting since 2023-06-31
-                # minus one day is still 2023
+                # minus one day is still 2023 Q2.
                 esg_scores["date"] = pd.to_datetime(
                     esg_scores["date"]
                 ) - pd.offsets.Day(1)

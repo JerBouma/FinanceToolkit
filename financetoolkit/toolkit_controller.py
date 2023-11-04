@@ -1346,7 +1346,7 @@ class Toolkit:
 
         earnings_calendar = self._earnings_calendar.round(
             rounding if rounding else self._rounding
-        ).loc[self._start_date : self._end_date]
+        )
 
         if self._remove_invalid_tickers:
             self._tickers = [

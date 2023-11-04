@@ -150,7 +150,12 @@ def copy_normalization_files(
     Returns:
         Three csv files saved to the desired location.
     """
-    print(f"Files are being saved to {save_location}")
+    print(
+        f"Files are being saved to {save_location}. Please see the following: "
+        "https://www.jeroenbouma.com/projects/financetoolkit/external-datasets "
+        "to understand how to work with these files. In essence, all it requires is "
+        "to match up the rows in your dataframe with the normalization format."
+    )
     for statement in ["balance", "income", "cash", "statistics"]:
         if format_location:
             file_location = f"{format_location}/{statement}.csv"

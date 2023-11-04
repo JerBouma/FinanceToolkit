@@ -102,6 +102,8 @@ A basic example of how to use the Finance Toolkit is shown below.
 
 
 ````python
+from financetoolkit import Toolkit
+
 companies = Toolkit(["AAPL", "MSFT"], api_key=API_KEY, start_date="2017-12-31")
 
 # a Historical example

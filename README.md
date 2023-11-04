@@ -140,6 +140,11 @@ Obtain historical data on a daily, weekly, monthly or yearly basis. This include
 | 2018-01-05 | 43.36   | 43.8425 | 43.2625 | 43.75   |       41.43 | 9.46401e+07 |           0 |   0.0115 |       0.0202 |         -0.0133 |              0.0233 |              1.0159 |
 | 2018-01-08 | 43.5875 | 43.9025 | 43.4825 | 43.5875 |       41.27 | 8.22711e+07 |           0 |  -0.0039 |       0.0202 |         -0.0287 |              0.0233 |              1.012  |
 
+And below the cumulative returns are plotted which include the S&P 500 as benchmark:
+
+![HistoricalData](https://github.com/JerBouma/FinanceToolkit/assets/46355364/cd7b5029-0e66-4592-9822-42b652e7deed)
+
+
 ### Obtaining Financial Statements
 
 Obtain an Income Statement on an annual or quarterly basis. This can also be an income statement (`companies.get_income_statement()`) or cash flow statement (`companies.get_cash_flow_statement()`). For example, the first 5 rows of the Income Statement for Apple are shown below.
@@ -152,18 +157,25 @@ Obtain an Income Statement on an annual or quarterly basis. This can also be an 
 | Gross Profit Ratio                | 0.3847      | 0.3834      | 0.3782      | 0.3823      | 0.4178      | 0.4331      | 0.4413      |
 | Research and Development Expenses | 1.1581e+10  | 1.4236e+10  | 1.6217e+10  | 1.8752e+10  | 2.1914e+10  | 2.6251e+10  | 2.9915e+10  |
 
+And below the Earnings Before Interest, Taxes, Depreciation and Amortization (EBITDA) are plotted for both Apple and Microsoft.
+
+![FinancialStatements](https://github.com/JerBouma/FinanceToolkit/assets/46355364/a4ba0629-0832-4dc0-a5c1-9cf2c9bd13ce)
+
 ### Obtaining Financial Ratios
 
 Get Profitability Ratios based on the inputted balance sheet, income and cash flow statements. This can be any of the 50+ ratios within the `ratios` module. The `get_` functions show a single ratio whereas the `collect_` functions show an aggregation of multiple ratios. For example, see some of the profitability ratios of Microsoft below.
 
-|                                             |   2017 |   2018 |   2019 |   2020 |   2021 |   2022 |   2023 |
-|:--------------------------------------------|-------:|-------:|-------:|-------:|-------:|-------:|-------:|
-| Income Quality Ratio                        | 1.8632 | 2.6482 | 1.3299 | 1.3702 | 1.2525 | 1.2241 | 1.2103 |
-| Net Income per EBT                          | 0.916  | 0.4543 | 0.8982 | 0.8349 | 0.8617 | 0.8689 | 0.8102 |
-| Free Cash Flow to Operating Cash Flow Ratio | 0.7942 | 0.7349 | 0.7332 | 0.7455 | 0.7313 | 0.7317 | 0.6791 |
-| EBT to EBIT Ratio                           | 0.9124 | 0.9303 | 0.9421 | 0.9534 | 0.9681 | 0.9759 | 0.9784 |
-| EBIT to Revenue                             | 0.2821 | 0.3553 | 0.3685 | 0.389  | 0.437  | 0.4326 | 0.4307 |
+|                                 |    2017 |    2018 |    2019 |    2020 |    2021 |    2022 |    2023 |
+|:--------------------------------|--------:|--------:|--------:|--------:|--------:|--------:|--------:|
+| Gross Margin                    |  0.6191 |  0.6525 |  0.659  |  0.6778 |  0.6893 |  0.684  |  0.6892 |
+| Operating Margin                |  0.2482 |  0.3177 |  0.3414 |  0.3703 |  0.4159 |  0.4206 |  0.4177 |
+| Net Profit Margin               |  0.2357 |  0.1502 |  0.3118 |  0.3096 |  0.3645 |  0.3669 |  0.3415 |
+| Interest Coverage Ratio         | 13.9982 | 16.5821 | 20.3429 | 25.3782 | 34.7835 | 47.4275 | 52.0244 |
+| Income Before Tax Profit Margin |  0.2574 |  0.3305 |  0.3472 |  0.3708 |  0.423  |  0.4222 |  0.4214 |
 
+And below a few of the profitability ratios are plotted for Microsoft.
+
+![FinancialRatios](https://github.com/JerBouma/FinanceToolkit/assets/46355364/93221f7a-face-4035-87c7-e43815e89eb4)
 
 ### Obtaining Financial Models
 
@@ -178,6 +190,10 @@ Get an Extended DuPont Analysis based on the inputted balance sheet, income and 
 | Equity Multiplier       | nan      | 3.2231 | 2.9474 | 2.6644 | 2.4399 | 2.2643 | 2.0839 |
 | Return on Equity        | nan      | 0.2137 | 0.4241 | 0.4014 | 0.4708 | 0.4715 | 0.3882 |
 
+And below each component of the Extended Dupont Analysis is plotted including the resulting Return on Equity (ROE).
+
+![Models](https://github.com/JerBouma/FinanceToolkit/assets/46355364/0016a932-f3a0-4055-94f2-a969eb531165)
+
 ### Obtaining Performance Metrics
 
 Get the correlations with the factors as defined by Fama-and-French. These include market, size, value, operating profitability and investment. The beauty of all functionality here is that it can be based on any period as the function accepts the period 'weekly', 'monthly', 'quarterly' and 'yearly'. For example, this shows the quarterly correlations for Apple:
@@ -189,6 +205,10 @@ Get the correlations with the factors as defined by Fama-and-French. These inclu
 | 2022Q4 |   0.8998 |  0.2309 | -0.5968 | -0.1868 | -0.5946 |
 | 2023Q1 |   0.7737 |  0.1606 | -0.3775 | -0.228  | -0.5707 |
 | 2023Q2 |   0.7416 | -0.1166 | -0.2722 |  0.0093 | -0.4745 |
+
+And below the correlations with each factor are plotted over time for both Apple and Microsoft.
+
+![Performance](https://github.com/JerBouma/FinanceToolkit/assets/46355364/9c1eff76-b5c8-4bd2-9f47-8ce70bf002db)
 
 ### Obtaining Risk Metrics
 
@@ -202,6 +222,10 @@ Get the Value at Risk for each quarter. Here, the days within each quarter are c
 | 2023-10-16/2023-10-22 | -0.0135 | -0.0124 |     -0.0131 |
 | 2023-10-23/2023-10-29 | -0.0224 | -0.0293 |     -0.0139 |
 
+And below the Value at Risk (VaR) for Apple, Microsoft and the benchmark (S&P 500) are plotted also demonstrating the impact of COVID-19.
+
+![Risk](https://github.com/JerBouma/FinanceToolkit/assets/46355364/a95e5b51-f7fc-4a70-bbb4-bf88b346523e)
+
 ### Obtaining Technical Indicators
 
 Get the Ichimoku Cloud parameters based on the historical market data. This can be any of the 30+ technical indicators within the `technicals` module. The `get_` functions show a single indicator whereas the `collect_` functions show an aggregation of multiple indicators. For example, see some of the parameters for Apple below:
@@ -213,6 +237,10 @@ Get the Ichimoku Cloud parameters based on the historical market data. This can 
 | 2023-11-01 |     174.005 |           170.545 |          176.775 |            178.8 |
 | 2023-11-02 |     174.005 |           171.725 |          176.235 |            178.8 |
 | 2023-11-03 |     174.005 |           171.725 |          175.558 |            178.8 |
+
+And below the Ichimoku Cloud parameters are plotted for Apple and Microsoft side-by-side.
+
+![Technicals](https://github.com/JerBouma/FinanceToolkit/assets/46355364/1ced5b34-2410-4206-8ddf-bb053bcb21b2)
 
 # Available Metrics
 

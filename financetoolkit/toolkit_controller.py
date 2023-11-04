@@ -12,6 +12,7 @@ from financetoolkit.fundamentals_model import (
     get_analyst_estimates as _get_analyst_estimates,
     get_dividend_calendar as _get_dividend_calendar,
     get_earnings_calendar as _get_earnings_calendar,
+    get_esg_scores as _get_esg_scores,
     get_financial_statements as _get_financial_statements,
     get_profile as _get_profile,
     get_quote as _get_quote,
@@ -250,6 +251,7 @@ class Toolkit:
             self._analyst_estimates_growth: pd.DataFrame = pd.DataFrame()
             self._dividend_calendar: pd.DataFrame = pd.DataFrame()
             self._earnings_calendar: pd.DataFrame = pd.DataFrame()
+            self._esg_scores: pd.DataFrame = pd.DataFrame()
             self._revenue_geographic_segmentation: pd.DataFrame = pd.DataFrame()
             self._revenue_geographic_segmentation_growth: pd.DataFrame = pd.DataFrame()
             self._revenue_product_segmentation: pd.DataFrame = pd.DataFrame()
@@ -1895,7 +1897,7 @@ class Toolkit:
 
         dividend_calendar = self._dividend_calendar.round(
             rounding if rounding else self._rounding
-        ).loc[self._start_date : self._end_date]
+        )
 
         if self._remove_invalid_tickers:
             self._tickers = [
@@ -1908,6 +1910,135 @@ class Toolkit:
             return dividend_calendar.loc[tickers[0]]
 
         return dividend_calendar
+
+    def get_esg_scores(
+        self,
+        overwrite: bool = False,
+        rounding: int | None = None,
+    ):
+        """
+        ESG scores, which stands for Environmental, Social, and Governance scores, are a crucial
+        metric used by investors and organizations to assess a company's sustainability and
+        ethical practices. These scores provide valuable insights into a company's performance
+        in three key areas:
+
+            - Environmental (E): The environmental component evaluates a company's
+            impact on the planet and its efforts to mitigate environmental risks. It includes
+            factors like carbon emissions, energy efficiency, water management, and waste
+            reduction. A high environmental score indicates a company's commitment to eco-friendly
+            practices and reducing its ecological footprint.
+
+            - Social (S): The social component focuses on how a company interacts with its employees,
+            customers, suppliers, and the communities in which it operates. Key factors in the
+            social score include labor practices, diversity and inclusion, human rights,
+            product safety, and community engagement. A strong social score reflects a company's
+            dedication to fostering positive relationships and contributing positively to society.
+
+            - Governance (G): Governance examines a company's internal structures, policies, and
+            leadership. It assesses aspects such as board independence, executive compensation,
+            transparency, and the presence of anti-corruption measures. A high governance score
+            signifies strong leadership and a commitment to maintaining high ethical standards
+            and accountability
+
+        ESG scores provide investors with a holistic view of a company's sustainability and
+        ethical practices, allowing them to make more informed investment decisions. These scores
+        are increasingly used to identify socially responsible investments and guide capital towards
+        companies that prioritize long-term sustainability and responsible business practices. As
+        the importance of ESG considerations continues to grow, companies are motivated to improve
+        their ESG scores, not only for ethical reasons but also to attract investors who value
+        sustainable and responsible business practices.
+
+        Args:
+            overwrite (bool): Defines whether to overwrite the existing data.
+            rounding (int): Defines the number of decimal places to round the data to.
+
+        Returns:
+            pd.DataFrame: The ESG scores for the specified tickers.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["MSFT", "TSLA", "AMZN"], api_key=FMP_KEY, start_date="2022-08-01", quarterly=False
+        )
+
+        esg_scores = toolkit.get_esg_scores()
+
+        esg_scores.xs("MSFT", level=1, axis=1)
+        ```
+
+        Which returns:
+
+        | date   |   Environmental Score |   Social Score |   Governance Score |   ESG Score |
+        |:-------|----------------------:|---------------:|-------------------:|------------:|
+        | 2022Q3 |                 72.42 |          58.39 |              61.13 |       63.98 |
+        | 2022Q4 |                 72.22 |          58.05 |              61.27 |       63.85 |
+        | 2023Q1 |                 72.6  |          58.74 |              61.88 |       64.41 |
+        | 2023Q2 |                 73.54 |          60.73 |              63.44 |       65.9  |
+        """
+        if not self._api_key:
+            return print(
+                "The requested data requires the api_key parameter to be set, consider obtaining a key with the "
+                "following link: https://www.jeroenbouma.com/fmp"
+                "\nThis functionality also requires a Premium subscription. You can get 15% off by using "
+                "the above affiliate link which also supports the project."
+            )
+
+        if self._check_asset_class:
+            if self._historical_statistics.empty:
+                self.get_historical_statistics()
+
+            tickers = [
+                ticker
+                for ticker in self._historical_statistics.columns
+                if self._historical_statistics.loc["Instrument Type", ticker]
+                == "EQUITY"
+            ]
+            no_data_tickers = set(self._tickers) - set(tickers)
+        else:
+            tickers = self._tickers
+            no_data_tickers = set([])
+
+        if not tickers:
+            raise ValueError(
+                "Only for Equities it is possible to acquire the ESG Scores. None of the inputted tickers "
+                "are considered an Equity."
+            )
+        if no_data_tickers:
+            print(
+                f"Only for Equities it is possible to acquire the ESG Scores. Therefore, the "
+                f"following tickers yield no data: {', '.join(no_data_tickers)}"
+            )
+
+        if self._esg_scores.empty or overwrite:
+            (
+                self._esg_scores,
+                self._invalid_tickers,
+            ) = _get_esg_scores(
+                tickers=tickers,
+                api_key=self._api_key,
+                quarter=self._quarterly,
+                start_date=self._start_date,
+                end_date=self._end_date,
+                sleep_timer=self._sleep_timer,
+                progress_bar=self._progress_bar,
+            )
+
+        esg_scores = self._esg_scores.round(rounding if rounding else self._rounding)
+
+        if self._remove_invalid_tickers:
+            self._tickers = [
+                ticker
+                for ticker in self._tickers
+                if ticker not in self._invalid_tickers
+            ]
+
+        if len(tickers) == 1 and not self._esg_scores.empty:
+            return esg_scores.xs(tickers[0], axis=1, level=1)
+
+        return esg_scores
 
     def get_historical_statistics(self):
         """

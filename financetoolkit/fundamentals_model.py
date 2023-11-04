@@ -74,10 +74,20 @@ def get_financial_statements(
         try:
             financial_statement = financial_statement.drop("symbol", axis=1)
 
+            # One day is deducted from the date because it could be that
+            # the date is reported as 2023-07-01 while the data is about the
+            # second quarter of 2023. This usually happens when companies
+            # have a different financial year than the calendar year. It doesn't
+            # matter for others that are correctly reporting since 2023-06-31
+            # minus one day is still 2023
+            financial_statement["date"] = pd.to_datetime(
+                financial_statement["date"]
+            ) - pd.offsets.Day(1)
+
             if quarter:
-                financial_statement["date"] = pd.to_datetime(
-                    financial_statement["date"]
-                ).dt.to_period("Q")
+                financial_statement["date"] = financial_statement["date"].dt.to_period(
+                    "Q"
+                )
             else:
                 financial_statement["date"] = pd.to_datetime(
                     financial_statement["calendarYear"].astype(str)
@@ -1155,6 +1165,133 @@ def get_dividend_calendar(
 
         return (
             dividend_calendar_total,
+            no_data,
+        )
+
+    return pd.DataFrame(), no_data
+
+
+def get_esg_scores(
+    tickers: list[str] | str,
+    api_key: str,
+    quarter: bool = False,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    sleep_timer: bool = False,
+    progress_bar: bool = True,
+):
+    """
+    Obtains the ESG Scores for a selection of companies.
+
+    Args:
+        ticker (list or string): the company ticker (for example: "MSFT")
+        api_key (string): the API Key obtained from
+        https://www.jeroenbouma.com/fmp
+        start_date (str): The start date to filter data with.
+        end_date (str): The end date to filter data with.
+        sleep_timer (bool): Whether to set a sleep timer when the rate limit is reached. Note that this only works
+        if you have a Premium subscription (Starter or higher) from FinancialModelingPrep. Defaults to False.
+        progress_bar (bool): Whether to show a progress bar when retrieving data over 10 tickers. Defaults to True.
+
+    Returns:
+        pd.DataFrame: the earnings calendar data.
+    """
+
+    def worker(ticker, esg_scores_dict):
+        url = (
+            "https://financialmodelingprep.com/api/v4/esg-environmental-social-governance-data?"
+            f"symbol={ticker}&apikey={api_key}"
+        )
+        esg_scores = helpers.get_financial_data(url=url, sleep_timer=sleep_timer)
+
+        try:
+            if "date" not in esg_scores.columns:
+                no_data.append(ticker)
+            else:
+                # One day is deducted from the date because it could be that
+                # the date is reported as 2023-07-01 while the data is about the
+                # second quarter of 2023. This usually happens when companies
+                # have a different financial year than the calendar year. It doesn't
+                # matter for others that are correctly reporting since 2023-06-31
+                # minus one day is still 2023
+                esg_scores["date"] = pd.to_datetime(
+                    esg_scores["date"]
+                ) - pd.offsets.Day(1)
+
+                esg_scores = esg_scores.set_index("date")
+                esg_scores.index = esg_scores.index.to_period(
+                    freq="Q" if quarter else "Y"
+                )
+
+                esg_scores = esg_scores.sort_index()
+                esg_scores = esg_scores.rename(columns=naming)
+
+                esg_scores = esg_scores.sort_index(axis=0).truncate(
+                    before=start_date, after=end_date, axis=0
+                )
+
+                esg_scores = esg_scores[~esg_scores.index.duplicated()]
+
+                esg_scores_dict[ticker] = esg_scores[naming.values()]
+        except KeyError:
+            no_data.append(ticker)
+            esg_scores_dict[ticker] = esg_scores
+
+    naming: dict = {
+        "environmentalScore": "Environmental Score",
+        "socialScore": "Social Score",
+        "governanceScore": "Governance Score",
+        "ESGScore": "ESG Score",
+    }
+
+    if isinstance(tickers, str):
+        ticker_list = [tickers]
+    elif isinstance(tickers, list):
+        ticker_list = tickers
+    else:
+        raise ValueError(f"Type for the tickers ({type(tickers)}) variable is invalid.")
+
+    if not api_key:
+        raise ValueError(
+            "Please enter an API key from FinancialModelingPrep. "
+            "For more information, look here: https://www.jeroenbouma.com/fmp"
+        )
+
+    esg_scores_dict: dict = {}
+    no_data: list[str] = []
+    threads = []
+
+    ticker_list_iterator = (
+        tqdm(ticker_list, desc="Obtaining ESG scores")
+        if ENABLE_TQDM & progress_bar
+        else ticker_list
+    )
+
+    for ticker in ticker_list_iterator:
+        # Introduce a sleep timer to prevent rate limit errors
+        time.sleep(0.1)
+
+        thread = threading.Thread(
+            target=worker,
+            args=(ticker, esg_scores_dict),
+        )
+        thread.start()
+        threads.append(thread)
+
+    for thread in threads:
+        thread.join()
+
+    # Checks if any errors are in the dataset and if this is the case, reports them
+    esg_scores_dict = helpers.check_for_error_messages(esg_scores_dict)
+
+    if no_data:
+        print(f"No data found for the following tickers: {', '.join(no_data)}")
+
+    if esg_scores_dict:
+        esg_scores_total = pd.concat(esg_scores_dict, axis=0).unstack(level=0)
+
+        return (
+            esg_scores_total,
             no_data,
         )
 

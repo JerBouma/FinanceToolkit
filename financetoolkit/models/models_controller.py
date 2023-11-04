@@ -9,12 +9,13 @@ from financetoolkit.models import (
     dupont_model,
     enterprise_model,
     intrinsic_model,
+    piotroski_model,
     wacc_model,
 )
 from financetoolkit.performance.performance_model import get_beta
 from financetoolkit.ratios import liquidity_model, valuation_model
 
-# pylint: disable=too-many-instance-attributes,too-many-locals
+# pylint: disable=too-many-instance-attributes,too-many-locals,too-many-lines
 
 
 class Models:
@@ -852,3 +853,171 @@ class Models:
         altman_results = altman_results.round(rounding if rounding else self._rounding)
 
         return altman_results
+
+    @handle_errors
+    def get_piotroski_score(self) -> pd.DataFrame:
+        """
+        Calculate the Piotroski Score, a comprehensive financial assessment tool that helps investors and analysts
+        evaluate a company's financial health and fundamental strength.
+
+        The Piotroski Score was developed by Joseph Piotroski and is based on a set of nine fundamental
+        financial criteria. Each criterion is assigned a score of 0 or 1, and the scores are then summed to
+        calculate the Piotroski Score.
+
+        The nine criteria are categorized into three groups:
+
+        1. Profitability:
+            - Return on Assets (ROA) Criteria: Measures the profitability of the company.
+            - Operating Cash Flow Criteria: Evaluates the company's ability to generate cash from its operations.
+            - Change in ROA Criteria: Assesses the trend in ROA over time.
+            - Accruals Criteria: Examines the quality of earnings.
+
+        2. Leverage, Liquidity, and Operating Efficiency:
+            - Change in Leverage Criteria: Analyzes changes in the company's leverage (debt).
+            - Change in Current Ratio Criteria: Evaluates changes in the current ratio.
+            - Number of Shares Criteria: Assesses the issuance of common shares.
+
+        3. Operating Efficiency and Asset Utilization:
+            - Gross Margin Criteria: Examines the company's gross margin, a measure of profitability.
+            - Asset Turnover Ratio Criteria: Evaluates the efficiency of asset utilization and sales generation.
+
+        The Piotroski Score is calculated by summing the scores assigned to each of the nine criteria.
+        The maximum possible score is 9, indicating the highest financial strength, while the minimum score is 0,
+        suggesting potential financial weaknesses.
+
+        Note that the Piostroski Score has been developed many decades ago and that it is important to
+        always compare the same sectors. E.g. it could be that it is quite normal that a firm issues shares
+        each year which nets a lower score even though it is a normal practice in that sector.
+
+        Please see Piotroski, Joseph D. "Value Investing: The Use of Historical Financial Statement
+        Information to Separate Winners from Losers." Journal of Accounting Research, Vol. 38, No.
+        3, 1999, pp. 1-41.
+
+        Args:
+            growth (bool, optional): Whether to calculate the growth of the values. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+
+        Returns:
+            pd.DataFrame: DataFrame containing the Piotroski F-Score and its components.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA", "MSFT"], api_key=FMP_KEY)
+
+        altman_z_score = toolkit.models.get_piotroski_score()
+        ```
+        """
+        piotroski_score = {}
+
+        piotroski_score[
+            "Return on Assets Criteria"
+        ] = piotroski_model.get_return_on_assets_criteria(
+            net_income=self._income_statement.loc[:, "Net Income", :],
+            total_assets_begin=self._balance_sheet_statement.loc[
+                :, "Total Assets", :
+            ].shift(axis=1),
+            total_assets_end=self._balance_sheet_statement.loc[:, "Total Assets", :],
+        )
+
+        piotroski_score[
+            "Operating Cashflow Criteria"
+        ] = piotroski_model.get_operating_cashflow_criteria(
+            operating_cashflow=self._cash_flow_statement.loc[
+                :, "Operating Cash Flow", :
+            ],
+        )
+
+        piotroski_score[
+            "Change in Return on Assets Criteria"
+        ] = piotroski_model.get_change_in_return_on_asset_criteria(
+            net_income=self._income_statement.loc[:, "Net Income", :],
+            total_assets_begin=self._balance_sheet_statement.loc[
+                :, "Total Assets", :
+            ].shift(axis=1),
+            total_assets_end=self._balance_sheet_statement.loc[:, "Total Assets", :],
+        )
+
+        piotroski_score["Accruals Criteria"] = piotroski_model.get_accruals_criteria(
+            net_income=self._income_statement.loc[:, "Net Income", :],
+            total_assets_begin=self._balance_sheet_statement.loc[
+                :, "Total Assets", :
+            ].shift(axis=1),
+            total_assets_end=self._balance_sheet_statement.loc[:, "Total Assets", :],
+            operating_cashflow=self._cash_flow_statement.loc[
+                :, "Operating Cash Flow", :
+            ],
+            total_assets=self._balance_sheet_statement.loc[:, "Total Assets", :],
+        )
+
+        piotroski_score[
+            "Change in Leverage Criteria"
+        ] = piotroski_model.get_change_in_leverage_criteria(
+            total_debt=self._balance_sheet_statement.loc[:, "Total Debt", :],
+            total_assets=self._balance_sheet_statement.loc[:, "Total Assets", :],
+        )
+
+        piotroski_score[
+            "Change in Current Ratio Criteria"
+        ] = piotroski_model.get_change_in_current_ratio_criteria(
+            current_assets=self._balance_sheet_statement.loc[
+                :, "Total Current Assets", :
+            ],
+            current_liabilities=self._balance_sheet_statement.loc[
+                :, "Total Current Liabilities", :
+            ],
+        )
+
+        piotroski_score[
+            "Number of Shares Criteria"
+        ] = piotroski_model.get_number_of_shares_criteria(
+            common_stock_issued=self._cash_flow_statement.loc[
+                :, "Common Stock Issued", :
+            ],
+        )
+
+        piotroski_score[
+            "Gross Margin Criteria"
+        ] = piotroski_model.get_gross_margin_criteria(
+            revenue=self._income_statement.loc[:, "Revenue", :],
+            cost_of_goods_sold=self._income_statement.loc[:, "Cost of Goods Sold", :],
+        )
+
+        piotroski_score[
+            "Asset Turnover Criteria"
+        ] = piotroski_model.get_asset_turnover_ratio_criteria(
+            sales=self._income_statement.loc[:, "Revenue", :],
+            total_assets_begin=self._balance_sheet_statement.loc[
+                :, "Total Assets", :
+            ].shift(axis=1),
+            total_assets_end=self._balance_sheet_statement.loc[:, "Total Assets", :],
+        )
+
+        piotroski_score["Piotroski Score"] = piotroski_model.get_piotroski_score(
+            piotroski_score["Return on Assets Criteria"],
+            piotroski_score["Operating Cashflow Criteria"],
+            piotroski_score["Change in Return on Assets Criteria"],
+            piotroski_score["Accruals Criteria"],
+            piotroski_score["Change in Leverage Criteria"],
+            piotroski_score["Change in Current Ratio Criteria"],
+            piotroski_score["Number of Shares Criteria"],
+            piotroski_score["Gross Margin Criteria"],
+            piotroski_score["Asset Turnover Criteria"],
+        )
+
+        piotroski_results = (
+            pd.concat(piotroski_score)
+            .dropna(axis=1, how="all")
+            .swaplevel(0, 1)
+            .reindex(self._tickers, level=0)
+        )
+
+        # The first column is taken out because calculating the change of the
+        # first date will always result in NaN which means that any criteria
+        # looking at the change over time will return a 0. This is a meaningless
+        # result for the analysis
+        piotroski_results = piotroski_results[piotroski_results.columns[1:]]
+
+        return piotroski_results

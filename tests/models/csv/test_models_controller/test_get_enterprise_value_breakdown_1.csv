@@ -1,15 +1,15 @@
-,,2013,2014,2015,2016,2017,2018,2019,2020,2021,2022,2023
-AAPL,Share Price,,0.4062,-0.0301,0.1248,0.4846,-0.0539,0.8896,0.8231,0.3465,-0.264,0.3233
-AAPL,Market Capitalization,,0.3202,-0.0823,0.068,0.4175,-0.0992,0.7569,0.7184,0.2955,-0.2876,-1.0
-AAPL,Total Debt,,1.0811,0.8264,0.3501,0.3292,-0.0103,-0.0562,0.0406,0.1092,-0.0373,-1.0
-AAPL,Minority Interest,,,,,,,,,,,inf
-AAPL,Preferred Equity,,,,,,,,,,,inf
-AAPL,Cash and Cash Equivalents,,-0.0291,0.5256,-0.0301,-0.0095,0.2772,0.8849,-0.2217,-0.0809,-0.3232,-1.0
-AAPL,Enterprise Value,,0.359,-0.0446,0.1018,0.4191,-0.0964,0.643,0.6988,0.2927,-0.2769,-1.0
-MSFT,Share Price,,0.2756,0.2269,0.1508,0.4073,0.208,0.5756,0.4253,0.5248,-0.2802,0.3256
-MSFT,Market Capitalization,,0.265,0.2057,0.1172,0.3721,0.2051,0.5673,0.4125,0.5099,-0.2867,0.3136
-MSFT,Total Debt,,0.4516,0.5585,0.5212,0.6055,-0.0509,-0.0421,-0.094,-0.0454,-0.096,-0.0213
-MSFT,Minority Interest,,,,,,,,,,,
-MSFT,Preferred Equity,,,,,,,,,,,
-MSFT,Cash and Cash Equivalents,,1.2789,-0.3546,0.1635,0.1771,0.5589,-0.0494,0.1955,0.0477,-0.0206,1.4911
-MSFT,Enterprise Value,,0.2616,0.2422,0.1492,0.3996,0.1698,0.5157,0.3826,0.4907,-0.2831,0.2936
+,,2020,2021,2022,2023
+AAPL,Share Price,,0.3465,-0.2641,0.0
+AAPL,Market Capitalization,,0.2956,-0.2876,0.0
+AAPL,Total Debt,,0.1092,-0.0373,-0.1566
+AAPL,Minority Interest,,,,
+AAPL,Preferred Equity,,,,
+AAPL,Cash and Cash Equivalents,,-0.0809,-0.3232,0.2672
+AAPL,Enterprise Value,,0.2927,-0.2769,-0.9864
+MSFT,Share Price,,0.5248,-0.2803,125802929.4337
+MSFT,Market Capitalization,,0.5099,-0.2867,-0.9833
+MSFT,Total Debt,,-0.0454,-0.096,-0.0213
+MSFT,Minority Interest,,,,
+MSFT,Preferred Equity,,,,
+MSFT,Cash and Cash Equivalents,,0.0477,-0.0206,1.4911
+MSFT,Enterprise Value,,0.4907,-0.2831,-0.9812

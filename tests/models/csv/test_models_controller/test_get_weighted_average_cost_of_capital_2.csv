@@ -1,37 +1,37 @@
-,,,2013,2014,2015,2016,2017,2018,2019,2020,2021,2022,2023
-AAPL,Market Value Equity,Lag 1,,0.3202,-0.0823,0.068,0.4175,-0.0992,0.7569,0.7184,0.2955,-0.2876,0.0
-AAPL,Market Value Equity,Lag 2,,,0.2115,-0.02,0.5139,0.2769,0.5825,2.019,1.2263,-0.077,-0.2876
-AAPL,Market Value Equity,Lag 3,,,,0.2938,0.3892,0.3637,1.2433,1.7195,2.9112,0.5861,-0.077
-AAPL,Market Value Debt,Lag 1,,1.0811,0.8264,0.3501,0.3292,-0.0103,-0.0562,0.0406,0.1092,-0.0373,0.0
-AAPL,Market Value Debt,Lag 2,,,2.8008,1.4658,0.7945,0.3154,-0.066,-0.0179,0.1543,0.0679,-0.0373
-AAPL,Market Value Debt,Lag 3,,,,4.1316,2.2775,0.776,0.2415,-0.028,0.0894,0.1113,0.0679
-AAPL,Cost of Equity,Lag 1,,3.517,-1.1179,-9.2246,1.6659,-1.3332,-6.1463,-0.5864,0.9204,-1.7636,-1.4871
-AAPL,Cost of Equity,Lag 2,,,-1.5323,-0.0307,-22.9262,-1.8882,0.7146,-3.1283,-0.2058,-2.4665,-0.6281
-AAPL,Cost of Equity,Lag 3,,,,3.3783,1.5841,6.3052,3.571,-0.2909,-5.0873,-1.6065,-0.2857
-AAPL,Cost of Debt,Lag 1,,0.3568,0.0452,0.4712,0.2004,0.4093,0.1694,-0.2279,-0.17,0.151,0.0
-AAPL,Cost of Debt,Lag 2,,,0.418,0.5377,0.766,0.6917,0.6481,-0.0971,-0.3592,-0.0447,0.151
-AAPL,Cost of Debt,Lag 3,,,,1.0863,0.8458,1.4889,0.9783,0.2724,-0.2506,-0.2624,-0.0447
-AAPL,Corporate Tax Rate,Lag 1,,-0.0011,0.0093,-0.0308,-0.0392,-0.2531,-0.1308,-0.0951,-0.078,0.2182,0.0
-AAPL,Corporate Tax Rate,Lag 2,,,0.0082,-0.0218,-0.0687,-0.2823,-0.3507,-0.2134,-0.1657,0.1231,0.2182
-AAPL,Corporate Tax Rate,Lag 3,,,,-0.0229,-0.0601,-0.3044,-0.3762,-0.4124,-0.2748,0.0163,0.1231
-AAPL,Weighted Average Cost of Capital,Lag 1,,3.403,-1.102,-9.8971,1.6586,-1.3132,-6.7422,-0.5735,0.9263,-1.748,0.0
-AAPL,Weighted Average Cost of Capital,Lag 2,,,-1.449,-0.0926,-24.6541,-1.8327,0.7986,-3.4491,-0.1784,-2.4409,-1.748
-AAPL,Weighted Average Cost of Capital,Lag 3,,,,2.9951,1.4123,6.409,3.7818,-0.2329,-5.7178,-1.6146,-2.4409
-MSFT,Market Value Equity,Lag 1,,0.265,0.2057,0.1172,0.3721,0.2051,0.5673,0.4125,0.5099,-0.2867,0.3136
-MSFT,Market Value Equity,Lag 2,,,0.5252,0.347,0.5329,0.6535,0.8887,1.2138,1.1327,0.077,-0.063
-MSFT,Market Value Equity,Lag 3,,,,0.7039,0.8483,0.8473,1.5915,1.6677,2.3425,0.5213,0.4148
-MSFT,Market Value Debt,Lag 1,,0.4516,0.5585,0.5212,0.6055,-0.0509,-0.0421,-0.094,-0.0454,-0.096,-0.0213
-MSFT,Market Value Debt,Lag 2,,,1.2623,1.3708,1.4423,0.5238,-0.0908,-0.1321,-0.1351,-0.137,-0.1152
-MSFT,Market Value Debt,Lag 3,,,,2.4415,2.8063,1.318,0.4597,-0.1763,-0.1715,-0.2182,-0.1554
-MSFT,Cost of Equity,Lag 1,,-247.7076,-1.1343,-8.5523,1.1941,-1.417,-4.6007,-0.5082,0.6982,-1.8466,-1.5203
-MSFT,Cost of Equity,Lag 2,,,32.1266,0.0141,-17.5704,-1.9149,0.5014,-2.771,-0.1648,-2.4378,-0.5595
-MSFT,Cost of Equity,Lag 3,,,,-251.1824,1.225,5.9093,2.2941,-0.2616,-4.0075,-1.7072,-0.2519
-MSFT,Cost of Debt,Lag 1,,-0.0413,-0.1606,0.0462,0.1134,0.2959,0.026,0.0647,-0.0515,-0.0273,-0.0253
-MSFT,Cost of Debt,Lag 2,,,-0.1953,-0.1218,0.1649,0.4429,0.3296,0.0924,0.0099,-0.0774,-0.0519
-MSFT,Cost of Debt,Lag 3,,,,-0.1581,-0.0222,0.5096,0.4804,0.4156,0.0361,-0.0176,-0.1007
-MSFT,Corporate Tax Rate,Lag 1,,0.0768,0.6518,-0.5618,-0.438,5.4945,-0.8134,0.6214,-0.1624,-0.0516,0.4473
-MSFT,Corporate Tax Rate,Lag 2,,,0.7786,-0.2761,-0.7537,2.6497,0.2118,-0.6975,0.358,-0.2056,0.3726
-MSFT,Corporate Tax Rate,Lag 3,,,,-0.2205,-0.5932,0.5994,-0.319,0.9647,-0.7466,0.288,0.1497
-MSFT,Weighted Average Cost of Capital,Lag 1,,129.2622,-1.1191,-9.1916,1.1396,-1.4156,-4.8257,-0.4961,0.7163,-1.8354,-1.5294
-MSFT,Weighted Average Cost of Capital,Lag 2,,,-16.5141,-0.0244,-18.5271,-1.8892,0.5898,-2.9277,-0.1352,-2.4337,-0.5578
-MSFT,Weighted Average Cost of Capital,Lag 3,,,,126.0858,1.0875,6.2837,2.4017,-0.1989,-4.3085,-1.7224,-0.241
+,,,2020,2021,2022,2023
+AAPL,Market Value Equity,Lag 1,,0.2956,-0.2876,0.0
+AAPL,Market Value Equity,Lag 2,,,-0.077,-0.2876
+AAPL,Market Value Equity,Lag 3,,,,-0.077
+AAPL,Market Value Debt,Lag 1,,0.1092,-0.0373,-0.1566
+AAPL,Market Value Debt,Lag 2,,,0.0679,-0.188
+AAPL,Market Value Debt,Lag 3,,,,-0.0993
+AAPL,Cost of Equity,Lag 1,,-261.1799,-1.6617,0.0
+AAPL,Cost of Equity,Lag 2,,,171.1513,-1.6617
+AAPL,Cost of Equity,Lag 3,,,,171.1513
+AAPL,Cost of Debt,Lag 1,,-0.17,0.151,-1.0
+AAPL,Cost of Debt,Lag 2,,,-0.0447,-1.0
+AAPL,Cost of Debt,Lag 3,,,,-1.0
+AAPL,Corporate Tax Rate,Lag 1,,-0.078,0.2182,-0.0917
+AAPL,Corporate Tax Rate,Lag 2,,,0.1231,0.1065
+AAPL,Corporate Tax Rate,Lag 3,,,,0.0202
+AAPL,Weighted Average Cost of Capital,Lag 1,,-1026.5214,-1.648,0.0
+AAPL,Weighted Average Cost of Capital,Lag 2,,,663.5625,-1.648
+AAPL,Weighted Average Cost of Capital,Lag 3,,,,663.5625
+MSFT,Market Value Equity,Lag 1,,0.5099,-0.2867,0.0
+MSFT,Market Value Equity,Lag 2,,,0.077,-0.2867
+MSFT,Market Value Equity,Lag 3,,,,0.077
+MSFT,Market Value Debt,Lag 1,,-0.0454,-0.096,-0.0213
+MSFT,Market Value Debt,Lag 2,,,-0.137,-0.1152
+MSFT,Market Value Debt,Lag 3,,,,-0.1554
+MSFT,Cost of Equity,Lag 1,,-243.2339,-1.7349,0.0
+MSFT,Cost of Equity,Lag 2,,,177.0277,-1.7349
+MSFT,Cost of Equity,Lag 3,,,,177.0277
+MSFT,Cost of Debt,Lag 1,,-0.0515,-0.0273,-0.0253
+MSFT,Cost of Debt,Lag 2,,,-0.0774,-0.0519
+MSFT,Cost of Debt,Lag 3,,,,-0.1007
+MSFT,Corporate Tax Rate,Lag 1,,-0.1624,-0.0516,0.4473
+MSFT,Corporate Tax Rate,Lag 2,,,-0.2056,0.3726
+MSFT,Corporate Tax Rate,Lag 3,,,,0.1497
+MSFT,Weighted Average Cost of Capital,Lag 1,,-4843.0494,-1.7251,0.0
+MSFT,Weighted Average Cost of Capital,Lag 2,,,3509.847,-1.7251
+MSFT,Weighted Average Cost of Capital,Lag 3,,,,3509.847

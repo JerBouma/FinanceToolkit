@@ -1,43 +1,43 @@
-,,,2013,2014,2015,2016,2017,2018,2019,2020,2021,2022,2023
-AAPL,Share Price,Lag 1,,0.4062,-0.0301,0.1248,0.4846,-0.0539,0.8896,0.8231,0.3465,-0.264,0.3233
-AAPL,Share Price,Lag 2,,,0.3638,0.0909,0.6699,0.4046,0.7877,2.4448,1.4547,-0.009,-0.0261
-AAPL,Share Price,Lag 3,,,,0.5341,0.6196,0.5799,1.6541,2.2591,3.6384,0.8066,0.3114
-AAPL,Market Capitalization,Lag 1,,0.3202,-0.0823,0.068,0.4175,-0.0992,0.7569,0.7184,0.2955,-0.2876,0.0
-AAPL,Market Capitalization,Lag 2,,,0.2115,-0.02,0.5139,0.2769,0.5825,2.019,1.2263,-0.077,-0.2876
-AAPL,Market Capitalization,Lag 3,,,,0.2938,0.3892,0.3637,1.2433,1.7195,2.9112,0.5861,-0.077
-AAPL,Total Debt,Lag 1,,1.0811,0.8264,0.3501,0.3292,-0.0103,-0.0562,0.0406,0.1092,-0.0373,0.0
-AAPL,Total Debt,Lag 2,,,2.8008,1.4658,0.7945,0.3154,-0.066,-0.0179,0.1543,0.0679,-0.0373
-AAPL,Total Debt,Lag 3,,,,4.1316,2.2775,0.776,0.2415,-0.028,0.0894,0.1113,0.0679
-AAPL,Minority Interest,Lag 1,,,,,,,,,,,
-AAPL,Minority Interest,Lag 2,,,,,,,,,,,
-AAPL,Minority Interest,Lag 3,,,,,,,,,,,
-AAPL,Preferred Equity,Lag 1,,,,,,,,,,,
-AAPL,Preferred Equity,Lag 2,,,,,,,,,,,
-AAPL,Preferred Equity,Lag 3,,,,,,,,,,,
-AAPL,Cash and Cash Equivalents,Lag 1,,-0.0291,0.5256,-0.0301,-0.0095,0.2772,0.8849,-0.2217,-0.0809,-0.3232,0.0
-AAPL,Cash and Cash Equivalents,Lag 2,,,0.4812,0.4796,-0.0393,0.265,1.4074,0.4671,-0.2847,-0.378,-0.3232
-AAPL,Cash and Cash Equivalents,Lag 3,,,,0.4366,0.4655,0.2269,1.3845,0.8737,0.3484,-0.5159,-0.378
-AAPL,Enterprise Value,Lag 1,,0.359,-0.0446,0.1018,0.4191,-0.0964,0.643,0.6988,0.2927,-0.2769,0.0
-AAPL,Enterprise Value,Lag 2,,,0.2983,0.0526,0.5636,0.2823,0.4846,1.7911,1.196,-0.0653,-0.2769
-AAPL,Enterprise Value,Lag 3,,,,0.4304,0.4938,0.4128,1.1069,1.522,2.6081,0.5879,-0.0653
-MSFT,Share Price,Lag 1,,0.2756,0.2269,0.1508,0.4073,0.208,0.5756,0.4253,0.5248,-0.2802,0.3256
-MSFT,Share Price,Lag 2,,,0.5651,0.4119,0.6195,0.7,0.9032,1.2457,1.1733,0.0975,-0.0459
-MSFT,Share Price,Lag 3,,,,0.8011,0.987,0.9563,1.6784,1.7127,2.4242,0.5642,0.4548
-MSFT,Market Capitalization,Lag 1,,0.265,0.2057,0.1172,0.3721,0.2051,0.5673,0.4125,0.5099,-0.2867,0.3136
-MSFT,Market Capitalization,Lag 2,,,0.5252,0.347,0.5329,0.6535,0.8887,1.2138,1.1327,0.077,-0.063
-MSFT,Market Capitalization,Lag 3,,,,0.7039,0.8483,0.8473,1.5915,1.6677,2.3425,0.5213,0.4148
-MSFT,Total Debt,Lag 1,,0.4516,0.5585,0.5212,0.6055,-0.0509,-0.0421,-0.094,-0.0454,-0.096,-0.0213
-MSFT,Total Debt,Lag 2,,,1.2623,1.3708,1.4423,0.5238,-0.0908,-0.1321,-0.1351,-0.137,-0.1152
-MSFT,Total Debt,Lag 3,,,,2.4415,2.8063,1.318,0.4597,-0.1763,-0.1715,-0.2182,-0.1554
-MSFT,Minority Interest,Lag 1,,,,,,,,,,,
-MSFT,Minority Interest,Lag 2,,,,,,,,,,,
-MSFT,Minority Interest,Lag 3,,,,,,,,,,,
-MSFT,Preferred Equity,Lag 1,,,,,,,,,,,
-MSFT,Preferred Equity,Lag 2,,,,,,,,,,,
-MSFT,Preferred Equity,Lag 3,,,,,,,,,,,
-MSFT,Cash and Cash Equivalents,Lag 1,,1.2789,-0.3546,0.1635,0.1771,0.5589,-0.0494,0.1955,0.0477,-0.0206,1.4911
-MSFT,Cash and Cash Equivalents,Lag 2,,,0.4708,-0.249,0.3696,0.835,0.4819,0.1364,0.2526,0.0261,1.4398
-MSFT,Cash and Cash Equivalents,Lag 3,,,,0.7114,-0.116,1.1351,0.7444,0.7716,0.1907,0.2268,1.5563
-MSFT,Enterprise Value,Lag 1,,0.2616,0.2422,0.1492,0.3996,0.1698,0.5157,0.3826,0.4907,-0.2831,0.2936
-MSFT,Enterprise Value,Lag 2,,,0.5671,0.4275,0.6084,0.6373,0.7731,1.0956,1.061,0.0686,-0.0726
-MSFT,Enterprise Value,Lag 3,,,,0.8009,0.9979,0.8815,1.4816,1.4516,2.1239,0.4775,0.3824
+,,,2020,2021,2022,2023
+AAPL,Share Price,Lag 1,,0.3465,-0.2641,0.0
+AAPL,Share Price,Lag 2,,,-0.009,-0.2641
+AAPL,Share Price,Lag 3,,,,-0.009
+AAPL,Market Capitalization,Lag 1,,0.2956,-0.2876,0.0
+AAPL,Market Capitalization,Lag 2,,,-0.077,-0.2876
+AAPL,Market Capitalization,Lag 3,,,,-0.077
+AAPL,Total Debt,Lag 1,,0.1092,-0.0373,-0.1566
+AAPL,Total Debt,Lag 2,,,0.0679,-0.188
+AAPL,Total Debt,Lag 3,,,,-0.0993
+AAPL,Minority Interest,Lag 1,,,,
+AAPL,Minority Interest,Lag 2,,,,
+AAPL,Minority Interest,Lag 3,,,,
+AAPL,Preferred Equity,Lag 1,,,,
+AAPL,Preferred Equity,Lag 2,,,,
+AAPL,Preferred Equity,Lag 3,,,,
+AAPL,Cash and Cash Equivalents,Lag 1,,-0.0809,-0.3232,0.2672
+AAPL,Cash and Cash Equivalents,Lag 2,,,-0.378,-0.1424
+AAPL,Cash and Cash Equivalents,Lag 3,,,,-0.2118
+AAPL,Enterprise Value,Lag 1,,0.2927,-0.2769,0.0
+AAPL,Enterprise Value,Lag 2,,,-0.0653,-0.2769
+AAPL,Enterprise Value,Lag 3,,,,-0.0653
+MSFT,Share Price,Lag 1,,0.5248,-0.2803,0.0
+MSFT,Share Price,Lag 2,,,0.0974,-0.2803
+MSFT,Share Price,Lag 3,,,,0.0974
+MSFT,Market Capitalization,Lag 1,,0.5099,-0.2867,0.0
+MSFT,Market Capitalization,Lag 2,,,0.077,-0.2867
+MSFT,Market Capitalization,Lag 3,,,,0.077
+MSFT,Total Debt,Lag 1,,-0.0454,-0.096,-0.0213
+MSFT,Total Debt,Lag 2,,,-0.137,-0.1152
+MSFT,Total Debt,Lag 3,,,,-0.1554
+MSFT,Minority Interest,Lag 1,,,,
+MSFT,Minority Interest,Lag 2,,,,
+MSFT,Minority Interest,Lag 3,,,,
+MSFT,Preferred Equity,Lag 1,,,,
+MSFT,Preferred Equity,Lag 2,,,,
+MSFT,Preferred Equity,Lag 3,,,,
+MSFT,Cash and Cash Equivalents,Lag 1,,0.0477,-0.0206,1.4911
+MSFT,Cash and Cash Equivalents,Lag 2,,,0.0261,1.4398
+MSFT,Cash and Cash Equivalents,Lag 3,,,,1.5563
+MSFT,Enterprise Value,Lag 1,,0.4907,-0.2831,0.0
+MSFT,Enterprise Value,Lag 2,,,0.0686,-0.2831
+MSFT,Enterprise Value,Lag 3,,,,0.0686

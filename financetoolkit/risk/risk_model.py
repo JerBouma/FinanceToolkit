@@ -2,7 +2,7 @@
 
 import numpy as np
 import pandas as pd
-from scipy import stats, optimize
+from scipy import optimize, stats
 
 ALPHA_CONSTRAINT = 0.5
 
@@ -525,8 +525,9 @@ def get_garch_weights(
     """
     Estimates the weights (parameters) for a GARCH(p, q) model using simulated annealing optimization.
 
-    The weights are estimated by using simulated annealing, which goes over different values of (1 - alpha - beta) sigma_l, alpha and beta, while
-    maximizing: SUM(-ln(v_i) - (u_i ^ 2) / v_i). With the constraints:
+    The weights are estimated by using simulated annealing, which goes over different values of 
+    (1 - alpha - beta) sigma_l, alpha and beta, while maximizing: SUM(-ln(v_i) - (u_i ^ 2) / v_i). 
+    With the constraints:
     - alpha > 0
     - beta > 0
     - alpha + beta < 1
@@ -545,7 +546,7 @@ def get_garch_weights(
         A list with the weights
     """
     if isinstance(returns, pd.DataFrame):
-        returns = returns.iloc[:, 0].values
+        returns = returns.iloc[:, 0].to_numpy()
     if t is None:
         t = len(returns)
 

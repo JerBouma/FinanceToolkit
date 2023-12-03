@@ -561,8 +561,9 @@ class Risk:
         """
         Calculates volatility forecasts based on the GARCH model.
 
-        GARCH (Generalized autoregressive conditional heteroskedasticity) is stochastic model for time series, which is for
-        instance used to model volatility clusters, stock return and inflation. It is a generalisation of the ARCH models.
+        GARCH (Generalized autoregressive conditional heteroskedasticity) is stochastic model for time series, which is
+        for instance used to model volatility clusters, stock return and inflation. It is a generalisation of the ARCH
+        models.
 
         Args:
             period (str, optional): The data frequency for returns (daily, weekly, quarterly, or yearly).
@@ -636,8 +637,9 @@ class Risk:
         """
         Calculates sigma_2 forecasts.
 
-        GARCH (Generalized autoregressive conditional heteroskedasticity) is stochastic model for time series, which is for
-        instance used to model volatility clusters, stock return and inflation. It is a generalisation of the ARCH models.
+        GARCH (Generalized autoregressive conditional heteroskedasticity) is stochastic model for time series, which is
+        for instance used to model volatility clusters, stock return and inflation. It is a generalisation of the ARCH
+        models.
 
         The forecasting with GARCH is done with the following formula:
         sigma_l ** 2 + (sigma_t ** 2 - sigma_l ** 2) * (alpha + beta) ** (t - 1)
@@ -649,20 +651,22 @@ class Risk:
             period (str, optional): The data frequency for returns (daily, weekly, quarterly, or yearly).
             Defaults to "yearly".
             t (int, optional): Time steps to calculate GARCH and to forecast sigma_2 values for.
-            within_period (bool, optional): Whether to calculate GARCH within the specified period or for the entire
-            period. Thus whether to look at the GARCH within a specific year (if period = 'yearly') or look at the entirety
-            of all years. Defaults to True.
+            within_period (bool, optional): Whether to calculate GARCH within the specified period or for the
+            entire period. Thus whether to look at the GARCH within a specific year (if period = 'yearly') or
+            look at the entirety of all years. Defaults to True.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
-            growth (bool, optional): Whether to calculate the growth of the GARCH values over time. Defaults to False.
+            growth (bool, optional): Whether to calculate the growth of the GARCH values over time. Defaults to
+            False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
 
         Returns:
             pd.DataFrame | pd.Series: sigma_2 forecast values
 
         Notes:
-        - The method retrieves historical return data based on the specified `period` and calculates the sigma_2 forecast for each
-        asset in the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of the forecasted simga_2 values using the specified `lag`.
+        - The method retrieves historical return data based on the specified `period` and calculates the sigma_2 
+        forecast for each asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the forecasted simga_2 values using 
+        the specified `lag`.
 
         Example:
         ```python

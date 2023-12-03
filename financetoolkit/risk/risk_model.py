@@ -525,8 +525,8 @@ def get_garch_weights(
     """
     Estimates the weights (parameters) for a GARCH(p, q) model using simulated annealing optimization.
 
-    The weights are estimated by using simulated annealing, which goes over different values of 
-    (1 - alpha - beta) sigma_l, alpha and beta, while maximizing: SUM(-ln(v_i) - (u_i ^ 2) / v_i). 
+    The weights are estimated by using simulated annealing, which goes over different values of
+    (1 - alpha - beta) sigma_l, alpha and beta, while maximizing: SUM(-ln(v_i) - (u_i ^ 2) / v_i).
     With the constraints:
     - alpha > 0
     - beta > 0

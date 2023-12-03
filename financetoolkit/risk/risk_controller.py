@@ -663,9 +663,9 @@ class Risk:
             pd.DataFrame | pd.Series: sigma_2 forecast values
 
         Notes:
-        - The method retrieves historical return data based on the specified `period` and calculates the sigma_2 
+        - The method retrieves historical return data based on the specified `period` and calculates the sigma_2
         forecast for each asset in the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of the forecasted simga_2 values using 
+        - If `growth` is set to True, the method calculates the growth of the forecasted simga_2 values using
         the specified `lag`.
 
         Example:

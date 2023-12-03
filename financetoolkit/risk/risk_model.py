@@ -555,7 +555,8 @@ def get_garch_weights(
 
     # Define the wrapper function for optimization that applies the constraints
     def wrapper_func(parameters):
-        omega, alpha, beta = parameters
+        alpha = parameters[1]
+        beta = parameters[2]
         if alpha + beta >= 1:  # Constraint
             return np.inf  # Return a large number to represent an invalid solution
         return garch_log_maximization(parameters, returns, t, p, q)
@@ -599,7 +600,7 @@ def get_garch(
     np.array | pd.Series | pd.DataFrame:
         A object with sigma_2 values
     """
-    # TODO: support GARCH(p, q), for any p and q
+    # TODO: support GARCH(p, q), for any p and q  # pylint: disable=W0511
     if p != 1 or q != 1:
         raise ValueError(
             "Invalid input for p or/and q, currently only GARCH(1, 1) is implemented."
@@ -715,10 +716,10 @@ def get_garch_forecast(
         sigma_l = weights[0] / (1 - weights[1] - weights[2])
         sigma_2 = np.zeros(t)
         sigma_2[0] = garch_values[0]
-        for t in range(1, t):
-            sigma_2[t] = sigma_l**2 + (garch_values[0] - sigma_l**2) * (
+        for i in range(1, t):
+            sigma_2[i] = sigma_l**2 + (garch_values[0] - sigma_l**2) * (
                 weights[1] + weights[2]
-            ) ** (t - 1)
+            ) ** (i - 1)
 
         return sigma_2
 

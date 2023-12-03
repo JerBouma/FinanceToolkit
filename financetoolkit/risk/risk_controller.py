@@ -548,6 +548,164 @@ class Risk:
         return ulcer_index.round(rounding if rounding else self._rounding)
 
     @handle_errors
+    def get_garch(
+        self,
+        period: str | None = None,
+        t: int = None,
+        optimization_t: int = None,
+        within_period: bool = True,
+        rounding: int | None = 4,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+    ):
+        """
+        Calculates volatility forecasts based on the GARCH model.
+
+        GARCH (Generalized autoregressive conditional heteroskedasticity) is stochastic model for time series, which is for
+        instance used to model volatility clusters, stock return and inflation. It is a generalisation of the ARCH models.
+
+        Args:
+            period (str, optional): The data frequency for returns (daily, weekly, quarterly, or yearly).
+            Defaults to "yearly".
+            t (int, optional): Time steps to calculate GARCH for.
+            optimization_t (int, optional): Time steps to optimize GRACH for. It is only used if no weights are given.
+            within_period (bool, optional): Whether to calculate GARCH within the specified period or for the entire
+            period. Thus whether to look at the GARCH within a specific year (if period = 'yearly') or look at the entirety
+            of all years. Defaults to True.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the GARCH values over time. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+
+        Returns:
+            nd.array: GARCH values
+
+        Notes:
+        - The method retrieves historical return data based on the specified `period` and calculates GARCH for each
+        asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of GARCH values using the specified `lag`.
+
+        Example:
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AMZN", "TSLA"], api_key=FMP_KEY)
+
+        toolkit.risk.get_garch()
+        ```
+
+        Which returns:
+
+        | Date       |        AMZN |        TSLA |   Benchmark |
+        |:-----------|------------:|------------:|------------:|
+        | 2013-12-06 | 4.57488e-05 | 0.000502296 | 0.000124924 |
+        | 2013-12-09 | 0.00020399  | 0.000617153 | 0.000100779 |
+        | 2013-12-10 | 0.000229732 | 0.000717356 | 8.04292e-05 |
+        | 2013-12-11 | 0.000257061 | 0.000804773 | 6.82256e-05 |
+        | 2013-12-12 | 0.000374806 | 0.000881038 | 6.60062e-05 |
+        | 2013-12-13 | 0.000249236 | 0.000947571 | 5.92753e-05 |
+        | 2013-12-16 | 0.000262354 | 0.00100562  | 5.46336e-05 |
+        ...
+        """
+        period = period if period else "quarterly" if self._quarterly else "yearly"
+        returns = helpers.handle_return_data_periods(
+            self, period, within_period
+        ).dropna()
+
+        garch_sigma_2 = risk_model.get_garch(returns, None, t, optimization_t)
+
+        if growth:
+            return calculate_growth(
+                garch_sigma_2,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
+                axis="index",
+            )
+
+        return garch_sigma_2.round(rounding if rounding else self._rounding)
+
+    @handle_errors
+    def get_garch_forecast(
+        self,
+        period: str | None = None,
+        t: int = None,
+        within_period: bool = True,
+        rounding: int | None = 4,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+    ):
+        """
+        Calculates sigma_2 forecasts.
+
+        GARCH (Generalized autoregressive conditional heteroskedasticity) is stochastic model for time series, which is for
+        instance used to model volatility clusters, stock return and inflation. It is a generalisation of the ARCH models.
+
+        The forecasting with GARCH is done with the following formula:
+        sigma_l ** 2 + (sigma_t ** 2 - sigma_l ** 2) * (alpha + beta) ** (t - 1)
+
+        For more:
+        - Finance Compact Plus Band 1, by Yvonne Seler Zimmerman and Heinz Zimmerman; ISBN: 978-3-907291-31-1
+
+        Args:
+            period (str, optional): The data frequency for returns (daily, weekly, quarterly, or yearly).
+            Defaults to "yearly".
+            t (int, optional): Time steps to calculate GARCH and to forecast sigma_2 values for.
+            within_period (bool, optional): Whether to calculate GARCH within the specified period or for the entire
+            period. Thus whether to look at the GARCH within a specific year (if period = 'yearly') or look at the entirety
+            of all years. Defaults to True.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the GARCH values over time. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+
+        Returns:
+            nd.array: sigma_2 forecast values
+
+        Notes:
+        - The method retrieves historical return data based on the specified `period` and calculates the sigma_2 forecast for each
+        asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the forecasted simga_2 values using the specified `lag`.
+
+        Example:
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AMZN", "TSLA"], api_key=FMP_KEY)
+
+        toolkit.risk.get_garch_forecast()
+        ```
+
+        Which returns:
+
+        |    |        AMZN |        TSLA |   Benchmark |
+        |---:|------------:|------------:|------------:|
+        |  0 | 4.57488e-05 | 0.000502296 | 0.000124924 |
+        |  1 | 4.57488e-05 | 0.000502296 | 0.000124924 |
+        |  2 | 4.36745e-05 | 0.000497892 | 0.00011862  |
+        |  3 | 4.1695e-05  | 0.000493527 | 0.000112635 |
+        |  4 | 3.98062e-05 | 0.000489201 | 0.000106951 |
+        |  5 | 3.80038e-05 | 0.000484912 | 0.000101555 |
+        |  6 | 3.62838e-05 | 0.000480661 | 9.64306e-05 |
+        |  7 | 3.46426e-05 | 0.000476448 | 9.1565e-05  |
+        |  8 | 3.30765e-05 | 0.000472272 | 8.69448e-05 |
+        |  9 | 3.1582e-05  | 0.000468132 | 8.25579e-05 |
+        """
+        period = period if period else "quarterly" if self._quarterly else "yearly"
+        returns = helpers.handle_return_data_periods(
+            self, period, within_period
+        ).dropna()
+
+        sigma_2_forecast = risk_model.get_garch_forecast(returns, None, t).dropna()
+
+        if growth:
+            return calculate_growth(
+                sigma_2_forecast,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
+                axis="index",
+            )
+
+        return sigma_2_forecast.round(rounding if rounding else self._rounding)
+
+    @handle_errors
     def get_skewness(
         self,
         period: str | None = None,

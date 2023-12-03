@@ -571,8 +571,8 @@ class Risk:
             t (int, optional): Time steps to calculate GARCH for.
             optimization_t (int, optional): Time steps to optimize GRACH for. It is only used if no weights are given.
             within_period (bool, optional): Whether to calculate GARCH within the specified period or for the entire
-            period. Thus whether to look at the GARCH within a specific year (if period = 'yearly') or look at the entirety
-            of all years. Defaults to True.
+            period. Thus whether to look at the GARCH within a specific year (if period = 'yearly') or look at the
+            entirety of all years. Defaults to True.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the GARCH values over time. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.

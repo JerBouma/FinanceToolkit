@@ -577,7 +577,7 @@ class Risk:
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
 
         Returns:
-            nd.array: GARCH values
+            pd.DataFrame | pd.Series: GARCH values
 
         Notes:
         - The method retrieves historical return data based on the specified `period` and calculates GARCH for each
@@ -657,7 +657,7 @@ class Risk:
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
 
         Returns:
-            nd.array: sigma_2 forecast values
+            pd.DataFrame | pd.Series: sigma_2 forecast values
 
         Notes:
         - The method retrieves historical return data based on the specified `period` and calculates the sigma_2 forecast for each

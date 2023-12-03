@@ -489,7 +489,7 @@ def garch_log_maximization(
     weights: list, returns: np.ndarray, t: int, p: int = 1, q: int = 1
 ) -> float:
     """
-    Calcualtes -SUM(-ln(v_i) - (u_i ^ 2) / v_i)
+    Calculates -SUM(-ln(v_i) - (u_i ^ 2) / v_i)
 
     Parameters
     ----------
@@ -595,7 +595,7 @@ def get_garch(
 
     Returns
     -------
-    nd.array | pd.Series | pd.DataFrame:
+    np.array | pd.Series | pd.DataFrame:
         A object with sigma_2 values
     """
     # TODO: support GARCH(p, q), for any p and q

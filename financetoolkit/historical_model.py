@@ -42,6 +42,7 @@ def get_historical_data(
     sleep_timer: bool = True,
     show_ticker_seperation: bool = True,
     show_errors: bool = False,
+    tqdm_message: str = "Obtaining historical data",
 ):
     """
     Retrieves historical stock data for the given ticker(s) from Financial Modeling Prep or/and Yahoo Finance
@@ -136,7 +137,7 @@ def get_historical_data(
         raise ValueError(f"Type for the tickers ({type(tickers)}) variable is invalid.")
 
     ticker_list_iterator = (
-        tqdm(ticker_list, desc="Obtaining historical data")
+        tqdm(ticker_list, desc=tqdm_message)
         if (ENABLE_TQDM & progress_bar)
         else ticker_list
     )
@@ -175,8 +176,19 @@ def get_historical_data(
             f"The following tickers acquired historical data from YahooFinance: {', '.join(yf_tickers)}"
         )
 
-    if no_data:
+    if no_data and show_errors:
         print(f"No data found for the following tickers: {', '.join(no_data)}")
+
+    if len(historical_data_dict) == 0:
+        # Fill the DataFrame with zeros to ensure the DataFrame is returned
+        # even if no data is found. This is mostly applicable when nothing
+        # can be found at all.
+        for ticker in tickers:
+            historical_data_dict[ticker] = pd.DataFrame(
+                data=0,
+                index=pd.PeriodIndex(pd.date_range(start, end), freq="D"),
+                columns=["Open", "High", "Low", "Close", "Adj Close", "Volume"],
+            )
 
     historical_data = pd.concat(historical_data_dict).unstack(level=0)
     historical_data = historical_data.reindex(ticker_list, level=1, axis=1)
@@ -672,7 +684,7 @@ def convert_daily_to_other_period(
     return period_historical_data.fillna(0)
 
 
-def get_historical_statistics(tickers: list[str], progress_bar: bool = False):
+def get_historical_statistics(tickers: list[str], progress_bar: bool = True):
     """
     Retrieve statistics about each ticker's historical data. This is especially useful to understand why certain
     tickers might fluctuate more than others as it could be due to local regulations or the currency the instrument
@@ -745,7 +757,7 @@ def get_historical_statistics(tickers: list[str], progress_bar: bool = False):
         raise ValueError(f"Type for the tickers ({type(tickers)}) variable is invalid.")
 
     ticker_list_iterator = (
-        tqdm(ticker_list, desc="Obtaining historical data")
+        tqdm(ticker_list, desc="Obtaining historical statistics")
         if (ENABLE_TQDM & progress_bar)
         else ticker_list
     )

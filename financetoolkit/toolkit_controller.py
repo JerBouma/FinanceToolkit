@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 import pandas as pd
 import requests
 
+from financetoolkit import helpers
 from financetoolkit.fundamentals_model import (
     get_analyst_estimates as _get_analyst_estimates,
     get_dividend_calendar as _get_dividend_calendar,
@@ -72,10 +73,11 @@ class Toolkit:
         income: pd.DataFrame = pd.DataFrame(),
         cash: pd.DataFrame = pd.DataFrame(),
         format_location: str = "",
+        convert_currency: bool | None = None,
         reverse_dates: bool = False,
         rounding: int | None = 4,
         remove_invalid_tickers: bool = False,
-        sleep_timer: bool = True,
+        sleep_timer: bool | None = None,
         progress_bar: bool = True,
     ):
         """
@@ -138,6 +140,13 @@ class Toolkit:
 
         format_location (str): A string containing the location of the normalization files.
 
+        convert_currency (bool): A boolean indicating whether to convert the currency of the financial statements to
+        match that of the related historical data. This is an important conversion when comparing the financial
+        statements between each ticker as well as for calculations that are done with the historical data.
+        If you are using a Free plan from FinancialModelingPrep, this will be set to False.
+        If you are using a Premium plan from FinancialModelingPrep, this will be set to True. Defaults to None
+        and can thus be overridden.
+
         reverse_dates (bool): A boolean indicating whether to reverse the dates in the financial statements.
 
         rounding (int): An integer indicating the number of decimals to round the results to.
@@ -145,7 +154,8 @@ class Toolkit:
         remove_invalid_tickers (bool): A boolean indicating whether to remove invalid tickers. Defaults to False.
 
         sleep_timer (bool): Whether to set a sleep timer when the rate limit is reached. Note that this only works
-        if you have a Premium subscription (Starter or higher) from FinancialModelingPrep. Defaults to True.
+        if you have a Premium subscription (Starter or higher) from FinancialModelingPrep. Defaults to None which
+        means it is determined by the model (Free plan = False, Premium plan = True).
 
         progress_bar (bool): Whether to enable the progress bar when ticker amount is over 10. Defaults to True.
 
@@ -167,6 +177,24 @@ class Toolkit:
         toolkit = Toolkit("AMZN", benchmark_ticker="^DJI", risk_free_rate="30y", api_key=FMP_KEY)
         ```
         """
+        if sleep_timer is None:
+            # This tests the API key to determine the subscription plan. This is relevant for the sleep timer
+            # but also for other components of the Toolkit. This prevents wait timers from occurring while
+            # it wouldn't result to any other answer than a rate limit error.
+            determine_plan = helpers.get_financial_data(
+                url=f"https://financialmodelingprep.com/api/v3/income-statement/AAPL?period=quarter&apikey={api_key}",
+                sleep_timer=False,
+            )
+
+            self._fmp_plan = "Premium"
+
+            for option in ["NOT AVAILABLE", "LIMIT REACH", "INVALID API KEY"]:
+                if option in determine_plan:
+                    self._fmp_plan = "Free"
+                    break
+        else:
+            self._fmp_plan = "Premium"
+
         if isinstance(tickers, str):
             tickers = [tickers.upper()]
         elif isinstance(tickers, list):
@@ -238,9 +266,18 @@ class Toolkit:
         self._rounding = rounding
         self._remove_invalid_tickers = remove_invalid_tickers
         self._invalid_tickers: list = []
-        self._sleep_timer = sleep_timer
+        self._sleep_timer = (
+            sleep_timer if sleep_timer is not None else self._fmp_plan != "Free"
+        )
+        self._convert_currency = (
+            convert_currency
+            if convert_currency is not None
+            else self._fmp_plan != "Free"
+        )
         self._progress_bar = progress_bar
         self._historical = historical
+        self._currencies: list = []
+        self._statement_currencies: pd.Series = pd.Series()
 
         if self._api_key:
             # Initialization of FinancialModelingPrep Variables
@@ -332,6 +369,13 @@ class Toolkit:
         self._monthly_treasury_data: pd.DataFrame = pd.DataFrame()
         self._quarterly_treasury_data: pd.DataFrame = pd.DataFrame()
         self._yearly_treasury_data: pd.DataFrame = pd.DataFrame()
+
+        # Initialization of the Exchange Rate Variables
+        self._daily_exchange_rate_data: pd.DataFrame = pd.DataFrame()
+        self._weekly_exchange_rate_data: pd.DataFrame = pd.DataFrame()
+        self._monthly_exchange_rate_data: pd.DataFrame = pd.DataFrame()
+        self._quarterly_exchange_rate_data: pd.DataFrame = pd.DataFrame()
+        self._yearly_exchange_rate_data: pd.DataFrame = pd.DataFrame()
 
         # Initialization of Normalization Variables
         self._balance_sheet_statement_generic: pd.DataFrame = _read_normalization_file(
@@ -476,7 +520,8 @@ class Toolkit:
             and self._cash_flow_statement.empty
         ):
             raise ValueError(
-                "The datasets could not be populated and therefore the Ratios class cannot be initialized."
+                "The datasets could not be populated and therefore the Ratios class cannot be initialized. "
+                "This is usually because you have reached the API limit."
             )
 
         if not self._start_date:
@@ -584,7 +629,8 @@ class Toolkit:
             and self._cash_flow_statement.empty
         ):
             raise ValueError(
-                "The datasets could not be populated and therefore the Models class cannot be initialized."
+                "The datasets could not be populated and therefore the Ratios class cannot be initialized. "
+                "This is usually because you have reached the API limit."
             )
 
         if not self._start_date:
@@ -1568,7 +1614,6 @@ class Toolkit:
         fill_nan: bool = True,
         overwrite: bool = False,
         rounding: int | None = None,
-        sleep_timer: bool = True,
         show_ticker_seperation: bool = True,
     ):
         """
@@ -1669,7 +1714,7 @@ class Toolkit:
                 progress_bar=self._progress_bar,
                 fill_nan=fill_nan,
                 rounding=rounding if rounding else self._rounding,
-                sleep_timer=sleep_timer,
+                sleep_timer=self._sleep_timer,
                 show_ticker_seperation=show_ticker_seperation,
             )
 
@@ -2086,7 +2131,7 @@ class Toolkit:
 
         if self._historical_statistics.empty:
             self._historical_statistics = _get_historical_statistics(
-                tickers=self._tickers
+                tickers=self._tickers, progress_bar=self._progress_bar
             )
 
         if len(self._tickers) == 1 and not self._historical_statistics.empty:
@@ -2174,7 +2219,8 @@ class Toolkit:
 
         if not self._daily_treasury_data.empty:
             specific_rates = [
-                ticker in self._daily_treasury_data.columns.get_level_values(1)
+                treasury_names[ticker]
+                in self._daily_treasury_data.columns.get_level_values(1)
                 for ticker in risk_free_rate_tickers
             ]
 
@@ -2194,6 +2240,8 @@ class Toolkit:
                 divide_ohlc_by=divide_ohlc_by,
                 rounding=rounding if rounding else self._rounding,
                 show_errors=show_errors,
+                sleep_timer=self._sleep_timer,
+                tqdm_message="Obtaining treasury data",
             )
 
             self._daily_treasury_data = self._daily_treasury_data.rename(
@@ -2203,6 +2251,13 @@ class Toolkit:
             self._daily_risk_free_rate = self._daily_treasury_data.xs(
                 risk_free_rate, level=1, axis=1
             )
+
+            if self._daily_risk_free_rate["Adj Close"].sum() == 0:
+                print(
+                    "No data could be retrieved for the risk free rate which "
+                    "results in calculations requiring an Excess Return to use "
+                    "a Risk Free Rate of 0."
+                )
 
         if period == "daily":
             return self._daily_treasury_data.loc[self._start_date : self._end_date, :]
@@ -2264,6 +2319,208 @@ class Toolkit:
             )
 
             return self._yearly_treasury_data.loc[self._start_date : self._end_date, :]
+
+        raise ValueError(
+            "Please choose from daily, weekly, monthly, quarterly or yearly as period."
+        )
+
+    def get_exchange_rates(
+        self,
+        period: str = "daily",
+        return_column: str = "Adj Close",
+        fill_nan: bool = True,
+        overwrite: bool = False,
+        rounding: int | None = None,
+        show_ticker_seperation: bool = True,
+    ):
+        """
+        This functionality looks at the exchange rates between the currency of the historical data and the currency
+        of the financial statements. Given that these can deviate from each other, e.g. the historical data is in USD
+        but the financial statements are in EUR, it is important to adjust for this. This is especially relevant for
+        models that use the historical data and the financial statements.
+
+        This function therefore shows the exchange rates that are used to convert the financial statements to the
+        currency of the historical data. The historical market data is quote currency and the financial statements
+        are base currency.
+
+        Note that you can get currency data from any currency as well by supplying the currency as a ticker. For example,
+        if you want to get the exchange rates between USD and EUR you can use USDEUR=X as a ticker.
+
+        Important to note is that when an api_key is included in the Toolkit initialization that the data
+        collection defaults to FinancialModelingPrep which is a more stable source and utilises your subscription.
+        However, if this is undesired, it can be disabled by setting historical_source to "YahooFinance". If
+        data collection fails from FinancialModelingPrep it automatically reverts back to YahooFinance.
+
+        Args:
+            start (str): The start date for the exchange data. Defaults to None.
+            end (str): The end date for the exchange data. Defaults to None.
+            period (str): The interval at which the historical data should be
+            returned - daily, weekly, monthly, quarterly, or yearly.
+            Defaults to "daily".
+            return_column (str): The column to use for the return calculation. Defaults to "Adj Close".
+            fill_nan (bool): Defines whether to forward fill NaN values. This defaults
+            to True to prevent holes in the dataset. This is especially relevant for
+            technical indicators.
+            overwrite (bool): Defines whether to overwrite the existing data.
+            rounding (int): Defines the number of decimal places to round the data to.
+            show_ticker_seperation (bool, optional): A boolean representing whether to show which tickers
+            acquired data from FinancialModelingPrep and which tickers acquired data from YahooFinance.
+
+        Raises:
+            ValueError: If an invalid value is specified for period.
+
+        Returns:
+            pandas.DataFrame: The historical exchange rate data.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit("ASML", api_key=FMP_KEY)
+
+        toolkit.get_exchange_rates(period="monthly")
+        ```
+
+        Which returns:
+
+        | Date    |   Open |   High |    Low |   Close |   Adj Close |   Volume |   Return |   Volatility |   Cumulative Return |
+        |:--------|-------:|-------:|-------:|--------:|------------:|---------:|---------:|-------------:|--------------------:|
+        | 2023-03 | 1.0905 | 1.0926 | 1.0861 |  1.0905 |      1.0905 |        0 |   0.0277 |       0.0298 |              0.7896 |
+        | 2023-04 | 1.1011 | 1.1037 | 1.0963 |  1.0969 |      1.0969 |   131812 |   0.0059 |       0.0278 |              0.7943 |
+        | 2023-05 | 1.0693 | 1.0771 | 1.066  |  1.076  |      1.0733 |   162069 |  -0.0215 |       0.0143 |              0.7772 |
+        | 2023-06 | 1.09   | 1.09   | 1.08   |  1.09   |      1.0868 |        0 |   0.0126 |       0.0179 |              0.787  |
+        | 2023-07 | 1.0996 | 1.102  | 1.0952 |  1.1007 |      1.1024 |   183278 |   0.0144 |       0.0225 |              0.7983 |
+        | 2023-08 | 1.0842 | 1.0882 | 1.077  |  1.0796 |      1.09   |   171695 |  -0.0112 |       0.0219 |              0.7893 |
+        | 2023-09 | 1.06   | 1.06   | 1.06   |  1.06   |      1.06   |        0 |  -0.0275 |       0.0264 |              0.7676 |
+        | 2023-10 | 1.0614 | 1.0674 | 1.0556 |  1.0578 |      1.0615 |   184667 |   0.0014 |       0.0232 |              0.7686 |
+        | 2023-11 | 1.0973 | 1.0984 | 1.0878 |  1.0892 |      1.0974 |   173646 |   0.0338 |       0.0202 |              0.7946 |
+        | 2023-12 | 1.088  | 1.0898 | 1.0848 |  1.0871 |      1.0871 |    90494 |  -0.0094 |       0.0173 |              0.7872 |
+        """
+        if not self._currencies or overwrite:
+            if self._historical_statistics.empty:
+                self.get_historical_statistics()
+            if self._statistics_statement.empty:
+                self.get_statistics_statement()
+
+            self._statement_currencies, self._currencies = helpers.determine_currencies(
+                statement_currencies=self._statistics_statement.xs(
+                    "Reported Currency", axis=0, level=1
+                ),
+                historical_currencies=self._historical_statistics.loc["Currency"],
+            )
+
+        if self._daily_exchange_rate_data.empty or overwrite:
+            self._daily_exchange_rate_data, _ = _get_historical_data(
+                tickers=self._currencies,
+                api_key=self._api_key,
+                source=self._historical_source,
+                start=self._start_date,
+                end=self._end_date,
+                interval="1d",
+                return_column=return_column,
+                risk_free_rate=pd.DataFrame(),
+                include_dividends=False,
+                progress_bar=self._progress_bar,
+                fill_nan=fill_nan,
+                rounding=rounding if rounding else self._rounding,
+                sleep_timer=self._sleep_timer,
+                show_ticker_seperation=show_ticker_seperation,
+                tqdm_message="Obtaining exchange data",
+            )
+
+            # For exchange data, it is possible that data on USDUSD=X is
+            # collected which should always be 1. In that case, everything
+            # should match with 1 which is why backfilling is used.
+            self._daily_exchange_rate_data = self._daily_exchange_rate_data.bfill()
+
+        if period == "daily":
+            historical_data = self._daily_exchange_rate_data.loc[
+                self._start_date : self._end_date, :
+            ].copy()
+            historical_data.loc[historical_data.index[0], "Return"] = 0
+
+            if len(self._currencies) == 1:
+                return historical_data.xs(self._currencies[0], level=1, axis="columns")
+
+            return historical_data
+
+        if period == "weekly":
+            self._weekly_exchange_rate_data = _convert_daily_to_other_period(
+                period="weekly",
+                daily_historical_data=self._daily_exchange_rate_data,
+                start=self._start_date,
+                end=self._end_date,
+                risk_free_rate=pd.DataFrame(),
+                rounding=rounding if rounding else self._rounding,
+            )
+
+            historical_data = self._weekly_exchange_rate_data.loc[
+                self._start_date : self._end_date, :
+            ].copy()
+            historical_data.loc[historical_data.index[0], "Return"] = 0
+
+            if len(self._currencies) == 1:
+                return historical_data.xs(self._currencies[0], level=1, axis="columns")
+
+            return historical_data
+
+        if period == "monthly":
+            self._monthly_exchange_rate_data = _convert_daily_to_other_period(
+                period="monthly",
+                daily_historical_data=self._daily_exchange_rate_data,
+                start=self._start_date,
+                end=self._end_date,
+                risk_free_rate=pd.DataFrame(),
+                rounding=rounding if rounding else self._rounding,
+            )
+
+            historical_data = self._monthly_exchange_rate_data.loc[
+                self._start_date : self._end_date, :
+            ].copy()
+            historical_data.loc[historical_data.index[0], "Return"] = 0
+
+            if len(self._currencies) == 1:
+                return historical_data.xs(self._currencies[0], level=1, axis="columns")
+
+            return historical_data
+
+        if period == "quarterly":
+            self._quarterly_exchange_rate_data = _convert_daily_to_other_period(
+                period="quarterly",
+                daily_historical_data=self._daily_exchange_rate_data,
+                start=self._start_date,
+                end=self._end_date,
+                risk_free_rate=pd.DataFrame(),
+                rounding=rounding if rounding else self._rounding,
+            )
+
+            historical_data = self._quarterly_exchange_rate_data.loc[
+                self._start_date : self._end_date, :
+            ].copy()
+            historical_data.loc[historical_data.index[0], "Return"] = 0
+
+            if len(self._currencies) == 1:
+                return historical_data.xs(self._currencies[0], level=1, axis="columns")
+
+            return historical_data
+
+        if period == "yearly":
+            self._yearly_exchange_rate_data = _convert_daily_to_other_period(
+                period="yearly",
+                daily_historical_data=self._daily_exchange_rate_data,
+                start=self._start_date,
+                end=self._end_date,
+                risk_free_rate=pd.DataFrame(),
+                rounding=rounding if rounding else self._rounding,
+            )
+
+            historical_data = self._yearly_exchange_rate_data.loc[
+                self._start_date : self._end_date, :
+            ].copy()
+            historical_data.loc[historical_data.index[0], "Return"] = 0
+
+            return historical_data
 
         raise ValueError(
             "Please choose from daily, weekly, monthly, quarterly or yearly as period."
@@ -2352,6 +2609,11 @@ class Toolkit:
         | Total Debt                               |  7.592e+09  |  7.516e+09  |  1.089e+10  |  1.2884e+10 |  1.3848e+10 |
         | Net Debt                                 | -1.565e+09  | -7.46e+08   |  1.316e+09  |  3.086e+09  |  4.55e+09   |
         """
+        convert_currency = bool(
+            self._convert_currency
+            and (self._balance_sheet_statement.empty or overwrite)
+        )
+
         if not self._api_key and self._balance_sheet_statement.empty:
             return print(
                 "The requested data requires the api_key parameter to be set, consider "
@@ -2428,6 +2690,70 @@ class Toolkit:
                 rounding=rounding if rounding else self._rounding,
                 axis="columns",
             )
+
+        if convert_currency:
+            self.get_exchange_rates(period="quarterly" if self._quarterly else "yearly")
+            no_data = []
+
+            periods = self._balance_sheet_statement.columns
+            currencies: dict[str, list[str]] = {}
+
+            for ticker in self._tickers:
+                try:
+                    currency = self._statement_currencies.loc[ticker]
+                    base_currency, quote_currency = currency[:3], currency[3:6]
+
+                    if base_currency != quote_currency:
+                        if currency not in currencies:
+                            currencies[currency] = []
+
+                        if self._quarterly:
+                            self._balance_sheet_statement.loc[ticker] = (
+                                self._balance_sheet_statement.loc[ticker].mul(
+                                    self._quarterly_exchange_rate_data.loc[
+                                        periods, ("Adj Close", currency)
+                                    ]
+                                )
+                            ).to_numpy()
+                        else:
+                            self._balance_sheet_statement.loc[ticker] = (
+                                self._balance_sheet_statement.loc[ticker].mul(
+                                    self._yearly_exchange_rate_data.loc[
+                                        periods, ("Adj Close", currency)
+                                    ]
+                                )
+                            ).to_numpy()
+
+                        currencies[currency].append(ticker)
+                except (KeyError, ValueError) as error:
+                    print(error)
+                    no_data.append(ticker)
+                    continue
+
+            if no_data:
+                print(
+                    "The following tickers could not be converted to the historical data currency: "
+                    f"{', '.join(no_data)}"
+                )
+
+            currencies_text = []
+            for currency, tickers in currencies.items():
+                base_currency, quote_currency = currency[:3], currency[3:6]
+
+                if base_currency != quote_currency:
+                    for ticker in tickers:
+                        currencies_text.append(
+                            f"{ticker} ({base_currency} to {quote_currency})"
+                        )
+
+            if currencies_text:
+                print(
+                    f"The balance sheet statements from the following tickers are converted: {', '.join(currencies_text)}"
+                )
+
+        balance_sheet_statement = balance_sheet_statement.round(
+            rounding if rounding else self._rounding
+        )
 
         if len(tickers) == 1 and not self._balance_sheet_statement.empty:
             return (
@@ -2508,6 +2834,10 @@ class Toolkit:
         | Weighted Average Shares                      | 3.111e+09  |  3.146e+09  |  3.16e+09   |  3.166e+09  | 3.171e+09  |
         | Weighted Average Shares Diluted              | 3.465e+09  |  3.468e+09  |  3.471e+09  |  3.468e+09  | 3.478e+09  |
         """
+        convert_currency = bool(
+            self._convert_currency and (self._income_statement.empty or overwrite)
+        )
+
         if not self._api_key and self._income_statement.empty:
             return print(
                 "The requested data requires the api_key parameter to be set, consider "
@@ -2582,6 +2912,70 @@ class Toolkit:
                 rounding=rounding if rounding else self._rounding,
                 axis="columns",
             )
+
+        if convert_currency:
+            self.get_exchange_rates(period="quarterly" if self._quarterly else "yearly")
+            no_data = []
+
+            periods = self._income_statement.columns
+            currencies: dict[str, list[str]] = {}
+
+            for ticker in self._tickers:
+                try:
+                    currency = self._statement_currencies.loc[ticker]
+                    base_currency, quote_currency = currency[:3], currency[3:6]
+
+                    if base_currency != quote_currency:
+                        if currency not in currencies:
+                            currencies[currency] = []
+
+                        if self._quarterly:
+                            self._income_statement.loc[ticker] = (
+                                self._income_statement.loc[ticker].mul(
+                                    self._quarterly_exchange_rate_data.loc[
+                                        periods, ("Adj Close", currency)
+                                    ]
+                                )
+                            ).to_numpy()
+                        else:
+                            self._income_statement.loc[ticker] = (
+                                self._income_statement.loc[ticker].mul(
+                                    self._yearly_exchange_rate_data.loc[
+                                        periods, ("Adj Close", currency)
+                                    ]
+                                )
+                            ).to_numpy()
+
+                        currencies[currency].append(ticker)
+                except (KeyError, ValueError) as error:
+                    print(error)
+                    no_data.append(ticker)
+                    continue
+
+            if no_data:
+                print(
+                    "The following tickers could not be converted to the historical data currency: "
+                    f"{', '.join(no_data)}"
+                )
+
+            currencies_text = []
+            for currency, tickers in currencies.items():
+                base_currency, quote_currency = currency[:3], currency[3:6]
+
+                if base_currency != quote_currency:
+                    for ticker in tickers:
+                        currencies_text.append(
+                            f"{ticker} ({base_currency} to {quote_currency})"
+                        )
+
+            if currencies_text:
+                print(
+                    f"The income statements from the following tickers are converted: {', '.join(currencies_text)}"
+                )
+
+        income_statement = income_statement.round(
+            rounding if rounding else self._rounding
+        )
 
         if len(tickers) == 1 and not self._income_statement.empty:
             return (
@@ -2662,6 +3056,10 @@ class Toolkit:
         | Capital Expenditure           | -1.6378e+10 | -1.6592e+10 | -1.4207e+10 | -1.1455e+10 |
         | Free Cash Flow                | -4.974e+09  |  1.2581e+10 | -9.419e+09  |  5.021e+09  |
         """
+        convert_currency = bool(
+            self._convert_currency and (self._cash_flow_statement.empty or overwrite)
+        )
+
         if not self._api_key and self._cash_flow_statement.empty:
             return print(
                 "The requested data requires the api_key parameter to be set, consider "
@@ -2737,13 +3135,76 @@ class Toolkit:
                 axis="columns",
             )
 
+        if convert_currency:
+            self.get_exchange_rates(period="quarterly" if self._quarterly else "yearly")
+            no_data = []
+
+            periods = self._cash_flow_statement.columns
+            currencies: dict[str, list[str]] = {}
+
+            for ticker in self._tickers:
+                try:
+                    currency = self._statement_currencies.loc[ticker]
+                    base_currency, quote_currency = currency[:3], currency[3:6]
+
+                    if base_currency != quote_currency:
+                        if currency not in currencies:
+                            currencies[currency] = []
+
+                        if self._quarterly:
+                            self._cash_flow_statement.loc[ticker] = (
+                                self._cash_flow_statement.loc[ticker].mul(
+                                    self._quarterly_exchange_rate_data.loc[
+                                        periods, ("Adj Close", currency)
+                                    ]
+                                )
+                            ).to_numpy()
+                        else:
+                            self._cash_flow_statement.loc[ticker] = (
+                                self._cash_flow_statement.loc[ticker].mul(
+                                    self._yearly_exchange_rate_data.loc[
+                                        periods, ("Adj Close", currency)
+                                    ]
+                                )
+                            ).to_numpy()
+
+                        currencies[currency].append(ticker)
+                except (KeyError, ValueError) as error:
+                    print(error)
+                    no_data.append(ticker)
+                    continue
+
+            if no_data:
+                print(
+                    "The following tickers could not be converted to the historical data currency: "
+                    f"{', '.join(no_data)}"
+                )
+
+            currencies_text = []
+            for currency, tickers in currencies.items():
+                base_currency, quote_currency = currency[:3], currency[3:6]
+
+                if base_currency != quote_currency:
+                    for ticker in tickers:
+                        currencies_text.append(
+                            f"{ticker} ({base_currency} to {quote_currency})"
+                        )
+
+            if currencies_text:
+                print(
+                    f"The cash flow statements from the following tickers are converted: {', '.join(currencies_text)}"
+                )
+
+        cash_flow_statement = cash_flow_statement.round(
+            rounding if rounding else self._rounding
+        )
+
         if len(tickers) == 1 and not self._cash_flow_statement.empty:
             return (
                 self._cash_flow_statement_growth.loc[tickers[0]]
                 if growth
                 else cash_flow_statement.loc[tickers[0]]
             )
-
         return self._cash_flow_statement_growth if growth else cash_flow_statement
 
     def get_statistics_statement(

@@ -11,7 +11,9 @@ import pandas as pd
 import requests
 from urllib3.exceptions import MaxRetryError
 
-RETRY_LIMIT = 3
+RETRY_LIMIT = 12
+
+# pylint: disable=comparison-with-itself
 
 
 def get_financial_data(
@@ -33,7 +35,8 @@ def get_financial_data(
     Returns:
         pd.DataFrame: A DataFrame containing the financial data.
     """
-    retry_counter = 0
+    error_retry_counter = 0
+    limit_retry_counter = 0
 
     while True:
         try:
@@ -49,7 +52,7 @@ def get_financial_data(
 
             return financial_data
 
-        except requests.exceptions.HTTPError:
+        except (requests.exceptions.HTTPError, ValueError):
             if (
                 "not available under your current subscription"
                 in response.json()["Error Message"]
@@ -57,9 +60,9 @@ def get_financial_data(
                 return pd.DataFrame(columns=["NOT AVAILABLE"])
 
             if "Limit Reach" in response.json()["Error Message"]:
-                if sleep_timer:
-                    time.sleep(61)
-                    sleep_timer = False
+                if sleep_timer and limit_retry_counter < RETRY_LIMIT:
+                    time.sleep(5.01)
+                    limit_retry_counter += 1
                 else:
                     return pd.DataFrame(columns=["LIMIT REACH"])
             if (
@@ -71,14 +74,57 @@ def get_financial_data(
             if "Invalid API KEY." in response.json()["Error Message"]:
                 return pd.DataFrame(columns=["INVALID API KEY"])
 
-        except (MaxRetryError, requests.exceptions.SSLError):
-            # When the connection is refused, retry the request 3 times
+        except (
+            MaxRetryError,
+            requests.exceptions.SSLError,
+            requests.exceptions.ConnectionError,
+        ):
+            # When the connection is refused, retry the request 12 times
             # and if it doesn't work, then return an empty dataframe
-            if retry_counter == RETRY_LIMIT:
+            if error_retry_counter == RETRY_LIMIT:
                 return pd.DataFrame(columns=["NO ERRORS"])
 
-            retry_counter += 1
+            error_retry_counter += 1
             time.sleep(5)
+
+
+def determine_currencies(
+    statement_currencies: pd.DataFrame, historical_currencies: pd.DataFrame
+):
+    """
+    Based on the statement currencies and the historical currencies, determine the
+    currencies that are used in the financial statements and the historical datasets.
+
+    This is relevant to prevent mismatches between the perceived price of the instrument
+    and the numbers as found in the financial statements. If there is a mismatch, then
+    the currency conversion needs to be applied.
+
+    Args:
+        statement_currencies (pd.DataFrame): A DataFrame containing the statement currencies.
+        historical_currencies (pd.DataFrame): A DataFrame containing the historical currencies.
+
+    Returns:
+        pd.Series, list: a Series containing the currency symbols per ticker
+        and a list containing the currencies.
+    """
+    currencies = []
+
+    for period in statement_currencies.columns:
+        statement_currencies.loc[:, period] = (
+            statement_currencies[period] + historical_currencies + "=X"
+        )
+
+        for currency in statement_currencies[period].unique():
+            # Identify the currencies that are not in the list yet
+            # and that are not NaN (the currency == currency check)
+            if currency not in currencies and currency == currency:  # noqa
+                currencies.append(currency)
+
+    statement_currencies = statement_currencies.bfill(axis=1).ffill(axis=1)
+
+    statement_currencies = statement_currencies[statement_currencies.columns[-1]]
+
+    return statement_currencies, currencies
 
 
 def combine_dataframes(dataset_dictionary: dict[str, pd.DataFrame]) -> pd.DataFrame:
@@ -254,6 +300,13 @@ def handle_errors(func):
             print(
                 f"An error occurred while trying to run the function "
                 f"{function_name}. This is {e}. This is due to a division by zero."
+            )
+            return pd.Series(dtype="object")
+        except IndexError as e:
+            function_name = func.__name__
+            print(
+                f"An error occurred while trying to run the function "
+                f"{function_name}. This is {e}. This is due to missing data."
             )
             return pd.Series(dtype="object")
 

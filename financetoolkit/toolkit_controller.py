@@ -2725,8 +2725,7 @@ class Toolkit:
                             ).to_numpy()
 
                         currencies[currency].append(ticker)
-                except (KeyError, ValueError) as error:
-                    print(error)
+                except (KeyError, ValueError):
                     no_data.append(ticker)
                     continue
 
@@ -2737,11 +2736,11 @@ class Toolkit:
                 )
 
             currencies_text = []
-            for currency, tickers in currencies.items():
+            for currency, ticker_match in currencies.items():
                 base_currency, quote_currency = currency[:3], currency[3:6]
 
                 if base_currency != quote_currency:
-                    for ticker in tickers:
+                    for ticker in ticker_match:
                         currencies_text.append(
                             f"{ticker} ({base_currency} to {quote_currency})"
                         )
@@ -2947,8 +2946,7 @@ class Toolkit:
                             ).to_numpy()
 
                         currencies[currency].append(ticker)
-                except (KeyError, ValueError) as error:
-                    print(error)
+                except (KeyError, ValueError):
                     no_data.append(ticker)
                     continue
 
@@ -2959,11 +2957,11 @@ class Toolkit:
                 )
 
             currencies_text = []
-            for currency, tickers in currencies.items():
+            for currency, ticker_match in currencies.items():
                 base_currency, quote_currency = currency[:3], currency[3:6]
 
                 if base_currency != quote_currency:
-                    for ticker in tickers:
+                    for ticker in ticker_match:
                         currencies_text.append(
                             f"{ticker} ({base_currency} to {quote_currency})"
                         )
@@ -3169,8 +3167,7 @@ class Toolkit:
                             ).to_numpy()
 
                         currencies[currency].append(ticker)
-                except (KeyError, ValueError) as error:
-                    print(error)
+                except (KeyError, ValueError):
                     no_data.append(ticker)
                     continue
 
@@ -3181,11 +3178,11 @@ class Toolkit:
                 )
 
             currencies_text = []
-            for currency, tickers in currencies.items():
+            for currency, ticker_match in currencies.items():
                 base_currency, quote_currency = currency[:3], currency[3:6]
 
                 if base_currency != quote_currency:
-                    for ticker in tickers:
+                    for ticker in ticker_match:
                         currencies_text.append(
                             f"{ticker} ({base_currency} to {quote_currency})"
                         )

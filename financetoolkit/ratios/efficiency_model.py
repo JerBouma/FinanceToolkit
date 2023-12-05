@@ -4,9 +4,7 @@ __docformat__ = "google"
 import pandas as pd
 
 
-def get_asset_turnover_ratio(
-    sales: pd.Series, total_assets_begin: pd.Series, total_assets_end
-) -> pd.Series:
+def get_asset_turnover_ratio(sales, total_assets_begin, total_assets_end) -> pd.Series:
     """
     Calculate the asset turnover ratio, an efficiency ratio that measures how
     efficiently a company uses its assets to generate sales.
@@ -23,9 +21,9 @@ def get_asset_turnover_ratio(
 
 
 def get_inventory_turnover_ratio(
-    cost_of_goods_sold: pd.Series,
-    inventory_begin: pd.Series,
-    inventory_end: pd.Series,
+    cost_of_goods_sold,
+    inventory_begin,
+    inventory_end,
 ) -> pd.Series:
     """
     Calculate the inventory turnover ratio, an efficiency ratio that measures
@@ -43,10 +41,10 @@ def get_inventory_turnover_ratio(
 
 
 def get_days_of_inventory_outstanding(
-    inventory_begin: pd.Series,
-    inventory_end: pd.Series,
-    cost_of_goods_sold: pd.Series,
-    days: int | float = 365,
+    inventory_begin,
+    inventory_end,
+    cost_of_goods_sold,
+    days=365,
 ) -> pd.Series:
     """
     Calculate the days sales in inventory ratio, an efficiency ratio that measures
@@ -65,10 +63,10 @@ def get_days_of_inventory_outstanding(
 
 
 def get_days_of_sales_outstanding(
-    accounts_receivable_begin: pd.Series,
-    accounts_receivable_end: pd.Series,
-    net_credit_sales: pd.Series,
-    days: int | float = 365,
+    accounts_receivable_begin,
+    accounts_receivable_end,
+    net_credit_sales,
+    days=365,
 ) -> pd.Series:
     """
     Calculate the days of sales outstanding, an efficiency ratio that measures
@@ -92,7 +90,7 @@ def get_days_of_sales_outstanding(
 
 
 def get_operating_cycle(
-    days_of_inventory: pd.Series, days_of_sales_outstanding: pd.Series
+    days_of_inventory, days_of_sales_outstanding: pd.Series
 ) -> pd.Series:
     """
     Calculate the operating cycle, an efficiency ratio that measures the average
@@ -110,9 +108,9 @@ def get_operating_cycle(
 
 
 def get_accounts_payables_turnover_ratio(
-    cost_of_goods_sold: pd.Series,
-    accounts_payable_begin: pd.Series,
-    accounts_payable_end: pd.Series,
+    cost_of_goods_sold,
+    accounts_payable_begin,
+    accounts_payable_end,
 ) -> pd.Series:
     """
     Calculate the accounts payable turnover ratio is an efficiency ratio that measures how
@@ -130,10 +128,10 @@ def get_accounts_payables_turnover_ratio(
 
 
 def get_days_of_accounts_payable_outstanding(
-    cost_of_goods_sold: pd.Series,
-    accounts_payable_begin: pd.Series,
-    accounts_payable_end: pd.Series,
-    days: int | float = 365,
+    cost_of_goods_sold,
+    accounts_payable_begin,
+    accounts_payable_end,
+    days=365,
 ) -> pd.Series:
     """
     Calculate the days payables outstanding, an efficiency ratio that measures the
@@ -156,9 +154,9 @@ def get_days_of_accounts_payable_outstanding(
 
 
 def get_cash_conversion_cycle(
-    days_inventory: pd.Series,
-    days_sales_outstanding: pd.Series,
-    days_payables_outstanding: pd.Series,
+    days_inventory,
+    days_sales_outstanding,
+    days_payables_outstanding,
 ) -> pd.Series:
     """
     Calculate the Cash Conversion Cycle, which measures the amount of time it takes for a company to convert
@@ -177,9 +175,9 @@ def get_cash_conversion_cycle(
 
 
 def get_receivables_turnover(
-    accounts_receivable_begin: pd.Series,
-    accounts_receivable_end: pd.Series,
-    net_credit_sales: pd.Series,
+    accounts_receivable_begin,
+    accounts_receivable_end,
+    net_credit_sales,
 ) -> pd.Series:
     """
     Calculate the receivables turnover, a ratio that measures how efficiently a
@@ -198,7 +196,7 @@ def get_receivables_turnover(
     ) / net_credit_sales
 
 
-def get_sga_to_revenue_ratio(sga_expenses: pd.Series, revenue: pd.Series) -> pd.Series:
+def get_sga_to_revenue_ratio(sga_expenses, revenue: pd.Series) -> pd.Series:
     """
     Calculates the sales, general, and administrative (SG&A) expenses to revenue ratio,
     which measures the SG&A expenses relative to the revenue of the company.
@@ -214,9 +212,9 @@ def get_sga_to_revenue_ratio(sga_expenses: pd.Series, revenue: pd.Series) -> pd.
 
 
 def get_fixed_asset_turnover(
-    net_sales: pd.Series,
-    net_fixed_assets_begin: pd.Series,
-    net_fixed_assets_end: pd.Series,
+    net_sales,
+    net_fixed_assets_begin,
+    net_fixed_assets_end,
 ) -> pd.Series:
     """
     Calculate the Fixed Asset Turnover ratio, an efficiency ratio that
@@ -234,9 +232,9 @@ def get_fixed_asset_turnover(
 
 
 def get_operating_ratio(
-    operating_expenses: pd.Series,
-    cost_of_goods_sold: pd.Series,
-    revenue: pd.Series,
+    operating_expenses,
+    cost_of_goods_sold,
+    revenue,
 ) -> pd.Series:
     """
     Calculate the operating ratio, a financial metric that measures the efficiency

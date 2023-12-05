@@ -24,13 +24,13 @@ except ImportError:
 
 
 def get_financial_statements(
-    tickers: str | list[str],
-    statement: str = "",
-    api_key: str = "",
+    tickers,
+    statement="",
+    api_key="",
     quarter: bool = False,
-    start_date: str | None = None,
-    end_date: str | None = None,
-    rounding: int | None = 4,
+    start_date=None,
+    end_date=None,
+    rounding=4,
     statement_format: pd.DataFrame = pd.DataFrame(),
     statistics_format: pd.DataFrame = pd.DataFrame(),
     sleep_timer: bool = True,
@@ -226,12 +226,12 @@ def get_financial_statements(
 
 
 def get_revenue_segmentation(
-    tickers: str | list[str],
-    method: str = "",
-    api_key: str = "",
+    tickers,
+    method="",
+    api_key="",
     quarter: bool = False,
-    start_date: str | None = None,
-    end_date: str | None = None,
+    start_date=None,
+    end_date=None,
     sleep_timer: bool = False,
     progress_bar: bool = True,
 ) -> pd.DataFrame:
@@ -426,12 +426,12 @@ def get_revenue_segmentation(
 
 
 def get_analyst_estimates(
-    tickers: str | list[str],
-    api_key: str = "",
+    tickers,
+    api_key="",
     quarter: bool = False,
-    start_date: str | None = None,
-    end_date: str | None = None,
-    rounding: int | None = 4,
+    start_date=None,
+    end_date=None,
+    rounding=4,
     sleep_timer: bool = False,
     progress_bar: bool = True,
 ) -> pd.DataFrame:
@@ -619,9 +619,7 @@ def get_analyst_estimates(
     return pd.DataFrame(), no_data
 
 
-def get_profile(
-    tickers: list[str] | str, api_key: str, progress_bar: bool = True
-) -> pd.DataFrame:
+def get_profile(tickers, api_key: str, progress_bar: bool = True) -> pd.DataFrame:
     """
     Gives information about the profile of a company which includes i.a. beta, company description, industry and sector.
 
@@ -726,9 +724,7 @@ def get_profile(
     return profile_dataframe, no_data
 
 
-def get_quote(
-    tickers: list[str] | str, api_key: str, progress_bar: bool = True
-) -> pd.DataFrame:
+def get_quote(tickers, api_key: str, progress_bar: bool = True) -> pd.DataFrame:
     """
     Gives information about the quote of a company which includes i.a. high/low close prices,
     price-to-earning ratio and shares outstanding.
@@ -824,7 +820,7 @@ def get_quote(
     return quote_dataframe, no_data
 
 
-def get_rating(tickers: list[str] | str, api_key: str, progress_bar: bool = True):
+def get_rating(tickers, api_key: str, progress_bar: bool = True):
     """
     Gives information about the rating of a company which includes i.a. the company rating and
     recommendation as well as ratings based on a variety of ratios.
@@ -924,10 +920,10 @@ def get_rating(tickers: list[str] | str, api_key: str, progress_bar: bool = True
 
 
 def get_earnings_calendar(
-    tickers: list[str] | str,
+    tickers,
     api_key: str,
-    start_date: str | None = None,
-    end_date: str | None = None,
+    start_date=None,
+    end_date=None,
     actual_dates: bool = True,
     sleep_timer: bool = False,
     progress_bar: bool = True,
@@ -1051,10 +1047,10 @@ def get_earnings_calendar(
 
 
 def get_dividend_calendar(
-    tickers: list[str] | str,
+    tickers,
     api_key: str,
-    start_date: str | None = None,
-    end_date: str | None = None,
+    start_date=None,
+    end_date=None,
     sleep_timer: bool = False,
     progress_bar: bool = True,
 ):
@@ -1172,11 +1168,11 @@ def get_dividend_calendar(
 
 
 def get_esg_scores(
-    tickers: list[str] | str,
+    tickers,
     api_key: str,
     quarter: bool = False,
-    start_date: str | None = None,
-    end_date: str | None = None,
+    start_date=None,
+    end_date=None,
     sleep_timer: bool = False,
     progress_bar: bool = True,
 ):

@@ -9,7 +9,7 @@ import numpy as np
 import pandas as pd
 
 
-def read_normalization_file(statement: str, format_location: str = ""):
+def read_normalization_file(statement: str, format_location=""):
     """
     This function copies the normalization files as found inside the environment and saves them
     to a custom location defined by the user. This is designed to make it possible to edit these files
@@ -81,8 +81,8 @@ def convert_financial_statements(
 
 def convert_date_label(
     financial_statement: pd.DataFrame,
-    start_date: str | None = None,
-    end_date: str | None = None,
+    start_date=None,
+    end_date=None,
     quarter: bool = False,
 ):
     """
@@ -136,8 +136,8 @@ def convert_date_label(
 
 
 def copy_normalization_files(
-    format_location: str = "",
-    save_location: str | Path = Path(Path.home(), "Downloads"),
+    format_location="",
+    save_location=Path(Path.home(), "Downloads"),
 ):
     """
     This function copies the normalization files as found inside the environment and saves them

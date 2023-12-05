@@ -21,14 +21,14 @@ class Risk:
 
     def __init__(
         self,
-        tickers: str | list[str],
+        tickers,
         daily_historical: pd.DataFrame = pd.DataFrame(),
         weekly_historical: pd.DataFrame = pd.DataFrame(),
         monthly_historical: pd.DataFrame = pd.DataFrame(),
         quarterly_historical: pd.DataFrame = pd.DataFrame(),
         yearly_historical: pd.DataFrame = pd.DataFrame(),
         quarterly: bool = False,
-        rounding: int | None = 4,
+        rounding=4,
     ):
         """
         Initializes the Risk Controller Class.
@@ -91,7 +91,7 @@ class Risk:
         self._quarterly_historical = quarterly_historical
         self._yearly_historical = yearly_historical
         self._quarterly = quarterly
-        self._rounding: int | None = rounding
+        self._rounding = rounding
 
         # Return Calculations
         self._daily_returns = self._daily_historical["Return"]
@@ -119,13 +119,13 @@ class Risk:
     @handle_errors
     def get_value_at_risk(
         self,
-        period: str | None = None,
+        period=None,
         alpha: float = 0.05,
         within_period: bool = True,
-        rounding: int | None = None,
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
-        distribution: str = "historic",
+        lag=1,
+        distribution="historic",
     ):
         """
         Calculate the Value at Risk (VaR) of an investment portfolio or asset's returns.
@@ -213,13 +213,13 @@ class Risk:
     @handle_errors
     def get_conditional_value_at_risk(
         self,
-        period: str | None = None,
+        period=None,
         alpha: float = 0.05,
         within_period: bool = True,
-        rounding: int | None = None,
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
-        distribution: str = "historic",
+        lag=1,
+        distribution="historic",
     ):
         """
         Calculate the Conditional Value at Risk (CVaR) of an investment portfolio or asset's returns.
@@ -311,12 +311,12 @@ class Risk:
     @handle_errors
     def get_entropic_value_at_risk(
         self,
-        period: str | None = None,
+        period=None,
         alpha: float = 0.05,
         within_period: bool = True,
-        rounding: int | None = 4,
+        rounding=4,
         growth: bool = False,
-        lag: int | list[int] = 1,
+        lag=1,
     ):
         """
         Calculate the Entropic Value at Risk (EVaR) of an investment portfolio or asset's returns.
@@ -393,11 +393,11 @@ class Risk:
     @handle_errors
     def get_maximum_drawdown(
         self,
-        period: str | None = None,
+        period=None,
         within_period: bool = True,
-        rounding: int | None = None,
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
+        lag=1,
     ):
         """
         Calculate the Maximum Drawdown (MDD) of an investment portfolio or asset's returns.
@@ -471,11 +471,11 @@ class Risk:
     @handle_errors
     def get_ulcer_index(
         self,
-        period: str | None = None,
-        rolling: int = 14,
-        rounding: int | None = 4,
+        period=None,
+        rolling=14,
+        rounding=4,
         growth: bool = False,
-        lag: int | list[int] = 1,
+        lag=1,
     ):
         """
         The Ulcer Index is a financial metric used to assess the risk and volatility of an
@@ -550,11 +550,11 @@ class Risk:
     @handle_errors
     def get_skewness(
         self,
-        period: str | None = None,
+        period=None,
         within_period: bool = True,
-        rounding: int | None = None,
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
+        lag=1,
     ):
         """
         Calculate the Skewness of an investment portfolio or asset's returns.
@@ -624,12 +624,12 @@ class Risk:
     @handle_errors
     def get_kurtosis(
         self,
-        period: str | None = None,
+        period=None,
         within_period: bool = True,
         fisher: bool = False,
-        rounding: int | None = None,
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
+        lag=1,
     ):
         """
         Calculate the Kurtosis of an investment portfolio or asset's returns.

@@ -26,15 +26,15 @@ class Technicals:
 
     def __init__(
         self,
-        tickers: str | list[str],
+        tickers,
         daily_historical: pd.DataFrame = pd.DataFrame(),
         weekly_historical: pd.DataFrame = pd.DataFrame(),
         monthly_historical: pd.DataFrame = pd.DataFrame(),
         quarterly_historical: pd.DataFrame = pd.DataFrame(),
         yearly_historical: pd.DataFrame = pd.DataFrame(),
-        rounding: int | None = 4,
-        start_date: str | None = None,
-        end_date: str | None = None,
+        rounding=4,
+        start_date=None,
+        end_date=None,
     ):
         """
         Initializes the Technicals Controller Class.
@@ -93,9 +93,9 @@ class Technicals:
         self._monthly_historical = monthly_historical
         self._quarterly_historical = quarterly_historical
         self._yearly_historical = yearly_historical
-        self._rounding: int | None = rounding
-        self._start_date: str | None = start_date
-        self._end_date: str | None = end_date
+        self._rounding = rounding
+        self._start_date = start_date
+        self._end_date = end_date
 
         # Technical Indicators
         self._all_indicators: pd.DataFrame = pd.DataFrame()
@@ -111,13 +111,13 @@ class Technicals:
 
     def collect_all_indicators(
         self,
-        period: str = "daily",
-        window: int = 14,
-        close_column: str = "Adj Close",
-        rounding: int | None = None,
+        period="daily",
+        window=14,
+        close_column="Adj Close",
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
-    ) -> pd.Series | pd.DataFrame:
+        lag=1,
+    ):
         """
         Calculates all Technical Indicators based on the data provided.
 
@@ -181,12 +181,12 @@ class Technicals:
 
     def collect_breadth_indicators(
         self,
-        period: str = "daily",
-        close_column: str = "Adj Close",
-        rounding: int | None = None,
+        period="daily",
+        close_column="Adj Close",
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
-    ) -> pd.Series | pd.DataFrame:
+        lag=1,
+    ):
         """
         Calculates and collects various breadth indicators based on the provided data.
 
@@ -273,14 +273,14 @@ class Technicals:
     @handle_errors
     def get_mcclellan_oscillator(
         self,
-        period: str = "daily",
-        close_column: str = "Adj Close",
-        short_ema_window: int = 19,
-        long_ema_window: int = 39,
-        rounding: int | None = None,
+        period="daily",
+        close_column="Adj Close",
+        short_ema_window=19,
+        long_ema_window=39,
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
-    ) -> pd.Series | pd.DataFrame:
+        lag=1,
+    ):
         """
         Calculate the McClellan Oscillator for a given price series.
 
@@ -359,12 +359,12 @@ class Technicals:
     @handle_errors
     def get_advancers_decliners(
         self,
-        period: str = "daily",
-        close_column: str = "Adj Close",
-        rounding: int | None = None,
+        period="daily",
+        close_column="Adj Close",
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
-    ) -> pd.Series | pd.DataFrame:
+        lag=1,
+    ):
         """
         Calculate the Advancers/Decliners ratio for a given price series.
 
@@ -435,12 +435,12 @@ class Technicals:
     @handle_errors
     def get_on_balance_volume(
         self,
-        period: str = "daily",
-        close_column: str = "Adj Close",
-        rounding: int | None = None,
+        period="daily",
+        close_column="Adj Close",
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
-    ) -> pd.Series | pd.DataFrame:
+        lag=1,
+    ):
         """
         Calculate the On-Balance Volume (OBV) for a given price series.
 
@@ -511,12 +511,12 @@ class Technicals:
     @handle_errors
     def get_accumulation_distribution_line(
         self,
-        period: str = "daily",
-        close_column: str = "Adj Close",
-        rounding: int | None = None,
+        period="daily",
+        close_column="Adj Close",
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
-    ) -> pd.Series | pd.DataFrame:
+        lag=1,
+    ):
         """
         Calculate the Accumulation/Distribution Line for a given price series.
 
@@ -600,14 +600,14 @@ class Technicals:
     @handle_errors
     def get_chaikin_oscillator(
         self,
-        period: str = "daily",
-        close_column: str = "Adj Close",
-        short_window: int = 3,
-        long_window: int = 10,
-        rounding: int | None = None,
+        period="daily",
+        close_column="Adj Close",
+        short_window=3,
+        long_window=10,
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
-    ) -> pd.Series | pd.DataFrame:
+        lag=1,
+    ):
         """
         Calculate the Chaikin Oscillator for a given price series.
 
@@ -686,13 +686,13 @@ class Technicals:
 
     def collect_momentum_indicators(
         self,
-        period: str = "daily",
-        window: int = 14,
-        close_column: str = "Adj Close",
-        rounding: int | None = None,
+        period="daily",
+        window=14,
+        close_column="Adj Close",
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
-    ) -> pd.Series | pd.DataFrame:
+        lag=1,
+    ):
         """
         Calculates and collects various momentum indicators based on the provided data.
 
@@ -846,13 +846,13 @@ class Technicals:
     @handle_errors
     def get_money_flow_index(
         self,
-        period: str = "daily",
-        close_column: str = "Adj Close",
-        window: int = 14,
-        rounding: int | None = None,
+        period="daily",
+        close_column="Adj Close",
+        window=14,
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
-    ) -> pd.Series | pd.DataFrame:
+        lag=1,
+    ):
         """
         Calculate the Money Flow Index (MFI) for a given price series.
 
@@ -929,13 +929,13 @@ class Technicals:
     @handle_errors
     def get_williams_percent_r(
         self,
-        period: str = "daily",
-        close_column: str = "Adj Close",
-        window: int = 14,
-        rounding: int | None = None,
+        period="daily",
+        close_column="Adj Close",
+        window=14,
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
-    ) -> pd.Series | pd.DataFrame:
+        lag=1,
+    ):
         """
         Calculate the Williams Percent R (Williams %R) for a given price series.
 
@@ -1010,12 +1010,12 @@ class Technicals:
     @handle_errors
     def get_aroon_indicator(
         self,
-        period: str = "daily",
-        window: int = 14,
-        rounding: int | None = None,
+        period="daily",
+        window=14,
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
-    ) -> tuple[pd.Series, pd.Series] | tuple[pd.DataFrame, pd.DataFrame]:
+        lag=1,
+    ):
         """
         Calculate the Aroon Indicator for a given price series.
 
@@ -1097,14 +1097,14 @@ class Technicals:
     @handle_errors
     def get_commodity_channel_index(
         self,
-        period: str = "daily",
-        close_column: str = "Adj Close",
-        window: int = 14,
+        period="daily",
+        close_column="Adj Close",
+        window=14,
         constant: float = 0.015,
-        rounding: int | None = None,
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
-    ) -> pd.Series | pd.DataFrame:
+        lag=1,
+    ):
         """
         Calculate the Commodity Channel Index (CCI) for a given price series.
 
@@ -1191,13 +1191,13 @@ class Technicals:
     @handle_errors
     def get_relative_vigor_index(
         self,
-        period: str = "daily",
-        close_column: str = "Adj Close",
-        window: int = 14,
-        rounding: int | None = None,
+        period="daily",
+        close_column="Adj Close",
+        window=14,
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
-    ) -> pd.Series | pd.DataFrame:
+        lag=1,
+    ):
         """
         Calculate the Relative Vigor Index (RVI) for a given price series.
 
@@ -1272,13 +1272,13 @@ class Technicals:
     @handle_errors
     def get_force_index(
         self,
-        period: str = "daily",
-        close_column: str = "Adj Close",
-        window: int = 14,
-        rounding: int | None = None,
+        period="daily",
+        close_column="Adj Close",
+        window=14,
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
-    ) -> pd.Series | pd.DataFrame:
+        lag=1,
+    ):
         """
         Calculate the Force Index for a given price series.
 
@@ -1351,15 +1351,15 @@ class Technicals:
     @handle_errors
     def get_ultimate_oscillator(
         self,
-        period: str = "daily",
-        close_column: str = "Adj Close",
-        window_1: int = 7,
-        window_2: int = 14,
-        window_3: int = 28,
-        rounding: int | None = None,
+        period="daily",
+        close_column="Adj Close",
+        window_1=7,
+        window_2=14,
+        window_3=28,
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
-    ) -> pd.Series | pd.DataFrame:
+        lag=1,
+    ):
         """
         Calculate the Ultimate Oscillator for a given price series.
 
@@ -1445,14 +1445,14 @@ class Technicals:
     @handle_errors
     def get_percentage_price_oscillator(
         self,
-        period: str = "daily",
-        close_column: str = "Adj Close",
-        short_window: int = 7,
-        long_window: int = 28,
-        rounding: int | None = None,
+        period="daily",
+        close_column="Adj Close",
+        short_window=7,
+        long_window=28,
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
-    ) -> pd.Series | pd.DataFrame:
+        lag=1,
+    ):
         """
         Calculate the Percentage Price Oscillator (PPO) for a given price series.
 
@@ -1531,13 +1531,13 @@ class Technicals:
     @handle_errors
     def get_detrended_price_oscillator(
         self,
-        period: str = "daily",
-        close_column: str = "Adj Close",
-        window: int = 14,
-        rounding: int | None = None,
+        period="daily",
+        close_column="Adj Close",
+        window=14,
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
-    ) -> pd.Series | pd.DataFrame:
+        lag=1,
+    ):
         """
         Calculate the Detrended Price Oscillator (DPO) for a given price series.
 
@@ -1612,13 +1612,13 @@ class Technicals:
     @handle_errors
     def get_average_directional_index(
         self,
-        period: str = "daily",
-        close_column: str = "Adj Close",
-        window: int = 14,
-        rounding: int | None = None,
+        period="daily",
+        close_column="Adj Close",
+        window=14,
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
-    ) -> pd.Series | pd.DataFrame:
+        lag=1,
+    ):
         """
         Calculate the Average Directional Index (ADX) for a given price series.
 
@@ -1702,13 +1702,13 @@ class Technicals:
     @handle_errors
     def get_chande_momentum_oscillator(
         self,
-        period: str = "daily",
-        close_column: str = "Adj Close",
-        window: int = 14,
-        rounding: int | None = None,
+        period="daily",
+        close_column="Adj Close",
+        window=14,
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
-    ) -> pd.Series | pd.DataFrame:
+        lag=1,
+    ):
         """
         Calculate the Chande Momentum Oscillator (CMO) for a given price series.
 
@@ -1784,13 +1784,13 @@ class Technicals:
     @handle_errors
     def get_ichimoku_cloud(
         self,
-        period: str = "daily",
-        conversion_window: int = 9,
-        base_window: int = 20,
-        lead_span_b_window: int = 40,
-        rounding: int | None = None,
+        period="daily",
+        conversion_window=9,
+        base_window=20,
+        lead_span_b_window=40,
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
+        lag=1,
     ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
         """
         Calculate the Ichimoku Cloud indicator for a given price series.
@@ -1883,13 +1883,13 @@ class Technicals:
     @handle_errors
     def get_stochastic_oscillator(
         self,
-        period: str = "daily",
-        close_column: str = "Adj Close",
-        window: int = 14,
-        smooth_widow: int = 3,
-        rounding: int | None = None,
+        period="daily",
+        close_column="Adj Close",
+        window=14,
+        smooth_widow=3,
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
+        lag=1,
     ) -> tuple[pd.DataFrame, pd.DataFrame]:
         """
         Calculate the Stochastic Oscillator indicator for a given price series.
@@ -1986,15 +1986,15 @@ class Technicals:
     @handle_errors
     def get_moving_average_convergence_divergence(
         self,
-        period: str = "daily",
-        close_column: str = "Adj Close",
-        short_window: int = 12,
-        long_window: int = 26,
-        signal_window: int = 9,
-        rounding: int | None = None,
+        period="daily",
+        close_column="Adj Close",
+        short_window=12,
+        long_window=26,
+        signal_window=9,
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
-    ) -> tuple[pd.Series, pd.Series] | tuple[pd.DataFrame, pd.DataFrame]:
+        lag=1,
+    ):
         """
         Calculate the Moving Average Convergence Divergence (MACD) indicator for a given price series.
 
@@ -2087,13 +2087,13 @@ class Technicals:
     @handle_errors
     def get_relative_strength_index(
         self,
-        period: str = "daily",
-        close_column: str = "Adj Close",
-        window: int = 14,
-        rounding: int | None = None,
+        period="daily",
+        close_column="Adj Close",
+        window=14,
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
-    ) -> pd.Series | pd.DataFrame:
+        lag=1,
+    ):
         """
         Calculate the Relative Strength Index (RSI) indicator for a given price series.
 
@@ -2166,12 +2166,12 @@ class Technicals:
     @handle_errors
     def get_balance_of_power(
         self,
-        period: str = "daily",
-        close_column: str = "Adj Close",
-        rounding: int | None = None,
+        period="daily",
+        close_column="Adj Close",
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
-    ) -> pd.Series | pd.DataFrame:
+        lag=1,
+    ):
         """
         Calculate the Balance of Power (BOP) indicator for a given price series.
 
@@ -2244,13 +2244,13 @@ class Technicals:
 
     def collect_overlap_indicators(
         self,
-        period: str = "daily",
-        window: int = 14,
-        close_column: str = "Adj Close",
-        rounding: int | None = None,
+        period="daily",
+        window=14,
+        close_column="Adj Close",
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
-    ) -> pd.Series | pd.DataFrame:
+        lag=1,
+    ):
         """
         Calculates and collects various overlap-based indicators based on the provided data.
 
@@ -2342,13 +2342,13 @@ class Technicals:
     @handle_errors
     def get_moving_average(
         self,
-        period: str = "daily",
-        close_column: str = "Adj Close",
-        window: int = 14,
-        rounding: int | None = None,
+        period="daily",
+        close_column="Adj Close",
+        window=14,
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
-    ) -> pd.Series | pd.DataFrame:
+        lag=1,
+    ):
         """
         Calculate the Moving Average (MA) for a given price series.
 
@@ -2421,13 +2421,13 @@ class Technicals:
     @handle_errors
     def get_exponential_moving_average(
         self,
-        period: str = "daily",
-        close_column: str = "Adj Close",
-        window: int = 14,
-        rounding: int | None = None,
+        period="daily",
+        close_column="Adj Close",
+        window=14,
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
-    ) -> pd.Series | pd.DataFrame:
+        lag=1,
+    ):
         """
         Calculate the Exponential Moving Average (EMA) for a given price series.
 
@@ -2502,13 +2502,13 @@ class Technicals:
     @handle_errors
     def get_double_exponential_moving_average(
         self,
-        period: str = "daily",
-        close_column: str = "Adj Close",
-        window: int = 14,
-        rounding: int | None = None,
+        period="daily",
+        close_column="Adj Close",
+        window=14,
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
-    ) -> pd.Series | pd.DataFrame:
+        lag=1,
+    ):
         """
         Calculate the Double Exponential Moving Average (DEMA) for a given price series.
 
@@ -2585,13 +2585,13 @@ class Technicals:
     @handle_errors
     def get_trix(
         self,
-        period: str = "daily",
-        close_column: str = "Adj Close",
-        window: int = 14,
-        rounding: int | None = None,
+        period="daily",
+        close_column="Adj Close",
+        window=14,
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
-    ) -> pd.Series | pd.DataFrame:
+        lag=1,
+    ):
         """
         Calculate the Trix (Triple Exponential Moving Average) for a given price series.
 
@@ -2668,13 +2668,13 @@ class Technicals:
     @handle_errors
     def get_bollinger_bands(
         self,
-        period: str = "daily",
-        close_column: str = "Adj Close",
-        window: int = 14,
-        num_std_dev: int = 2,
-        rounding: int | None = None,
+        period="daily",
+        close_column="Adj Close",
+        window=14,
+        num_std_dev=2,
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
+        lag=1,
     ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
         """
         Calculate the Bollinger Bands for a given price series.
@@ -2765,13 +2765,13 @@ class Technicals:
     @handle_errors
     def get_triangular_moving_average(
         self,
-        period: str = "daily",
-        close_column: str = "Adj Close",
-        window: int = 14,
-        rounding: int | None = None,
+        period="daily",
+        close_column="Adj Close",
+        window=14,
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
-    ) -> pd.Series | pd.DataFrame:
+        lag=1,
+    ):
         """
         Calculate the Triangular Moving Average (TMA) for a given price series.
 
@@ -2842,13 +2842,13 @@ class Technicals:
 
     def collect_volatility_indicators(
         self,
-        period: str = "daily",
-        window: int = 14,
-        close_column: str = "Adj Close",
-        rounding: int | None = None,
+        period="daily",
+        window=14,
+        close_column="Adj Close",
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
-    ) -> pd.Series | pd.DataFrame:
+        lag=1,
+    ):
         """
         Calculates and collects various volatility indicators based on the provided data.
 
@@ -2944,12 +2944,12 @@ class Technicals:
     @handle_errors
     def get_true_range(
         self,
-        period: str = "daily",
-        close_column: str = "Adj Close",
-        rounding: int | None = None,
+        period="daily",
+        close_column="Adj Close",
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
-    ) -> pd.Series | pd.DataFrame:
+        lag=1,
+    ):
         """
         Calculate the True Range (TR) for a given price series.
 
@@ -3026,12 +3026,12 @@ class Technicals:
     @handle_errors
     def get_average_true_range(
         self,
-        period: str = "daily",
-        close_column: str = "Adj Close",
-        window: int = 14,
-        rounding: int | None = None,
+        period="daily",
+        close_column="Adj Close",
+        window=14,
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
+        lag=1,
     ) -> pd.Series:
         """
         Calculate the Average True Range (ATR) of a given price series.
@@ -3118,14 +3118,14 @@ class Technicals:
     @handle_errors
     def get_keltner_channels(
         self,
-        period: str = "daily",
-        close_column: str = "Adj Close",
-        window: int = 14,
-        atr_window: int = 14,
-        atr_multiplier: int = 2,
-        rounding: int | None = None,
+        period="daily",
+        close_column="Adj Close",
+        window=14,
+        atr_window=14,
+        atr_multiplier=2,
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
+        lag=1,
     ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
         """
         Calculate the Keltner Channels for a given price series.

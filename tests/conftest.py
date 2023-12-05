@@ -20,7 +20,7 @@ This is a modified version of the original code snippet
 to fit the needs of the financetoolkit.
 """
 
-DISPLAY_LIMIT: int = 500
+DISPLAY_LIMIT = 500
 EXTENSIONS_ALLOWED: list[str] = ["csv", "json", "txt"]
 EXTENSIONS_MATCHING: dict[str, list[type]] = {
     "csv": [pd.DataFrame, pd.Series],
@@ -50,7 +50,7 @@ class Record:
         return string_value.replace("\r\n", "\n")
 
     @staticmethod
-    def load_string(path: str) -> str | None:
+    def load_string(path: str):
         if os.path.exists(path):
             with open(
                 file=path,
@@ -91,7 +91,7 @@ class Record:
         return self.__record_path
 
     @property
-    def recorded(self) -> str | None:
+    def recorded(self):
         return self.__recorded
 
     def recorded_reload(self):
@@ -142,7 +142,7 @@ class PathTemplate:
         self.__module_name = module_name
         self.__test_name = test_name
 
-    def build_path_by_extension(self, extension: str, index: int = 0):
+    def build_path_by_extension(self, extension: str, index=0):
         if extension not in EXTENSIONS_ALLOWED:
             raise Exception(f"Unsupported extension : {extension}")
 
@@ -156,7 +156,7 @@ class PathTemplate:
 
         return path
 
-    def build_path_by_data(self, data: Any, index: int = 0):
+    def build_path_by_data(self, data: Any, index=0):
         extension = self.find_extension(data=data)
         return self.build_path_by_extension(extension=extension, index=index)
 
@@ -194,7 +194,7 @@ class Recorder:
         self,
         path_template: PathTemplate,
         record_mode: str,
-        display_limit: int = DISPLAY_LIMIT,
+        display_limit=DISPLAY_LIMIT,
         rewrite_expected: bool = False,
     ) -> None:
         self.__path_template = path_template

@@ -7,12 +7,12 @@ from financetoolkit.ratios import efficiency_model, profitability_model, solvenc
 
 
 def get_dupont_analysis(
-    net_income: pd.Series,
-    total_revenue: pd.Series,
-    total_assets_begin: pd.Series,
-    total_assets_end: pd.Series,
-    total_equity_begin: pd.Series,
-    total_equity_end: pd.Series,
+    net_income,
+    total_revenue,
+    total_assets_begin,
+    total_assets_end,
+    total_equity_begin,
+    total_equity_end,
 ) -> pd.DataFrame:
     """
     Perform a Dupont analysis to breakdown the return on equity (ROE) into its components.
@@ -63,14 +63,14 @@ def get_dupont_analysis(
 
 
 def get_extended_dupont_analysis(
-    operating_income: pd.Series,
-    income_before_tax: pd.Series,
-    net_income: pd.Series,
-    total_revenue: pd.Series,
-    total_assets_begin: pd.Series,
-    total_assets_end: pd.Series,
-    total_equity_begin: pd.Series,
-    total_equity_end: pd.Series,
+    operating_income,
+    income_before_tax,
+    net_income,
+    total_revenue,
+    total_assets_begin,
+    total_assets_end,
+    total_equity_begin,
+    total_equity_end,
 ) -> pd.DataFrame:
     """
     Perform am Extended Dupont analysis to breakdown the return on equity (ROE) into its components.

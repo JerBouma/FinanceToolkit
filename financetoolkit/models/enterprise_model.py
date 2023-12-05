@@ -7,12 +7,12 @@ from financetoolkit.ratios import valuation_model
 
 
 def get_enterprise_value_breakdown(
-    share_price: float | pd.Series,
-    shares_outstanding: float | pd.Series,
-    total_debt: float | pd.Series,
-    minority_interest: float | pd.Series,
-    preferred_equity: float | pd.Series,
-    cash_and_cash_equivalents: float | pd.Series,
+    share_price,
+    shares_outstanding,
+    total_debt,
+    minority_interest,
+    preferred_equity,
+    cash_and_cash_equivalents,
 ) -> pd.DataFrame:
     """
     The Enterprise Value breakdown corresponds to the following components:

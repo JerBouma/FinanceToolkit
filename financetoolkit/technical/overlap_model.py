@@ -4,7 +4,7 @@ __docformat__ = "google"
 import pandas as pd
 
 
-def get_moving_average(prices: pd.Series, window: int) -> pd.Series:
+def get_moving_average(prices, window: int) -> pd.Series:
     """
     Calculate the Moving Average (MA) of a given price series.
 
@@ -18,7 +18,7 @@ def get_moving_average(prices: pd.Series, window: int) -> pd.Series:
     return prices.rolling(window=window).mean()
 
 
-def get_exponential_moving_average(prices: pd.Series, window: int) -> pd.Series:
+def get_exponential_moving_average(prices, window: int) -> pd.Series:
     """
     Calculate the Exponential Moving Average (EMA) of a given price series.
 
@@ -32,7 +32,7 @@ def get_exponential_moving_average(prices: pd.Series, window: int) -> pd.Series:
     return prices.ewm(span=window, min_periods=1, adjust=False).mean()
 
 
-def get_double_exponential_moving_average(prices: pd.Series, window: int) -> pd.Series:
+def get_double_exponential_moving_average(prices, window: int) -> pd.Series:
     """
     Calculate the Double Exponential Moving Average (DEMA) of a given price series.
 
@@ -50,7 +50,7 @@ def get_double_exponential_moving_average(prices: pd.Series, window: int) -> pd.
     return dema
 
 
-def get_trix(prices_close: pd.Series, window: int) -> pd.Series:
+def get_trix(prices_close, window: int) -> pd.Series:
     """
     Calculate the Trix Indicator for a given price series.
 
@@ -70,7 +70,7 @@ def get_trix(prices_close: pd.Series, window: int) -> pd.Series:
     return trix
 
 
-def get_triangular_moving_average(prices: pd.Series, window: int) -> pd.Series:
+def get_triangular_moving_average(prices, window: int) -> pd.Series:
     """
     Calculate the Triangular Moving Average (TRIMA) of a given price series.
 

@@ -28,7 +28,7 @@ class Models:
 
     def __init__(
         self,
-        tickers: str | list[str],
+        tickers,
         daily_historical: pd.DataFrame,
         period_historical: pd.DataFrame,
         risk_free_rate: pd.DataFrame,
@@ -36,7 +36,7 @@ class Models:
         income: pd.DataFrame,
         cash: pd.DataFrame,
         quarterly: bool = False,
-        rounding: int | None = 4,
+        rounding=4,
     ):
         """
         Initializes the Models Controller Class.
@@ -105,9 +105,9 @@ class Models:
     @handle_errors
     def get_dupont_analysis(
         self,
-        rounding: int | None = None,
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
+        lag=1,
     ) -> pd.DataFrame:
         """
         Perform a Dupont analysis to breakdown the return on equity (ROE) into its components.
@@ -183,9 +183,9 @@ class Models:
     @handle_errors
     def get_extended_dupont_analysis(
         self,
-        rounding: int | None = None,
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
+        lag=1,
     ) -> pd.DataFrame:
         """
         Perform an Extended Dupont analysis to breakdown the return on equity (ROE) into its components,
@@ -275,9 +275,9 @@ class Models:
     def get_enterprise_value_breakdown(
         self,
         diluted: bool = True,
-        rounding: int | None = None,
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
+        lag=1,
     ) -> pd.DataFrame:
         """
         Calculate the Enterprise Value (EV) breakdown, providing a detailed view of its components.
@@ -382,9 +382,9 @@ class Models:
         self,
         show_full_results: bool = True,
         diluted: bool = True,
-        rounding: int | None = None,
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
+        lag=1,
     ) -> pd.DataFrame:
         """
         The Weighted Average Cost of Capital (WACC) is a financial metric used to estimate
@@ -537,12 +537,12 @@ class Models:
 
     def get_intrinsic_valuation(
         self,
-        growth_rate: float | list | dict[str, float],
-        perpetual_growth_rate: float | list | dict[str, float],
-        weighted_average_cost_of_capital: float | list | dict[str, float],
-        periods: int = 5,
+        growth_rate,
+        perpetual_growth_rate,
+        weighted_average_cost_of_capital,
+        periods=5,
         cash_flow_type: str = "Free Cash Flow",
-        rounding: int | None = None,
+        rounding=None,
     ) -> pd.DataFrame:
         """
         Intrinsic value is a fundamental concept in finance and investing that represents the
@@ -705,9 +705,9 @@ class Models:
     def get_altman_z_score(
         self,
         diluted: bool = True,
-        rounding: int | None = None,
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
+        lag=1,
     ) -> pd.DataFrame:
         """
         Calculates the Altman Z-Score, a financial metric used to predict the likelihood of a company going bankrupt.

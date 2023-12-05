@@ -32,13 +32,13 @@ class Performance:
 
     def __init__(
         self,
-        tickers: str | list[str],
+        tickers,
         historical_data: dict[str, pd.DataFrame],
         risk_free_rate_data: pd.DataFrame,
-        quarterly: bool | None = None,
-        rounding: int | None = 4,
-        start_date: str | None = None,
-        end_date: str | None = None,
+        quarterly=None,
+        rounding=4,
+        start_date=None,
+        end_date=None,
         progress_bar: bool = True,
     ):
         """
@@ -75,10 +75,10 @@ class Performance:
         """
         self._tickers = tickers
         self._benchmark_name = "Benchmark"
-        self._quarterly: bool | None = quarterly
-        self._rounding: int | None = rounding
-        self._start_date: str | None = start_date
-        self._end_date: str | None = end_date
+        self._quarterly = quarterly
+        self._rounding = rounding
+        self._start_date = start_date
+        self._end_date = end_date
         self._progress_bar: bool = progress_bar
 
         # Historical Data
@@ -119,11 +119,11 @@ class Performance:
     @handle_errors
     def get_beta(
         self,
-        period: str | None = None,
-        rolling: int | None = None,
-        rounding: int | None = None,
+        period=None,
+        rolling=None,
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
+        lag=1,
     ):
         """
         Calculate the Beta, a measurement that assess the systematic risk of a stock or investment.
@@ -213,11 +213,11 @@ class Performance:
     @handle_errors
     def get_capital_asset_pricing_model(
         self,
-        period: str | None = None,
+        period=None,
         show_full_results: bool = False,
-        rounding: int | None = None,
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
+        lag=1,
     ):
         """
         CAPM, or the Capital Asset Pricing Model, is a financial model used to estimate the expected return
@@ -331,9 +331,9 @@ class Performance:
 
     def get_factor_asset_correlations(
         self,
-        period: str | None = None,
-        factors_to_calculate: list[str] | None = None,
-        rounding: int | None = None,
+        period=None,
+        factors_to_calculate=None,
+        rounding=None,
     ):
         """
         Calculates factor exposures for each asset.
@@ -456,10 +456,10 @@ class Performance:
 
     def get_factor_correlations(
         self,
-        period: str | None = None,
-        factors_to_calculate: list[str] | None = None,
+        period=None,
+        factors_to_calculate=None,
         exclude_risk_free: bool = True,
-        rounding: int | None = None,
+        rounding=None,
     ):
         """
         Calculates factor correlations between each factor. This is useful to understand how correlated
@@ -536,13 +536,13 @@ class Performance:
 
     def get_fama_and_french_model(
         self,
-        period: str | None = None,
-        method: str = "multi",
-        factors_to_calculate: list[str] | None = None,
+        period=None,
+        method="multi",
+        factors_to_calculate=None,
         include_daily_residuals: bool = False,
-        rounding: int | None = None,
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
+        lag=1,
     ):
         """
         Calculate Fama and French 5 Factor model scores and residuals for a set of financial assets.
@@ -705,7 +705,7 @@ class Performance:
                     )
 
                 fama_and_french_model = fama_and_french_model.unstack(
-                    level=0, sort=False
+                    level=0
                 ).swaplevel(0, 1, axis=1)
 
                 # Sort the DataFrame with respect to the original column order
@@ -771,7 +771,7 @@ class Performance:
                     2
                 ).unique()
 
-                fama_and_french_model = fama_and_french_model.stack(sort=False).unstack(
+                fama_and_french_model = fama_and_french_model.stack().unstack(
                     level=[2, 1, 3]
                 )
 
@@ -841,11 +841,11 @@ class Performance:
     @handle_errors
     def get_alpha(
         self,
-        period: str | None = None,
+        period=None,
         show_full_results: bool = False,
-        rounding: int | None = None,
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
+        lag=1,
     ):
         """
         Alpha, in a general sense, represents the excess return an investment generates relative to
@@ -919,10 +919,10 @@ class Performance:
     @handle_errors
     def get_jensens_alpha(
         self,
-        period: str | None = None,
-        rounding: int | None = None,
+        period=None,
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
+        lag=1,
     ):
         """
         Calculate Jensen's Alpha, a measure of an asset's performance relative to its expected return
@@ -1010,10 +1010,10 @@ class Performance:
     @handle_errors
     def get_treynor_ratio(
         self,
-        period: str | None = None,
-        rounding: int | None = None,
+        period=None,
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
+        lag=1,
     ):
         """
         The Treynor Ratio, also known as Treynor's Measure or the Reward-to-Variability Ratio, is a
@@ -1097,11 +1097,11 @@ class Performance:
     @handle_errors
     def get_sharpe_ratio(
         self,
-        period: str | None = None,
-        rolling: int | None = None,
-        rounding: int | None = None,
+        period=None,
+        rolling=None,
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
+        lag=1,
     ):
         """
         Calculate the Sharpe ratio, a measure of risk-adjusted return that evaluates the excess return
@@ -1195,10 +1195,10 @@ class Performance:
     @handle_errors
     def get_sortino_ratio(
         self,
-        period: str | None = None,
-        rounding: int | None = None,
+        period=None,
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
+        lag=1,
     ):
         """
 
@@ -1282,11 +1282,11 @@ class Performance:
     @handle_errors
     def get_ulcer_performance_index(
         self,
-        period: str | None = None,
-        rolling: int = 14,
-        rounding: int | None = None,
+        period=None,
+        rolling=14,
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
+        lag=1,
     ):
         """
         Calculate the Ulcer Performance Index (UPI), alternatively called Martin ratio, a measure of risk-adjusted
@@ -1354,10 +1354,10 @@ class Performance:
     @handle_errors
     def get_m2_ratio(
         self,
-        period: str | None = None,
-        rounding: int | None = None,
+        period=None,
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
+        lag=1,
     ):
         """
         The M2 Ratio, also known as the Modigliani-Modigliani Measure, is a financial
@@ -1439,10 +1439,10 @@ class Performance:
     @handle_errors
     def get_tracking_error(
         self,
-        period: str | None = None,
-        rounding: int | None = None,
+        period=None,
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
+        lag=1,
     ):
         """
         Tracking Error is a financial metric that quantifies the volatility or dispersion of the
@@ -1519,10 +1519,10 @@ class Performance:
     @handle_errors
     def get_information_ratio(
         self,
-        period: str | None = None,
-        rounding: int | None = None,
+        period=None,
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
+        lag=1,
     ):
         """
         The Information Ratio (IR), also known as the Information Coefficient, is a financial
@@ -1608,7 +1608,7 @@ class Performance:
     @handle_errors
     def get_compound_growth_rate(
         self,
-        rounding: int | None = None,
+        rounding=None,
     ):
         """
         This function calculates the Compound Growth Rate (CGR) for different periods: yearly, quarterly, monthly,

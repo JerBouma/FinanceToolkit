@@ -4,9 +4,7 @@ __docformat__ = "google"
 import pandas as pd
 
 
-def get_current_ratio(
-    current_assets: pd.Series, current_liabilities: pd.Series
-) -> pd.Series:
+def get_current_ratio(current_assets, current_liabilities: pd.Series) -> pd.Series:
     """
     Calculate the current ratio, a liquidity ratio that measures a company's ability
     to pay off its short-term liabilities with its current assets.
@@ -24,10 +22,10 @@ def get_current_ratio(
 
 
 def get_quick_ratio(
-    cash_and_equivalents: pd.Series,
-    accounts_receivable: pd.Series,
-    marketable_securities: pd.Series,
-    current_liabilities: pd.Series,
+    cash_and_equivalents,
+    accounts_receivable,
+    marketable_securities,
+    current_liabilities,
 ) -> pd.Series:
     """
     Calculate the quick ratio (also known as the acid-test ratio), a more stringent
@@ -50,9 +48,9 @@ def get_quick_ratio(
 
 
 def get_cash_ratio(
-    cash_and_equivalents: pd.Series,
-    marketable_securities: pd.Series,
-    current_liabilities: pd.Series,
+    cash_and_equivalents,
+    marketable_securities,
+    current_liabilities,
 ) -> pd.Series:
     """
     Calculate the cash ratio, a liquidity ratio that measures a company's ability
@@ -69,9 +67,7 @@ def get_cash_ratio(
     return (cash_and_equivalents + marketable_securities) / current_liabilities
 
 
-def get_working_capital(
-    current_assets: pd.Series, current_liabilities: pd.Series
-) -> pd.Series:
+def get_working_capital(current_assets, current_liabilities: pd.Series) -> pd.Series:
     """
     Calculate the working capital, which is the difference between a company's current assets
     and current liabilities.
@@ -87,7 +83,7 @@ def get_working_capital(
 
 
 def get_operating_cash_flow_ratio(
-    operating_cash_flow: pd.Series, current_liabilities: pd.Series
+    operating_cash_flow, current_liabilities: pd.Series
 ) -> pd.Series:
     """
     Calculate the operating cash flow ratio, a liquidity ratio that measures a company's
@@ -104,7 +100,7 @@ def get_operating_cash_flow_ratio(
 
 
 def get_operating_cash_flow_sales_ratio(
-    operating_cash_flow: pd.Series, revenue: pd.Series
+    operating_cash_flow, revenue: pd.Series
 ) -> pd.Series:
     """
     Calculate the operating cash flow to sales ratio, a liquidity ratio that measures the ability of a company to generate
@@ -121,10 +117,10 @@ def get_operating_cash_flow_sales_ratio(
 
 
 def get_short_term_coverage_ratio(
-    operating_cash_flow: pd.Series,
-    accounts_receivable: pd.Series,
-    inventory: pd.Series,
-    accounts_payable: pd.Series,
+    operating_cash_flow,
+    accounts_receivable,
+    inventory,
+    accounts_payable,
 ) -> pd.Series:
     """
     Calculate the short term coverage ratio, a liquidity ratio that measures a company's ability to pay off its

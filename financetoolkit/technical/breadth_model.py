@@ -5,7 +5,7 @@ import pandas as pd
 
 
 def get_mcclellan_oscillator(
-    prices_close: pd.Series, short_ema_window: int, long_ema_window: int
+    prices_close, short_ema_window: int, long_ema_window: int
 ) -> pd.Series:
     """
     Calculate the McClellan Oscillator for a given price series.
@@ -45,7 +45,7 @@ def get_advancers_decliners(prices_close: pd.Series) -> pd.Series:
     return advancers - decliners
 
 
-def get_on_balance_volume(prices_close: pd.Series, volumes: pd.Series) -> pd.Series:
+def get_on_balance_volume(prices_close, volumes: pd.Series) -> pd.Series:
     """
     Calculate the On-Balance Volume (OBV) of a given price series.
 
@@ -63,10 +63,10 @@ def get_on_balance_volume(prices_close: pd.Series, volumes: pd.Series) -> pd.Ser
 
 
 def get_accumulation_distribution_line(
-    prices_high: pd.Series,
-    prices_low: pd.Series,
-    prices_close: pd.Series,
-    volumes: pd.Series,
+    prices_high,
+    prices_low,
+    prices_close,
+    volumes,
 ) -> pd.Series:
     """
     Calculate the Accumulation/Distribution Line for a given price series.
@@ -89,10 +89,10 @@ def get_accumulation_distribution_line(
 
 
 def get_chaikin_oscillator(
-    prices_high: pd.Series,
-    prices_low: pd.Series,
-    prices_close: pd.Series,
-    volumes: pd.Series,
+    prices_high,
+    prices_low,
+    prices_close,
+    volumes,
     short_window: int,
     long_window: int,
 ) -> pd.Series:

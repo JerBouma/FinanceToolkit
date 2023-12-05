@@ -10,9 +10,9 @@ from financetoolkit.ratios import profitability_model, valuation_model
 
 
 def get_cost_of_equity(
-    risk_free_rate: pd.Series,
-    beta: pd.Series,
-    benchmark_returns: pd.Series,
+    risk_free_rate,
+    beta,
+    benchmark_returns,
 ) -> pd.DataFrame:
     """
     The cost of equity represents the return required by investors (shareholders) for
@@ -44,8 +44,8 @@ def get_cost_of_equity(
 
 
 def get_cost_of_debt(
-    interest_expense: pd.Series,
-    total_debt: pd.Series,
+    interest_expense,
+    total_debt,
 ) -> pd.DataFrame:
     """
     The cost of debt represents the interest rate a company pays on its outstanding debt,
@@ -68,15 +68,15 @@ def get_cost_of_debt(
 
 
 def get_weighted_average_cost_of_capital(
-    share_price: pd.Series,
-    total_shares_outstanding: pd.Series,
-    interest_expense: pd.Series,
-    total_debt: pd.Series,
-    risk_free_rate: pd.Series,
-    beta: pd.Series,
-    benchmark_returns: pd.Series,
-    income_tax_expense: pd.Series,
-    income_before_tax: pd.Series,
+    share_price,
+    total_shares_outstanding,
+    interest_expense,
+    total_debt,
+    risk_free_rate,
+    beta,
+    benchmark_returns,
+    income_tax_expense,
+    income_before_tax,
 ) -> pd.DataFrame:
     """
     The Weighted Average Cost of Capital (WACC) is a financial metric used to estimate the

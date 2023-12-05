@@ -14,7 +14,7 @@ def get_intrinsic_value(
     cash_and_cash_equivalents: float,
     total_debt: float,
     shares_outstanding: float,
-    periods: int = 5,
+    periods=5,
 ) -> pd.DataFrame:
     """
     The Weighted Average Cost of Capital (WACC) is a financial metric used to estimate the

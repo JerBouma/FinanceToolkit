@@ -145,7 +145,7 @@ def combine_dataframes(dataset_dictionary: dict[str, pd.DataFrame]) -> pd.DataFr
     return combined_df.sort_index(level=0, sort_remaining=False)
 
 
-def equal_length(dataset1: pd.Series, dataset2: pd.Series) -> pd.Series:
+def equal_length(dataset1, dataset2: pd.Series) -> pd.Series:
     """
     Equalize the length of two datasets by adding zeros to the beginning of the shorter dataset.
 
@@ -173,11 +173,11 @@ def equal_length(dataset1: pd.Series, dataset2: pd.Series) -> pd.Series:
 
 
 def calculate_growth(
-    dataset: pd.Series | pd.DataFrame,
-    lag: int | list[int] = 1,
-    rounding: int | None = 4,
-    axis: str = "columns",
-) -> pd.Series | pd.DataFrame:
+    dataset,
+    lag=1,
+    rounding=4,
+    axis="columns",
+):
     """
     Calculates growth for a given dataset. Defaults to a lag of 1 (i.e. 1 year or 1 quarter).
 
@@ -321,7 +321,7 @@ def handle_errors(func):
 
 def check_for_error_messages(
     dataset_dictionary: dict[str, pd.DataFrame],
-    subscription_type: str = "Premium",
+    subscription_type="Premium",
     delete_tickers: bool = True,
 ):
     """

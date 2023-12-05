@@ -27,14 +27,14 @@ class Ratios:
 
     def __init__(
         self,
-        tickers: str | list[str],
+        tickers,
         historical: pd.DataFrame,
         balance: pd.DataFrame,
         income: pd.DataFrame,
         cash: pd.DataFrame,
-        custom_ratios_dict: dict | None = None,
+        custom_ratios_dict=None,
         quarterly: bool = False,
-        rounding: int | None = 4,
+        rounding=4,
     ):
         """
         Initializes the Ratios Controller Class.
@@ -93,7 +93,7 @@ class Ratios:
         )
         self._custom_ratios: pd.DataFrame = pd.DataFrame()
         self._custom_ratios_growth: pd.DataFrame = pd.DataFrame()
-        self._rounding: int | None = rounding
+        self._rounding = rounding
         self._quarterly: bool = quarterly
 
         # Initialization of Historical Data
@@ -118,12 +118,12 @@ class Ratios:
         self,
         include_dividends: bool = False,
         diluted: bool = True,
-        days: int | float | None = None,
-        rounding: int | None = None,
+        days=None,
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
-        trailing: int | None = None,
-    ) -> pd.Series | pd.DataFrame:
+        lag=1,
+        trailing=None,
+    ):
         """
         Calculates and collects all ratios based on the provided data.
 
@@ -209,10 +209,10 @@ class Ratios:
     @handle_errors
     def collect_custom_ratios(
         self,
-        custom_ratios_dict: dict | None = None,
-        rounding: int | None = None,
+        custom_ratios_dict=None,
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
+        lag=1,
     ):
         """
         Calculates all Custom Ratios based on the data provided.
@@ -411,12 +411,12 @@ class Ratios:
 
     def collect_efficiency_ratios(
         self,
-        days: int | float | None = None,
-        rounding: int | None = None,
+        days=None,
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
-        trailing: int | None = None,
-    ) -> pd.Series | pd.DataFrame:
+        lag=1,
+        trailing=None,
+    ):
         """
         Calculates and collects all Efficiency Ratios based on the provided data.
 
@@ -521,10 +521,10 @@ class Ratios:
     @handle_errors
     def get_asset_turnover_ratio(
         self,
-        rounding: int | None = None,
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
-        trailing: int | None = None,
+        lag=1,
+        trailing=None,
     ) -> pd.DataFrame:
         """
         Calculate the asset turnover ratio, an efficiency ratio that measures how
@@ -598,10 +598,10 @@ class Ratios:
     @handle_errors
     def get_inventory_turnover_ratio(
         self,
-        rounding: int | None = None,
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
-        trailing: int | None = None,
+        lag=1,
+        trailing=None,
     ) -> pd.DataFrame:
         """
         Calculate the inventory turnover ratio, an efficiency ratio that measures
@@ -678,11 +678,11 @@ class Ratios:
     @handle_errors
     def get_days_of_inventory_outstanding(
         self,
-        days: int | float | None = None,
-        rounding: int | None = None,
+        days=None,
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
-        trailing: int | None = None,
+        lag=1,
+        trailing=None,
     ) -> pd.DataFrame:
         """
         Calculate the days sales in inventory ratio, an efficiency ratio that measures
@@ -770,11 +770,11 @@ class Ratios:
     @handle_errors
     def get_days_of_sales_outstanding(
         self,
-        days: int | float | None = None,
-        rounding: int | None = None,
+        days=None,
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
-        trailing: int | None = None,
+        lag=1,
+        trailing=None,
     ) -> pd.DataFrame:
         """
         Calculate the days of sales outstanding ratio, an efficiency ratio that measures
@@ -856,11 +856,11 @@ class Ratios:
     @handle_errors
     def get_operating_cycle(
         self,
-        days: int | float | None = None,
-        rounding: int | None = None,
+        days=None,
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
-        trailing: int | None = None,
+        lag=1,
+        trailing=None,
     ) -> pd.DataFrame:
         """
         Calculate the operating cycle ratio, an efficiency ratio that measures the average
@@ -968,10 +968,10 @@ class Ratios:
     @handle_errors
     def get_accounts_payables_turnover_ratio(
         self,
-        rounding: int | None = None,
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
-        trailing: int | None = None,
+        lag=1,
+        trailing=None,
     ) -> pd.DataFrame:
         """
         Calculate the accounts payable turnover ratio, an efficiency ratio that measures how
@@ -1055,11 +1055,11 @@ class Ratios:
     @handle_errors
     def get_days_of_accounts_payable_outstanding(
         self,
-        days: int | float | None = None,
-        rounding: int | None = None,
+        days=None,
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
-        trailing: int | None = None,
+        lag=1,
+        trailing=None,
     ) -> pd.DataFrame:
         """
         Calculate the days payables outstanding, an efficiency ratio that measures the
@@ -1149,11 +1149,11 @@ class Ratios:
     @handle_errors
     def get_cash_conversion_cycle(
         self,
-        days: int | float | None = None,
-        rounding: int | None = None,
+        days=None,
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
-        trailing: int | None = None,
+        lag=1,
+        trailing=None,
     ) -> pd.DataFrame:
         """
         Calculate the Cash Conversion Cycle, which measures the amount of time it takes for a company to convert
@@ -1290,10 +1290,10 @@ class Ratios:
     @handle_errors
     def get_receivables_turnover(
         self,
-        rounding: int | None = None,
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
-        trailing: int | None = None,
+        lag=1,
+        trailing=None,
     ) -> pd.DataFrame:
         """
         Calculate the receivables turnover, a ratio that measures how efficiently a
@@ -1367,10 +1367,10 @@ class Ratios:
     @handle_errors
     def get_sga_to_revenue_ratio(
         self,
-        rounding: int | None = None,
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
-        trailing: int | None = None,
+        lag=1,
+        trailing=None,
     ) -> pd.DataFrame:
         """
         Calculate the sales, general, and administrative (SG&A) expenses to revenue ratio,
@@ -1441,10 +1441,10 @@ class Ratios:
     @handle_errors
     def get_fixed_asset_turnover(
         self,
-        rounding: int | None = None,
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
-        trailing: int | None = None,
+        lag=1,
+        trailing=None,
     ) -> pd.DataFrame:
         """
         Calculate the Fixed Asset Turnover ratio, an efficiency ratio that
@@ -1517,10 +1517,10 @@ class Ratios:
     @handle_errors
     def get_operating_ratio(
         self,
-        rounding: int | None = None,
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
-        trailing: int | None = None,
+        lag=1,
+        trailing=None,
     ) -> pd.DataFrame:
         """
         Calculate the operating ratio, a financial metric that measures the efficiency
@@ -1590,10 +1590,10 @@ class Ratios:
 
     def collect_liquidity_ratios(
         self,
-        rounding: int | None = None,
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
-        trailing: int | None = None,
+        lag=1,
+        trailing=None,
     ) -> pd.DataFrame:
         """
         Calculates and collects all Liquidity Ratios based on the provided data.
@@ -1672,10 +1672,10 @@ class Ratios:
     @handle_errors
     def get_current_ratio(
         self,
-        rounding: int | None = None,
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
-        trailing: int | None = None,
+        lag=1,
+        trailing=None,
     ) -> pd.DataFrame:
         """
         Calculate the current ratio, a liquidity ratio that measures a company's ability
@@ -1744,10 +1744,10 @@ class Ratios:
     @handle_errors
     def get_quick_ratio(
         self,
-        rounding: int | None = None,
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
-        trailing: int | None = None,
+        lag=1,
+        trailing=None,
     ) -> pd.DataFrame:
         """
         Calculate the quick ratio (also known as the acid-test ratio), a more stringent
@@ -1826,10 +1826,10 @@ class Ratios:
     @handle_errors
     def get_cash_ratio(
         self,
-        rounding: int | None = None,
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
-        trailing: int | None = None,
+        lag=1,
+        trailing=None,
     ) -> pd.DataFrame:
         """
         Calculate the cash ratio, a liquidity ratio that measures a company's ability
@@ -1901,10 +1901,10 @@ class Ratios:
     @handle_errors
     def get_working_capital(
         self,
-        rounding: int | None = None,
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
-        trailing: int | None = None,
+        lag=1,
+        trailing=None,
     ) -> pd.DataFrame:
         """
         Calculate the working capital, which is the difference between a company's current assets
@@ -1973,10 +1973,10 @@ class Ratios:
     @handle_errors
     def get_operating_cash_flow_ratio(
         self,
-        rounding: int | None = None,
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
-        trailing: int | None = None,
+        lag=1,
+        trailing=None,
     ) -> pd.DataFrame:
         """
         Calculate the operating cash flow ratio, a liquidity ratio that measures a company's
@@ -2045,10 +2045,10 @@ class Ratios:
     @handle_errors
     def get_operating_cash_flow_sales_ratio(
         self,
-        rounding: int | None = None,
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
-        trailing: int | None = None,
+        lag=1,
+        trailing=None,
     ) -> pd.DataFrame:
         """
         Calculate the operating cash flow to sales ratio, a liquidity ratio that
@@ -2123,10 +2123,10 @@ class Ratios:
     @handle_errors
     def get_short_term_coverage_ratio(
         self,
-        rounding: int | None = None,
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
-        trailing: int | None = None,
+        lag=1,
+        trailing=None,
     ):
         """
         Calculate the short-term coverage ratio, a liquidity ratio that measures a company's
@@ -2194,10 +2194,10 @@ class Ratios:
 
     def collect_profitability_ratios(
         self,
-        rounding: int | None = None,
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
-        trailing: int | None = None,
+        lag=1,
+        trailing=None,
     ) -> pd.DataFrame:
         """
         Calculates and collects all Profitability Ratios based on the provided data.
@@ -2309,10 +2309,10 @@ class Ratios:
     @handle_errors
     def get_gross_margin(
         self,
-        rounding: int | None = None,
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
-        trailing: int | None = None,
+        lag=1,
+        trailing=None,
     ) -> pd.DataFrame:
         """
         Calculate the gross margin, a profitability ratio that measures the percentage of
@@ -2376,10 +2376,10 @@ class Ratios:
     @handle_errors
     def get_operating_margin(
         self,
-        rounding: int | None = None,
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
-        trailing: int | None = None,
+        lag=1,
+        trailing=None,
     ) -> pd.DataFrame:
         """
         Calculate the operating margin, a profitability ratio that measures the percentage of
@@ -2445,10 +2445,10 @@ class Ratios:
     @handle_errors
     def get_net_profit_margin(
         self,
-        rounding: int | None = None,
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
-        trailing: int | None = None,
+        lag=1,
+        trailing=None,
     ) -> pd.DataFrame:
         """
         Calculate the net profit margin, a profitability ratio that measures the percentage
@@ -2514,10 +2514,10 @@ class Ratios:
     @handle_errors
     def get_interest_burden_ratio(
         self,
-        rounding: int | None = None,
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
-        trailing: int | None = None,
+        lag=1,
+        trailing=None,
     ) -> pd.DataFrame:
         """
         Compute the Interest Coverage Ratio, a metric that reveals a company's
@@ -2590,10 +2590,10 @@ class Ratios:
     @handle_errors
     def get_income_before_tax_profit_margin(
         self,
-        rounding: int | None = None,
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
-        trailing: int | None = None,
+        lag=1,
+        trailing=None,
     ) -> pd.DataFrame:
         """
         Calculate the Pretax Profit Margin, which is the ratio of a company's pre-tax profit to
@@ -2667,10 +2667,10 @@ class Ratios:
     @handle_errors
     def get_effective_tax_rate(
         self,
-        rounding: int | None = None,
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
-        trailing: int | None = None,
+        lag=1,
+        trailing=None,
     ) -> pd.DataFrame:
         """
         Calculate the effective tax rate, a financial ratio that measures the
@@ -2738,10 +2738,10 @@ class Ratios:
     @handle_errors
     def get_return_on_assets(
         self,
-        rounding: int | None = None,
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
-        trailing: int | None = None,
+        lag=1,
+        trailing=None,
     ) -> pd.DataFrame:
         """
         Calculate the return on assets (ROA), a profitability ratio that measures how
@@ -2816,10 +2816,10 @@ class Ratios:
     @handle_errors
     def get_return_on_equity(
         self,
-        rounding: int | None = None,
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
-        trailing: int | None = None,
+        lag=1,
+        trailing=None,
     ) -> pd.DataFrame:
         """
         Calculate the return on equity (ROE), a profitability ratio that measures how
@@ -2898,10 +2898,10 @@ class Ratios:
     @handle_errors
     def get_return_on_invested_capital(
         self,
-        rounding: int | None = None,
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
-        trailing: int | None = None,
+        lag=1,
+        trailing=None,
     ):
         """
         Calculate the return on invested capital (ROIC), a financial ratio that measures
@@ -3004,10 +3004,10 @@ class Ratios:
     @handle_errors
     def get_income_quality_ratio(
         self,
-        rounding: int | None = None,
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
-        trailing: int | None = None,
+        lag=1,
+        trailing=None,
     ):
         """
         Calculate the income quality ratio, a financial metric that measures the cash flow from
@@ -3076,10 +3076,10 @@ class Ratios:
     @handle_errors
     def get_return_on_tangible_assets(
         self,
-        rounding: int | None = None,
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
-        trailing: int | None = None,
+        lag=1,
+        trailing=None,
     ):
         """
         Calculate the return on tangible assets, a financial ratio that measures the amount of profit
@@ -3185,10 +3185,10 @@ class Ratios:
     @handle_errors
     def get_return_on_capital_employed(
         self,
-        rounding: int | None = None,
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
-        trailing: int | None = None,
+        lag=1,
+        trailing=None,
     ):
         """
         Calculate the return on capital employed (ROCE), a profitability ratio that measures the amount of return
@@ -3278,10 +3278,10 @@ class Ratios:
     @handle_errors
     def get_net_income_per_ebt(
         self,
-        rounding: int | None = None,
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
-        trailing: int | None = None,
+        lag=1,
+        trailing=None,
     ):
         """
         Calculate the net income per earnings before taxes (EBT), a profitability ratio that measures
@@ -3350,10 +3350,10 @@ class Ratios:
     @handle_errors
     def get_free_cash_flow_operating_cash_flow_ratio(
         self,
-        rounding: int | None = None,
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
-        trailing: int | None = None,
+        lag=1,
+        trailing=None,
     ):
         """
         Calculate the free cash flow to operating cash flow ratio, a profitability ratio that measures
@@ -3427,10 +3427,10 @@ class Ratios:
     @handle_errors
     def get_tax_burden_ratio(
         self,
-        rounding: int | None = None,
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
-        trailing: int | None = None,
+        lag=1,
+        trailing=None,
     ):
         """
         Calculate the tax burden ratio, which is the ratio of a company's
@@ -3500,10 +3500,10 @@ class Ratios:
     @handle_errors
     def get_EBT_to_EBIT(
         self,
-        rounding: int | None = None,
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
-        trailing: int | None = None,
+        lag=1,
+        trailing=None,
     ):
         """
         Calculate the EBT to EBIT, which is the ratio of a company's earnings before tax to its
@@ -3586,10 +3586,10 @@ class Ratios:
     @handle_errors
     def get_EBIT_to_revenue(
         self,
-        rounding: int | None = None,
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
-        trailing: int | None = None,
+        lag=1,
+        trailing=None,
     ):
         """
         Calculate the EBIT per Revenue, which is the ratio of a company's earnings
@@ -3667,10 +3667,10 @@ class Ratios:
     def collect_solvency_ratios(
         self,
         diluted: bool = True,
-        rounding: int | None = None,
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
-        trailing: int | None = None,
+        lag=1,
+        trailing=None,
     ) -> pd.DataFrame:
         """
         Calculates and collects all Solvency Ratios based on the provided data.
@@ -3762,10 +3762,10 @@ class Ratios:
     @handle_errors
     def get_debt_to_assets_ratio(
         self,
-        rounding: int | None = None,
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
-        trailing: int | None = None,
+        lag=1,
+        trailing=None,
     ):
         """
         Calculate the debt to assets ratio, a solvency ratio that measures the proportion
@@ -3834,10 +3834,10 @@ class Ratios:
     @handle_errors
     def get_debt_to_equity_ratio(
         self,
-        rounding: int | None = None,
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
-        trailing: int | None = None,
+        lag=1,
+        trailing=None,
     ):
         """
         Calculate the debt to equity ratio, a solvency ratio that measures the
@@ -3906,10 +3906,10 @@ class Ratios:
     @handle_errors
     def get_interest_coverage_ratio(
         self,
-        rounding: int | None = None,
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
-        trailing: int | None = None,
+        lag=1,
+        trailing=None,
     ):
         """
         Calculate the interest coverage ratio, a solvency ratio that measures a company's
@@ -3983,10 +3983,10 @@ class Ratios:
     @handle_errors
     def get_equity_multiplier(
         self,
-        rounding: int | None = None,
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
-        trailing: int | None = None,
+        lag=1,
+        trailing=None,
     ):
         """
         Calculate the equity multiplier, a solvency ratio that measures the degree to which
@@ -4067,10 +4067,10 @@ class Ratios:
     @handle_errors
     def get_debt_service_coverage_ratio(
         self,
-        rounding: int | None = None,
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
-        trailing: int | None = None,
+        lag=1,
+        trailing=None,
     ):
         """
         Calculate the debt service coverage ratio, a solvency ratio that measures a company's
@@ -4147,10 +4147,10 @@ class Ratios:
     def get_free_cash_flow_yield(
         self,
         diluted: bool = True,
-        rounding: int | None = None,
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
-        trailing: int | None = None,
+        lag=1,
+        trailing=None,
     ):
         """
         Calculates the free cash flow yield ratio, which measures the free cash flow
@@ -4235,10 +4235,10 @@ class Ratios:
     @handle_errors
     def get_net_debt_to_ebitda_ratio(
         self,
-        rounding: int | None = None,
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
-        trailing: int | None = None,
+        lag=1,
+        trailing=None,
     ):
         """
         Calculates the net debt to EBITDA ratio, which measures the net debt of the company
@@ -4310,10 +4310,10 @@ class Ratios:
     @handle_errors
     def get_cash_flow_coverage_ratio(
         self,
-        rounding: int | None = None,
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
-        trailing: int | None = None,
+        lag=1,
+        trailing=None,
     ):
         """
         Calculate the cash flow coverage ratio, a solvency ratio that measures a company's
@@ -4380,10 +4380,10 @@ class Ratios:
     @handle_errors
     def get_capex_coverage_ratio(
         self,
-        rounding: int | None = None,
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
-        trailing: int | None = None,
+        lag=1,
+        trailing=None,
     ):
         """
         Calculate the capital expenditure coverage ratio, a solvency ratio that
@@ -4452,10 +4452,10 @@ class Ratios:
     @handle_errors
     def get_capex_dividend_coverage_ratio(
         self,
-        rounding: int | None = None,
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
-        trailing: int | None = None,
+        lag=1,
+        trailing=None,
     ):
         """
         Calculate the dividend paid and capital expenditure coverage ratio, a solvency ratio
@@ -4538,10 +4538,10 @@ class Ratios:
         self,
         include_dividends: bool = False,
         diluted: bool = True,
-        rounding: int | None = None,
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
-        trailing: int | None = None,
+        lag=1,
+        trailing=None,
     ) -> pd.DataFrame:
         """
         Calculates and collects all Valuation Ratios based on the provided data.
@@ -4683,10 +4683,10 @@ class Ratios:
         self,
         include_dividends: bool = False,
         diluted: bool = True,
-        rounding: int | None = None,
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
-        trailing: int | None = None,
+        lag=1,
+        trailing=None,
     ):
         """
         Calculate the earnings per share (EPS), a valuation ratio that measures the amount
@@ -4778,10 +4778,10 @@ class Ratios:
     def get_revenue_per_share(
         self,
         diluted: bool = True,
-        rounding: int | None = None,
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
-        trailing: int | None = None,
+        lag=1,
+        trailing=None,
     ):
         """
         Calculate the revenue per share, a valuation ratio that measures the amount
@@ -4852,10 +4852,10 @@ class Ratios:
         self,
         include_dividends: bool = False,
         diluted: bool = True,
-        rounding: int | None = None,
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
-        trailing: int | None = None,
+        lag=1,
+        trailing=None,
     ):
         """
         Calculate the price earnings ratio (P/E), a valuation ratio that compares a
@@ -4925,10 +4925,10 @@ class Ratios:
         self,
         include_dividends: bool = False,
         diluted: bool = True,
-        rounding: int | None = None,
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
-        trailing: int | None = None,
+        lag=1,
+        trailing=None,
     ):
         """
         Calculate the price earnings to growth (PEG) ratio, a valuation metric that
@@ -5000,10 +5000,10 @@ class Ratios:
     def get_book_value_per_share(
         self,
         diluted: bool = True,
-        rounding: int | None = None,
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
-        trailing: int | None = None,
+        lag=1,
+        trailing=None,
     ):
         """
         Calculate the book value per share, a valuation ratio that measures the
@@ -5081,10 +5081,10 @@ class Ratios:
     def get_price_to_book_ratio(
         self,
         diluted: bool = True,
-        rounding: int | None = None,
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
-        trailing: int | None = None,
+        lag=1,
+        trailing=None,
     ):
         """
         Calculate the price to book ratio, a valuation ratio that compares a
@@ -5153,10 +5153,10 @@ class Ratios:
     def get_interest_debt_per_share(
         self,
         diluted: bool = True,
-        rounding: int | None = None,
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
-        trailing: int | None = None,
+        lag=1,
+        trailing=None,
     ):
         """
         Calculate the interest debt per share, a valuation ratio that measures the
@@ -5235,10 +5235,10 @@ class Ratios:
     def get_capex_per_share(
         self,
         diluted: bool = True,
-        rounding: int | None = None,
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
-        trailing: int | None = None,
+        lag=1,
+        trailing=None,
     ):
         """
         Calculate the capex per share, a valuation ratio that measures the amount of
@@ -5311,10 +5311,10 @@ class Ratios:
     @handle_errors
     def get_dividend_yield(
         self,
-        rounding: int | None = None,
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
-        trailing: int | None = None,
+        lag=1,
+        trailing=None,
     ):
         """
         Calculate the dividend yield ratio, a valuation ratio that measures the
@@ -5375,10 +5375,10 @@ class Ratios:
     def get_weighted_dividend_yield(
         self,
         diluted: bool = True,
-        rounding: int | None = None,
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
-        trailing: int | None = None,
+        lag=1,
+        trailing=None,
     ):
         """
         Calculate the weighted dividend yield ratio, a valuation ratio that measures the
@@ -5461,10 +5461,10 @@ class Ratios:
     def get_price_to_cash_flow_ratio(
         self,
         diluted: bool = True,
-        rounding: int | None = None,
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
-        trailing: int | None = None,
+        lag=1,
+        trailing=None,
     ):
         """
         Calculate the price to cash flow ratio, a valuation ratio that compares a
@@ -5547,10 +5547,10 @@ class Ratios:
     def get_price_to_free_cash_flow_ratio(
         self,
         diluted: bool = True,
-        rounding: int | None = None,
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
-        trailing: int | None = None,
+        lag=1,
+        trailing=None,
     ):
         """
         Calculate the price to free cash flow ratio, a valuation ratio that compares a
@@ -5625,10 +5625,10 @@ class Ratios:
     def get_market_cap(
         self,
         diluted: bool = True,
-        rounding: int | None = None,
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
-        trailing: int | None = None,
+        lag=1,
+        trailing=None,
     ):
         """
         Calculates the market capitalization of the company.
@@ -5693,10 +5693,10 @@ class Ratios:
     def get_enterprise_value(
         self,
         diluted: bool = True,
-        rounding: int | None = None,
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
-        trailing: int | None = None,
+        lag=1,
+        trailing=None,
     ):
         """
         Calculates the Enterprise Value (EV) of a company. The Enterprise Value (EV)
@@ -5777,10 +5777,10 @@ class Ratios:
     def get_ev_to_sales_ratio(
         self,
         diluted: bool = True,
-        rounding: int | None = None,
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
-        trailing: int | None = None,
+        lag=1,
+        trailing=None,
     ):
         """
         Calculate the EV to sales ratio, a valuation ratio that compares a company's
@@ -5842,10 +5842,10 @@ class Ratios:
     def get_ev_to_ebitda_ratio(
         self,
         diluted: bool = True,
-        rounding: int | None = None,
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
-        trailing: int | None = None,
+        lag=1,
+        trailing=None,
     ):
         """
         Calculate the enterprise value over EBITDA ratio, a valuation ratio that
@@ -5915,10 +5915,10 @@ class Ratios:
     def get_ev_to_operating_cashflow_ratio(
         self,
         diluted: bool = True,
-        rounding: int | None = None,
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
-        trailing: int | None = None,
+        lag=1,
+        trailing=None,
     ):
         """
         Calculate the enterprise value over operating cash flow ratio, a valuation ratio that
@@ -5992,10 +5992,10 @@ class Ratios:
         self,
         include_dividends: bool = False,
         diluted: bool = True,
-        rounding: int | None = None,
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
-        trailing: int | None = None,
+        lag=1,
+        trailing=None,
     ):
         """
         Calculate the earnings yield ratio, a valuation ratio that measures the earnings per share
@@ -6057,10 +6057,10 @@ class Ratios:
     @handle_errors
     def get_payout_ratio(
         self,
-        rounding: int | None = None,
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
-        trailing: int | None = None,
+        lag=1,
+        trailing=None,
     ):
         """
         Calculate the (dividend) payout ratio, a financial metric that measures the proportion
@@ -6123,10 +6123,10 @@ class Ratios:
     @handle_errors
     def get_tangible_asset_value(
         self,
-        rounding: int | None = None,
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
-        trailing: int | None = None,
+        lag=1,
+        trailing=None,
     ):
         """
         Calculate the tangible asset value, a financial metric that represents the total value
@@ -6191,10 +6191,10 @@ class Ratios:
     @handle_errors
     def get_net_current_asset_value(
         self,
-        rounding: int | None = None,
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
-        trailing: int | None = None,
+        lag=1,
+        trailing=None,
     ):
         """
         Calculate the net current asset value, a financial metric that represents the total value
@@ -6255,10 +6255,10 @@ class Ratios:
     def get_ev_to_ebit(
         self,
         diluted: bool = True,
-        rounding: int | None = None,
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
-        trailing: int | None = None,
+        lag=1,
+        trailing=None,
     ):
         """
         Calculate the enterprise value over earnings before interest and taxes (EBIT) ratio,

@@ -5,7 +5,7 @@ import numpy as np
 import pandas as pd
 
 
-def get_beta(returns: pd.Series, benchmark_returns: pd.Series) -> pd.Series:
+def get_beta(returns, benchmark_returns: pd.Series) -> pd.Series:
     """
     Calculate the beta of returns with respect to a benchmark over a rolling window.
 
@@ -32,7 +32,7 @@ def get_beta(returns: pd.Series, benchmark_returns: pd.Series) -> pd.Series:
     return beta_values
 
 
-def get_pearsons_correlation(series1: pd.Series, series2: pd.Series) -> float:
+def get_pearsons_correlation(series1, series2: pd.Series) -> float:
     """
     Calculate Pearson's Correlation Coefficient between two given series.
 
@@ -54,7 +54,7 @@ def get_pearsons_correlation(series1: pd.Series, series2: pd.Series) -> float:
     return correlation_coefficient
 
 
-def get_spearman_correlation(series1: pd.Series, series2: pd.Series) -> float:
+def get_spearman_correlation(series1, series2: pd.Series) -> float:
     """
     Calculate the Spearman Correlation Coefficient between two given data series.
 

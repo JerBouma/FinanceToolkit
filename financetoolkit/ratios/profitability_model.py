@@ -4,7 +4,7 @@ __docformat__ = "google"
 import pandas as pd
 
 
-def get_gross_margin(revenue: pd.Series, cost_of_goods_sold: pd.Series) -> pd.Series:
+def get_gross_margin(revenue, cost_of_goods_sold: pd.Series) -> pd.Series:
     """
     Calculate the gross margin, a profitability ratio that measures the percentage of
     revenue that exceeds the cost of goods sold.
@@ -19,7 +19,7 @@ def get_gross_margin(revenue: pd.Series, cost_of_goods_sold: pd.Series) -> pd.Se
     return (revenue - cost_of_goods_sold) / revenue
 
 
-def get_operating_margin(operating_income: pd.Series, revenue: pd.Series) -> pd.Series:
+def get_operating_margin(operating_income, revenue: pd.Series) -> pd.Series:
     """
     Calculate the operating margin, a profitability ratio that measures the percentage of
     revenue that remains after deducting operating expenses.
@@ -34,7 +34,7 @@ def get_operating_margin(operating_income: pd.Series, revenue: pd.Series) -> pd.
     return operating_income / revenue
 
 
-def get_net_profit_margin(net_income: pd.Series, revenue: pd.Series) -> pd.Series:
+def get_net_profit_margin(net_income, revenue: pd.Series) -> pd.Series:
     """
     Calculate the net profit margin, a profitability ratio that measures the percentage
     of profit a company earns per dollar of revenue.
@@ -50,7 +50,7 @@ def get_net_profit_margin(net_income: pd.Series, revenue: pd.Series) -> pd.Serie
 
 
 def get_interest_coverage_ratio(
-    operating_income: pd.Series, interest_expense: pd.Series
+    operating_income, interest_expense: pd.Series
 ) -> pd.Series:
     """
     Compute the Interest Coverage Ratio, a metric that reveals a company's
@@ -70,7 +70,7 @@ def get_interest_coverage_ratio(
 
 
 def get_interest_burden_ratio(
-    income_before_tax: pd.Series, operating_income: pd.Series
+    income_before_tax, operating_income: pd.Series
 ) -> pd.Series:
     """
     Compute the Interest Burden Ratio, a metric that reveals a company's
@@ -90,7 +90,7 @@ def get_interest_burden_ratio(
 
 
 def get_income_before_tax_profit_margin(
-    income_before_tax: pd.Series, revenue: pd.Series
+    income_before_tax, revenue: pd.Series
 ) -> pd.Series:
     """
     Calculate the Pretax Profit Margin, which is the ratio of a company's pre-tax profit to its revenue,
@@ -107,7 +107,7 @@ def get_income_before_tax_profit_margin(
 
 
 def get_effective_tax_rate(
-    income_tax_expense: pd.Series, income_before_tax: pd.Series
+    income_tax_expense, income_before_tax: pd.Series
 ) -> pd.Series:
     """
     Calculate the effective tax rate, a financial ratio that measures the percentage of pretax income
@@ -124,7 +124,7 @@ def get_effective_tax_rate(
 
 
 def get_return_on_assets(
-    net_income: pd.Series, total_assets_begin: pd.Series, total_assets_end: pd.Series
+    net_income, total_assets_begin, total_assets_end: pd.Series
 ) -> pd.Series:
     """
     Calculate the return on assets (ROA), a profitability ratio that measures how
@@ -142,9 +142,9 @@ def get_return_on_assets(
 
 
 def get_return_on_equity(
-    net_income: pd.Series,
-    total_equity_begin: pd.Series,
-    total_equity_end: pd.Series,
+    net_income,
+    total_equity_begin,
+    total_equity_end,
 ) -> pd.Series:
     """
     Calculate the return on equity (ROE), a profitability ratio that measures how
@@ -162,13 +162,13 @@ def get_return_on_equity(
 
 
 def get_return_on_invested_capital(
-    net_income: pd.Series,
-    dividends: pd.Series,
-    effective_tax_rate: pd.Series,
-    total_equity_begin: pd.Series,
-    total_equity_end: pd.Series,
-    total_debt_begin: pd.Series,
-    total_debt_end: pd.Series,
+    net_income,
+    dividends,
+    effective_tax_rate,
+    total_equity_begin,
+    total_equity_end,
+    total_debt_begin,
+    total_debt_end,
 ) -> pd.Series:
     """
     Calculate the return on invested capital, a financial ratio that measures the company's return on
@@ -192,8 +192,8 @@ def get_return_on_invested_capital(
 
 
 def get_income_quality_ratio(
-    cash_flow_from_operating_activities: pd.Series,
-    net_income: pd.Series,
+    cash_flow_from_operating_activities,
+    net_income,
 ) -> pd.Series:
     """
     Calculates the income quality ratio, which measures the cash flow from operating
@@ -211,13 +211,13 @@ def get_income_quality_ratio(
 
 
 def get_return_on_tangible_assets(
-    net_income: pd.Series,
-    total_assets_begin: pd.Series,
-    total_assets_end: pd.Series,
-    intangible_assets_begin: pd.Series,
-    intangible_assets_end: pd.Series,
-    total_liabilities_begin: pd.Series,
-    total_liabilities_end: pd.Series,
+    net_income,
+    total_assets_begin,
+    total_assets_end,
+    intangible_assets_begin,
+    intangible_assets_end,
+    total_liabilities_begin,
+    total_liabilities_end,
 ) -> pd.Series:
     """
     Calculate the return on tangible assets, which measures the amount of profit
@@ -245,11 +245,11 @@ def get_return_on_tangible_assets(
 
 
 def get_return_on_capital_employed(
-    net_income: pd.Series,
-    interest_expense: pd.Series,
-    tax_expense: pd.Series,
-    total_assets: pd.Series,
-    total_current_liabilities: pd.Series,
+    net_income,
+    interest_expense,
+    tax_expense,
+    total_assets,
+    total_current_liabilities,
 ) -> pd.Series:
     """
     Calculate the return on capital employed (ROCE), a profitability ratio that measures
@@ -270,9 +270,7 @@ def get_return_on_capital_employed(
     )
 
 
-def get_net_income_per_ebt(
-    net_income: pd.Series, income_tax_expense: pd.Series
-) -> pd.Series:
+def get_net_income_per_ebt(net_income, income_tax_expense: pd.Series) -> pd.Series:
     """
     Calculate the net income per earnings before taxes (EBT), a profitability ratio that
     measures the net income generated for each dollar of EBT.
@@ -288,7 +286,7 @@ def get_net_income_per_ebt(
 
 
 def get_free_cash_flow_operating_cash_flow_ratio(
-    free_cash_flow: pd.Series, operating_cash_flow: pd.Series
+    free_cash_flow, operating_cash_flow: pd.Series
 ) -> pd.Series:
     """
     Calculate the free cash flow to operating cash flow ratio, a profitability
@@ -305,9 +303,7 @@ def get_free_cash_flow_operating_cash_flow_ratio(
     return free_cash_flow / operating_cash_flow
 
 
-def get_tax_burden_ratio(
-    net_income: pd.Series, income_before_tax: pd.Series
-) -> pd.Series:
+def get_tax_burden_ratio(net_income, income_before_tax: pd.Series) -> pd.Series:
     """
     Calculate the tax burden ratio, which is the ratio of a company's
     net income to its income before tax, indicating how much of a
@@ -324,8 +320,8 @@ def get_tax_burden_ratio(
 
 
 def get_EBT_to_EBIT(
-    earnings_before_tax: pd.Series,
-    earnings_before_interest_and_taxes: pd.Series,
+    earnings_before_tax,
+    earnings_before_interest_and_taxes,
 ) -> pd.Series:
     """
     Calculate the EBT to EBIT, which is the ratio of a company's earnings before tax to its earnings before
@@ -342,7 +338,7 @@ def get_EBT_to_EBIT(
 
 
 def get_EBIT_to_revenue(
-    earnings_before_interest_and_taxes: pd.Series, revenue: pd.Series
+    earnings_before_interest_and_taxes, revenue: pd.Series
 ) -> pd.Series:
     """
     Calculate the EBITperRevenue, which is the ratio of a company's earnings

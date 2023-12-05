@@ -10,10 +10,10 @@ from financetoolkit.technical.overlap_model import (
 
 
 def get_money_flow_index(
-    prices_high: pd.Series,
-    prices_low: pd.Series,
-    prices_close: pd.Series,
-    volumes: pd.Series,
+    prices_high,
+    prices_low,
+    prices_close,
+    volumes,
     window: int,
 ) -> pd.Series:
     """
@@ -50,7 +50,7 @@ def get_money_flow_index(
 
 
 def get_williams_percent_r(
-    prices_high: pd.Series, prices_low: pd.Series, prices_close: pd.Series, window: int
+    prices_high, prices_low, prices_close, window: int
 ) -> pd.Series:
     """
     Calculate the Williams %R indicator for a given price series.
@@ -71,9 +71,7 @@ def get_williams_percent_r(
     return percent_r
 
 
-def get_aroon_indicator(
-    prices_high: pd.Series, prices_low: pd.Series, window: int
-) -> pd.DataFrame:
+def get_aroon_indicator(prices_high, prices_low, window: int) -> pd.DataFrame:
     """
     Calculate the Aroon Indicator for a given price series.
 
@@ -106,9 +104,9 @@ def get_aroon_indicator(
 
 
 def get_commodity_channel_index(
-    prices_high: pd.Series,
-    prices_low: pd.Series,
-    prices_close: pd.Series,
+    prices_high,
+    prices_low,
+    prices_close,
     window: int,
     constant: float = 0.015,
 ) -> pd.Series:
@@ -138,7 +136,7 @@ def get_commodity_channel_index(
 
 
 def get_relative_vigor_index(
-    prices_open: pd.Series, prices_close: pd.Series, volumes: pd.Series, window: int
+    prices_open, prices_close, volumes, window: int
 ) -> pd.Series:
     """
     Calculate the Relative Vigor Index (RVI) for a given price series.
@@ -167,9 +165,7 @@ def get_relative_vigor_index(
     return rvi
 
 
-def get_force_index(
-    prices_close: pd.Series, volumes: pd.Series, window: int
-) -> pd.Series:
+def get_force_index(prices_close, volumes, window: int) -> pd.Series:
     """
     Calculate the Force Index for a given price series.
 
@@ -185,9 +181,9 @@ def get_force_index(
 
 
 def get_ultimate_oscillator(
-    prices_high: pd.Series,
-    prices_low: pd.Series,
-    prices_close: pd.Series,
+    prices_high,
+    prices_low,
+    prices_close,
     window_1: int,
     window_2: int,
     window_3: int,
@@ -237,7 +233,7 @@ def get_ultimate_oscillator(
 
 
 def get_percentage_price_oscillator(
-    prices_close: pd.Series, short_window: int, long_window: int
+    prices_close, short_window: int, long_window: int
 ) -> pd.Series:
     """
     Calculate the Percentage Price Oscillator (PPO) for a given price series.
@@ -258,9 +254,9 @@ def get_percentage_price_oscillator(
 
 
 def get_detrended_price_oscillator(
-    prices_close: pd.Series,
+    prices_close,
     window: int,
-    moving_average_type: str = "sma",
+    moving_average_type="sma",
 ) -> pd.Series:
     """
     Calculate the Detrended Price Oscillator (DPO) for a given price series.
@@ -285,7 +281,7 @@ def get_detrended_price_oscillator(
 
 
 def get_average_directional_index(
-    prices_high: pd.Series, prices_low: pd.Series, prices_close: pd.Series, window: int
+    prices_high, prices_low, prices_close, window: int
 ) -> pd.Series:
     """
     Calculate the Average Directional Movement Index (ADX) of a given price series.
@@ -332,7 +328,7 @@ def get_average_directional_index(
     return adx
 
 
-def get_chande_momentum_oscillator(prices_close: pd.Series, window: int) -> pd.Series:
+def get_chande_momentum_oscillator(prices_close, window: int) -> pd.Series:
     """
     Calculate the Chande Momentum Oscillator (CMO) for a given price series.
 
@@ -353,8 +349,8 @@ def get_chande_momentum_oscillator(prices_close: pd.Series, window: int) -> pd.S
 
 
 def get_ichimoku_cloud(
-    prices_high: pd.Series,
-    prices_low: pd.Series,
+    prices_high,
+    prices_low,
     conversion_window: int,
     base_window: int,
     lead_span_b_window: int,
@@ -398,9 +394,9 @@ def get_ichimoku_cloud(
 
 
 def get_stochastic_oscillator(
-    prices_high: pd.Series,
-    prices_low: pd.Series,
-    prices_close: pd.Series,
+    prices_high,
+    prices_low,
+    prices_close,
     window: int,
     smooth_window: int,
 ) -> pd.DataFrame:
@@ -429,7 +425,7 @@ def get_stochastic_oscillator(
 
 
 def get_moving_average_convergence_divergence(
-    prices: pd.Series, short_window: int, long_window: int, signal_window: int
+    prices, short_window: int, long_window: int, signal_window: int
 ) -> pd.Series:
     """
     Calculate the Moving Average Convergence Divergence (MACD) of a given price series.
@@ -454,7 +450,7 @@ def get_moving_average_convergence_divergence(
     )
 
 
-def get_relative_strength_index(prices: pd.Series, window: int) -> pd.Series:
+def get_relative_strength_index(prices, window: int) -> pd.Series:
     """
     Calculate the Relative Strength Index (RSI) of a given price series.
 
@@ -484,10 +480,10 @@ def get_relative_strength_index(prices: pd.Series, window: int) -> pd.Series:
 
 
 def get_balance_of_power(
-    prices_open: pd.Series,
-    prices_high: pd.Series,
-    prices_low: pd.Series,
-    prices_close: pd.Series,
+    prices_open,
+    prices_high,
+    prices_low,
+    prices_close,
 ) -> pd.Series:
     """
     Calculate the Balance of Power (BOP) indicator for a given price series.

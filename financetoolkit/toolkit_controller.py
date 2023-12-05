@@ -58,26 +58,26 @@ class Toolkit:
 
     def __init__(
         self,
-        tickers: list | str,
-        api_key: str = "",
-        start_date: str | None = None,
-        end_date: str | None = None,
+        tickers,
+        api_key="",
+        start_date=None,
+        end_date=None,
         quarterly: bool = False,
-        risk_free_rate: str = "10y",
-        benchmark_ticker: str | None = "SPY",
-        historical_source: str | None = None,
+        risk_free_rate="10y",
+        benchmark_ticker="SPY",
+        historical_source=None,
         check_asset_class: bool = False,
-        custom_ratios: dict | None = None,
+        custom_ratios=None,
         historical: pd.DataFrame = pd.DataFrame(),
         balance: pd.DataFrame = pd.DataFrame(),
         income: pd.DataFrame = pd.DataFrame(),
         cash: pd.DataFrame = pd.DataFrame(),
-        format_location: str = "",
-        convert_currency: bool | None = None,
+        format_location="",
+        convert_currency=None,
         reverse_dates: bool = False,
-        rounding: int | None = 4,
+        rounding=4,
         remove_invalid_tickers: bool = False,
-        sleep_timer: bool | None = None,
+        sleep_timer=None,
         progress_bar: bool = True,
     ):
         """
@@ -177,6 +177,7 @@ class Toolkit:
         toolkit = Toolkit("AMZN", benchmark_ticker="^DJI", risk_free_rate="30y", api_key=FMP_KEY)
         ```
         """
+
         if sleep_timer is None:
             # This tests the API key to determine the subscription plan. This is relevant for the sleep timer
             # but also for other components of the Toolkit. This prevents wait timers from occurring while
@@ -436,7 +437,7 @@ class Toolkit:
         self._cash_flow_statement_growth: pd.DataFrame = pd.DataFrame()
 
         self._statistics_statement: pd.DataFrame = pd.DataFrame()
-        self._custom_ratios: dict | None = custom_ratios
+        self._custom_ratios = custom_ratios
 
         pd.set_option("display.float_format", str)
 
@@ -1165,9 +1166,9 @@ class Toolkit:
     def get_analyst_estimates(
         self,
         overwrite: bool = False,
-        rounding: int | None = None,
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
+        lag=1,
     ):
         """
         Obtain analyst estimates regarding revenues, EBITDA, EBIT, Net Income
@@ -1300,7 +1301,7 @@ class Toolkit:
         self,
         actual_dates: bool = True,
         overwrite: bool = False,
-        rounding: int | None = None,
+        rounding=None,
     ):
         """
         Obtain Earnings Calendars for any range of companies. You have the option to
@@ -1608,12 +1609,12 @@ class Toolkit:
 
     def get_historical_data(
         self,
-        period: str = "daily",
-        return_column: str = "Adj Close",
+        period="daily",
+        return_column="Adj Close",
         include_dividends: bool = True,
         fill_nan: bool = True,
         overwrite: bool = False,
-        rounding: int | None = None,
+        rounding=None,
         show_ticker_seperation: bool = True,
     ):
         """
@@ -1848,7 +1849,7 @@ class Toolkit:
     def get_dividend_calendar(
         self,
         overwrite: bool = False,
-        rounding: int | None = None,
+        rounding=None,
     ):
         """
         Obtain Dividend Calendars for any range of companies. It includes the following columns:
@@ -1959,7 +1960,7 @@ class Toolkit:
     def get_esg_scores(
         self,
         overwrite: bool = False,
-        rounding: int | None = None,
+        rounding=None,
     ):
         """
         ESG scores, which stands for Environmental, Social, and Governance scores, are a crucial
@@ -2141,10 +2142,10 @@ class Toolkit:
 
     def get_treasury_data(
         self,
-        period: str = "daily",
-        risk_free_rate: str | None = None,
-        divide_ohlc_by: int | float | None = 100,
-        rounding: int | None = None,
+        period="daily",
+        risk_free_rate=None,
+        divide_ohlc_by=100,
+        rounding=None,
         show_errors: bool = False,
     ):
         """
@@ -2326,11 +2327,11 @@ class Toolkit:
 
     def get_exchange_rates(
         self,
-        period: str = "daily",
-        return_column: str = "Adj Close",
+        period="daily",
+        return_column="Adj Close",
         fill_nan: bool = True,
         overwrite: bool = False,
-        rounding: int | None = None,
+        rounding=None,
         show_ticker_seperation: bool = True,
     ):
         """
@@ -2529,10 +2530,10 @@ class Toolkit:
     def get_balance_sheet_statement(
         self,
         overwrite: bool = False,
-        rounding: int | None = None,
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
-        trailing: int | None = None,
+        lag=1,
+        trailing=None,
     ):
         """
         Retrieves the balance sheet statement financial data for the company(s) from the specified source.
@@ -2768,10 +2769,10 @@ class Toolkit:
     def get_income_statement(
         self,
         overwrite: bool = False,
-        rounding: int | None = None,
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
-        trailing: int | None = None,
+        lag=1,
+        trailing=None,
     ):
         """
         Retrieves the income statement financial data for the company(s) from the specified source.
@@ -2987,10 +2988,10 @@ class Toolkit:
     def get_cash_flow_statement(
         self,
         overwrite: bool = False,
-        rounding: int | None = None,
+        rounding=None,
         growth: bool = False,
-        lag: int | list[int] = 1,
-        trailing: int | None = None,
+        lag=1,
+        trailing=None,
     ):
         """
         Retrieves the cash flow statement financial data for the company(s) from the specified source.
@@ -3310,7 +3311,7 @@ class Toolkit:
 
         return self._statistics_statement
 
-    def get_normalization_files(self, path: str = ""):
+    def get_normalization_files(self, path=""):
         """
         Copies the normalization files to a folder based on path. By default, this is the path
         of the 'Downloads' folder.

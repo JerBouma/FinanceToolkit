@@ -6,9 +6,7 @@ import pandas as pd
 from financetoolkit.technical.overlap_model import get_exponential_moving_average
 
 
-def get_true_range(
-    prices_high: pd.Series, prices_low: pd.Series, prices_close: pd.Series
-) -> pd.Series:
+def get_true_range(prices_high, prices_low, prices_close: pd.Series) -> pd.Series:
     """
     Calculate the Average True Range (ATR) of a given price series.
 
@@ -34,7 +32,7 @@ def get_true_range(
 
 
 def get_average_true_range(
-    prices_high: pd.Series, prices_low: pd.Series, prices_close: pd.Series, window: int
+    prices_high, prices_low, prices_close, window: int
 ) -> pd.Series:
     """
     Calculate the Average True Range (ATR) of a given price series.
@@ -56,9 +54,9 @@ def get_average_true_range(
 
 
 def get_keltner_channels(
-    prices_high: pd.Series,
-    prices_low: pd.Series,
-    prices_close: pd.Series,
+    prices_high,
+    prices_low,
+    prices_close,
     window: int,
     atr_window: int,
     atr_multiplier: float,
@@ -92,9 +90,7 @@ def get_keltner_channels(
     )
 
 
-def get_bollinger_bands(
-    prices: pd.Series, window: int, num_std_dev: int
-) -> pd.DataFrame:
+def get_bollinger_bands(prices, window: int, num_std_dev: int) -> pd.DataFrame:
     """
     Calculate the Bollinger Bands of a given price series.
 

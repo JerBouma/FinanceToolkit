@@ -26,23 +26,23 @@ TREASURY_LIMIT = 90
 
 
 def get_historical_data(
-    tickers: list[str] | str,
-    api_key: str | None = None,
-    source: str = "FinancialModelingPrep",
-    start: str | None = None,
-    end: str | None = None,
-    interval: str = "1d",
-    return_column: str = "Adj Close",
+    tickers,
+    api_key=None,
+    source="FinancialModelingPrep",
+    start=None,
+    end=None,
+    interval="1d",
+    return_column="Adj Close",
     risk_free_rate: pd.DataFrame = pd.DataFrame(),
     include_dividends: bool = True,
     progress_bar: bool = True,
     fill_nan: bool = True,
-    divide_ohlc_by: int | float | None = None,
-    rounding: int | None = None,
+    divide_ohlc_by=None,
+    rounding=None,
     sleep_timer: bool = True,
     show_ticker_seperation: bool = True,
     show_errors: bool = False,
-    tqdm_message: str = "Obtaining historical data",
+    tqdm_message="Obtaining historical data",
 ):
     """
     Retrieves historical stock data for the given ticker(s) from Financial Modeling Prep or/and Yahoo Finance
@@ -208,13 +208,13 @@ def get_historical_data(
 def get_historical_data_from_financial_modeling_prep(
     ticker: str,
     api_key: str,
-    start: str | None = None,
-    end: str | None = None,
-    interval: str = "1d",
-    return_column: str = "Adj Close",
+    start=None,
+    end=None,
+    interval="1d",
+    return_column="Adj Close",
     risk_free_rate: pd.DataFrame = pd.DataFrame(),
     include_dividends: bool = True,
-    divide_ohlc_by: int | float | None = None,
+    divide_ohlc_by=None,
     sleep_timer: bool = True,
 ):
     """
@@ -366,13 +366,13 @@ def get_historical_data_from_financial_modeling_prep(
 
 def get_historical_data_from_yahoo_finance(
     ticker: str,
-    start: str | None = None,
-    end: str | None = None,
-    interval: str = "1d",
-    return_column: str = "Adj Close",
+    start=None,
+    end=None,
+    interval="1d",
+    return_column="Adj Close",
     risk_free_rate: pd.DataFrame = pd.DataFrame(),
     include_dividends: bool = True,
-    divide_ohlc_by: int | float | None = None,
+    divide_ohlc_by=None,
 ):
     """
     Retrieves historical stock data for the given ticker(s) from Yahoo! Finance API for a specified period.
@@ -492,9 +492,9 @@ def get_historical_data_from_yahoo_finance(
 
 def enrich_historical_data(
     historical_data: pd.DataFrame,
-    start: str | None = None,
-    end: str | None = None,
-    return_column: str = "Adj Close",
+    start=None,
+    end=None,
+    return_column="Adj Close",
     risk_free_rate: pd.DataFrame = pd.DataFrame(),
 ):
     """
@@ -569,10 +569,10 @@ def enrich_historical_data(
 def convert_daily_to_other_period(
     period: str,
     daily_historical_data: pd.DataFrame,
-    start: str | None = None,
-    end: str | None = None,
+    start=None,
+    end=None,
     risk_free_rate: pd.Series = pd.DataFrame(),
-    rounding: int | None = None,
+    rounding=None,
 ):
     """
     Converts daily historical data to another period which can be:

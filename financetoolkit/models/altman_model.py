@@ -1,13 +1,11 @@
 """Altman Module"""
 __docformat__ = "google"
 
-import pandas as pd
-
 
 def get_working_capital_to_total_assets_ratio(
-    working_capital: float | pd.Series | pd.DataFrame,
-    total_assets: float | pd.Series | pd.DataFrame,
-) -> float | pd.Series | pd.DataFrame:
+    working_capital,
+    total_assets,
+):
     """
     The Working Capital to Total Assets Ratio is a financial metric used to measure a company's liquidity and
     ability to meet short-term obligations. It represents the proportion of a company's total assets that are
@@ -33,9 +31,9 @@ def get_working_capital_to_total_assets_ratio(
 
 
 def get_retained_earnings_to_total_assets_ratio(
-    retained_earnings: float | pd.Series | pd.DataFrame,
-    total_assets: float | pd.Series | pd.DataFrame,
-) -> float | pd.Series | pd.DataFrame:
+    retained_earnings,
+    total_assets,
+):
     """
     The Retained Earnings to Total Assets Ratio is a financial metric used to measure a company's profitability
     and the proportion of its assets that are financed by its retained earnings.
@@ -60,9 +58,9 @@ def get_retained_earnings_to_total_assets_ratio(
 
 
 def get_earnings_before_interest_and_taxes_to_total_assets_ratio(
-    ebit: float | pd.Series | pd.DataFrame,
-    total_assets: float | pd.Series | pd.DataFrame,
-) -> float | pd.Series | pd.DataFrame:
+    ebit,
+    total_assets,
+):
     """
     The Earnings Before Interest and Taxes to Total Assets Ratio is a financial metric used to measure a company's
     profitability and the efficiency with which it uses its assets.
@@ -86,9 +84,9 @@ def get_earnings_before_interest_and_taxes_to_total_assets_ratio(
 
 
 def get_market_value_of_equity_to_book_value_of_total_liabilities_ratio(
-    market_value_of_equity: float | pd.Series | pd.DataFrame,
-    total_liabilities: float | pd.Series | pd.DataFrame,
-) -> float | pd.Series | pd.DataFrame:
+    market_value_of_equity,
+    total_liabilities,
+):
     """
     The Market Value of Equity to Book Value of Total Liabilities Ratio is a financial metric used to measure a
     company's solvency and the proportion of its liabilities that are covered by its equity.
@@ -112,9 +110,9 @@ def get_market_value_of_equity_to_book_value_of_total_liabilities_ratio(
 
 
 def get_sales_to_total_assets_ratio(
-    sales: float | pd.Series | pd.DataFrame,
-    total_assets: float | pd.Series | pd.DataFrame,
-) -> float | pd.Series | pd.DataFrame:
+    sales,
+    total_assets,
+):
     """
     The Sales to Total Assets Ratio is a financial metric used to measure a company's efficiency and the
     proportion of its assets that are used to generate sales.
@@ -138,15 +136,11 @@ def get_sales_to_total_assets_ratio(
 
 
 def get_altman_z_score(
-    working_capital_to_total_assets_ratio: float | pd.Series | pd.DataFrame,
-    retained_earnings_to_total_assets_ratio: float | pd.Series | pd.DataFrame,
-    earnings_before_interest_and_taxes_to_total_assets_ratio: float
-    | pd.Series
-    | pd.DataFrame,
-    market_value_of_equity_to_book_value_of_total_liabilities_ratio: float
-    | pd.Series
-    | pd.DataFrame,
-    sales_to_total_assets_ratio: float | pd.Series | pd.DataFrame,
+    working_capital_to_total_assets_ratio,
+    retained_earnings_to_total_assets_ratio,
+    earnings_before_interest_and_taxes_to_total_assets_ratio,
+    market_value_of_equity_to_book_value_of_total_liabilities_ratio,
+    sales_to_total_assets_ratio,
 ):
     """
     The Altman Z-Score is a financial metric used to measure a company's solvency and the likelihood that it will

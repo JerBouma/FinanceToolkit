@@ -19,9 +19,7 @@ MULTI_PERIOD_INDEX_LEVELS = 2
 # pylint: disable=isinstance-second-argument-not-valid-type
 
 
-def get_covariance(
-    returns: pd.Series | pd.DataFrame, benchmark_returns: pd.Series | pd.DataFrame
-) -> pd.Series | pd.DataFrame:
+def get_covariance(returns, benchmark_returns):
     """
     Calculate the covariance of returns.
 
@@ -52,15 +50,13 @@ def get_covariance(
 
             return covariance
 
-        if isinstance(returns, pd.Series | pd.core.window.rolling.Rolling):
+        if isinstance(returns, pd.Series or pd.core.window.rolling.Rolling):
             return returns.cov(benchmark_returns)
 
     return returns.cov(benchmark_returns)
 
 
-def get_beta(
-    returns: pd.Series | pd.DataFrame, benchmark_returns: pd.Series
-) -> pd.Series | pd.DataFrame:
+def get_beta(returns, benchmark_returns: pd.Series):
     """
     Calculate beta. Beta represents the slope in the linear regression between
     the asset returns and the benchmark returns.
@@ -93,9 +89,7 @@ def get_beta(
     raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
 
 
-def get_rolling_beta(
-    returns: pd.Series | pd.DataFrame, benchmark_returns: pd.Series, window_size: int
-) -> pd.Series | pd.DataFrame:
+def get_rolling_beta(returns, benchmark_returns, window_size: int):
     """
     Calculate rolling beta. Beta represents the slope in the linear regression between
     the asset returns and the benchmark returns.
@@ -127,10 +121,10 @@ def get_rolling_beta(
 
 
 def get_capital_asset_pricing_model(
-    risk_free_rate: pd.Series | float,
-    beta: pd.Series | pd.DataFrame | float,
-    benchmark_returns: pd.Series | float,
-) -> pd.Series | pd.DataFrame:
+    risk_free_rate,
+    beta,
+    benchmark_returns,
+):
     """
     CAPM, or the Capital Asset Pricing Model, is a financial model used to estimate the expected return on an investment,
     such as a stock or portfolio of stocks. It provides a framework for evaluating the risk and return trade-off of
@@ -151,9 +145,9 @@ def get_capital_asset_pricing_model(
     Expected Return (ER) = Rf + β * (Rm - Rf)
 
     Args:
-        risk_free_rate (pd.Series | float): the risk free rate.
+        risk_free_rate (pd.Series or float): the risk free rate.
         beta (pd.Series | pd.DataFrame | float): the beta.
-        benchmark_returns (pd.Series | float): the benchmark returns.
+        benchmark_returns (pd.Series or float): the benchmark returns.
 
     Returns:
         pd.Series | pd.DataFrame | float: the capital asset pricing model.
@@ -166,7 +160,7 @@ def get_capital_asset_pricing_model(
             capital_asset_pricing_model.loc[:, column] = risk_free_rate + beta[
                 column
             ] * (benchmark_returns - risk_free_rate)
-    if isinstance(beta, (pd.Series | float)):
+    if isinstance(beta, (pd.Series or float)):
         capital_asset_pricing_model = risk_free_rate + beta * (
             benchmark_returns - risk_free_rate
         )
@@ -174,7 +168,7 @@ def get_capital_asset_pricing_model(
     return capital_asset_pricing_model
 
 
-def obtain_fama_and_french_dataset(fama_and_french_url: str | None = None):
+def obtain_fama_and_french_dataset(fama_and_french_url=None):
     """
     This functionality returns the Fama and French 5 Factor Model dataset. It is a dataset that contains the
     excess returns of the 5 factors that are used in the Fama and French 5 Factor Model. The factors are:
@@ -229,7 +223,7 @@ def obtain_fama_and_french_dataset(fama_and_french_url: str | None = None):
 
 def get_factor_asset_correlations(
     factors: pd.DataFrame,
-    excess_return: pd.Series,
+    excess_return,
 ) -> pd.DataFrame:
     """
     Calculates factor exposures for each asset.
@@ -259,9 +253,9 @@ def get_factor_asset_correlations(
 
 
 def get_fama_and_french_model_multi(
-    excess_returns: pd.Series,
+    excess_returns,
     factor_dataset: pd.DataFrame,
-) -> pd.Series | pd.DataFrame:
+):
     """
     The Fama and French 5 Factor Model is an extension of the CAPM model. It adds four additional factors to the
     regression analysis to better describe asset returns:
@@ -320,9 +314,9 @@ def get_fama_and_french_model_multi(
 
 
 def get_fama_and_french_model_single(
-    excess_returns: pd.Series,
-    factor: pd.Series,
-) -> pd.Series | pd.DataFrame:
+    excess_returns,
+    factor,
+):
     """
     The Fama and French 5 Factor Model is an extension of the CAPM model. It adds four additional factors to the
     regression analysis to better describe asset returns:
@@ -363,9 +357,9 @@ def get_fama_and_french_model_single(
 
 
 def get_alpha(
-    asset_returns: pd.Series | float,
-    benchmark_returns: pd.Series | float,
-) -> pd.Series | pd.DataFrame:
+    asset_returns,
+    benchmark_returns,
+):
     """
     Calculate the Alpha.
 
@@ -379,18 +373,18 @@ def get_alpha(
         alpha = pd.DataFrame(columns=asset_returns.columns, dtype=np.float64)
         for column in alpha.columns:
             alpha.loc[:, column] = asset_returns[column] - benchmark_returns
-    if isinstance(asset_returns, (pd.Series | float)):
+    if isinstance(asset_returns, (pd.Series or float)):
         alpha = asset_returns - benchmark_returns
 
     return alpha
 
 
 def get_jensens_alpha(
-    asset_returns: pd.Series | float,
-    risk_free_rate: pd.Series | float,
-    beta: pd.Series | pd.DataFrame | float,
-    benchmark_returns: pd.Series | float,
-) -> pd.Series | pd.DataFrame:
+    asset_returns,
+    risk_free_rate,
+    beta,
+    benchmark_returns,
+):
     """
     Calculate Jensen's Alpha.
 
@@ -406,8 +400,8 @@ def get_jensens_alpha(
             jensens_alpha.loc[:, column] = asset_returns[column] - (
                 risk_free_rate + beta[column] * (benchmark_returns - risk_free_rate)
             )
-    elif isinstance(beta, (pd.Series | float)) and isinstance(
-        beta, (pd.Series | float)
+    elif isinstance(beta, (pd.Series or float)) and isinstance(
+        beta, (pd.Series or float)
     ):
         jensens_alpha = asset_returns - (
             risk_free_rate + beta * (benchmark_returns - risk_free_rate)
@@ -422,9 +416,9 @@ def get_jensens_alpha(
 
 
 def get_treynor_ratio(
-    asset_returns: pd.Series | float,
-    risk_free_rate: pd.Series | float,
-    beta: pd.Series | pd.DataFrame | float,
+    asset_returns,
+    risk_free_rate,
+    beta,
 ) -> pd.Series:
     """
     Calculate the Treynor ratio of returns.
@@ -442,8 +436,8 @@ def get_treynor_ratio(
             treynor_ratio.loc[:, column] = (
                 asset_returns[column] - risk_free_rate
             ) / beta[column]
-    elif isinstance(beta, (pd.Series | float)) and isinstance(
-        asset_returns, (pd.Series | float)
+    elif isinstance(beta, (pd.Series or float)) and isinstance(
+        asset_returns, (pd.Series or float)
     ):
         treynor_ratio = (asset_returns - risk_free_rate) / beta
     else:
@@ -455,7 +449,7 @@ def get_treynor_ratio(
     return treynor_ratio
 
 
-def get_sharpe_ratio(excess_returns: pd.Series | pd.DataFrame) -> pd.Series:
+def get_sharpe_ratio(excess_returns) -> pd.Series:
     """
     Calculate the Sharpe ratio of returns.
 
@@ -483,7 +477,7 @@ def get_sharpe_ratio(excess_returns: pd.Series | pd.DataFrame) -> pd.Series:
 
 
 def get_rolling_sharpe_ratio(
-    excess_returns: pd.Series | pd.DataFrame,
+    excess_returns,
     window_size: int,
 ) -> pd.Series:
     """
@@ -504,7 +498,7 @@ def get_rolling_sharpe_ratio(
     return sharpe_ratio
 
 
-def get_sortino_ratio(excess_returns: pd.Series | pd.DataFrame) -> pd.Series:
+def get_sortino_ratio(excess_returns) -> pd.Series:
     """
     Calculate the Sortino ratio of returns.
 
@@ -537,9 +531,7 @@ def get_sortino_ratio(excess_returns: pd.Series | pd.DataFrame) -> pd.Series:
     raise TypeError("Expects pd.DataFrame, pd.Series inputs, no other value.")
 
 
-def get_ulcer_performance_index(
-    excess_returns: pd.Series | pd.DataFrame, ulcer_index: pd.Series | pd.DataFrame
-) -> pd.Series:
+def get_ulcer_performance_index(excess_returns, ulcer_index) -> pd.Series:
     """
     Calculate the Ulcer Performance Index (UPI) of returns.
 
@@ -554,9 +546,9 @@ def get_ulcer_performance_index(
 
 
 def get_m2_ratio(
-    asset_returns: pd.Series | pd.DataFrame,
-    risk_free_rate: pd.Series,
-    asset_standard_deviation: pd.Series | pd.DataFrame,
+    asset_returns,
+    risk_free_rate,
+    asset_standard_deviation,
 ) -> pd.Series:
     """
     Calculate the M2 Ratio (Modigliani-Modigliani Measure) of returns.
@@ -576,8 +568,8 @@ def get_m2_ratio(
             m2_ratio.loc[:, column] = (
                 asset_returns[column] - risk_free_rate
             ) / asset_standard_deviation[column]
-    elif isinstance(asset_returns, (pd.Series | float)) and isinstance(
-        asset_standard_deviation, (pd.Series | float)
+    elif isinstance(asset_returns, (pd.Series or float)) and isinstance(
+        asset_standard_deviation, (pd.Series or float)
     ):
         m2_ratio = (asset_returns - risk_free_rate) / asset_standard_deviation
     else:
@@ -589,9 +581,7 @@ def get_m2_ratio(
     return m2_ratio
 
 
-def get_tracking_error(
-    asset_returns: pd.Series | pd.DataFrame, benchmark_returns: pd.Series
-) -> pd.Series:
+def get_tracking_error(asset_returns, benchmark_returns: pd.Series) -> pd.Series:
     """
     Calculate the Tracking Error of returns.
 
@@ -614,15 +604,13 @@ def get_tracking_error(
         for column in tracking_error.columns:
             tracking_error.loc[:, column] = (asset_returns - benchmark_returns).std()
 
-    if isinstance(asset_returns, (pd.Series | float)):
+    if isinstance(asset_returns, (pd.Series or float)):
         tracking_error = (asset_returns - benchmark_returns).std()
 
     return tracking_error
 
 
-def get_information_ratio(
-    asset_returns: pd.Series | pd.DataFrame, benchmark_returns: pd.Series
-) -> pd.Series:
+def get_information_ratio(asset_returns, benchmark_returns: pd.Series) -> pd.Series:
     """
     Calculate the Information Ratio of returns.
 
@@ -651,16 +639,14 @@ def get_information_ratio(
             difference = asset_returns[column] - benchmark_returns
             information_ratio.loc[:, column] = difference.mean() / difference.std()
 
-    if isinstance(asset_returns, (pd.Series | float)):
+    if isinstance(asset_returns, (pd.Series or float)):
         difference = asset_returns - benchmark_returns
         information_ratio = difference.mean() / difference.std()
 
     return information_ratio
 
 
-def get_compound_growth_rate(
-    prices: pd.Series | pd.DataFrame, periods: int
-) -> float | pd.Series:
+def get_compound_growth_rate(prices, periods: int):
     """
     Calculate the Compound Growth Rate of a given data series.
 

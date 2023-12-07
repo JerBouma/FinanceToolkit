@@ -695,7 +695,9 @@ def get_garch_forecast(
             for sub_period in periods:
                 period_data = returns.loc[sub_period].aggregate(get_garch_forecast)
                 period_data.name = sub_period
-                period_data.columns = [col + " " + str(sub_period) for col in period_data.columns]
+                period_data.columns = [
+                    col + " " + str(sub_period) for col in period_data.columns
+                ]
 
                 if not period_data.empty:
                     period_data_list.append(period_data)

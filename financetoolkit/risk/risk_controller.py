@@ -611,9 +611,11 @@ class Risk:
         ...
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
-        returns = helpers.handle_return_data_periods(
-            self, period, within_period
-        ).dropna().replace(0, 0.000001)
+        returns = (
+            helpers.handle_return_data_periods(self, period, within_period)
+            .dropna()
+            .replace(0, 0.000001)
+        )
         garch_sigma_2 = risk_model.get_garch(returns, None, t, optimization_t)
 
         if growth:
@@ -695,9 +697,11 @@ class Risk:
         |  9 | 3.1582e-05  | 0.000468132 | 8.25579e-05 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
-        returns = helpers.handle_return_data_periods(
-            self, period, within_period
-        ).dropna().replace(0, 0.000001)
+        returns = (
+            helpers.handle_return_data_periods(self, period, within_period)
+            .dropna()
+            .replace(0, 0.000001)
+        )
 
         sigma_2_forecast = risk_model.get_garch_forecast(returns, None, t).dropna()
 

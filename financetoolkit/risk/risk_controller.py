@@ -550,9 +550,9 @@ class Risk:
     @handle_errors
     def get_garch(
         self,
-        period: str | None = "quarterly",
-        t: int = None,
-        optimization_t: int = None,
+        period: str | None = None,
+        time_steps: int | None = None,
+        optimization_t: int | None = None,
         within_period: bool = False,
         rounding: int | None = 4,
         growth: bool = False,
@@ -614,9 +614,14 @@ class Risk:
         returns = (
             helpers.handle_return_data_periods(self, period, within_period)
             .dropna()
-            .replace(0, 0.000001)
+            .replace(0, 1e-100)
         )
-        garch_sigma_2 = risk_model.get_garch(returns, None, t, optimization_t)
+        garch_sigma_2 = risk_model.get_garch(
+            returns=returns,
+            weights=None,
+            time_steps=time_steps,
+            optimization_t=optimization_t,
+        )
 
         if growth:
             return calculate_growth(
@@ -626,13 +631,13 @@ class Risk:
                 axis="index",
             )
 
-        return garch_sigma_2.round(rounding if rounding else self._rounding)
+        return garch_sigma_2.round(rounding if rounding else self._rounding)  # type: ignore
 
     @handle_errors
     def get_garch_forecast(
         self,
-        period: str | None = "quarterly",
-        t: int = None,
+        period: str | None = None,
+        time_steps: int = 10,
         within_period: bool = False,
         rounding: int | None = None,
         growth: bool = False,
@@ -683,27 +688,48 @@ class Risk:
 
         Which returns:
 
-        |    |        AMZN |        TSLA |   Benchmark |
-        |---:|------------:|------------:|------------:|
-        |  0 | 4.57488e-05 | 0.000502296 | 0.000124924 |
-        |  1 | 4.57488e-05 | 0.000502296 | 0.000124924 |
-        |  2 | 4.36745e-05 | 0.000497892 | 0.00011862  |
-        |  3 | 4.1695e-05  | 0.000493527 | 0.000112635 |
-        |  4 | 3.98062e-05 | 0.000489201 | 0.000106951 |
-        |  5 | 3.80038e-05 | 0.000484912 | 0.000101555 |
-        |  6 | 3.62838e-05 | 0.000480661 | 9.64306e-05 |
-        |  7 | 3.46426e-05 | 0.000476448 | 9.1565e-05  |
-        |  8 | 3.30765e-05 | 0.000472272 | 8.69448e-05 |
-        |  9 | 3.1582e-05  | 0.000468132 | 8.25579e-05 |
+        |      |   AMZN |     TSLA |   Benchmark |
+        |:-----|-------:|---------:|------------:|
+        | 2024 | 0      |    0     |      0      |
+        | 2025 | 0      |    0     |      0      |
+        | 2026 | 0.4156 |  252.921 |      0.0058 |
+        | 2027 | 0.7897 |  480.55  |      0.011  |
+        | 2028 | 1.1263 |  685.417 |      0.0156 |
+        | 2029 | 1.4293 |  869.796 |      0.0198 |
+        | 2030 | 1.702  | 1035.74  |      0.0236 |
+        | 2031 | 1.9474 | 1185.09  |      0.027  |
+        | 2032 | 2.1683 | 1319.5   |      0.0301 |
+        | 2033 | 2.3671 | 1440.47  |      0.0329 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
         returns = (
             helpers.handle_return_data_periods(self, period, within_period)
             .dropna()
-            .replace(0, 0.000001)
+            .replace(0, 1e-100)
         )
 
-        sigma_2_forecast = risk_model.get_garch_forecast(returns, None, t).dropna()
+        sigma_2_forecast = risk_model.get_garch_forecast(
+            returns, None, time_steps
+        ).dropna()
+
+        period_symbol = (
+            "W"
+            if period == "weekly"
+            else "M"
+            if period == "monthly"
+            else "Q"
+            if period == "quarterly"
+            else "Y"
+        )
+        period_index = pd.PeriodIndex(
+            pd.date_range(
+                start=returns.index[-1].to_timestamp(),
+                periods=time_steps + 1,
+                freq=period_symbol,
+            )
+        )
+
+        sigma_2_forecast.index = period_index[1:]
 
         if growth:
             return calculate_growth(

@@ -491,24 +491,21 @@ def garch_log_maximization(
     """
     Calculates -SUM(-ln(v_i) - (u_i ^ 2) / v_i)
 
-    Parameters
-    ----------
-    weights (list): List with the values for omega, alpha and beta
-    returns (np.ndarray): A np.ndarray of returns.
-    t (int): Time steps to optimize GARCH for.
-    p (int): Number of u_t datapoints to use. Note that currently only p=1 is supported.
-    q: (int): Number of sigma_t datapoints to use. Note that currently only q=1 is supported.
+    Args:
+        weights (list): List with the values for omega, alpha and beta
+        returns (np.ndarray): A np.ndarray of returns.
+        t (int): Time steps to optimize GARCH for.
+        p (int): Number of u_t datapoints to use. Note that currently only p=1 is supported.
+        q: (int): Number of sigma_t datapoints to use. Note that currently only q=1 is supported.
 
-    Returns
-    -------
-    int
-        The result of the calculation -SUM(-ln(v_i) - (u_i ^ 2) / v_i)
+    Returns:
+        int: The result of the calculation -SUM(-ln(v_i) - (u_i ^ 2) / v_i)
     """
     # Convert weights to a numpy array for vectorized operations
-    weights = np.array(weights)
+    weights_array = np.array(weights)
 
     # Compute GARCH values using a vectorized function
-    garch = get_garch(returns, weights, t, p=p, q=q)
+    garch = get_garch(returns, weights_array, t, p=p, q=q)
 
     # Compute the log-likelihood in a vectorized manner
     u = returns[1:t]
@@ -516,11 +513,12 @@ def garch_log_maximization(
 
     # Use np.sum to calculate the sum of the log-likelihood
     result = -np.sum(-np.log(v) - u**2 / v)
+
     return result
 
 
 def get_garch_weights(
-    returns: np.ndarray, t: int = None, p: int = 1, q: int = 1
+    returns: np.ndarray, t: int | None = None, p: int = 1, q: int = 1
 ) -> list:
     """
     Estimates the weights (parameters) for a GARCH(p, q) model using simulated annealing optimization.
@@ -533,17 +531,14 @@ def get_garch_weights(
     - alpha + beta < 1
     Note that there is no restriction on (1 - alpha - beta) sigma_l.
 
-    Parameters
-    ----------
-    returns (np.ndarray): A np.ndarray of returns.
-    t (int): Time steps to optimize GARCH for.
-    p (int): Number of u_t datapoints to use. Note that currently only p=1 is supported.
-    q: (int): Number of sigma_t datapoints to use. Note that currently only q=1 is supported.
+    Args:
+        returns (np.ndarray): A np.ndarray of returns.
+        t (int): Time steps to optimize GARCH for.
+        p (int): Number of u_t datapoints to use. Note that currently only p=1 is supported.
+        q: (int): Number of sigma_t datapoints to use. Note that currently only q=1 is supported.
 
-    Returns
-    -------
-    list:
-        A list with the weights
+    Returns:
+        list: A list with the weights
     """
     if isinstance(returns, pd.DataFrame):
         returns = returns.iloc[:, 0].to_numpy()
@@ -569,9 +564,9 @@ def get_garch_weights(
 
 def get_garch(
     returns: np.ndarray | pd.Series | pd.DataFrame,
-    weights: np.ndarray = None,
-    t: int = None,
-    optimization_t: int = None,
+    weights: np.ndarray | list | None = None,
+    time_steps: int | None = None,
+    optimization_t: int | None = None,
     p: int = 1,
     q: int = 1,
 ) -> np.ndarray | pd.Series | pd.DataFrame:
@@ -586,19 +581,17 @@ def get_garch(
     - Finance Compact Plus Band 1, by Yvonne Seler Zimmerman and Heinz Zimmerman; ISBN: 978-3-907291-31-1
     - Options, Futures & other Derivates, by John C. Hull; ISBN: 0-13-022444-8
 
-    Parameters
-    ----------
-    returns (pd.Series | pd.DataFrame | np.ndarray): A Series or Dataframe or np.ndarray of returns.
-    weights (list): List with the values for omega, alpha and beta. Note that these are used all columns in the returns.
-    t (int): Time steps to calculate GARCH for.
-    optimization_t (int): Time steps to optimize GRACH for. It is only used if no weights are given.
-    p (int): Number of u_t datapoints to use. Note that currently only p=1 is supported.
-    q: (int): Number of sigma_t datapoints to use. Note that currently only q=1 is supported.
+    Args:
+        returns (pd.Series | pd.DataFrame | np.ndarray): A Series or Dataframe or np.ndarray of returns.
+        weights (list): List with the values for omega, alpha and beta. Note that these are used all columns
+        in the returns.
+        t (int): Time steps to calculate GARCH for.
+        optimization_t (int): Time steps to optimize GRACH for. It is only used if no weights are given.
+        p (int): Number of u_t datapoints to use. Note that currently only p=1 is supported.
+        q: (int): Number of sigma_t datapoints to use. Note that currently only q=1 is supported.
 
-    Returns
-    -------
-    np.array | pd.Series | pd.DataFrame:
-        A object with sigma_2 values
+    Returns:
+        np.array | pd.Series | pd.DataFrame: A object with sigma_2 values
     """
     # TODO: support GARCH(p, q), for any p and q  # pylint: disable=W0511
     if p != 1 or q != 1:
@@ -626,7 +619,7 @@ def get_garch(
         return get_garch(
             returns=returns.values,
             weights=weights,
-            t=t,
+            time_steps=time_steps,
             optimization_t=optimization_t,
             p=p,
             q=q,
@@ -636,15 +629,15 @@ def get_garch(
             if optimization_t is None:
                 optimization_t = len(returns)
             weights = get_garch_weights(returns, optimization_t, p, q)
-        if t is None:
-            t = len(returns)
+        if time_steps is None:
+            time_steps = len(returns)
 
         # Initialize sigma2 with zeros and set the first value
-        sigma2 = np.zeros(t)
+        sigma2 = np.zeros(time_steps)
         sigma2[0] = returns[0] ** 2
 
         # Calculate sigma2 values using a vectorized approach
-        for i in range(1, t):
+        for i in range(1, time_steps):
             sigma2[i] = (
                 weights[0]
                 + weights[1] * returns[i - 1] ** 2
@@ -658,8 +651,8 @@ def get_garch(
 
 def get_garch_forecast(
     returns: pd.Series | pd.DataFrame | np.ndarray,
-    weights: list = None,
-    t: int = 10,
+    weights: list | None = None,
+    time_steps: int = 10,
     p: int = 1,
     q: int = 1,
 ):
@@ -674,18 +667,15 @@ def get_garch_forecast(
     For more:
     - Finance Compact Plus Band 1, by Yvonne Seler Zimmerman and Heinz Zimmerman; ISBN: 978-3-907291-31-1
 
-    Parameters
-    ----------
-    returns (pd.Series | pd.DataFrame | np.ndarray): A Series or Dataframe or np.ndarray of returns.
-    weights (list): List with the values for omega, alpha and beta
-    t (int): Time steps to calculate GARCH for
-    p (int): Number of u_t datapoints to use. Note that currently only p=1 is supported.
-    q: (int): Number of sigma_t datapoints to use. Note that currently only q=1 is supported.
+    Args:
+        returns (pd.Series | pd.DataFrame | np.ndarray): A Series or Dataframe or np.ndarray of returns.
+        weights (list): List with the values for omega, alpha and beta
+        time_steps (int): Time steps to calculate GARCH for
+        p (int): Number of u_t datapoints to use. Note that currently only p=1 is supported.
+        q: (int): Number of sigma_t datapoints to use. Note that currently only q=1 is supported.
 
-    Returns
-    -------
-    np.ndarray
-        sigma_2 sigma_2 forecasts, going from the forecast from 0 time period to t
+    Returns:
+        np.ndarray: sigma_2 sigma_2 forecasts, going from the forecast from 0 time period to t
     """
     if isinstance(returns, pd.DataFrame):
         if returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS:
@@ -705,21 +695,22 @@ def get_garch_forecast(
             garch_forecast = pd.concat(period_data_list, axis=1)
 
             return garch_forecast
+
         return returns.aggregate(get_garch_forecast)
     if isinstance(returns, pd.Series):
         return get_garch_forecast(
-            returns=returns.values, weights=weights, t=t, p=p, q=q
+            returns=returns.values, weights=weights, time_steps=time_steps, p=p, q=q
         )
     if isinstance(returns, np.ndarray):
         if weights is None:
             weights = get_garch_weights(returns, p=p, q=q)
 
-        garch_values = get_garch(returns, weights, t, p=p, q=q)
+        garch_values = get_garch(returns, weights, time_steps, p=p, q=q)
 
         sigma_l = weights[0] / (1 - weights[1] - weights[2])
-        sigma_2 = np.zeros(t)
+        sigma_2 = np.zeros(time_steps)
         sigma_2[0] = garch_values[0]
-        for i in range(1, t):
+        for i in range(1, time_steps):
             sigma_2[i] = sigma_l**2 + (garch_values[0] - sigma_l**2) * (
                 weights[1] + weights[2]
             ) ** (i - 1)

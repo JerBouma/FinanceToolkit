@@ -10,10 +10,13 @@ historical = pd.read_pickle("tests/datasets/historical_dataset.pickle")
 
 toolkit = Toolkit(
     tickers=["AAPL", "MSFT"],
+    start_date="2013-09-09",
+    end_date="2023-09-07",
     historical=historical,
     balance=balance_dataset,
     income=income_dataset,
     cash=cash_dataset,
+    convert_currency=False,
 )
 
 ratios_module = toolkit.ratios

@@ -10,6 +10,7 @@ toolkit = Toolkit(
     historical=historical,
     start_date="2013-09-09",
     end_date="2023-09-07",
+    convert_currency=False,
 )
 
 technical_module = toolkit.technicals

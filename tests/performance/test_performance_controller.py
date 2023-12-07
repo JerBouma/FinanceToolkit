@@ -10,10 +10,13 @@ historical = pd.read_pickle("tests/datasets/historical_dataset.pickle")
 
 toolkit = Toolkit(
     tickers=["AAPL", "MSFT"],
+    start_date="2013-09-09",
+    end_date="2023-09-07",
     historical=historical,
     balance=balance_dataset,
     income=income_dataset,
     cash=cash_dataset,
+    convert_currency=False,
 )
 
 performance_module = toolkit.performance
@@ -34,7 +37,9 @@ def test_get_capital_asset_pricing_model(recorder):
         performance_module.get_capital_asset_pricing_model(growth=True, lag=[1, 2, 3])
     )
     recorder.capture(
-        performance_module.get_capital_asset_pricing_model(show_full_results=True)
+        performance_module.get_capital_asset_pricing_model(
+            show_full_results=True
+        ).round(2)
     )
 
 

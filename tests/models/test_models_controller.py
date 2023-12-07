@@ -16,6 +16,7 @@ toolkit = Toolkit(
     balance=balance_dataset,
     income=income_dataset,
     cash=cash_dataset,
+    convert_currency=False,
 )
 
 models_module = toolkit.models

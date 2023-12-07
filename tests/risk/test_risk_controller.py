@@ -6,10 +6,7 @@ from financetoolkit import Toolkit
 historical = pd.read_pickle("tests/datasets/historical_dataset.pickle")
 
 toolkit = Toolkit(
-    tickers=["AAPL", "MSFT"],
-    historical=historical,
-    start_date="2013-09-09",
-    end_date="2023-09-07",
+    tickers=["AAPL", "MSFT"], historical=historical, convert_currency=False
 )
 
 risk_module = toolkit.risk
@@ -41,6 +38,20 @@ def test_get_entropic_value_at_risk(recorder):
     recorder.capture(risk_module.get_entropic_value_at_risk(period="monthly"))
     recorder.capture(risk_module.get_entropic_value_at_risk(growth=True))
     recorder.capture(risk_module.get_entropic_value_at_risk(growth=True, lag=[1, 2, 3]))
+
+
+def test_get_garch(recorder):
+    recorder.capture(risk_module.get_garch())
+    recorder.capture(risk_module.get_garch(period="monthly"))
+    recorder.capture(risk_module.get_garch(growth=True))
+    recorder.capture(risk_module.get_garch(growth=True, lag=[1, 2, 3]))
+
+
+def test_get_garch_forecast(recorder):
+    recorder.capture(risk_module.get_garch_forecast())
+    recorder.capture(risk_module.get_garch_forecast(period="monthly"))
+    recorder.capture(risk_module.get_garch_forecast(growth=True))
+    recorder.capture(risk_module.get_garch_forecast(growth=True, lag=[1, 2, 3]))
 
 
 def test_get_maximum_drawdown(recorder):

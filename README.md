@@ -378,6 +378,7 @@ The Risk module is meant to calculate important risk metrics such as Value at Ri
 - Value at Risk (VaR) with distributions Historical, Gaussian, Student-t, Cornish-Fisher.
 - Conditional Value at Risk (cVaR) with distributions Historical, Gaussian, Laplace, Logistic.
 - Entropic Value at Risk (eVaR) with a Gaussian distribution. 
+- GARCH (Generalized Autoregressive Conditional Heteroskedasticity) with Forecasting
 - Ulcer Index (UI)
 - Maximum Drawdown (MDD)
 - Skewness

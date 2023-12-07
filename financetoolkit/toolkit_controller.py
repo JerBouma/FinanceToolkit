@@ -2693,62 +2693,14 @@ class Toolkit:
 
         if convert_currency:
             self.get_exchange_rates(period="quarterly" if self._quarterly else "yearly")
-            no_data = []
 
-            periods = self._balance_sheet_statement.columns
-            currencies: dict[str, list[str]] = {}
-
-            for ticker in self._tickers:
-                try:
-                    currency = self._statement_currencies.loc[ticker]
-                    base_currency, quote_currency = currency[:3], currency[3:6]
-
-                    if base_currency != quote_currency:
-                        if currency not in currencies:
-                            currencies[currency] = []
-
-                        if self._quarterly:
-                            self._balance_sheet_statement.loc[ticker] = (
-                                self._balance_sheet_statement.loc[ticker].mul(
-                                    self._quarterly_exchange_rate_data.loc[
-                                        periods, ("Adj Close", currency)
-                                    ]
-                                )
-                            ).to_numpy()
-                        else:
-                            self._balance_sheet_statement.loc[ticker] = (
-                                self._balance_sheet_statement.loc[ticker].mul(
-                                    self._yearly_exchange_rate_data.loc[
-                                        periods, ("Adj Close", currency)
-                                    ]
-                                )
-                            ).to_numpy()
-
-                        currencies[currency].append(ticker)
-                except (KeyError, ValueError):
-                    no_data.append(ticker)
-                    continue
-
-            if no_data:
-                print(
-                    "The following tickers could not be converted to the historical data currency: "
-                    f"{', '.join(no_data)}"
-                )
-
-            currencies_text = []
-            for currency, ticker_match in currencies.items():
-                base_currency, quote_currency = currency[:3], currency[3:6]
-
-                if base_currency != quote_currency:
-                    for ticker in ticker_match:
-                        currencies_text.append(
-                            f"{ticker} ({base_currency} to {quote_currency})"
-                        )
-
-            if currencies_text:
-                print(
-                    f"The balance sheet statements from the following tickers are converted: {', '.join(currencies_text)}"
-                )
+            balance_sheet_statement = helpers.convert_currencies(
+                financial_statement_data=balance_sheet_statement,
+                financial_statement_currencies=self._statement_currencies,
+                exchange_rate_data=self.get_exchange_rates(
+                    period="quarterly" if self._quarterly else "yearly"
+                )["Adj Close"],
+            )
 
         balance_sheet_statement = balance_sheet_statement.round(
             rounding if rounding else self._rounding
@@ -2914,62 +2866,14 @@ class Toolkit:
 
         if convert_currency:
             self.get_exchange_rates(period="quarterly" if self._quarterly else "yearly")
-            no_data = []
 
-            periods = self._income_statement.columns
-            currencies: dict[str, list[str]] = {}
-
-            for ticker in self._tickers:
-                try:
-                    currency = self._statement_currencies.loc[ticker]
-                    base_currency, quote_currency = currency[:3], currency[3:6]
-
-                    if base_currency != quote_currency:
-                        if currency not in currencies:
-                            currencies[currency] = []
-
-                        if self._quarterly:
-                            self._income_statement.loc[ticker] = (
-                                self._income_statement.loc[ticker].mul(
-                                    self._quarterly_exchange_rate_data.loc[
-                                        periods, ("Adj Close", currency)
-                                    ]
-                                )
-                            ).to_numpy()
-                        else:
-                            self._income_statement.loc[ticker] = (
-                                self._income_statement.loc[ticker].mul(
-                                    self._yearly_exchange_rate_data.loc[
-                                        periods, ("Adj Close", currency)
-                                    ]
-                                )
-                            ).to_numpy()
-
-                        currencies[currency].append(ticker)
-                except (KeyError, ValueError):
-                    no_data.append(ticker)
-                    continue
-
-            if no_data:
-                print(
-                    "The following tickers could not be converted to the historical data currency: "
-                    f"{', '.join(no_data)}"
-                )
-
-            currencies_text = []
-            for currency, ticker_match in currencies.items():
-                base_currency, quote_currency = currency[:3], currency[3:6]
-
-                if base_currency != quote_currency:
-                    for ticker in ticker_match:
-                        currencies_text.append(
-                            f"{ticker} ({base_currency} to {quote_currency})"
-                        )
-
-            if currencies_text:
-                print(
-                    f"The income statements from the following tickers are converted: {', '.join(currencies_text)}"
-                )
+            income_statement = helpers.convert_currencies(
+                financial_statement_data=income_statement,
+                financial_statement_currencies=self._statement_currencies,
+                exchange_rate_data=self.get_exchange_rates(
+                    period="quarterly" if self._quarterly else "yearly"
+                )["Adj Close"],
+            )
 
         income_statement = income_statement.round(
             rounding if rounding else self._rounding
@@ -3135,62 +3039,14 @@ class Toolkit:
 
         if convert_currency:
             self.get_exchange_rates(period="quarterly" if self._quarterly else "yearly")
-            no_data = []
 
-            periods = self._cash_flow_statement.columns
-            currencies: dict[str, list[str]] = {}
-
-            for ticker in self._tickers:
-                try:
-                    currency = self._statement_currencies.loc[ticker]
-                    base_currency, quote_currency = currency[:3], currency[3:6]
-
-                    if base_currency != quote_currency:
-                        if currency not in currencies:
-                            currencies[currency] = []
-
-                        if self._quarterly:
-                            self._cash_flow_statement.loc[ticker] = (
-                                self._cash_flow_statement.loc[ticker].mul(
-                                    self._quarterly_exchange_rate_data.loc[
-                                        periods, ("Adj Close", currency)
-                                    ]
-                                )
-                            ).to_numpy()
-                        else:
-                            self._cash_flow_statement.loc[ticker] = (
-                                self._cash_flow_statement.loc[ticker].mul(
-                                    self._yearly_exchange_rate_data.loc[
-                                        periods, ("Adj Close", currency)
-                                    ]
-                                )
-                            ).to_numpy()
-
-                        currencies[currency].append(ticker)
-                except (KeyError, ValueError):
-                    no_data.append(ticker)
-                    continue
-
-            if no_data:
-                print(
-                    "The following tickers could not be converted to the historical data currency: "
-                    f"{', '.join(no_data)}"
-                )
-
-            currencies_text = []
-            for currency, ticker_match in currencies.items():
-                base_currency, quote_currency = currency[:3], currency[3:6]
-
-                if base_currency != quote_currency:
-                    for ticker in ticker_match:
-                        currencies_text.append(
-                            f"{ticker} ({base_currency} to {quote_currency})"
-                        )
-
-            if currencies_text:
-                print(
-                    f"The cash flow statements from the following tickers are converted: {', '.join(currencies_text)}"
-                )
+            cash_flow_statement = helpers.convert_currencies(
+                financial_statement_data=cash_flow_statement,
+                financial_statement_currencies=self._statement_currencies,
+                exchange_rate_data=self.get_exchange_rates(
+                    period="quarterly" if self._quarterly else "yearly"
+                )["Adj Close"],
+            )
 
         cash_flow_statement = cash_flow_statement.round(
             rounding if rounding else self._rounding

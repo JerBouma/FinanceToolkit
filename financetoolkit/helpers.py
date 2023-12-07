@@ -127,6 +127,86 @@ def determine_currencies(
     return statement_currencies, currencies
 
 
+def convert_currencies(
+    financial_statement_data: pd.DataFrame,
+    financial_statement_currencies: pd.Series,
+    exchange_rate_data: pd.DataFrame,
+):
+    """
+    Based on the retrieved currency definitions (e.g. EURUSD=X) for each ticker, obtained
+    through using the determine_currencies function, convert the financial statement data
+    to the historical currency.
+
+    The function reports the tickers that are converted and the currencies that they are
+    converted from and to. If the currency is the same, then no conversion is applied.
+
+    The function will also report the tickers that could not be converted. This is usually
+    due to the fact that the currency is not available in the historical data.
+
+    Args:
+        financial_statement_data (pd.DataFrame): A DataFrame containing the financial statement data.
+        financial_statement_currencies (pd.Series): A Series containing the currency symbols per ticker.
+        exchange_rate_data (pd.DataFrame): A DataFrame containing the exchange rate data.
+
+    Returns:
+        pd.DataFrame: A DataFrame containing the converted financial statement data.
+    """
+    no_data = []
+
+    periods = financial_statement_data.columns
+    tickers = financial_statement_data.index.get_level_values(0).unique()
+    currencies: dict[str, list[str]] = {}
+
+    for ticker in tickers:
+        try:
+            currency = financial_statement_currencies.loc[ticker]
+
+            # Only proceed if the currency is not NaN
+            if currency == currency:  # noqa
+                base_currency, quote_currency = currency[:3], currency[3:6]
+
+                if base_currency != quote_currency:
+                    if currency not in currencies:
+                        currencies[currency] = []
+
+                    financial_statement_data.loc[ticker] = (
+                        financial_statement_data.loc[ticker].mul(
+                            exchange_rate_data.loc[periods, currency]
+                        )
+                    ).to_numpy()
+
+                    currencies[currency].append(ticker)
+            else:
+                no_data.append(ticker)
+        except (KeyError, ValueError):
+            no_data.append(ticker)
+            continue
+
+    if no_data:
+        print(
+            "The following tickers could not be converted to the historical data currency: "
+            f"{', '.join(no_data)}"
+        )
+
+    currencies_text = []
+    for currency, ticker_match in currencies.items():
+        base_currency, quote_currency = currency[:3], currency[3:6]
+
+        if base_currency != quote_currency:
+            for ticker in ticker_match:
+                currencies_text.append(
+                    f"{ticker} ({base_currency} to {quote_currency})"
+                )
+
+    if currencies_text:
+        print(
+            "The financial statement from the following tickers are "
+            f"converted: {', '.join(currencies_text)}"
+        )
+
+    return financial_statement_data
+
+
 def combine_dataframes(dataset_dictionary: dict[str, pd.DataFrame]) -> pd.DataFrame:
     """
     Combine the dataframes from different companies of the same financial statement,

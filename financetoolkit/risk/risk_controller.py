@@ -550,10 +550,10 @@ class Risk:
     @handle_errors
     def get_garch(
         self,
-        period: str | None = None,
+        period: str | None = "quarterly",
         t: int = None,
         optimization_t: int = None,
-        within_period: bool = True,
+        within_period: bool = False,
         rounding: int | None = 4,
         growth: bool = False,
         lag: int | list[int] = 1,
@@ -567,12 +567,12 @@ class Risk:
 
         Args:
             period (str, optional): The data frequency for returns (daily, weekly, quarterly, or yearly).
-            Defaults to "yearly".
+            Defaults to "weekly".
             t (int, optional): Time steps to calculate GARCH for.
             optimization_t (int, optional): Time steps to optimize GRACH for. It is only used if no weights are given.
             within_period (bool, optional): Whether to calculate GARCH within the specified period or for the entire
             period. Thus whether to look at the GARCH within a specific year (if period = 'yearly') or look at the
-            entirety of all years. Defaults to True.
+            entirety of all years. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the GARCH values over time. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
@@ -596,22 +596,24 @@ class Risk:
 
         Which returns:
 
-        | Date       |        AMZN |        TSLA |   Benchmark |
-        |:-----------|------------:|------------:|------------:|
-        | 2013-12-06 | 4.57488e-05 | 0.000502296 | 0.000124924 |
-        | 2013-12-09 | 0.00020399  | 0.000617153 | 0.000100779 |
-        | 2013-12-10 | 0.000229732 | 0.000717356 | 8.04292e-05 |
-        | 2013-12-11 | 0.000257061 | 0.000804773 | 6.82256e-05 |
-        | 2013-12-12 | 0.000374806 | 0.000881038 | 6.60062e-05 |
-        | 2013-12-13 | 0.000249236 | 0.000947571 | 5.92753e-05 |
-        | 2013-12-16 | 0.000262354 | 0.00100562  | 5.46336e-05 |
+        | Date   |   AMZN |   TSLA |   Benchmark |
+        |:-------|-------:|-------:|------------:|
+        | 2012Q4 | 0      |  0     |      0      |
+        | 2013Q1 | 0.0147 |  0.214 |      0.0008 |
+        | 2013Q2 | 0.0223 |  0.214 |      0.0024 |
+        | 2013Q3 | 0.0262 |  0.214 |      0.0029 |
+        | 2013Q4 | 0.0282 |  0.214 |      0.0034 |
+        | 2014Q1 | 0.0293 |  0.214 |      0.0045 |
+        | 2014Q2 | 0.0298 |  0.214 |      0.0045 |
+        | 2014Q3 | 0.03   |  0.214 |      0.0047 |
+        | 2014Q4 | 0.0302 |  0.214 |      0.0047 |
+        | 2015Q1 | 0.0303 |  0.214 |      0.0048 |
         ...
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
         returns = helpers.handle_return_data_periods(
             self, period, within_period
-        ).dropna()
-
+        ).dropna().replace(0, 0.000001)
         garch_sigma_2 = risk_model.get_garch(returns, None, t, optimization_t)
 
         if growth:
@@ -627,10 +629,10 @@ class Risk:
     @handle_errors
     def get_garch_forecast(
         self,
-        period: str | None = None,
+        period: str | None = "quarterly",
         t: int = None,
-        within_period: bool = True,
-        rounding: int | None = 4,
+        within_period: bool = False,
+        rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
     ):
@@ -649,12 +651,12 @@ class Risk:
 
         Args:
             period (str, optional): The data frequency for returns (daily, weekly, quarterly, or yearly).
-            Defaults to "yearly".
+            Defaults to "quarterly".
             t (int, optional): Time steps to calculate GARCH and to forecast sigma_2 values for.
-            within_period (bool, optional): Whether to calculate GARCH within the specified period or for the
-            entire period. Thus whether to look at the GARCH within a specific year (if period = 'yearly') or
-            look at the entirety of all years. Defaults to True.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            within_period (bool, optional): Whether to calculate GARCH within each specified period or all
+            at once. Thus whether to look at the GARCH within each specific year (if period = 'yearly') or
+            look at the entirety of all years. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
             growth (bool, optional): Whether to calculate the growth of the GARCH values over time. Defaults to
             False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
@@ -695,7 +697,7 @@ class Risk:
         period = period if period else "quarterly" if self._quarterly else "yearly"
         returns = helpers.handle_return_data_periods(
             self, period, within_period
-        ).dropna()
+        ).dropna().replace(0, 0.000001)
 
         sigma_2_forecast = risk_model.get_garch_forecast(returns, None, t).dropna()
 

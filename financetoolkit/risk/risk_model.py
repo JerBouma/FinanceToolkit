@@ -618,9 +618,9 @@ def get_garch(
                 if not period_data.empty:
                     period_data_list.append(period_data)
 
-            garch = pd.concat(period_data_list, axis=1)
+            garch = pd.concat(period_data_list, axis=0)
 
-            return garch.T
+            return garch
         return returns.aggregate(get_garch)
     if isinstance(returns, pd.Series):
         return get_garch(
@@ -695,13 +695,14 @@ def get_garch_forecast(
             for sub_period in periods:
                 period_data = returns.loc[sub_period].aggregate(get_garch_forecast)
                 period_data.name = sub_period
+                period_data.columns = [col + " " + str(sub_period) for col in period_data.columns]
 
                 if not period_data.empty:
                     period_data_list.append(period_data)
 
             garch_forecast = pd.concat(period_data_list, axis=1)
 
-            return garch_forecast.T
+            return garch_forecast
         return returns.aggregate(get_garch_forecast)
     if isinstance(returns, pd.Series):
         return get_garch_forecast(

@@ -126,9 +126,12 @@ value_at_risk = companies.risk.get_value_at_risk(period="weekly")
 
 # a Technical example
 ichimoku_cloud = companies.technicals.get_ichimoku_cloud()
+
+# a Economics example
+unemployment_rates = companies.economics.get_unemployment_rate()
 ````
 
-Generally, the functions return a DataFrame with a multi-index in which all tickers, in this case Apple and Microsoft, are presented. To keep things manageable for this README, I've selected just Apple but in essence it can be any list of tickers (no limit). The filtering is done through using `.loc['AAPL']` and `.xs('AAPL', level=1, axis=1)` based on whether it's fundamental data or historical data respectively.
+Generally, the functions return a DataFrame with a multi-index in which all tickers, in this case Apple and Microsoft, are presented. To keep things manageable for this README, I've selected just Apple in most cases but in essence it can be any list of tickers (no limit). The filtering is done through using `.loc['AAPL']` and `.xs('AAPL', level=1, axis=1)` based on whether it's fundamental data or historical data respectively.
 
 ### Obtaining Historical Data
 
@@ -243,6 +246,23 @@ Get the Ichimoku Cloud parameters based on the historical market data. This can 
 And below the Ichimoku Cloud parameters are plotted for Apple and Microsoft side-by-side.
 
 ![Technicals](https://github.com/JerBouma/FinanceToolkit/assets/46355364/1ced5b34-2410-4206-8ddf-bb053bcb21b2)
+
+### Understanding Key Economic Indicators
+
+Get insights into key economic indicators such as the Consumer Price Index (CPI), Gross Domestic Product (GDP), Unemployment Rates and 3-month and 10-year Government Interest Rates. This is done through the `economics` module and can be used as a standalone module as well by using `from financetoolkit import Economics`. For example see a selection of the countries below:
+
+|      |   Colombia |   United States |   Sweden |   Japan |   Germany |
+|:-----|-----------:|----------------:|---------:|--------:|----------:|
+| 2017 |     0.093  |          0.0435 |   0.0686 |  0.0281 |    0.0357 |
+| 2018 |     0.0953 |          0.039  |   0.0648 |  0.0244 |    0.0321 |
+| 2019 |     0.1037 |          0.0367 |   0.0691 |  0.0235 |    0.0298 |
+| 2020 |     0.1586 |          0.0809 |   0.0848 |  0.0278 |    0.0362 |
+| 2021 |     0.1381 |          0.0537 |   0.0889 |  0.0282 |    0.0358 |
+| 2022 |     0.1122 |          0.0365 |   0.0748 |  0.026  |    0.0307 |
+
+And below these Unemployment Rates are plotted over time:
+
+
 
 # Available Metrics
 
@@ -425,6 +445,23 @@ The Technicals Module contains 30+ Technical Indicators that can be used to anal
 - Average True Range (ATR)
 - Keltners Channels
 - Bollinger Bands
+
+## Key Economic Indicators
+
+The Economics Module contains a variety of Key Economic Indicators that help in understanding the health and performance of more than 60 different countries. This module can be called directly via the Toolkit but also separately if desired. **Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics) which includes an explanation about each indicator, the parameters and an example.**
+
+- Gross Domestic Product (GDP) including Growth and Forecasts
+- Consumer Confidence Index (CCI)
+- Business Confidence Index (BCI)
+- Composite Leading Indicator (CLI)
+- Consumer Price Index (CPI)
+- Producer Price Index (PPI)
+- House and Rent Prices
+- Unemployment Rates
+- Long Term Interest Rates (10 year)
+- Short Term Interest Rates (3 month)
+- Purchasing Power Parity (PPP)
+- Exchange Rates
 
 # Contributing
 First off all, thank you for taking the time to contribute (or at least read the Contributing Guidelines)! 🚀

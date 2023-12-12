@@ -249,7 +249,7 @@ And below the Ichimoku Cloud parameters are plotted for Apple and Microsoft side
 
 ### Understanding Key Economic Indicators
 
-Get insights into key economic indicators such as the Consumer Price Index (CPI), Gross Domestic Product (GDP), Unemployment Rates and 3-month and 10-year Government Interest Rates. This is done through the `economics` module and can be used as a standalone module as well by using `from financetoolkit import Economics`. For example see a selection of the countries below:
+Get insights for 60+ countries into key economic indicators such as the Consumer Price Index (CPI), Gross Domestic Product (GDP), Unemployment Rates and 3-month and 10-year Government Interest Rates. This is done through the `economics` module and can be used as a standalone module as well by using `from financetoolkit import Economics`. For example see a selection of the countries below:
 
 |      |   Colombia |   United States |   Sweden |   Japan |   Germany |
 |:-----|-----------:|----------------:|---------:|--------:|----------:|
@@ -262,7 +262,7 @@ Get insights into key economic indicators such as the Consumer Price Index (CPI)
 
 And below these Unemployment Rates are plotted over time:
 
-![UnemploymentRatesFinanceToolkit](https://github.com/JerBouma/FinanceToolkit/assets/46355364/bb44bd4e-07a1-4ecf-a4eb-7fc09a960930)
+![Economics](https://github.com/JerBouma/FinanceToolkit/assets/46355364/bb44bd4e-07a1-4ecf-a4eb-7fc09a960930)
 
 # Available Metrics
 

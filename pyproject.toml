@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "financetoolkit"
-version = "1.6.6"
+version = "1.7.0"
 description = "Transparent and Efficient Financial Analysis"
 license = "MIT"
 authors = ["Jeroen Bouma"]
@@ -32,6 +32,7 @@ keywords = [
     "Database",
     "Equities",
     "Currencies",
+    "Economics",
     "ETFs",
     "Funds",
     "Indices",

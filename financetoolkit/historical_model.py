@@ -191,7 +191,9 @@ def get_historical_data(
             )
 
     historical_data = pd.concat(historical_data_dict).unstack(level=0)
-    historical_data = historical_data.reindex(ticker_list, level=1, axis=1)
+    historical_data = historical_data.reindex(
+        list(historical_data_dict.keys()), level=1, axis=1
+    )
 
     if "Dividends" in historical_data.columns:
         historical_data["Dividends"] = historical_data["Dividends"].fillna(0)

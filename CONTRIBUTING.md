@@ -2,39 +2,52 @@
 First off all, thank you for taking the time to contribute (or at least read the Contributing Guidelines)! 🚀
 
 The goal of the Finance Toolkit is to make any type of financial calculation as transparent and efficient as possible. I want to make these type of calculations as accessible to anyone as possible and seeing how many websites exists that do the same thing (but instead you have to pay) gave me plenty of reasons to work on this.
+___ 
 
-The following is a set of guidelines for contributing to the Finance Toolkit.
+<b><div align="center">Looking to learn how to create and maintain financial models with Python? Have a look at my in-depth guide <a href="https://www.jeroenbouma.com//modelling/introduction">here</a>.</div></b>
+___
 
 ## Structure
 
-The Finance Toolkit follows the Model, View, Controller model except it cuts out the View part being more focussed on calculations than on visusally depicting the data given that there are plenty of providers that offer this solution already. The MC model (as found in `financetoolkit/base`) is therefore constructed as follows:
+The Finance Toolkit follows the Model, View and Controller (MVC) pattern. This is a pattern in software design commonly used to implement user interfaces, data, and controlling logic. It emphasizes a separation between the software’s business logic and display. This “separation of concerns” provides for a better division of labor and improved maintenance. The Finance Toolkit utilizes only the Controller and Model logic.
 
 - **_controller** modules (such as toolkit_controller and ratios_controller) orchestrate the data flow. Through the controller, the user can set parameters (such as tickers, start and end date) that define the data that needs to be obtained. E.g. in the controller classes you will be able to find the function `get_income_statement` which collects income statements via a **_model** that takes in the parameters set by the user.
 - **_model** modules (such as fundamentals_model and historical_model) are the modules that actually obtain the data. E.g in the fundamentals_model exists a function called `get_financial_statements` which would be executed by `get_income_statement` from the controller class to obtain the financial statement, in this case the income statement, for the selected parameters. These functions will also work separately, they do not need the controller to work but the controller needs them to work.
 
-Next to that, each individual ratio, technical indicator, risk metric etc. is categorized and kept in its own directory. E.g. all functions of ratios can be found inside `financetoolkit/ratios` in which if I wanted to see the Price-to-Book ratio function, I'd visit the `valuation.py` (given that Price-to-Book ratio is categorized as a Valuation Ratio) and then scroll to the function which would be the following:
+Each model function is categorized in a specific module. For example, the Gross Margin calculation is categorized under the `profitability_model.py` module which contains all of the other profitability ratios. The same applies to the other ratio categories such as liquidity, solvency, efficiency and valuation which can be found in `liquidity_model.py`, `solvency_model.py`, `efficiency_model.py` and `valuation_model.py` respectively.
 
 ```python
-def get_price_to_book_ratio(
-    price_per_share: pd.Series, book_value_per_share: pd.Series
-) -> pd.Series:
+def get_gross_margin(revenue: pd.Series, cost_of_goods_sold: pd.Series) -> pd.Series:
     """
-    Calculate the price to book ratio, a valuation ratio that compares a company's market
-    price to its book value per share.
+    Calculate the gross margin, a profitability ratio that measures the percentage of
+    revenue that exceeds the cost of goods sold.
 
     Args:
-        price_per_share (float or pd.Series): Price per share of the company.
-        book_value_per_share (float or pd.Series): Book value per share of the company.
+        revenue (float or pd.Series): Total revenue of the company.
+        cost_of_goods_sold (float or pd.Series): Total cost of goods sold of the company.
 
     Returns:
-        float | pd.Series: The price to book ratio value.
+        float | pd.Series: The gross margin percentage value.
     """
-    return price_per_share / book_value_per_share
+    return (revenue - cost_of_goods_sold) / revenue
 ```
 
-This applies to any metric and this is also how the MC model retrieves the correct input. The `get_price_to_book_ratio` function is called by the `ratios_controller` which is called by the `toolkit_controller`. This is the flow of the data.
+As seen in my [Financial Modeling with Python Guide](https://www.jeroenbouma.com/modelling/structure-your-model), the Model, View and Controller for Gross Margin calculation will be named `profitability_model.py`, `profitability_view.py` and `profitability_controller.py` respectively. The `helpers.py` module will be placed in the root of the package.
 
-The separation is done so that it becomes possible to call all functions separately making the Finance Toolkit incredibly flexible for any kind of data input.
+The separation is done so that it becomes possible to call all functions separately making the Finance Toolkit incredibly flexible for any kind of data input. See how this would look like the following example:
+
+```mermaid
+flowchart TB;
+classDef boxfont fill:#3b9cba,stroke-width:0px,fill-opacity:0.7,color:white,radius:20px;
+
+Step0["User"] -- <b>Step 1<br></b>Initializes the FinanceToolkit -->  Step1["Toolkit Controller"]:::boxfont
+Step1["Toolkit Controller"] <-- <b>Step 2<br></b>Asks for Fundamental Data --> Step2a["Fundamentals Model"]:::boxfont
+Step1["Toolkit Controller"] <-- <b>Step 3<br></b>Asks for Historical Data --> Step2b["Historical Model"]:::boxfont
+Step1["Toolkit Controller"] -- <b>Step 4<br></b>Initializes the Ratios Controller --> Step3["Ratios Controller"]:::boxfont
+Step3["Ratios Controller"] -- <b>Step 5a<br></b>Calculates the Gross Margin --> Step2["Profitability Model"]:::boxfont
+Step3["Ratios Controller"] -- <b>Step 5b<br></b>Optional Growth Calculation --> Step4["Helpers"]:::boxfont
+Step3["Ratios Controller"] -- <b>Step 6<br></b>Shows the Gross Margin Data --> Step0["User"]:::boxfont
+```
 
 ## Adding New Functionality
 
@@ -47,7 +60,7 @@ If you are looking to add new functionality do the following:
     - If the answer is yes, add it to this controller.
     - If the answer is no, create a new controller and add it there. Make sure to also connect the controller to the `toolkit_controller` so that it can be called from there.
 3. Add in the relevant docstrings (be as extensive as possible, following already created examples) and update the README if relevant.
-4. Add in the relevant tests (see `tests` directory for examples).
+4. Add in the relevant tests (see `tests` directory for examples). If this is too difficult, feel free to skip.
 5. Create a Pull Request with your new additions. See the next section how to do so.
 
 ## Working with Git & Pull Requests

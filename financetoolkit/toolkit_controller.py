@@ -9,6 +9,7 @@ import pandas as pd
 import requests
 
 from financetoolkit import helpers
+from financetoolkit.economics.economics_controller import Economics
 from financetoolkit.fundamentals_model import (
     get_analyst_estimates as _get_analyst_estimates,
     get_dividend_calendar as _get_dividend_calendar,
@@ -901,6 +902,51 @@ class Toolkit:
             rounding=self._rounding,
         )
 
+    @property
+    def economics(self) -> Economics:
+        """
+        This gives access to the Economics module. This module contains a wide variety of economic data
+        obtained from OECD. These include things such as the Consumer Price Index (CPI), the Producer
+        Price Index (PPI), the Unemployment Rate, the GDP Growth Rate, the Long and Short Term Interest
+        Rate and the Consumer Confidence Index.
+
+        Note that this class can also be directly accessed by importing the Economics class directly via
+        from financetoolkit import Economics. This is useful if you only want to use the Economics class
+        and not the other classes within the Toolkit module.
+
+        See the following link for more information: https://www.jeroenbouma.com/projects/financetoolkit/docs/economics
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AMZN", "ASML"])
+
+        cpi = toolkit.economics.get_consumer_price_index(period='yearly')
+
+        cpi.loc['2015':, ['United States', 'Netherlands', 'Japan']]
+        ```
+
+        Which returns:
+
+        |      |   United States |   Netherlands |    Japan |
+        |:-----|----------------:|--------------:|---------:|
+        | 2015 |         100     |       100     | 100      |
+        | 2016 |         101.262 |       100.317 |  99.8727 |
+        | 2017 |         103.419 |       101.703 | 100.356  |
+        | 2018 |         105.945 |       103.435 | 101.349  |
+        | 2019 |         107.865 |       106.159 | 101.824  |
+        | 2020 |         109.195 |       107.51  | 101.799  |
+        | 2021 |         114.325 |       110.387 | 101.561  |
+        | 2022 |         123.474 |       121.427 | 104.098  |
+        """
+        return Economics(
+            rounding=self._rounding,
+            start_date=self._start_date,
+            end_date=self._end_date,
+        )
+
     def get_profile(self):
         """
         Returns a pandas dataframe containing the company profile information for the specified tickers.
@@ -1716,6 +1762,7 @@ class Toolkit:
                 rounding=rounding if rounding else self._rounding,
                 sleep_timer=self._sleep_timer,
                 show_ticker_seperation=show_ticker_seperation,
+                show_errors=True,
             )
 
             # Change the benchmark ticker name to Benchmark

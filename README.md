@@ -262,7 +262,7 @@ Get insights into key economic indicators such as the Consumer Price Index (CPI)
 
 And below these Unemployment Rates are plotted over time:
 
-
+![UnemploymentRatesFinanceToolkit](https://github.com/JerBouma/FinanceToolkit/assets/46355364/bb44bd4e-07a1-4ecf-a4eb-7fc09a960930)
 
 # Available Metrics
 

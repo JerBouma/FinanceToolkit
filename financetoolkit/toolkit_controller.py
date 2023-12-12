@@ -942,9 +942,10 @@ class Toolkit:
         | 2022 |         123.474 |       121.427 | 104.098  |
         """
         return Economics(
-            rounding=self._rounding,
             start_date=self._start_date,
             end_date=self._end_date,
+            quarterly=self._quarterly,
+            rounding=self._rounding,
         )
 
     def get_profile(self):

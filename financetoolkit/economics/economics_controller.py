@@ -103,11 +103,12 @@ class Economics:
         See definition: https://data.oecd.org/gdp/gross-domestic-product-gdp.htm
 
         Args:
-            year_on_year (bool, optional): Whether to return the year on year data or the quarter on quarter data.
+            inflation_adjusted (bool, optional): Whether to return the inflation adjusted data or the nominal data.
+            per_capita (bool, optional): Whether to return the per capita data or the total data.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
 
         Returns:
-            pd.DataFrame: A DataFrame containing the Quarterly Gross Domestic Product
+            pd.DataFrame: A DataFrame containing the Gross Domestic Product
 
         As an example:
 
@@ -232,7 +233,7 @@ class Economics:
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
 
         Returns:
-            pd.DataFrame: A DataFrame containing the Gross Domestic Product growth rates.
+            pd.DataFrame: A DataFrame containing the Gross Domestic Product forecast growth rates.
 
         As an example:
 
@@ -670,7 +671,7 @@ class Economics:
 
         Both are based on an 2015 = 100 as an index.
 
-        Definition: https://data.oecd.org/price/housing-prices.htm
+        See definition: https://data.oecd.org/price/housing-prices.htm
 
         Args:
             quarterly (bool | None, optional): Whether to return the quarterly data or the annual data.
@@ -739,7 +740,7 @@ class Economics:
 
         This is based on an 2015 = 100 as an index.
 
-        Definition: https://data.oecd.org/price/housing-prices.htm
+        See definition: https://data.oecd.org/price/housing-prices.htm
 
         Args:
             quarterly (bool | None, optional): Whether to return the quarterly data or the annual data.
@@ -815,7 +816,7 @@ class Economics:
         For European Union countries where monthly LFS information is not available,
         the monthly unemployed figures are estimated by Eurostat.
 
-        Definition: https://data.oecd.org/unemp/unemployment-rate.htm
+        See definition: https://data.oecd.org/unemp/unemployment-rate.htm
 
         Args:
             period (str | None, optional): Whether to return the monthly, quarterly or the annual data.
@@ -895,7 +896,7 @@ class Economics:
         term interest rates encourage investment in new equipment and high interest rates
         discourage it. Investment is, in turn, a major source of economic growth
 
-        Definition: https://data.oecd.org/interest/long-term-interest-rates.htm
+        See definition: https://data.oecd.org/interest/long-term-interest-rates.htm
 
         Args:
             period (str | None, optional): Whether to return the monthly, quarterly or the annual data.
@@ -973,7 +974,7 @@ class Economics:
         Short-term interest rates are based on three-month money market rates where available.
         Typical standardised names are "money market rate" and "treasury bill rate".
 
-        Definition: https://data.oecd.org/interest/short-term-interest-rates.htm
+        See definition: https://data.oecd.org/interest/short-term-interest-rates.htm
 
         Args:
             period (str | None, optional): Whether to return the monthly, quarterly or the annual data.
@@ -1053,7 +1054,7 @@ class Economics:
 
         This indicator is measured in terms of national currency per US dollar.
 
-        Definition: https://data.oecd.org/conversion/purchasing-power-parities-ppp.htm
+        See definition: https://data.oecd.org/conversion/purchasing-power-parities-ppp.htm
 
         Args:
             growth (bool, optional): Whether to return the growth data or the actual data.
@@ -1115,7 +1116,7 @@ class Economics:
         to another country's currency. This indicator is measured in terms of
         national currency per US dollar.
 
-        Definition: https://data.oecd.org/conversion/exchange-rates.htm
+        See definition: https://data.oecd.org/conversion/exchange-rates.htm
 
         Args:
             growth (bool, optional): Whether to return the growth data or the actual data.

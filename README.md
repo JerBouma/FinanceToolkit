@@ -462,6 +462,8 @@ The Economics Module contains a variety of Key Economic Indicators that help in 
 - Short Term Interest Rates (3 month)
 - Purchasing Power Parity (PPP)
 - Exchange Rates
+- European Central Bank (ECB) Interest Rates
+- Federal Reserve (FED) Interest Rates
 
 # Contributing
 First off all, thank you for taking the time to contribute (or at least read the Contributing Guidelines)! 🚀

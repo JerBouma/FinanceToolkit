@@ -324,7 +324,7 @@ All of these ratios can be calculated based on (lagged) growth as well as traili
 - EBT to EBIT
 - EBIT to Revenue
 
-### Solvency Ratios 🏔️
+### Solvency Ratios 🪨
 - Debt to Assets Ratio
 - Debt to Equity Ratio
 - Interest Coverage Ratio

@@ -282,7 +282,7 @@ The Ratios Module contains over 50+ ratios that can be used to analyse companies
 
 All of these ratios can be calculated based on (lagged) growth as well as trailing (e.g. TTM) metrics. This is embedded in all ratios as well as the financial statements themselves which means it is possible to calculate revenue growth and 12-month (TTM) Price-to-Earnings with the parameters `growth=True` and `trailing=4` respectively. Note that trailing is based on periods therefore TTM can only be calculated by setting `quarterly=True` in the Toolkit initialization.
 
-### Efficiency Ratios
+### Efficiency Ratios ⚙️
 - Asset Turnover Ratio
 - Inventory Turnover Ratio
 - Days of Inventory Outstanding
@@ -296,7 +296,7 @@ All of these ratios can be calculated based on (lagged) growth as well as traili
 - Fixed Asset Turnover
 - Operating Ratio
 
-### Liquidity Ratios
+### Liquidity Ratios 💧
 - Current Ratio
 - Quick Ratio
 - Cash Ratio
@@ -305,7 +305,7 @@ All of these ratios can be calculated based on (lagged) growth as well as traili
 - Operating Cash Flow Sales Ratio
 - Short Term Coverage Ratio
 
-### Profitability Ratios
+### Profitability Ratios 💰
 - Gross Margin
 - Operating Margin
 - Net Profit Margin
@@ -324,7 +324,7 @@ All of these ratios can be calculated based on (lagged) growth as well as traili
 - EBT to EBIT
 - EBIT to Revenue
 
-### Solvency Ratios
+### Solvency Ratios 🗿
 - Debt to Assets Ratio
 - Debt to Equity Ratio
 - Interest Coverage Ratio
@@ -336,7 +336,7 @@ All of these ratios can be calculated based on (lagged) growth as well as traili
 - CAPEX Coverage Ratio
 - CAPEX Dividend Coverage Ratio
 
-### Valuation Ratios
+### Valuation Ratios ⚖️
 - Earnings per Share (EPS)
 - Revenue per Share (RPS)
 - Price Earnings Ratio (PE)

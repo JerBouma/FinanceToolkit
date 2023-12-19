@@ -451,16 +451,6 @@ The Technicals Module contains 30+ Technical Indicators that can be used to anal
 
 The Economics Module contains a variety of Key Economic Indicators that help in understanding the health and performance of more than 60 different countries. This module can be called directly via the Toolkit but also separately if desired through `from financetoolkit import Economics`. **Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics) which includes an explanation about each indicator, the parameters and an example.**
 
-### Government
-- Deficit as % of GDP
-- Revenue as % of GDP
-- Spending as % of GDP
-- Debt as % of GDP
-- Financial Wealth as % of GDP
-- Production Costs as % of GDP
-- Central Spending based on the System of National accounts (SNA)
-- Trust in Government
-
 ### Economy
 - Gross Domestic Product (GDP) including Growth and Forecasts
 - Consumer Confidence Index (CCI)
@@ -471,11 +461,6 @@ The Economics Module contains a variety of Key Economic Indicators that help in 
 - House and Rent Prices
 - Share Prices
 
-### Jobs
-- Unemployment Rates
-- Labour Productivity
-- Income Inequality
-
 ### Finance
 - Long Term Interest Rates (10 year)
 - Short Term Interest Rates (3 month)
@@ -483,15 +468,6 @@ The Economics Module contains a variety of Key Economic Indicators that help in 
 - Broad Money (M3)
 - Purchasing Power Parity (PPP)
 - Exchange Rates
-
-### Society
-- Population
-- Young Population
-- Working Age Population
-- Elderly Population
-- Fertility Rates
-- Old-Age Dependency Ratio
-- Poverty Rate
 
 ### Central Banks
 - Main Refinancing Operations (ECB)
@@ -502,6 +478,36 @@ The Economics Module contains a variety of Key Economic Indicators that help in 
 - Tri-Party General Collateral Rate (FED)
 - Broad General Collateral Rate (FED)
 - Secured Overnight Financing Rate (FED)
+
+### Environment
+- Renewable Energy as % of Total Energy
+- Environmental Tax as % of GDP
+- Greenhouse Gas Emissions
+- Crude Oil Production and Prices
+
+### Government
+- Deficit as % of GDP
+- Revenue as % of GDP
+- Spending as % of GDP
+- Debt as % of GDP
+- Financial Wealth as % of GDP
+- Production Costs as % of GDP
+- Central Spending based on the System of National accounts (SNA)
+- Trust in Government
+
+### Jobs
+- Unemployment Rates
+- Labour Productivity
+- Income Inequality
+
+### Society
+- Population
+- Young Population
+- Working Age Population
+- Elderly Population
+- Fertility Rates
+- Old-Age Dependency Ratio
+- Poverty Rate
 
 # Contributing
 First off all, thank you for taking the time to contribute (or at least read the Contributing Guidelines)! 🚀

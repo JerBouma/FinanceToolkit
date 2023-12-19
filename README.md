@@ -451,7 +451,7 @@ The Technicals Module contains 30+ Technical Indicators that can be used to anal
 
 The Economics Module contains a variety of Key Economic Indicators that help in understanding the health and performance of more than 60 different countries. This module can be called directly via the Toolkit but also separately if desired through `from financetoolkit import Economics`. **Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics) which includes an explanation about each indicator, the parameters and an example.**
 
-### Economy
+### Economy 💵
 - Gross Domestic Product (GDP) including Growth and Forecasts
 - Consumer Confidence Index (CCI)
 - Business Confidence Index (BCI)
@@ -461,7 +461,7 @@ The Economics Module contains a variety of Key Economic Indicators that help in 
 - House and Rent Prices
 - Share Prices
 
-### Finance
+### Finance 💹
 - Long Term Interest Rates (10 year)
 - Short Term Interest Rates (3 month)
 - Narrow Money (M1)
@@ -469,7 +469,7 @@ The Economics Module contains a variety of Key Economic Indicators that help in 
 - Purchasing Power Parity (PPP)
 - Exchange Rates
 
-### Central Banks
+### Central Banks 🏦
 - Main Refinancing Operations (ECB)
 - Marginal Lending Facility (ECB)
 - Deposit Facility (ECB)
@@ -479,13 +479,13 @@ The Economics Module contains a variety of Key Economic Indicators that help in 
 - Broad General Collateral Rate (FED)
 - Secured Overnight Financing Rate (FED)
 
-### Environment
+### Environment 💚
 - Renewable Energy as % of Total Energy
 - Environmental Tax as % of GDP
 - Greenhouse Gas Emissions
 - Crude Oil Production and Prices
 
-### Government
+### Government 🏛️
 - Deficit as % of GDP
 - Revenue as % of GDP
 - Spending as % of GDP
@@ -495,12 +495,12 @@ The Economics Module contains a variety of Key Economic Indicators that help in 
 - Central Spending based on the System of National accounts (SNA)
 - Trust in Government
 
-### Jobs
+### Jobs 🗂️
 - Unemployment Rates
 - Labour Productivity
 - Income Inequality
 
-### Society
+### Society 👪
 - Population
 - Young Population
 - Working Age Population

@@ -40,7 +40,7 @@ from financetoolkit.risk.risk_controller import Risk
 from financetoolkit.technical.technicals_controller import Technicals
 
 # pylint: disable=too-many-instance-attributes,too-many-lines,line-too-long,too-many-locals
-# pylint: disable=too-many-function-args,too-many-public-methods)
+# pylint: disable=too-many-function-args,too-many-public-methods
 # ruff: noqa: E501
 
 TICKER_LIMIT = 20

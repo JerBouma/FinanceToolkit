@@ -448,8 +448,19 @@ The Technicals Module contains 30+ Technical Indicators that can be used to anal
 
 ## Key Economic Indicators
 
-The Economics Module contains a variety of Key Economic Indicators that help in understanding the health and performance of more than 60 different countries. This module can be called directly via the Toolkit but also separately if desired. **Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics) which includes an explanation about each indicator, the parameters and an example.**
+The Economics Module contains a variety of Key Economic Indicators that help in understanding the health and performance of more than 60 different countries. This module can be called directly via the Toolkit but also separately if desired through `from financetoolkit import Economics`. **Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics) which includes an explanation about each indicator, the parameters and an example.**
 
+### Government
+- Deficit as % of GDP
+- Revenue as % of GDP
+- Spending as % of GDP
+- Debt as % of GDP
+- Financial Wealth as % of GDP
+- Production Costs as % of GDP
+- Central Spending based on the System of National accounts (SNA)
+- Trust in Government
+
+### Economy
 - Gross Domestic Product (GDP) including Growth and Forecasts
 - Consumer Confidence Index (CCI)
 - Business Confidence Index (BCI)
@@ -457,13 +468,39 @@ The Economics Module contains a variety of Key Economic Indicators that help in 
 - Consumer Price Index (CPI)
 - Producer Price Index (PPI)
 - House and Rent Prices
+- Share Prices
+
+### Jobs
 - Unemployment Rates
+- Labour Productivity
+- Income Inequality
+
+### Finance
 - Long Term Interest Rates (10 year)
 - Short Term Interest Rates (3 month)
+- Narrow Money (M1)
+- Broad Money (M3)
 - Purchasing Power Parity (PPP)
 - Exchange Rates
-- European Central Bank (ECB) Interest Rates
-- Federal Reserve (FED) Interest Rates
+
+### Society
+- Population
+- Young Population
+- Working Age Population
+- Elderly Population
+- Fertility Rates
+- Old-Age Dependency Ratio
+- Poverty Rate
+
+### Central Banks
+- Main Refinancing Operations (ECB)
+- Marginal Lending Facility (ECB)
+- Deposit Facility (ECB)
+- Effective Federal Funds Rate (FED)
+- Overnight Bank Funding Rate (FED)
+- Tri-Party General Collateral Rate (FED)
+- Broad General Collateral Rate (FED)
+- Secured Overnight Financing Rate (FED)
 
 # Contributing
 First off all, thank you for taking the time to contribute (or at least read the Contributing Guidelines)! 🚀

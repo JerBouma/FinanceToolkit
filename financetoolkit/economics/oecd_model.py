@@ -1082,3 +1082,113 @@ def get_trust_in_goverment():
     trust_in_government = trust_in_government / 100
 
     return trust_in_government
+
+
+def get_renewable_energy():
+    """
+    Renewable energy is defined as the contribution of renewables
+    to total primary energy supply (TPES).
+
+    Returns:
+       pd.DataFrame: A DataFrame containing the renewable energy
+        for a variety of countries over time
+    """
+    oecd_data_string = ".RENEWABLE.TOT.PC_PRYENRGSUPPLY.A"
+
+    renewable_energy = collect_oecd_data(oecd_data_string, "Y")
+
+    # Divide by 100 to get percentage
+    renewable_energy = renewable_energy / 100
+
+    return renewable_energy
+
+
+def get_crude_oil_production():
+    """
+    Crude oil production is defined as the quantities of oil extracted
+    from the ground after the removal of inert matter or impurities.
+
+    The number is presented in thousand tonnes of oil equivalent.
+
+    Returns:
+       pd.DataFrame: A DataFrame containing the crude oil production
+        for a variety of countries over time
+    """
+    oecd_data_string = ".OILPROD.TOT.KTOE.A"
+
+    crude_oil_production = collect_oecd_data(oecd_data_string, "Y")
+
+    return crude_oil_production
+
+
+def get_crude_oil_prices():
+    """
+    Crude oil import prices come from the IEA's Crude Oil Import Register
+    and are influenced not only by traditional movements of supply and
+    demand, but also by other factors such as geopolitics.
+
+    The number is presented in US dollars per barrel.
+
+    Returns:
+       pd.DataFrame: A DataFrame containing the crude oil prices
+        for a variety of countries over time
+    """
+    oecd_data_string = ".OILIMPPRICE.TOT.USD_BAR.A"
+
+    crude_oil_prices = collect_oecd_data(oecd_data_string, "Y")
+
+    return crude_oil_prices
+
+
+def get_environmental_tax(parameter: str = "TOT"):
+    """
+    Environmentally related taxes are an important instrument for
+    governments to shape relative prices of goods and services.
+
+    Returns:
+       pd.DataFrame: A DataFrame containing the environmental tax
+        for a variety of countries over time
+    """
+    if parameter not in ["TOT", "ENRG", "TRANSPORT", "RES", "POL"]:
+        raise ValueError(
+            "Please choose one of the following parameters: 'TOT', 'ENRG', 'TRANSPORT', 'RES', 'POL'."
+        )
+    oecd_data_string = f".TAXENV.{parameter}.PC_GDP.A"
+
+    environmental_tax = collect_oecd_data(oecd_data_string, "Y")
+
+    # Divide by 100 to get percentage
+    environmental_tax = environmental_tax / 100
+
+    return environmental_tax
+
+
+def get_greenhouse_emissions(parameter: str = "CO2"):
+    """
+    Greenhouse gases refer to the sum of seven gases that have direct effects on climate change:
+    carbon dioxide (CO2), methane (CH4), nitrous oxide (N2O), chlorofluorocarbons (CFCs),
+    hydrofluorocarbons (HFCs), perfluorocarbons (PFCs), sulphur hexafluoride (SF6) and
+    nitrogen trifluoride (NF3).
+
+    Returns:
+       pd.DataFrame: A DataFrame containing the greenhouse emissions
+        for a variety of countries over time
+    """
+    if parameter not in ["CO2", "CO", "GHG", "NOX", "SOX", "VOC"]:
+        raise ValueError(
+            "Please choose one of the following parameters: 'CO2', 'CO', 'GHG', 'NOX', 'SOX', 'VOC'."
+        )
+
+    kilo_or_tonnes = (
+        "KG_CAP" if parameter in ["SOX", "CO", "NOX", "SOX", "VOC"] else "TONNE_CAP"
+    )
+
+    oecd_data_string = f".AIREMISSION.{parameter}.{kilo_or_tonnes}.A"
+
+    greenhouse_emission = collect_oecd_data(oecd_data_string, "Y")
+
+    # Divide by 1000 to get tonnes
+    if kilo_or_tonnes == "KG_CAP":
+        greenhouse_emission = greenhouse_emission / 1000
+
+    return greenhouse_emission

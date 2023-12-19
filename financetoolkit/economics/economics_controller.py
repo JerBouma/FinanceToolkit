@@ -2080,7 +2080,7 @@ class Economics:
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
 
         Returns:
-            pd.DataFrame: A DataFrame containing the Government Statistics.
+            pd.DataFrame: A DataFrame containing the Central Government Spending.
 
         As an example:
 
@@ -2183,7 +2183,7 @@ class Economics:
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
 
         Returns:
-            pd.DataFrame: A DataFrame containing the Exchange Rates.
+            pd.DataFrame: A DataFrame containing the Trust in Government.
 
         As an example:
 
@@ -2232,3 +2232,418 @@ class Economics:
         trust_in_government = trust_in_government.loc[self._start_date : self._end_date]
 
         return trust_in_government.round(rounding if rounding else self._rounding)
+
+    def get_renewable_energy(
+        self,
+        growth: bool = False,
+        lag: int = 1,
+        rounding: int | None = None,
+    ):
+        """
+        Renewable energy is defined as the contribution of renewables to total primary energy supply (TPES).
+        Renewables include the primary energy equivalent of hydro (excluding pumped storage), geothermal,
+        solar, wind, tide and wave sources.
+
+        Energy derived from solid biofuels, biogasoline, biodiesels, other liquid biofuels, biogases and
+        the renewable fraction of municipal waste are also included. Biofuels are defined as fuels derived
+        directly or indirectly from biomass (material obtained from living or recently living organisms).
+
+        This includes wood, vegetal waste (including wood waste and crops used for energy production), ethanol,
+        animal materials/wastes and sulphite lyes. Municipal waste comprises wastes produced by the residential,
+        commercial and public service sectors that are collected by local authorities for disposal in a central
+        location for the production of heat and/or power.
+
+        This indicator in percentage of total primary energy supply.
+
+        See definition: https://data.oecd.org/energy/renewable-energy.htm
+
+        Args:
+            growth (bool, optional): Whether to return the growth data or the actual data.
+            lag (int, optional): The number of periods to lag the data by.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+
+        Returns:
+            pd.DataFrame: A DataFrame containing the Renewable Energy Percentage.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Economics
+
+        economics = Economics(start_date='2010-01-01', end_date='2020-01-01')
+
+        renewable_energy = economics.get_renewable_energy()
+
+        renewable_energy.loc[:, ['Zambia', 'Albania', 'Austria']]
+        ```
+
+        Which returns:
+
+        |      |   Zambia |   Albania |   Austria |
+        |:-----|---------:|----------:|----------:|
+        | 2010 |   0.9038 |    0.4049 |    0.2742 |
+        | 2011 |   0.8882 |    0.2581 |    0.2696 |
+        | 2012 |   0.8726 |    0.3121 |    0.307  |
+        | 2013 |   0.874  |    0.3489 |    0.3011 |
+        | 2014 |   0.8627 |    0.2722 |    0.3068 |
+        | 2015 |   0.8486 |    0.3433 |    0.2985 |
+        | 2016 |   0.8241 |    0.4209 |    0.3034 |
+        | 2017 |   0.8097 |    0.273  |    0.2984 |
+        | 2018 |   0.8081 |    0.4322 |    0.2943 |
+        | 2019 |   0.8089 |    0.3172 |    0.3006 |
+        | 2020 |   0.818  |    0.3388 |    0.3202 |
+        """
+        renewable_energy = oecd_model.get_renewable_energy()
+
+        if growth:
+            renewable_energy = calculate_growth(
+                renewable_energy,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
+                axis="rows",
+            )
+
+        renewable_energy = renewable_energy.loc[self._start_date : self._end_date]
+
+        return renewable_energy.round(rounding if rounding else self._rounding)
+
+    def get_crude_oil_production(
+        self,
+        growth: bool = False,
+        lag: int = 1,
+        rounding: int | None = None,
+    ):
+        """
+        Crude oil production is defined as the quantities of oil extracted from the ground after
+        the removal of inert matter or impurities. It includes crude oil, natural gas liquids (NGLs)
+        and additives. This indicator is measured in thousand tonne of oil equivalent (toe).
+
+        Crude oil is a mineral oil consisting of a mixture of hydrocarbons of natural origin, yellow
+        to black in colour, and of variable density and viscosity. NGLs are the liquid or liquefied
+        hydrocarbons produced in the manufacture, purification and stabilisation of natural gas.
+
+        Additives are non-hydrocarbon substances added to or blended with a product to modify its
+        properties, for example, to improve its combustion characteristics (e.g. MTBE and tetraethyl lead).
+        Refinery production refers to the output of secondary oil products from an oil refinery.
+
+        This indicator is measured in thousand tonne of oil equivalent (toe).
+
+        See definition: https://data.oecd.org/energy/crude-oil-production.htm
+
+        Args:
+            growth (bool, optional): Whether to return the growth data or the actual data.
+            lag (int, optional): The number of periods to lag the data by.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+
+        Returns:
+            pd.DataFrame: A DataFrame containing the Crude Oil Production.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Economics
+
+        economics = Economics(start_date='2007-01-01')
+
+        crude_oil_production = economics.get_crude_oil_production()
+
+        crude_oil_production.loc[:, ['China', 'Saudi Arabia', 'Russia', 'Netherlands']]
+        ```
+
+        Which returns:
+
+        |      |   China |   Saudi Arabia |   Russia |   Netherlands |
+        |:-----|--------:|---------------:|---------:|--------------:|
+        | 2007 |  186318 |         446438 |   470511 |      2109.1   |
+        | 2008 |  190440 |         467050 |   471814 |      1765.4   |
+        | 2009 |  189490 |         414458 |   479089 |      1338.07  |
+        | 2010 |  203014 |         413505 |   487106 |      1040.27  |
+        | 2011 |  202876 |         471515 |   494393 |      1102.48  |
+        | 2012 |  207478 |         495778 |   499908 |      1133.08  |
+        | 2013 |  209919 |         488039 |   499966 |      1144.3   |
+        | 2014 |  211429 |         491857 |   505603 |      1555.3   |
+        | 2015 |  214556 |         516157 |   512777 |      1423.99  |
+        | 2016 |  199685 |         531161 |   524319 |       975.589 |
+        | 2017 |  191506 |         504365 |   517105 |       970.892 |
+        | 2018 |  189324 |         522375 |   525934 |       918.789 |
+        | 2019 |  191014 |         496688 |   530219 |       761.583 |
+        | 2020 |  194769 |         467840 |   484621 |       751.952 |
+        | 2021 |  199264 |         463618 |   495677 |       763.855 |
+        """
+        crude_oil_production = oecd_model.get_crude_oil_production()
+
+        if growth:
+            crude_oil_production = calculate_growth(
+                crude_oil_production,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
+                axis="rows",
+            )
+
+        crude_oil_production = crude_oil_production.loc[
+            self._start_date : self._end_date
+        ]
+
+        return crude_oil_production.round(rounding if rounding else self._rounding)
+
+    def get_crude_oil_prices(
+        self,
+        growth: bool = False,
+        lag: int = 1,
+        rounding: int | None = None,
+    ):
+        """
+        Crude oil import prices come from the IEA's Crude Oil Import Register and are influenced
+        not only by traditional movements of supply and demand, but also by other factors such as
+        geopolitics.
+
+        Information is collected from national agencies according to the type of crude oil, by
+        geographic origin and by quality of crude. Average prices are obtained by dividing value
+        by volume as recorded by customs administrations for each tariff position.
+
+        Values are recorded at the time of import and include cost, insurance and freight, but exclude
+        import duties. The nominal crude oil spot price from 2003 to 2011 is for Dubai and from 1970 to
+        2002 for Arabian Light. This indicator is measured in USD per barrel of oil.
+
+        The real price was calculated using the deflator for GDP at market prices and rebased with
+        reference year 1970 = 100.
+
+        See definition: https://data.oecd.org/energy/crude-oil-import-prices.htm
+
+        Args:
+            growth (bool, optional): Whether to return the growth data or the actual data.
+            lag (int, optional): The number of periods to lag the data by.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+
+        Returns:
+            pd.DataFrame: A DataFrame containing the Crude Oil Prices.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Economics
+
+        economics = Economics(start_date='2015-01-01')
+
+        crude_oil_prices = economics.get_crude_oil_prices()
+
+        crude_oil_prices.loc[:, ['United Kingdom', 'Japan', 'Canada']]
+        ```
+
+        Which returns:
+
+        |      |   United Kingdom |   Japan |   Canada |
+        |:-----|-----------------:|--------:|---------:|
+        | 2015 |            53.81 |   54.2  |    53.48 |
+        | 2016 |            44.62 |   41.79 |    43.6  |
+        | 2017 |            54.69 |   54.42 |    54.3  |
+        | 2018 |            72.65 |   72.85 |    70.88 |
+        | 2019 |            65.58 |   66.78 |    63.12 |
+        | 2020 |            44.62 |   46.85 |    45.79 |
+        | 2021 |            71.2  |   70.25 |    69.44 |
+        | 2022 |           104.66 |  102.11 |   104.16 |
+        """
+        crude_oil_prices = oecd_model.get_crude_oil_prices()
+
+        if growth:
+            crude_oil_prices = calculate_growth(
+                crude_oil_prices,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
+                axis="rows",
+            )
+
+        crude_oil_prices = crude_oil_prices.loc[self._start_date : self._end_date]
+
+        return crude_oil_prices.round(rounding if rounding else self._rounding)
+
+    def get_environmental_tax(
+        self,
+        growth: bool = False,
+        lag: int = 1,
+        rounding: int | None = None,
+    ):
+        """
+        Environmentally related taxes are an important instrument for governments to shape
+        relative prices of goods and services.
+
+        The characteristics of such taxes included in the database (e.g. revenue, tax base, tax
+        rates, exemptions, etc.) are used to construct the environmentally related tax revenues with a breakdown
+        by environmental domain:
+
+        - Energy products (including vehicle fuels);
+        - Motor vehicles and transport services;
+        - Measured or estimated emissions to air and water, ozone depleting substances, certain non-point
+        sources of water pollution, waste management and noise, as well as management of water, land, soil,
+        forests, biodiversity, wildlife and fish stocks.
+
+        The data have been cross-validated and complemented with Revenue statistics from the OECD Tax statistics
+        database and official national sources.
+
+        See definition: https://data.oecd.org/envpolicy/environmental-tax.htm
+
+        Args:
+            growth (bool, optional): Whether to return the growth data or the actual data.
+            lag (int, optional): The number of periods to lag the data by.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+
+        Returns:
+            pd.DataFrame: A DataFrame containing the Environmental Tax.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Economics
+
+        economics = Economics(start_date="2010-01-01", end_date="2020-01-01")
+
+        environmental_tax = economics.get_environmental_tax()
+
+        environmental_tax.loc[:, 'Netherlands']
+        ```
+
+        Which returns:
+
+        |      |   Total |   Energy |   Transport |   Resource |   Pollution |
+        |:-----|--------:|---------:|------------:|-----------:|------------:|
+        | 2010 |    3.63 |     1.88 |        1.14 |       0.37 |        0.24 |
+        | 2011 |    3.45 |     1.85 |        1.1  |       0.27 |        0.23 |
+        | 2012 |    3.28 |     1.78 |        1.02 |       0.25 |        0.23 |
+        | 2013 |    3.29 |     1.9  |        0.95 |       0.26 |        0.19 |
+        | 2014 |    3.35 |     1.88 |        1    |       0.28 |        0.19 |
+        | 2015 |    3.36 |     1.86 |        1.04 |       0.27 |        0.19 |
+        | 2016 |    3.39 |     1.89 |        1.03 |       0.28 |        0.19 |
+        | 2017 |    3.37 |     1.86 |        1.06 |       0.27 |        0.18 |
+        | 2018 |    3.37 |     1.87 |        1.07 |       0.26 |        0.18 |
+        | 2019 |    3.42 |     1.94 |        1.04 |       0.25 |        0.19 |
+        | 2020 |    3.21 |     1.8  |        0.96 |       0.26 |        0.2  |
+        """
+        environmental_tax = {}
+
+        environmental_tax["Total"] = oecd_model.get_environmental_tax(parameter="TOT")
+        environmental_tax["Energy"] = oecd_model.get_environmental_tax(parameter="ENRG")
+        environmental_tax["Transport"] = oecd_model.get_environmental_tax(
+            parameter="TRANSPORT"
+        )
+        environmental_tax["Resource"] = oecd_model.get_environmental_tax(
+            parameter="RES"
+        )
+        environmental_tax["Pollution"] = oecd_model.get_environmental_tax(
+            parameter="POL"
+        )
+
+        environmental_tax_df = pd.concat(environmental_tax, axis=0).unstack(level=0)
+
+        if growth:
+            environmental_tax_df = calculate_growth(
+                environmental_tax_df,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
+                axis="rows",
+            )
+
+        environmental_tax_df = environmental_tax_df.loc[
+            self._start_date : self._end_date
+        ]
+
+        return environmental_tax_df.round(rounding if rounding else self._rounding)
+
+    def get_greenhouse_emissions(
+        self,
+        growth: bool = False,
+        lag: int = 1,
+        rounding: int | None = None,
+    ):
+        """
+        Greenhouse gases refer to the sum of seven gases that have direct effects on climate change:
+
+            - Carbon Dioxide (CO2)
+            - Methane (CH4)
+            - Nitrous Oxide (N2O)
+            - Chlorofluorocarbons (CFCs)
+            - Hydrofluorocarbons (HFCs)
+            - Perfluorocarbons (PFCs)
+            - Sulphur Hexafluoride (SF6)
+            - Nitrogen Trifluoride (NF3).
+
+        The data are expressed in CO2 equivalents and refer to gross direct emissions from human
+        activities. CO2 refers to gross direct emissions from fuel combustion only and data are
+        provided by the International Energy Agency. Other air emissions include emissions of
+        sulphur oxides (SOx) and nitrogen oxides (NOx) given as quantities of SO2 and NO2, emissions of
+        carbon monoxide (CO), and emissions of volatile organic compounds (VOC), excluding methane.
+
+        Air and greenhouse gas emissions are measured in tonnes per capita and kilogram per capita
+        in which all metrics are converted to tonnes (1000kg) per capita.
+
+        See definition: https://data.oecd.org/air/air-and-ghg-emissions.htm
+
+        Args:
+            growth (bool, optional): Whether to return the growth data or the actual data.
+            lag (int, optional): The number of periods to lag the data by.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+
+        Returns:
+            pd.DataFrame: A DataFrame containing the Environmental Tax.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Economics
+
+        economics = Economics(start_date="2010-01-01", end_date="2020-01-01")
+
+        greenhouse_emissions = economics.get_greenhouse_emissions()
+
+        greenhouse_emissions.loc[:, 'United States']
+        ```
+
+        Which returns:
+
+        |      |   Carbon Dioxide (CO2) |   Carbon Monoxide (CO) |   Greenhouse Gases (GHG) |   Nitrogen Oxides (NOX) |   Sulphur Oxides (SOX) |   Volatile Organic Compounds (VOC) |
+        |:-----|-----------------------:|-----------------------:|-------------------------:|------------------------:|-----------------------:|-----------------------------------:|
+        | 2010 |                  17.28 |                 0.1719 |                   22.818 |                  0.0449 |                 0.0203 |                             0.0388 |
+        | 2011 |                  16.44 |                 0.1658 |                   22.168 |                  0.0423 |                 0.0186 |                             0.0389 |
+        | 2012 |                  15.6  |                 0.1538 |                   21.252 |                  0.0395 |                 0.0147 |                             0.0382 |
+        | 2013 |                  15.93 |                 0.1504 |                   21.647 |                  0.0368 |                 0.0139 |                             0.0364 |
+        | 2014 |                  15.84 |                 0.1443 |                   21.667 |                  0.0345 |                 0.013  |                             0.036  |
+        | 2015 |                  15.36 |                 0.1345 |                   21.006 |                  0.031  |                 0.0097 |                             0.0343 |
+        | 2016 |                  14.97 |                 0.1259 |                   20.362 |                  0.0278 |                 0.0074 |                             0.0332 |
+        | 2017 |                  14.64 |                 0.133  |                   20.183 |                  0.026  |                 0.0067 |                             0.0348 |
+        | 2018 |                  15.02 |                 0.133  |                   20.667 |                  0.0248 |                 0.0064 |                             0.0351 |
+        | 2019 |                  14.44 |                 0.1264 |                   20.156 |                  0.0236 |                 0.0054 |                             0.0332 |
+        | 2020 |                  12.9  |                 0.1172 |                   18.178 |                  0.0207 |                 0.0047 |                             0.0329 |
+        """
+        greenhouse_gases = {}
+
+        greenhouse_gases["Carbon Dioxide (CO2)"] = oecd_model.get_greenhouse_emissions(
+            parameter="CO2"
+        )
+        greenhouse_gases["Carbon Monoxide (CO)"] = oecd_model.get_greenhouse_emissions(
+            parameter="CO"
+        )
+        greenhouse_gases[
+            "Greenhouse Gases (GHG)"
+        ] = oecd_model.get_greenhouse_emissions(parameter="GHG")
+        greenhouse_gases["Nitrogen Oxides (NOX)"] = oecd_model.get_greenhouse_emissions(
+            parameter="NOX"
+        )
+        greenhouse_gases["Sulphur Oxides (SOX)"] = oecd_model.get_greenhouse_emissions(
+            parameter="SOX"
+        )
+        greenhouse_gases[
+            "Volatile Organic Compounds (VOC)"
+        ] = oecd_model.get_greenhouse_emissions(parameter="VOC")
+
+        greenhouse_gases_df = pd.concat(greenhouse_gases, axis=0).unstack(level=0)
+
+        if growth:
+            greenhouse_gases_df = calculate_growth(
+                greenhouse_gases_df,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
+                axis="rows",
+            )
+
+        greenhouse_gases_df = greenhouse_gases_df.loc[self._start_date : self._end_date]
+
+        return greenhouse_gases_df.round(rounding if rounding else self._rounding)

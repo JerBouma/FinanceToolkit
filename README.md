@@ -409,14 +409,14 @@ The Risk module is meant to calculate important risk metrics such as Value at Ri
 
 The Technicals Module contains 30+ Technical Indicators that can be used to analyse companies. These ratios are divided into 4 categories which are breadth, momentum, overlap and volatility. Each indicator is calculated using the data from the Toolkit module. **Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals) which includes an explanation about the indicator, the parameters and an example.**
 
-### Breadth Indicators
+### Breadth Indicators 💨
 - McClellan Oscillator
 - Advancers/Decliners Ratio
 - On-Balance Volume (OBV)
 - Accumulation/Distribution Line (ADL)
 - Chaikin Oscillator
 
-### Momentum Indicators
+### Momentum Indicators ⏱️
 - Money Flow Index
 - Williams %R
 - Aroon Indicator
@@ -434,14 +434,14 @@ The Technicals Module contains 30+ Technical Indicators that can be used to anal
 - Relative Strength Index (RSI)
 - Balance of Power (BOP)
 
-### Overlap Indicators
+### Overlap Indicators 🌈
 - Simple Moving Average (SMA)
 - Exponential Moving Average (EMA)
 - Double Exponential Moving Average (DEMA)
 - Triple Exponential Moving Average (TRIX)
 - Triangular Moving Average (TMA)
 
-### Volatility Indicators
+### Volatility Indicators ⚠️
 - True Range (TR)
 - Average True Range (ATR)
 - Keltners Channels

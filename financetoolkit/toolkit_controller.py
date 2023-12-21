@@ -522,7 +522,7 @@ class Toolkit:
         ):
             raise ValueError(
                 "The datasets could not be populated and therefore the Ratios class cannot be initialized. "
-                "This is usually because you have reached the API limit."
+                "This is usually because you have reached the API limit or entered an invalid API key."
             )
 
         if not self._start_date:
@@ -631,7 +631,7 @@ class Toolkit:
         ):
             raise ValueError(
                 "The datasets could not be populated and therefore the Ratios class cannot be initialized. "
-                "This is usually because you have reached the API limit."
+                "This is usually because you have reached the API limit or entered an invalid API key."
             )
 
         if not self._start_date:

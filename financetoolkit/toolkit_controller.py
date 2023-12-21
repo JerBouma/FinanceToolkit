@@ -40,7 +40,7 @@ from financetoolkit.risk.risk_controller import Risk
 from financetoolkit.technical.technicals_controller import Technicals
 
 # pylint: disable=too-many-instance-attributes,too-many-lines,line-too-long,too-many-locals
-# pylint: disable=too-many-function-args,too-many-public-methods)
+# pylint: disable=too-many-function-args,too-many-public-methods
 # ruff: noqa: E501
 
 TICKER_LIMIT = 20
@@ -49,7 +49,7 @@ TICKER_LIMIT = 20
 class Toolkit:
     """
     The Finance Toolkit is an open-source toolkit in which
-    all 100+ financial ratios, indicators and performance measurements
+    all 150+ financial ratios, indicators and performance measurements
     are written down in the most simplistic way allowing for complete transparency
     of the calculation method. This allows you to not have to rely on metrics
     from other providers and, given a financial statement, allow for efficient manual
@@ -522,7 +522,7 @@ class Toolkit:
         ):
             raise ValueError(
                 "The datasets could not be populated and therefore the Ratios class cannot be initialized. "
-                "This is usually because you have reached the API limit."
+                "This is usually because you have reached the API limit or entered an invalid API key."
             )
 
         if not self._start_date:
@@ -631,7 +631,7 @@ class Toolkit:
         ):
             raise ValueError(
                 "The datasets could not be populated and therefore the Ratios class cannot be initialized. "
-                "This is usually because you have reached the API limit."
+                "This is usually because you have reached the API limit or entered an invalid API key."
             )
 
         if not self._start_date:
@@ -950,13 +950,9 @@ class Toolkit:
 
     def get_profile(self):
         """
-        Returns a pandas dataframe containing the company profile information for the specified tickers.
-
-        Raises:
-            ValueError: If an API key is not defined for FinancialModelingPrep.
-
-        Returns:
-            pandas.DataFrame: The company profile information for the specified tickers.
+        Obtain the profile of the specified tickers. These include important metrics
+        such as the beta, market capitalization, currency, isin, industry, and ipo date
+        that give an overall understanding about the company.
 
         As an example:
 
@@ -1054,13 +1050,12 @@ class Toolkit:
 
     def get_quote(self):
         """
-        Returns a pandas dataframe containing the stock quote information for the specified tickers.
-
-        Raises:
-            ValueError: If an API key is not defined for FinancialModelingPrep.
-
-        Returns:
-            pandas.DataFrame: The stock quote information for the specified tickers.
+        Get the quote of the specified tickers. These include important metrics
+        such as the price, changes, day low, day high, year low, year high, market
+        capitalization, volume, average volume, open, previous close, earnings per
+        share (EPS), price to earnings ratio (PE), earnings announcement, shares
+        outstanding and timestamp that give an overall understanding about the
+        company.
 
         As an example:
 
@@ -1125,7 +1120,16 @@ class Toolkit:
 
     def get_rating(self):
         """
-        Returns a pandas dataframe containing the stock rating information for the specified tickers.
+        Get the rating of the specified tickers. These scores and recommendations are categorized
+        as follows:
+
+        - An overall rating
+        - Discounted Cash Flow (DCF)
+        - Return on Equity (ROE)
+        - Return on Assets (ROA)
+        - Debt to Equity (DE)
+        - Price Earnings (PE)
+        - Price to Book (PB)
 
         Args:
             limit (int): The number of results to return. Defaults to 100.
@@ -1134,7 +1138,7 @@ class Toolkit:
             ValueError: If an API key is not defined for FinancialModelingPrep.
 
         Returns:
-            pandas.DataFrame: The stock rating information for the specified tickers.
+            pd.DataFrame: The stock rating information for the specified tickers.
 
         As an example:
 
@@ -2015,23 +2019,23 @@ class Toolkit:
         ethical practices. These scores provide valuable insights into a company's performance
         in three key areas:
 
-            - Environmental (E): The environmental component evaluates a company's
-            impact on the planet and its efforts to mitigate environmental risks. It includes
-            factors like carbon emissions, energy efficiency, water management, and waste
-            reduction. A high environmental score indicates a company's commitment to eco-friendly
-            practices and reducing its ecological footprint.
+        - Environmental (E): The environmental component evaluates a company's
+        impact on the planet and its efforts to mitigate environmental risks. It includes
+        factors like carbon emissions, energy efficiency, water management, and waste
+        reduction. A high environmental score indicates a company's commitment to eco-friendly
+        practices and reducing its ecological footprint.
 
-            - Social (S): The social component focuses on how a company interacts with its employees,
-            customers, suppliers, and the communities in which it operates. Key factors in the
-            social score include labor practices, diversity and inclusion, human rights,
-            product safety, and community engagement. A strong social score reflects a company's
-            dedication to fostering positive relationships and contributing positively to society.
+        - Social (S): The social component focuses on how a company interacts with its employees,
+        customers, suppliers, and the communities in which it operates. Key factors in the
+        social score include labor practices, diversity and inclusion, human rights,
+        product safety, and community engagement. A strong social score reflects a company's
+        dedication to fostering positive relationships and contributing positively to society.
 
-            - Governance (G): Governance examines a company's internal structures, policies, and
-            leadership. It assesses aspects such as board independence, executive compensation,
-            transparency, and the presence of anti-corruption measures. A high governance score
-            signifies strong leadership and a commitment to maintaining high ethical standards
-            and accountability
+        - Governance (G): Governance examines a company's internal structures, policies, and
+        leadership. It assesses aspects such as board independence, executive compensation,
+        transparency, and the presence of anti-corruption measures. A high governance score
+        signifies strong leadership and a commitment to maintaining high ethical standards
+        and accountability
 
         ESG scores provide investors with a holistic view of a company's sustainability and
         ethical practices, allowing them to make more informed investment decisions. These scores

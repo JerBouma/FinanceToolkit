@@ -69,23 +69,30 @@ Through the link you are able to subscribe for the free plan and also premium pl
 
 The Finance Toolkit features the following functionality, also see [Basic Usage](#basic-usage) to see some of these functions in action:
 
-- **Company profiles** (`get_profile`), including country, sector, ISIN and general characteristics (from FinancialModelingPrep)
-- **Company quotes** (`get_quote`), including 52 week highs and lows, volume metrics and current shares outstanding (from FinancialModelingPrep)
-- **Company ratings** (`get_rating`), based on key indicators like PE and DE ratios (from FinancialModelingPrep)
-- **Historical market data** (`get_historical_data`), which can be retrieved on a daily, weekly, monthly, quarterly and yearly basis. This includes OHLC, dividends, returns, cumulative returns and volatility calculations for each corresponding period. (from FinancialModelingPrep or Yahoo Finance)
-- **Treasury Rates** (`get_treasury_data`) for several months and several years that can serve as risk-free rate (from Yahoo Finance)
-- **Dividends Calendar** (`get_dividend_calendar`) which shows the (adjusted) dividend and the the related record, payment and declaration dates (from FinancialModelingPrep)
-- **Analyst Estimates** (`get_analyst_estimates`) that show the expected EPS and Revenue from the past and future from a range of analysts (from FinancialModelingPrep)
-- **Earnings Calendar**(`get_earnings_calendar`) which shows the exact dates earnings are released in the past and in the future including expectations (from FinancialModelingPrep)
-- **Revenue Geographic Segmentation** (`get_revenue_geographic_segmentation`) which shows the revenue per company from each country and **Revenue Product Segmentation** (`get_revenue_product_segmenttion`) which shows the revenue per company from each product (from FinancialModelingPrep)
-- **ESG Scores** (`get_esg_scores`) which shows the Environmental, Social and Governance (ESG) scores for each company (from FinancialModelingPrep)
-- **Balance Sheet Statements** (`get_balance_sheet_statement`), **Income Statements** (`get_income_statement`), **Cash Flow Statements** (`get_cash_flow_statement`) and **Statistics Statements** (`get_statistics_statement`), obtainable from FinancialModelingPrep or the source of your choosing through custom input. These functions are accompanied with a normalization function so that for any source, the same ratio analysis can be performed. Next to that, you can obtain growth and trailing (TTM) results as well. Please see [this Jupyter Notebook](https://www.jeroenbouma.com/projects/financetoolkit/external-datasets) that explains how to use a custom source.
-- **Efficiency ratios** (`ratios.collect_efficiency_ratios`), **liquidity ratios** (`ratios.collect_liquidity_ratios`), **profitability ratios** (`ratios._collect_profitability_ratios`), **solvency ratios** (`ratios.collect_solvency_ratios`) and **valuation ratios** (`ratios.collect_valuation_ratios`) functionality that automatically calculates the most important ratios (50+) based on the inputted balance sheet, income and cash flow statements. Any of the underlying ratios can also be called individually such as `ratios.get_return_on_equity` and it is possible to calculate their growth with lags as well as calculate trailing metrics (TTM). Next to that, it is also possible to input your own **custom ratios** (`ratios.collect_custom_ratios`). See also [this Notebook](https://www.jeroenbouma.com/projects/financetoolkit/custom-ratios) for more information.
-- **Models** like DUPONT analysis (`models.get_extended_dupont_analysis`) or Enterprise Breakdown (`models.get_enterprise_value_breakdown`) that can be used to perform in-depth financial analysis through a single function. These functions combine much of the functionality throughout the Toolkit to provide advanced calculations. 
-- **Performance metrics** like Jensens Alpha (`performance.get_jensens_alpha`),  Capital Asset Pricing Model (CAPM) (`performance.get_capital_asset_pricing_model`) and (Rolling) Sharpe Ratio (`performance.get_sharpe_ratio`) that can be used to understand how each company is performing versus the benchmark and compared to each other.
-- **Risk metrics** like Value at Risk (`risk.get_value_at_risk`) and Conditional Value at Risk (`risk.get_conditional_value_at_risk`) that can be used to understand the risk profile of each company and how it compares to the benchmark.
-- **Technical indicators** like Relative Strength Index (`technicals.get_relative_strength_index`),  Exponential Moving Average (`technicals.get_exponential_moving_average`) and Bollinger Bands (`technicals.get_bollinger_bands`) that can be used to perform in-depth momentum and trend analysis. These functions allow for the calculation of technical indicators based on the historical market data.
-- **Key Economic Indicators** like Gross Domestic Product (GDP) (`economics.get_gross_domestic_product`), Consumer Price Index (CPI) (`economics.get_consumer_price_index`) and Federal Funds Rate (FED) (`economics.get_federal_reserve_rates`) that can be used to analyse over 60 different countries. Based on these indicators, it is possible to understand the economic landscape of each country and whether companies within these countries are a great fit for your portfolio.
+| Feature | Description | Source | Example |
+|:--------|:------------|:-------|:--------|
+| **Company Profiles** | Obtain company profiles including country, sector, ISIN and general characteristics. | FinancialModelingPrep | `companies.get_profile()` |
+| **Company Quotes** | Obtain 52 week highs and lows, volume metrics and current shares outstanding. | FinancialModelingPrep | `companies.get_quote()` |
+| **Company Ratings** | Obtain ratings based on key indicators like PE and DE ratios. | FinancialModelingPrep | `companies.get_rating()` |
+| **Historical Market Data** | Obtain OHLC, dividends, returns, cumulative returns and volatility calculations for each corresponding period. | FinancialModelingPrep or Yahoo Finance | `companies.get_historical_data()` |
+| **Treasury Rates** | Obtain several months and several years that can serve as risk-free rate. | Yahoo Finance | `companies.get_treasury_data()` |
+| **Dividends Calendar** | Obtain the (adjusted) dividend and the the related record, payment and declaration dates. | FinancialModelingPrep | `companies.get_dividend_calendar()` |
+| **Analyst Estimates** | Obtain the expected EPS and Revenue from the past and future from a range of analysts. | FinancialModelingPrep | `companies.get_analyst_estimates()` |
+| **Earnings Calendar** | Obtain the exact dates earnings are released in the past and in the future including expectations. | FinancialModelingPrep | `companies.get_earnings_calendar()` |
+| **Revenue Geographic Segmentation** | Obtain the revenue per company from each country. | FinancialModelingPrep | `companies.get_revenue_geographic_segmentation()` |
+| **Revenue Product Segmentation** | Obtain the revenue per company from each product. | FinancialModelingPrep | `companies.get_revenue_product_segmentation()` |
+| **ESG Scores** | Obtain the Environmental, Social and Governance (ESG) scores for each company. | FinancialModelingPrep | `companies.get_esg_scores()` |
+| **Balance Sheet Statements** | Obtain the balance sheet statement. | FinancialModelingPrep or Custom | `companies.get_balance_sheet_statement()` |
+| **Income Statements** | Obtain the income statement. | FinancialModelingPrep or Custom | `companies.get_income_statement()` |
+| **Cash Flow Statements** | Obtain the cash flow statement. | FinancialModelingPrep or Custom | `companies.get_cash_flow_statement()` |
+| **Statistics Statements** | Obtain the statistics statement. | FinancialModelingPrep or Custom | `companies.get_statistics_statement()` |
+| **Financial Ratios** | Obtain 50+ Financial Ratios separated between efficiency, liquidity, profitability, solvency and valuation. | Internal | `companies.ratios.collect_efficiency_ratios()` |
+| **Custom Ratios** | Obtain custom ratios based on the inputted balance sheet, income and cash flow statements. | Internal | `companies.ratios.collect_custom_ratios()` |
+| **Financial Models** | Obtain models like DUPONT analysis and Enterprise Breakdown. | Internal | `companies.models.get_extended_dupont_analysis()` |
+| **Performance Metrics** | Obtain metrics like Jensens Alpha, Capital Asset Pricing Model (CAPM) and (Rolling) Sharpe Ratio. | Internal | `companies.performance.get_jensens_alpha()` |
+| **Risk Metrics** | Obtain metrics like Value at Risk and Conditional Value at Risk. | Internal | `companies.risk.get_value_at_risk()` |
+| **Technical Indicators** | Obtain indicators like Relative Strength Index, Exponential Moving Average and Bollinger Bands. | Internal | `companies.technicals.get_relative_strength_index()` |
+| **Key Economic Indicators** | Obtain indicators like Gross Domestic Product (GDP), Consumer Price Index (CPI) and Federal Funds Rate (FED). | Internal | `companies.economics.get_gross_domestic_product()` |
 
 The dependencies of the package are on purpose *very slim* so that it will work well with any combination of packages and not result in conflicts.
 

@@ -71,29 +71,22 @@ The Finance Toolkit features the following functionality, also see [Basic Usage]
 
 | **Feature** | **Description** |
 |:--------|:------------|
-| **Company Profiles** | Obtain company profiles including country, sector, ISIN and general characteristics. |
-| **Company Quotes** | Obtain 52 week highs and lows, volume metrics and current shares outstanding. |
-| **Company Ratings** | Obtain ratings based on key indicators like PE and DE ratios. |
-| **Historical Market Data** | Obtain OHLC, dividends, returns, cumulative returns and volatility calculations for each corresponding period. |
+| **Company Overview** | Obtain company profiles including a general description about the company and its position as well as the current quote and the rating and recommendation based on a variety of different metrics such as the Discounted Cash Flow (DCF) and Return on Equity (RoE) |
+| **Historical Market Data** | Obtain a full history of OHLC, dividends, returns, cumulative returns and volatility calculations for each corresponding period. |
 | **Treasury Rates** | Obtain several months and several years that can serve as risk-free rate. |
 | **Dividends Calendar** | Obtain the (adjusted) dividend and the the related record, payment and declaration dates. |
 | **Analyst Estimates** | Obtain the expected EPS and Revenue from the past and future from a range of analysts. |
 | **Earnings Calendar** | Obtain the exact dates earnings are released in the past and in the future including expectations. |
-| **Revenue Geographic Segmentation** | Obtain the revenue per company from each country. |
-| **Revenue Product Segmentation** | Obtain the revenue per company from each product. |
+| **Revenue Segmentation** | Obtain revenue segmentation based on the different products as well as based on country |
 | **ESG Scores** | Obtain the Environmental, Social and Governance (ESG) scores for each company. |
-| **Balance Sheet Statements** | Obtain the balance sheet statement. |
-| **Income Statements** | Obtain the income statement. |
-| **Cash Flow Statements** | Obtain the cash flow statement. |
-| **Statistics Statements** | Obtain the statistics statement. |
-| **Financial Ratios** | Obtain 50+ Financial Ratios separated between efficiency, liquidity, profitability, solvency and valuation. |
-| **Custom Ratios** | Obtain custom ratios based on the inputted balance sheet, income and cash flow statements. |
-| **Financial Models** | Obtain models like DUPONT analysis and Enterprise Breakdown. |
-| **Performance Metrics** | Obtain metrics like Jensens Alpha, Capital Asset Pricing Model (CAPM) and (Rolling) Sharpe Ratio. |
-| **Risk Metrics** | Obtain metrics like Value at Risk and Conditional Value at Risk. |
-| **Technical Indicators** | Obtain indicators like Relative Strength Index, Exponential Moving Average and Bollinger Bands. |
-| **Key Economic Indicators** | Obtain indicators like Gross Domestic Product (GDP), Consumer Price Index (CPI) and Federal Funds Rate (FED). |
-
+| **Financial Statements** | Obtain a full history of yearly or quarterly balance sheet statements, income statements and cash flow statements. |
+| **Financial Ratios** | Obtain 50+ Financial Ratios separated between efficiency, liquidity, profitability, solvency and valuation. Find all of them [here](#financial-ratios). |
+| **Custom Ratios** | Define custom ratios and automatically calculate these based on the balance sheet, income and cash flow statements. Learn how [here](https://www.jeroenbouma.com/projects/financetoolkit/custom-ratios) |
+| **Financial Models** | Obtain 10+ financial models like DUPONT, Weighted Average Cost of Capital (WACC) and Altman Z-Score. Find all of them [here](#financial-models). |
+| **Performance Metrics** | Obtain 15+ performance metrics such as Jensens Alpha, Capital Asset Pricing Model (CAPM) and (Rolling) Sharpe Ratio. Find all of them [here](#performance-metrics) |
+| **Risk Metrics** | Obtain 10+ Risk metrics such as Value at Risk (VaR), GARCH and Entropic Value at Risk (eVaR). Find all of them [here](#risk-metrics). |
+| **Technical Indicators** | Obtain 40+ Technical indicators such as the Relative Strength Index (RSI), Exponential Moving Average and Bollinger Bands. Find all of them [here](#technical-indicators). |
+| **Key Economic Indicators** | Obtain 50+ macro-economic indicators like Gross Domestic Product (GDP), Consumer Price Index (CPI) and Federal Funds Rate (FED). Find all of them [here](#key-economic-indicators) |
 
 The dependencies of the package are on purpose *very slim* so that it will work well with any combination of packages and not result in conflicts.
 

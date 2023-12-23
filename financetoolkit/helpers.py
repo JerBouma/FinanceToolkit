@@ -552,6 +552,6 @@ class FinanceFrame(pd.DataFrame):
             transform=plt.gca().transAxes,
         )
 
-        plt.legend(loc="upper center", bbox_to_anchor=(0.6, -0.05), ncol=6)
+        plt.legend(loc="upper center", bbox_to_anchor=(0.6, -0.05), ncol=4)
 
         return result

@@ -69,30 +69,31 @@ Through the link you are able to subscribe for the free plan and also premium pl
 
 The Finance Toolkit features the following functionality, also see [Basic Usage](#basic-usage) to see some of these functions in action:
 
-| Feature | Description | Source | Example |
-|:--------|:------------|:-------|:--------|
-| **Company Profiles** | Obtain company profiles including country, sector, ISIN and general characteristics. | FinancialModelingPrep | `companies.get_profile()` |
-| **Company Quotes** | Obtain 52 week highs and lows, volume metrics and current shares outstanding. | FinancialModelingPrep | `companies.get_quote()` |
-| **Company Ratings** | Obtain ratings based on key indicators like PE and DE ratios. | FinancialModelingPrep | `companies.get_rating()` |
-| **Historical Market Data** | Obtain OHLC, dividends, returns, cumulative returns and volatility calculations for each corresponding period. | FinancialModelingPrep or Yahoo Finance | `companies.get_historical_data()` |
-| **Treasury Rates** | Obtain several months and several years that can serve as risk-free rate. | Yahoo Finance | `companies.get_treasury_data()` |
-| **Dividends Calendar** | Obtain the (adjusted) dividend and the the related record, payment and declaration dates. | FinancialModelingPrep | `companies.get_dividend_calendar()` |
-| **Analyst Estimates** | Obtain the expected EPS and Revenue from the past and future from a range of analysts. | FinancialModelingPrep | `companies.get_analyst_estimates()` |
-| **Earnings Calendar** | Obtain the exact dates earnings are released in the past and in the future including expectations. | FinancialModelingPrep | `companies.get_earnings_calendar()` |
-| **Revenue Geographic Segmentation** | Obtain the revenue per company from each country. | FinancialModelingPrep | `companies.get_revenue_geographic_segmentation()` |
-| **Revenue Product Segmentation** | Obtain the revenue per company from each product. | FinancialModelingPrep | `companies.get_revenue_product_segmentation()` |
-| **ESG Scores** | Obtain the Environmental, Social and Governance (ESG) scores for each company. | FinancialModelingPrep | `companies.get_esg_scores()` |
-| **Balance Sheet Statements** | Obtain the balance sheet statement. | FinancialModelingPrep or Custom | `companies.get_balance_sheet_statement()` |
-| **Income Statements** | Obtain the income statement. | FinancialModelingPrep or Custom | `companies.get_income_statement()` |
-| **Cash Flow Statements** | Obtain the cash flow statement. | FinancialModelingPrep or Custom | `companies.get_cash_flow_statement()` |
-| **Statistics Statements** | Obtain the statistics statement. | FinancialModelingPrep or Custom | `companies.get_statistics_statement()` |
-| **Financial Ratios** | Obtain 50+ Financial Ratios separated between efficiency, liquidity, profitability, solvency and valuation. | Internal | `companies.ratios.collect_efficiency_ratios()` |
-| **Custom Ratios** | Obtain custom ratios based on the inputted balance sheet, income and cash flow statements. | Internal | `companies.ratios.collect_custom_ratios()` |
-| **Financial Models** | Obtain models like DUPONT analysis and Enterprise Breakdown. | Internal | `companies.models.get_extended_dupont_analysis()` |
-| **Performance Metrics** | Obtain metrics like Jensens Alpha, Capital Asset Pricing Model (CAPM) and (Rolling) Sharpe Ratio. | Internal | `companies.performance.get_jensens_alpha()` |
-| **Risk Metrics** | Obtain metrics like Value at Risk and Conditional Value at Risk. | Internal | `companies.risk.get_value_at_risk()` |
-| **Technical Indicators** | Obtain indicators like Relative Strength Index, Exponential Moving Average and Bollinger Bands. | Internal | `companies.technicals.get_relative_strength_index()` |
-| **Key Economic Indicators** | Obtain indicators like Gross Domestic Product (GDP), Consumer Price Index (CPI) and Federal Funds Rate (FED). | Internal | `companies.economics.get_gross_domestic_product()` |
+| **Feature** | **Description** | **Example** |
+|:--------|:------------|:--------|
+| **Company Profiles** | Obtain company profiles including country, sector, ISIN and general characteristics. | `companies.get_profile()` |
+| **Company Quotes** | Obtain 52 week highs and lows, volume metrics and current shares outstanding. | `companies.get_quote()` |
+| **Company Ratings** | Obtain ratings based on key indicators like PE and DE ratios. | `companies.get_rating()` |
+| **Historical Market Data** | Obtain OHLC, dividends, returns, cumulative returns and volatility calculations for each corresponding period. | `companies.get_historical_data()` |
+| **Treasury Rates** | Obtain several months and several years that can serve as risk-free rate. | `companies.get_treasury_data()` |
+| **Dividends Calendar** | Obtain the (adjusted) dividend and the the related record, payment and declaration dates. | `companies.get_dividend_calendar()` |
+| **Analyst Estimates** | Obtain the expected EPS and Revenue from the past and future from a range of analysts. | `companies.get_analyst_estimates()` |
+| **Earnings Calendar** | Obtain the exact dates earnings are released in the past and in the future including expectations. | `companies.get_earnings_calendar()` |
+| **Revenue Geographic Segmentation** | Obtain the revenue per company from each country. | `companies.get_revenue_geographic_segmentation()` |
+| **Revenue Product Segmentation** | Obtain the revenue per company from each product. | `companies.get_revenue_product_segmentation()` |
+| **ESG Scores** | Obtain the Environmental, Social and Governance (ESG) scores for each company. | `companies.get_esg_scores()` |
+| **Balance Sheet Statements** | Obtain the balance sheet statement. | `companies.get_balance_sheet_statement()` |
+| **Income Statements** | Obtain the income statement. | `companies.get_income_statement()` |
+| **Cash Flow Statements** | Obtain the cash flow statement. | `companies.get_cash_flow_statement()` |
+| **Statistics Statements** | Obtain the statistics statement. | `companies.get_statistics_statement()` |
+| **Financial Ratios** | Obtain 50+ Financial Ratios separated between efficiency, liquidity, profitability, solvency and valuation. | `companies.ratios.collect_efficiency_ratios()` |
+| **Custom Ratios** | Obtain custom ratios based on the inputted balance sheet, income and cash flow statements. | `companies.ratios.collect_custom_ratios()` |
+| **Financial Models** | Obtain models like DUPONT analysis and Enterprise Breakdown. | `companies.models.get_extended_dupont_analysis()` |
+| **Performance Metrics** | Obtain metrics like Jensens Alpha, Capital Asset Pricing Model (CAPM) and (Rolling) Sharpe Ratio. | `companies.performance.get_jensens_alpha()` |
+| **Risk Metrics** | Obtain metrics like Value at Risk and Conditional Value at Risk. | `companies.risk.get_value_at_risk()` |
+| **Technical Indicators** | Obtain indicators like Relative Strength Index, Exponential Moving Average and Bollinger Bands. | `companies.technicals.get_relative_strength_index()` |
+| **Key Economic Indicators** | Obtain indicators like Gross Domestic Product (GDP), Consumer Price Index (CPI) and Federal Funds Rate (FED). | `companies.economics.get_gross_domestic_product()` |
+
 
 The dependencies of the package are on purpose *very slim* so that it will work well with any combination of packages and not result in conflicts.
 

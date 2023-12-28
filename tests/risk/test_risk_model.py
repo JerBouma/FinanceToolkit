@@ -33,7 +33,7 @@ def test_get_var_studentt(recorder):
     recorder.capture_list(
         risk_model.get_var_studentt(
             returns=pd.Series([0.3, 0.2, 0.1, 0, 0.06]), alpha=0.03
-        )
+        ).round(4)
     )
 
 

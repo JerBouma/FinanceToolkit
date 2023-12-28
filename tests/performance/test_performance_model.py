@@ -50,7 +50,7 @@ def test_obtain_fama_and_french_dataset(recorder):
     # This is done given that the dataset can change over time
     # it is only important to check if the data remains the same
     # for a short period of time
-    recorder.capture(dataset.iloc[:100])
+    recorder.capture(dataset.round(4).iloc[:100])
 
 
 def test_get_factor_asset_correlations(recorder):

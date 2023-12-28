@@ -65,14 +65,19 @@ def test_get_factor_asset_correlations(recorder):
 
 
 def test_get_fama_and_french_model_multi(recorder):
-    result = performance_model.get_fama_and_french_model_multi(
+    regression_results, residuals = performance_model.get_fama_and_french_model_multi(
         excess_returns=pd.Series([0.3, 0.2]),
         factor_dataset=pd.DataFrame(
             [[0.05, 0.03], [0.06, 0.02]], columns=["Mkt-RF", "SMB"]
         ),
     )
 
-    recorder.capture(pd.DataFrame(result))
+    for result_values in regression_results:
+        regression_results[result_values] = regression_results[result_values].round(0)
+
+    residuals = residuals.round(0)
+
+    recorder.capture(pd.DataFrame((regression_results, residuals)))
 
 
 def test_get_fama_and_french_model_single(recorder):

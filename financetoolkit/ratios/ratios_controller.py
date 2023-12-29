@@ -55,7 +55,7 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         profitability_ratios = toolkit.ratios.collect_profitability_ratios()
 
@@ -151,7 +151,7 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         toolkit.ratios.collect_all_ratios()
         ```
@@ -440,7 +440,7 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         toolkit.ratios.collect_efficiency_ratios()
         ```
@@ -560,7 +560,7 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         asset_turnover_ratios = toolkit.ratios.get_asset_turnover_ratio()
         ```
@@ -637,7 +637,7 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         inventory_turnover_ratios = toolkit.ratios.get_inventory_turnover_ratio()
         ```
@@ -719,7 +719,7 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         toolkit.ratios.get_days_of_inventory_outstanding()
         ```
@@ -812,7 +812,7 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         dso_ratios = toolkit.ratios.get_days_of_sales_outstanding()
         ```
@@ -896,7 +896,7 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         operating_cycle_ratios = toolkit.ratios.get_operating_cycle()
         ```
@@ -1006,7 +1006,7 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         ap_turnover_ratios = toolkit.ratios.get_accounts_payables_turnover_ratio()
         ```
@@ -1096,7 +1096,7 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         dpo_ratios = toolkit.ratios.get_days_of_accounts_payable_outstanding()
         ```
@@ -1189,7 +1189,7 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         ccc_values = toolkit.ratios.get_cash_conversion_cycle()
         ```
@@ -1327,7 +1327,7 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         receivables_turnover = toolkit.ratios.get_receivables_turnover()
         ```
@@ -1405,7 +1405,7 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         sga_to_revenue_ratios = toolkit.ratios.get_sga_to_revenue_ratio()
         ```
@@ -1479,7 +1479,7 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         fixed_asset_turnover_ratios = toolkit.ratios.get_fixed_asset_turnover()
         ```
@@ -1554,7 +1554,7 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         operating_ratios = toolkit.ratios.get_operating_ratio()
         ```
@@ -1617,7 +1617,7 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         liquidity_ratios = toolkit.ratios.collect_liquidity_ratios()
         ```
@@ -1709,7 +1709,7 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         current_ratios = toolkit.ratios.get_current_ratio()
         ```
@@ -1783,7 +1783,7 @@ class Ratios:
 
         ```python
         from financetoolkit import Toolkit
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         quick_ratios = toolkit.ratios.get_quick_ratio()
         ```
@@ -1863,7 +1863,7 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         cash_ratios = toolkit.ratios.get_cash_ratio()
         ```
@@ -1938,7 +1938,7 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         working_capitals = toolkit.ratios.get_working_capital()
         ```
@@ -2010,7 +2010,7 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         operating_cash_flow_ratios = toolkit.ratios.get_operating_cash_flow_ratio()
         ```
@@ -2082,7 +2082,7 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         operating_cash_flow_sales_ratios = toolkit.ratios.get_operating_cash_flow_sales_ratio()
         ```
@@ -2150,7 +2150,7 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         toolkit.ratios.get_short_term_coverage_ratio()
         ```
@@ -2221,7 +2221,7 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         profitability_ratios = toolkit.ratios.collect_profitability_ratios()
         ```
@@ -2346,7 +2346,7 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         gross_margin_ratios = toolkit.ratios.get_gross_margin()
         ```
@@ -2413,7 +2413,7 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         operating_margin_ratios = toolkit.ratios.get_operating_margin()
         ```
@@ -2482,7 +2482,7 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         net_profit_margin_ratios = toolkit.ratios.get_net_profit_margin()
         ```
@@ -2555,7 +2555,7 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         interest_coverage_ratios = toolkit.ratios.get_interest_burden_ratio()
         ```
@@ -2626,7 +2626,7 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         pretax_profit_margin = toolkit.ratios.get_income_before_tax_profit_margin()
         ```
@@ -2703,7 +2703,7 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         effective_tax_rate = toolkit.ratios.get_effective_tax_rate()
         ```
@@ -2775,7 +2775,7 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         roa_ratios = toolkit.ratios.get_return_on_assets()
         ```
@@ -2856,7 +2856,7 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         roe_ratios = toolkit.ratios.get_return_on_equity()
         ```
@@ -2933,7 +2933,7 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         roic_ratios = toolkit.ratios.get_return_on_invested_capital()
         ```
@@ -3041,7 +3041,7 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         income_quality_ratios = toolkit.ratios.get_income_quality_ratio()
         ```
@@ -3112,7 +3112,7 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         rota_ratios = toolkit.ratios.get_return_on_tangible_assets()
         ```
@@ -3220,7 +3220,7 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         roce_ratios = toolkit.ratios.get_return_on_capital_employed()
         ```
@@ -3315,7 +3315,7 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         net_income_per_ebt_ratios = toolkit.ratios.get_net_income_per_ebt()
         ```
@@ -3386,7 +3386,7 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         fcf_to_ocf_ratios = toolkit.ratios.get_free_cash_flow_operating_cash_flow_ratio()
         ```
@@ -3465,7 +3465,7 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         tax_burden_ratios = toolkit.ratios.get_tax_burden_ratio()
         ```
@@ -3538,7 +3538,7 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         ebt_to_ebit_ratios = toolkit.ratios.get_EBT_to_EBIT()
         ```
@@ -3626,7 +3626,7 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         ebit_to_revenue_ratios = toolkit.ratios.get_EBIT_to_revenue()
         ```
@@ -3695,7 +3695,7 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         solvency_ratios = toolkit.ratios.collect_solvency_ratios()
         ```
@@ -3799,7 +3799,7 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         debt_to_assets_ratios = toolkit.ratios.get_debt_to_assets_ratio()
         ```
@@ -3871,7 +3871,7 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         debt_to_equity_ratios = toolkit.ratios.get_debt_to_equity_ratio()
         ```
@@ -3943,7 +3943,7 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         interest_coverage_ratios = toolkit.ratios.get_interest_coverage_ratio()
         ```
@@ -4020,7 +4020,7 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         equity_multipliers = toolkit.ratios.get_equity_multiplier()
         ```
@@ -4103,7 +4103,7 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         debt_service_coverage_ratios = toolkit.ratios.get_debt_service_coverage_ratio()
         ```
@@ -4183,7 +4183,7 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         free_cash_flow_yield_ratios = toolkit.ratios.get_free_cash_flow_yield()
         ```
@@ -4270,7 +4270,7 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         net_debt_to_ebitda_ratios = toolkit.ratios.get_net_debt_to_ebitda_ratio()
         ```
@@ -4345,7 +4345,7 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         cash_flow_coverage_ratios = toolkit.ratios.get_cash_flow_coverage_ratio()
         ```
@@ -4417,7 +4417,7 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         capex_coverage_ratios = toolkit.ratios.get_capex_coverage_ratio()
         ```
@@ -4491,7 +4491,7 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         capex_dividend_coverage_ratios = toolkit.ratios.get_capex_dividend_coverage_ratio()
         ```
@@ -4567,7 +4567,7 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         valuation_ratios = toolkit.ratios.collect_valuation_ratios()
         ```
@@ -4722,7 +4722,7 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         eps_ratios = toolkit.ratios.get_earnings_per_share()
         ```
@@ -4816,7 +4816,7 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         revenue_per_share = toolkit.ratios.get_revenue_per_share()
         ```
@@ -4890,7 +4890,7 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         pe_ratio = toolkit.ratios.get_price_earnings_ratio()
         ```
@@ -4963,7 +4963,7 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         peg_ratio = toolkit.ratios.get_price_to_earnings_growth_ratio()
         ```
@@ -5037,7 +5037,7 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         book_value_per_share = toolkit.ratios.get_book_value_per_share()
         ```
@@ -5119,7 +5119,7 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         price_to_book_ratio = toolkit.ratios.get_price_to_book_ratio()
         ```
@@ -5191,7 +5191,7 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         interest_debt_per_share = toolkit.ratios.get_interest_debt_per_share()
         ```
@@ -5273,7 +5273,7 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         capex_per_share = toolkit.ratios.get_capex_per_share()
         ```
@@ -5348,7 +5348,7 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         dividend_yield = toolkit.ratios.get_dividend_yield()
         ```
@@ -5413,7 +5413,7 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         weighted_dividend_yield = toolkit.ratios.get_weighted_dividend_yield()
         ```
@@ -5499,7 +5499,7 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         price_to_cash_flow_ratio = toolkit.ratios.get_price_to_cash_flow_ratio()
         ```
@@ -5583,7 +5583,7 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         price_to_free_cash_flow_ratio = toolkit.ratios.get_price_to_free_cash_flow_ratio()
         ```
@@ -5656,7 +5656,7 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         market_cap = toolkit.ratios.get_market_cap()
         ```
@@ -5725,7 +5725,7 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         enterprise_value = toolkit.ratios.get_enterprise_value()
         ```
@@ -5809,7 +5809,7 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         ev_to_sales_ratio = toolkit.ratios.get_ev_to_sales_ratio()
         ```
@@ -5873,7 +5873,7 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         ev_to_ebitda_ratio = toolkit.ratios.get_ev_to_ebitda_ratio()
         ```
@@ -5948,7 +5948,7 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         ev_to_operating_cashflow_ratio = toolkit.ratios.get_ev_to_operating_cashflow_ratio()
         ```
@@ -6026,7 +6026,7 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         earnings_yield_ratio = toolkit.ratios.get_earnings_yield()
         ```
@@ -6090,7 +6090,7 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         payout_ratio = toolkit.ratios.get_payout_ratio()
         ```
@@ -6151,7 +6151,7 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         tangible_asset_value = toolkit.ratios.get_tangible_asset_value()
         ```
@@ -6219,7 +6219,7 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         net_current_asset_value = toolkit.ratios.get_net_current_asset_value()
         ```
@@ -6284,7 +6284,7 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         ev_to_ebit_ratio = toolkit.ratios.get_ev_to_ebit()
         ```

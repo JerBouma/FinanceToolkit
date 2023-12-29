@@ -58,7 +58,7 @@ class Performance:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         toolkit.performance.get_capital_asset_pricing_model(period='quarterly')
         ```
@@ -169,7 +169,7 @@ class Performance:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "AMZN"], api_key=FMP_KEY)
+        toolkit = Toolkit(["AAPL", "AMZN"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         toolkit.performance.get_beta()
         ```
@@ -271,7 +271,7 @@ class Performance:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         toolkit.performance.get_capital_asset_pricing_model()
         ```
@@ -365,7 +365,7 @@ class Performance:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         toolkit.performance.get_factor_asset_correlations()
         ```
@@ -492,7 +492,7 @@ class Performance:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         toolkit.performance.get_factor_correlations()
         ```
@@ -609,12 +609,12 @@ class Performance:
         In this case, the Risk Free Rate from the Fama and French dataset is used.
         - If `growth` is set to True, the method calculates the growth of the ratio values using the specified `lag`.
 
-        Example:
+        As an example:
 
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         # Calculate Fama and French 5 Factor model scores
         toolkit.performance.get_fama_and_french_model()
@@ -877,7 +877,7 @@ class Performance:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         toolkit.performance.get_alpha()
         ```
@@ -959,7 +959,7 @@ class Performance:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         toolkit.performance.get_jensens_alpha()
         ```
@@ -1050,7 +1050,7 @@ class Performance:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         toolkit.performance.get_treynor_ratio()
         ```
@@ -1152,7 +1152,7 @@ class Performance:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         toolkit.performance.get_sharpe_ratio()
         ```
@@ -1246,7 +1246,7 @@ class Performance:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         toolkit.performance.get_sortino_ratio()
         ```
@@ -1317,7 +1317,7 @@ class Performance:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         toolkit.performance.get_ulcer_performance_index()
         ```
@@ -1395,7 +1395,7 @@ class Performance:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         toolkit.performance.get_m2_ratio()
         ```
@@ -1480,7 +1480,7 @@ class Performance:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         toolkit.performance.get_tracking_error()
         ```
@@ -1569,7 +1569,7 @@ class Performance:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         toolkit.performance.get_information_ratio()
         ```
@@ -1636,12 +1636,12 @@ class Performance:
         This is mostly noticeable when looking at the Compound Daily Growth Rate. Adjust the rounding with the
         rounding parameter accordingly to get a more precise figure.
 
-        Example:
+        As an example:
 
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         toolkit.performance.get_compound_growth_rate()
         ```

@@ -53,7 +53,7 @@ class Risk:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         toolkit.risk.get_value_at_risk(period='yearly')
         ```
@@ -160,11 +160,12 @@ class Risk:
         asset in the Toolkit instance.
         - If `growth` is set to True, the method calculates the growth of VaR values using the specified `lag`.
 
-        Example:
+        As an example:
+
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AMZN", "TSLA"], api_key=FMP_KEY)
+        toolkit = Toolkit(["AMZN", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         toolkit.risk.get_value_at_risk()
         ```
@@ -254,11 +255,12 @@ class Risk:
         asset in the Toolkit instance.
         - If `growth` is set to True, the method calculates the growth of CVaR values using the specified `lag`.
 
-        Example:
+        As an example:
+
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AMZN", "TSLA"], api_key=FMP_KEY)
+        toolkit = Toolkit(["AMZN", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         toolkit.risk.get_conditional_value_at_risk()
         ```
@@ -349,11 +351,12 @@ class Risk:
         asset in the Toolkit instance.
         - If `growth` is set to True, the method calculates the growth of EVaR values using the specified `lag`.
 
-        Example:
+        As an example:
+
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AMZN", "TSLA"], api_key=FMP_KEY)
+        toolkit = Toolkit(["AMZN", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         toolkit.risk.get_entropic_value_at_risk()
         ```
@@ -427,11 +430,12 @@ class Risk:
         asset in the Toolkit instance.
         - If `growth` is set to True, the method calculates the growth of MMD values using the specified `lag`.
 
-        Example:
+        As an example:
+
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AMZN", "TSLA"], api_key=FMP_KEY)
+        toolkit = Toolkit(["AMZN", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         toolkit.risk.get_maximum_drawdown()
         ```
@@ -506,11 +510,12 @@ class Risk:
         asset in the Toolkit instance.
         - If `growth` is set to True, the method calculates the growth of VaR values using the specified `lag`.
 
-        Example:
+        As an example:
+
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AMZN", "TSLA"], api_key=FMP_KEY)
+        toolkit = Toolkit(["AMZN", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         toolkit.risk.get_ulcer_index()
         ```
@@ -585,11 +590,12 @@ class Risk:
         asset in the Toolkit instance.
         - If `growth` is set to True, the method calculates the growth of GARCH values using the specified `lag`.
 
-        Example:
+        As an example:
+
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AMZN", "TSLA"], api_key=FMP_KEY)
+        toolkit = Toolkit(["AMZN", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         toolkit.risk.get_garch()
         ```
@@ -651,9 +657,11 @@ class Risk:
         models.
 
         The forecasting with GARCH is done with the following formula:
-        sigma_l ** 2 + (sigma_t ** 2 - sigma_l ** 2) * (alpha + beta) ** (t - 1)
 
-        For more:
+        - sigma_l ** 2 + (sigma_t ** 2 - sigma_l ** 2) * (alpha + beta) ** (t - 1)
+
+        For more information about the method, see the following book:
+
         - Finance Compact Plus Band 1, by Yvonne Seler Zimmerman and Heinz Zimmerman; ISBN: 978-3-907291-31-1
 
         Args:
@@ -677,11 +685,12 @@ class Risk:
         - If `growth` is set to True, the method calculates the growth of the forecasted simga_2 values using
         the specified `lag`.
 
-        Example:
+        As an example:
+
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AMZN", "TSLA"], api_key=FMP_KEY)
+        toolkit = Toolkit(["AMZN", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         toolkit.risk.get_garch_forecast()
         ```
@@ -781,11 +790,12 @@ class Risk:
         asset in the Toolkit instance.
         - If `growth` is set to True, the method calculates the growth of VaR values using the specified `lag`.
 
-        Example:
+        As an example:
+
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["MSFT", "AAPL", "TSLA"], api_key=FMP_KEY)
+        toolkit = Toolkit(["MSFT", "AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         toolkit.risk.get_skewness()
         ```
@@ -860,11 +870,12 @@ class Risk:
         asset in the Toolkit instance.
         - If `growth` is set to True, the method calculates the growth of VaR values using the specified `lag`.
 
-        Example:
+        As an example:
+
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["MSFT", "AAPL", "TSLA"]], api_key=FMP_KEY)
+        toolkit = Toolkit(["MSFT", "AAPL", "TSLA"]], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         toolkit.risk.get_kurtosis()
         ```

@@ -63,7 +63,7 @@ class Technicals:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         average_directional_index = toolkit.technical.get_average_directional_index()
         ```

@@ -147,16 +147,16 @@ class Toolkit:
         from financetoolkit import Toolkit
 
         # Simple example
-        toolkit = Toolkit(["TSLA", "ASML"], api_key=FMP_KEY)
+        toolkit = Toolkit(["TSLA", "ASML"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         # Obtaining quarterly data
-        toolkit = Toolkit(["AAPL", "GOOGL"], quarterly=True, api_key=FMP_KEY)
+        toolkit = Toolkit(["AAPL", "GOOGL"], quarterly=True, api_key="FINANCIAL_MODELING_PREP_KEY")
 
         # Including a start and end date
-        toolkit = Toolkit(["MSFT", "MU"], start_date="2020-01-01", end_date="2023-01-01", quarterly=True, api_key=FMP_KEY)
+        toolkit = Toolkit(["MSFT", "MU"], start_date="2020-01-01", end_date="2023-01-01", quarterly=True, api_key="FINANCIAL_MODELING_PREP_KEY")
 
         # Changing the benchmark and risk free rate
-        toolkit = Toolkit("AMZN", benchmark_ticker="^DJI", risk_free_rate="30y", api_key=FMP_KEY)
+        toolkit = Toolkit("AMZN", benchmark_ticker="^DJI", risk_free_rate="30y", api_key="FINANCIAL_MODELING_PREP_KEY")
         ```
         """
         if sleep_timer is None:
@@ -444,7 +444,7 @@ class Toolkit:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         profitability_ratios = toolkit.ratios.collect_profitability_ratios()
 
@@ -682,7 +682,7 @@ class Toolkit:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         average_directional_index = toolkit.technical.get_average_directional_index()
         ```
@@ -756,7 +756,7 @@ class Toolkit:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         toolkit.performance.get_capital_asset_pricing_model(period='quarterly')
         ```
@@ -833,7 +833,7 @@ class Toolkit:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key=FMP_KEY)
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         toolkit.risk.get_value_at_risk(period='yearly')
         ```
@@ -940,7 +940,7 @@ class Toolkit:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["MSFT", "AAPL"], api_key=FMP_KEY)
+        toolkit = Toolkit(["MSFT", "AAPL"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         toolkit.get_profile()
         ```
@@ -1043,7 +1043,7 @@ class Toolkit:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["TSLA", "AAPL"], api_key=FMP_KEY)
+        toolkit = Toolkit(["TSLA", "AAPL"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         toolkit.get_quote()
         ```
@@ -1126,7 +1126,7 @@ class Toolkit:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AMZN", "TSLA"], api_key=FMP_KEY)
+        toolkit = Toolkit(["AMZN", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         rating = toolkit.get_rating()
 
@@ -1704,7 +1704,7 @@ class Toolkit:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit("AAPL", api_key=FMP_KEY)
+        toolkit = Toolkit("AAPL", api_key="FINANCIAL_MODELING_PREP_KEY")
 
         toolkit.get_historical_data(period="yearly")
         ```
@@ -2410,7 +2410,7 @@ class Toolkit:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit("ASML", api_key=FMP_KEY)
+        toolkit = Toolkit("ASML", api_key="FINANCIAL_MODELING_PREP_KEY")
 
         toolkit.get_exchange_rates(period="monthly")
         ```

@@ -614,7 +614,6 @@ class Risk:
         | 2014Q3 | 0.03   |  0.214 |      0.0047 |
         | 2014Q4 | 0.0302 |  0.214 |      0.0047 |
         | 2015Q1 | 0.0303 |  0.214 |      0.0048 |
-        ...
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
         returns = (

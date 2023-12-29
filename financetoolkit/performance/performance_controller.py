@@ -244,7 +244,7 @@ class Performance:
 
         The formula is as follows:
 
-            Capital Asset Pricing Model = Risk Free Rate + Beta * (Benchmark Returns - Risk Free Rate)
+        - Capital Asset Pricing Model = Risk Free Rate + Beta * (Benchmark Returns - Risk Free Rate)
 
         See definition: https://en.wikipedia.org/wiki/Capital_asset_pricing_model
 
@@ -1024,7 +1024,7 @@ class Performance:
 
         The formula is as follows:
 
-            - Treynor Ratio = (Portfolio's Return - Risk-Free Rate) / Portfolio Beta
+        - - Treynor Ratio = (Portfolio's Return - Risk-Free Rate) / Portfolio Beta
 
         See definition: https://en.wikipedia.org/wiki/Treynor_ratio
 

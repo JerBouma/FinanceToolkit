@@ -82,7 +82,6 @@ class Ratios:
         | Free Cash Flow to Operating Cash Flow Ratio | 0.828073 | 0.848756 | 0.909401 | 0.893452 | 0.912338 |
         | EBT to EBIT Ratio                           | 0.957448 | 0.948408 | 0.958936 | 0.976353 | 0.975982 |
         | EBIT to Revenue                             | 0.286688 | 0.26641  | 0.254864 | 0.305759 | 0.309473 |
-        ```
         """
         self._tickers = tickers
         self._balance_sheet_statement: pd.DataFrame = balance
@@ -538,7 +537,7 @@ class Ratios:
 
         The formula is as follows:
 
-            Asset Turnover Ratio = Net Sales / Average Total Assets
+        - Asset Turnover Ratio = Net Sales / Average Total Assets
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
@@ -615,7 +614,7 @@ class Ratios:
 
         The formula is as follows:
 
-            Inventory Turnover Ratio = Cost of Goods Sold / Average Inventory
+        - Inventory Turnover Ratio = Cost of Goods Sold / Average Inventory
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
@@ -696,7 +695,7 @@ class Ratios:
 
         The formula is as follows:
 
-            Days Sales in Inventory Ratio = (Average Inventory / Cost of Goods Sold) * Days
+        - Days Sales in Inventory Ratio = (Average Inventory / Cost of Goods Sold) * Days
 
         Args:
             days (int, optional): The number of days to use for the calculation. Defaults to 365.
@@ -789,7 +788,7 @@ class Ratios:
 
         The formula is as follows:
 
-            Days of Sales Outstanding Ratio = (Accounts Receivable / Total Credit Sales) * Days
+        - Days of Sales Outstanding Ratio = (Accounts Receivable / Total Credit Sales) * Days
 
         Args:
             days (int, optional): The number of days to use for the calculation. Defaults to 365.
@@ -873,7 +872,7 @@ class Ratios:
 
         The formula is as follows:
 
-            Operating Cycle Ratio = Days of Sales in Inventory + Days of Sales Outstanding
+        - Operating Cycle Ratio = Days of Sales in Inventory + Days of Sales Outstanding
 
         Args:
             days (int, optional): The number of days to use for the calculation. Defaults to 365.
@@ -984,7 +983,7 @@ class Ratios:
 
         The formula is as follows:
 
-            Accounts Payable Turnover Ratio = Cost of Goods Sold / Average Accounts Payable
+        - Accounts Payable Turnover Ratio = Cost of Goods Sold / Average Accounts Payable
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
@@ -1073,7 +1072,7 @@ class Ratios:
 
         The formula is as follows:
 
-            Days Payables Outstanding = (Average Accounts Payable / Cost of Goods Sold) * Days
+        - Days Payables Outstanding = (Average Accounts Payable / Cost of Goods Sold) * Days
 
         Args:
             days (int, optional): The number of days to use for the calculation. Defaults to 365.
@@ -1167,7 +1166,7 @@ class Ratios:
 
         The formula is as follows:
 
-            Cash Conversion Cycle = Days of Sales in Inventory + Days of Sales Outstanding - Days of Accounts Payable
+        - Cash Conversion Cycle = Days of Sales in Inventory + Days of Sales Outstanding - Days of Accounts Payable
             Outstanding
 
         Args:
@@ -1307,7 +1306,7 @@ class Ratios:
 
         The formula is as follows:
 
-            Receivables Turnover Ratio = Net Credit Sales / Average Accounts Receivable
+        - Receivables Turnover Ratio = Net Credit Sales / Average Accounts Receivable
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
@@ -1383,7 +1382,7 @@ class Ratios:
 
         The formula is as follows:
 
-            SG&A to Revenue Ratio = SG&A Expenses / Revenue
+        - SG&A to Revenue Ratio = SG&A Expenses / Revenue
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
@@ -1457,7 +1456,7 @@ class Ratios:
 
         The formula is as follows:
 
-            Fixed Asset Turnover Ratio = Net Sales / Average Fixed Assets
+        - Fixed Asset Turnover Ratio = Net Sales / Average Fixed Assets
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
@@ -1532,7 +1531,7 @@ class Ratios:
 
         The formula is as follows:
 
-            Operating Ratio = (Operating Expenses + Cost of Goods Sold) / Revenue
+        - Operating Ratio = (Operating Expenses + Cost of Goods Sold) / Revenue
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
@@ -1687,7 +1686,7 @@ class Ratios:
 
         The formula is as follows:
 
-            Current Ratio = Current Assets / Current Liabilities
+        - Current Ratio = Current Assets / Current Liabilities
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
@@ -1762,7 +1761,7 @@ class Ratios:
 
         The formula is as follows:
 
-            Quick Ratio = (Cash and Cash Equivalents + Short Term Investments + Accounts Receivable) / Current Liabilities
+        - Quick Ratio = (Cash and Cash Equivalents + Short Term Investments + Accounts Receivable) / Current Liabilities
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
@@ -1841,7 +1840,7 @@ class Ratios:
 
         The formula is as follows:
 
-            Cash Ratio = (Cash and Cash Equivalents + Short Term Investments) / Current Liabilities
+        - Cash Ratio = (Cash and Cash Equivalents + Short Term Investments) / Current Liabilities
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
@@ -1916,7 +1915,7 @@ class Ratios:
 
         The formula is as follows:
 
-            Working Capital = Current Assets - Current Liabilities
+        - Working Capital = Current Assets - Current Liabilities
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
@@ -1988,7 +1987,7 @@ class Ratios:
 
         The formula is as follows:
 
-            Operating Cash Flow Ratio = Cash Flow from Operations / Current Liabilities
+        - Operating Cash Flow Ratio = Cash Flow from Operations / Current Liabilities
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
@@ -2060,7 +2059,7 @@ class Ratios:
 
         The formula is as follows:
 
-            Operating Cash Flow to Sales Ratio = Cash Flow from Operations / Revenue
+        - Operating Cash Flow to Sales Ratio = Cash Flow from Operations / Revenue
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
@@ -2137,7 +2136,7 @@ class Ratios:
 
         The formula is as follows:
 
-            Short Term Coverage Ratio = Cash Flow from Operations / (Accounts Receivable + Inventory - Accounts Payable)
+        - Short Term Coverage Ratio = Cash Flow from Operations / (Accounts Receivable + Inventory - Accounts Payable)
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
@@ -2324,7 +2323,7 @@ class Ratios:
 
         The formula is as follows:
 
-            Gross Margin Ratio = (Revenue - Cost of Goods Sold) / Revenue
+        - Gross Margin Ratio = (Revenue - Cost of Goods Sold) / Revenue
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
@@ -2391,7 +2390,7 @@ class Ratios:
 
         The formula is as follows:
 
-            Operating Margin Ratio = Operating Income / Revenue
+        - Operating Margin Ratio = Operating Income / Revenue
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
@@ -2460,7 +2459,7 @@ class Ratios:
 
         The formula is as follows:
 
-            Net Profit Margin Ratio = Net Income / Revenue
+        - Net Profit Margin Ratio = Net Income / Revenue
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
@@ -2533,7 +2532,7 @@ class Ratios:
 
         The formula is as follows:
 
-            Interest Coverage Ratio = EBIT (or Operating Income) / Interest Expenses
+        - Interest Coverage Ratio = EBIT (or Operating Income) / Interest Expenses
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
@@ -2604,7 +2603,7 @@ class Ratios:
 
         The formula is as follows:
 
-            Pretax Profit Margin = Income Before Tax / Revenue
+        - Pretax Profit Margin = Income Before Tax / Revenue
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
@@ -2681,7 +2680,7 @@ class Ratios:
 
         The formula is as follows:
 
-            Effective Tax Rate = Income Tax Expense / Income Before Tax
+        - Effective Tax Rate = Income Tax Expense / Income Before Tax
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
@@ -2753,7 +2752,7 @@ class Ratios:
 
         The formula is as follows:
 
-            Return on Assets = Net Income / Average Total Assets
+        - Return on Assets = Net Income / Average Total Assets
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
@@ -2836,7 +2835,7 @@ class Ratios:
 
         The formula is as follows:
 
-            Return on Equity = Net Income / Average Shareholders' Equity (or Total Equity)
+        - Return on Equity = Net Income / Average Shareholders' Equity (or Total Equity)
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
@@ -2913,7 +2912,7 @@ class Ratios:
 
         The formula is as follows:
 
-            Return on Invested Capital = Net Operating Profit After Taxes / Average Invested Capital
+        - Return on Invested Capital = Net Operating Profit After Taxes / Average Invested Capital
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
@@ -3020,7 +3019,7 @@ class Ratios:
 
         The formula is as follows:
 
-            Income Quality Ratio = Cash Flow from Operations / Net Income
+        - Income Quality Ratio = Cash Flow from Operations / Net Income
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
@@ -3092,7 +3091,7 @@ class Ratios:
 
         The formula is as follows:
 
-            Return on Tangible Assets = Net Income / Average Tangible Assets
+        - Return on Tangible Assets = Net Income / Average Tangible Assets
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
@@ -3200,7 +3199,7 @@ class Ratios:
 
         The formula is as follows:
 
-            Return on Capital Employed = EBIT / (Total Assets - Current Liabilities)
+        - Return on Capital Employed = EBIT / (Total Assets - Current Liabilities)
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
@@ -3293,7 +3292,7 @@ class Ratios:
 
         The formula is as follows:
 
-            Net Income per EBT = Net Income / Income Before Tax
+        - Net Income per EBT = Net Income / Income Before Tax
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
@@ -3366,7 +3365,7 @@ class Ratios:
 
         The formula is as follows:
 
-            Free Cash Flow to Operating Cash Flow Ratio = Free Cash Flow / Cash Flow from Operations
+        - Free Cash Flow to Operating Cash Flow Ratio = Free Cash Flow / Cash Flow from Operations
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
@@ -3445,7 +3444,7 @@ class Ratios:
 
         The formula is as follows:
 
-            Tax Burden Ratio = Net Income / Income Before Tax
+        - Tax Burden Ratio = Net Income / Income Before Tax
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
@@ -3518,7 +3517,7 @@ class Ratios:
 
         The formula is as follows:
 
-            EBT to EBIT = (Net Income + Income Tax Expense) / (Net Income + Income Tax Expense + Interest Expense)
+        - EBT to EBIT = (Net Income + Income Tax Expense) / (Net Income + Income Tax Expense + Interest Expense)
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
@@ -3606,7 +3605,7 @@ class Ratios:
 
         The formula is as follows:
 
-            EBIT to Revenue = EBIT / Revenue
+        - EBIT to Revenue = EBIT / Revenue
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
@@ -3779,7 +3778,7 @@ class Ratios:
 
         The formula is as follows:
 
-            Debt to Assets Ratio = Total Debt / Total Assets
+        - Debt to Assets Ratio = Total Debt / Total Assets
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
@@ -3851,7 +3850,7 @@ class Ratios:
 
         The formula is as follows:
 
-            Debt to Equity Ratio = Total Debt / Total Equity
+        - Debt to Equity Ratio = Total Debt / Total Equity
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
@@ -3923,7 +3922,7 @@ class Ratios:
 
         The formula is as follows:
 
-            Interest Coverage Ratio = Operating Income / (Interest Expense + Depreciation and Amortization)
+        - Interest Coverage Ratio = Operating Income / (Interest Expense + Depreciation and Amortization)
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
@@ -4000,7 +3999,7 @@ class Ratios:
 
         The formula is as follows:
 
-            Equity Multiplier = Average Total Assets / Average Total Equity
+        - Equity Multiplier = Average Total Assets / Average Total Equity
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
@@ -4083,7 +4082,7 @@ class Ratios:
 
         The formula is as follows:
 
-            Debt Service Coverage Ratio = Operating Income / Total Current Liabilities
+        - Debt Service Coverage Ratio = Operating Income / Total Current Liabilities
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
@@ -4162,7 +4161,7 @@ class Ratios:
 
         The formula is as follows:
 
-            Free Cash Flow Yield Ratio = Free Cash Flow / Market Capitalization
+        - Free Cash Flow Yield Ratio = Free Cash Flow / Market Capitalization
 
         Args:
             diluted (bool, optional): Whether to use diluted shares for market capitalization. Defaults to True.
@@ -4250,7 +4249,7 @@ class Ratios:
 
         The formula is as follows:
 
-            Net Debt to EBITDA Ratio = Net Debt / EBITDA
+        - Net Debt to EBITDA Ratio = Net Debt / EBITDA
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
@@ -4325,7 +4324,7 @@ class Ratios:
 
         The formula is as follows:
 
-            Cash Flow Coverage Ratio = Cash Flow from Operations / Total Debt
+        - Cash Flow Coverage Ratio = Cash Flow from Operations / Total Debt
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
@@ -4397,7 +4396,7 @@ class Ratios:
 
         The formula is as follows:
 
-            Capital Expenditure Coverage Ratio = Cash Flow from Operations / Capital Expenditure
+        - Capital Expenditure Coverage Ratio = Cash Flow from Operations / Capital Expenditure
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
@@ -4470,7 +4469,7 @@ class Ratios:
 
         The formula is as follows:
 
-            Dividend Paid and Capital Expenditure Coverage Ratio = Cash Flow from Operations /
+        - Dividend Paid and Capital Expenditure Coverage Ratio = Cash Flow from Operations /
             (Capital Expenditure + Dividends Paid)
 
         Args:
@@ -4700,7 +4699,7 @@ class Ratios:
 
         The formula is as follows:
 
-            Earnings per Share (EPS) = (Net Income - Preferred Dividends Paid) / Weighted Average Shares
+        - Earnings per Share (EPS) = (Net Income - Preferred Dividends Paid) / Weighted Average Shares
 
         Args:
             include_dividends (bool, optional): Whether to include dividends in the EPS calculation. Defaults to False.
@@ -4793,7 +4792,7 @@ class Ratios:
 
         The formula is as follows:
 
-            Revenue per Share = Revenue / Weighted Average (Diluted) Shares
+        - Revenue per Share = Revenue / Weighted Average (Diluted) Shares
 
         Args:
             diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
@@ -4868,7 +4867,7 @@ class Ratios:
 
         The formula is as follows:
 
-            Price Earnings Ratio (P/E) = Share Price / Earnings per Share (EPS)
+        - Price Earnings Ratio (P/E) = Share Price / Earnings per Share (EPS)
 
         Args:
             include_dividends (bool, optional): Whether to include dividends in the calculation. Defaults to False.
@@ -4941,7 +4940,7 @@ class Ratios:
 
         The formula is as follows:
 
-            Price Earnings to Growth Ratio (PEG) = Price Earnings Ratio (P/E) / Earnings per Share Growth
+        - Price Earnings to Growth Ratio (PEG) = Price Earnings Ratio (P/E) / Earnings per Share Growth
 
         Args:
             include_dividends (bool, optional): Whether to include dividends in the calculation. Defaults to False.
@@ -5014,7 +5013,7 @@ class Ratios:
 
         The formula is as follows:
 
-            Book Value per Share = (Total Shareholder Equity - Preferred Stock) / Weighted Average (Diluted) Shares
+        - Book Value per Share = (Total Shareholder Equity - Preferred Stock) / Weighted Average (Diluted) Shares
 
         Args:
             diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
@@ -5096,7 +5095,7 @@ class Ratios:
 
         The formula is as follows:
 
-            Price to Book Ratio = Share Price / Book Value per Share
+        - Price to Book Ratio = Share Price / Book Value per Share
 
         Args:
             diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
@@ -5168,7 +5167,7 @@ class Ratios:
 
         The formula is as follows:
 
-            Interest Debt per Share = (Interest Expense / Total Debt) / Weighted Average (Diluted) Shares
+        - Interest Debt per Share = (Interest Expense / Total Debt) / Weighted Average (Diluted) Shares
 
         Args:
             diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
@@ -5250,7 +5249,7 @@ class Ratios:
 
         The formula is as follows:
 
-            CAPEX per Share = Capital Expenditure / Weighted Average (Diluted) Shares
+        - CAPEX per Share = Capital Expenditure / Weighted Average (Diluted) Shares
 
         Args:
             diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
@@ -5326,7 +5325,7 @@ class Ratios:
 
         The formula is as follows:
 
-            Dividend Yield = Dividends per Share / Share Price
+        - Dividend Yield = Dividends per Share / Share Price
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
@@ -5390,7 +5389,7 @@ class Ratios:
 
         The formula is as follows:
 
-            Weighted Dividend Yield = Dividends Paid / Weighted Average (Diluted) Shares * Share Price
+        - Weighted Dividend Yield = Dividends Paid / Weighted Average (Diluted) Shares * Share Price
 
         Args:
             diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
@@ -5476,7 +5475,7 @@ class Ratios:
 
         The formula is as follows:
 
-            Price to Cash Flow Ratio = Share Price / Cash Flow from Operations per Share
+        - Price to Cash Flow Ratio = Share Price / Cash Flow from Operations per Share
 
         Args:
             diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
@@ -5560,7 +5559,7 @@ class Ratios:
 
         The formula is as follows:
 
-            Price to Free Cash Flow Ratio = Market Cap / Free Cash Flow
+        - Price to Free Cash Flow Ratio = Market Cap / Free Cash Flow
 
         Args:
             diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
@@ -5639,7 +5638,7 @@ class Ratios:
 
         The formula is as follows:
 
-            Market Capitalization = Share Price * Weighted Average (Diluted) Shares
+        - Market Capitalization = Share Price * Weighted Average (Diluted) Shares
 
         Args:
             diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
@@ -5707,7 +5706,7 @@ class Ratios:
 
         The formula is as follows:
 
-            Enterprise Value = Market Capitalization + Total Debt + Minority Interest + Preferred Equity
+        - Enterprise Value = Market Capitalization + Total Debt + Minority Interest + Preferred Equity
             - Cash and Cash Equivalents
 
         Args:
@@ -5792,7 +5791,7 @@ class Ratios:
 
         The formula is as follows:
 
-            Enterprise Value to Sales Ratio = Enterprise Value / Total Revenue
+        - Enterprise Value to Sales Ratio = Enterprise Value / Total Revenue
 
         Args:
             diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
@@ -5856,7 +5855,7 @@ class Ratios:
 
         The formula is as follows:
 
-            Enterprise Value to EBITDA Ratio = Enterprise Value / EBITDA
+        - Enterprise Value to EBITDA Ratio = Enterprise Value / EBITDA
 
         Args:
             diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
@@ -5931,7 +5930,7 @@ class Ratios:
 
         The formula is as follows:
 
-            Enterprise Value to Operating Cash Flow Ratio = Enterprise Value / Operating Cash Flow
+        - Enterprise Value to Operating Cash Flow Ratio = Enterprise Value / Operating Cash Flow
 
         Args:
             diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
@@ -6008,7 +6007,7 @@ class Ratios:
 
         The formula is as follows:
 
-            Earnings Yield Ratio = Earnings per Share / Share Price
+        - Earnings Yield Ratio = Earnings per Share / Share Price
 
         Args:
             include_dividends (bool, optional): Whether to include dividends in the calculation. Defaults to False.
@@ -6074,7 +6073,7 @@ class Ratios:
 
         The formula is as follows:
 
-            Payout Ratio = Dividends per Share / Earnings per Share
+        - Payout Ratio = Dividends per Share / Earnings per Share
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
@@ -6135,7 +6134,7 @@ class Ratios:
 
         The formula is as follows:
 
-            Tangible Asset Value = Total Assets - Total Liabilities - Goodwill
+        - Tangible Asset Value = Total Assets - Total Liabilities - Goodwill
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
@@ -6203,7 +6202,7 @@ class Ratios:
 
         The formula is as follows:
 
-            Net Current Asset Value = Total Current Assets - Total Current Liabilities
+        - Net Current Asset Value = Total Current Assets - Total Current Liabilities
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
@@ -6267,7 +6266,7 @@ class Ratios:
 
         The formula is as follows:
 
-            Enterprise Value to EBIT Ratio = Enterprise Value / EBIT
+        - Enterprise Value to EBIT Ratio = Enterprise Value / EBIT
 
         Args:
             diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.

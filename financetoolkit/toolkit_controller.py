@@ -68,7 +68,6 @@ class Toolkit:
         benchmark_ticker: str | None = "SPY",
         historical_source: str | None = None,
         check_asset_class: bool = False,
-        custom_ratios: dict | None = None,
         historical: pd.DataFrame = pd.DataFrame(),
         balance: pd.DataFrame = pd.DataFrame(),
         income: pd.DataFrame = pd.DataFrame(),
@@ -117,8 +116,6 @@ class Toolkit:
         to collect data but could lead to confusing results. The parameter is built in to limit the API calls as it
         needs to acquire the data from Yahoo Finance. It is turned on when the amount of tickers are < 20 and turned
         off when the amount of tickers is higher than 20. Can be overridden when you set it to True or False.
-        custom_ratios (dict): A dictionary containing custom ratios. This is meant to define your own ratios. See
-        the following Notebook how to set this up: https://www.jeroenbouma.com/projects/financetoolkit/custom-ratios
         historical (pd.DataFrame): A DataFrame containing historical data. This is a custom dataset only relevant if
         you are looking to use custom data. See for more information the following Notebook:
         https://www.jeroenbouma.com/projects/financetoolkit/external-datasets
@@ -418,7 +415,6 @@ class Toolkit:
         self._cash_flow_statement_growth: pd.DataFrame = pd.DataFrame()
 
         self._statistics_statement: pd.DataFrame = pd.DataFrame()
-        self._custom_ratios: dict | None = custom_ratios
 
         pd.set_option("display.float_format", str)
 
@@ -544,7 +540,6 @@ class Toolkit:
             balance=self._balance_sheet_statement,
             income=self._income_statement,
             cash=self._cash_flow_statement,
-            custom_ratios_dict=self._custom_ratios,
             quarterly=self._quarterly,
             rounding=self._rounding,
         )

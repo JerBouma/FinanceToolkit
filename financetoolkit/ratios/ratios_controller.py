@@ -32,7 +32,6 @@ class Ratios:
         balance: pd.DataFrame,
         income: pd.DataFrame,
         cash: pd.DataFrame,
-        custom_ratios_dict: dict | None = None,
         quarterly: bool = False,
         rounding: int | None = 4,
     ):
@@ -45,7 +44,6 @@ class Ratios:
             balance (pd.DataFrame): The balance sheet data to use for the calculations.
             income (pd.DataFrame): The income statement data to use for the calculations.
             cash (pd.DataFrame): The cash flow statement data to use for the calculations.
-            custom_ratios_dict (dict, optional): A dictionary containing the custom ratios to calculate. This is
             an optional parameter given that you can also define the custom ratios through the Toolkit initialization.
             quarterly (bool, optional): Whether to use quarterly data. Defaults to False.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
@@ -87,9 +85,7 @@ class Ratios:
         self._balance_sheet_statement: pd.DataFrame = balance
         self._income_statement: pd.DataFrame = income
         self._cash_flow_statement: pd.DataFrame = cash
-        self._custom_ratios_dict: dict = (
-            custom_ratios_dict if custom_ratios_dict else {}
-        )
+        self._available_custom_ratios_options: list[str] = []
         self._custom_ratios: pd.DataFrame = pd.DataFrame()
         self._custom_ratios_growth: pd.DataFrame = pd.DataFrame()
         self._rounding: int | None = rounding
@@ -209,6 +205,7 @@ class Ratios:
     def collect_custom_ratios(
         self,
         custom_ratios_dict: dict | None = None,
+        options: bool = False,
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
@@ -221,8 +218,8 @@ class Ratios:
         using any of the above characters as part of the column naming will result into an error.
 
         Args:
-            custom_ratios (dict, optional): A dictionary containing the custom ratios to calculate. This is
-            an optional parameter given that you can also define the custom ratios through the Toolkit initialization.
+            custom_ratios (dict): A dictionary containing the custom ratios to calculate.
+            options (bool): Whether to return the available names to use in the custom ratios.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
@@ -253,44 +250,62 @@ class Ratios:
         }
 
         companies = Toolkit(
-            ["AAPL", "MSFT", "GOOGL", "AMZN"], api_key=API_KEY, start_date="2022-10-01",
-            custom_ratios=custom_ratios, quarterly=True
+            tickers=["AAPL", "MSFT", "GOOGL", "AMZN"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2022-10-01",
+            quarterly=True
         )
 
-        custom_ratios = companies.ratios.collect_custom_ratios()
+        custom_ratios = companies.ratios.collect_custom_ratios(
+            custom_ratios_dict=custom_ratios
+        )
 
         custom_ratios.loc['AMZN']
         ```
 
         Which returns:
 
-        |                        |         2022Q4 |         2023Q1 |         2023Q2 |   2023Q3 |
-        |:-----------------------|---------------:|---------------:|---------------:|---------:|
-        | Cash Op Expenses       |    2.1856e+10  |    1.9972e+10  |    2.1322e+10  |      nan |
-        | Daily Cash Op Expenses |    5.98795e+07 |    5.47178e+07 |    5.84164e+07 |      nan |
-        | Defensive Interval     | 2260.22        | 2592.34        | 2738.1         |      nan |
-        | Large Revenues         |    1           |    1           |    1           |        0 |
-        | Quick Assets           |    1.35341e+11 |    1.41847e+11 |    1.5995e+11  |      nan |
-        | WC / Net Income as %   |  463.349       |  427.335       |  398.924       |      nan |
+        |                        |         2022Q4 |         2023Q1 |         2023Q2 |         2023Q3 |
+        |:-----------------------|---------------:|---------------:|---------------:|---------------:|
+        | WC / Net Income as %   |  463.349       |  427.335       |  398.924       |  371.423       |
+        | Large Revenues         |    1           |    1           |    1           |    1           |
+        | Quick Assets           |    1.35341e+11 |    1.41847e+11 |    1.5995e+11  |    1.80898e+11 |
+        | Cash Op Expenses       |    2.1056e+10  |    1.9972e+10  |    2.2854e+10  |    1.9042e+10  |
+        | Daily Cash Op Expenses |    5.76877e+07 |    5.47178e+07 |    6.26137e+07 |    5.21699e+07 |
+        | Defensive Interval     | 2346.1         | 2592.34        | 2554.55        | 3467.48        |
         """
-        if not self._custom_ratios_dict and not custom_ratios_dict:
-            print(
-                "Please define custom ratios through the Toolkit initialization or include a "
-                "dictionary to the custom_ratios_dict parameter.\nSee "
-                "https://www.jeroenbouma.com/projects/financetoolkit/custom-ratios how to do this."
-            )
-
-        custom_ratios_dict = (
-            custom_ratios_dict if custom_ratios_dict else self._custom_ratios_dict
-        )
-
         if self._all_ratios.empty:
             self.collect_all_ratios()
+
+        if not custom_ratios_dict and not options:
+            print(
+                "Please define custom ratios dictionary to the custom_ratios_dict parameter. See "
+                "https://www.jeroenbouma.com/projects/financetoolkit/custom-ratios how to do this."
+            )
+            return None
+
+        if options:
+            print(
+                "The following names are available to be used in the Custom Ratios calculations.\n"
+            )
+
+            self._available_custom_ratios_options = list(
+                set(
+                    list(self._balance_sheet_statement.index.get_level_values(level=1))
+                    + list(self._income_statement.index.get_level_values(level=1))
+                    + list(self._cash_flow_statement.index.get_level_values(level=1))
+                    + list(self._all_ratios.index.get_level_values(level=1))
+                )
+            )
+
+            self._available_custom_ratios_options.sort()
+
+            return self._available_custom_ratios_options
 
         custom_ratios = pd.DataFrame(
             0,
             index=pd.MultiIndex.from_product(
-                [self._tickers, custom_ratios_dict.keys()]
+                [self._tickers, custom_ratios_dict.keys()]  # type: ignore
             ),
             columns=self._balance_sheet_statement.columns,
         )
@@ -311,10 +326,10 @@ class Ratios:
         ]
 
         formula_dict = {}
-        for name, formula in custom_ratios_dict.items():
+        for name, formula in custom_ratios_dict.items():  # type: ignore
             # Rearrange the formula dict in case a formula is dependent on another formula
             # and the order would result into errors
-            for sub_name, sub_formula in custom_ratios_dict.items():
+            for sub_name, sub_formula in custom_ratios_dict.items():  # type: ignore
                 if sub_name in formula:
                     formula_dict[sub_name] = sub_formula
 
@@ -369,7 +384,8 @@ class Ratios:
                         formula_adjusted = None
                         print(
                             f"Column {formula_section_stripped} not found in total_financials and is not a number. "
-                            f"Therefore the formula {formula} is invalid."
+                            f"Therefore the formula {formula} is invalid. Use collect_custom_ratios(options=True) "
+                            "to see the available columns."
                         )
                         break
 
@@ -381,7 +397,7 @@ class Ratios:
                 ).to_numpy()
 
                 self._custom_ratios = total_financials.loc[
-                    :, list(custom_ratios_dict.keys()), :
+                    :, list(custom_ratios_dict.keys()), :  # type: ignore
                 ]
                 self._custom_ratios = self._custom_ratios.sort_index(
                     axis=0, level=0, sort_remaining=False

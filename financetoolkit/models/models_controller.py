@@ -907,7 +907,7 @@ class Models:
 
         toolkit = Toolkit(["AAPL", "TSLA", "MSFT"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
-        altman_z_score = toolkit.models.get_piotroski_score()
+        toolkit.models.get_piotroski_score()
         ```
         """
         piotroski_score = {}

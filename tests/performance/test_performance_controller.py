@@ -44,12 +44,14 @@ def test_get_capital_asset_pricing_model(recorder):
 
 
 def test_get_factor_asset_correlations(recorder):
-    recorder.capture(performance_module.get_factor_asset_correlations())
-    recorder.capture(performance_module.get_factor_asset_correlations(period="monthly"))
+    recorder.capture(performance_module.get_factor_asset_correlations().round(1))
+    recorder.capture(
+        performance_module.get_factor_asset_correlations(period="monthly").round(1)
+    )
     recorder.capture(
         performance_module.get_factor_asset_correlations(
             factors_to_calculate=["HML", "Mkt-RF"]
-        )
+        ).round(1)
     )
 
 

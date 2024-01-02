@@ -45,6 +45,13 @@ from financetoolkit.technical.technicals_controller import Technicals
 
 TICKER_LIMIT = 20
 
+try:
+    from tqdm import tqdm
+
+    ENABLE_TQDM = True
+except ImportError:
+    ENABLE_TQDM = False
+
 
 class Toolkit:
     """
@@ -482,15 +489,34 @@ class Toolkit:
                 "within the Toolkit class. Get an API key here: "
                 "https://www.jeroenbouma.com/fmp"
             )
+
         if self._balance_sheet_statement.empty:
             empty_data.append("Balance Sheet Statement")
-            self.get_balance_sheet_statement()
         if self._income_statement.empty:
             empty_data.append("Income Statement")
-            self.get_income_statement()
         if self._cash_flow_statement.empty:
             empty_data.append("Cash Flow Statement")
-            self.get_cash_flow_statement()
+
+        empty_data_iterator = (
+            tqdm(empty_data, desc="Obtaining financial statements")
+            if ENABLE_TQDM & self._progress_bar
+            else empty_data
+        )
+
+        if empty_data:
+            empty_data_iterator = (
+                tqdm(empty_data, desc="Obtaining financial statements")
+                if ENABLE_TQDM & self._progress_bar
+                else empty_data
+            )
+
+            for statement in empty_data_iterator:
+                if statement == "Balance Sheet Statement":
+                    self.get_balance_sheet_statement(progress_bar=False)
+                if statement == "Income Statement":
+                    self.get_income_statement(progress_bar=False)
+                if statement == "Cash Flow Statement":
+                    self.get_cash_flow_statement(progress_bar=False)
 
         if (
             self._balance_sheet_statement.empty
@@ -592,13 +618,25 @@ class Toolkit:
 
         if self._balance_sheet_statement.empty:
             empty_data.append("Balance Sheet Statement")
-            self.get_balance_sheet_statement()
         if self._income_statement.empty:
             empty_data.append("Income Statement")
-            self.get_income_statement()
         if self._cash_flow_statement.empty:
             empty_data.append("Cash Flow Statement")
-            self.get_cash_flow_statement()
+
+        if empty_data:
+            empty_data_iterator = (
+                tqdm(empty_data, desc="Obtaining financial statements")
+                if ENABLE_TQDM & self._progress_bar
+                else empty_data
+            )
+
+            for statement in empty_data_iterator:
+                if statement == "Balance Sheet Statement":
+                    self.get_balance_sheet_statement(progress_bar=False)
+                if statement == "Income Statement":
+                    self.get_income_statement(progress_bar=False)
+                if statement == "Cash Flow Statement":
+                    self.get_cash_flow_statement(progress_bar=False)
 
         if (
             self._balance_sheet_statement.empty
@@ -924,11 +962,14 @@ class Toolkit:
             rounding=self._rounding,
         )
 
-    def get_profile(self):
+    def get_profile(self, progress_bar: bool | None = None):
         """
         Obtain the profile of the specified tickers. These include important metrics
         such as the beta, market capitalization, currency, isin, industry, and ipo date
         that give an overall understanding about the company.
+
+        Args:
+            progress_bar (bool, optional): Whether to show a progress bar. Defaults to None.
 
         As an example:
 
@@ -986,7 +1027,11 @@ class Toolkit:
 
         if self._check_asset_class:
             if self._historical_statistics.empty:
-                self.get_historical_statistics()
+                self.get_historical_statistics(
+                    progress_bar=progress_bar
+                    if progress_bar is not None
+                    else self._progress_bar
+                )
 
             tickers = [
                 ticker
@@ -1012,7 +1057,11 @@ class Toolkit:
 
         if self._profile.empty:
             self._profile, self._invalid_tickers = _get_profile(
-                tickers=tickers, api_key=self._api_key
+                tickers=tickers,
+                api_key=self._api_key,
+                progress_bar=progress_bar
+                if progress_bar is not None
+                else self._progress_bar,
             )
 
         if self._remove_invalid_tickers:
@@ -1024,7 +1073,7 @@ class Toolkit:
 
         return self._profile
 
-    def get_quote(self):
+    def get_quote(self, progress_bar: bool | None = None):
         """
         Get the quote of the specified tickers. These include important metrics
         such as the price, changes, day low, day high, year low, year high, market
@@ -1032,6 +1081,9 @@ class Toolkit:
         share (EPS), price to earnings ratio (PE), earnings announcement, shares
         outstanding and timestamp that give an overall understanding about the
         company.
+
+        Args:
+            progress_bar (bool, optional): Whether to show a progress bar. Defaults to None.
 
         As an example:
 
@@ -1082,7 +1134,11 @@ class Toolkit:
 
         if self._quote.empty:
             self._quote, self._invalid_tickers = _get_quote(
-                tickers=self._tickers, api_key=self._api_key
+                tickers=self._tickers,
+                api_key=self._api_key,
+                progress_bar=progress_bar
+                if progress_bar is not None
+                else self._progress_bar,
             )
 
         if self._remove_invalid_tickers:
@@ -1094,7 +1150,7 @@ class Toolkit:
 
         return self._quote
 
-    def get_rating(self):
+    def get_rating(self, progress_bar: bool | None = None):
         """
         Get the rating of the specified tickers. These scores and recommendations are categorized
         as follows:
@@ -1108,7 +1164,7 @@ class Toolkit:
         - Price to Book (PB)
 
         Args:
-            limit (int): The number of results to return. Defaults to 100.
+            progress_bar (bool, optional): Whether to show a progress bar. Defaults to None.
 
         Raises:
             ValueError: If an API key is not defined for FinancialModelingPrep.
@@ -1151,7 +1207,11 @@ class Toolkit:
 
         if self._check_asset_class:
             if self._historical_statistics.empty:
-                self.get_historical_statistics()
+                self.get_historical_statistics(
+                    progress_bar=progress_bar
+                    if progress_bar is not None
+                    else self._progress_bar
+                )
 
             tickers = [
                 ticker
@@ -1177,7 +1237,11 @@ class Toolkit:
 
         if self._rating.empty:
             self._rating, self._invalid_tickers = _get_rating(
-                tickers=tickers, api_key=self._api_key
+                tickers=tickers,
+                api_key=self._api_key,
+                progress_bar=progress_bar
+                if progress_bar is not None
+                else self._progress_bar,
             )
 
         if self._remove_invalid_tickers:
@@ -1195,6 +1259,7 @@ class Toolkit:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        progress_bar: bool | None = None,
     ):
         """
         Obtain analyst estimates regarding revenues, EBITDA, EBIT, Net Income
@@ -1261,7 +1326,11 @@ class Toolkit:
 
         if self._check_asset_class:
             if self._historical_statistics.empty:
-                self.get_historical_statistics()
+                self.get_historical_statistics(
+                    progress_bar=progress_bar
+                    if progress_bar is not None
+                    else self._progress_bar
+                )
 
             tickers = [
                 ticker
@@ -1297,7 +1366,9 @@ class Toolkit:
                 end_date=self._end_date,
                 rounding=rounding if rounding else self._rounding,
                 sleep_timer=self._sleep_timer,
-                progress_bar=self._progress_bar,
+                progress_bar=progress_bar
+                if progress_bar is not None
+                else self._progress_bar,
             )
 
         if self._remove_invalid_tickers:
@@ -1328,6 +1399,7 @@ class Toolkit:
         actual_dates: bool = True,
         overwrite: bool = False,
         rounding: int | None = None,
+        progress_bar: bool | None = None,
     ):
         """
         Obtain Earnings Calendars for any range of companies. You have the option to
@@ -1379,7 +1451,11 @@ class Toolkit:
 
         if self._check_asset_class:
             if self._historical_statistics.empty:
-                self.get_historical_statistics()
+                self.get_historical_statistics(
+                    progress_bar=progress_bar
+                    if progress_bar is not None
+                    else self._progress_bar
+                )
 
             tickers = [
                 ticker
@@ -1414,7 +1490,9 @@ class Toolkit:
                 end_date=self._end_date,
                 actual_dates=actual_dates,
                 sleep_timer=self._sleep_timer,
-                progress_bar=self._progress_bar,
+                progress_bar=progress_bar
+                if progress_bar is not None
+                else self._progress_bar,
             )
 
         earnings_calendar = self._earnings_calendar.round(
@@ -1433,7 +1511,9 @@ class Toolkit:
 
         return earnings_calendar
 
-    def get_revenue_geographic_segmentation(self, overwrite: bool = False):
+    def get_revenue_geographic_segmentation(
+        self, overwrite: bool = False, progress_bar: bool | None = None
+    ):
         """
         Obtain revenue by geographic segmentation (e.g. United States, Europe, Asia).
 
@@ -1441,6 +1521,7 @@ class Toolkit:
 
         Args:
             overwrite (bool): Defines whether to overwrite the existing data.
+            progress_bar (bool, optional): Whether to show a progress bar. Defaults to None.
 
         Returns:
             pd.DataFrame: The revenue by geographic segmentation for the specified tickers.
@@ -1480,7 +1561,11 @@ class Toolkit:
 
         if self._check_asset_class:
             if self._historical_statistics.empty:
-                self.get_historical_statistics()
+                self.get_historical_statistics(
+                    progress_bar=progress_bar
+                    if progress_bar is not None
+                    else self._progress_bar
+                )
 
             tickers = [
                 ticker
@@ -1516,7 +1601,9 @@ class Toolkit:
                 start_date=self._start_date,
                 end_date=self._end_date,
                 sleep_timer=self._sleep_timer,
-                progress_bar=self._progress_bar,
+                progress_bar=progress_bar
+                if progress_bar is not None
+                else self._progress_bar,
             )
 
         if self._remove_invalid_tickers:
@@ -1531,7 +1618,9 @@ class Toolkit:
 
         return self._revenue_geographic_segmentation
 
-    def get_revenue_product_segmentation(self, overwrite: bool = False):
+    def get_revenue_product_segmentation(
+        self, overwrite: bool = False, progress_bar: bool | None = None
+    ):
         """
         Obtain revenue by product segmentation (e.g. iPad, Advertisement, Windows).
 
@@ -1539,6 +1628,7 @@ class Toolkit:
 
         Args:
             overwrite (bool): Defines whether to overwrite the existing data.
+            progress_bar (bool, optional): Whether to show a progress bar. Defaults to None.
 
         Returns:
             pd.DataFrame: The revenue by product segmentation for the specified tickers.
@@ -1582,7 +1672,11 @@ class Toolkit:
 
         if self._check_asset_class:
             if self._historical_statistics.empty:
-                self.get_historical_statistics()
+                self.get_historical_statistics(
+                    progress_bar=progress_bar
+                    if progress_bar is not None
+                    else self._progress_bar
+                )
 
             tickers = [
                 ticker
@@ -1618,7 +1712,9 @@ class Toolkit:
                 start_date=self._start_date,
                 end_date=self._end_date,
                 sleep_timer=self._sleep_timer,
-                progress_bar=self._progress_bar,
+                progress_bar=progress_bar
+                if progress_bar is not None
+                else self._progress_bar,
             )
 
         if self._remove_invalid_tickers:
@@ -1642,6 +1738,7 @@ class Toolkit:
         overwrite: bool = False,
         rounding: int | None = None,
         show_ticker_seperation: bool = True,
+        progress_bar: bool | None = None,
     ):
         """
         Returns historical data for the specified tickers. This contains the following columns:
@@ -1687,6 +1784,7 @@ class Toolkit:
             overloading the API. Defaults to True.
             show_ticker_seperation (bool, optional): A boolean representing whether to show which tickers
             acquired data from FinancialModelingPrep and which tickers acquired data from YahooFinance.
+            progress_bar (bool, optional): Whether to show a progress bar. Defaults to None.
 
         Raises:
             ValueError: If an invalid value is specified for period.
@@ -1738,7 +1836,9 @@ class Toolkit:
                 return_column=return_column,
                 risk_free_rate=self._daily_risk_free_rate,
                 include_dividends=include_dividends,
-                progress_bar=self._progress_bar,
+                progress_bar=progress_bar
+                if progress_bar is not None
+                else self._progress_bar,
                 fill_nan=fill_nan,
                 rounding=rounding if rounding else self._rounding,
                 sleep_timer=self._sleep_timer,
@@ -1877,6 +1977,7 @@ class Toolkit:
         self,
         overwrite: bool = False,
         rounding: int | None = None,
+        progress_bar: bool | None = None,
     ):
         """
         Obtain Dividend Calendars for any range of companies. It includes the following columns:
@@ -1893,6 +1994,7 @@ class Toolkit:
         Args:
             overwrite (bool): Defines whether to overwrite the existing data.
             rounding (int): Defines the number of decimal places to round the data to.
+            progress_bar (bool, optional): Whether to show a progress bar. Defaults to None.
 
         Returns:
             pd.DataFrame: The earnings calendar for the specified tickers.
@@ -1931,7 +2033,11 @@ class Toolkit:
 
         if self._check_asset_class:
             if self._historical_statistics.empty:
-                self.get_historical_statistics()
+                self.get_historical_statistics(
+                    progress_bar=progress_bar
+                    if progress_bar is not None
+                    else self._progress_bar
+                )
 
             tickers = [
                 ticker
@@ -1965,7 +2071,9 @@ class Toolkit:
                 start_date=self._start_date,
                 end_date=self._end_date,
                 sleep_timer=self._sleep_timer,
-                progress_bar=self._progress_bar,
+                progress_bar=progress_bar
+                if progress_bar is not None
+                else self._progress_bar,
             )
 
         dividend_calendar = self._dividend_calendar.round(
@@ -1988,6 +2096,7 @@ class Toolkit:
         self,
         overwrite: bool = False,
         rounding: int | None = None,
+        progress_bar: bool | None = None,
     ):
         """
         ESG scores, which stands for Environmental, Social, and Governance scores, are a crucial
@@ -2061,7 +2170,11 @@ class Toolkit:
 
         if self._check_asset_class:
             if self._historical_statistics.empty:
-                self.get_historical_statistics()
+                self.get_historical_statistics(
+                    progress_bar=progress_bar
+                    if progress_bar is not None
+                    else self._progress_bar
+                )
 
             tickers = [
                 ticker
@@ -2096,7 +2209,9 @@ class Toolkit:
                 start_date=self._start_date,
                 end_date=self._end_date,
                 sleep_timer=self._sleep_timer,
-                progress_bar=self._progress_bar,
+                progress_bar=progress_bar
+                if progress_bar is not None
+                else self._progress_bar,
             )
 
         esg_scores = self._esg_scores.round(rounding if rounding else self._rounding)
@@ -2113,7 +2228,7 @@ class Toolkit:
 
         return esg_scores
 
-    def get_historical_statistics(self):
+    def get_historical_statistics(self, progress_bar: bool | None = None):
         """
         Retrieve statistics about each ticker's historical data. This is especially useful to understand why certain
         tickers might fluctuate more than others as it could be due to local regulations or the currency the instrument
@@ -2128,6 +2243,9 @@ class Toolkit:
             - GMT Offset: The GMT offset.
             - Timezone: The timezone the instrument is traded in.
             - Exchange Timezone Name: The name of the timezone the instrument is traded in.
+
+        Args:
+            progress_bar (bool): Defines whether to show a progress bar. Defaults to None.
 
         Returns:
             pd.DataFrame: A DataFrame containing the statistics for each ticker.
@@ -2159,7 +2277,10 @@ class Toolkit:
 
         if self._historical_statistics.empty:
             self._historical_statistics = _get_historical_statistics(
-                tickers=self._tickers, progress_bar=self._progress_bar
+                tickers=self._tickers,
+                progress_bar=progress_bar
+                if progress_bar is not None
+                else self._progress_bar,
             )
 
         if len(self._tickers) == 1 and not self._historical_statistics.empty:
@@ -2360,6 +2481,7 @@ class Toolkit:
         overwrite: bool = False,
         rounding: int | None = None,
         show_ticker_seperation: bool = True,
+        progress_bar: bool | None = None,
     ):
         """
         This functionality looks at the exchange rates between the currency of the historical data and the currency
@@ -2427,9 +2549,17 @@ class Toolkit:
         """
         if not self._currencies or overwrite:
             if self._historical_statistics.empty:
-                self.get_historical_statistics()
+                self.get_historical_statistics(
+                    progress_bar=progress_bar
+                    if progress_bar is not None
+                    else self._progress_bar
+                )
             if self._statistics_statement.empty:
-                self.get_statistics_statement()
+                self.get_statistics_statement(
+                    progress_bar=progress_bar
+                    if progress_bar is not None
+                    else self._progress_bar
+                )
 
             self._statement_currencies, self._currencies = helpers.determine_currencies(
                 statement_currencies=self._statistics_statement.xs(
@@ -2449,7 +2579,9 @@ class Toolkit:
                 return_column=return_column,
                 risk_free_rate=pd.DataFrame(),
                 include_dividends=False,
-                progress_bar=self._progress_bar,
+                progress_bar=progress_bar
+                if progress_bar is not None
+                else self._progress_bar,
                 fill_nan=fill_nan,
                 rounding=rounding if rounding else self._rounding,
                 sleep_timer=self._sleep_timer,
@@ -2561,6 +2693,7 @@ class Toolkit:
         growth: bool = False,
         lag: int | list[int] = 1,
         trailing: int | None = None,
+        progress_bar: bool | None = None,
     ):
         """
         Retrieves the balance sheet statement financial data for the company(s) from the specified source.
@@ -2573,6 +2706,7 @@ class Toolkit:
             lag (int | str): Defines the number of periods to lag the growth data by.
             trailing (int): Defines whether to select a trailing period.
             E.g. when selecting 4 with quarterly data, the TTM is calculated.
+            progress_bar (bool): Defines whether to show a progress bar.
 
         Returns:
             pd.DataFrame: A pandas DataFrame with the retrieved balance sheet statement data.
@@ -2654,7 +2788,11 @@ class Toolkit:
 
         if self._check_asset_class:
             if self._historical_statistics.empty:
-                self.get_historical_statistics()
+                self.get_historical_statistics(
+                    progress_bar=progress_bar
+                    if progress_bar is not None
+                    else self._progress_bar
+                )
 
             tickers = [
                 ticker
@@ -2694,7 +2832,9 @@ class Toolkit:
                 statement_format=self._balance_sheet_statement_generic,
                 statistics_format=self._statistics_statement_generic,
                 sleep_timer=self._sleep_timer,
-                progress_bar=self._progress_bar,
+                progress_bar=progress_bar
+                if progress_bar is not None
+                else self._progress_bar,
             )
 
         if self._remove_invalid_tickers:
@@ -2720,7 +2860,12 @@ class Toolkit:
             )
 
         if convert_currency:
-            self.get_exchange_rates(period="quarterly" if self._quarterly else "yearly")
+            self.get_exchange_rates(
+                period="quarterly" if self._quarterly else "yearly",
+                progress_bar=progress_bar
+                if progress_bar is not None
+                else self._progress_bar,
+            )
 
             balance_sheet_statement = helpers.convert_currencies(
                 financial_statement_data=balance_sheet_statement,
@@ -2752,6 +2897,7 @@ class Toolkit:
         growth: bool = False,
         lag: int | list[int] = 1,
         trailing: int | None = None,
+        progress_bar: bool | None = None,
     ):
         """
         Retrieves the income statement financial data for the company(s) from the specified source.
@@ -2764,6 +2910,7 @@ class Toolkit:
             lag (int | str): Defines the number of periods to lag the growth data by.
             trailing (int): Defines whether to select a trailing period.
             E.g. when selecting 4 with quarterly data, the TTM is calculated.
+            progress_bar (bool): Defines whether to show a progress bar.
 
         Returns:
             pd.DataFrame: A pandas DataFrame with the retrieved income statement data.
@@ -2829,7 +2976,11 @@ class Toolkit:
 
         if self._check_asset_class:
             if self._historical_statistics.empty:
-                self.get_historical_statistics()
+                self.get_historical_statistics(
+                    progress_bar=progress_bar
+                    if progress_bar is not None
+                    else self._progress_bar
+                )
 
             tickers = [
                 ticker
@@ -2869,7 +3020,9 @@ class Toolkit:
                 statement_format=self._income_statement_generic,
                 statistics_format=self._statistics_statement_generic,
                 sleep_timer=self._sleep_timer,
-                progress_bar=self._progress_bar,
+                progress_bar=progress_bar
+                if progress_bar is not None
+                else self._progress_bar,
             )
 
         if self._remove_invalid_tickers:
@@ -2893,7 +3046,12 @@ class Toolkit:
             )
 
         if convert_currency:
-            self.get_exchange_rates(period="quarterly" if self._quarterly else "yearly")
+            self.get_exchange_rates(
+                period="quarterly" if self._quarterly else "yearly",
+                progress_bar=progress_bar
+                if progress_bar is not None
+                else self._progress_bar,
+            )
 
             income_statement = helpers.convert_currencies(
                 financial_statement_data=income_statement,
@@ -2923,6 +3081,7 @@ class Toolkit:
         growth: bool = False,
         lag: int | list[int] = 1,
         trailing: int | None = None,
+        progress_bar: bool | None = None,
     ):
         """
         Retrieves the cash flow statement financial data for the company(s) from the specified source.
@@ -2935,6 +3094,7 @@ class Toolkit:
             lag (int | str): Defines the number of periods to lag the growth data by.
             trailing (int): Defines whether to select a trailing period.
             E.g. when selecting 4 with quarterly data, the TTM is calculated.
+            progress_bar (bool): Defines whether to show a progress bar.
 
         Returns:
             pd.DataFrame: A pandas DataFrame with the retrieved cash flow statement data.
@@ -3002,7 +3162,11 @@ class Toolkit:
 
         if self._check_asset_class:
             if self._historical_statistics.empty:
-                self.get_historical_statistics()
+                self.get_historical_statistics(
+                    progress_bar=progress_bar
+                    if progress_bar is not None
+                    else self._progress_bar
+                )
 
             tickers = [
                 ticker
@@ -3042,7 +3206,9 @@ class Toolkit:
                 statement_format=self._cash_flow_statement_generic,
                 statistics_format=self._statistics_statement_generic,
                 sleep_timer=self._sleep_timer,
-                progress_bar=self._progress_bar,
+                progress_bar=progress_bar
+                if progress_bar is not None
+                else self._progress_bar,
             )
 
         if self._remove_invalid_tickers:
@@ -3066,7 +3232,12 @@ class Toolkit:
             )
 
         if convert_currency:
-            self.get_exchange_rates(period="quarterly" if self._quarterly else "yearly")
+            self.get_exchange_rates(
+                period="quarterly" if self._quarterly else "yearly",
+                progress_bar=progress_bar
+                if progress_bar is not None
+                else self._progress_bar,
+            )
 
             cash_flow_statement = helpers.convert_currencies(
                 financial_statement_data=cash_flow_statement,
@@ -3091,6 +3262,7 @@ class Toolkit:
     def get_statistics_statement(
         self,
         overwrite: bool = False,
+        progress_bar: bool | None = None,
     ):
         """
         Retrieves the balance, cash and income statistics for the company(s) from the specified source.
@@ -3101,6 +3273,7 @@ class Toolkit:
         Args:
             limit (int): Defines the maximum years or quarters to obtain.
             overwrite (bool): Defines whether to overwrite the existing data.
+            progress_bar (bool): Defines whether to show a progress bar.
 
         Returns:
             pd.DataFrame: A pandas DataFrame with the retrieved statistics statement data.
@@ -3140,7 +3313,11 @@ class Toolkit:
 
         if self._check_asset_class:
             if self._historical_statistics.empty:
-                self.get_historical_statistics()
+                self.get_historical_statistics(
+                    progress_bar=progress_bar
+                    if progress_bar is not None
+                    else self._progress_bar
+                )
 
             tickers = [
                 ticker
@@ -3179,7 +3356,9 @@ class Toolkit:
                 statement_format=self._balance_sheet_statement_generic,
                 statistics_format=self._statistics_statement_generic,
                 sleep_timer=self._sleep_timer,
-                progress_bar=self._progress_bar,
+                progress_bar=progress_bar
+                if progress_bar is not None
+                else self._progress_bar,
             )
 
         if self._remove_invalid_tickers:

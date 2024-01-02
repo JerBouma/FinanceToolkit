@@ -84,7 +84,7 @@ skip_gitignore = true
 combine_as_imports = true
 
 [tool.codespell]
-ignore-words-list = 'te,hsi,amplitud,nam,tha'
+ignore-words-list = 'te,hsi,amplitud,nam,tha,plaform'
 skip = '*.json,./.git,pyproject.toml,poetry.lock,examples'
 
 [tool.mypy]

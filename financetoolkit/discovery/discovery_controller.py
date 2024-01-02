@@ -1,18 +1,18 @@
-"""Utilities Module"""
+"""Discovery Module"""
 __docformat__ = "google"
 
 import pandas as pd
 
-from financetoolkit.utilities import utilities_model
+from financetoolkit.discovery import discovery_model
 
 # pylint: disable=too-many-instance-attributes,too-few-public-methods,too-many-lines,
 # pylint: disable=too-many-locals,line-too-long,too-many-public-methods
 # ruff: noqa: E501
 
 
-class Utilities:
+class Discovery:
     """
-    The Utilities module contains a collection of functions that are meant to get
+    The Discovery module contains a collection of functions that are meant to get
     find companies and other financial instruments. Given that the Toolkit itself expects
     a ticker symbol, these functions are meant to help find the ticker symbol for a given
     company or financial instrument.
@@ -23,7 +23,7 @@ class Utilities:
         api_key: str | None = None,
     ):
         """
-        Initializes the Utilities Controller Class.
+        Initializes the Discovery Controller Class.
 
         Args:
             api_key (str): An API key from FinancialModelingPrep. Obtain one here: https://www.jeroenbouma.com/fmp
@@ -31,11 +31,11 @@ class Utilities:
         As an example:
 
         ```python
-        from financetoolkit import Utilities
+        from financetoolkit import Discovery
 
-        utilities = Utilities(api_key="FINANCIAL_MODELING_PREP_KEY")
+        discovery = Discovery(api_key="FINANCIAL_MODELING_PREP_KEY")
 
-        stock_list = utilities.get_stock_list()
+        stock_list = discovery.get_stock_list()
 
         # The total list equals over 60.000 rows
         stock_list.iloc[48000:48010]
@@ -78,11 +78,11 @@ class Utilities:
         As an example:
 
         ```python
-        from financetoolkit import Utilities
+        from financetoolkit import Discovery
 
-        utilities = Utilities(api_key="FINANCIAL_MODELING_PREP_KEY")
+        discovery = Discovery(api_key="FINANCIAL_MODELING_PREP_KEY")
 
-        utilities.search_instruments(query='META')
+        discovery.search_instruments(query='META')
         ```
 
         Which returns:
@@ -101,7 +101,7 @@ class Utilities:
                 "Please enter a query to search for, e.g. search_instruments(query='META'). "
             )
 
-        symbol_list = utilities_model.get_instruments(
+        symbol_list = discovery_model.get_instruments(
             api_key=self._api_key, query=query
         )
 
@@ -154,11 +154,11 @@ class Utilities:
         As an example:
 
         ```python
-        from financetoolkit import Utilities
+        from financetoolkit import Discovery
 
-        utilities = Utilities(api_key="FINANCIAL_MODELING_PREP_KEY")
+        discovery = Discovery(api_key="FINANCIAL_MODELING_PREP_KEY")
 
-        utilities.get_stock_screener(
+        discovery.get_stock_screener(
             market_cap_higher=1000000,
             market_cap_lower=200000000000,
             price_higher=100,
@@ -183,7 +183,7 @@ class Utilities:
         | HES      | Hess Corporation  |  44694706090 | Energy            | Oil & Gas E&P          |  1.464 | 145.51  |       1.75 |   123147 | New York Stock Exchange | NYSE            | US        |
 
         """
-        stock_screener = utilities_model.get_stock_screener(
+        stock_screener = discovery_model.get_stock_screener(
             api_key=self._api_key,
             market_cap_higher=market_cap_higher,
             market_cap_lower=market_cap_lower,
@@ -211,11 +211,11 @@ class Utilities:
         As an example:
 
         ```python
-        from financetoolkit import Utilities
+        from financetoolkit import Discovery
 
-        utilities = Utilities(api_key="FINANCIAL_MODELING_PREP_KEY")
+        discovery = Discovery(api_key="FINANCIAL_MODELING_PREP_KEY")
 
-        stock_list = utilities.get_stock_list()
+        stock_list = discovery.get_stock_list()
 
         # The total list equals over 60.000 rows
         stock_list.iloc[38000:38010]
@@ -237,7 +237,7 @@ class Utilities:
         | LESL        | Leslie's, Inc.               |   6.91  | NASDAQ Global Select            | NASDAQ          |
         """
 
-        stock_list = utilities_model.get_stock_list(api_key=self._api_key)
+        stock_list = discovery_model.get_stock_list(api_key=self._api_key)
 
         return stock_list
 
@@ -252,11 +252,11 @@ class Utilities:
         As an example:
 
         ```python
-        from financetoolkit import Utilities
+        from financetoolkit import Discovery
 
-        utilities = Utilities(api_key="FINANCIAL_MODELING_PREP_KEY")
+        discovery = Discovery(api_key="FINANCIAL_MODELING_PREP_KEY")
 
-        stock_quotes = utilities.get_stock_quotes()
+        stock_quotes = discovery.get_stock_quotes()
 
         stock_quotes.iloc[3000:3010]
         ```
@@ -277,7 +277,7 @@ class Utilities:
         | EL       |         1 |      143.9  |      0           |          1 |      142.5  |          143      |              100 |      1.7042e+12  |
         """
 
-        stock_quotes = utilities_model.get_stock_quotes(api_key=self._api_key)
+        stock_quotes = discovery_model.get_stock_quotes(api_key=self._api_key)
 
         return stock_quotes
 
@@ -293,11 +293,11 @@ class Utilities:
         As an example:
 
         ```python
-        from financetoolkit import Utilities
+        from financetoolkit import Discovery
 
-        utilities = Utilities(api_key="FINANCIAL_MODELING_PREP_KEY")
+        discovery = Discovery(api_key="FINANCIAL_MODELING_PREP_KEY")
 
-        shares_float = utilities.get_stock_shares_float()
+        shares_float = discovery.get_stock_shares_float()
 
         shares_float.iloc[50000:50010]
         ```
@@ -319,7 +319,7 @@ class Utilities:
 
         """
 
-        stock_shares_float = utilities_model.get_stock_shares_float(
+        stock_shares_float = discovery_model.get_stock_shares_float(
             api_key=self._api_key
         )
 
@@ -336,11 +336,11 @@ class Utilities:
         As an example:
 
         ```python
-        from financetoolkit import Utilities
+        from financetoolkit import Discovery
 
-        utilities = Utilities(api_key="FINANCIAL_MODELING_PREP_KEY")
+        discovery = Discovery(api_key="FINANCIAL_MODELING_PREP_KEY")
 
-        sectors_performance = utilities.get_sectors_performance()
+        sectors_performance = discovery.get_sectors_performance()
 
         sectors_performance.tail()
         ```
@@ -355,7 +355,7 @@ class Utilities:
         | 2024-01-01 |    -0.01347 |          -0.14536 |                 -0.15074 |            -0.58877 |              0.18141 | -0.41917 |             -0.34753 |     -0.08193 |      -0.21821 |      -0.52216 |     -0.5708  |
         | 2024-01-02 |    -0.01347 |          -0.14536 |                 -0.15074 |            -0.58877 |              0.18141 | -0.41917 |             -0.34779 |     -0.08193 |      -0.21823 |      -0.52281 |     -0.57073 |
         """
-        sectors_performance = utilities_model.get_sectors_performance(
+        sectors_performance = discovery_model.get_sectors_performance(
             api_key=self._api_key
         )
 
@@ -372,11 +372,11 @@ class Utilities:
         As an example:
 
         ```python
-        from financetoolkit import Utilities
+        from financetoolkit import Discovery
 
-        utilities = Utilities(api_key="FINANCIAL_MODELING_PREP_KEY")
+        discovery = Discovery(api_key="FINANCIAL_MODELING_PREP_KEY")
 
-        biggest_gainers = utilities.get_biggest_gainers()
+        biggest_gainers = discovery.get_biggest_gainers()
 
         biggest_gainers.head(10)
         ```
@@ -396,7 +396,7 @@ class Utilities:
         | BHG      | Bright Health Group, Inc.                              |   2.37   |  7.63   |    45.057  |
         | BROG     | Brooge Energy Limited                                  |   0.73   |  3.68   |    24.7458 |
         """
-        biggest_gainers = utilities_model.get_biggest_gainers(api_key=self._api_key)
+        biggest_gainers = discovery_model.get_biggest_gainers(api_key=self._api_key)
 
         return biggest_gainers
 
@@ -411,11 +411,11 @@ class Utilities:
         As an example:
 
         ```python
-        from financetoolkit import Utilities
+        from financetoolkit import Discovery
 
-        utilities = Utilities(api_key="FINANCIAL_MODELING_PREP_KEY")
+        discovery = Discovery(api_key="FINANCIAL_MODELING_PREP_KEY")
 
-        biggest_losers = utilities.get_biggest_losers()
+        biggest_losers = discovery.get_biggest_losers()
 
         biggest_losers.head(10)
         ```
@@ -436,7 +436,7 @@ class Utilities:
         | BYN      | Banyan Acquisition Corporation             |  -2.035  | 10.9    |   -15.7325 |
         """
 
-        biggest_losers = utilities_model.get_biggest_losers(api_key=self._api_key)
+        biggest_losers = discovery_model.get_biggest_losers(api_key=self._api_key)
 
         return biggest_losers
 
@@ -451,11 +451,11 @@ class Utilities:
         As an example:
 
         ```python
-        from financetoolkit import Utilities
+        from financetoolkit import Discovery
 
-        utilities = Utilities(api_key="FINANCIAL_MODELING_PREP_KEY")
+        discovery = Discovery(api_key="FINANCIAL_MODELING_PREP_KEY")
 
-        most_active_stocks = utilities.get_most_active_stocks()
+        most_active_stocks = discovery.get_most_active_stocks()
 
         most_active_stocks.head(10)
         ```
@@ -476,7 +476,7 @@ class Utilities:
         | DISH     | DISH Network Corporation       |     0.11 |    5.77 |     1.9435 |
         """
 
-        most_active_stocks = utilities_model.get_most_active_stocks(
+        most_active_stocks = discovery_model.get_most_active_stocks(
             api_key=self._api_key
         )
 
@@ -493,11 +493,11 @@ class Utilities:
         As an example:
 
         ```python
-        from financetoolkit import Utilities
+        from financetoolkit import Discovery
 
-        utilities = Utilities(api_key="FINANCIAL_MODELING_PREP_KEY")
+        discovery = Discovery(api_key="FINANCIAL_MODELING_PREP_KEY")
 
-        delisted_stocks = utilities.get_delisted_stocks()
+        delisted_stocks = discovery.get_delisted_stocks()
 
         delisted_stocks.head(10)
         ```
@@ -517,7 +517,7 @@ class Utilities:
         | ASPAU    | Abri SPAC I, Inc.                            | NASDAQ     | 2021-08-10 | 2023-11-02      |
         | AVID     | Avid Technology, Inc.                        | NASDAQ     | 1993-03-12 | 2023-11-07      |
         """
-        delisted_stocks = utilities_model.get_delisted_stocks(api_key=self._api_key)
+        delisted_stocks = discovery_model.get_delisted_stocks(api_key=self._api_key)
 
         return delisted_stocks
 
@@ -532,11 +532,11 @@ class Utilities:
         As an example:
 
         ```python
-        from financetoolkit import Utilities
+        from financetoolkit import Discovery
 
-        utilities = Utilities(api_key="FINANCIAL_MODELING_PREP_KEY")
+        discovery = Discovery(api_key="FINANCIAL_MODELING_PREP_KEY")
 
-        crypto_list = utilities.get_crypto_list()
+        crypto_list = discovery.get_crypto_list()
 
         crypto_list.head(10)
         ```
@@ -556,7 +556,7 @@ class Utilities:
         | 0XGASUSD     | 0xGasless USD                        | USD        | CCC        |
         | 0XMRUSD      | 0xMonero USD                         | USD        | CCC        |
         """
-        crypto_list = utilities_model.get_crypto_list(api_key=self._api_key)
+        crypto_list = discovery_model.get_crypto_list(api_key=self._api_key)
 
         return crypto_list
 
@@ -574,11 +574,11 @@ class Utilities:
         As an example:
 
         ```python
-        from financetoolkit import Utilities
+        from financetoolkit import Discovery
 
-        utilities = Utilities(api_key="FINANCIAL_MODELING_PREP_KEY")
+        discovery = Discovery(api_key="FINANCIAL_MODELING_PREP_KEY")
 
-        crypto_quotes = utilities.get_crypto_quotes()
+        crypto_quotes = discovery.get_crypto_quotes()
 
         crypto_quotes.head(10)
         ```
@@ -598,7 +598,7 @@ class Utilities:
         | 0XGASUSD     | 0xGasless USD                        |  0.11228     |   12.1894  |  0.0121997   |  0.10008     |  0.11228    |    0.19216  |  3.7e-05     |      0           |  0.038569    |   0.0143848   |   8700      |   9628           |  0.10008    |       0.10008    |   nan |  nan |                     nan |          0           | 2024-01-02 14:06:00 |
         | 0XMRUSD      | 0xMonero USD                         |  0.0497938   |  -38.9213  | -0.0317302   |  0.0496646   |  2.79013    |    0.18734  |  0.0418889   |      0           |  0.13616     |   0.11633     |    347.276  |     11           |  0.081524   |       0.081524   |   nan |  nan |                     nan |        nan           | 2024-01-02 14:05:07 |
         """
-        crypto_quotes = utilities_model.get_crypto_quotes(api_key=self._api_key)
+        crypto_quotes = discovery_model.get_crypto_quotes(api_key=self._api_key)
 
         return crypto_quotes
 
@@ -613,11 +613,11 @@ class Utilities:
         As an example:
 
         ```python
-        from financetoolkit import Utilities
+        from financetoolkit import Discovery
 
-        utilities = Utilities(api_key="FINANCIAL_MODELING_PREP_KEY")
+        discovery = Discovery(api_key="FINANCIAL_MODELING_PREP_KEY")
 
-        forex_list = utilities.get_forex_list()
+        forex_list = discovery.get_forex_list()
 
         forex_list.head(10)
         ```
@@ -637,7 +637,7 @@ class Utilities:
         | AEDINR   | AED/INR | INR        | CCY        |
         | AEDJOD   | AED/JOD | JOD        | CCY        |
         """
-        forex_list = utilities_model.get_forex_list(api_key=self._api_key)
+        forex_list = discovery_model.get_forex_list(api_key=self._api_key)
 
         return forex_list
 
@@ -655,11 +655,11 @@ class Utilities:
         As an example:
 
         ```python
-        from financetoolkit import Utilities
+        from financetoolkit import Discovery
 
-        utilities = Utilities(api_key="FINANCIAL_MODELING_PREP_KEY")
+        discovery = Discovery(api_key="FINANCIAL_MODELING_PREP_KEY")
 
-        forex_quotes = utilities.get_forex_quotes()
+        forex_quotes = discovery.get_forex_quotes()
 
         forex_quotes.head(10)
         ```
@@ -680,7 +680,7 @@ class Utilities:
         | AEDJOD   | AED/JOD |  0.19335 |   -3.32563   |  -0.00665126 |   0.19315 |    0.19364 |     0.19412 |  0.19185   |      0.19314 |       0.19315 |       38 |      18.8451 |  0.19331 |          0.2     | 2024-01-02 13:51:18 |
 
         """
-        forex_quotes = utilities_model.get_forex_quotes(api_key=self._api_key)
+        forex_quotes = discovery_model.get_forex_quotes(api_key=self._api_key)
 
         return forex_quotes
 
@@ -695,11 +695,11 @@ class Utilities:
         As an example:
 
         ```python
-        from financetoolkit import Utilities
+        from financetoolkit import Discovery
 
-        utilities = Utilities(api_key="FINANCIAL_MODELING_PREP_KEY")
+        discovery = Discovery(api_key="FINANCIAL_MODELING_PREP_KEY")
 
-        commodity_list = utilities.get_commodity_list()
+        commodity_list = discovery.get_commodity_list()
 
         commodity_list.head(10)
         ```
@@ -719,7 +719,7 @@ class Utilities:
         | GCUSD    | Gold Futures           | USD        | CME        |
         | GFUSX    | Feeder Cattle Futures  | USX        | CME        |
         """
-        commodity_list = utilities_model.get_commodity_list(api_key=self._api_key)
+        commodity_list = discovery_model.get_commodity_list(api_key=self._api_key)
 
         return commodity_list
 
@@ -737,11 +737,11 @@ class Utilities:
         As an example:
 
         ```python
-        from financetoolkit import Utilities
+        from financetoolkit import Discovery
 
-        utilities = Utilities(api_key="FINANCIAL_MODELING_PREP_KEY")
+        discovery = Discovery(api_key="FINANCIAL_MODELING_PREP_KEY")
 
-        commodity_quotes = utilities.get_commodity_quotes()
+        commodity_quotes = discovery.get_commodity_quotes()
 
         commodity_quotes.head(10)
         ```
@@ -761,7 +761,7 @@ class Utilities:
         | GCUSD    | Gold Futures           | 2075     |  0.15446   |    3.2   |  2071.4   |    2094.7  |     2130.2  |    1808.1  |    2003.86   |     1960.64   |    38456 |   3511           | 2072.7   |         2071.8   | 2024-01-02 14:00:13 |
         | GFUSX    | Feeder Cattle Futures  |  223.125 |  0.0112057 |    0.025 |   222.725 |     224.45 |      257.5  |     177.55 |     226.9    |      230.114  |     4395 |   3915           |  224.4   |          223.1   | 2023-12-29 19:04:57 |
         """
-        commodity_quotes = utilities_model.get_commodity_quotes(api_key=self._api_key)
+        commodity_quotes = discovery_model.get_commodity_quotes(api_key=self._api_key)
 
         return commodity_quotes
 
@@ -776,11 +776,11 @@ class Utilities:
         As an example:
 
         ```python
-        from financetoolkit import Utilities
+        from financetoolkit import Discovery
 
-        utilities = Utilities(api_key="FINANCIAL_MODELING_PREP_KEY")
+        discovery = Discovery(api_key="FINANCIAL_MODELING_PREP_KEY")
 
-        etf_list = utilities.get_etf_list()
+        etf_list = discovery.get_etf_list()
 
         etf_list.head(10)
         ```
@@ -801,7 +801,7 @@ class Utilities:
         | 098560.KS | Mirae Asset TIGER Media & Telecom ETF                                                           |  7335      | KSE                   | KSC             |
         """
 
-        etf_list = utilities_model.get_etf_list(api_key=self._api_key)
+        etf_list = discovery_model.get_etf_list(api_key=self._api_key)
 
         return etf_list
 
@@ -816,11 +816,11 @@ class Utilities:
         As an example:
 
         ```python
-        from financetoolkit import Utilities
+        from financetoolkit import Discovery
 
-        utilities = Utilities(api_key="FINANCIAL_MODELING_PREP_KEY")
+        discovery = Discovery(api_key="FINANCIAL_MODELING_PREP_KEY")
 
-        index_list = utilities.get_index_list()
+        index_list = discovery.get_index_list()
 
         index_list.head(10)
         ```
@@ -840,7 +840,7 @@ class Utilities:
         | ITLMS.MI    | FTSE Italia All-Share Index   | EUR        | Milan                  |
         | KOSPI200.KS | KOSPI 200 Index               | KRW        | KSE                    |
         """
-        index_list = utilities_model.get_index_list(api_key=self._api_key)
+        index_list = discovery_model.get_index_list(api_key=self._api_key)
 
         return index_list
 
@@ -858,11 +858,11 @@ class Utilities:
         As an example:
 
         ```python
-        from financetoolkit import Utilities
+        from financetoolkit import Discovery
 
-        utilities = Utilities(api_key="FINANCIAL_MODELING_PREP_KEY")
+        discovery = Discovery(api_key="FINANCIAL_MODELING_PREP_KEY")
 
-        index_quotes = utilities.get_index_quotes()
+        index_quotes = discovery.get_index_quotes()
 
         index_quotes.head(10)
         ```
@@ -882,6 +882,6 @@ class Utilities:
         | ITLMS.MI    | FTSE Italia All-Share Index   | 32507     |     0.0859 |    27.9004 | 32434.3   |  32999.1   |   32999.1   |  23017.3   |    22902.7   |     23017.3   |          0 |            0 | 32651.2   |        32479.1   |  1704203955 |
         | KOSPI200.KS | KOSPI 200 Index               |   360.55  |     0.7151 |     2.56   |   355.96  |    361.53  |     361.53  |    355.96  |        0     |         0     |     106709 |            0 |   356.43  |          357.99  |  1704186335 |
         """
-        index_quotes = utilities_model.get_index_quotes(api_key=self._api_key)
+        index_quotes = discovery_model.get_index_quotes(api_key=self._api_key)
 
         return index_quotes

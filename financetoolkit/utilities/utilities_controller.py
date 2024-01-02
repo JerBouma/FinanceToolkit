@@ -107,6 +107,99 @@ class Utilities:
 
         return symbol_list
 
+    def get_stock_screener(
+        self,
+        market_cap_higher: int | None = None,
+        market_cap_lower: int | None = None,
+        price_higher: int | None = None,
+        price_lower: int | None = None,
+        beta_higher: int | None = None,
+        beta_lower: int | None = None,
+        volume_higher: int | None = None,
+        volume_lower: int | None = None,
+        dividend_higher: int | None = None,
+        dividend_lower: int | None = None,
+        is_etf: bool | None = None,
+    ):
+        """
+        Screen stocks based on a set of criteria. This can be useful to find companies that match
+        a specific criteria or your analysis. Further filtering can be done by utilising the
+        Finance Toolkit and calculating the relevant ratios to filter by. This can be:
+
+        - Market capitalization (market_cap_higher, market_cap_lower)
+        - Price (price_higher, price_lower)
+        - Beta (beta_higher, beta_lower)
+        - Volume (volume_higher, volume_lower)
+        - Dividend (dividend_higher, dividend_lower)
+
+        Note that the limit is 1000 companies. Thus if you hit the 1000, it is recommended
+        to narrow down your search to prevent companies from being excluded simply because
+        of this limit.
+
+        Args:
+            market_cap_higher (int): The minimum market capitalization of the stock.
+            market_cap_lower (int): The maximum market capitalization of the stock.
+            price_higher (int): The minimum price of the stock.
+            price_lower (int): The maximum price of the stock.
+            beta_higher (int): The minimum beta of the stock.
+            beta_lower (int): The maximum beta of the stock.
+            volume_higher (int): The minimum volume of the stock.
+            volume_lower (int): The maximum volume of the stock.
+            dividend_higher (int): The minimum dividend of the stock.
+            dividend_lower (int): The maximum dividend of the stock.
+
+        Returns:
+            pd.DataFrame: A dataframe with all the symbols that match the query.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Utilities
+
+        utilities = Utilities(api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        utilities.get_stock_screener(
+            market_cap_higher=1000000,
+            market_cap_lower=200000000000,
+            price_higher=100,
+            price_lower=200,
+            beta_higher=1,
+            beta_lower=1.5,
+            volume_higher=100000,
+            volume_lower=2000000,
+            dividend_higher=1,
+            dividend_lower=2,
+            is_etf=False
+        )
+        ```
+
+        Which returns:
+
+        | Symbol   | Name              |   Market Cap | Sector            | Industry               |   Beta |   Price |   Dividend |   Volume | Exchange                | Exchange Code   | Country   |
+        |:---------|:------------------|-------------:|:------------------|:-----------------------|-------:|--------:|-----------:|---------:|:------------------------|:----------------|:----------|
+        | NKE      | NIKE, Inc.        | 163403295604 | Consumer Cyclical | Footwear & Accessories |  1.079 | 107.36  |       1.48 |  1045865 | New York Stock Exchange | NYSE            | US        |
+        | SAF.PA   | Safran SA         |  66234006559 | Industrials       | Aerospace & Defense    |  1.339 | 160.16  |       1.35 |   119394 | Paris                   | EURONEXT        | FR        |
+        | ROST     | Ross Stores, Inc. |  46724188589 | Consumer Cyclical | Apparel Retail         |  1.026 | 138.785 |       1.34 |   169879 | NASDAQ Global Select    | NASDAQ          | US        |
+        | HES      | Hess Corporation  |  44694706090 | Energy            | Oil & Gas E&P          |  1.464 | 145.51  |       1.75 |   123147 | New York Stock Exchange | NYSE            | US        |
+
+        """
+        stock_screener = utilities_model.get_stock_screener(
+            api_key=self._api_key,
+            market_cap_higher=market_cap_higher,
+            market_cap_lower=market_cap_lower,
+            price_higher=price_higher,
+            price_lower=price_lower,
+            beta_higher=beta_higher,
+            beta_lower=beta_lower,
+            volume_higher=volume_higher,
+            volume_lower=volume_lower,
+            dividend_higher=dividend_higher,
+            dividend_lower=dividend_lower,
+            is_etf=is_etf,
+        )
+
+        return stock_screener
+
     def get_stock_list(self) -> pd.DataFrame:
         """
         The stock list function returns a complete list of all the symbols that can be used
@@ -388,6 +481,45 @@ class Utilities:
         )
 
         return most_active_stocks
+
+    def get_delisted_stocks(self) -> pd.DataFrame:
+        """
+        The crypto list function returns a complete list of all crypto symbols that can be
+        used in the FinanceToolkit. These are over 4.000 symbols.
+
+        Returns:
+            pd.DataFrame: A dataframe with all the symbols in the toolkit.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Utilities
+
+        utilities = Utilities(api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        delisted_stocks = utilities.get_delisted_stocks()
+
+        delisted_stocks.head(10)
+        ```
+
+        Which returns:
+
+        | Symbol   | Name                                         | Exchange   | IPO Date   | Delisted Date   |
+        |:---------|:---------------------------------------------|:-----------|:-----------|:----------------|
+        | AAIC     | Arlington Asset Investment Corp.             | NYSE       | 1997-12-23 | 2023-12-14      |
+        | ABCM     | Abcam plc                                    | NASDAQ     | 2010-12-03 | 2023-12-12      |
+        | ADZ      | DB Agriculture Short ETN                     | AMEX       | 2008-04-16 | 2023-10-27      |
+        | AENZ     | Aenza S.A.A.                                 | NYSE       | 2013-07-24 | 2023-12-08      |
+        | AKUMQ    | Akumin Inc                                   | NASDAQ     | 2018-03-08 | 2023-10-25      |
+        | ALTMW    | Kinetik Holdings Inc - Warrants (09/11/2023) | NASDAQ     | 2017-05-01 | 2023-11-07      |
+        | ARCE     | Arco Platform Limited                        | NASDAQ     | 2018-09-26 | 2023-12-07      |
+        | ARTEW    | Artemis Strategic Investment Corporation     | NASDAQ     | 2021-11-22 | 2023-11-03      |
+        | ASPAU    | Abri SPAC I, Inc.                            | NASDAQ     | 2021-08-10 | 2023-11-02      |
+        | AVID     | Avid Technology, Inc.                        | NASDAQ     | 1993-03-12 | 2023-11-07      |
+        """
+        delisted_stocks = utilities_model.get_delisted_stocks(api_key=self._api_key)
+
+        return delisted_stocks
 
     def get_crypto_list(self) -> pd.DataFrame:
         """

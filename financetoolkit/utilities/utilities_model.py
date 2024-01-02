@@ -6,6 +6,126 @@ import pandas as pd
 from financetoolkit.helpers import get_financial_data
 
 
+def get_instruments(api_key: str, query: str) -> pd.DataFrame:
+    """
+    Get a list of instruments based on a query.
+
+    Args:
+        api_key (str): the API key from Financial Modeling Prep.
+        query (str): The query to search for.
+
+    Returns:
+        pd.DataFrame: DataFrame of instruments.
+    """
+    url = f"https://financialmodelingprep.com/api/v3/search?query={query}&apikey={api_key}"
+
+    instruments_query = get_financial_data(url=url)
+
+    instruments_query = instruments_query.rename(
+        columns={
+            "symbol": "Symbol",
+            "name": "Name",
+            "currency": "Currency",
+            "stockExchange": "Exchange",
+            "exchangeShortName": "Exchange Code",
+        }
+    )
+
+    instruments_query = instruments_query.set_index("Symbol")
+
+    return instruments_query
+
+
+def get_stock_screener(
+    api_key: str,
+    market_cap_higher: int | None = None,
+    market_cap_lower: int | None = None,
+    price_higher: int | None = None,
+    price_lower: int | None = None,
+    beta_higher: int | None = None,
+    beta_lower: int | None = None,
+    volume_higher: int | None = None,
+    volume_lower: int | None = None,
+    dividend_higher: int | None = None,
+    dividend_lower: int | None = None,
+    is_etf: bool | None = None,
+) -> pd.DataFrame:
+    """
+    Get a list of instruments based on the screening criteria provided. It defaults
+    to all stocks.
+
+    Args:
+        api_key (str): the API key from Financial Modeling Prep.
+        market_cap_higher (int, optional): The market cap higher than. Defaults to None.
+        market_cap_lower (int, optional): The market cap lower than. Defaults to None.
+        price_higher (int, optional): The price higher than. Defaults to None.
+        price_lower (int, optional): The price lower than. Defaults to None.
+        beta_higher (int, optional): The beta higher than. Defaults to None.
+        beta_lower (int, optional): The beta lower than. Defaults to None.
+        volume_higher (int, optional): The volume higher than. Defaults to None.
+        volume_lower (int, optional): The volume lower than. Defaults to None.
+        dividend_higher (int, optional): The dividend higher than. Defaults to None.
+        dividend_lower (int, optional): The dividend lower than. Defaults to None.
+        is_etf (bool, optional): Whether the instrument is an ETF. Defaults to None.
+
+    Returns:
+        pd.DataFrame: DataFrame of instruments matching the query.
+    """
+    url = f"https://financialmodelingprep.com/api/v3/stock-screener?apikey={api_key}"
+
+    if market_cap_higher:
+        url += f"&marketCapMoreThan={market_cap_higher}"
+    if market_cap_lower:
+        url += f"&marketCapLowerThan={market_cap_lower}"
+    if price_higher:
+        url += f"&priceMoreThan={price_higher}"
+    if price_lower:
+        url += f"&priceLowerThan={price_lower}"
+    if beta_higher:
+        url += f"&betaMoreThan={beta_higher}"
+    if beta_lower:
+        url += f"&betaLowerThan={beta_lower}"
+    if volume_higher:
+        url += f"&volumeMoreThan={volume_higher}"
+    if volume_lower:
+        url += f"&volumeLowerThan={volume_lower}"
+    if dividend_higher:
+        url += f"&dividendMoreThan={dividend_higher}"
+    if dividend_lower:
+        url += f"&dividendLowerThan={dividend_lower}"
+    if is_etf is not None:
+        url += f"&isEtf={str(is_etf)}"
+
+    stock_screener = get_financial_data(url=url)
+
+    stock_screener = stock_screener.rename(
+        columns={
+            "symbol": "Symbol",
+            "companyName": "Name",
+            "marketCap": "Market Cap",
+            "sector": "Sector",
+            "industry": "Industry",
+            "beta": "Beta",
+            "price": "Price",
+            "lastAnnualDividend": "Dividend",
+            "volume": "Volume",
+            "exchange": "Exchange",
+            "exchangeShortName": "Exchange Code",
+            "country": "Country",
+            "currency": "Currency",
+            "stockExchange": "Exchange",
+        }
+    )
+
+    if stock_screener.empty:
+        raise ValueError("No stocks found matching the query.")
+
+    stock_screener = stock_screener.drop(columns=["isEtf", "isActivelyTrading"])
+    stock_screener = stock_screener.set_index("Symbol")
+
+    return stock_screener
+
+
 def get_stock_list(api_key: str) -> pd.DataFrame:
     """
     Get a list of stocks.
@@ -266,6 +386,37 @@ def get_crypto_list(api_key: str) -> pd.DataFrame:
     crypto_list = crypto_list.set_index("Symbol").sort_index()
 
     return crypto_list
+
+
+def get_delisted_stocks(api_key: str) -> pd.DataFrame:
+    """
+    Get a list of delisted companies.
+
+    Args:
+        api_key (str): the API key from Financial Modeling Prep.
+
+    Returns:
+        pd.DataFrame: DataFrame of delisted companies.
+    """
+    url = (
+        f"https://financialmodelingprep.com/api/v3/delisted-companies?apikey={api_key}"
+    )
+
+    delisted_companies = get_financial_data(url=url)
+
+    delisted_companies = delisted_companies.rename(
+        columns={
+            "symbol": "Symbol",
+            "companyName": "Name",
+            "exchange": "Exchange",
+            "ipoDate": "IPO Date",
+            "delistedDate": "Delisted Date",
+        }
+    )
+
+    delisted_companies = delisted_companies.set_index("Symbol").sort_index()
+
+    return delisted_companies
 
 
 def get_crypto_quotes(api_key: str) -> pd.DataFrame:
@@ -591,33 +742,3 @@ def get_index_quotes(api_key: str) -> pd.DataFrame:
     index_quotes = index_quotes.dropna(how="all", axis=1)
 
     return index_quotes
-
-
-def get_instruments(api_key: str, query: str) -> pd.DataFrame:
-    """
-    Get a list of instruments based on a query.
-
-    Args:
-        api_key (str): the API key from Financial Modeling Prep.
-        query (str): The query to search for.
-
-    Returns:
-        pd.DataFrame: DataFrame of instruments.
-    """
-    url = f"https://financialmodelingprep.com/api/v3/search?query={query}&apikey={api_key}"
-
-    instruments_query = get_financial_data(url=url)
-
-    instruments_query = instruments_query.rename(
-        columns={
-            "symbol": "Symbol",
-            "name": "Name",
-            "currency": "Currency",
-            "stockExchange": "Exchange",
-            "exchangeShortName": "Exchange Code",
-        }
-    )
-
-    instruments_query = instruments_query.set_index("Symbol")
-
-    return instruments_query

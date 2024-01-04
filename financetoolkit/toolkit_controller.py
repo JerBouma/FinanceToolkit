@@ -3059,6 +3059,17 @@ class Toolkit:
                 exchange_rate_data=self.get_exchange_rates(
                     period="quarterly" if self._quarterly else "yearly"
                 )["Adj Close"],
+                items_not_to_adjust=[
+                    "Gross Profit Ratio",
+                    "EBITDA Ratio",
+                    "Operating Income Ratio",
+                    "Income Before Tax Ratio",
+                    "Net Income Ratio",
+                    "EPS",
+                    "EPS Diluted",
+                    "Weighted Average Shares",
+                    "Weighted Average Shares Diluted",
+                ],
             )
 
         income_statement = income_statement.round(

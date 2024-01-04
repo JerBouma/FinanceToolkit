@@ -132,6 +132,7 @@ def convert_currencies(
     financial_statement_data: pd.DataFrame,
     financial_statement_currencies: pd.Series,
     exchange_rate_data: pd.DataFrame,
+    items_not_to_adjust: list[str] | None = None,
 ):
     """
     Based on the retrieved currency definitions (e.g. EURUSD=X) for each ticker, obtained
@@ -148,6 +149,7 @@ def convert_currencies(
         financial_statement_data (pd.DataFrame): A DataFrame containing the financial statement data.
         financial_statement_currencies (pd.Series): A Series containing the currency symbols per ticker.
         exchange_rate_data (pd.DataFrame): A DataFrame containing the exchange rate data.
+        items_not_to_adjust (list[str]): A list containing the items that should not be adjusted. Defaults to None.
 
     Returns:
         pd.DataFrame: A DataFrame containing the converted financial statement data.
@@ -170,9 +172,22 @@ def convert_currencies(
                     if currency not in currencies:
                         currencies[currency] = []
 
-                    financial_statement_data.loc[ticker] = (
-                        financial_statement_data.loc[ticker].mul(
-                            exchange_rate_data.loc[periods, currency]
+                    if items_not_to_adjust is not None:
+                        items_to_adjust = [
+                            item
+                            for item in financial_statement_data.index.get_level_values(
+                                level=1
+                            )
+                            if item not in items_not_to_adjust
+                        ]
+                    else:
+                        items_to_adjust = (
+                            financial_statement_data.index.get_level_values(level=1)
+                        )
+
+                    financial_statement_data.loc[(ticker, items_to_adjust), :] = (
+                        financial_statement_data.loc[(ticker, items_to_adjust), :].mul(
+                            exchange_rate_data.loc[periods, currency], axis=1
                         )
                     ).to_numpy()
 

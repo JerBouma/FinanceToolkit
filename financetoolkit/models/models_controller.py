@@ -436,8 +436,7 @@ class Models:
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
 
         Returns:
-            pd.DataFrame: DataFrame containing Dupont analysis results, including Profit Margin, Asset
-                          Turnover, Financial Leverage, and the calculated ROE values.
+            pd.DataFrame: DataFrame containing the WACC values.
 
         Notes:
         - The Cost of Equity is approximated with the Capital Asset Pricing Model (CAPM).

@@ -57,7 +57,8 @@ class Models:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["TSLA", "AMZN"], api_key=FMP_KEY, quarterly=True, start_date='2022-12-31')
+        toolkit = Toolkit(["TSLA", "AMZN"], api_key="FINANCIAL_MODELING_PREP_KEY",
+        quarterly=True, start_date='2022-12-31')
 
         dupont_analysis = toolkit.models.get_extended_dupont_analysis()
 

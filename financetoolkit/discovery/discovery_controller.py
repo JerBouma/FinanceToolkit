@@ -484,11 +484,11 @@ class Discovery:
 
     def get_delisted_stocks(self) -> pd.DataFrame:
         """
-        The crypto list function returns a complete list of all crypto symbols that can be
-        used in the FinanceToolkit. These are over 4.000 symbols.
+        The delisted stocks function returns a complete list of all delisted stocks including
+        the IPO and delisted date.
 
         Returns:
-            pd.DataFrame: A dataframe with all the symbols in the toolkit.
+            pd.DataFrame: A dataframe with all the delisted stocks.
 
         As an example:
 

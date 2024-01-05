@@ -161,10 +161,10 @@ class Risk:
 
         The formula are as follows:
 
-            - d1 = (ln(S / K) + (r + (σ^2) / 2) * t) / (σ * sqrt(t))
-            - d2 = d1 - σ * sqrt(t)
-            - Call Option Price = S * N(d1) - K * e^(-r * t) * N(d2)
-            - Put Option Price = K * e^(-r * t) * N(-d2) - S * N(-d1)
+            -- d1 = (ln(S / K) + (r + (σ^2) / 2) * t) / (σ * sqrt(t))
+            -- d2 = d1 - σ * sqrt(t)
+            -- Call Option Price = S * N(d1) - K * e^(-r * t) * N(d2)
+            -- Put Option Price = K * e^(-r * t) * N(-d2) - S * N(-d1)
 
         Args:
             put_option (bool, optional): Whether to calculate the put option price. Defaults to False which means

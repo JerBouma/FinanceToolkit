@@ -251,3 +251,21 @@ def get_operating_ratio(
         float or pd.Series: The operating ratio value.
     """
     return (operating_expenses + cost_of_goods_sold) / revenue
+
+
+def get_cash_conversion_efficiency(
+    operating_cash_flow: pd.Series,
+    revenue: pd.Series,
+):
+    """
+    Calculate the cash conversion efficiency, a financial metric that measures the efficiency
+    of a company's operations by comparing its operating cash flow to its revenue.
+
+    Args:
+        operating_cash_flow (float or pd.Series): Total operating cash flow of the company.
+        revenue (float or pd.Series): Total revenue of the company.
+
+    Returns:
+        float or pd.Series: The cash conversion efficiency value.
+    """
+    return operating_cash_flow / revenue

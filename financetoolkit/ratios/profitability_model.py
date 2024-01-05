@@ -164,7 +164,6 @@ def get_return_on_equity(
 def get_return_on_invested_capital(
     net_income: pd.Series,
     dividends: pd.Series,
-    effective_tax_rate: pd.Series,
     total_equity_begin: pd.Series,
     total_equity_end: pd.Series,
     total_debt_begin: pd.Series,
@@ -186,7 +185,7 @@ def get_return_on_invested_capital(
     Returns:
         float | pd.Series: The return on invested capital value.
     """
-    return ((net_income - dividends) * (1 - effective_tax_rate)) / (
+    return (net_income - dividends) / (
         (total_equity_begin + total_equity_end + total_debt_begin + total_debt_end) / 2
     )
 

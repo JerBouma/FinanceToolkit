@@ -542,12 +542,6 @@ class Toolkit:
         else:
             self.get_historical_data(period="yearly")
 
-        if empty_data:
-            print(
-                "The following data was not provided within the Toolkit class and "
-                f"thus was retrieved from FinancialModelingPrep: {', '.join(empty_data)}."
-            )
-
         if not self._historical_statistics.empty:
             tickers = [
                 ticker
@@ -661,12 +655,6 @@ class Toolkit:
             self.get_historical_data(period="quarterly")
         else:
             self.get_historical_data(period="yearly")
-
-        if empty_data:
-            print(
-                "The following data was not provided within the Toolkit class and "
-                f"thus was retrieved from FinancialModelingPrep: {', '.join(empty_data)}."
-            )
 
         if not self._historical_statistics.empty:
             tickers = [
@@ -912,6 +900,9 @@ class Toolkit:
             monthly_historical=self._monthly_historical_data,
             quarterly_historical=self._quarterly_historical_data,
             yearly_historical=self._yearly_historical_data,
+            risk_free_rate=self._quarterly_risk_free_rate
+            if self._quarterly
+            else self._yearly_risk_free_rate,
             quarterly=self._quarterly,
             rounding=self._rounding,
         )

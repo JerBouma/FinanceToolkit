@@ -353,9 +353,9 @@ def get_earnings_yield(
     return earnings_per_share / market_price_per_share
 
 
-def get_payout_ratio(dividends: pd.Series, net_income: pd.Series) -> pd.Series:
+def get_dividend_payout_ratio(dividends: pd.Series, net_income: pd.Series) -> pd.Series:
     """
-    Calculates the payout ratio, which measures the proportion of net income paid out as
+    Calculates the dividend payout ratio, which measures the proportion of net income paid out as
     dividends to shareholders.
 
     Args:
@@ -363,9 +363,23 @@ def get_payout_ratio(dividends: pd.Series, net_income: pd.Series) -> pd.Series:
         net_income (float or pd.Series): Net income of the company.
 
     Returns:
-        float | pd.Series: The payout ratio.
+        float | pd.Series: The dividend payout ratio.
     """
     return abs(dividends) / net_income
+
+
+def get_reinvestment_ratio(dividend_payout_ratio: pd.Series) -> pd.Series:
+    """
+    Calculates the reinvestment ratio, which measures the proportion of net income
+    retained by the company to reinvest in the business.
+
+    Args:
+        dividend_payout_ratio (float or pd.Series): The dividend payout ratio.
+
+    Returns:
+        float | pd.Series: The reinvestment ratio.
+    """
+    return 1 - dividend_payout_ratio
 
 
 def get_tangible_asset_value(

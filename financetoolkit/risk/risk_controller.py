@@ -177,7 +177,18 @@ class Risk:
             means it will use the current risk free rate.
 
         Returns:
-            float: The theoretical value of the option.
+            pd.DataFrame: Black Scholes values containing the tickers and strike prices as the index and the
+            time to expiration as the columns.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.risk.get_black_scholes_model()
+        ```
         """
         tickers_without_benchmark = [
             ticker for ticker in self._tickers if ticker != "Benchmark"
@@ -199,7 +210,8 @@ class Risk:
 
         for ticker in stock_price.index:
             # This creates a list of strike prices from price_range% below the current stock price and price_range% above
-            # the current stock price, with a step size of 5. The numbers are rounded to the nearest 5.
+            # the current stock price, with a step size of strike_step_size. The numbers are rounded to the nearest
+            # strike_step_size
             strike_prices_per_ticker[ticker] = list(
                 range(
                     strike_step_size

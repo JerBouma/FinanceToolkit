@@ -480,7 +480,10 @@ class Ratios:
         ] = self.get_days_of_accounts_payable_outstanding(days=days, trailing=trailing)
         efficiency_ratios[
             "Cash Conversion Cycle (CCC)"
-        ] = self.get_cash_conversion_cycle(days=days)
+        ] = self.get_cash_conversion_cycle(days=days, trailing=trailing)
+        efficiency_ratios[
+            "Cash Conversion Efficiency (CCE)"
+        ] = self.get_cash_conversion_efficiency(trailing=trailing)
         efficiency_ratios["Receivables Turnover"] = self.get_receivables_turnover(
             trailing=trailing
         )
@@ -1173,7 +1176,7 @@ class Ratios:
         """
         Calculate the Cash Conversion Cycle, which measures the amount of time it takes for a company to convert
         its investments in inventory and accounts receivable into cash, while considering the time it takes to pay
-        its accounts payable.
+        its accounts payable. This ratio is also known as Cash-to-Cash Cycle (C2C) or Net Operating Cycle.
 
         The Cash Conversion Cycle (CCC) is an important measure of a company's liquidity management and efficiency
         in managing its working capital. It takes into account the time it takes to sell inventory, collect payments
@@ -1301,6 +1304,84 @@ class Ratios:
             )
 
         return cash_conversion_cycle.round(rounding if rounding else self._rounding)
+
+    @handle_errors
+    def get_cash_conversion_efficiency(
+        self,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        trailing: int | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the operating ratio, a financial metric that measures the efficiency
+        of a company's operations by comparing its operating expenses to its revenue.
+
+        The operating ratio is calculated by dividing the company's operating expenses by
+        its net sales and multiplying by 100 to express it as a percentage. It provides
+        insight into how efficiently a company is managing its operations.
+
+        The formula is as follows:
+
+        - Operating Ratio = (Operating Expenses + Cost of Goods Sold) / Revenue
+
+        Args:
+            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            trailing (int): Defines whether to select a trailing period.
+            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+
+        Returns:
+            pd.DataFrame: Operating ratio values.
+
+        Notes:
+        - The method retrieves historical data and calculates the operating ratio for each
+        asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the ratio values
+        using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        operating_ratios = toolkit.ratios.get_operating_ratio()
+        ```
+        """
+        if trailing:
+            cash_conversion_efficiency = (
+                efficiency_model.get_cash_conversion_efficiency(
+                    self._income_statement.loc[:, "Operating Cash Flow", :]
+                    .T.rolling(trailing)
+                    .sum()
+                    .T,
+                    self._income_statement.loc[:, "Revenue", :]
+                    .T.rolling(trailing)
+                    .sum()
+                    .T,
+                )
+            )
+        else:
+            cash_conversion_efficiency = (
+                efficiency_model.get_cash_conversion_efficiency(
+                    self._cash_flow_statement.loc[:, "Operating Cash Flow", :],
+                    self._income_statement.loc[:, "Revenue", :],
+                )
+            )
+
+        if growth:
+            return calculate_growth(
+                cash_conversion_efficiency,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
+            )
+
+        return cash_conversion_efficiency.round(
+            rounding if rounding else self._rounding
+        )
 
     @handle_errors
     def get_receivables_turnover(
@@ -2913,6 +2994,7 @@ class Ratios:
     @handle_errors
     def get_return_on_invested_capital(
         self,
+        dividend_adjusted: bool = True,
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
@@ -2928,9 +3010,11 @@ class Ratios:
 
         The formula is as follows:
 
-        - Return on Invested Capital = Net Operating Profit After Taxes / Average Invested Capital
+        - Return on Invested Capital = (Net Income - Paid Dividends) / Average Invested Capital
 
         Args:
+            dividend_adjusted (bool, optional): Whether to adjust the net operating profit after taxes
+            with the dividends paid. Defaults to True.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
@@ -2955,8 +3039,6 @@ class Ratios:
         ```
         """
         if trailing:
-            effective_tax_rate = self.get_effective_tax_rate(trailing=trailing)
-
             return_on_invested_capital = (
                 profitability_model.get_return_on_invested_capital(
                     self._income_statement.loc[:, "Net Income", :]
@@ -2966,8 +3048,9 @@ class Ratios:
                     self._cash_flow_statement.loc[:, "Dividends Paid", :]
                     .T.rolling(trailing)
                     .sum()
-                    .T,
-                    effective_tax_rate,
+                    .T
+                    if dividend_adjusted
+                    else 0,
                     self._balance_sheet_statement.loc[:, "Total Equity", :]
                     .shift(axis=1)
                     .T.rolling(trailing)
@@ -2989,13 +3072,12 @@ class Ratios:
                 )
             )
         else:
-            effective_tax_rate = self.get_effective_tax_rate()
-
             return_on_invested_capital = (
                 profitability_model.get_return_on_invested_capital(
                     self._income_statement.loc[:, "Net Income", :],
-                    self._cash_flow_statement.loc[:, "Dividends Paid", :],
-                    effective_tax_rate,
+                    self._cash_flow_statement.loc[:, "Dividends Paid", :]
+                    if dividend_adjusted
+                    else 0,
                     self._balance_sheet_statement.loc[:, "Total Equity", :].shift(
                         axis=1
                     ),
@@ -3856,9 +3938,10 @@ class Ratios:
     ):
         """
         Calculate the debt to equity ratio, a solvency ratio that measures the
-        proportion of a company's equity that is financed by debt.
+        proportion of a company's equity that is financed by debt. This ratio is also known
+        as the Gearing Ratio.
 
-        The debt to equity ratio, also known as the D/E ratio, indicates the relative
+        The debt to equity ratio, for short the D/E ratio, indicates the relative
         contribution of debt and equity to a company's capital structure. It helps assess
         the level of financial risk a company carries due to its debt obligations. A higher
         ratio implies a higher reliance on debt to finance the business, which could increase
@@ -4619,7 +4702,9 @@ class Ratios:
         valuation_ratios["Earnings Yield"] = self.get_earnings_yield(
             include_dividends=include_dividends, diluted=diluted, trailing=trailing
         )
-        valuation_ratios["Payout Ratio"] = self.get_payout_ratio(trailing=trailing)
+        valuation_ratios["Dividend Payout Ratio"] = self.get_dividend_payout_ratio(
+            trailing=trailing
+        )
 
         dividend_yield = self.get_dividend_yield(trailing=trailing)
         dividend_yield_columns = [
@@ -6070,7 +6155,7 @@ class Ratios:
         return earnings_yield.round(rounding if rounding else self._rounding)
 
     @handle_errors
-    def get_payout_ratio(
+    def get_dividend_payout_ratio(
         self,
         rounding: int | None = None,
         growth: bool = False,
@@ -6078,7 +6163,7 @@ class Ratios:
         trailing: int | None = None,
     ):
         """
-        Calculate the (dividend) payout ratio, a financial metric that measures the proportion
+        Calculate the Dividend payout ratio, a financial metric that measures the proportion
         of earnings paid out as dividends to shareholders.
 
         The payout ratio is a financial metric that helps investors assess the
@@ -6089,7 +6174,7 @@ class Ratios:
 
         The formula is as follows:
 
-        - Payout Ratio = Dividends per Share / Earnings per Share
+        - Dividend Payout Ratio = Dividends Paid / Net Income
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
@@ -6108,11 +6193,11 @@ class Ratios:
 
         toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
-        payout_ratio = toolkit.ratios.get_payout_ratio()
+        toolkit.ratios.get_dividend_payout_ratio()
         ```
         """
         if trailing:
-            payout_ratio = valuation_model.get_payout_ratio(
+            payout_ratio = valuation_model.get_dividend_payout_ratio(
                 self._cash_flow_statement.loc[:, "Dividends Paid", :]
                 .T.rolling(trailing)
                 .sum()
@@ -6123,7 +6208,7 @@ class Ratios:
                 .T,
             )
         else:
-            payout_ratio = valuation_model.get_payout_ratio(
+            payout_ratio = valuation_model.get_dividend_payout_ratio(
                 self._cash_flow_statement.loc[:, "Dividends Paid", :],
                 self._income_statement.loc[:, "Net Income", :],
             )
@@ -6134,6 +6219,68 @@ class Ratios:
             )
 
         return payout_ratio.round(rounding if rounding else self._rounding)
+
+    @handle_errors
+    def get_reinvestment_rate(
+        self,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        trailing: int | None = None,
+    ):
+        """
+        Calculate the Reinvestment rate, a financial metric that measures the proportion
+        of earnings retained by the company.
+
+        The reinvestment rate is a financial metric that helps investors assess the
+        portion of a company's earnings that is being retained by the company
+        for future growth. It's a valuable indicator for dividend investors as
+        it indicates the sustainability of dividend payments and the company's
+        approach to distributing profits.
+
+        The formula is as follows:
+
+        - Reinvestment Rate = 1 - Dividend Payout Ratio
+
+        Args:
+            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            trailing (int): Defines whether to select a trailing period.
+            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+
+        Returns:
+            pd.DataFrame: Reinvestment Rate values.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.ratios.get_reinvestment_rate()
+        ```
+        """
+        if trailing:
+            dividend_payout_ratio = self.get_dividend_payout_ratio(trailing=True)
+            reinvestment_ratio = valuation_model.get_reinvestment_ratio(
+                dividend_payout_ratio=dividend_payout_ratio,
+            )
+        else:
+            dividend_payout_ratio = self.get_dividend_payout_ratio()
+            reinvestment_ratio = valuation_model.get_reinvestment_ratio(
+                dividend_payout_ratio=dividend_payout_ratio,
+            )
+
+        if growth:
+            return calculate_growth(
+                reinvestment_ratio,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
+            )
+
+        return reinvestment_ratio.round(rounding if rounding else self._rounding)
 
     @handle_errors
     def get_tangible_asset_value(

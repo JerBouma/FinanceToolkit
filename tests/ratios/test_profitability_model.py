@@ -84,7 +84,6 @@ def test_get_return_on_invested_capital(recorder):
         profitability_model.get_return_on_invested_capital(
             net_income=pd.Series([80, 40, 40, 30, 20]),
             dividends=pd.Series([4, 3, 2, 1, 10]),
-            effective_tax_rate=pd.Series([0.2, 0.2, 0.2, 0.2, 0.2]),
             total_equity_begin=pd.Series([130, 200, 210, 200, 150]),
             total_equity_end=pd.Series([130, 200, 210, 200, 150]),
             total_debt_begin=pd.Series([130, 200, 210, 200, 150]),

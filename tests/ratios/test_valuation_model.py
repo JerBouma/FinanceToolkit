@@ -176,9 +176,9 @@ def test_get_earnings_yield(recorder):
     )
 
 
-def test_get_payout_ratio(recorder):
+def test_get_dividend_payout_ratio(recorder):
     recorder.capture(
-        valuation_model.get_payout_ratio(
+        valuation_model.get_dividend_payout_ratio(
             dividends=pd.Series([0.6, 0.4, 0.15, 0.4, 0.25]),
             net_income=pd.Series([100, 120, 80, 50, 30]),
         )

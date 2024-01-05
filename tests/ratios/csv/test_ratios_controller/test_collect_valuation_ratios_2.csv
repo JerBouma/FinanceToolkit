@@ -26,9 +26,9 @@ AAPL,CAPEX per Share,Lag 3,,,,-1.0
 AAPL,Earnings Yield,Lag 1,,0.2709,0.4796,0.0
 AAPL,Earnings Yield,Lag 2,,,0.8805,0.4796
 AAPL,Earnings Yield,Lag 3,,,,0.8805
-AAPL,Payout Ratio,Lag 1,,-0.3771,-0.0268,0.0417
-AAPL,Payout Ratio,Lag 2,,,-0.3938,0.0137
-AAPL,Payout Ratio,Lag 3,,,,-0.3685
+AAPL,Dividend Payout Ratio,Lag 1,,-0.3771,-0.0268,0.0417
+AAPL,Dividend Payout Ratio,Lag 2,,,-0.3938,0.0137
+AAPL,Dividend Payout Ratio,Lag 3,,,,-0.3685
 AAPL,Dividend Yield,Lag 1,,-0.755,0.4286,0.0
 AAPL,Dividend Yield,Lag 2,,,-0.65,0.4286
 AAPL,Dividend Yield,Lag 3,,,,-0.65
@@ -92,9 +92,9 @@ MSFT,CAPEX per Share,Lag 3,,,,0.8716
 MSFT,Earnings Yield,Lag 1,,-0.0865,0.6667,0.0
 MSFT,Earnings Yield,Lag 2,,,0.5226,0.6667
 MSFT,Earnings Yield,Lag 3,,,,0.5226
-MSFT,Payout Ratio,Lag 1,,-0.2112,-0.0753,0.0975
-MSFT,Payout Ratio,Lag 2,,,-0.2706,0.0148
-MSFT,Payout Ratio,Lag 3,,,,-0.1995
+MSFT,Dividend Payout Ratio,Lag 1,,-0.2112,-0.0753,0.0975
+MSFT,Dividend Payout Ratio,Lag 2,,,-0.2706,0.0148
+MSFT,Dividend Payout Ratio,Lag 3,,,,-0.1995
 MSFT,Dividend Yield,Lag 1,,-0.2812,0.5507,0.0
 MSFT,Dividend Yield,Lag 2,,,0.1146,0.5507
 MSFT,Dividend Yield,Lag 3,,,,0.1146

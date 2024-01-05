@@ -14,6 +14,9 @@ AAPL,Days of Accounts Payable Outstanding (DPO),Lag 3,,,,
 AAPL,Cash Conversion Cycle (CCC),Lag 1,,,0.1998,0.5541
 AAPL,Cash Conversion Cycle (CCC),Lag 2,,,,0.8646
 AAPL,Cash Conversion Cycle (CCC),Lag 3,,,,
+AAPL,Cash Conversion Efficiency (CCE),Lag 1,,-0.0323,0.0893,-0.0691
+AAPL,Cash Conversion Efficiency (CCE),Lag 2,,,0.0541,0.0141
+AAPL,Cash Conversion Efficiency (CCE),Lag 3,,,,-0.0187
 AAPL,Receivables Turnover,Lag 1,,,0.1727,-0.1725
 AAPL,Receivables Turnover,Lag 2,,,,-0.0296
 AAPL,Receivables Turnover,Lag 3,,,,
@@ -50,6 +53,9 @@ MSFT,Days of Accounts Payable Outstanding (DPO),Lag 3,,,,
 MSFT,Cash Conversion Cycle (CCC),Lag 1,,,0.0641,0.0508
 MSFT,Cash Conversion Cycle (CCC),Lag 2,,,,0.1182
 MSFT,Cash Conversion Cycle (CCC),Lag 3,,,,
+MSFT,Cash Conversion Efficiency (CCE),Lag 1,,0.0759,-0.0162,-0.0797
+MSFT,Cash Conversion Efficiency (CCE),Lag 2,,,0.0584,-0.0946
+MSFT,Cash Conversion Efficiency (CCE),Lag 3,,,,-0.0259
 MSFT,Receivables Turnover,Lag 1,,,-0.0038,0.0564
 MSFT,Receivables Turnover,Lag 2,,,,0.0523
 MSFT,Receivables Turnover,Lag 3,,,,
@@ -137,8 +143,8 @@ AAPL,Return on Assets (ROA),Lag 3,,,,
 AAPL,Return on Equity (ROE),Lag 1,,,0.19,-0.02
 AAPL,Return on Equity (ROE),Lag 2,,,,0.1662
 AAPL,Return on Equity (ROE),Lag 3,,,,
-AAPL,Return on Invested Capital (ROIC),Lag 1,,,0.0352,0.067
-AAPL,Return on Invested Capital (ROIC),Lag 2,,,,0.1045
+AAPL,Return on Invested Capital (ROIC),Lag 1,,,0.071,0.0485
+AAPL,Return on Invested Capital (ROIC),Lag 2,,,,0.1229
 AAPL,Return on Invested Capital (ROIC),Lag 3,,,,
 AAPL,Return on Capital Employed (ROCE),Lag 1,,0.549,0.2377,-0.1062
 AAPL,Return on Capital Employed (ROCE),Lag 2,,,0.9172,0.1062
@@ -185,8 +191,8 @@ MSFT,Return on Assets (ROA),Lag 3,,,,
 MSFT,Return on Equity (ROE),Lag 1,,,0.0015,-0.1767
 MSFT,Return on Equity (ROE),Lag 2,,,,-0.1754
 MSFT,Return on Equity (ROE),Lag 3,,,,
-MSFT,Return on Invested Capital (ROIC),Lag 1,,,0.0741,-0.1624
-MSFT,Return on Invested Capital (ROIC),Lag 2,,,,-0.1003
+MSFT,Return on Invested Capital (ROIC),Lag 1,,,0.0651,-0.1016
+MSFT,Return on Invested Capital (ROIC),Lag 2,,,,-0.0431
 MSFT,Return on Invested Capital (ROIC),Lag 3,,,,
 MSFT,Return on Capital Employed (ROCE),Lag 1,,0.2334,0.0614,-0.0676
 MSFT,Return on Capital Employed (ROCE),Lag 2,,,0.3092,-0.0103
@@ -290,9 +296,9 @@ AAPL,CAPEX per Share,Lag 3,,,,-1.0
 AAPL,Earnings Yield,Lag 1,,0.2709,0.4796,0.0
 AAPL,Earnings Yield,Lag 2,,,0.8805,0.4796
 AAPL,Earnings Yield,Lag 3,,,,0.8805
-AAPL,Payout Ratio,Lag 1,,-0.3771,-0.0268,0.0417
-AAPL,Payout Ratio,Lag 2,,,-0.3938,0.0137
-AAPL,Payout Ratio,Lag 3,,,,-0.3685
+AAPL,Dividend Payout Ratio,Lag 1,,-0.3771,-0.0268,0.0417
+AAPL,Dividend Payout Ratio,Lag 2,,,-0.3938,0.0137
+AAPL,Dividend Payout Ratio,Lag 3,,,,-0.3685
 AAPL,Dividend Yield,Lag 1,,-0.755,0.4286,0.0
 AAPL,Dividend Yield,Lag 2,,,-0.65,0.4286
 AAPL,Dividend Yield,Lag 3,,,,-0.65
@@ -356,9 +362,9 @@ MSFT,CAPEX per Share,Lag 3,,,,0.8716
 MSFT,Earnings Yield,Lag 1,,-0.0865,0.6667,0.0
 MSFT,Earnings Yield,Lag 2,,,0.5226,0.6667
 MSFT,Earnings Yield,Lag 3,,,,0.5226
-MSFT,Payout Ratio,Lag 1,,-0.2112,-0.0753,0.0975
-MSFT,Payout Ratio,Lag 2,,,-0.2706,0.0148
-MSFT,Payout Ratio,Lag 3,,,,-0.1995
+MSFT,Dividend Payout Ratio,Lag 1,,-0.2112,-0.0753,0.0975
+MSFT,Dividend Payout Ratio,Lag 2,,,-0.2706,0.0148
+MSFT,Dividend Payout Ratio,Lag 3,,,,-0.1995
 MSFT,Dividend Yield,Lag 1,,-0.2812,0.5507,0.0
 MSFT,Dividend Yield,Lag 2,,,0.1146,0.5507
 MSFT,Dividend Yield,Lag 3,,,,0.1146

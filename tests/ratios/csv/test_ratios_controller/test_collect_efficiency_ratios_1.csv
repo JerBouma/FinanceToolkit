@@ -4,9 +4,10 @@ AAPL,Days of Sales Outstanding (DSO),,,0.1726,-0.1725
 AAPL,Operating Cycle (CC),,,0.1487,-0.1428
 AAPL,Days of Accounts Payable Outstanding (DPO),,,0.1669,0.1129
 AAPL,Cash Conversion Cycle (CCC),,,0.1998,0.5541
-AAPL,Receivables Turnover,,,0.1727,-0.1725
-AAPL,Inventory Turnover Ratio,,,-0.031,-0.0209
-AAPL,Accounts Payable Turnover Ratio,,,-0.143,-0.1014
+AAPL,Cash Conversion Efficiency (CCE),,-0.0323,0.0893,-0.0691
+AAPL,Receivables Turnover,,-0.5863,0.1727,-0.1725
+AAPL,Inventory Turnover Ratio,,135.2038,-0.031,-0.0209
+AAPL,Accounts Payable Turnover Ratio,,13.9326,-0.143,-0.1014
 AAPL,SGA-to-Revenue Ratio,,-0.171,0.0582,0.022
 AAPL,Fixed Asset Turnover,,24.4621,-0.0145,-0.0117
 AAPL,Asset Turnover Ratio,,13.9531,0.0337,-0.0302
@@ -16,9 +17,10 @@ MSFT,Days of Sales Outstanding (DSO),,99.2775,-0.004,0.0566
 MSFT,Operating Cycle (CC),,120.1495,0.0266,0.0319
 MSFT,Days of Accounts Payable Outstanding (DPO),,126.5677,0.0285,0.0329
 MSFT,Cash Conversion Cycle (CCC),,-7.4182,0.0641,0.0508
-MSFT,Receivables Turnover,,-0.7252,-0.0038,0.0564
-MSFT,Inventory Turnover Ratio,,29.396,-0.1479,0.0742
-MSFT,Accounts Payable Turnover Ratio,,3.9732,-0.0277,-0.0318
+MSFT,Cash Conversion Efficiency (CCE),,0.0759,-0.0162,-0.0797
+MSFT,Receivables Turnover,,-0.5088,-0.0038,0.0564
+MSFT,Inventory Turnover Ratio,,53.3375,-0.1479,0.0742
+MSFT,Accounts Payable Turnover Ratio,,7.8904,-0.0277,-0.0318
 MSFT,SGA-to-Revenue Ratio,,-0.1314,-0.0686,0.0236
 MSFT,Fixed Asset Turnover,,6.2384,-0.0798,-0.1292
 MSFT,Asset Turnover Ratio,,2.0631,0.0724,-0.0388

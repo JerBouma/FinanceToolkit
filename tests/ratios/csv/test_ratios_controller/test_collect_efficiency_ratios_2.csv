@@ -14,6 +14,9 @@ AAPL,Days of Accounts Payable Outstanding (DPO),Lag 3,,,,
 AAPL,Cash Conversion Cycle (CCC),Lag 1,,,0.1998,0.5541
 AAPL,Cash Conversion Cycle (CCC),Lag 2,,,,0.8646
 AAPL,Cash Conversion Cycle (CCC),Lag 3,,,,
+AAPL,Cash Conversion Efficiency (CCE),Lag 1,,-0.0323,0.0893,-0.0691
+AAPL,Cash Conversion Efficiency (CCE),Lag 2,,,0.0541,0.0141
+AAPL,Cash Conversion Efficiency (CCE),Lag 3,,,,-0.0187
 AAPL,Receivables Turnover,Lag 1,,,0.1727,-0.1725
 AAPL,Receivables Turnover,Lag 2,,,,-0.0296
 AAPL,Receivables Turnover,Lag 3,,,,
@@ -50,6 +53,9 @@ MSFT,Days of Accounts Payable Outstanding (DPO),Lag 3,,,,
 MSFT,Cash Conversion Cycle (CCC),Lag 1,,,0.0641,0.0508
 MSFT,Cash Conversion Cycle (CCC),Lag 2,,,,0.1182
 MSFT,Cash Conversion Cycle (CCC),Lag 3,,,,
+MSFT,Cash Conversion Efficiency (CCE),Lag 1,,0.0759,-0.0162,-0.0797
+MSFT,Cash Conversion Efficiency (CCE),Lag 2,,,0.0584,-0.0946
+MSFT,Cash Conversion Efficiency (CCE),Lag 3,,,,-0.0259
 MSFT,Receivables Turnover,Lag 1,,,-0.0038,0.0564
 MSFT,Receivables Turnover,Lag 2,,,,0.0523
 MSFT,Receivables Turnover,Lag 3,,,,

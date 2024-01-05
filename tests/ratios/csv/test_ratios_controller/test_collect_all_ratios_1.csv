@@ -4,9 +4,10 @@ AAPL,Days of Sales Outstanding (DSO),,,0.1726,-0.1725
 AAPL,Operating Cycle (CC),,,0.1487,-0.1428
 AAPL,Days of Accounts Payable Outstanding (DPO),,,0.1669,0.1129
 AAPL,Cash Conversion Cycle (CCC),,,0.1998,0.5541
-AAPL,Receivables Turnover,,,0.1727,-0.1725
-AAPL,Inventory Turnover Ratio,,,-0.031,-0.0209
-AAPL,Accounts Payable Turnover Ratio,,,-0.143,-0.1014
+AAPL,Cash Conversion Efficiency (CCE),,-0.0323,0.0893,-0.0691
+AAPL,Receivables Turnover,,-0.5863,0.1727,-0.1725
+AAPL,Inventory Turnover Ratio,,135.2038,-0.031,-0.0209
+AAPL,Accounts Payable Turnover Ratio,,13.9326,-0.143,-0.1014
 AAPL,SGA-to-Revenue Ratio,,-0.171,0.0582,0.022
 AAPL,Fixed Asset Turnover,,24.4621,-0.0145,-0.0117
 AAPL,Asset Turnover Ratio,,13.9531,0.0337,-0.0302
@@ -16,9 +17,10 @@ MSFT,Days of Sales Outstanding (DSO),,99.2775,-0.004,0.0566
 MSFT,Operating Cycle (CC),,120.1495,0.0266,0.0319
 MSFT,Days of Accounts Payable Outstanding (DPO),,126.5677,0.0285,0.0329
 MSFT,Cash Conversion Cycle (CCC),,-7.4182,0.0641,0.0508
-MSFT,Receivables Turnover,,-0.7252,-0.0038,0.0564
-MSFT,Inventory Turnover Ratio,,29.396,-0.1479,0.0742
-MSFT,Accounts Payable Turnover Ratio,,3.9732,-0.0277,-0.0318
+MSFT,Cash Conversion Efficiency (CCE),,0.0759,-0.0162,-0.0797
+MSFT,Receivables Turnover,,-0.5088,-0.0038,0.0564
+MSFT,Inventory Turnover Ratio,,53.3375,-0.1479,0.0742
+MSFT,Accounts Payable Turnover Ratio,,7.8904,-0.0277,-0.0318
 MSFT,SGA-to-Revenue Ratio,,-0.1314,-0.0686,0.0236
 MSFT,Fixed Asset Turnover,,6.2384,-0.0798,-0.1292
 MSFT,Asset Turnover Ratio,,2.0631,0.0724,-0.0388
@@ -45,7 +47,7 @@ AAPL,Income Before Tax Profit Margin,,0.2214,0.0117,-0.0175
 AAPL,Effective Tax Rate,,-0.0783,0.218,-0.0914
 AAPL,Return on Assets (ROA),,0.9446,0.0107,-0.0303
 AAPL,Return on Equity (ROE),,9.2176,0.19,-0.02
-AAPL,Return on Invested Capital (ROIC),,2.5877,0.0352,0.067
+AAPL,Return on Invested Capital (ROIC),,3.1379,0.071,0.0485
 AAPL,Return on Capital Employed (ROCE),,0.549,0.2377,-0.1062
 AAPL,Return on Tangible Assets,,-0.5159,-0.0045,-0.0311
 AAPL,Income Quality Ratio,,-0.218,0.1139,-0.0688
@@ -61,7 +63,7 @@ MSFT,Income Before Tax Profit Margin,,0.1408,-0.0019,-0.0019
 MSFT,Effective Tax Rate,,-0.1623,-0.0521,0.4477
 MSFT,Return on Assets (ROA),,0.169,0.0788,-0.1052
 MSFT,Return on Equity (ROE),,1.8516,0.0015,-0.1767
-MSFT,Return on Invested Capital (ROIC),,1.0351,0.0741,-0.1624
+MSFT,Return on Invested Capital (ROIC),,1.3616,0.0651,-0.1016
 MSFT,Return on Capital Employed (ROCE),,0.2334,0.0614,-0.0676
 MSFT,Return on Tangible Assets,,-0.5076,0.0978,-0.083
 MSFT,Income Quality Ratio,,-0.0859,-0.0227,-0.0113
@@ -96,7 +98,7 @@ AAPL,Price-to-Book (PB),,0.3417,-0.113,-0.9057
 AAPL,Interest Debt per Share,,-0.2014,0.1142,-1.0
 AAPL,CAPEX per Share,,0.5763,-0.0021,-1.0
 AAPL,Earnings Yield,,0.2709,0.4796,-1.0
-AAPL,Payout Ratio,,-0.3771,-0.0268,0.0417
+AAPL,Dividend Payout Ratio,,-0.3771,-0.0268,0.0417
 AAPL,Dividend Yield,,-0.755,0.4286,21.1286
 AAPL,Weighted Dividend Yield,,-0.2097,0.4286,21.1286
 AAPL,Price-to-Cash-Flow (P/CF),,0.0046,-0.3932,-0.991
@@ -118,7 +120,7 @@ MSFT,Price-to-Book (PB),,0.258,-0.3919,1.5593
 MSFT,Interest Debt per Share,,-0.0608,-0.036,-0.0341
 MSFT,CAPEX per Share,,0.3487,0.1687,0.1874
 MSFT,Earnings Yield,,-0.0865,0.6667,-93.879
-MSFT,Payout Ratio,,-0.2112,-0.0753,0.0975
+MSFT,Dividend Payout Ratio,,-0.2112,-0.0753,0.0975
 MSFT,Dividend Yield,,-0.2812,0.5507,24.5701
 MSFT,Weighted Dividend Yield,,-0.2747,0.5303,26.0891
 MSFT,Price-to-Cash-Flow (P/CF),,0.1938,-0.3852,-0.9864

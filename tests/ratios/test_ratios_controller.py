@@ -308,8 +308,8 @@ def test_get_earnings_yield(recorder):
     recorder.capture(ratios_module.get_earnings_yield())
 
 
-def test_get_payout_ratio(recorder):
-    recorder.capture(ratios_module.get_payout_ratio())
+def test_get_dividend_payout_ratio(recorder):
+    recorder.capture(ratios_module.get_dividend_payout_ratio())
 
 
 def test_get_tangible_asset_value(recorder):

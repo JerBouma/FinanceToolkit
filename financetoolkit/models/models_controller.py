@@ -8,6 +8,7 @@ from financetoolkit.models import (
     altman_model,
     dupont_model,
     enterprise_model,
+    growth_model,
     intrinsic_model,
     piotroski_model,
     wacc_model,
@@ -1021,3 +1022,93 @@ class Models:
         piotroski_results = piotroski_results[piotroski_results.columns[1:]]
 
         return piotroski_results
+
+    @handle_errors
+    def get_present_value_of_growth_opportunities(
+        self,
+        calculate_daily: bool = False,
+        diluted: bool = True,
+        include_dividends: bool = False,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+    ) -> pd.DataFrame:
+        """
+        The Present Value of Growth Opportunities (PVGO) is a financial metric that represents the
+        present value of a company's future growth opportunities. It is calculated as the difference
+        between the company's current stock price and the discounted value of its future cash flows.
+
+        The formula is as follows:
+
+            - PVGO = Stock Price - Earnings Per Share / Weighted Average Cost of Capital
+
+        Args:
+            calculate_daily (bool, optional): Whether to calculate the PVGO using daily historical data.
+            Defaults to False.
+            diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
+            include_dividends (bool, optional): Whether to include dividends in the calculation.
+            Defaults to False.
+            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the values. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+
+        Returns:
+            pd.DataFrame: DataFrame containing the PVGO values.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.models.get_present_value_of_growth_opportunities()
+        ```
+        """
+        wacc = self.get_weighted_average_cost_of_capital(show_full_results=False)
+
+        average_shares = (
+            self._income_statement.loc[:, "Weighted Average Shares Diluted", :]
+            if diluted
+            else self._income_statement.loc[:, "Weighted Average Shares", :]
+        )
+
+        dividends = (
+            self._cash_flow_statement.loc[:, "Preferred Dividends Paid", :]
+            if include_dividends
+            else 0
+        )
+
+        earnings_per_share = valuation_model.get_earnings_per_share(
+            net_income=self._income_statement.loc[:, "Net Income", :],
+            preferred_dividends=dividends,
+            average_outstanding_shares=average_shares,
+        )
+
+        historical_prices = (
+            self._daily_historical["Adj Close"]
+            if calculate_daily
+            else self._historical_data["Adj Close"]
+        )
+
+        pvgo = growth_model.get_present_value_of_growth_opportunities(
+            weighted_average_cost_of_capital=wacc,
+            earnings_per_share=earnings_per_share,
+            close_prices=historical_prices[self._tickers],
+            calculate_daily=calculate_daily,
+        )
+
+        if growth:
+            return calculate_growth(
+                pvgo,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
+                axis="index",
+            )
+
+        pvgo = pvgo.round(rounding if rounding else self._rounding)
+
+        # When there is no data found for any ticker, drop the row
+        pvgo = pvgo.dropna(how="all", axis=0)
+
+        return pvgo

@@ -520,21 +520,21 @@ The Economics Module contains a variety of Key Economic Indicators that help in 
 
 This section includes frequently asked questions and is meant to clear up confusion about certain results and/or deviations from other sources. If you have any questions that are not answered here, feel free to reach out to me via the contact details below.
 
-**How do you deal with companies that have different fiscal years?**
+> **How do you deal with companies that have different fiscal years?**
 
 For any financial statement, I make sure to line it up with the corresponding *calendar* period. For example, Apple's Q4 2023 relates to July to September of 2023. This corresponds to the calendar period Q3 which is why I normalize Apple's numbers to Q3 2023 instead. This is done to allow for comparison between companies that have different fiscal years.
 
-**Why do the numbers in the financial statements sometimes deviate from the data from FinancialModelingPrep?**
+> **Why do the numbers in the financial statements sometimes deviate from the data from FinancialModelingPrep?**
 
 When looking at a company such as Hyundai Motor Company (ticker: 005380.KS), you will notice that the financial statements are reported in KRW (South Korean won). As this specific ticker is listed on the Korean Exchange, the historical market data will also be reported in KRW. However, if you use the ticker HYMTF, which is listed on the American OTC market, the historical market data will be reported in USD. To deal with this discrepancy, the end of year or end of quarter exchange rate is retrieved which is used to convert the financial statements to USD. This is done to prevent ratio calculations such as the Free Cash Flow Yield (which is based on the market capitalization) or Price Earnings Ratio (which is based on the stock price) from being incorrect. This can be disabled by setting `convert_currency=False` in the Toolkit initialization. It is recommended to always use the ticker that is listed on the exchange where the company is based.
 
-**How can I save the data periodically so that I don't have to retrieve it every single time again?**
+> **How can I save the data periodically so that I don't have to retrieve it every single time again?**
 
 The Toolkit initialization has the ability to add custom datasets which can serve as input for external datasets from different providers but also to prevent downloading all of the same data again. Have a look at [this comment](https://github.com/JerBouma/FinanceToolkit/issues/68#issuecomment-1748684501) that explains this further.
 
-**Are you part of FinancialModelingPrep?**
+> **Are you part of FinancialModelingPrep?**
 
-No, I am not. I've merely picked them as the primary data provider given that they have a generous free tier and fair pricing compared to other providers. Therefore, any questions related to the data should go through [their contact form](https://site.financialmodelingprep.com/contact). When it comes to any type of ratios, performance metrics, risk metrics, technical indicators or economic indicators, feel free to reach out to me as this is my own work.
+*No, I am not*. I've merely picked them as the primary data provider given that they have a generous free tier and fair pricing compared to other providers. Therefore, any questions related to the data should go through [their contact form](https://site.financialmodelingprep.com/contact). When it comes to any type of ratios, performance metrics, risk metrics, technical indicators or economic indicators, feel free to reach out to me as this is my own work.
 
 # Contributing
 First off all, thank you for taking the time to contribute (or at least read the Contributing Guidelines)! 🚀

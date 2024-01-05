@@ -293,7 +293,8 @@ All of these ratios can be calculated based on (lagged) growth as well as traili
 - Operating Cycle
 - Accounts Payables Turnover Ratio
 - Days of Accounts Payable Outstanding
-- Cash Conversion Cycle
+- Cash Conversion Cycle (CCC)
+- Cash Conversion Efficiency (CCE)
 - Receivables Turnover
 - SGA to Revenue Ratio
 - Fixed Asset Turnover
@@ -359,7 +360,8 @@ All of these ratios can be calculated based on (lagged) growth as well as traili
 - EV to Operating Cashflow Ratio
 - EV to EBIT
 - Earnings Yield
-- Payout Ratio
+- Dividend Payout Ratio
+- Reinvestment Rate
 - Tangible Asset Value
 - Net Current Asset Value
 
@@ -374,6 +376,7 @@ The Models module is meant to execute well-known models such as DUPONT and the D
 - Intrinsic Valuation
 - Altman Z-Score
 - Piotroski F-Score
+- Present Value of Growth Opportunities (PVGO)
 
 ## Performance Metrics
 
@@ -399,6 +402,7 @@ The Performance module is meant to calculate important performance metrics such 
 
 The Risk module is meant to calculate important risk metrics such as Value at Risk (VaR), Conditional Value at Risk (cVaR), Maximum Drawdown, Correlations, Beta, GARCH, EWMA and more. **Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/risk) which includes an explanation about the risk metrics, the parameters and an example.**
 
+- Black Scholes Model
 - Value at Risk (VaR) with distributions Historical, Gaussian, Student-t, Cornish-Fisher.
 - Conditional Value at Risk (cVaR) with distributions Historical, Gaussian, Laplace, Logistic.
 - Entropic Value at Risk (eVaR) with a Gaussian distribution. 

@@ -4710,7 +4710,7 @@ class Ratios:
         dividend_yield_columns = [
             column
             for column in dividend_yield.columns
-            if column in valuation_ratios["Payout Ratio"].columns
+            if column in valuation_ratios["Dividend Payout Ratio"].columns
         ]
         valuation_ratios["Dividend Yield"] = dividend_yield.loc[
             :, dividend_yield_columns

@@ -20,9 +20,10 @@ def get_present_value_of_growth_opportunities(
     It is meant to be used as relative valuation metric and therefore doesn't necessarily have a meaning when used
     for one company.
 
+
     The formula is as follows:
 
-        PVGO = Close Price - (Earnings Per Share / Weighted Average Cost of Capital)
+        PVGO = Close Price — (Earnings Per Share / Weighted Average Cost of Capital)
 
     Args:
         weighted_average_cost_of_capital (pd.DataFrame): The weighted average cost of capital.

@@ -159,7 +159,7 @@ class Risk:
         the daily returns of the stock price and the selected period (this can be altered by defining this accordingly
         when defining the Toolkit class, start_date and end_date).
 
-        The formula are as follows:
+        The formulas are as follows:
 
             - d1 = (ln(S / K) + (r + (σ^2) / 2) * t) / (σ * sqrt(t))
             - d2 = d1 — σ * sqrt(t)

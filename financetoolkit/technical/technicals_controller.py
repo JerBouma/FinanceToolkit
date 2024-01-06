@@ -290,7 +290,7 @@ class Technicals:
 
         The formula is a follows:
 
-            McClellan Oscillator = EMA(Advancers) - EMA(Decliners)
+            McClellan Oscillator = EMA(Advancers) — EMA(Decliners)
 
         Args:
             period (str, optional): The time period to consider for historical data.
@@ -617,7 +617,7 @@ class Technicals:
 
         The formula is a follows:
 
-            Chaikin Oscillator = EMA(short-window ADL) - EMA(long-window ADL)
+            Chaikin Oscillator = EMA(short-window ADL) — EMA(long-window ADL)
 
         Args:
             period (str, optional): The time period to consider for historical data.
@@ -944,7 +944,7 @@ class Technicals:
 
         The formula is a follows:
 
-            Williams %R = (Highest High - Close) / (Highest High - Lowest Low) * -100
+            Williams %R = (Highest High — Close) / (Highest High — Lowest Low) * —100
 
         Args:
             period (str, optional): The time period to consider for historical data.
@@ -1024,7 +1024,7 @@ class Technicals:
 
         The formula is a follows:
 
-            Aroon Up = ((Number of periods) - (Number of periods since highest high)) / (Number of periods) * 100
+            Aroon Up = ((Number of periods) — (Number of periods since highest high)) / (Number of periods) * 100
 
         Args:
             period (str, optional): The time period to consider for historical data.
@@ -1113,7 +1113,7 @@ class Technicals:
 
         The formula is a follows:
 
-            CCI = (Typical Price - SMA(Typical Price)) / (constant * Mean Deviation)
+            CCI = (Typical Price — SMA(Typical Price)) / (constant * Mean Deviation)
 
         Args:
             period (str, optional): The time period to consider for historical data.
@@ -1286,7 +1286,7 @@ class Technicals:
 
         The formula is a follows:
 
-            Force Index = SMA(Periods) * (Close - Close(1))
+            Force Index = SMA(Periods) * (Close — Close(1))
 
         Args:
             period (str, optional): The time period to consider for historical data.
@@ -1461,7 +1461,7 @@ class Technicals:
 
         The formula is a follows:
 
-            PPO = ((Long-term EMA - Short-term EMA) / Short-term EMA) * 100
+            PPO = ((Long-term EMA — Short-term EMA) / Short—term EMA) * 100
 
         Args:
             period (str, optional): The time period to consider for historical data.
@@ -1717,7 +1717,7 @@ class Technicals:
 
         The formula is a follows:
 
-            CMO = ((Sum of Upward Change) - (Sum of Downward Change)) / ((Sum of Upward Change)
+            CMO = ((Sum of Upward Change) — (Sum of Downward Change)) / ((Sum of Upward Change)
             + (Sum of Downward Change))
 
         Args:
@@ -1900,7 +1900,7 @@ class Technicals:
 
         The formula is a follows:
 
-            - %K = 100 * ((Close - Lowest Low) / (Highest High - Lowest Low))
+            - %K = 100 * ((Close — Lowest Low) / (Highest High — Lowest Low))
             - %D = SMA(%K)
 
         Args:
@@ -2004,7 +2004,7 @@ class Technicals:
 
         The formula is a follows:
 
-            - MACD Line = Short-term EMA - Long-term EMA
+            - MACD Line = Short-term EMA — Long-term EMA
             - Signal Line = SMA(MACD Line)
 
         Args:
@@ -2103,7 +2103,7 @@ class Technicals:
 
         The formula is a follows:
 
-            RSI = 100 - (100 / (1 + RS))
+            RSI = 100 — (100 / (1 + RS))
 
         Args:
             period (str, optional): The time period to consider for historical data.
@@ -2180,7 +2180,7 @@ class Technicals:
 
         The formula is a follows:
 
-            BOP = (Close - Open) / (High - Low)
+            BOP = (Close — Open) / (High — Low)
 
         Args:
             period (str, optional): The time period to consider for historical data.
@@ -2436,7 +2436,7 @@ class Technicals:
 
         The formula is a follows:
 
-            EMA = (Close - Previous EMA) * (2 / (1 + Window)) + Previous EMA
+            EMA = (Close — Previous EMA) * (2 / (1 + Window)) + Previous EMA
 
         Args:
             period (str, optional): The time period to consider for historical data.
@@ -2517,7 +2517,7 @@ class Technicals:
 
         The formula is a follows:
 
-            EMA = (Close - Previous EMA) * (2 / (1 + Window)) + Previous EMA
+            EMA = (Close — Previous EMA) * (2 / (1 + Window)) + Previous EMA
 
         Args:
             period (str, optional): The time period to consider for historical data.
@@ -2604,7 +2604,7 @@ class Technicals:
             - EMA1 = EMA(Close, Window)
             - EMA2 = EMA(EMA1, Window)
             - EMA3 = EMA(EMA2, Window)
-            - TRIX = 100 * ((EMA3 - EMA3[-1]) / EMA3[-1])
+            - TRIX = 100 * ((EMA3 — EMA3[—1]) / EMA3[—1])
 
         Args:
             period (str, optional): The time period to consider for historical data.
@@ -2688,7 +2688,7 @@ class Technicals:
 
             - Middle Band = SMA(Close, Window)
             - Upper Band = Middle Band + (Num Std Dev * Std Dev)
-            - Lower Band = Middle Band - (Num Std Dev * Std Dev)
+            - Lower Band = Middle Band — (Num Std Dev * Std Dev)
 
         Args:
             period (str, optional): The time period to consider for historical data.
@@ -2959,7 +2959,7 @@ class Technicals:
 
         The formula is a follows:
 
-            TR = max(high - low, abs(high - previous_close), abs(low - previous_close))
+            TR = max(high — low, abs(high — previous_close), abs(low — previous_close))
 
         Args:
             period (str, optional): The time period to consider for historical data.
@@ -3043,7 +3043,7 @@ class Technicals:
 
         The formula is a follows:
 
-            - TR = max(high - low, abs(high - previous_close), abs(low - previous_close))
+            - TR = max(high — low, abs(high — previous_close), abs(low — previous_close))
             - ATR = EMA(TR, Window)
 
         Args:
@@ -3137,11 +3137,11 @@ class Technicals:
 
         The formula is a follows:
 
-            - EMA = (Close - Previous EMA) * (2 / (1 + Window)) + Previous EMA
+            - EMA = (Close — Previous EMA) * (2 / (1 + Window)) + Previous EMA
             - ATR = EMA(TR, ATR Window)
             - Upper Channel Line = EMA(High, Window) + ATR * ATR Multiplier
             - Middle Channel Line = EMA(Close, Window)
-            - Lower Channel Line = EMA(Low, Window) - ATR * ATR Multiplier
+            - Lower Channel Line = EMA(Low, Window) — ATR * ATR Multiplier
 
         Args:
             period (str, optional): The time period to consider for historical data.

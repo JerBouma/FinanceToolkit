@@ -148,7 +148,7 @@ def get_capital_asset_pricing_model(
 
     The formula is as follows:
 
-    Expected Return (ER) = Rf + β * (Rm - Rf)
+    - Expected Return (ER) = Rf + β * (Rm — Rf)
 
     Args:
         risk_free_rate (pd.Series | float): the risk free rate.

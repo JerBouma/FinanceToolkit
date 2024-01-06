@@ -2014,7 +2014,7 @@ class Ratios:
 
         The formula is as follows:
 
-        - Working Capital = Current Assets - Current Liabilities
+        - Working Capital = Current Assets — Current Liabilities
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
@@ -2235,7 +2235,7 @@ class Ratios:
 
         The formula is as follows:
 
-        - Short Term Coverage Ratio = Cash Flow from Operations / (Accounts Receivable + Inventory - Accounts Payable)
+        - Short Term Coverage Ratio = Cash Flow from Operations / (Accounts Receivable + Inventory — Accounts Payable)
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
@@ -2422,7 +2422,7 @@ class Ratios:
 
         The formula is as follows:
 
-        - Gross Margin Ratio = (Revenue - Cost of Goods Sold) / Revenue
+        - Gross Margin Ratio = (Revenue — Cost of Goods Sold) / Revenue
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
@@ -3012,7 +3012,7 @@ class Ratios:
 
         The formula is as follows:
 
-        - Return on Invested Capital = (Net Income - Paid Dividends) / Average Invested Capital
+        - Return on Invested Capital = (Net Income — Paid Dividends) / Average Invested Capital
 
         Args:
             dividend_adjusted (bool, optional): Whether to adjust the net operating profit after taxes
@@ -3299,7 +3299,7 @@ class Ratios:
 
         The formula is as follows:
 
-        - Return on Capital Employed = EBIT / (Total Assets - Current Liabilities)
+        - Return on Capital Employed = EBIT / (Total Assets — Current Liabilities)
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
@@ -5116,7 +5116,7 @@ class Ratios:
 
         The formula is as follows:
 
-        - Book Value per Share = (Total Shareholder Equity - Preferred Stock) / Weighted Average (Diluted) Shares
+        - Book Value per Share = (Total Shareholder Equity — Preferred Stock) / Weighted Average (Diluted) Shares
 
         Args:
             diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
@@ -5810,7 +5810,7 @@ class Ratios:
         The formula is as follows:
 
         - Enterprise Value = Market Capitalization + Total Debt + Minority Interest + Preferred Equity
-            - Cash and Cash Equivalents
+            — Cash and Cash Equivalents
 
         Args:
             diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
@@ -6242,7 +6242,7 @@ class Ratios:
 
         The formula is as follows:
 
-        - Reinvestment Rate = 1 - Dividend Payout Ratio
+        - Reinvestment Rate = 1 — Dividend Payout Ratio
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
@@ -6299,7 +6299,7 @@ class Ratios:
 
         The formula is as follows:
 
-        - Tangible Asset Value = Total Assets - Total Liabilities - Goodwill
+        - Tangible Asset Value = Total Assets — Total Liabilities — Goodwill
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
@@ -6367,7 +6367,7 @@ class Ratios:
 
         The formula is as follows:
 
-        - Net Current Asset Value = Total Current Assets - Total Current Liabilities
+        - Net Current Asset Value = Total Current Assets — Total Current Liabilities
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.

@@ -244,7 +244,7 @@ class Performance:
 
         The formula is as follows:
 
-        - Capital Asset Pricing Model = Risk Free Rate + Beta * (Benchmark Returns - Risk Free Rate)
+        - Capital Asset Pricing Model = Risk Free Rate + Beta * (Benchmark Returns — Risk Free Rate)
 
         See definition: https://en.wikipedia.org/wiki/Capital_asset_pricing_model
 
@@ -854,7 +854,7 @@ class Performance:
 
         The formula is as follows:
 
-            - Alpha = Asset's Actual Return - Benchmark's Actual Return
+            - Alpha = Asset's Actual Return — Benchmark's Actual Return
 
         See definition: https://en.wikipedia.org/wiki/Alpha_(finance)
 
@@ -931,9 +931,9 @@ class Performance:
         Jensen's Alpha is used to assess whether an investment has outperformed or underperformed
         its expected return given its systematic risk, as represented by the asset's Beta.
 
-        The formula for Jensen's Alpha is as follows:
+        The formula is as follows:
 
-            - Jensen's Alpha = Asset's Actual Return - [Risk-Free Rate + Beta * (Benchmark Return - Risk-Free Rate)]
+            - Jensen's Alpha = Asset's Actual Return — [Risk-Free Rate + Beta * (Benchmark Return — Risk-Free Rate)]
 
         See definition: https://en.wikipedia.org/wiki/Jensen%27s_alpha
 
@@ -1024,7 +1024,7 @@ class Performance:
 
         The formula is as follows:
 
-        - - Treynor Ratio = (Portfolio's Return - Risk-Free Rate) / Portfolio Beta
+        - - Treynor Ratio = (Portfolio's Return — Risk-Free Rate) / Portfolio Beta
 
         See definition: https://en.wikipedia.org/wiki/Treynor_ratio
 
@@ -1369,7 +1369,7 @@ class Performance:
 
         The formula is as follows:
 
-            - M2 Ratio = (Portfolio's Return - Risk-Free Rate) / Portfolio Standard Deviation
+            - M2 Ratio = (Portfolio's Return — Risk-Free Rate) / Portfolio Standard Deviation
 
         See definition: https://en.wikipedia.org/wiki/Modigliani_risk-adjusted_performance
 
@@ -1454,7 +1454,7 @@ class Performance:
 
         The formula is as follows:
 
-            - Tracking Error (TE) = Standard Deviation of (Portfolio Returns - Benchmark Returns)
+            - Tracking Error (TE) = Standard Deviation of (Portfolio Returns — Benchmark Returns)
 
         See definition: https://en.wikipedia.org/wiki/Tracking_error
 
@@ -1543,7 +1543,7 @@ class Performance:
 
         The formula is as follows:
 
-            - Information Ratio (IR) = (Portfolio's Excess Return - Benchmark's Excess Return) / Tracking Error
+            - Information Ratio (IR) = (Portfolio's Excess Return — Benchmark's Excess Return) / Tracking Error
 
         See definition: https://en.wikipedia.org/wiki/Information_ratio
 
@@ -1621,7 +1621,7 @@ class Performance:
 
         The formula is as follows:
 
-            - CGR = (Final Value / Initial Value) ^ (1 / Number of Periods) - 1
+            - CGR = (Final Value / Initial Value) ^ (1 / Number of Periods) — 1
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. If not provided,

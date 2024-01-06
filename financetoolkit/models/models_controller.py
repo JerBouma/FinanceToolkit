@@ -402,7 +402,7 @@ class Models:
             - Cost of Equity = Risk Free Rate + Beta * (Benchmark Return - Risk Free Rate)
             - Cost of Debt = Interest Expense / Total Debt
             - WACC = (Market Value of Equity / Total Market Value) * Cost of Equity +
-            (Market Value of Debt / Total Market Value) * Cost of Debt * (1 - Corporate Tax Rate)
+            (Market Value of Debt / Total Market Value) * Cost of Debt * (1 — Corporate Tax Rate)
 
         Cost of Equity (Re): The cost of equity represents the return required by the company's shareholders or
         equity investors. It is the cost of raising funds by selling equity (such as common stock). The cost
@@ -563,9 +563,9 @@ class Models:
 
             - Cash Flow Projection_t = Cash Flow_t-1 * (1 + Growth Rate)
             - Terminal Value = Last Cash Flow Projection * (1 + Perpetual Growth Rate) /
-            (Weighted Average Cost of Capital - Perpetual Growth Rate)
+            (Weighted Average Cost of Capital — Perpetual Growth Rate)
             - Enterprise Value = Sum of Present Value of Cash Flow Projections + Terminal Value
-            - Equity Value = Enterprise Value - Total Debt + Cash and Cash Equivalents
+            - Equity Value = Enterprise Value — Total Debt + Cash and Cash Equivalents
             - Intrinsic Value = Equity Value / Total Shares Outstanding
 
         Args:
@@ -1040,7 +1040,7 @@ class Models:
 
         The formula is as follows:
 
-            - PVGO = Stock Price - Earnings Per Share / Weighted Average Cost of Capital
+            - PVGO = Stock Price — Earnings Per Share / Weighted Average Cost of Capital
 
         Args:
             calculate_daily (bool, optional): Whether to calculate the PVGO using daily historical data.

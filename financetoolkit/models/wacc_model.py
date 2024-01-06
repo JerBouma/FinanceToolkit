@@ -23,7 +23,7 @@ def get_cost_of_equity(
 
     The formula is as follows:
 
-        Cost of Equity (Re) = Risk-Free Rate (Rf) + Beta (β) * (Market Return (Rm) - Risk-Free Rate (Rf))
+        Cost of Equity (Re) = Risk-Free Rate (Rf) + Beta (β) * (Market Return (Rm) — Risk-Free Rate (Rf))
 
     Args:
         risk_free_rate (float or pd.Series): The risk-free rate is the rate of return of a
@@ -88,7 +88,7 @@ def get_weighted_average_cost_of_capital(
     The formula is as follows:
 
         WACC = (Market Value of Equity / Total Market Value) * Cost of Equity +
-        (Market Value of Debt / Total Market Value) * Cost of Debt * (1 - Corporate Tax Rate)
+        (Market Value of Debt / Total Market Value) * Cost of Debt * (1 — Corporate Tax Rate)
 
     Args:
         share_price (float or pd.Series): The price of a single share of a company's stock.

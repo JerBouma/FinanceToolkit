@@ -26,7 +26,7 @@ def get_intrinsic_value(
     The formula is as follows:
 
         WACC = (Market Value of Equity / Total Market Value) * Cost of Equity +
-        (Market Value of Debt / Total Market Value) * Cost of Debt * (1 - Corporate Tax Rate)
+        (Market Value of Debt / Total Market Value) * Cost of Debt * (1 — Corporate Tax Rate)
 
     Args:
         share_price (float or pd.Series): The price of a single share of a company's stock.

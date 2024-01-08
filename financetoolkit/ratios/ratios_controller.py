@@ -1356,7 +1356,7 @@ class Ratios:
         if trailing:
             cash_conversion_efficiency = (
                 efficiency_model.get_cash_conversion_efficiency(
-                    self._income_statement.loc[:, "Operating Cash Flow", :]
+                    self._cash_flow_statement.loc[:, "Operating Cash Flow", :]
                     .T.rolling(trailing)
                     .sum()
                     .T,

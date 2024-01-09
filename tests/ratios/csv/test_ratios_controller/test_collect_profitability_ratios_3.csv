@@ -1,0 +1,33 @@
+,,2020,2021,2022,2023
+AAPL,Gross Margin,,0.4026,0.4257,0.4371
+AAPL,Operating Margin,,0.2737,0.3005,0.3006
+AAPL,Net Profit Margin,,0.2375,0.2558,0.2531
+AAPL,Interest Coverage Ratio,,35.8059,44.9738,83.5353
+AAPL,Income Before Tax Profit Margin,,0.2753,0.3004,0.2994
+AAPL,Effective Tax Rate,,0.1373,0.1482,0.1548
+AAPL,Return on Assets (ROA),,,0.2821,0.2793
+AAPL,Return on Equity (ROE),,,1.606,1.7371
+AAPL,Return on Invested Capital (ROIC),,,0.6181,0.6544
+AAPL,Return on Capital Employed (ROCE),,0.4095,0.5512,0.5806
+AAPL,Return on Tangible Assets,,,0.1547,0.1519
+AAPL,Income Quality Ratio,,1.2145,1.163,1.1824
+AAPL,Net Income per EBT,,0.8627,0.8518,0.8452
+AAPL,Free Cash Flow to Operating Cash Flow Ratio,0.9094,0.8935,0.9123,1.0
+AAPL,EBT to EBIT Ratio,,0.9697,0.9762,0.9876
+AAPL,EBIT to Revenue,0.2549,0.3058,0.3095,0.2967
+MSFT,Gross Margin,,0.684,0.6864,0.6867
+MSFT,Operating Margin,,0.395,0.4184,0.4191
+MSFT,Net Profit Margin,,0.3393,0.3658,0.3537
+MSFT,Interest Coverage Ratio,,29.8475,40.6997,49.6718
+MSFT,Income Before Tax Profit Margin,,0.399,0.4226,0.4218
+MSFT,Effective Tax Rate,,0.1497,0.1344,0.1614
+MSFT,Return on Assets (ROA),,,0.201,0.1967
+MSFT,Return on Equity (ROE),,,0.4712,0.426
+MSFT,Return on Invested Capital (ROIC),,,0.4032,0.393
+MSFT,Return on Capital Employed (ROCE),,0.2722,0.3093,0.3065
+MSFT,Return on Tangible Assets,,,0.1257,0.1257
+MSFT,Income Quality Ratio,,1.3019,1.237,1.2172
+MSFT,Net Income per EBT,,0.8503,0.8656,0.8386
+MSFT,Free Cash Flow to Operating Cash Flow Ratio,0.7455,0.7313,0.7317,0.6791
+MSFT,EBT to EBIT Ratio,,0.9618,0.9723,0.9772
+MSFT,EBIT to Revenue,0.389,0.437,0.4326,0.4307

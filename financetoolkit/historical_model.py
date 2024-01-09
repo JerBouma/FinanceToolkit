@@ -1,6 +1,7 @@
 """Historical Module"""
 __docformat__ = "google"
 
+import contextlib
 import threading
 import time
 from datetime import datetime, timedelta
@@ -557,7 +558,9 @@ def enrich_historical_data(
     historical_data["Cumulative Return"] = 1
 
     adjusted_return = historical_data.loc[start:end, "Return"].copy()
-    adjusted_return.iloc[0] = 0
+
+    with contextlib.suppress(IndexError):
+        adjusted_return.iloc[0] = 0
 
     historical_data["Cumulative Return"] = pd.Series(np.nan).astype(float)
 

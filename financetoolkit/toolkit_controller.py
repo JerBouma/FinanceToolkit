@@ -497,12 +497,6 @@ class Toolkit:
         if self._cash_flow_statement.empty:
             empty_data.append("Cash Flow Statement")
 
-        empty_data_iterator = (
-            tqdm(empty_data, desc="Obtaining financial statements")
-            if ENABLE_TQDM & self._progress_bar
-            else empty_data
-        )
-
         if empty_data:
             empty_data_iterator = (
                 tqdm(empty_data, desc="Obtaining financial statements")

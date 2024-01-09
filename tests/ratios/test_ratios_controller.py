@@ -28,6 +28,8 @@ def test_collect_all_ratios(recorder):
     recorder.capture(ratios_module.collect_all_ratios())
     recorder.capture(ratios_module.collect_all_ratios(growth=True))
     recorder.capture(ratios_module.collect_all_ratios(growth=True, lag=[1, 2, 3]))
+    recorder.capture(ratios_module.collect_all_ratios(growth=False, trailing=2))
+    recorder.capture(ratios_module.collect_all_ratios(growth=True, trailing=2))
 
 
 def test_collect_efficiency_ratios(recorder):
@@ -36,18 +38,24 @@ def test_collect_efficiency_ratios(recorder):
     recorder.capture(
         ratios_module.collect_efficiency_ratios(growth=True, lag=[1, 2, 3])
     )
+    recorder.capture(ratios_module.collect_efficiency_ratios(growth=False, trailing=2))
+    recorder.capture(ratios_module.collect_efficiency_ratios(growth=True, trailing=2))
 
 
 def test_collect_solvency_ratios(recorder):
     recorder.capture(ratios_module.collect_solvency_ratios())
     recorder.capture(ratios_module.collect_solvency_ratios(growth=True))
     recorder.capture(ratios_module.collect_solvency_ratios(growth=True, lag=[1, 2, 3]))
+    recorder.capture(ratios_module.collect_solvency_ratios(growth=False, trailing=2))
+    recorder.capture(ratios_module.collect_solvency_ratios(growth=True, trailing=2))
 
 
 def test_collect_liquidity_ratios(recorder):
     recorder.capture(ratios_module.collect_liquidity_ratios())
     recorder.capture(ratios_module.collect_liquidity_ratios(growth=True))
     recorder.capture(ratios_module.collect_liquidity_ratios(growth=True, lag=[1, 2, 3]))
+    recorder.capture(ratios_module.collect_liquidity_ratios(growth=False, trailing=2))
+    recorder.capture(ratios_module.collect_liquidity_ratios(growth=True, trailing=2))
 
 
 def test_collect_profitability_ratios(recorder):
@@ -56,12 +64,20 @@ def test_collect_profitability_ratios(recorder):
     recorder.capture(
         ratios_module.collect_profitability_ratios(growth=True, lag=[1, 2, 3])
     )
+    recorder.capture(
+        ratios_module.collect_profitability_ratios(growth=False, trailing=2)
+    )
+    recorder.capture(
+        ratios_module.collect_profitability_ratios(growth=True, trailing=2)
+    )
 
 
 def test_collect_valuation_ratios(recorder):
     recorder.capture(ratios_module.collect_valuation_ratios())
     recorder.capture(ratios_module.collect_valuation_ratios(growth=True))
     recorder.capture(ratios_module.collect_valuation_ratios(growth=True, lag=[1, 2, 3]))
+    recorder.capture(ratios_module.collect_valuation_ratios(growth=False, trailing=2))
+    recorder.capture(ratios_module.collect_valuation_ratios(growth=True, trailing=2))
 
 
 def test_get_asset_turnover_ratio(recorder):

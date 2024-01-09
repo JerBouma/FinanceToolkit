@@ -58,3 +58,10 @@ def test_get_altman_z_score(recorder):
     recorder.capture(models_module.get_altman_z_score())
     recorder.capture(models_module.get_altman_z_score(growth=True))
     recorder.capture(models_module.get_altman_z_score(growth=True, lag=[1, 2, 3]))
+
+
+def test_get_present_value_of_growth_opportunities(recorder):
+    recorder.capture(models_module.get_present_value_of_growth_opportunities())
+    recorder.capture(
+        models_module.get_present_value_of_growth_opportunities(calculate_daily=True)
+    )

@@ -1,0 +1,15 @@
+,,2021,2022,2023
+AAPL,Current Ratio,1.2065,0.967,0.9321
+AAPL,Quick Ratio,1.0505,0.7993,0.6692
+AAPL,Cash Ratio,0.6652,0.397,0.3671
+AAPL,Working Capital,47676000000.0,-9222000000.0,-20319000000.0
+AAPL,Operating Cash Flow Ratio,0.8001,0.8094,0.7775
+AAPL,Operating Cash Flow to Sales Ratio,0.2885,0.2976,0.2992
+AAPL,Short Term Coverage Ratio,72.9222,44.4729,-9.3044
+MSFT,Current Ratio,2.2758,1.9271,1.7765
+MSFT,Quick Ratio,2.0931,1.7274,1.5508
+MSFT,Cash Ratio,1.6579,1.2795,1.0843
+MSFT,Working Capital,205354000000.0,170351000000.0,154710000000.0
+MSFT,Operating Cash Flow Ratio,0.8537,0.9022,0.8865
+MSFT,Operating Cash Flow to Sales Ratio,0.4417,0.4525,0.4306
+MSFT,Short Term Coverage Ratio,2.9305,3.0407,2.8443

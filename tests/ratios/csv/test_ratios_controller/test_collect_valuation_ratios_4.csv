@@ -1,0 +1,45 @@
+,,2021,2022,2023
+AAPL,Earnings per Share (EPS),,0.3251,0.045
+AAPL,Revenue per Share (RPS),,0.2301,0.0565
+AAPL,Price-to-Earnings (PE),,-0.4446,0.0958
+AAPL,Price-to-Earnings-Growth (PEG),,0.7084,-0.6437
+AAPL,Book Value per Share,,-0.0821,0.0242
+AAPL,Price-to-Book (PB),,-0.1982,-0.907
+AAPL,Interest Debt per Share,,-0.0552,-0.4371
+AAPL,CAPEX per Share,,0.2277,-0.4925
+AAPL,Earnings Yield,,0.7976,-8.3554
+AAPL,Dividend Payout Ratio,,-0.1971,0.0073
+AAPL,Dividend Yield,,-0.3081,10.0803
+AAPL,Weighted Dividend Yield,,0.4468,21.3235
+AAPL,Price-to-Cash-Flow (P/CF),,-0.4182,-0.9837
+AAPL,Price-to-Free-Cash-Flow (P/FCF),,-0.4221,-0.9928
+AAPL,Market Cap,,-0.2898,-1.0
+AAPL,Enterprise Value,,-0.2786,-1.0
+AAPL,EV-to-Sales,,-0.3923,-0.9742
+AAPL,EV-to-EBIT,,-0.4392,-0.9921
+AAPL,EV-to-EBITDA,,-0.4316,-0.9915
+AAPL,EV-to-Operating-Cash-Flow,,-0.4109,-0.9923
+AAPL,Tangible Asset Value,,-0.1142,-0.0083
+AAPL,Net Current Asset Value,,-1.1934,1.2033
+MSFT,Earnings per Share (EPS),,0.2816,0.0926
+MSFT,Revenue per Share (RPS),,0.1887,0.1298
+MSFT,Price-to-Earnings (PE),,-0.4384,0.0148
+MSFT,Price-to-Earnings-Growth (PEG),,0.9943,-0.7142
+MSFT,Book Value per Share,,0.1965,0.2191
+MSFT,Price-to-Book (PB),,-0.3985,1.1233
+MSFT,Interest Debt per Share,,-0.0486,-0.0356
+MSFT,CAPEX per Share,,0.2458,0.1787
+MSFT,Earnings Yield,,0.7751,-94.3531
+MSFT,Dividend Payout Ratio,,-0.1377,0.0108
+MSFT,Dividend Yield,,0.5263,11.8768
+MSFT,Weighted Dividend Yield,,0.5238,26.2292
+MSFT,Price-to-Cash-Flow (P/CF),,-0.4087,-0.9759
+MSFT,Price-to-Free-Cash-Flow (P/FCF),,-0.4041,-0.9912
+MSFT,Market Cap,,-0.287,-1.0
+MSFT,Enterprise Value,,-0.2828,-1.0
+MSFT,EV-to-Sales,,-0.391,-0.9742
+MSFT,EV-to-EBIT,,-0.4186,-0.9888
+MSFT,EV-to-EBITDA,,-0.411,-0.9874
+MSFT,EV-to-Operating-Cash-Flow,,-0.4055,-0.9883
+MSFT,Tangible Asset Value,,0.1439,0.2408
+MSFT,Net Current Asset Value,,-0.1705,-0.0918

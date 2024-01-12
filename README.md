@@ -378,6 +378,40 @@ The Models module is meant to execute well-known models such as DUPONT and the D
 - Piotroski F-Score
 - Present Value of Growth Opportunities (PVGO)
 
+## Options and Greeks
+
+The Options module is meant to calculate theoretical values based on Black Scholes for European Options. This includes the theoretical value of the Option for each Strike Price and Expiration Date which is intelligently chosen. It also includes the First, Second and Third Order Greeks such as Delta, Gamma, Vega, Vomma and Ultima. **Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/options) which includes an explanation about the model, the parameters and an example.**
+
+### Options
+
+- Black Scholes Model
+- Option Chains
+
+### First-Order Greeks
+- Delta
+- Dual Delta
+- Vega
+- Theta
+- Rho
+- Epsilon
+- Lambda
+
+### Second-Order Greeks
+- Gamma
+- Dual Gamma
+- Vanna
+- Charm
+- Vomma
+- Vera
+- Veta
+- Partial Derivative
+
+### Third-Order Greeks
+- Speed
+- Zomma
+- Color
+- Ultima
+
 ## Performance Metrics
 
 The Performance module is meant to calculate important performance metrics such as Sharpe Ratio, Sortino Ratio, Treynor Ratio, Information Ratio, Jensen's Alpha, Beta, Capital Asset Pricing Model, Factor Models and more. **Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/performance) which includes an explanation about the performance metrics, the parameters and an example.**
@@ -402,7 +436,6 @@ The Performance module is meant to calculate important performance metrics such 
 
 The Risk module is meant to calculate important risk metrics such as Value at Risk (VaR), Conditional Value at Risk (cVaR), Maximum Drawdown, Correlations, Beta, GARCH, EWMA and more. **Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/risk) which includes an explanation about the risk metrics, the parameters and an example.**
 
-- Black Scholes Model
 - Value at Risk (VaR) with distributions Historical, Gaussian, Student-t, Cornish-Fisher.
 - Conditional Value at Risk (cVaR) with distributions Historical, Gaussian, Laplace, Logistic.
 - Entropic Value at Risk (eVaR) with a Gaussian distribution. 

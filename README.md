@@ -382,12 +382,12 @@ The Models module is meant to execute well-known models such as DUPONT and the D
 
 The Options module is meant to calculate theoretical values based on Black Scholes for European Options. This includes the theoretical value of the Option for each Strike Price and Expiration Date which is intelligently chosen. It also includes the First, Second and Third Order Greeks such as Delta, Gamma, Vega, Vomma and Ultima. **Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/options) which includes an explanation about the model, the parameters and an example.**
 
-### Options
+### Option Pricing 📊
 
 - Black Scholes Model
 - Option Chains
 
-### First-Order Greeks
+### First-Order Greeks 1️⃣
 - Delta
 - Dual Delta
 - Vega
@@ -396,7 +396,7 @@ The Options module is meant to calculate theoretical values based on Black Schol
 - Epsilon
 - Lambda
 
-### Second-Order Greeks
+### Second-Order Greeks 2️⃣
 - Gamma
 - Dual Gamma
 - Vanna
@@ -406,7 +406,7 @@ The Options module is meant to calculate theoretical values based on Black Schol
 - Veta
 - Partial Derivative
 
-### Third-Order Greeks
+### Third-Order Greeks 3️⃣
 - Speed
 - Zomma
 - Color

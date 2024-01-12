@@ -34,6 +34,7 @@ from financetoolkit.normalization_model import (
     copy_normalization_files as _copy_normalization_files,
     read_normalization_file as _read_normalization_file,
 )
+from financetoolkit.options.options_controller import Options
 from financetoolkit.performance.performance_controller import Performance
 from financetoolkit.ratios.ratios_controller import Ratios
 from financetoolkit.risk.risk_controller import Risk
@@ -897,6 +898,64 @@ class Toolkit:
             risk_free_rate=self._quarterly_risk_free_rate
             if self._quarterly
             else self._yearly_risk_free_rate,
+            quarterly=self._quarterly,
+            rounding=self._rounding,
+        )
+
+    @property
+    def options(self) -> Options:
+        """
+        This gives access to the Risk module. The Risk Module is meant to calculate metrics related to risk such
+        as Value at Risk (VaR), Conditional Value at Risk (cVaR), EMWA/GARCH models and similar models.
+
+        It gives insights in the risk a stock composes that is not perceived as easily by looking at the data.
+        This class is closely related to the Performance class which highlights things such as Sharpe Ratio and
+        Sortino Ratio.
+
+        See the following link for more information: https://www.jeroenbouma.com/projects/financetoolkit/docs/risk
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.risk.get_value_at_risk(period='yearly')
+        ```
+
+        Which returns:
+
+        | Date   |    AAPL |    TSLA |
+        |:-------|--------:|--------:|
+        | 2012   |  0      |  0      |
+        | 2013   |  0.1754 |  4.96   |
+        | 2014   |  1.7515 |  0.9481 |
+        | 2015   | -0.1958 |  0.1454 |
+        | 2016   |  0.4177 | -0.3437 |
+        | 2017   |  2.6368 |  1.2225 |
+        | 2018   | -0.2786 |  0.0718 |
+        | 2019   |  3.2243 |  0.4707 |
+        | 2020   |  1.729  |  8.3319 |
+        | 2021   |  1.3179 |  0.8797 |
+        | 2022   | -0.8026 | -1.0046 |
+        | 2023   |  1.8549 |  1.8238 |
+        """
+        if not self._start_date:
+            self._start_date = (datetime.today() - timedelta(days=365 * 10)).strftime(
+                "%Y-%m-%d"
+            )
+        if not self._end_date:
+            self._end_date = datetime.today().strftime("%Y-%m-%d")
+
+        self.get_historical_data(period="daily")
+        self.get_historical_data(period="yearly")
+
+        return Options(
+            tickers=self._tickers,
+            daily_historical=self._daily_historical_data,
+            annual_historical=self._yearly_historical_data,
+            risk_free_rate=self._daily_risk_free_rate,
             quarterly=self._quarterly,
             rounding=self._rounding,
         )

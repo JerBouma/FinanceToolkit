@@ -231,6 +231,8 @@ Get the Black Scholes Model for both call and put options including the relevant
 
 Which can also be plotted together with Gamma, Theta and Vega as follows:
 
+![Greeks](https://github.com/JerBouma/FinanceToolkit/assets/46355364/56504c68-2078-4c3e-9f52-5eaf56c6371d)
+
 ### Obtaining Performance Metrics
 
 Get the correlations with the factors as defined by Fama-and-French. These include market, size, value, operating profitability and investment. The beauty of all functionality here is that it can be based on any period as the function accepts the period 'weekly', 'monthly', 'quarterly' and 'yearly'. For example, this shows the quarterly correlations for Apple:

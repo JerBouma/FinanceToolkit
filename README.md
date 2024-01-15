@@ -206,7 +206,7 @@ And below each component of the Extended Dupont Analysis is plotted including th
 
 ### Obtaining Options and Greeks
 
-Get the Black Scholes Model for both call and put options including the relevant Greeks, in this case Delta, Gamma, Theta and Vega. This can be any of the First, Second or Third Order Greeks as found in the the `options` module. The `get_` functions show a single Greeks whereas the `collect_` functions show an aggregation of Greeks. For example, see the delta of the Call option for Apple for multiple time to expirations and strike prices below (Stock Price: 185.92, Volatility: 31.59%, Dividend Yield: 0.49% and Risk Free Rate: 3.95%):
+Get the Black Scholes Model for both call and put options including the relevant Greeks, in this case Delta, Gamma, Theta and Vega. This can be any of the First, Second or Third Order Greeks as found in the the `options` module. The `get_` functions show a single Greek whereas the `collect_` functions show an aggregation of Greeks. For example, see the delta of the Call options for Apple for multiple expiration times and strike prices below (Stock Price: 185.92, Volatility: 31.59%, Dividend Yield: 0.49% and Risk Free Rate: 3.95%):
 
 |     |   1 Month |   2 Months |   3 Months |   4 Months |   5 Months |   6 Months |
 |----:|----------:|-----------:|-----------:|-----------:|-----------:|-----------:|

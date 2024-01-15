@@ -288,10 +288,6 @@ class Options:
         |            160 |       0.0437 |       0.2013 |       0.3903 |       0.5823 |       0.77   |       0.9513 |       1.1259 |       1.2942 |       1.4565 |       1.6133 |       1.7651 |       1.9124 |       2.0554 |       2.1946 |       2.3302 |       2.4624 |       2.5916 |       2.7179 |       2.8416 |       2.9627 |       3.0814 |       3.198  |       3.3124 |       3.4249 |       3.5355 |       3.6443 |       3.7514 |       3.8569 |       3.9608 |
         |            165 |       0.0001 |       0.0081 |       0.0378 |       0.0889 |       0.1563 |       0.235  |       0.3213 |       0.413  |       0.5081 |       0.6055 |       0.7043 |       0.804  |       0.9039 |       1.0039 |       1.1036 |       1.2029 |       1.3017 |       1.3999 |       1.4974 |       1.5941 |       1.69   |       1.7852 |       1.8795 |       1.973  |       2.0657 |       2.1576 |       2.2487 |       2.339  |       2.4285 |
         |            170 |       0      |       0.0001 |       0.0017 |       0.0079 |       0.0208 |       0.0412 |       0.0689 |       0.103  |       0.143  |       0.1879 |       0.237  |       0.2897 |       0.3454 |       0.4037 |       0.4641 |       0.5263 |       0.59   |       0.6549 |       0.721  |       0.7878 |       0.8555 |       0.9237 |       0.9923 |       1.0614 |       1.1307 |       1.2003 |       1.27   |       1.3398 |       1.4096 |
-        |            175 |       0      |       0      |       0      |       0.0004 |       0.0018 |       0.0052 |       0.0111 |       0.0201 |       0.0325 |       0.0483 |       0.0673 |       0.0896 |       0.1148 |       0.1428 |       0.1734 |       0.2064 |       0.2415 |       0.2786 |       0.3175 |       0.358  |       0.4    |       0.4434 |       0.488  |       0.5336 |       0.5803 |       0.6279 |       0.6764 |       0.7255 |       0.7754 |
-        |            180 |       0      |       0      |       0      |       0      |       0.0001 |       0.0005 |       0.0014 |       0.0031 |       0.006  |       0.0103 |       0.0162 |       0.0239 |       0.0333 |       0.0446 |       0.0578 |       0.0728 |       0.0896 |       0.108  |       0.1282 |       0.1499 |       0.1732 |       0.1979 |       0.2239 |       0.2513 |       0.2798 |       0.3095 |       0.3403 |       0.372  |       0.4048 |
-        |            185 |       0      |       0      |       0      |       0      |       0      |       0      |       0.0001 |       0.0004 |       0.0009 |       0.0018 |       0.0033 |       0.0055 |       0.0085 |       0.0124 |       0.0173 |       0.0232 |       0.0302 |       0.0383 |       0.0476 |       0.0581 |       0.0696 |       0.0823 |       0.0962 |       0.1111 |       0.127  |       0.1441 |       0.1621 |       0.181  |       0.201  |
-        |            190 |       0      |       0      |       0      |       0      |       0      |       0      |       0      |       0      |       0.0001 |       0.0003 |       0.0006 |       0.0011 |       0.0019 |       0.0031 |       0.0046 |       0.0067 |       0.0093 |       0.0125 |       0.0163 |       0.0209 |       0.0261 |       0.0321 |       0.0388 |       0.0462 |       0.0545 |       0.0635 |       0.0733 |       0.0838 |       0.0951 |
         """
         if start_date is not None and start_date not in self._prices.index:
             raise ValueError(f"The start date {start_date} is not a valid date.")
@@ -467,13 +463,6 @@ class Options:
 
         |   Strike Price |   Delta |   Dual Delta |   Vega |   Theta |    Rho |   Epsilon |   Lambda |   Gamma |   Dual Gamma |   Vanna |    Charm |   Vomma |    Vera |      Veta |     PD |   Speed |   Zomma |   Color |   Ultima |
         |---------------:|--------:|-------------:|-------:|--------:|-------:|----------:|---------:|--------:|-------------:|--------:|---------:|--------:|--------:|----------:|-------:|--------:|--------:|--------:|---------:|
-        |            180 |  1      |      -0.9999 | 0      | -0.0193 | 0.0049 |   -0.6533 |   0.0408 |  0      |       0      | -0      |   0      |  0      | -0      |    0      | 0      | -0      |  0      |  0      |   0      |
-        |            185 |  1      |      -0.9999 | 0      | -0.0198 | 0.0051 |   -0.6533 |   0.0446 |  0      |       0      | -0      |   0      |  0      | -0      |    0      | 0      | -0      |  0      |  0      |   0      |
-        |            190 |  1      |      -0.9999 | 0      | -0.0204 | 0.0052 |   -0.6533 |   0.0492 |  0      |       0      | -0      |   0      |  0      | -0      |    0      | 0      | -0      |  0      |  0      |   0      |
-        |            195 |  1      |      -0.9999 | 0      | -0.0209 | 0.0053 |   -0.6533 |   0.0549 |  0      |       0      | -0      |   0      |  0      | -0      |    0      | 0      | -0      |  0      |  0      |   0      |
-        |            200 |  1      |      -0.9999 | 0      | -0.0214 | 0.0055 |   -0.6533 |   0.062  |  0      |       0      | -0      |   0      |  0      | -0      |    0.0014 | 0      | -0      |  0      |  0      |   0      |
-        |            205 |  1      |      -0.9999 | 0      | -0.022  | 0.0056 |   -0.6533 |   0.0712 |  0      |       0      | -0      |   0.0005 |  0.0003 | -0      |    0.1236 | 0      | -0      |  0      |  0.0004 |   0.0001 |
-        |            210 |  1      |      -0.9999 | 0      | -0.0226 | 0.0058 |   -0.6533 |   0.0837 |  0      |       0      | -0.0002 |   0.0221 |  0.0119 | -0.0001 |    4.6313 | 0      | -0      |  0.0001 |  0.0132 |   0.0034 |
         |            215 |  0.9998 |      -0.9997 | 0.0001 | -0.0254 | 0.0059 |   -0.6532 |   0.1016 |  0.0001 |       0.0001 | -0.0044 |   0.4426 |  0.1942 | -0.0029 |   77.6496 | 0.0001 | -0.0001 |  0.0021 |  0.209  |   0.0336 |
         |            220 |  0.9973 |      -0.9969 | 0.001  | -0.0526 | 0.006  |   -0.6515 |   0.1287 |  0.0012 |       0.0014 | -0.0414 |   4.1955 |  1.4351 | -0.0273 |  600.92   | 0.0014 | -0.0005 |  0.0144 |  1.4569 |   0.1196 |
         |            225 |  0.9777 |      -0.976  | 0.0066 | -0.2079 | 0.006  |   -0.6387 |   0.1723 |  0.0076 |       0.0086 | -0.1884 |  19.0888 |  4.7244 | -0.1249 | 2187.89   | 0.0086 | -0.0022 |  0.0407 |  4.1228 |   0.0829 |
@@ -485,12 +474,6 @@ class Options:
         |            255 |  0.0112 |      -0.0104 | 0.0037 | -0.1028 | 0.0001 |   -0.0073 |   1.0084 |  0.0042 |       0.0037 |  0.1223 | -12.477  |  3.4845 |  0.0789 | 1542.52   | 0.0037 |  0.0014 |  0.0325 |  3.3216 |   0.1424 |
         |            260 |  0.0016 |      -0.0015 | 0.0006 | -0.018  | 0      |   -0.001  |   1.205  |  0.0007 |       0.0006 |  0.0276 |  -2.8148 |  1.0161 |  0.0179 |  421.028  | 0.0006 |  0.0003 |  0.0104 |  1.0578 |   0.1054 |
         |            265 |  0.0002 |      -0.0001 | 0.0001 | -0.0021 | 0      |   -0.0001 |   1.4049 |  0.0001 |       0.0001 |  0.004  |  -0.4041 |  0.1783 |  0.0026 |   71.3544 | 0.0001 |  0      |  0.0019 |  0.1933 |   0.0322 |
-        |            270 |  0      |      -0      | 0      | -0.0002 | 0      |   -0      |   1.6059 |  0      |       0      |  0.0004 |  -0.0385 |  0.02   |  0.0002 |    7.8471 | 0      |  0      |  0.0002 |  0.0222 |   0.0054 |
-        |            275 |  0      |      -0      | 0      | -0      | 0      |   -0      |   1.8068 |  0      |       0      |  0      |  -0.0025 |  0.0015 |  0      |    0.5804 | 0      |  0      |  0      |  0.0017 |   0.0006 |
-        |            280 |  0      |      -0      | 0      | -0      | 0      |   -0      |   2.0066 |  0      |       0      |  0      |  -0.0001 |  0.0001 |  0      |    0.0297 | 0      |  0      |  0      |  0.0001 |   0      |
-        |            285 |  0      |      -0      | 0      | -0      | 0      |   -0      |   2.2048 |  0      |       0      |  0      |  -0      |  0      |  0      |    0.0011 | 0      |  0      |  0      |  0      |   0      |
-        |            290 |  0      |      -0      | 0      | -0      | 0      |   -0      |   2.401  |  0      |       0      |  0      |  -0      |  0      |  0      |    0      | 0      |  0      |  0      |  0      |   0      |
-        |            295 |  0      |      -0      | 0      | -0      | 0      |   -0      |   2.595  |  0      |       0      |  0      |  -0      |  0      |  0      |    0      | 0      |  0      |  0      |  0      |   0      |
         """
         first_order_greeks = self.collect_first_order_greeks(
             start_date=start_date,
@@ -755,6 +738,16 @@ class Options:
         Returns:
             pd.DataFrame: the delta values containing the tickers and strike prices as the index and the
             time to expiration as the columns.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "ASML"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.options.get_delta()
+        ```
         """
         if start_date is not None and start_date not in self._prices.index:
             raise ValueError(f"The start date {start_date} is not a valid date.")
@@ -883,6 +876,16 @@ class Options:
         Returns:
             pd.DataFrame: the gamma values containing the tickers and strike prices as the index and the
             time to expiration as the columns.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "ASML"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.options.get_dual_delta()
+        ```
         """
         if start_date is not None and start_date not in self._prices.index:
             raise ValueError(f"The start date {start_date} is not a valid date.")
@@ -1012,6 +1015,16 @@ class Options:
         Returns:
             pd.DataFrame: the vega values containing the tickers and strike prices as the index and the
             time to expiration as the columns.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "ASML"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.options.get_vega()
+        ```
         """
         if start_date is not None and start_date not in self._prices.index:
             raise ValueError(f"The start date {start_date} is not a valid date.")
@@ -1145,6 +1158,16 @@ class Options:
         Returns:
             pd.DataFrame: the vega values containing the tickers and strike prices as the index and the
             time to expiration as the columns.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "ASML"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.options.get_theta()
+        ```
         """
         if start_date is not None and start_date not in self._prices.index:
             raise ValueError(f"The start date {start_date} is not a valid date.")
@@ -1280,6 +1303,16 @@ class Options:
         Returns:
             pd.DataFrame: the vega values containing the tickers and strike prices as the index and the
             time to expiration as the columns.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "ASML"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.options.get_rho()
+        ```
         """
         if start_date is not None and start_date not in self._prices.index:
             raise ValueError(f"The start date {start_date} is not a valid date.")
@@ -1411,6 +1444,16 @@ class Options:
         Returns:
             pd.DataFrame: the lambda values containing the tickers and strike prices as the index and the
             time to expiration as the columns.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "ASML"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.options.get_epsilon()
+        ```
         """
         if start_date is not None and start_date not in self._prices.index:
             raise ValueError(f"The start date {start_date} is not a valid date.")
@@ -1544,6 +1587,16 @@ class Options:
         Returns:
             pd.DataFrame: the lambda values containing the tickers and strike prices as the index and the
             time to expiration as the columns.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "ASML"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.options.get_lambda()
+        ```
         """
         if start_date is not None and start_date not in self._prices.index:
             raise ValueError(f"The start date {start_date} is not a valid date.")
@@ -1838,6 +1891,16 @@ class Options:
         Returns:
             pd.DataFrame: the gamma values containing the tickers and strike prices as the index and the
             time to expiration as the columns.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "ASML"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.options.get_gamma()
+        ```
         """
         if start_date is not None and start_date not in self._prices.index:
             raise ValueError(f"The start date {start_date} is not a valid date.")
@@ -1960,6 +2023,16 @@ class Options:
         Returns:
             pd.DataFrame: the dual gamma values containing the tickers and strike prices as the index and the
             time to expiration as the columns.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "ASML"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.options.get_dual_gamma()
+        ```
         """
         if start_date is not None and start_date not in self._prices.index:
             raise ValueError(f"The start date {start_date} is not a valid date.")
@@ -2089,6 +2162,16 @@ class Options:
         Returns:
             pd.DataFrame: the vanna values containing the tickers and strike prices as the index and the
             time to expiration as the columns.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "ASML"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.options.get_vanna()
+        ```
         """
         if start_date is not None and start_date not in self._prices.index:
             raise ValueError(f"The start date {start_date} is not a valid date.")
@@ -2220,6 +2303,16 @@ class Options:
         Returns:
             pd.DataFrame: the charm values containing the tickers and strike prices as the index and the
             time to expiration as the columns.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "ASML"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.options.get_charm()
+        ```
         """
         if start_date is not None and start_date not in self._prices.index:
             raise ValueError(f"The start date {start_date} is not a valid date.")
@@ -2349,6 +2442,16 @@ class Options:
         Returns:
             pd.DataFrame: the vomma values containing the tickers and strike prices as the index and the
             time to expiration as the columns.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "ASML"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.options.get_vomma()
+        ```
         """
         if start_date is not None and start_date not in self._prices.index:
             raise ValueError(f"The start date {start_date} is not a valid date.")
@@ -2478,6 +2581,16 @@ class Options:
         Returns:
             pd.DataFrame: the gamma values containing the tickers and strike prices as the index and the
             time to expiration as the columns.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "ASML"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.options.get_vera()
+        ```
         """
         if start_date is not None and start_date not in self._prices.index:
             raise ValueError(f"The start date {start_date} is not a valid date.")
@@ -2608,6 +2721,16 @@ class Options:
         Returns:
             pd.DataFrame: the veta values containing the tickers and strike prices as the index and the
             time to expiration as the columns.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "ASML"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.options.get_veta()
+        ```
         """
         if start_date is not None and start_date not in self._prices.index:
             raise ValueError(f"The start date {start_date} is not a valid date.")
@@ -2729,6 +2852,16 @@ class Options:
         Returns:
             pd.DataFrame: the partial derivative values containing the tickers and strike prices as the index and the
             time to expiration as the columns.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "ASML"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.options.get_partial_derivative()
+        ```
         """
         if start_date is not None and start_date not in self._prices.index:
             raise ValueError(f"The start date {start_date} is not a valid date.")
@@ -2968,8 +3101,18 @@ class Options:
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
 
         Returns:
-            pd.DataFrame: the gamma values containing the tickers and strike prices as the index and the
+            pd.DataFrame: the speed values containing the tickers and strike prices as the index and the
             time to expiration as the columns.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "ASML"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.options.get_speed()
+        ```
         """
         if start_date is not None and start_date not in self._prices.index:
             raise ValueError(f"The start date {start_date} is not a valid date.")
@@ -3099,6 +3242,16 @@ class Options:
         Returns:
             pd.DataFrame: the gamma values containing the tickers and strike prices as the index and the
             time to expiration as the columns.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "ASML"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.options.get_zomma()
+        ```
         """
         if start_date is not None and start_date not in self._prices.index:
             raise ValueError(f"The start date {start_date} is not a valid date.")
@@ -3228,6 +3381,16 @@ class Options:
         Returns:
             pd.DataFrame: the color values containing the tickers and strike prices as the index and the
             time to expiration as the columns.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "ASML"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.options.get_color()
+        ```
         """
         if start_date is not None and start_date not in self._prices.index:
             raise ValueError(f"The start date {start_date} is not a valid date.")
@@ -3357,6 +3520,16 @@ class Options:
         Returns:
             pd.DataFrame: the gamma values containing the tickers and strike prices as the index and the
             time to expiration as the columns.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "ASML"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.options.get_ultima()
+        ```
         """
         if start_date is not None and start_date not in self._prices.index:
             raise ValueError(f"The start date {start_date} is not a valid date.")

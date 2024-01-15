@@ -218,7 +218,7 @@ Get the Black Scholes Model for both call and put options including the relevant
 
 Which can also be plotted together with Gamma, Theta and Vega as follows:
 
-![Greeks](https://github.com/JerBouma/FinanceToolkit/assets/46355364/56504c68-2078-4c3e-9f52-5eaf56c6371d)
+![Greeks](https://github.com/JerBouma/FinanceToolkit/assets/46355364/3aebe116-c4ac-4845-9801-54d2b4bde0f5)
 
 ### Obtaining Performance Metrics
 

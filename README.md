@@ -204,6 +204,33 @@ And below each component of the Extended Dupont Analysis is plotted including th
 
 ![Models](https://github.com/JerBouma/FinanceToolkit/assets/46355364/f5e1cab3-d1bd-455d-a4ba-92e1348163be)
 
+### Obtaining Options and Greeks
+
+Get the Black Scholes Model for both call and put options including the relevant Greeks, in this case Delta, Gamma, Theta and Vega. This can be any of the First, Second or Third Order Greeks as found in the the `options` module. The `get_` functions show a single Greeks whereas the `collect_` functions show an aggregation of Greeks. For example, see the delta of the Call option for Apple for multiple time to expirations and strike prices below.
+
+|     |   1 Month |   2 Months |   3 Months |   4 Months |   5 Months |   6 Months |
+|----:|----------:|-----------:|-----------:|-----------:|-----------:|-----------:|
+| 140 |    0.9988 |     0.9886 |     0.9721 |     0.9551 |     0.9397 |     0.9269 |
+| 145 |    0.9968 |     0.9782 |     0.9551 |     0.9343 |     0.9167 |     0.9029 |
+| 150 |    0.9916 |     0.961  |     0.9313 |     0.9075 |     0.8886 |     0.8744 |
+| 155 |    0.9796 |     0.9347 |     0.8998 |     0.8743 |     0.8553 |     0.8416 |
+| 160 |    0.9559 |     0.8976 |     0.8601 |     0.8349 |     0.8172 |     0.8048 |
+| 165 |    0.915  |     0.8486 |     0.8123 |     0.7898 |     0.7746 |     0.7645 |
+| 170 |    0.8528 |     0.7882 |     0.7574 |     0.7397 |     0.7284 |     0.7213 |
+| 175 |    0.7686 |     0.7178 |     0.6967 |     0.6857 |     0.6794 |     0.6759 |
+| 180 |    0.6659 |     0.64   |     0.6318 |     0.629  |     0.6285 |     0.6291 |
+| 185 |    0.5522 |     0.5583 |     0.5648 |     0.571  |     0.5767 |     0.5816 |
+| 190 |    0.4371 |     0.4762 |     0.4977 |     0.513  |     0.5249 |     0.5342 |
+| 195 |    0.3298 |     0.3971 |     0.4324 |     0.4562 |     0.474  |     0.4875 |
+| 200 |    0.2372 |     0.3239 |     0.3705 |     0.4016 |     0.4248 |     0.4422 |
+| 205 |    0.1627 |     0.2585 |     0.3132 |     0.3502 |     0.378  |     0.3986 |
+| 210 |    0.1065 |     0.202  |     0.2612 |     0.3026 |     0.3338 |     0.3573 |
+| 215 |    0.0667 |     0.1547 |     0.2151 |     0.259  |     0.2929 |     0.3185 |
+| 220 |    0.04   |     0.1161 |     0.1751 |     0.2199 |     0.2553 |     0.2824 |
+| 225 |    0.023  |     0.0856 |     0.1408 |     0.1851 |     0.2211 |     0.2492 |
+
+Which can also be plotted together with Gamma, Theta and Vega as follows:
+
 ### Obtaining Performance Metrics
 
 Get the correlations with the factors as defined by Fama-and-French. These include market, size, value, operating profitability and investment. The beauty of all functionality here is that it can be based on any period as the function accepts the period 'weekly', 'monthly', 'quarterly' and 'yearly'. For example, this shows the quarterly correlations for Apple:

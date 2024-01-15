@@ -1,4 +1,4 @@
-"""Risk Module"""
+"""Options Module"""
 __docformat__ = "google"
 
 import numpy as np
@@ -2724,13 +2724,15 @@ class Options:
         rounding: int | None = None,
     ):
         """
-        Calculate the gamma of an option based on the Black Scholes Model. The Black Scholes Model
-        is a mathematical model used to estimate the price of European—style options. The gamma is
-        the rate of change of the delta with respect to the price of the underlying asset.
+        Calculate the partial derivative of an option based on the Black Scholes Model. The Black Scholes Model
+        is a mathematical model used to estimate the price of European—style options. The partial derivative is
+        the rate of change of the option price with respect to the strike price.
 
-        The gamma calculation is the theoretical value of the gamma. The actual gamma can differ from this
-        value due to several factors such as the volatility of the underlying asset, the time to expiration,
-        the risk free rate and more.
+        The partial derivative is used in the Breeden-Litzenberger theorem is used for risk-neutral valuation and
+        was developed by Fischer Black and Robert Litzenberger in 1978. The theorem states that the price of any
+        derivative security can be calculated by finding the expected value of the derivative under a risk-neutral
+        measure. The theorem is based on the Black-Scholes model and the assumption that the underlying asset
+        follows a lognormal distribution. See the paper: https://www.jstor.org/stable/2352653
 
         The formula is as follows:
 
@@ -2758,7 +2760,7 @@ class Options:
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
 
         Returns:
-            pd.DataFrame: the gamma values containing the tickers and strike prices as the index and the
+            pd.DataFrame: the partial derivative values containing the tickers and strike prices as the index and the
             time to expiration as the columns.
         """
         if start_date is not None and start_date not in self._prices.index:

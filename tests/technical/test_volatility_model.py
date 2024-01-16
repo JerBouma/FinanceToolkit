@@ -1,7 +1,7 @@
 """Volatility Model Tests"""
 import pandas as pd
 
-from financetoolkit.technical import volatility_model
+from financetoolkit.technicals import volatility_model
 
 # pylint: disable=missing-function-docstring
 

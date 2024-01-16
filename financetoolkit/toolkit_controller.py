@@ -38,7 +38,7 @@ from financetoolkit.options.options_controller import Options
 from financetoolkit.performance.performance_controller import Performance
 from financetoolkit.ratios.ratios_controller import Ratios
 from financetoolkit.risk.risk_controller import Risk
-from financetoolkit.technical.technicals_controller import Technicals
+from financetoolkit.technicals.technicals_controller import Technicals
 
 # pylint: disable=too-many-instance-attributes,too-many-lines,line-too-long,too-many-locals
 # pylint: disable=too-many-function-args,too-many-public-methods
@@ -700,7 +700,7 @@ class Toolkit:
 
         toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
-        average_directional_index = toolkit.technical.get_average_directional_index()
+        average_directional_index = toolkit.technicals.get_average_directional_index()
         ```
 
         Which returns:

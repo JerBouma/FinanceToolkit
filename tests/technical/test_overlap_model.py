@@ -1,7 +1,7 @@
 """Overlap Model Tests"""
 import pandas as pd
 
-from financetoolkit.technical import overlap_model
+from financetoolkit.technicals import overlap_model
 
 # pylint: disable=missing-function-docstring
 

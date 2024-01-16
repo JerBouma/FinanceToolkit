@@ -123,8 +123,13 @@ profitability_ratios = companies.ratios.collect_profitability_ratios()
 # a Models example
 extended_dupont_analysis = companies.models.get_extended_dupont_analysis()
 
+# a Options example
+all_greeks = companies.options.collect_all_greeks(expiration_time_range=180)
+
 # a Performance example
-factor_asset_correlations = companies.performance.get_factor_asset_correlations(period='quarterly')
+factor_asset_correlations = companies.performance.get_factor_asset_correlations(
+    period="quarterly"
+)
 
 # a Risk example
 value_at_risk = companies.risk.get_value_at_risk(period="weekly")

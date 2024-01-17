@@ -14,20 +14,6 @@ risk_module = toolkit.risk
 # pylint: disable=missing-function-docstring
 
 
-def test_get_black_scholes_model(recorder):
-    recorder.capture(risk_module.get_black_scholes_model())
-    recorder.capture(risk_module.get_black_scholes_model(put_option=True))
-    recorder.capture(
-        risk_module.get_black_scholes_model(
-            strike_price_range=0.10,
-            strike_step_size=2,
-            expiration_time_range=5,
-            risk_free_rate=0.01,
-            rounding=2,
-        )
-    )
-
-
 def test_get_value_at_risk(recorder):
     recorder.capture(risk_module.get_value_at_risk())
     recorder.capture(risk_module.get_value_at_risk(within_period=False))

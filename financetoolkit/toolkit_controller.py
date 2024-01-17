@@ -678,6 +678,79 @@ class Toolkit:
         )
 
     @property
+    def options(self) -> Options:
+        """
+        This gives access to the Options module. The Options Module is meant to provide Options valuations
+        based on real market data. This includes the Black-Scholes model and in the future the Binomial model
+        and the Monte Carlo model. It also includes all available first-order, second-order and third-order
+        Greeks such as Delta, Gamma, Theta, Vega, Rho, Charm, Vanna, Vomma, Veta, Speed and Zomma.
+
+        It gives insights in the sensitivity of an option to changes in the underlying asset price, volatility,
+        time to maturity, dividend yilds and interest rates and several derivatives of these sensitivities.
+
+        See the following link for more information: https://www.jeroenbouma.com/projects/financetoolkit/docs/options
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["TSLA", "MU"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        all_greeks = toolkit.options.collect_all_greeks(start_date='2024-01-03')
+
+        all_greeks.loc['TSLA', '2024-01-04']
+        ```
+
+        Which returns:
+
+        |   Strike Price |   Delta |   Dual Delta |   Vega |   Theta |    Rho |   Epsilon |   Lambda |   Gamma |   Dual Gamma |   Vanna |    Charm |   Vomma |    Vera |      Veta |     PD |   Speed |   Zomma |   Color |   Ultima |
+        |---------------:|--------:|-------------:|-------:|--------:|-------:|----------:|---------:|--------:|-------------:|--------:|---------:|--------:|--------:|----------:|-------:|--------:|--------:|--------:|---------:|
+        |            180 |  1      |      -0.9999 | 0      | -0.0193 | 0.0049 |   -0.6533 |   0.0408 |  0      |       0      | -0      |   0      |  0      | -0      |    0      | 0      | -0      |  0      |  0      |   0      |
+        |            185 |  1      |      -0.9999 | 0      | -0.0198 | 0.0051 |   -0.6533 |   0.0446 |  0      |       0      | -0      |   0      |  0      | -0      |    0      | 0      | -0      |  0      |  0      |   0      |
+        |            190 |  1      |      -0.9999 | 0      | -0.0204 | 0.0052 |   -0.6533 |   0.0492 |  0      |       0      | -0      |   0      |  0      | -0      |    0      | 0      | -0      |  0      |  0      |   0      |
+        |            195 |  1      |      -0.9999 | 0      | -0.0209 | 0.0053 |   -0.6533 |   0.0549 |  0      |       0      | -0      |   0      |  0      | -0      |    0      | 0      | -0      |  0      |  0      |   0      |
+        |            200 |  1      |      -0.9999 | 0      | -0.0214 | 0.0055 |   -0.6533 |   0.062  |  0      |       0      | -0      |   0      |  0      | -0      |    0.0014 | 0      | -0      |  0      |  0      |   0      |
+        |            205 |  1      |      -0.9999 | 0      | -0.022  | 0.0056 |   -0.6533 |   0.0712 |  0      |       0      | -0      |   0.0005 |  0.0003 | -0      |    0.1236 | 0      | -0      |  0      |  0.0004 |   0.0001 |
+        |            210 |  1      |      -0.9999 | 0      | -0.0226 | 0.0058 |   -0.6533 |   0.0837 |  0      |       0      | -0.0002 |   0.0221 |  0.0119 | -0.0001 |    4.6313 | 0      | -0      |  0.0001 |  0.0132 |   0.0034 |
+        |            215 |  0.9998 |      -0.9997 | 0.0001 | -0.0254 | 0.0059 |   -0.6532 |   0.1016 |  0.0001 |       0.0001 | -0.0044 |   0.4426 |  0.1942 | -0.0029 |   77.6496 | 0.0001 | -0.0001 |  0.0021 |  0.209  |   0.0336 |
+        |            220 |  0.9973 |      -0.9969 | 0.001  | -0.0526 | 0.006  |   -0.6515 |   0.1287 |  0.0012 |       0.0014 | -0.0414 |   4.1955 |  1.4351 | -0.0273 |  600.92   | 0.0014 | -0.0005 |  0.0144 |  1.4569 |   0.1196 |
+        |            225 |  0.9777 |      -0.976  | 0.0066 | -0.2079 | 0.006  |   -0.6387 |   0.1723 |  0.0076 |       0.0086 | -0.1884 |  19.0888 |  4.7244 | -0.1249 | 2187.89   | 0.0086 | -0.0022 |  0.0407 |  4.1228 |   0.0829 |
+        |            230 |  0.8953 |      -0.8898 | 0.0226 | -0.6528 | 0.0056 |   -0.5849 |   0.2419 |  0.0261 |       0.028  | -0.3993 |  40.3564 |  6.2557 | -0.267  | 3816.31   | 0.028  | -0.0048 |  0.0253 |  2.5239 |  -0.1641 |
+        |            235 |  0.6978 |      -0.6874 | 0.0435 | -1.2304 | 0.0044 |   -0.4558 |   0.3442 |  0.0502 |       0.0516 | -0.306  |  30.653  |  1.9785 | -0.2119 | 3623.7    | 0.0516 | -0.0039 | -0.0672 | -6.8719 |  -0.0977 |
+        |            240 |  0.4192 |      -0.4078 | 0.0488 | -1.3691 | 0.0027 |   -0.2739 |   0.4789 |  0.0562 |       0.0555 |  0.1634 | -17.1438 |  0.4159 |  0.0934 | 3407.79   | 0.0555 |  0.0014 | -0.096  | -9.7512 |  -0.0222 |
+        |            245 |  0.1812 |      -0.1736 | 0.0329 | -0.9207 | 0.0012 |   -0.1184 |   0.6396 |  0.0379 |       0.0359 |  0.4445 | -45.5549 |  5.0536 |  0.2814 | 4080.87   | 0.0359 |  0.0048 | -0.0098 | -0.9474 |  -0.1945 |
+        |            250 |  0.0544 |      -0.0513 | 0.0138 | -0.3848 | 0.0004 |   -0.0355 |   0.8183 |  0.0159 |       0.0144 |  0.3232 | -33.01   |  6.468  |  0.2073 | 3328.37   | 0.0144 |  0.0036 |  0.0461 |  4.7176 |  -0.0443 |
+        |            255 |  0.0112 |      -0.0104 | 0.0037 | -0.1028 | 0.0001 |   -0.0073 |   1.0084 |  0.0042 |       0.0037 |  0.1223 | -12.477  |  3.4845 |  0.0789 | 1542.52   | 0.0037 |  0.0014 |  0.0325 |  3.3216 |   0.1424 |
+        |            260 |  0.0016 |      -0.0015 | 0.0006 | -0.018  | 0      |   -0.001  |   1.205  |  0.0007 |       0.0006 |  0.0276 |  -2.8148 |  1.0161 |  0.0179 |  421.028  | 0.0006 |  0.0003 |  0.0104 |  1.0578 |   0.1054 |
+        |            265 |  0.0002 |      -0.0001 | 0.0001 | -0.0021 | 0      |   -0.0001 |   1.4049 |  0.0001 |       0.0001 |  0.004  |  -0.4041 |  0.1783 |  0.0026 |   71.3544 | 0.0001 |  0      |  0.0019 |  0.1933 |   0.0322 |
+        |            270 |  0      |      -0      | 0      | -0.0002 | 0      |   -0      |   1.6059 |  0      |       0      |  0.0004 |  -0.0385 |  0.02   |  0.0002 |    7.8471 | 0      |  0      |  0.0002 |  0.0222 |   0.0054 |
+        |            275 |  0      |      -0      | 0      | -0      | 0      |   -0      |   1.8068 |  0      |       0      |  0      |  -0.0025 |  0.0015 |  0      |    0.5804 | 0      |  0      |  0      |  0.0017 |   0.0006 |
+        |            280 |  0      |      -0      | 0      | -0      | 0      |   -0      |   2.0066 |  0      |       0      |  0      |  -0.0001 |  0.0001 |  0      |    0.0297 | 0      |  0      |  0      |  0.0001 |   0      |
+        |            285 |  0      |      -0      | 0      | -0      | 0      |   -0      |   2.2048 |  0      |       0      |  0      |  -0      |  0      |  0      |    0.0011 | 0      |  0      |  0      |  0      |   0      |
+        |            290 |  0      |      -0      | 0      | -0      | 0      |   -0      |   2.401  |  0      |       0      |  0      |  -0      |  0      |  0      |    0      | 0      |  0      |  0      |  0      |   0      |
+        |            295 |  0      |      -0      | 0      | -0      | 0      |   -0      |   2.595  |  0      |       0      |  0      |  -0      |  0      |  0      |    0      | 0      |  0      |  0      |  0      |   0      |
+        """
+        if not self._start_date:
+            self._start_date = (datetime.today() - timedelta(days=365 * 10)).strftime(
+                "%Y-%m-%d"
+            )
+        if not self._end_date:
+            self._end_date = datetime.today().strftime("%Y-%m-%d")
+
+        self.get_historical_data(period="daily")
+        self.get_historical_data(period="yearly")
+
+        return Options(
+            tickers=self._tickers,
+            daily_historical=self._daily_historical_data,
+            annual_historical=self._yearly_historical_data,
+            risk_free_rate=self._daily_risk_free_rate,
+            quarterly=self._quarterly,
+            rounding=self._rounding,
+        )
+
+    @property
     def technicals(self) -> Technicals:
         """
         This gives access to the Technicals module. The Technicals Module contains
@@ -898,79 +971,6 @@ class Toolkit:
             risk_free_rate=self._quarterly_risk_free_rate
             if self._quarterly
             else self._yearly_risk_free_rate,
-            quarterly=self._quarterly,
-            rounding=self._rounding,
-        )
-
-    @property
-    def options(self) -> Options:
-        """
-        This gives access to the Options module. The Options Module is meant to provide Options valuations
-        based on real market data. This includes the Black-Scholes model and in the future the Binomial model
-        and the Monte Carlo model. It also includes all available first-order, second-order and third-order
-        Greeks such as Delta, Gamma, Theta, Vega, Rho, Charm, Vanna, Vomma, Veta, Speed and Zomma.
-
-        It gives insights in the sensitivity of an option to changes in the underlying asset price, volatility,
-        time to maturity, dividend yilds and interest rates and several derivatives of these sensitivities.
-
-        See the following link for more information: https://www.jeroenbouma.com/projects/financetoolkit/docs/options
-
-        As an example:
-
-        ```python
-        from financetoolkit import Toolkit
-
-        toolkit = Toolkit(["TSLA", "MU"], api_key="FINANCIAL_MODELING_PREP_KEY")
-
-        all_greeks = toolkit.options.collect_all_greeks(start_date='2024-01-03')
-
-        all_greeks.loc['TSLA', '2024-01-04']
-        ```
-
-        Which returns:
-
-        |   Strike Price |   Delta |   Dual Delta |   Vega |   Theta |    Rho |   Epsilon |   Lambda |   Gamma |   Dual Gamma |   Vanna |    Charm |   Vomma |    Vera |      Veta |     PD |   Speed |   Zomma |   Color |   Ultima |
-        |---------------:|--------:|-------------:|-------:|--------:|-------:|----------:|---------:|--------:|-------------:|--------:|---------:|--------:|--------:|----------:|-------:|--------:|--------:|--------:|---------:|
-        |            180 |  1      |      -0.9999 | 0      | -0.0193 | 0.0049 |   -0.6533 |   0.0408 |  0      |       0      | -0      |   0      |  0      | -0      |    0      | 0      | -0      |  0      |  0      |   0      |
-        |            185 |  1      |      -0.9999 | 0      | -0.0198 | 0.0051 |   -0.6533 |   0.0446 |  0      |       0      | -0      |   0      |  0      | -0      |    0      | 0      | -0      |  0      |  0      |   0      |
-        |            190 |  1      |      -0.9999 | 0      | -0.0204 | 0.0052 |   -0.6533 |   0.0492 |  0      |       0      | -0      |   0      |  0      | -0      |    0      | 0      | -0      |  0      |  0      |   0      |
-        |            195 |  1      |      -0.9999 | 0      | -0.0209 | 0.0053 |   -0.6533 |   0.0549 |  0      |       0      | -0      |   0      |  0      | -0      |    0      | 0      | -0      |  0      |  0      |   0      |
-        |            200 |  1      |      -0.9999 | 0      | -0.0214 | 0.0055 |   -0.6533 |   0.062  |  0      |       0      | -0      |   0      |  0      | -0      |    0.0014 | 0      | -0      |  0      |  0      |   0      |
-        |            205 |  1      |      -0.9999 | 0      | -0.022  | 0.0056 |   -0.6533 |   0.0712 |  0      |       0      | -0      |   0.0005 |  0.0003 | -0      |    0.1236 | 0      | -0      |  0      |  0.0004 |   0.0001 |
-        |            210 |  1      |      -0.9999 | 0      | -0.0226 | 0.0058 |   -0.6533 |   0.0837 |  0      |       0      | -0.0002 |   0.0221 |  0.0119 | -0.0001 |    4.6313 | 0      | -0      |  0.0001 |  0.0132 |   0.0034 |
-        |            215 |  0.9998 |      -0.9997 | 0.0001 | -0.0254 | 0.0059 |   -0.6532 |   0.1016 |  0.0001 |       0.0001 | -0.0044 |   0.4426 |  0.1942 | -0.0029 |   77.6496 | 0.0001 | -0.0001 |  0.0021 |  0.209  |   0.0336 |
-        |            220 |  0.9973 |      -0.9969 | 0.001  | -0.0526 | 0.006  |   -0.6515 |   0.1287 |  0.0012 |       0.0014 | -0.0414 |   4.1955 |  1.4351 | -0.0273 |  600.92   | 0.0014 | -0.0005 |  0.0144 |  1.4569 |   0.1196 |
-        |            225 |  0.9777 |      -0.976  | 0.0066 | -0.2079 | 0.006  |   -0.6387 |   0.1723 |  0.0076 |       0.0086 | -0.1884 |  19.0888 |  4.7244 | -0.1249 | 2187.89   | 0.0086 | -0.0022 |  0.0407 |  4.1228 |   0.0829 |
-        |            230 |  0.8953 |      -0.8898 | 0.0226 | -0.6528 | 0.0056 |   -0.5849 |   0.2419 |  0.0261 |       0.028  | -0.3993 |  40.3564 |  6.2557 | -0.267  | 3816.31   | 0.028  | -0.0048 |  0.0253 |  2.5239 |  -0.1641 |
-        |            235 |  0.6978 |      -0.6874 | 0.0435 | -1.2304 | 0.0044 |   -0.4558 |   0.3442 |  0.0502 |       0.0516 | -0.306  |  30.653  |  1.9785 | -0.2119 | 3623.7    | 0.0516 | -0.0039 | -0.0672 | -6.8719 |  -0.0977 |
-        |            240 |  0.4192 |      -0.4078 | 0.0488 | -1.3691 | 0.0027 |   -0.2739 |   0.4789 |  0.0562 |       0.0555 |  0.1634 | -17.1438 |  0.4159 |  0.0934 | 3407.79   | 0.0555 |  0.0014 | -0.096  | -9.7512 |  -0.0222 |
-        |            245 |  0.1812 |      -0.1736 | 0.0329 | -0.9207 | 0.0012 |   -0.1184 |   0.6396 |  0.0379 |       0.0359 |  0.4445 | -45.5549 |  5.0536 |  0.2814 | 4080.87   | 0.0359 |  0.0048 | -0.0098 | -0.9474 |  -0.1945 |
-        |            250 |  0.0544 |      -0.0513 | 0.0138 | -0.3848 | 0.0004 |   -0.0355 |   0.8183 |  0.0159 |       0.0144 |  0.3232 | -33.01   |  6.468  |  0.2073 | 3328.37   | 0.0144 |  0.0036 |  0.0461 |  4.7176 |  -0.0443 |
-        |            255 |  0.0112 |      -0.0104 | 0.0037 | -0.1028 | 0.0001 |   -0.0073 |   1.0084 |  0.0042 |       0.0037 |  0.1223 | -12.477  |  3.4845 |  0.0789 | 1542.52   | 0.0037 |  0.0014 |  0.0325 |  3.3216 |   0.1424 |
-        |            260 |  0.0016 |      -0.0015 | 0.0006 | -0.018  | 0      |   -0.001  |   1.205  |  0.0007 |       0.0006 |  0.0276 |  -2.8148 |  1.0161 |  0.0179 |  421.028  | 0.0006 |  0.0003 |  0.0104 |  1.0578 |   0.1054 |
-        |            265 |  0.0002 |      -0.0001 | 0.0001 | -0.0021 | 0      |   -0.0001 |   1.4049 |  0.0001 |       0.0001 |  0.004  |  -0.4041 |  0.1783 |  0.0026 |   71.3544 | 0.0001 |  0      |  0.0019 |  0.1933 |   0.0322 |
-        |            270 |  0      |      -0      | 0      | -0.0002 | 0      |   -0      |   1.6059 |  0      |       0      |  0.0004 |  -0.0385 |  0.02   |  0.0002 |    7.8471 | 0      |  0      |  0.0002 |  0.0222 |   0.0054 |
-        |            275 |  0      |      -0      | 0      | -0      | 0      |   -0      |   1.8068 |  0      |       0      |  0      |  -0.0025 |  0.0015 |  0      |    0.5804 | 0      |  0      |  0      |  0.0017 |   0.0006 |
-        |            280 |  0      |      -0      | 0      | -0      | 0      |   -0      |   2.0066 |  0      |       0      |  0      |  -0.0001 |  0.0001 |  0      |    0.0297 | 0      |  0      |  0      |  0.0001 |   0      |
-        |            285 |  0      |      -0      | 0      | -0      | 0      |   -0      |   2.2048 |  0      |       0      |  0      |  -0      |  0      |  0      |    0.0011 | 0      |  0      |  0      |  0      |   0      |
-        |            290 |  0      |      -0      | 0      | -0      | 0      |   -0      |   2.401  |  0      |       0      |  0      |  -0      |  0      |  0      |    0      | 0      |  0      |  0      |  0      |   0      |
-        |            295 |  0      |      -0      | 0      | -0      | 0      |   -0      |   2.595  |  0      |       0      |  0      |  -0      |  0      |  0      |    0      | 0      |  0      |  0      |  0      |   0      |
-        """
-        if not self._start_date:
-            self._start_date = (datetime.today() - timedelta(days=365 * 10)).strftime(
-                "%Y-%m-%d"
-            )
-        if not self._end_date:
-            self._end_date = datetime.today().strftime("%Y-%m-%d")
-
-        self.get_historical_data(period="daily")
-        self.get_historical_data(period="yearly")
-
-        return Options(
-            tickers=self._tickers,
-            daily_historical=self._daily_historical_data,
-            annual_historical=self._yearly_historical_data,
-            risk_free_rate=self._daily_risk_free_rate,
             quarterly=self._quarterly,
             rounding=self._rounding,
         )

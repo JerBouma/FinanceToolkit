@@ -1,7 +1,7 @@
 """Momentum Model Tests"""
 import pandas as pd
 
-from financetoolkit.technical import momentum_model
+from financetoolkit.technicals import momentum_model
 
 # pylint: disable=missing-function-docstring
 

@@ -1,7 +1,7 @@
 """Breadth Model Tests"""
 import pandas as pd
 
-from financetoolkit.technical import breadth_model
+from financetoolkit.technicals import breadth_model
 
 # pylint: disable=missing-function-docstring
 

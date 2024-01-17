@@ -5,13 +5,13 @@ __docformat__ = "google"
 import pandas as pd
 
 from financetoolkit.helpers import calculate_growth
-from financetoolkit.technical import (
+from financetoolkit.technicals import (
     breadth_model,
     momentum_model,
     overlap_model,
     volatility_model,
 )
-from financetoolkit.technical.helpers import handle_errors
+from financetoolkit.technicals.helpers import handle_errors
 
 # pylint: disable=too-many-lines,too-many-instance-attributes,too-many-public-methods,too-many-locals,eval-used
 
@@ -65,7 +65,7 @@ class Technicals:
 
         toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
-        average_directional_index = toolkit.technical.get_average_directional_index()
+        average_directional_index = toolkit.technicals.get_average_directional_index()
         ```
 
         Which returns:

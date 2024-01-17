@@ -3,7 +3,7 @@ __docformat__ = "google"
 
 import pandas as pd
 
-from financetoolkit.technical.overlap_model import (
+from financetoolkit.technicals.overlap_model import (
     get_exponential_moving_average,
     get_moving_average,
 )

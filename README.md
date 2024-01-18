@@ -684,6 +684,8 @@ The Options module is meant to calculate theoretical values based on Black Schol
 <details>
   <summary><b>Option Pricing 📊</b></summary>
 
+Option pricing are mathematical models that calculate the theoretical value of an option contract. It is widely used by traders and investors to determine the theoretical value of an option, and to assess the potential risks and rewards of a position.
+
 > **Option Chains**
 
 Get the Option Chains which gives information about the currently available options as reported by Yahoo Finance. This returns the Contract Symbol, Strike Currency, Last Price, Absolute Change, Percent Change, Volume, Open Interest, Bid Pirce, Ask Price, Expiration, Last Trade Date, Implied Volatility and whether the option is In The Money. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/options#get_option_chains).
@@ -707,6 +709,8 @@ Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolki
 
 <details>
     <summary><b>First-Order Greeks</b></summary>
+
+The first-order greeks are Delta, Dual Delta, Vega, Theta, Rho, Epsilon and Lambda. These greeks are used to assess the sensitivity of an option’s price to changes in the underlying asset’s price, volatility, time to expiration, risk-free interest rate, dividend yield, and strike price.
 
 > **Delta**
 
@@ -768,21 +772,117 @@ Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolki
 
 </details>
 
-### Second-Order Greeks 2️⃣
-- Gamma
-- Dual Gamma
-- Vanna
-- Charm
-- Vomma
-- Vera
-- Veta
-- Partial Derivative
+<details>
+    <summary><b>Second-Order Greeks</b></summary>:
 
-### Third-Order Greeks 3️⃣
-- Speed
-- Zomma
-- Color
-- Ultima
+The second-order greeks are are Gamma, Dual Gamma, Vanna, Charm, Vomma, Vera and Veta. These greeks are used to assess the sensitivity of the first-order greeks to small changes in the underlying asset’s price, volatility, time to expiration, risk-free interest rate, dividend yield, and strike price.
+
+> **Gamma**
+
+The gamma is the rate of change of the delta with respect to the price of the underlying asset. The Gamma can be interpreted as follows:
+
+- If Gamma is high, it indicates that the option’s Delta is highly sensitive to changes in the underlying asset’s price. The option’s Delta will change more significantly with small movements in the stock price.
+- If Gamma is low, it suggests that the option’s Delta is relatively insensitive to changes in the underlying asset’s price. The option’s Delta changes more gradually with movements in the stock price.
+
+Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/options#get_gamma).
+
+> **Dual Gamma**
+
+Similar to Dual Delta, the Dual Gamma measures how fast dual delta changes with respect to the strike price. It therefore measures the change in the probability of an option finishing in the money with respect to the strike price. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/options#get_dual_gamma).
+
+> **Vanna**
+
+The vanna is the rate of change of the vega with respect to the price of the underlying asset. The Vanna can be interpreted as follows:
+
+- If Vanna is positive, it indicates that the Delta of the option becomes more positive as both the underlying asset’s price and implied volatility increase, and more negative as they both decrease.
+- If Vanna is negative, it suggests that the Delta of the option becomes more negative as both the underlying asset’s price and implied volatility increase, and more positive as they both decrease.
+
+Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/options#get_vanna).
+
+> **Charm**
+
+The charm is the rate of change of the delta with respect to the time to expiration. The Charm can be interpreted as follows:
+
+- If Charm is positive, it suggests that the option’s Delta is becoming more positive over time. In other words, the option is gaining sensitivity to changes in the underlying asset’s price as time passes.
+- If Charm is negative, it indicates that the option’s Delta is becoming more negative over time. The option is losing sensitivity to changes in the underlying asset’s price as time passes.
+
+Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/options#get_charm).
+
+> **Vomma**
+
+The vomma is the rate of change of the vega with respect to the volatility of the underlying asset. The vomma can be interpreted as follows:
+
+- If Vomma is high, it indicates that the option’s Vega is highly sensitive to changes in implied volatility. The option’s value will experience more significant fluctuations with variations in implied volatility.
+- If Vomma is low, it suggests that the option’s Vega is relatively less sensitive to changes in implied volatility.
+
+Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/options#get_vomma).
+
+> **Vera**
+
+The vera is the rate of change of the rho with respect to volatility. The Vera can be interpreted as follows:
+
+- If Vera is positive, it indicates that the option’s Rho is becoming more positive over time. In other words, the option is gaining sensitivity to changes in the risk free rate as time passes.
+- If Vera is negative, it suggests that the option’s Rho is becoming more negative over time. The option is losing sensitivity to changes in the risk free rate as time passes.
+
+Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/options#get_vera).
+
+> **Veta**
+
+The veta is the rate of change of the vega with respect to the time to expiration. The Veta can be interpreted as follows:
+
+- If Veta is positive, it indicates that the option’s Vega is becoming more positive over time. In other words, the option is gaining sensitivity to changes in implied volatility as time passes.
+- If Veta is negative, it suggests that the option’s Vega is becoming more negative over time. The option is losing sensitivity to changes in implied volatility as time passes.
+
+Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/options#get_veta).
+
+> **Partial Derivative**
+
+The partial derivative is the rate of change of the option price with respect to the strike price. The partial derivative is used in the Breeden -Litzenberger theorem is used for risk -neutral valuation and was developed by Fischer Black and Robert Litzenberger in 1978. The theorem states that the price of any derivative security can be calculated by finding the expected value of the derivative under a risk -neutral measure. The theorem is based on the Black -Scholes model and the assumption that the underlying asset follows a lognormal distribution. See the paper: https://www.jstor.org/stable/2352653. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/options#get_partial_derivative).
+
+</details>
+
+<details>
+    <summary><b>Third-Order Greeks</b></summary>
+
+The third-order greeks are Speed, Zomma, Color and Ultima. These greeks are used to assess the sensitivity of the second-order greeks to small changes in the underlying asset’s price, volatility, time to expiration, risk-free interest rate, dividend yield, and strike price.
+
+> **Speed**
+
+The speed is the rate of change of the gamma with respect to the price of the underlying asset. The Speed can be interpreted as follows:
+
+- If Speed is positive, it indicates that the option’s Gamma is becoming more positive over time. In other words, the option is gaining sensitivity to changes in the underlying price as time passes.
+- If Speed is negative, it suggests that the option’s Gamma is becoming more negative over time. The option is losing sensitivity to changes in the underlying price as time passes.
+
+Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/options#get_speed).
+
+> **Zomma**
+
+The zomma is the rate of change of the gamma with respect to volatility. The Zomma can be interpreted as follows:
+
+- If Zomma is positive, it indicates that the option’s Gamma is becoming more positive over time. In other words, the option is gaining sensitivity to changes in volatility as time passes.
+- If Zomma is negative, it suggests that the option’s Gamma is becoming more negative over time. The option is losing sensitivity to changes in volatility as time passes.
+
+Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/options#get_zomma).
+
+> **Color**
+
+The color is the rate of change of the gamma with respect to time to expiration. The Color can be interpreted as follows:
+
+- If Color is positive, it indicates that the option’s Gamma is becoming more positive over time. In other words, the option is gaining sensitivity to changes in time to expiration as time passes.
+- If Color is negative, it suggests that the option’s Gamma is becoming more negative over time. The option is losing sensitivity to changes in time to expiration as time passes.
+
+Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/options#get_color).
+
+> **Ultima**
+
+The ultima is the rate of change of the vomma with respect to volatility. The Ultima can be interpreted as follows:
+
+- If Ultima is positive, it indicates that the option’s vomma is becoming more positive over time. In other words, the option is gaining sensitivity to changes in volatility as time passes.
+- If Ultima is negative, it suggests that the option’s vomma is becoming more negative over time. The option is losing sensitivity to changes in volatility as time passes.
+
+Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/options#get_ultima).
+
+</details>
 
 ## Performance Metrics
 

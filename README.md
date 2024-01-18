@@ -29,7 +29,7 @@ The Finance Toolkit is complimented very well with the [Finance Database 🌎](h
 
 1. [Installation](#installation)
 2. [Basic Usage](#basic-usage)
-3. [Available Metrics](#available-metrics)
+3. [Available Functionality and Metrics](#available-functionality-and-metrics)
 4. [Questions & Answers](#questions--answers)
 5. [Contributing](#contributing)
 6. [Contact](#contact)
@@ -275,7 +275,7 @@ ___
 <b><div align="center">Find a variety of How-To Guides including Code Documentation for the FinanceToolkit <a href="https://www.jeroenbouma.com/projects/financetoolkit">here</a>.</div></b>
 ___
 
-## General Functionality
+## Functionality
 
 <details>
     <summary><b>Financial Statements</b></summary>

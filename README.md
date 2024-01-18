@@ -345,65 +345,140 @@ The accounts payable turnover ratio indicates how many times, on average, a comp
 
 > **Days of Accounts Payable Outstanding**
 
-The days payables outstanding (DPO) ratio is used to assess how efficiently a company manages its accounts payable. It calculates the average number of days it takes for a company to pay its suppliers after receiving an invoice. A higher DPO ratio indicates that the company is taking longer to pay its suppliers, which may have implications for its relationships with suppliers. See documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_days_of_accounts_payable_outstanding).
+The days payables outstanding (DPO) ratio is used to assess how efficiently a company manages its accounts payable. It calculates the average number of days it takes for a company to pay its suppliers after receiving an invoice. A higher DPO ratio indicates that the company is taking longer to pay its suppliers, which may have implications for its relationships with suppliers. See the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_days_of_accounts_payable_outstanding).
 
 > **Cash Conversion Cycle (CCC)**
 
-The Cash Conversion Cycle (CCC) is an important measure of a company’s liquidity management and efficiency in managing its working capital. It takes into account the time it takes to sell inventory, collect payments from customers, and pay suppliers. A shorter CCC indicates that a company is able to quickly convert its investments into cash, which can be a positive sign of efficient operations. See documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_cash_conversion_cycle).
+The Cash Conversion Cycle (CCC) is an important measure of a company’s liquidity management and efficiency in managing its working capital. It takes into account the time it takes to sell inventory, collect payments from customers, and pay suppliers. A shorter CCC indicates that a company is able to quickly convert its investments into cash, which can be a positive sign of efficient operations. See the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_cash_conversion_cycle).
 
 > **Cash Conversion Efficiency (CCE)**
 
-The cash conversion efficiency ratio is calculated by dividing the operating cash flow by the revenue. It indicates how much of a company’s sales are converted into cash. A higher cash conversion efficiency ratio is generally favorable, as it suggests that the company is able to convert its sales into cash more efficiently. See documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_cash_conversion_efficiency).
+The cash conversion efficiency ratio is calculated by dividing the operating cash flow by the revenue. It indicates how much of a company’s sales are converted into cash. A higher cash conversion efficiency ratio is generally favorable, as it suggests that the company is able to convert its sales into cash more efficiently. See the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_cash_conversion_efficiency).
 
 > **Receivables Turnover**
 
-The receivables turnover ratio is an important measure of how well a company manages its accounts receivable. It indicates how quickly a company collects payments from its customers. A higher turnover ratio is generally favorable as it suggests that the company is collecting payments more quickly, which improves its cash flow and working capital management. See documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_receivables_turnover).
+The receivables turnover ratio is an important measure of how well a company manages its accounts receivable. It indicates how quickly a company collects payments from its customers. A higher turnover ratio is generally favorable as it suggests that the company is collecting payments more quickly, which improves its cash flow and working capital management. See the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_receivables_turnover).
 
 > **SGA to Revenue Ratio**
 
-The SG&A to revenue ratio is calculated by dividing the total SG&A expenses by the company’s revenue and then multiplying by 100 to express it as a percentage. It provides insight into the efficiency of a company’s cost management and its ability to control its overhead costs. See documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_sga_to_revenue_ratio).
+The SG&A to revenue ratio is calculated by dividing the total SG&A expenses by the company’s revenue and then multiplying by 100 to express it as a percentage. It provides insight into the efficiency of a company’s cost management and its ability to control its overhead costs. See the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_sga_to_revenue_ratio).
 
 > **Fixed Asset Turnover**
 
-The Fixed Asset Turnover ratio is calculated by dividing the company’s net sales by the average fixed assets. It indicates how well a company is utilizing its fixed assets to generate revenue. A higher ratio suggests more efficient utilization of fixed assets. See documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_fixed_asset_turnover).
+The Fixed Asset Turnover ratio is calculated by dividing the company’s net sales by the average fixed assets. It indicates how well a company is utilizing its fixed assets to generate revenue. A higher ratio suggests more efficient utilization of fixed assets. See the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_fixed_asset_turnover).
 
 > **Operating Ratio**
 
-The operating ratio is calculated by dividing the company’s operating expenses by its net sales and multiplying by 100 to express it as a percentage. It provides insight into how efficiently a company is managing its operations. See documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_operating_ratio).
+The operating ratio is calculated by dividing the company’s operating expenses by its net sales and multiplying by 100 to express it as a percentage. It provides insight into how efficiently a company is managing its operations. See the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_operating_ratio).
 
 </details>
 <details>
   <summary>Liquidity Ratios 💧</summary>
 
-- Current Ratio
-- Quick Ratio
-- Cash Ratio
-- Working Capital
-- Operating Cash Flow Ratio
-- Operating Cash Flow Sales Ratio
-- Short Term Coverage Ratio
+The liquidity ratios are used to assess a company’s ability to meet its short-term obligations using its short-term assets. They provide insight into the company’s short-term financial health and its ability to cover its current obligations using its liquid assets.
+
+> **Current Ratio**
+
+The current ratio is calculated by dividing a company’s current assets by its current liabilities. It indicates whether a company can meet its short -term obligations using its short-term assets. See the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_current_ratio).
+
+> **Quick Ratio**
+
+The quick ratio is calculated by subtracting inventory from current assets and then dividing the result by current liabilities. It provides insight into a company’s ability to cover its short -term liabilities using its most liquid assets without relying on inventory. This ratio is also referred to as the Acid Test Ratio. See the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_quick_ratio).
+
+> **Cash Ratio**
+
+The cash ratio is calculated by dividing the sum of cash and cash equivalents by current liabilities. It provides insight into a company’s immediate ability to cover its short -term obligations using its most liquid assets. See the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_cash_ratio).
+
+> **Working Capital**
+
+The working capital is calculated by subtracting total current liabilities from total current assets. It represents the company’s short -term financial health and its ability to cover its current obligations using its liquid assets. See the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_working_capital).
+
+> **Operating Cash Flow Ratio**
+
+The operating cash flow ratio is calculated by dividing operating cash flow by current liabilities. It indicates whether a company’s operating cash flow is sufficient to cover its short-term obligations. See the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_operating_cash_flow_ratio).
+
+> **Operating Cash Flow Sales Ratio**
+
+The operating cash flow to sales ratio is calculated by dividing operating cash flow by sales revenue. It indicates the proportion of sales revenue that is converted into cash from operating activities. See the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_operating_cash_flow_sales_ratio).
+
+> **Short Term Coverage Ratio**
+
+The short-term coverage ratio is calculated by dividing operating cash flow by short -term debt. It assesses the company’s ability to meet its short -term obligations using its operating cash flow. See the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_short_term_coverage_ratio).
+
 </details>
 
 <details>
   <summary>Profitability Ratios 💰</summary>
 
-- Gross Margin
-- Operating Margin
-- Net Profit Margin
-- Interest Burden Ratio
-- Income Before Tax Profit Margin
-- Effective Tax Rate
-- Return on Assets (RoA)
-- Return on Equity (RoE)
-- Return on Invested Capital (RoIC)
-- Income Quality Ratio
-- Return on Tangible Assets (RoTA)
-- Return on Capital Employed (RoCE)
-- Net Income per EBT
-- Free Cash Flow Operating Cash Flow Ratio
-- Tax Burden Ratio
-- EBT to EBIT
-- EBIT to Revenue
+> **Gross Margin**
+
+The gross margin ratio is calculated by subtracting the cost of goods sold (COGS) from the total revenue and then dividing the result by the total revenue. It represents the portion of revenue that contributes to covering other expenses and generating profit. See the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_gross_margin).
+
+> **Operating Margin**
+
+The operating margin ratio is calculated by subtracting the operating expenses from the total revenue and then dividing the result by the total revenue. It indicates how efficiently a company is managing its operating expenses in relation to its revenue. See the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_operating_margin).
+
+> **Net Profit Margin**
+
+The net profit margin ratio is calculated by dividing the net income by the total revenue. It indicates the portion of each dollar of revenue that represents profit after all expenses have been deducted. A higher net profit margin is generally considered favorable. See the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_net_profit_margin).
+
+> **Interest Burden Ratio**
+
+The Interest Burden or Interest Coverage Ratio is calculated by dividing the earnings before interest and taxes (EBIT) by the interest expenses. A higher ratio indicates that the company has more earnings to cover its interest expenses, which is generally considered favorable. See the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_interest_burden_ratio).
+
+> **Income Before Tax Profit Margin**
+
+The Income Before Tax Profit Margin or Pretax Profit Margin is calculated by dividing the pre -tax profit by the revenue. It provides insight into how efficiently a company is able to generate profits from its revenue. See the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_income_before_tax_profit_margin).
+
+> **Effective Tax Rate**
+
+The effective tax rate is calculated by dividing the income tax expense by the pre-tax income. A financial ratio that measures the percentage of pretax income that is paid as taxes. See the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_effective_tax_rate).
+
+> **Return on Assets (RoA)**
+
+The return on assets is calculated by dividing the net income by the average total assets. Note that it is false to take the total assets at the end of the period given that income statements report over the period whereas a balance sheet reports on the period. See the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_return_on_assets).
+
+> **Return on Equity (RoE)**
+
+The return on equity is calculated by dividing the net income by the average shareholders’ equity. Shareholders’ equity represents the residual interest in the assets of a company after deducting liabilities. Note that it is false to take the total assets at the end of the period given that income statements report over the period whereas a balance sheet reports on the period. ROE provides insight into the company’s ability to generate profits from the investments made by its shareholders. A higher ROE indicates that the company is using its equity effectively to generate higher returns for its shareholders. See the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_return_on_equity).
+
+> **Return on Invested Capital (RoIC)**
+
+The return on invested capital is calculated by dividing the net operating profit after taxes (NOPAT) by the average invested capital. Invested capital includes both equity and debt, making this ratio a valuable measure of how efficiently a company generates returns for all of its investors. See the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_return_on_invested_capital).
+
+
+> **Income Quality Ratio**
+
+The income quality ratio provides insights into the quality of a company’s reported earnings. By comparing the cash flow from operating activities to the net income, this ratio helps assess whether a company’s reported profits are backed by actual cash flow. A higher income quality ratio suggests higher earnings quality and a better ability to convert profits into cash flow. See the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_income_quality_ratio).
+
+> **Return on Tangible Assets (RoTA)**
+
+The return on tangible assets (ROTA) provides insights into the efficiency with which a company utilizes its tangible assets to generate profits. Tangible assets include physical assets such as buildings, machinery, and equipment. ROTA indicates how well a company can generate profits from its core operational assets. See the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_return_on_tangible_assets).
+
+> **Return on Capital Employed (RoCE)**
+
+The return on capital employed (ROCE) is a crucial financial metric that evaluates the efficiency and profitability of a company’s utilization of both equity and debt capital to generate profits. It assesses how well the company generates earnings relative to the total capital invested in the business. See the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_return_on_capital_employed).
+
+> **Net Income per EBT**
+
+The net income per earnings before taxes (EBT) ratio helps evaluate the extent to which a company’s net income is generated from its operating activities before considering the impact of income taxes. It gives insights into how effectively a company generates profit relative to its taxable income. See the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_net_income_per_ebt).
+
+> **Free Cash Flow Operating Cash Flow Ratio**
+
+The free cash flow to operating cash flow ratio helps assess how well a company’s operating activities translate into free cash flow, which is the cash available after all expenses and investments. A higher ratio indicates that the company is generating strong free cash flow relative to its operating cash flow, which could signify efficient capital management. See the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_free_cash_flow_operating_cash_flow_ratio).
+
+> **Tax Burden Ratio**
+
+The tax burden ratio measures the portion of a company’s earnings that is paid as taxes. A higher ratio indicates that a larger portion of the income is being retained by the company after taxes. This ratio provides insights into the tax efficiency of the company and its ability to manage its tax liabilities. See the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_tax_burden_ratio).
+
+> **EBT to EBIT**
+
+The EBT to EBIT ratio measures the proportion of a company’s earnings that is generated before paying interest and taxes. It provides insights into how a company’s operating performance is impacted by interest expenses and tax obligations. A higher ratio indicates that a larger portion of the company’s earnings is generated from its core operations before considering interest payments and taxes. See the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_ebt_to_ebit).
+
+> **EBIT to Revenue**
+
+The EBIT to Revenue ratio measures the company’s ability to generate profit from its core operations relative to its revenue. It provides insights into the operational efficiency and profitability of the company, as it excludes the impact of interest expenses and taxes on its earnings. A higher ratio indicates that a larger portion of the company’s revenue is converted into operating profit. See the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_ebit_to_revenue).
+
 </details>
 
 <details>

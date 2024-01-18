@@ -316,20 +316,19 @@ All of these ratios can be calculated based on (lagged) growth as well as traili
 
 <details>
   <summary><h3>Efficiency Ratios ⚙️</h3></summary>
-  
-    - Asset Turnover Ratio
-    - Inventory Turnover Ratio
-    - Days of Inventory Outstanding
-    - Days of Sales Outstanding
-    - Operating Cycle
-    - Accounts Payables Turnover Ratio
-    - Days of Accounts Payable Outstanding
-    - Cash Conversion Cycle (CCC)
-    - Cash Conversion Efficiency (CCE)
-    - Receivables Turnover
-    - SGA to Revenue Ratio
-    - Fixed Asset Turnover
-    - Operating Ratio
+- Asset Turnover Ratio
+- Inventory Turnover Ratio
+- Days of Inventory Outstanding
+- Days of Sales Outstanding
+- Operating Cycle
+- Accounts Payables Turnover Ratio
+- Days of Accounts Payable Outstanding
+- Cash Conversion Cycle (CCC)
+- Cash Conversion Efficiency (CCE)
+- Receivables Turnover
+- SGA to Revenue Ratio
+- Fixed Asset Turnover
+- Operating Ratio
 </details>
 
 

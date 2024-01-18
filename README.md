@@ -705,7 +705,7 @@ Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolki
 
 </details>
 
-</details>
+<details>
     <summary><b>First-Order Greeks</b></summary>
 
 > **Delta**

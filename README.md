@@ -635,6 +635,9 @@ The net current asset value is a financial metric that represents the total valu
 
 The Models module is meant to execute well-known models such as DUPONT and the Discounted Cash Flow (DCF) model. These models are also directly related to the data retrieved from the Toolkit module. **Find the Notebook [here](https://www.jeroenbouma.com/projects/financetoolkit/models-module) and the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/models) which includes an explanation about the model, the parameters and an example.**
 
+<details>
+  <summary><b>Financial Models</b></summary>
+
 > **DuPont Analysis**
 
 The Dupont analysis is a method used to dissect and understand the factors that drive a company’s return on equity (ROE). It breaks down the ROE into three key components: Profit Margin, Asset Turnover, and Financial Leverage. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/models#get_dupont_analysis).
@@ -669,6 +672,8 @@ The Piotroski Score is a comprehensive financial assessment tool that helps inve
 > **Present Value of Growth Opportunities (PVGO)**
 
 The Present Value of Growth Opportunities (PVGO) is a financial metric that represents the present value of a company’s future growth opportunities. It is calculated as the difference between the company’s current stock price and the discounted value of its future cash flows. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/models#get_present_value_of_growth_opportunities).
+
+</details>
 
 ## Options and Greeks
 

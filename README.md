@@ -531,7 +531,9 @@ The capex dividend coverage ratio assesses whether a company’s cash flow from 
 </details>
 
 <details>
-  <summary>Valuation Ratios ⚖️</summary>
+  <summary><b>Valuation Ratios ⚖️</b></summary>
+
+The valuation ratios are used to assess the relative value of a company’s stock. They provide insight into the company’s valuation and its attractiveness as an investment opportunity.
 
 > **Earnings per Share (EPS)**
 

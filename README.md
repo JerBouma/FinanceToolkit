@@ -317,6 +317,8 @@ All of these ratios can be calculated based on (lagged) growth as well as traili
 <details>
   <summary>Efficiency Ratios ⚙️</summary>
 
+The efficiency ratios are used to assess how well a company utilizes its assets and liabilities to generate revenue. They provide insight into the company’s operational efficiency and its ability to manage its assets and liabilities.
+
 > **Asset Turnover Ratio**
 
 The asset turnover ratio is calculated by dividing the company’s net sales (revenue) by its average total assets. It measures how well a company utilizes its assets to generate revenue. A higher asset turnover ratio indicates that the company is generating more revenue per unit of assets, which is generally seen as a positive sign of operational efficiency.
@@ -368,6 +370,7 @@ The Fixed Asset Turnover ratio is calculated by dividing the company’s net sal
 > **Operating Ratio**
 
 The operating ratio is calculated by dividing the company’s operating expenses by its net sales and multiplying by 100 to express it as a percentage. It provides insight into how efficiently a company is managing its operations.
+
 </details>
 <details>
   <summary>Liquidity Ratios 💧</summary>

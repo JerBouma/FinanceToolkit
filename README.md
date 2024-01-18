@@ -284,6 +284,8 @@ Acquire a full history of both annual and quarterly financial statements, includ
 
 These financial statements are normalized to facilitate straightforward comparisons between companies such as automatic currency conversions of the entire of the financial statement. Additionally, variations in accounting periods among companies are automatically standardized, ensuring that each company's year or quarter aligns with the corresponding calendar period. Next to that, there is also a [statististics statement](https://www.jeroenbouma.com/projects/financetoolkit/docs#get_statistics_statement) that gives insights into the reported currency, CIK ID and SEC links.
 
+</details>
+
 <details>
     <summary><b>Company Overviews</b></summary>
 
@@ -325,6 +327,8 @@ If a benchmark ticker is selected, it also calculates the benchmark ticker toget
 
 Important to note is that when an api_key is included in the Toolkit initialization that the data collection defaults to FinancialModelingPrep which is a more stable source and utilises your subscription. However, if this is undesired, it can be disabled by setting `historical_source` to “YahooFinance”. If data collection fails from FinancialModelingPrep it automatically reverts back to YahooFinance.
 
+</details>
+
 <details>
     <summary><b>Treasury Rates</b></summary>
 
@@ -338,6 +342,8 @@ It returns the following columns:
 - 30 Year Treasury Bond: The 30 Year Treasury Bond for the period.
 
 By default, the Finance Toolkit uses the 10 Year Treasury Bond as risk-free rate but this can be changed by setting `risk_free_rate` to any of the other treasury rates.
+
+</details>
 
 <details>
     <summary><b>Earnings & Dividend Calendars</b></summary>
@@ -359,10 +365,16 @@ Furthermore, find [Dividend Calendars](https://www.jeroenbouma.com/projects/fina
 - Payment Date: The payment date of the dividend.
 - Declaration Date: The declaration date of the dividend.
 
+</details>
+
 <details>
     <summary><b>Analyst Estimates</b></summary>
 
-Obtain the [Analyst Estimates](https://www.jeroenbouma.com/projects/financetoolkit/docs#get_analyst_estimates) which include estimates for Revenue, Earnings-per-Share (EPS), EBITDA, EBIT, Net Income, and SGA Expense from the past and future from a large collection of analysts. It includes the lower, average and upper bound for each estimate which gives insights whether analysts have reached a consensus on the prices or think wildly different. The larger the difference between the lower and upper bound, the more uncertain the analysts are.
+Obtain the [Analyst Estimates](https://www.jeroenbouma.com/projects/financetoolkit/docs#get_analyst_estimates) which include estimates for Revenue, Earnings-per-Share (EPS), EBITDA, EBIT, Net Income, and SGA Expense from the past and future from a large collection of analysts.
+
+It includes the lower, average and upper bound for each estimate which gives insights whether analysts have reached a consensus on the prices or think wildly different. The larger the difference between the lower and upper bound, the more uncertain the analysts are.
+
+</details>
 
 <details>
     <summary><b>Revenue Segmentations</b></summary>

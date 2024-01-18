@@ -332,8 +332,9 @@ All of these ratios can be calculated based on (lagged) growth as well as traili
 - Operating Ratio
 </details>
 
+<details>
+  <summary><h3>Liquidity Ratios 💧</h3></summary>
 
-### Liquidity Ratios 💧
 - Current Ratio
 - Quick Ratio
 - Cash Ratio
@@ -341,8 +342,11 @@ All of these ratios can be calculated based on (lagged) growth as well as traili
 - Operating Cash Flow Ratio
 - Operating Cash Flow Sales Ratio
 - Short Term Coverage Ratio
+</details>
 
-### Profitability Ratios 💰
+<details>
+  <summary><h3>Profitability Ratios 💰</h3></summary>
+
 - Gross Margin
 - Operating Margin
 - Net Profit Margin
@@ -360,8 +364,11 @@ All of these ratios can be calculated based on (lagged) growth as well as traili
 - Tax Burden Ratio
 - EBT to EBIT
 - EBIT to Revenue
+</details>
 
-### Solvency Ratios 🪨
+<details>
+  <summary><h3>Solvency Ratios 🪨</h3></summary>
+
 - Debt to Assets Ratio
 - Debt to Equity Ratio
 - Interest Coverage Ratio
@@ -372,8 +379,11 @@ All of these ratios can be calculated based on (lagged) growth as well as traili
 - Cash Flow Coverage Ratio
 - CAPEX Coverage Ratio
 - CAPEX Dividend Coverage Ratio
+</details>
 
-### Valuation Ratios ⚖️
+<details>
+  <summary><h3>Valuation Ratios ⚖️</h3></summary>
+
 - Earnings per Share (EPS)
 - Revenue per Share (RPS)
 - Price Earnings Ratio (PE)
@@ -397,6 +407,7 @@ All of these ratios can be calculated based on (lagged) growth as well as traili
 - Reinvestment Rate
 - Tangible Asset Value
 - Net Current Asset Value
+</details>
 
 ## Financial Models
 

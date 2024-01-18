@@ -638,6 +638,8 @@ The Models module is meant to execute well-known models such as DUPONT and the D
 <details>
   <summary><b>Financial Models</b></summary>
 
+The financial models are used to analyze a company’s financial performance and assess its financial health. They provide insights into the company’s profitability, efficiency, liquidity, solvency, and valuation.
+
 > **DuPont Analysis**
 
 The Dupont analysis is a method used to dissect and understand the factors that drive a company’s return on equity (ROE). It breaks down the ROE into three key components: Profit Margin, Asset Turnover, and Financial Leverage. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/models#get_dupont_analysis).
@@ -679,19 +681,90 @@ The Present Value of Growth Opportunities (PVGO) is a financial metric that repr
 
 The Options module is meant to calculate theoretical values based on Black Scholes for European Options. This includes the theoretical value of the Option for each Strike Price and Expiration Date which is intelligently chosen. It also includes the First, Second and Third Order Greeks such as Delta, Gamma, Vega, Vomma and Ultima. **Find the Notebook [here](https://www.jeroenbouma.com/projects/financetoolkit/options-module) and the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/options) which includes an explanation about the model, the parameters and an example.**
 
-### Option Pricing 📊
+<details>
+  <summary><b>Option Pricing 📊</b></summary>
 
-- Black Scholes Model
-- Option Chains
+> **Option Chains**
 
-### First-Order Greeks 1️⃣
-- Delta
-- Dual Delta
-- Vega
-- Theta
-- Rho
-- Epsilon
-- Lambda
+Get the Option Chains which gives information about the currently available options as reported by Yahoo Finance. This returns the Contract Symbol, Strike Currency, Last Price, Absolute Change, Percent Change, Volume, Open Interest, Bid Pirce, Ask Price, Expiration, Last Trade Date, Implied Volatility and whether the option is In The Money. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/options#get_option_chains).
+
+> **Black Scholes Model**
+
+The Black Scholes Model is a mathematical model used to estimate the price of European-style options. It is widely used by traders and investors to determine the theoretical value of an option, and to assess the potential risks and rewards of a position.
+
+Within Risk Management, defining the theoretical value of an option is important to assess the potential risk and rewards of an option position. A position that could be used to hedge a portfolio, for example, is a long put option. The theoretical value of this option can be used to determine the potential risk and rewards of this position.
+
+The Black Scholes Model is based on several assumptions, including the following:
+
+- The option is European and can only be exercised at expiration.
+- The underlying stock follows a lognormal distribution.
+- The risk-free rate and volatility of the underlying stock are known and constant.
+- The returns on the underlying stock are normally distributed.
+
+Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/options#get_black_scholes_model).
+
+</details>
+    <summary><b>First-Order Greeks</b></summary>
+
+> **Delta**
+
+The delta is the rate of change of the option price with respect to the price of the underlying asset. The Delta can be interpreted as follows:
+
+- For call options, Delta is positive, indicating that the option price tends to move in the same direction as the underlying asset’s price.
+- For put options, Delta is negative, indicating that the option price tends to move in the opposite direction to the underlying asset’s price.
+
+Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/options#get_delta).
+
+> **Dual Delta**
+
+The dual delta is the actual probability of an option finishing in the money which is the first derivative of option price with respect to strike. The Dual Delta can be interpreted as the probability of an option finishing in the money. For example, if the Dual Delta is 0.5, then the probability of the option finishing in the money is 50%. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/options#get_dual_delta).
+
+> **Vega**
+
+The vega is the rate of change of the option price with respect to the volatility of the underlying asset. The Vega can be interpreted as follows:
+
+- If Vega is positive, it indicates that the option value will increase as the volatility increases, and vice versa.
+- If Vega is negative, it implies that the option value will decrease as the volatility increases, and vice versa.
+
+Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/options#get_vega).
+
+> **Theta**
+
+The theta is the rate of change of the option price with respect to the passage of time. The Theta can be interpreted as follows:
+
+- If Theta is positive, it indicates that the option value will increase as the time to expiration increases, and vice versa.
+- If Theta is negative, it implies that the option value will decrease as the time to expiration increases, and vice versa.
+
+Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/options#get_theta).
+
+> **Rho**
+
+The rho is the rate of change of the option price with respect to the risk free interest rate. The Rho can be interpreted as follows:
+
+- If Rho is positive, it indicates that the option value will increase as the risk free rate increases, and vice versa.
+- If Rho is negative, it implies that the option value will decrease as the risk free rate increases, and vice versa.
+
+Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/options#get_rho).
+
+> **Epsilon**
+
+The epsilon is the rate of change of the option price with respect to the dividend yield. The Epsilon can be interpreted as follows:
+
+- If Epislon is positive, it indicates that the option value will increase as the dividend yield increases, and vice versa.
+- If Epislon is negative, it implies that the option value will decrease as the dividend yield increases, and vice versa.
+
+Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/options#get_epsilon).
+
+> **Lambda**
+
+The lambda is the rate of change of the option price with respect to the underlying price. The Lambda can be interpreted as follows:
+
+- If Lambda is positive, it indicates that the option value will increase as the underlying price increases, and vice versa.
+- If Lambda is negative, it implies that the option value will decrease as the underlying price increases, and vice versa.
+
+Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/options#get_lambda).
+
+</details>
 
 ### Second-Order Greeks 2️⃣
 - Gamma

@@ -392,11 +392,11 @@ It is also possible to retrieve the [geographic revenue segmentation](https://ww
 
 [ESG scores](https://www.jeroenbouma.com/projects/financetoolkit/docs#get_esg_scores), which stands for Environmental, Social, and Governance scores, are a crucial metric used by investors and organizations to assess a company’s sustainability and ethical practices. These scores provide valuable insights into a company’s performance in three key areas:
 
-- Environmental (E): The environmental component evaluates a company’s impact on the planet and its efforts to mitigate environmental risks. It includes factors like carbon emissions, energy efficiency, water management, and waste reduction. A high environmental score indicates a company’s commitment to eco -friendly practices and reducing its ecological footprint.
+- Environmental (E): The environmental component evaluates a company’s impact on the planet and its efforts to mitigate environmental risks. It includes factors like carbon emissions, energy efficiency, water management, and waste reduction. A high environmental score indicates a company’s commitment to eco-friendly practices and reducing its ecological footprint.
 - Social (S): The social component focuses on how a company interacts with its employees, customers, suppliers, and the communities in which it operates. Key factors in the social score include labor practices, diversity and inclusion, human rights, product safety, and community engagement. A strong social score reflects a company’s dedication to fostering positive relationships and contributing positively to society.
-- Governance (G): Governance examines a company’s internal structures, policies, and leadership. It assesses aspects such as board independence, executive compensation, transparency, and the presence of anti -corruption measures. A high governance score signifies strong leadership and a commitment to maintaining high ethical standards and accountability
+- Governance (G): Governance examines a company’s internal structures, policies, and leadership. It assesses aspects such as board independence, executive compensation, transparency, and the presence of anti-corruption measures. A high governance score signifies strong leadership and a commitment to maintaining high ethical standards and accountability
 
-ESG scores provide investors with a holistic view of a company’s sustainability and ethical practices, allowing them to make more informed investment decisions. These scores are increasingly used to identify socially responsible investments and guide capital towards companies that prioritize long -term sustainability and responsible business practices. As the importance of ESG considerations continues to grow, companies are motivated to improve their ESG scores, not only for ethical reasons but also to attract investors who value sustainable and responsible business practices.
+ESG scores provide investors with a holistic view of a company’s sustainability and ethical practices, allowing them to make more informed investment decisions. These scores are increasingly used to identify socially responsible investments and guide capital towards companies that prioritize long-term sustainability and responsible business practices. As the importance of ESG considerations continues to grow, companies are motivated to improve their ESG scores, not only for ethical reasons but also to attract investors who value sustainable and responsible business practices.
 
 </details>
 
@@ -593,19 +593,19 @@ The liquidity ratios are used to assess a company’s ability to meet its short-
 
 > **Current Ratio**
 
-The current ratio is calculated by dividing a company’s current assets by its current liabilities. It indicates whether a company can meet its short -term obligations using its short-term assets. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_current_ratio).
+The current ratio is calculated by dividing a company’s current assets by its current liabilities. It indicates whether a company can meet its short-term obligations using its short-term assets. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_current_ratio).
 
 > **Quick Ratio**
 
-The quick ratio is calculated by subtracting inventory from current assets and then dividing the result by current liabilities. It provides insight into a company’s ability to cover its short -term liabilities using its most liquid assets without relying on inventory. This ratio is also referred to as the Acid Test Ratio. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_quick_ratio).
+The quick ratio is calculated by subtracting inventory from current assets and then dividing the result by current liabilities. It provides insight into a company’s ability to cover its short-term liabilities using its most liquid assets without relying on inventory. This ratio is also referred to as the Acid Test Ratio. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_quick_ratio).
 
 > **Cash Ratio**
 
-The cash ratio is calculated by dividing the sum of cash and cash equivalents by current liabilities. It provides insight into a company’s immediate ability to cover its short -term obligations using its most liquid assets. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_cash_ratio).
+The cash ratio is calculated by dividing the sum of cash and cash equivalents by current liabilities. It provides insight into a company’s immediate ability to cover its short-term obligations using its most liquid assets. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_cash_ratio).
 
 > **Working Capital**
 
-The working capital is calculated by subtracting total current liabilities from total current assets. It represents the company’s short -term financial health and its ability to cover its current obligations using its liquid assets. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_working_capital).
+The working capital is calculated by subtracting total current liabilities from total current assets. It represents the company’s short-term financial health and its ability to cover its current obligations using its liquid assets. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_working_capital).
 
 > **Operating Cash Flow Ratio**
 
@@ -617,7 +617,7 @@ The operating cash flow to sales ratio is calculated by dividing operating cash 
 
 > **Short Term Coverage Ratio**
 
-The short-term coverage ratio is calculated by dividing operating cash flow by short -term debt. It assesses the company’s ability to meet its short -term obligations using its operating cash flow. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_short_term_coverage_ratio).
+The short-term coverage ratio is calculated by dividing operating cash flow by short-term debt. It assesses the company’s ability to meet its short-term obligations using its operating cash flow. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_short_term_coverage_ratio).
 
 </details>
 
@@ -644,7 +644,7 @@ The Interest Burden or Interest Coverage Ratio is calculated by dividing the ear
 
 > **Income Before Tax Profit Margin**
 
-The Income Before Tax Profit Margin or Pretax Profit Margin is calculated by dividing the pre -tax profit by the revenue. It provides insight into how efficiently a company is able to generate profits from its revenue. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_income_before_tax_profit_margin).
+The Income Before Tax Profit Margin or Pretax Profit Margin is calculated by dividing the pre-tax profit by the revenue. It provides insight into how efficiently a company is able to generate profits from its revenue. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_income_before_tax_profit_margin).
 
 > **Effective Tax Rate**
 
@@ -751,12 +751,12 @@ The valuation ratios are used to assess the relative value of a company’s stoc
 
 > **Earnings per Share (EPS)**
 
-The earnings per share (EPS) is a widely used financial metric that helps investors understand the profitability of a company on a per -share basis. It provides insight into the portion of a company’s earnings that is allocated to each outstanding share of its common stock. EPS is an important measure for investors and analysts when assessing a company’s financial performance and comparing it to other companies. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_earnings_per_share).
+The earnings per share (EPS) is a widely used financial metric that helps investors understand the profitability of a company on a per-share basis. It provides insight into the portion of a company’s earnings that is allocated to each outstanding share of its common stock. EPS is an important measure for investors and analysts when assessing a company’s financial performance and comparing it to other companies. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_earnings_per_share).
 
 
 > **Revenue per Share (RPS)**
 
-The revenue per share is an important metric that provides insight into a company’s ability to generate revenue on a per -share basis. It can help investors understand the company’s revenue -generation efficiency and its overall financial health. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_revenue_per_share).
+The revenue per share is an important metric that provides insight into a company’s ability to generate revenue on a per-share basis. It can help investors understand the company’s revenue-generation efficiency and its overall financial health. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_revenue_per_share).
 
 > **Price Earnings Ratio (PE)**
 
@@ -841,7 +841,7 @@ The tangible asset value is a financial metric that represents the total value o
 
 > **Net Current Asset Value**
 
-The net current asset value is a financial metric that represents the total value of a company’s current assets minus its current liabilities. It indicates the extent to which a company’s short -term assets exceed its short-term liabilities. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_net_current_asset_value).
+The net current asset value is a financial metric that represents the total value of a company’s current assets minus its current liabilities. It indicates the extent to which a company’s short-term assets exceed its short-term liabilities. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_net_current_asset_value).
 
 </details>
 
@@ -878,7 +878,7 @@ This functionality uses DCF, or Discounted Cash Flow which is a widely used fina
 
 > **Altman Z-Score**
 
-The Altman Z -Score is a financial metric used to predict the likelihood of a company going bankrupt. The Altman Z -Score is calculated using several financial ratios, including working capital to total assets, retained earnings to total assets, earnings before interest and taxes (EBIT) to total assets, market value of equity to book value of total liabilities, and sales to total assets. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/models#get_altman_z_score).
+The Altman Z-Score is a financial metric used to predict the likelihood of a company going bankrupt. The Altman Z-Score is calculated using several financial ratios, including working capital to total assets, retained earnings to total assets, earnings before interest and taxes (EBIT) to total assets, market value of equity to book value of total liabilities, and sales to total assets. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/models#get_altman_z_score).
 
 
 > **Piotroski F-Score**
@@ -1051,7 +1051,7 @@ Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolki
 
 > **Partial Derivative**
 
-The partial derivative is the rate of change of the option price with respect to the strike price. The partial derivative is used in the Breeden -Litzenberger theorem is used for risk -neutral valuation and was developed by Fischer Black and Robert Litzenberger in 1978. The theorem states that the price of any derivative security can be calculated by finding the expected value of the derivative under a risk -neutral measure. The theorem is based on the Black -Scholes model and the assumption that the underlying asset follows a lognormal distribution. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/options#get_partial_derivative).
+The partial derivative is the rate of change of the option price with respect to the strike price. The partial derivative is used in the Breeden-Litzenberger theorem is used for risk-neutral valuation and was developed by Fischer Black and Robert Litzenberger in 1978. The theorem states that the price of any derivative security can be calculated by finding the expected value of the derivative under a risk-neutral measure. The theorem is based on the Black-Scholes model and the assumption that the underlying asset follows a lognormal distribution. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/options#get_partial_derivative).
 
 </details>
 
@@ -1113,24 +1113,24 @@ Beta is a financial metric used to assess the systematic risk of a stock or inve
 
 > **Capital Asset Pricing Model (CAPM)**
 
-CAPM, or the Capital Asset Pricing Model, is a financial model used to estimate the expected return on an investment, such as a stock or portfolio of stocks. It provides a framework for evaluating the risk and return trade -off of an asset or portfolio in relation to the overall market. CAPM is based on the following key components:
+CAPM, or the Capital Asset Pricing Model, is a financial model used to estimate the expected return on an investment, such as a stock or portfolio of stocks. It provides a framework for evaluating the risk and return trade-off of an asset or portfolio in relation to the overall market. CAPM is based on the following key components:
 
-- Risk -Free Rate (Rf): This is the theoretical return an investor could earn from an investment with no risk of financial loss. It is typically based on the yield of a government bond.
-- Market Risk Premium (Rm - Rf): This represents the additional return that investors expect to earn for taking on the risk of investing in the overall market as opposed to a risk -free asset. It is calculated as the difference between the expected return of the market (Rm) and the risk -free rate (Rf).
+- Risk-Free Rate (Rf): This is the theoretical return an investor could earn from an investment with no risk of financial loss. It is typically based on the yield of a government bond.
+- Market Risk Premium (Rm- Rf): This represents the additional return that investors expect to earn for taking on the risk of investing in the overall market as opposed to a risk-free asset. It is calculated as the difference between the expected return of the market (Rm) and the risk-free rate (Rf).
 - Beta (β): Beta is a measure of an asset’s or portfolio’s sensitivity to market movements. It quantifies how much an asset’s returns are expected to move in relation to changes in the overall market. A beta of 1 indicates that the asset moves in line with the market, while a beta greater than 1 suggests higher volatility, and a beta less than 1 indicates lower volatility.
 
-The Capital Asset Pricing Model (CAPM) is a widely used financial model that helps in determining the expected return of an asset or portfolio based on its systematic risk and the prevailing risk -free rate in the market. CAPM provides insights into how an asset or investment should be priced in order to offer an appropriate rate of return, given its level of risk compared to the overall market. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/performance#get_capital_asset_pricing_model).
+The Capital Asset Pricing Model (CAPM) is a widely used financial model that helps in determining the expected return of an asset or portfolio based on its systematic risk and the prevailing risk-free rate in the market. CAPM provides insights into how an asset or investment should be priced in order to offer an appropriate rate of return, given its level of risk compared to the overall market. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/performance#get_capital_asset_pricing_model).
 
 > **Factor Asset Correlations**
 
-Finds factor exposures for each asset. The major difference between the Fama and French Model here is that the correlation is taken as opposed to a Linear Regression in which the R-squared or Slope can be used to understand the exposure to each factor. For assessing the exposure or influence of a stock to external factors, it’s often preferable to use R -squared (R²) or Beta because it explicitly measures how well the factors explain the stock’s returns. A higher R² indicates that the stock’s returns are more closely related to the factors, and thus, the factors have a greater influence on the stock’s performance. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/performance#get_factor_asset_correlations).
+Finds factor exposures for each asset. The major difference between the Fama and French Model here is that the correlation is taken as opposed to a Linear Regression in which the R-squared or Slope can be used to understand the exposure to each factor. For assessing the exposure or influence of a stock to external factors, it’s often preferable to use R-squared (R²) or Beta because it explicitly measures how well the factors explain the stock’s returns. A higher R² indicates that the stock’s returns are more closely related to the factors, and thus, the factors have a greater influence on the stock’s performance. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/performance#get_factor_asset_correlations).
 
 > **Factor Correlations**
 
 Calculates factor correlations between each factor. This is useful to understand how correlated each factor is to each other. This is based off the Fama and French 5 Factor model which includes:
 
-- Market Risk Premium (Mkt -RF): Represents the additional return that investors expect to earn for taking on the risk of investing in the overall market as opposed to a risk -free asset.
-- Size Premium (SMB): Reflects the historical excess return of small -cap stocks over large -cap stocks.
+- Market Risk Premium (Mkt-RF): Represents the additional return that investors expect to earn for taking on the risk of investing in the overall market as opposed to a risk-free asset.
+- Size Premium (SMB): Reflects the historical excess return of small-cap stocks over large-cap stocks.
 - Value Premium (HML): Captures the historical excess return of value stocks over growth stocks.
 - Profitability (RMW): Measures the historical excess return of high profitability stocks over low profitability stocks.
 - Investment (CMA): Quantifies the historical excess return of low investment stocks over high investment stocks.
@@ -1141,8 +1141,8 @@ Optionally, it is also possible to see the correlation between the risk-free rat
 
 The Fama and French 5 Factor model is a widely used financial model that helps estimate the expected return of financial assets, such as stocks or portfolios, based on five key factors:
 
-- Market Risk Premium (Mkt -RF): Represents the additional return that investors expect to earn for taking on the risk of investing in the overall market as opposed to a risk -free asset.
-- Size Premium (SMB): Reflects the historical excess return of small -cap stocks over large -cap stocks.
+- Market Risk Premium (Mkt-RF): Represents the additional return that investors expect to earn for taking on the risk of investing in the overall market as opposed to a risk-free asset.
+- Size Premium (SMB): Reflects the historical excess return of small-cap stocks over large-cap stocks.
 - Value Premium (HML): Captures the historical excess return of value stocks over growth stocks.
 - Profitability (RMW): Measures the historical excess return of high profitability stocks over low profitability stocks.
 - Investment (CMA): Quantifies the historical excess return of low investment stocks over high investment stocks.
@@ -1151,7 +1151,7 @@ The model can perform both a Simple Linear Regression on each factor as well as 
 
 > **Alpha**
 
-Alpha, in a general sense, represents the excess return an investment generates relative to a benchmark or a risk -adjusted return. It can be positive (indicating the investment outperformed the benchmark) or negative (indicating underperformance). Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/performance#get_alpha).
+Alpha, in a general sense, represents the excess return an investment generates relative to a benchmark or a risk-adjusted return. It can be positive (indicating the investment outperformed the benchmark) or negative (indicating underperformance). Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/performance#get_alpha).
 
 > **Jensen's Alpha**
 
@@ -1163,19 +1163,19 @@ The Treynor Ratio, also known as Treynor’s Measure or the Reward-to-Variabilit
 
 > **Sharpe Ratio**
 
-The Sharpe ratio is calculated as the difference between the expected return of the asset or portfolio and the risk -free rate of return, divided by the standard deviation of the asset or portfolio’s excess return. It quantifies the amount of return generated for each unit of risk assumed, providing insights into the investment’s performance relative to the risk taken. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/performance#get_sharpe_ratio).
+The Sharpe ratio is calculated as the difference between the expected return of the asset or portfolio and the risk-free rate of return, divided by the standard deviation of the asset or portfolio’s excess return. It quantifies the amount of return generated for each unit of risk assumed, providing insights into the investment’s performance relative to the risk taken. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/performance#get_sharpe_ratio).
 
 > **Sortino Ratio**
 
-The Sortino Ratio is a financial metric used to assess the risk -adjusted performance of an investment portfolio or asset by considering only the downside risk. It measures the excess return generated by the portfolio per unit of downside risk, specifically, the standard deviation of negative returns. The Sortino Ratio is particularly useful for investors who are primarily concerned with minimizing the downside risk of their investments. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/performance#get_sortino_ratio).
+The Sortino Ratio is a financial metric used to assess the risk-adjusted performance of an investment portfolio or asset by considering only the downside risk. It measures the excess return generated by the portfolio per unit of downside risk, specifically, the standard deviation of negative returns. The Sortino Ratio is particularly useful for investors who are primarily concerned with minimizing the downside risk of their investments. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/performance#get_sortino_ratio).
 
 > **Ulcer Performance Index (UPI)**
 
-Calculate the Ulcer Performance Index (UPI), alternatively called Martin ratio, a measure of risk -adjusted return that evaluates the excess return of an investment portfolio or asset per unit of risk taken. It can be used to compare volatilities in different stocks or show stocks go into Ulcer territory. Similar to the Sharpe Ratio, a higher UPI is better than a lower one (since investors prefer more return for less risk). Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/performance#get_ulcer_performance_index).
+Calculate the Ulcer Performance Index (UPI), alternatively called Martin ratio, a measure of risk-adjusted return that evaluates the excess return of an investment portfolio or asset per unit of risk taken. It can be used to compare volatilities in different stocks or show stocks go into Ulcer territory. Similar to the Sharpe Ratio, a higher UPI is better than a lower one (since investors prefer more return for less risk). Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/performance#get_ulcer_performance_index).
 
 > **M2 Ratio**
 
-The M2 Ratio, also known as the Modigliani-Modigliani Measure, is a financial metric used to evaluate the risk -adjusted performance of an investment portfolio or strategy. It assesses the excess return generated by the portfolio relative to a risk -free investment, taking into account the portfolio’s volatility or risk. The M2 Ratio helps investors and portfolio managers determine whether the portfolio is delivering returns that justify its level of risk. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/performance#get_m2_ratio).
+The M2 Ratio, also known as the Modigliani-Modigliani Measure, is a financial metric used to evaluate the risk-adjusted performance of an investment portfolio or strategy. It assesses the excess return generated by the portfolio relative to a risk-free investment, taking into account the portfolio’s volatility or risk. The M2 Ratio helps investors and portfolio managers determine whether the portfolio is delivering returns that justify its level of risk. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/performance#get_m2_ratio).
 
 > **Tracking Error**
 
@@ -1183,7 +1183,7 @@ Tracking Error is a financial metric that quantifies the volatility or dispersio
 
 > **Information Ratio**
 
-The Information Ratio (IR), also known as the Information Coefficient, is a financial metric that assesses the risk -adjusted performance of a portfolio or investment strategy relative to a benchmark index. It quantifies how much excess return the portfolio generates for each unit of tracking error (volatility of tracking error). The Information Ratio is commonly used by portfolio managers, financial analysts, and investors to evaluate the skill of a portfolio manager in generating returns beyond what would be expected based on the risk taken. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/performance#get_information_ratio).
+The Information Ratio (IR), also known as the Information Coefficient, is a financial metric that assesses the risk-adjusted performance of a portfolio or investment strategy relative to a benchmark index. It quantifies how much excess return the portfolio generates for each unit of tracking error (volatility of tracking error). The Information Ratio is commonly used by portfolio managers, financial analysts, and investors to evaluate the skill of a portfolio manager in generating returns beyond what would be expected based on the risk taken. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/performance#get_information_ratio).
 
 > **Compound Annual Growth Rate (CAGR)**
 
@@ -1296,7 +1296,7 @@ The Force Index is an indicator that measures the strength behind price movement
 
 > **Ultimate Oscillator**
 
-The Ultimate Oscillator is a momentum oscillator that combines short -term, mid -term, and long -term price momentum into a single value. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals#get_ultimate_oscillator).
+The Ultimate Oscillator is a momentum oscillator that combines short-, mid-term, and long-term price momentum into a single value. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals#get_ultimate_oscillator).
 
 > **Percentage Price Oscillator**
 
@@ -1320,11 +1320,11 @@ The Ichimoku Cloud, also known as the Ichimoku Kinko Hyo, is a versatile indicat
 
 > **Stochastic Oscillator**
 
-The Stochastic Oscillator is a momentum indicator that shows the location of the close relative to the high -low range over a set number of periods. It consists of the %K line (fast) and the %D line (slow). Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals#get_stochastic_oscillator).
+The Stochastic Oscillator is a momentum indicator that shows the location of the close relative to the high-low range over a set number of periods. It consists of the %K line (fast) and the %D line (slow). Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals#get_stochastic_oscillator).
 
 > **Moving Average Convergence Divergence (MACD)**
 
-The Moving Average Convergence Divergence (MACD) is a trend -following momentum indicator that shows the relationship between two moving averages of a security’s price. It consists of the MACD line, signal line, and MACD histogram. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals#get_moving_average_convergence_divergence).
+The Moving Average Convergence Divergence (MACD) is a trend-following momentum indicator that shows the relationship between two moving averages of a security’s price. It consists of the MACD line, signal line, and MACD histogram. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals#get_moving_average_convergence_divergence).
 
 > **Relative Strength Index (RSI)**
 
@@ -1423,7 +1423,7 @@ The composite leading indicator (CLI) is designed to provide early signals of tu
 
 Inflation measured by consumer price index (CPI) is defined as the change in the prices of a basket of goods and services that are typically purchased by specific groups of households. Inflation is measured in terms an index, 2015 base year with a breakdown for food, energy and total.
 
-Inflation measures the erosion of living standards. A consumer price index is estimated as a series of summary measures of the period -to -period proportional change in the prices of a fixed set of consumer goods and services of constant quantity and characteristics, acquired, used or paid for by the reference population.
+Inflation measures the erosion of living standards. A consumer price index is estimated as a series of summary measures of the period-to-period proportional change in the prices of a fixed set of consumer goods and services of constant quantity and characteristics, acquired, used or paid for by the reference population.
 
 Each summary measure is constructed as a weighted average of a large number of elementary aggregate indices. Each of the elementary aggregate indices is estimated using a sample of prices for a defined set of goods and services obtained in, or by residents of, a specific region from a given set of outlets or other sources of consumption goods and services. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_consumer_price_index).
 
@@ -1431,11 +1431,11 @@ Each summary measure is constructed as a weighted average of a large number of e
 
 Producer price indices in manufacturing measure the rate of change in prices of products sold as they leave the producer. They exclude any taxes, transport and trade margins that the purchaser may have to pay. PPIs provide measures of average movements of prices received by the producers of various commodities. hey are often seen as advanced indicators of price changes throughout the economy, including changes in the prices of consumer goods and services.
 
-Manufacturing covers the production of semi -processed goods and other intermediate goods as well as final products such as consumer goods and capital equipment. A variety of price indices may be used to measure inflation in an economy. These include consumer price indices (CPI), price indices relating to specific goods and/or services, GDP deflators and producer price indices (PPI). Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_producer_price_index).
+Manufacturing covers the production of semi-processed goods and other intermediate goods as well as final products such as consumer goods and capital equipment. A variety of price indices may be used to measure inflation in an economy. These include consumer price indices (CPI), price indices relating to specific goods and/or services, GDP deflators and producer price indices (PPI). Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_producer_price_index).
 
 > **House Prices**
 
-In most cases, the nominal house price index covers the sales of newly -built and existing dwellings, following the recommendations from the RPPI (Residential Property Prices Indices) manual.
+In most cases, the nominal house price index covers the sales of newly-built and existing dwellings, following the recommendations from the RPPI (Residential Property Prices Indices) manual.
 
 The real house price index is given by the ratio of the nominal house price index to the consumers’ expenditure deflator in each country from the OECD national accounts database. Both indices are seasonally adjusted. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_house_prices).
 
@@ -1449,7 +1449,7 @@ Share price indices are calculated from the prices of common shares of companies
 
 A share price index measures how the value of the stocks in the index is changing, a share return index tells the investor what their “return” is, meaning how much money they would make as a result of investing in that basket of shares.
 
-A price index measures changes in the market capitalisation of the basket of shares in the index whereas a return index adds on to the price index the value of dividend payments, assuming they are re -invested in the same stocks. Occasionally agencies such as central banks will compile share indices. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_share_prices).
+A price index measures changes in the market capitalisation of the basket of shares in the index whereas a return index adds on to the price index the value of dividend payments, assuming they are re-invested in the same stocks. Occasionally agencies such as central banks will compile share indices. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_share_prices).
 
 </details>
 
@@ -1460,15 +1460,15 @@ The finance metrics are used to assess the financial health of a country. This i
 
 > **Long Term Interest Rates (10 year)**
 
-Long -term interest rates refer to government bonds maturing in ten years. Rates are mainly determined by the price charged by the lender, the risk from the borrower and the fall in the capital value. Long -term interest rates are generally averages of daily rates, measured as a percentage. These interest rates are implied by the prices at which the government bonds are traded on financial markets, not the interest rates at which the loans were issued.
+Long-term interest rates refer to government bonds maturing in ten years. Rates are mainly determined by the price charged by the lender, the risk from the borrower and the fall in the capital value. Long-term interest rates are generally averages of daily rates, measured as a percentage. These interest rates are implied by the prices at which the government bonds are traded on financial markets, not the interest rates at which the loans were issued.
 
-In all cases, they refer to bonds whose capital repayment is guaranteed by governments. Long -term interest rates are one of the determinants of business investment. Low long term interest rates encourage investment in new equipment and high interest rates discourage it. Investment is, in turn, a major source of economic growth. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_long_term_interest_rates).
+In all cases, they refer to bonds whose capital repayment is guaranteed by governments. Long-term interest rates are one of the determinants of business investment. Low long term interest rates encourage investment in new equipment and high interest rates discourage it. Investment is, in turn, a major source of economic growth. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_long_term_interest_rates).
 
 > **Short Term Interest Rates (3 month)**
 
-Short -term interest rates are the rates at which short -term borrowings are effected between financial institutions or the rate at which short -term government paper is issued or traded in the market. Short -term interest rates are generally averages of daily rates, measured as a percentage.
+Short-term interest rates are the rates at which short-term borrowings are effected between financial institutions or the rate at which short-term government paper is issued or traded in the market. Short-term interest rates are generally averages of daily rates, measured as a percentage.
 
-Short -term interest rates are based on three -month money market rates where available. Typical standardised names are “money market rate” and “treasury bill rate”. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_short_term_interest_rates).
+Short-term interest rates are based on three-month money market rates where available. Typical standardised names are “money market rate” and “treasury bill rate”. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_short_term_interest_rates).
 
 > ***Narrow Money (M1)**
 
@@ -1510,23 +1510,23 @@ The deposit facility rate is one of the three interest rates the ECB sets every 
 
 > **Effective Federal Funds Rate**
 
-The effective federal funds rate (EFFR) is calculated as a volume -weighted median of overnight federal funds transactions reported in the FR 2420 Report of Selected Money Market Rates. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_federal_reserve_rates).
+The effective federal funds rate (EFFR) is calculated as a volume-weighted median of overnight federal funds transactions reported in the FR 2420 Report of Selected Money Market Rates. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_federal_reserve_rates).
 
 > **Overnight Bank Funding Rate**
 
-The overnight bank funding rate (OBFR) is calculated as a volume -weighted median of overnight federal funds transactions, Eurodollar transactions, and the domestic deposits reported as “Selected Deposits” in the FR 2420 Report. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_federal_reserve_rates).
+The overnight bank funding rate (OBFR) is calculated as a volume-weighted median of overnight federal funds transactions, Eurodollar transactions, and the domestic deposits reported as “Selected Deposits” in the FR 2420 Report. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_federal_reserve_rates).
 
 > **Tri-Party General Collateral Rate**
 
-The TGCR is calculated as a volume -weighted median of transaction -level tri -party repo data collected from the Bank of New York Mellon. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_federal_reserve_rates).
+The TGCR is calculated as a volume-weighted median of transaction-level tri-party repo data collected from the Bank of New York Mellon. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_federal_reserve_rates).
 
 > **Broad General Collateral Rate**
 
-The BGCR is calculated as a volume -weighted median of transaction -level tri -party repo data collected from the Bank of New York Mellon as well as GCF Repo transaction data obtained from the U.S. Department of the Treasury’s Office of Financial Research (OFR). Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_federal_reserve_rates).
+The BGCR is calculated as a volume-weighted median of transaction-level tri-party repo data collected from the Bank of New York Mellon as well as GCF Repo transaction data obtained from the U.S. Department of the Treasury’s Office of Financial Research (OFR). Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_federal_reserve_rates).
 
 > **Secured Overnight Financing Rate**
 
-The SOFR is calculated as a volume -weighted median of transaction -level tri -party repo data collected from the Bank of New York Mellon as well as GCF Repo transaction data and data on bilateral Treasury repo transactions cleared through FICC’s DVP service, which are obtained from the U.S. Department of the Treasury’s Office of Financial Research (OFR). Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_federal_reserve_rates).
+The SOFR is calculated as a volume-weighted median of transaction-level tri-party repo data collected from the Bank of New York Mellon as well as GCF Repo transaction data and data on bilateral Treasury repo transactions cleared through FICC’s DVP service, which are obtained from the U.S. Department of the Treasury’s Office of Financial Research (OFR). Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_federal_reserve_rates).
 
 </details>
 
@@ -1541,7 +1541,7 @@ Renewable energy is defined as the contribution of renewables to total primary e
 
 Energy derived from solid biofuels, biogasoline, biodiesels, other liquid biofuels, biogases and the renewable fraction of municipal waste are also included. Biofuels are defined as fuels derived directly or indirectly from biomass (material obtained from living or recently living organisms).
 
-This includes wood, vegetal waste (including wood waste and crops used for energy production), ethanol, animal materials/wastes and sulphite lyes. Municipal waste comprises wastes produced by the residential, commercial and public service sectors that are collected by local authorities for disposal in a central location for the production of heat and/or power. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_environment).
+This includes wood, vegetal waste (including wood waste and crops used for energy production), ethanol, animal materials/wastes and sulphite lyes. Municipal waste comprises wastes produced by the residential, commercial and public service sectors that are collected by local authorities for disposal in a central location for the production of heat and/or power. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_renewable_energy).
 
 > **Environmental Tax as % of GDP**
 
@@ -1551,7 +1551,7 @@ The characteristics of such taxes included in the database (e.g. revenue, tax ba
 
 - Energy products (including vehicle fuels);
 - Motor vehicles and transport services;
-- Measured or estimated emissions to air and water, ozone depleting substances, certain non -point sources of water pollution, waste management and noise, as well as management of water, land, soil, forests, biodiversity, wildlife and fish stocks.
+- Measured or estimated emissions to air and water, ozone depleting substances, certain non-point sources of water pollution, waste management and noise, as well as management of water, land, soil, forests, biodiversity, wildlife and fish stocks.
 
 The data have been cross-validated and complemented with Revenue statistics from the OECD Tax statistics database and official national sources. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_environmental_tax).
 
@@ -1578,7 +1578,7 @@ Crude oil production is defined as the quantities of oil extracted from the grou
 
 Crude oil is a mineral oil consisting of a mixture of hydrocarbons of natural origin, yellow to black in colour, and of variable density and viscosity. NGLs are the liquid or liquefied hydrocarbons produced in the manufacture, purification and stabilisation of natural gas.
 
-Additives are non -hydrocarbon substances added to or blended with a product to modify its properties, for example, to improve its combustion characteristics (e.g. MTBE and tetraethyl lead). Refinery production refers to the output of secondary oil products from an oil refinery. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_crude_oil_production_and_prices).
+Additives are non-hydrocarbon substances added to or blended with a product to modify its properties, for example, to improve its combustion characteristics (e.g. MTBE and tetraethyl lead). Refinery production refers to the output of secondary oil products from an oil refinery. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_crude_oil_production_and_prices).
 
 > **Crude Oil Prices**
 
@@ -1609,7 +1609,7 @@ General government spending is defined as an indicator of the size of government
 
 > **Debt as % of GDP**
 
-General government debt -to -GDP ratio measures the gross debt of the general government as a percentage of GDP. It is a key indicator for the sustainability of government finance. Debt is calculated as the sum of the following liability categories (as applicable): currency and deposits; debt securities, loans; insurance, pensions and standardised guarantee schemes, and other accounts payable. Changes in government debt over time primarily reflect the impact of past government deficits. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_government_statistics).
+General government debt-to-GDP ratio measures the gross debt of the general government as a percentage of GDP. It is a key indicator for the sustainability of government finance. Debt is calculated as the sum of the following liability categories (as applicable): currency and deposits; debt securities, loans; insurance, pensions and standardised guarantee schemes, and other accounts payable. Changes in government debt over time primarily reflect the impact of past government deficits. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_government_statistics).
 
 > **Financial Wealth as % of GDP**
 
@@ -1617,7 +1617,7 @@ The net financial worth of the general government sector is the total value of i
 
 > **Production Costs as % of GDP**
 
-General government production costs are decisions about the amount and type of goods and services governments produce, as well as on how best to produce them. They are often political in nature and based on a country’s social and cultural context. Governments use a mix of their own employees, capital, and outside contractors (non -profit institutions or private sector entities) to produce goods and services. Government production costs include: compensation costs of general government employees; goods and services used and financed by general government (including intermediate consumption and social transfer in kind via market producers paid for by government); and other costs, including depreciation of capital and other taxes on production less other subsidies on production. The data include government employment and intermediate consumption for output produced by the government for its own use, such as roads and other capital investment projects built by government employees. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_government_statistics).
+General government production costs are decisions about the amount and type of goods and services governments produce, as well as on how best to produce them. They are often political in nature and based on a country’s social and cultural context. Governments use a mix of their own employees, capital, and outside contractors (non-profit institutions or private sector entities) to produce goods and services. Government production costs include: compensation costs of general government employees; goods and services used and financed by general government (including intermediate consumption and social transfer in kind via market producers paid for by government); and other costs, including depreciation of capital and other taxes on production less other subsidies on production. The data include government employment and intermediate consumption for output produced by the government for its own use, such as roads and other capital investment projects built by government employees. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_government_statistics).
 
 </details>
 
@@ -1642,7 +1642,7 @@ The ratio between the output measure and the labour input depends to a large deg
 
 > **Income Inequality**
 
-Income is defined as household disposable income in a particular year. It consists of earnings, self -employment and capital income and public cash transfers; income taxes and social security contributions paid by households are deducted. The income of the household is attributed to each of its members, with an adjustment to reflect differences in needs for households of different sizes. Income inequality among individuals is measured here by five indicators. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_jobs).
+Income is defined as household disposable income in a particular year. It consists of earnings, self-employment and capital income and public cash transfers; income taxes and social security contributions paid by households are deducted. The income of the household is attributed to each of its members, with an adjustment to reflect differences in needs for households of different sizes. Income inequality among individuals is measured here by five indicators. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_jobs).
 
 </details>
 
@@ -1669,7 +1669,7 @@ The elderly population is defined as those aged 65 and over as a percentage of t
 
 > **Fertility Rates**
 
-The total fertility rate in a specific year is defined as the total number of children that would be born to each woman if she were to live to the end of her child -bearing years and give birth to children in alignment with the prevailing age-specific fertility rates. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_population_statistics).
+The total fertility rate in a specific year is defined as the total number of children that would be born to each woman if she were to live to the end of her child-bearing years and give birth to children in alignment with the prevailing age-specific fertility rates. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_population_statistics).
 
 > **Old-Age Dependency Ratio**
 
@@ -1681,11 +1681,11 @@ The poverty rate is the ratio of the number of people (in a given age group) who
 
 It is also available by broad age group:
 
-- child poverty (0 to 17 year -olds);
-- working -age poverty (18 to 65 year -olds);
-- and elderly poverty (66 year -olds or more).
+- child poverty (0 to 17 year-olds);
+- working-age poverty (18 to 65 year-olds);
+- and elderly poverty (66 year-olds or more).
 
-However, two countries with the same poverty rates may differ in terms of the relative income -level of the poor. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_population_statistics).
+However, two countries with the same poverty rates may differ in terms of the relative income-level of the poor. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_population_statistics).
 
 </details>
 

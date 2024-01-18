@@ -773,7 +773,7 @@ Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolki
 </details>
 
 <details>
-    <summary><b>Second-Order Greeks</b></summary>:
+    <summary><b>Second-Order Greeks</b></summary>
 
 The second-order greeks are are Gamma, Dual Gamma, Vanna, Charm, Vomma, Vera and Veta. These greeks are used to assess the sensitivity of the first-order greeks to small changes in the underlying asset’s price, volatility, time to expiration, risk-free interest rate, dividend yield, and strike price.
 
@@ -837,7 +837,7 @@ Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolki
 
 > **Partial Derivative**
 
-The partial derivative is the rate of change of the option price with respect to the strike price. The partial derivative is used in the Breeden -Litzenberger theorem is used for risk -neutral valuation and was developed by Fischer Black and Robert Litzenberger in 1978. The theorem states that the price of any derivative security can be calculated by finding the expected value of the derivative under a risk -neutral measure. The theorem is based on the Black -Scholes model and the assumption that the underlying asset follows a lognormal distribution. See the paper: https://www.jstor.org/stable/2352653. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/options#get_partial_derivative).
+The partial derivative is the rate of change of the option price with respect to the strike price. The partial derivative is used in the Breeden -Litzenberger theorem is used for risk -neutral valuation and was developed by Fischer Black and Robert Litzenberger in 1978. The theorem states that the price of any derivative security can be calculated by finding the expected value of the derivative under a risk -neutral measure. The theorem is based on the Black -Scholes model and the assumption that the underlying asset follows a lognormal distribution. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/options#get_partial_derivative).
 
 </details>
 
@@ -888,76 +888,287 @@ Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolki
 
 The Performance module is meant to calculate important performance metrics such as Sharpe Ratio, Sortino Ratio, Treynor Ratio, Information Ratio, Jensen's Alpha, Beta, Capital Asset Pricing Model, Factor Models and more. **Find the Notebook [here](https://www.jeroenbouma.com/projects/financetoolkit/performance-module) and the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/performance) which includes an explanation about the performance metrics, the parameters and an example.**
 
-- Alpha
-- Jensen's Alpha 
-- Beta
-- Capital Asset Pricing Model (CAPM)
-- Factor Asset Correlations
-- Factor Correlations
-- Fama-French 5 Factor Model (FF)
-- Treynor Ratio
-- Sharpe Ratio
-- Sortino Ratio
-- Ulcer Performance Index (UPI)
-- M2 Ratio
-- Tracking Error
-- Information Error
-- Compound Annual Growth Rate (CAGR)
+<details>
+    <summary><b>Performance Metrics</b></summary>
+
+The performance metrics are used to assess the performance of a portfolio or investment strategy. They provide insights into the risk-adjusted returns of a portfolio or investment strategy, and can be used to compare the performance of different portfolios or investment strategies.
+
+> **Beta**
+
+Beta is a financial metric used to assess the systematic risk of a stock or investment in relation to the overall market. It provides valuable insights into how a particular asset’s returns tend to move in response to fluctuations in the broader market. A stock’s Beta is calculated by analyzing its historical price movements and their correlation with the movements of a market index, typically the benchmark index like the S&P 500. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/performance#get_beta).
+
+> **Capital Asset Pricing Model (CAPM)**
+
+CAPM, or the Capital Asset Pricing Model, is a financial model used to estimate the expected return on an investment, such as a stock or portfolio of stocks. It provides a framework for evaluating the risk and return trade -off of an asset or portfolio in relation to the overall market. CAPM is based on the following key components:
+
+- Risk -Free Rate (Rf): This is the theoretical return an investor could earn from an investment with no risk of financial loss. It is typically based on the yield of a government bond.
+- Market Risk Premium (Rm - Rf): This represents the additional return that investors expect to earn for taking on the risk of investing in the overall market as opposed to a risk -free asset. It is calculated as the difference between the expected return of the market (Rm) and the risk -free rate (Rf).
+- Beta (β): Beta is a measure of an asset’s or portfolio’s sensitivity to market movements. It quantifies how much an asset’s returns are expected to move in relation to changes in the overall market. A beta of 1 indicates that the asset moves in line with the market, while a beta greater than 1 suggests higher volatility, and a beta less than 1 indicates lower volatility.
+
+The Capital Asset Pricing Model (CAPM) is a widely used financial model that helps in determining the expected return of an asset or portfolio based on its systematic risk and the prevailing risk -free rate in the market. CAPM provides insights into how an asset or investment should be priced in order to offer an appropriate rate of return, given its level of risk compared to the overall market. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/performance#get_capital_asset_pricing_model).
+
+> **Factor Asset Correlations**
+
+Finds factor exposures for each asset. The major difference between the Fama and French Model here is that the correlation is taken as opposed to a Linear Regression in which the R-squared or Slope can be used to understand the exposure to each factor. For assessing the exposure or influence of a stock to external factors, it’s often preferable to use R -squared (R²) or Beta because it explicitly measures how well the factors explain the stock’s returns. A higher R² indicates that the stock’s returns are more closely related to the factors, and thus, the factors have a greater influence on the stock’s performance. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/performance#get_factor_asset_correlations).
+
+> **Factor Correlations**
+
+Calculates factor correlations between each factor. This is useful to understand how correlated each factor is to each other. This is based off the Fama and French 5 Factor model which includes:
+
+- Market Risk Premium (Mkt -RF): Represents the additional return that investors expect to earn for taking on the risk of investing in the overall market as opposed to a risk -free asset.
+- Size Premium (SMB): Reflects the historical excess return of small -cap stocks over large -cap stocks.
+- Value Premium (HML): Captures the historical excess return of value stocks over growth stocks.
+- Profitability (RMW): Measures the historical excess return of high profitability stocks over low profitability stocks.
+- Investment (CMA): Quantifies the historical excess return of low investment stocks over high investment stocks.
+
+Optionally, it is also possible to see the correlation between the risk-free rate and each factor. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/performance#get_factor_correlations).
+
+> **Fama-French 5 Factor Model (FF)**
+
+The Fama and French 5 Factor model is a widely used financial model that helps estimate the expected return of financial assets, such as stocks or portfolios, based on five key factors:
+
+- Market Risk Premium (Mkt -RF): Represents the additional return that investors expect to earn for taking on the risk of investing in the overall market as opposed to a risk -free asset.
+- Size Premium (SMB): Reflects the historical excess return of small -cap stocks over large -cap stocks.
+- Value Premium (HML): Captures the historical excess return of value stocks over growth stocks.
+- Profitability (RMW): Measures the historical excess return of high profitability stocks over low profitability stocks.
+- Investment (CMA): Quantifies the historical excess return of low investment stocks over high investment stocks.
+
+The model can perform both a Simple Linear Regression on each factor as well as a Multi Linear Regression which includes all factors. Generally, a multi linear regression is applied but if you wish to see individual R-squared values for each factor you can select the simple linear regression method. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/performance#get_fama_french_5_factor_model).
+
+> **Alpha**
+
+Alpha, in a general sense, represents the excess return an investment generates relative to a benchmark or a risk -adjusted return. It can be positive (indicating the investment outperformed the benchmark) or negative (indicating underperformance). Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/performance#get_alpha).
+
+> **Jensen's Alpha**
+
+Calculate Jensen’s Alpha, a measure of an asset’s performance relative to its expected return based on the Capital Asset Pricing Model (CAPM). Jensen’s Alpha is used to assess whether an investment has outperformed or underperformed its expected return given its systematic risk, as represented by the asset’s Beta. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/performance#get_jensens_alpha).
+
+> **Treynor Ratio**
+
+The Treynor Ratio, also known as Treynor’s Measure or the Reward-to-Variability Ratio, is a financial metric used to assess the risk-adjusted performance of an investment portfolio or asset. It measures the excess return generated by the portfolio per unit of systematic or market risk, often represented by Beta. The Treynor Ratio is a valuable tool for evaluating the performance of investments in relation to their market risk exposure. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/performance#get_treynor_ratio).
+
+> **Sharpe Ratio**
+
+The Sharpe ratio is calculated as the difference between the expected return of the asset or portfolio and the risk -free rate of return, divided by the standard deviation of the asset or portfolio’s excess return. It quantifies the amount of return generated for each unit of risk assumed, providing insights into the investment’s performance relative to the risk taken. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/performance#get_sharpe_ratio).
+
+> **Sortino Ratio**
+
+The Sortino Ratio is a financial metric used to assess the risk -adjusted performance of an investment portfolio or asset by considering only the downside risk. It measures the excess return generated by the portfolio per unit of downside risk, specifically, the standard deviation of negative returns. The Sortino Ratio is particularly useful for investors who are primarily concerned with minimizing the downside risk of their investments. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/performance#get_sortino_ratio).
+
+> **Ulcer Performance Index (UPI)**
+
+Calculate the Ulcer Performance Index (UPI), alternatively called Martin ratio, a measure of risk -adjusted return that evaluates the excess return of an investment portfolio or asset per unit of risk taken. It can be used to compare volatilities in different stocks or show stocks go into Ulcer territory. Similar to the Sharpe Ratio, a higher UPI is better than a lower one (since investors prefer more return for less risk). Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/performance#get_ulcer_performance_index).
+
+> **M2 Ratio**
+
+The M2 Ratio, also known as the Modigliani-Modigliani Measure, is a financial metric used to evaluate the risk -adjusted performance of an investment portfolio or strategy. It assesses the excess return generated by the portfolio relative to a risk -free investment, taking into account the portfolio’s volatility or risk. The M2 Ratio helps investors and portfolio managers determine whether the portfolio is delivering returns that justify its level of risk. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/performance#get_m2_ratio).
+
+> **Tracking Error**
+
+Tracking Error is a financial metric that quantifies the volatility or dispersion of the difference between the returns of an investment portfolio or asset and the returns of a benchmark index. It measures how closely the portfolio tracks its benchmark and provides insights into the consistency of the portfolio’s performance relative to the benchmark. A higher Tracking Error indicates greater divergence from the benchmark, while a lower Tracking Error suggests that the portfolio closely follows the benchmark. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/performance#get_tracking_error).
+
+> **Information Ratio**
+
+The Information Ratio (IR), also known as the Information Coefficient, is a financial metric that assesses the risk -adjusted performance of a portfolio or investment strategy relative to a benchmark index. It quantifies how much excess return the portfolio generates for each unit of tracking error (volatility of tracking error). The Information Ratio is commonly used by portfolio managers, financial analysts, and investors to evaluate the skill of a portfolio manager in generating returns beyond what would be expected based on the risk taken. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/performance#get_information_ratio).
+
+> **Compound Annual Growth Rate (CAGR)**
+
+The Compound Annual Growth Rate is a measure that provides the mean growth rate of an investment over a specified period of time. It is a useful measure for comparing the performance of investments over different time periods or across different asset classes. The CGR is calculated by taking the ratio of the final value to the initial value, raising it to the inverse of the number of periods, and then subtracting one. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/performance#get_compound_annual_growth_rate).
+
+</details>
 
 ## Risk Metrics
 
 The Risk module is meant to calculate important risk metrics such as Value at Risk (VaR), Conditional Value at Risk (cVaR), Maximum Drawdown, Correlations, Beta, GARCH, EWMA and more. **Find the Notebook [here](https://www.jeroenbouma.com/projects/financetoolkit/risk-module) and the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/risk) which includes an explanation about the risk metrics, the parameters and an example.**
 
-- Value at Risk (VaR) with distributions Historical, Gaussian, Student-t, Cornish-Fisher.
-- Conditional Value at Risk (cVaR) with distributions Historical, Gaussian, Laplace, Logistic.
-- Entropic Value at Risk (eVaR) with a Gaussian distribution. 
-- GARCH (Generalized Autoregressive Conditional Heteroskedasticity) with Forecasting
-- Ulcer Index (UI)
-- Maximum Drawdown (MDD)
-- Skewness
-- Kurtosis
+<details>
+    <summary><b>Risk Metrics</b></summary>
+
+The risk metrics are used to assess the risk of a portfolio or investment strategy. It helps in understanding maximum drawdowns, value at risk, conditional value at risk, volatility forecasts through GARCH and EWMA and more.
+
+> **Value at Risk (VaR)**
+
+Value at Risk (VaR) is a risk management metric that quantifies the maximum potential loss an investment portfolio or asset may experience over a specified time horizon and confidence level. It provides insights into the downside risk associated with an investment and helps investors make informed decisions about risk tolerance. The VaR is calculated as the quantile of the return distribution, representing the loss threshold that is not expected to be exceeded with a given confidence level (e.g., 5% for alpha=0.05). Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/risk#get_value_at_risk).
+
+> **Conditional Value at Risk (cVaR)**
+
+Conditional Value at Risk (CVaR) is a risk management metric that quantifies the loss in the worst % of cases of an investment portfolio or asset may experience over a specified time horizon and confidence level. It provides insights into the downside risk associated with an investment and helps investors make informed decisions about risk tolerance. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/risk#get_conditional_value_at_risk).
+
+> **Entropic Value at Risk (eVaR)**
+
+Entropic Value at Risk (EVaR) is a risk management metric that quantifies upper bound for the value at risk (VaR) and the conditional value at risk (CVaR) over a specified time horizon and confidence level. EVaR is obtained from the Chernoff inequality. It provides insights into the downside risk associated with an investment and helps investors make informed decisions about risk tolerance. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/risk#get_entropic_value_at_risk).
+
+> **Maximum Drawdown (MDD)**
+
+Maximum Drawdown (MDD) is a risk management metric that quantifies the largest historical loss of n investment portfolio or asset experienced over a specified time horizon. It provides insights into the downside risk associated with an investment and helps investors make informed decisions about risk tolerance. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/risk#get_maximum_drawdown).
+
+> **Ulcer Index (UI)**
+
+The Ulcer Index is a financial metric used to assess the risk and volatility of an investment portfolio or asset. Developed by Peter Martin in the 1980s, the Ulcer Index is particularly useful for evaluating the downside risk and drawdowns associated with investments. The Ulcer Index differs from traditional volatility measures like standard deviation or variance because it focuses on the depth and duration of drawdowns rather than the dispersion of returns. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/risk#get_ulcer_index).
+
+> **GARCH (Generalized Autoregressive Conditional Heteroskedasticity) and Forecasts**
+
+GARCH (Generalized autoregressive conditional heteroskedasticity) is stochastic model for time series, which is for instance used to model volatility clusters, stock return and inflation. It is a generalisation of the ARCH models. It is also able to calculate the Sigma2 Forecasts. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/risk#get_garch).
+
+> **Skewness**
+
+Skewness is a statistical measure used in finance to assess the asymmetry in the distribution of returns for an investment portfolio or asset over a defined period. It offers valuable insights into the shape of the return distribution, indicating whether returns are skewed towards the positive or negative side of the mean. Skewness is a crucial tool for investors and analysts seeking to understand the potential risk and return characteristics of an investment, aiding in the assessment of the distribution’s tails and potential outliers. It provides a means to gauge the level of skew in returns, enabling more informed investment decisions and risk management strategies. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/risk#get_skewness).
+
+> **Kurtosis**
+
+Kurtosis is a statistical measure used in finance to evaluate the shape of the probability distribution of returns for an investment portfolio or asset over a defined time period. It assesses the “tailedness” of the return distribution, indicating whether returns have fatter or thinner tails compared to a normal distribution. Kurtosis plays a critical role in risk assessment by revealing the potential presence of extreme outliers or the likelihood of heavy tails in the return data. This information aids investors and analysts in understanding the degree of risk associated with an investment and assists in making more informed decisions regarding risk tolerance. In essence, kurtosis serves as a valuable tool for comprehending the distribution characteristics of returns, offering insights into the potential for rare but significant events in the financial markets. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/risk#get_kurtosis).
 
 ## Technical Indicators
 
 The Technicals Module contains 30+ Technical Indicators that can be used to analyse companies. These ratios are divided into 4 categories which are breadth, momentum, overlap and volatility. Each indicator is calculated using the data from the Toolkit module. **Find the Notebook [here](https://www.jeroenbouma.com/projects/financetoolkit/technicals-module) and the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals) which includes an explanation about the indicator, the parameters and an example.**
 
-### Breadth Indicators 💨
-- McClellan Oscillator
-- Advancers/Decliners Ratio
-- On-Balance Volume (OBV)
-- Accumulation/Distribution Line (ADL)
-- Chaikin Oscillator
+<details>
+    <summary>Breadth Indicators 💨</summary>
 
-### Momentum Indicators ⏱️
-- Money Flow Index
-- Williams %R
-- Aroon Indicator
-- Commodity Channel Index
-- Relative Vigor Index
-- Force Index
-- Ultimate Oscillator
-- Percentage Price Oscillator
-- Detrended Price Oscillator
-- Average Directional Index (ADX)
-- Chande Momentum Oscillator (CMO)
-- Ichimoku Cloud
-- Stochastic Oscillator
-- Moving Average Convergence Divergence (MACD)
-- Relative Strength Index (RSI)
-- Balance of Power (BOP)
+Breadth indicators are mathematical formulas that measure the number of advancing and declining stocks, and/or their volume, to calculate the participation in a stock index's price movements.
 
-### Overlap Indicators 🌈
-- Simple Moving Average (SMA)
-- Exponential Moving Average (EMA)
-- Double Exponential Moving Average (DEMA)
-- Triple Exponential Moving Average (TRIX)
-- Triangular Moving Average (TMA)
+> **McClellan Oscillator**
 
-### Volatility Indicators ⚠️
-- True Range (TR)
-- Average True Range (ATR)
-- Keltners Channels
-- Bollinger Bands
+The McClellan Oscillator is a breadth indicator that measures the difference between the exponential moving average of advancing stocks and the exponential moving average of declining stocks. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals#get_mcclellan_oscillator).
+
+> **Advancers/Decliners Ratio**
+
+The Advancers/Decliners ratio is a breadth indicator that measures the number of advancing stocks (stocks with positive price changes) versus the number of declining stocks (stocks with negative price changes). Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals#get_advancers_decliners_ratio).
+
+> **On-Balance Volume (OBV)**
+
+The On-Balance Volume (OBV) is a technical indicator that uses volume flow to predict changes in stock price. It accumulates the volume on up days and subtracts the volume on down days. The resulting OBV line provides insights into the buying and selling pressure behind price movements. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals#get_on_balance_volume).
+
+> **Accumulation/Distribution Line (ADL)**
+
+The Accumulation/Distribution Line is a technical indicator that evaluates the flow of money into or out of an asset. It takes into account both price and volume information to identify whether an asset is being accumulated (bought) or distributed (sold) by investors. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals#get_accumulation_distribution_line).
+
+> **Chaikin Oscillator**
+
+The Chaikin Oscillator is a momentum-based indicator that combines price and volume to help identify potential trends and reversals in the market. It is calculated as the difference between the 3-day and 10-day Accumulation/Distribution Line. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals#get_chaikin_oscillator).
+
+</details>
+
+<details>
+    <summary><b>Momentum Indicators ⏱️</b></summary>
+
+Momentrum indicators are technical analysis tools used to determine the strength or weakness of a stock's price. Momentum measures the rate of the rise or fall of stock prices. Common momentum indicators include the relative strength index (RSI) and moving average convergence divergence (MACD).
+
+> **Money Flow Index**
+
+The Money Flow Index is a momentum indicator that measures the strength and direction of money flowing in and out of a security by considering both price and volume. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals#get_money_flow_index).
+
+> **Williams %R**
+
+The Williams %R is a momentum indicator that measures the level of the close price relative to the high-low range over a certain number of periods. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals#get_williams_r).
+
+> **Aroon Indicator**
+
+The Aroon Indicator is an oscillator that measures the strength of a trend and the likelihood of its continuation or reversal. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals#get_aroon_indicator).
+
+> **Commodity Channel Index**
+
+The Commodity Channel Index is an oscillator that measures the current price level relative to an average price level over a specified period. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals#get_commodity_channel_index).
+
+> **Relative Vigor Index**
+
+The Relative Vigor Index is an oscillator that measures the conviction of a current price trend using the relationship between closing and opening prices. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals#get_relative_vigor_index).
+
+> **Force Index**
+
+The Force Index is an indicator that measures the strength behind price movements. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals#get_force_index).
+
+> **Ultimate Oscillator**
+
+The Ultimate Oscillator is a momentum oscillator that combines short -term, mid -term, and long -term price momentum into a single value. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals#get_ultimate_oscillator).
+
+> **Percentage Price Oscillator**
+
+The Percentage Price Oscillator (PPO) is a momentum oscillator that measures the difference between two moving averages as a percentage of the longer moving average. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals#get_percentage_price_oscillator).
+
+> **Detrended Price Oscillator**
+
+The Detrended Price Oscillator (DPO) is an indicator that helps identify short-term cycles by removing longer-term trends from prices. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals#get_detrended_price_oscillator).
+
+> **Average Directional Index (ADX)**
+
+The Average Directional Index (ADX) is an indicator that measures the strength of a trend, whether it’s an uptrend or a downtrend. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals#get_average_directional_index).
+
+> **Chande Momentum Oscillator (CMO)**
+
+The Chande Momentum Oscillator is an indicator that measures the momentum of a price series and identifies overbought and oversold conditions. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals#get_chande_momentum_oscillator).
+
+> **Ichimoku Cloud**
+
+The Ichimoku Cloud, also known as the Ichimoku Kinko Hyo, is a versatile indicator that defines support and resistance, identifies trend direction, gauges momentum, and provides trading signals. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals#get_ichimoku_cloud).
+
+> **Stochastic Oscillator**
+
+The Stochastic Oscillator is a momentum indicator that shows the location of the close relative to the high -low range over a set number of periods. It consists of the %K line (fast) and the %D line (slow). Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals#get_stochastic_oscillator).
+
+> **Moving Average Convergence Divergence (MACD)**
+
+The Moving Average Convergence Divergence (MACD) is a trend -following momentum indicator that shows the relationship between two moving averages of a security’s price. It consists of the MACD line, signal line, and MACD histogram. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals#get_moving_average_convergence_divergence).
+
+> **Relative Strength Index (RSI)**
+
+The Relative Strength Index (RSI) is a momentum oscillator that measures the speed and change of price movements. It ranges from 0 to 100 and is used to identify overbought or oversold conditions in an asset’s price. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals#get_relative_strength_index).
+
+> **Balance of Power (BOP)**
+
+The Balance of Power (BOP) indicator measures the strength of buyers versus sellers in the market. It relates the price change to the change in the asset’s trading range. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals#get_balance_of_power).
+
+</details>
+
+<details>
+    <summary><b>Overlap Indicators 🌈</b></summary>
+
+Overlap indicators are technical analysis tools that use the same scale as prices on a chart. They are plotted directly on top of the price chart and provide insights into the price action of an asset.
+
+> **Simple Moving Average (SMA)**
+
+The Moving Average (MA) is a commonly used technical indicator that smooths out price data by calculating the average price over a specified number of periods. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals#get_moving_average).
+
+> **Exponential Moving Average (EMA)**
+
+EMA is a technical indicator that gives more weight to recent price data, providing a smoothed moving average that reacts faster to price changes. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals#get_exponential_moving_average).
+
+> **Double Exponential Moving Average (DEMA)**
+
+DEMA is a technical indicator that attempts to reduce the lag from traditional moving averages by using a combination of two exponential moving averages. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals#get_double_exponential_moving_average).
+
+> **Triple Exponential Moving Average (TRIX)**
+
+Trix is a momentum oscillator that calculates the percentage rate of change of a triple exponentially smoothed moving average. It helps identify overbought and oversold conditions in a market. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals#get_triple_exponential_moving_average).
+
+> **Triangular Moving Average (TMA)**
+
+The Triangular Moving Average (TMA) is a smoothed version of the Simple Moving Average (SMA) that uses multiple SMAs to reduce noise and provide a smoother trendline. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals#get_triangular_moving_average).
+
+</details>
+
+<details>
+    <summary><b>Volatility Indicators ⚠️</b></summary>
+
+Volatility indicators are technical analysis tools that measure the volatility of an asset’s price movements. They are used to identify potential breakouts and reversals in the market.
+
+> **True Range (TR)**
+
+The True Range (TR) is a measure of market volatility that considers the differences between the high and low prices and the previous closing price. It provides insights into the price movement of an asset. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals#get_true_range).
+
+> **Average True Range (ATR)**
+
+The Average True Range (ATR) is a technical indicator that measures the volatility of an asset’s price movements over a specified number of periods. It provides insights into the potential price range of an asset, which can help traders and investors make more informed decisions. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals#get_average_true_range).
+
+> **Keltners Channels**
+
+The Keltner Channels are a technical indicator that uses volatility to identify potential breakouts and reversals in the market. They consist of an upper band, lower band, and middle line. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals#get_keltners_channels).
+
+> **Bollinger Bands**
+
+Bollinger Bands are a volatility indicator that consists of three lines: an upper band, a middle band (simple moving average), and a lower band. The upper and lower bands are calculated as the moving average plus and minus a specified number of standard deviations, respectively. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals#get_bollinger_bands).
+
+</details>
 
 ## Key Economic Indicators
 

@@ -73,136 +73,6 @@ ___
 
 In the next pargraphs you can find information about the available functionality, basic usage examples, a complete list of all 150+ metrics and how you can contribute and reach out to me.
 
-# Functionality
-
-The Finance Toolkit features the following functionality, also see [Basic Usage](#basic-usage) to see some of these functions in action and the [Code Documentation](https://www.jeroenbouma.com/projects/financetoolkit/docs) for a detailed explanation of each function.
-
-<details>
-    <summary><b>Discover Instruments</b></summary>
-
-Obtain lists of companies, cryptocurrencies, forex, commodities, etfs and indices including screeners, quotes, performance metrics and more to find and select tickers to use in the Finance Toolkit. For more information have a look [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/discovery).
-
-</details>
-
-<details>
-    <summary><b>Company Overview</b></summary>
-
-Obtain company profiles including a general description about the company as well as the current quote, the rating and recommendation based on a variety of different metrics such as the Discounted Cash Flow (DCF) and Return on Equity (RoE).
-
-</details>
-
-<details>
-    <summary><b>Historical Market Data</b></summary>
-
-Obtain a full history of OHLC, dividends, (excess) returns, cumulative returns and (excess) volatility calculations on a daily, weekly, quarterly or yearly basis. This includes the normalization of the data as well as auto-adjustments for missing values. It can also be obtained from both FinancialModelingPrep and Yahoo Finance.
-
-</details>
-
-<details>
-    <summary><b>Treasury Rates</b></summary>
-
-Just like the historical market data, obtain a full history for the treasury rates which also serve as risk-free rate by default allowing for calculations such as the Sharpe Ratio. This also includes normalization of the data as well as auto-adjustments for missing values. It can also be obtained from both FinancialModelingPrep and Yahoo Finance.
-
-</details>
-
-<details>
-    <summary><b>Dividends Calendar</b></summary>
-
-Obtain the (adjusted) dividend and the the related record, payment and declaration dates. This represent both past and future dividend cashflows based on official statements from the selected companies.
-
-</details>
-
-<details>
-    <summary><b>Analyst Estimates</b></summary>
-
-Obtain the expected Revenue, Earnings-per-Share (EPS), EBITDA, EBIT, Net Income, and SGA Expense from the past and future from a large collection of analysts. For each metric, it includes the lower bound, upper bound and median based on the analyst consensus.
-
-</details>
-
-<details>
-    <summary><b>Earnings Calendar</b></summary>
-
-Retrieve precise dates for past and future earnings releases, including analyst expectations. These metrics are presented for both Earnings-per-Share (EPS) and Revenue.
-
-</details>
-
-<details>
-    <summary><b>Revenue Segmentation</b></summary>
-
-Retrieve revenue segmentation based on both product design and geographic location for each company. Normalization is applied to ensure accurate comparisons of revenue streams over time among different companies.
-
-</details>
-
-<details>
-    <summary><b>ESG Scores</b></summary>
-
-Retrieve comprehensive Environmental, Social, and Governance (ESG) scores for each company. The scores encompass various factors such as carbon footprint, diversity and inclusion efforts, ethical business practices, and board effectiveness. This information provides a holistic view of a company's sustainability and ethical practices in alignment with ESG criteria.
-
-</details>
-
-<details>
-    <summary><b>Financial Statements</b></summary>
-
-Acquire a full history of both annual and quarterly financial statements, including balance sheets, income statements, and cash flow statements. These financial statements are normalized to facilitate straightforward comparisons between companies such as automatic currency conversions of the entire of the financial statement. Additionally, variations in accounting periods among companies are automatically standardized, ensuring that each company's year or quarter aligns with the corresponding calendar period.
-
-</details>
-
-<details>
-    <summary><b>Financial Ratios</b></summary>
-
-Acquire 50+ financial ratios categorized into their key financial domains, including Efficiency, Liquidity, Profitability, Solvency, and Valuation.<br><br>*Efficiency ratios*, such as Inventory Turnover and Asset Turnover provide insights into operational effectiveness. *Liquidity ratios*, including the Current and Quick Ratios, gauge the company's short-term financial viability. *Profitability ratios*, for example Return on Equity (RoE) and Net Profit Margin, shed light on the company's ability to generate profits. *Solvency ratios*, which include the Debt-to-Equity ratio or Interest Coverage ratio, assess the company's long-term financial stability. *Valuation ratios*, such as the Price-to-Earnings (P/E) ratio and Earnings Yield, offer perspectives on the company's market valuation.<br><br>Find all of them [here](#financial-ratios).
-
-</details>
-
-<details>
-    <summary><b>Custom Ratios</b></summary>
-
-Define custom ratios and calculate these automatically based on the balance sheet, income and cash flow statements. With this, it is possible to calculate any collection of custom ratios without needing to understanding the backend of the Finance Toolkit. Learn how [here](https://www.jeroenbouma.com/projects/financetoolkit/custom-ratios).
-
-</details>
-
-<details>
-    <summary><b>Financial Models</b></summary>
-
-Access a variety of financial models that combine the historical market data and financial statements. This is for example the DUPONT analysis, Weighted Average Cost of Capital (WACC), and Altman Z-Score. Find all of them [here](#financial-models).
-
-</details>
-
-<details>
-    <summary><b>Options and Greeks</b></summary>
-
-Access valuation methods such as the Black Scholes Model as well as real market prices for both call and put options. Next to that, calculate all First, Second and Third-Order Greeks such as Delta, Gamma, Theta, Vega, Rho, Veta and Ultima that explain option sensitivities. Find all of them [here](#options-and-greeks).
-
-</details>
-
-<details>
-    <summary><b>Performance Metrics</b></summary>
-
-Access a variety of performance metrics, including Jensens Alpha, Capital Asset Pricing Model (CAPM), and (Rolling) Sharpe Ratio. These metrics provide a comprehensive evaluation of a company's financial performance, risk-adjusted returns, and its relationship with market benchmarks. Find all of them [here](#performance-metrics).
-
-</details>
-
-<details>
-    <summary><b>Risk Metrics</b></summary>
-
-Access a diverse set of risk metrics, including the Value at Risk (VaR), GARCH, and Entropic Value at Risk (eVaR). These metrics are meant to gauge the potential major losses that can occur over time as well as estimate future volatilities. Find all of them [here](#risk-metrics).
-
-</details>
-
-<details>
-    <summary><b>Technical Indicators</b></summary>
-
-Access an extensive array of more than 40 technical indicators such as the Relative Strength Index (RSI), Exponential Moving Average (EMA), and Bollinger Bands. These technical indicators are key to understanding short-term market trends, momentum, and volatility. Find all of them [here](#technical-indicators).
-
-</details>
-
-<details>
-    <summary><b>Key Economic Indicators</b></summary>
-
-Access an extensive collection of over 50 macro-economic indicators such as Gross Domestic Product (GDP), Consumer Price Index (CPI), and Federal Funds Rate (FED). These indicators serve as barometers to understand the economic, environmental and social climate of 60+ countries. Find all of them [here](#key-economic-indicators).
-
-</details>
-
 The dependencies of the package are on purpose *very slim* so that it will work well with any combination of packages and not result in conflicts.
 
 # Basic Usage
@@ -401,6 +271,136 @@ Get insights for 60+ countries into key economic indicators such as the Consumer
 And below these Unemployment Rates are plotted over time:
 
 ![Economics](https://github.com/JerBouma/FinanceToolkit/assets/46355364/bb44bd4e-07a1-4ecf-a4eb-7fc09a960930)
+
+# Functionality
+
+The Finance Toolkit features the following functionality, also see [Basic Usage](#basic-usage) to see some of these functions in action and the [Code Documentation](https://www.jeroenbouma.com/projects/financetoolkit/docs) for a detailed explanation of each function.
+
+<details>
+    <summary><b>Discover Instruments</b></summary>
+
+Obtain lists of companies, cryptocurrencies, forex, commodities, etfs and indices including screeners, quotes, performance metrics and more to find and select tickers to use in the Finance Toolkit. For more information have a look [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/discovery).
+
+</details>
+
+<details>
+    <summary><b>Company Overview</b></summary>
+
+Obtain company profiles including a general description about the company as well as the current quote, the rating and recommendation based on a variety of different metrics such as the Discounted Cash Flow (DCF) and Return on Equity (RoE).
+
+</details>
+
+<details>
+    <summary><b>Historical Market Data</b></summary>
+
+Obtain a full history of OHLC, dividends, (excess) returns, cumulative returns and (excess) volatility calculations on a daily, weekly, quarterly or yearly basis. This includes the normalization of the data as well as auto-adjustments for missing values. It can also be obtained from both FinancialModelingPrep and Yahoo Finance.
+
+</details>
+
+<details>
+    <summary><b>Treasury Rates</b></summary>
+
+Just like the historical market data, obtain a full history for the treasury rates which also serve as risk-free rate by default allowing for calculations such as the Sharpe Ratio. This also includes normalization of the data as well as auto-adjustments for missing values. It can also be obtained from both FinancialModelingPrep and Yahoo Finance.
+
+</details>
+
+<details>
+    <summary><b>Dividends Calendar</b></summary>
+
+Obtain the (adjusted) dividend and the the related record, payment and declaration dates. This represent both past and future dividend cashflows based on official statements from the selected companies.
+
+</details>
+
+<details>
+    <summary><b>Analyst Estimates</b></summary>
+
+Obtain the expected Revenue, Earnings-per-Share (EPS), EBITDA, EBIT, Net Income, and SGA Expense from the past and future from a large collection of analysts. For each metric, it includes the lower bound, upper bound and median based on the analyst consensus.
+
+</details>
+
+<details>
+    <summary><b>Earnings Calendar</b></summary>
+
+Retrieve precise dates for past and future earnings releases, including analyst expectations. These metrics are presented for both Earnings-per-Share (EPS) and Revenue.
+
+</details>
+
+<details>
+    <summary><b>Revenue Segmentation</b></summary>
+
+Retrieve revenue segmentation based on both product design and geographic location for each company. Normalization is applied to ensure accurate comparisons of revenue streams over time among different companies.
+
+</details>
+
+<details>
+    <summary><b>ESG Scores</b></summary>
+
+Retrieve comprehensive Environmental, Social, and Governance (ESG) scores for each company. The scores encompass various factors such as carbon footprint, diversity and inclusion efforts, ethical business practices, and board effectiveness. This information provides a holistic view of a company's sustainability and ethical practices in alignment with ESG criteria.
+
+</details>
+
+<details>
+    <summary><b>Financial Statements</b></summary>
+
+Acquire a full history of both annual and quarterly financial statements, including balance sheets, income statements, and cash flow statements. These financial statements are normalized to facilitate straightforward comparisons between companies such as automatic currency conversions of the entire of the financial statement. Additionally, variations in accounting periods among companies are automatically standardized, ensuring that each company's year or quarter aligns with the corresponding calendar period.
+
+</details>
+
+<details>
+    <summary><b>Financial Ratios</b></summary>
+
+Acquire 50+ financial ratios categorized into their key financial domains, including Efficiency, Liquidity, Profitability, Solvency, and Valuation.<br><br>*Efficiency ratios*, such as Inventory Turnover and Asset Turnover provide insights into operational effectiveness. *Liquidity ratios*, including the Current and Quick Ratios, gauge the company's short-term financial viability. *Profitability ratios*, for example Return on Equity (RoE) and Net Profit Margin, shed light on the company's ability to generate profits. *Solvency ratios*, which include the Debt-to-Equity ratio or Interest Coverage ratio, assess the company's long-term financial stability. *Valuation ratios*, such as the Price-to-Earnings (P/E) ratio and Earnings Yield, offer perspectives on the company's market valuation.<br><br>Find all of them [here](#financial-ratios).
+
+</details>
+
+<details>
+    <summary><b>Custom Ratios</b></summary>
+
+Define custom ratios and calculate these automatically based on the balance sheet, income and cash flow statements. With this, it is possible to calculate any collection of custom ratios without needing to understanding the backend of the Finance Toolkit. Learn how [here](https://www.jeroenbouma.com/projects/financetoolkit/custom-ratios).
+
+</details>
+
+<details>
+    <summary><b>Financial Models</b></summary>
+
+Access a variety of financial models that combine the historical market data and financial statements. This is for example the DUPONT analysis, Weighted Average Cost of Capital (WACC), and Altman Z-Score. Find all of them [here](#financial-models).
+
+</details>
+
+<details>
+    <summary><b>Options and Greeks</b></summary>
+
+Access valuation methods such as the Black Scholes Model as well as real market prices for both call and put options. Next to that, calculate all First, Second and Third-Order Greeks such as Delta, Gamma, Theta, Vega, Rho, Veta and Ultima that explain option sensitivities. Find all of them [here](#options-and-greeks).
+
+</details>
+
+<details>
+    <summary><b>Performance Metrics</b></summary>
+
+Access a variety of performance metrics, including Jensens Alpha, Capital Asset Pricing Model (CAPM), and (Rolling) Sharpe Ratio. These metrics provide a comprehensive evaluation of a company's financial performance, risk-adjusted returns, and its relationship with market benchmarks. Find all of them [here](#performance-metrics).
+
+</details>
+
+<details>
+    <summary><b>Risk Metrics</b></summary>
+
+Access a diverse set of risk metrics, including the Value at Risk (VaR), GARCH, and Entropic Value at Risk (eVaR). These metrics are meant to gauge the potential major losses that can occur over time as well as estimate future volatilities. Find all of them [here](#risk-metrics).
+
+</details>
+
+<details>
+    <summary><b>Technical Indicators</b></summary>
+
+Access an extensive array of more than 40 technical indicators such as the Relative Strength Index (RSI), Exponential Moving Average (EMA), and Bollinger Bands. These technical indicators are key to understanding short-term market trends, momentum, and volatility. Find all of them [here](#technical-indicators).
+
+</details>
+
+<details>
+    <summary><b>Key Economic Indicators</b></summary>
+
+Access an extensive collection of over 50 macro-economic indicators such as Gross Domestic Product (GDP), Consumer Price Index (CPI), and Federal Funds Rate (FED). These indicators serve as barometers to understand the economic, environmental and social climate of 60+ countries. Find all of them [here](#key-economic-indicators).
+
+</details>
 
 # Available Metrics
 

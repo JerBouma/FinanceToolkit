@@ -314,20 +314,24 @@ The Ratios Module contains over 50+ ratios that can be used to analyse companies
 
 All of these ratios can be calculated based on (lagged) growth as well as trailing (e.g. TTM) metrics. This is embedded in all ratios as well as the financial statements themselves which means it is possible to calculate revenue growth and 12-month (TTM) Price-to-Earnings with the parameters `growth=True` and `trailing=4` respectively. Note that trailing is based on periods therefore TTM can only be calculated by setting `quarterly=True` in the Toolkit initialization.
 
-### Efficiency Ratios ⚙️
-- Asset Turnover Ratio
-- Inventory Turnover Ratio
-- Days of Inventory Outstanding
-- Days of Sales Outstanding
-- Operating Cycle
-- Accounts Payables Turnover Ratio
-- Days of Accounts Payable Outstanding
-- Cash Conversion Cycle (CCC)
-- Cash Conversion Efficiency (CCE)
-- Receivables Turnover
-- SGA to Revenue Ratio
-- Fixed Asset Turnover
-- Operating Ratio
+<details>
+  <summary><h3>Efficiency Ratios ⚙️</h3></summary>
+  
+    - Asset Turnover Ratio
+    - Inventory Turnover Ratio
+    - Days of Inventory Outstanding
+    - Days of Sales Outstanding
+    - Operating Cycle
+    - Accounts Payables Turnover Ratio
+    - Days of Accounts Payable Outstanding
+    - Cash Conversion Cycle (CCC)
+    - Cash Conversion Efficiency (CCE)
+    - Receivables Turnover
+    - SGA to Revenue Ratio
+    - Fixed Asset Turnover
+    - Operating Ratio
+</details>
+
 
 ### Liquidity Ratios 💧
 - Current Ratio

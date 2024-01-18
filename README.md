@@ -373,7 +373,7 @@ The operating ratio is calculated by dividing the company’s operating expenses
 
 </details>
 <details>
-  <summary>Liquidity Ratios 💧</summary>
+  <summary><b>Liquidity Ratios 💧</b></summary>
 
 The liquidity ratios are used to assess a company’s ability to meet its short-term obligations using its short-term assets. They provide insight into the company’s short-term financial health and its ability to cover its current obligations using its liquid assets.
 
@@ -408,7 +408,9 @@ The short-term coverage ratio is calculated by dividing operating cash flow by s
 </details>
 
 <details>
-  <summary>Profitability Ratios 💰</summary>
+  <summary><b>Profitability Ratios 💰</b></summary>
+
+The profitability ratios are used to assess a company’s ability to generate profits from its operations. They provide insight into the company’s operational efficiency and its ability to generate profits from its revenue.
 
 > **Gross Margin**
 
@@ -482,46 +484,149 @@ The EBIT to Revenue ratio measures the company’s ability to generate profit fr
 </details>
 
 <details>
-  <summary>Solvency Ratios 🪨</summary>
+  <summary><b>Solvency Ratios 🪨</b></summary>
 
-- Debt to Assets Ratio
-- Debt to Equity Ratio
-- Interest Coverage Ratio
-- Equity Multiplier
-- Debt Service Coverage Ratio
-- Free Cash Flow Yield
-- Net Debt to EBITDA Ratio
-- Cash Flow Coverage Ratio
-- CAPEX Coverage Ratio
-- CAPEX Dividend Coverage Ratio
+The solvency ratios are used to assess a company’s ability to meet its long-term obligations using its long-term assets. They provide insight into the company’s long-term financial health and its ability to cover its long-term obligations using its long-term assets.
+
+> **Debt to Assets Ratio**
+
+This ratio, also known as the Debt Ratio, indicates the percentage of a company’s total assets that are funded by debt. It is a measure of a company’s financial leverage and indicates the extent to which a company relies on borrowed funds to finance its operations. A higher ratio implies a higher level of debt in the company’s capital structure, which could increase financial risk. See the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_debt_to_assets_ratio).
+
+> **Debt to Equity Ratio**
+
+The debt to equity ratio, for short the D/E ratio, indicates the relative contribution of debt and equity to a company’s capital structure. It helps assess the level of financial risk a company carries due to its debt obligations. A higher ratio implies a higher reliance on debt to finance the business, which could increase risk but also potentially lead to higher returns for shareholders. See the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_debt_to_equity_ratio).
+
+> **Interest Coverage Ratio**
+
+The interest coverage ratio evaluates a company’s ability to meet its interest obligations from its operating income. A higher ratio indicates a company’s stronger ability to cover its interest payments using its earnings, implying lower financial risk. Conversely, a lower ratio suggests a company may have difficulty meeting its interest obligations and could be at higher risk of default. See the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_interest_coverage_ratio).
+
+> **Equity Multiplier**
+
+The equity multiplier helps assess the financial leverage of a company by indicating how much of its assets are financed by equity versus debt. A higher equity multiplier suggests that the company relies more on debt financing, which can amplify returns but also increases financial risk. Conversely, a lower equity multiplier indicates a larger portion of assets is financed by equity, potentially lowering financial risk. See the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_equity_multiplier).
+
+> **Debt Service Coverage Ratio**
+
+The debt service coverage ratio provides insights into a company’s ability to meet its debt obligations from its operating income. It is especially important for companies with significant debt obligations, as a lower ratio indicates higher financial risk and potential difficulties in servicing debt payments. See the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_debt_service_coverage_ratio).
+
+> **Free Cash Flow Yield**
+
+The free cash flow yield ratio is a measure of how efficiently a company generates free cash flow relative to its market value. It provides insights into whether the company’s valuation is reasonable compared to the amount of cash it generates. See the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_free_cash_flow_yield).
+
+> **Net Debt to EBITDA Ratio**
+
+The net debt to EBITDA ratio is a measure of a company’s ability to manage its debt obligations in relation to its earnings and cash flow. A lower ratio indicates better financial health and a stronger ability to manage debt. See the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_net_debt_to_ebitda_ratio).
+
+> **Cash Flow Coverage Ratio**
+
+The cash flow coverage ratio assesses a company’s ability to meet its debt obligations by comparing its operating cash flow to its total debt. A higher ratio indicates a stronger ability to cover its debt with cash generated from operations. See the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_cash_flow_coverage_ratio).
+
+> **CAPEX Coverage Ratio**
+
+The capex coverage ratio evaluates a company’s ability to fund its capital expenditures, which are essential for maintaining and growing its business, using the cash generated from its operations. A higher ratio indicates a stronger ability to fund capital investments from operating cash flow. See the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_capex_coverage_ratio).
+
+> **CAPEX Dividend Coverage Ratio**
+
+The capex dividend coverage ratio assesses whether a company’s cash flow from operations is sufficient to cover both its capital expenditures (which are essential for maintaining and growing its business) and its dividend payments to shareholders. A higher ratio indicates a stronger ability to fund both capex and dividends from operating cash flow. See the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_capex_dividend_coverage_ratio).
+
 </details>
 
 <details>
   <summary>Valuation Ratios ⚖️</summary>
 
-- Earnings per Share (EPS)
-- Revenue per Share (RPS)
-- Price Earnings Ratio (PE)
-- Price to Earnings Growth Ratio (PEG)
-- Book Value per Share
-- Price to Book Ratio (PB)
-- Interest Debt per Share
-- CAPEX per Share
-- Dividend Yield
-- Weighted Dividend Yield
-- Price to Cash Flow Ratio (P/CF)
-- Price to Free Cash Flow Ratio (P/FCF)
-- Market Capitalization
-- Enterprise Value
-- EV to Sales Ratio
-- EV to EBITDA Ratio
-- EV to Operating Cashflow Ratio
-- EV to EBIT
-- Earnings Yield
-- Dividend Payout Ratio
-- Reinvestment Rate
-- Tangible Asset Value
-- Net Current Asset Value
+> **Earnings per Share (EPS)**
+
+The earnings per share (EPS) is a widely used financial metric that helps investors understand the profitability of a company on a per -share basis. It provides insight into the portion of a company’s earnings that is allocated to each outstanding share of its common stock. EPS is an important measure for investors and analysts when assessing a company’s financial performance and comparing it to other companies. See the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_earnings_per_share).
+
+
+> **Revenue per Share (RPS)**
+
+The revenue per share is an important metric that provides insight into a company’s ability to generate revenue on a per -share basis. It can help investors understand the company’s revenue -generation efficiency and its overall financial health. See the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_revenue_per_share).
+
+> **Price Earnings Ratio (PE)**
+
+The price earnings ratio is a widely used valuation metric that helps investors assess the relative value of a company’s stock. A higher P/E ratio may indicate that the market has high expectations for the company’s future growth, while a lower P/E ratio may suggest that the company is undervalued. See the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_price_earnings_ratio).
+
+> **Price to Earnings Growth Ratio (PEG)**
+
+The price--to-earnings growth (PEG) ratio provides a more comprehensive valuation measure compared to the P/E ratio alone. It takes into account a company’s earnings growth rate, allowing investors to assess whether a stock is overvalued or undervalued relative to its growth prospects. See the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_price_to_earnings_growth_ratio).
+
+> **Book Value per Share**
+
+The book value per share is a fundamental valuation metric that reflects the net worth of a company attributed to each outstanding share of common stock. See the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_book_value_per_share).
+
+> **Price to Book Ratio (PB)**
+
+The price to book ratio is a key valuation metric that helps investors assess whether a company’s stock is overvalued or undervalued relative to its underlying net asset value. See the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_price_to_book_ratio).
+
+> **Interest Debt per Share**
+
+The interest debt per share ratio provides insight into how much interest a company pays on its debt relative to its shareholder base. It can help investors assess the financial burden of interest expenses on the company’s profitability. See the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_interest_debt_per_share).
+
+> **CAPEX per Share**
+
+The capex per share ratio provides insight into how much capital a company invests in its operations and growth initiatives relative to its shareholder base. It can help investors assess the level of reinvestment into the business. See the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_capex_per_share).
+
+> **Dividend Yield**
+
+The dividend yield ratio is used by investors to assess the income potential of an investment in a company’s stock based on the dividends it pays out. A higher dividend yield can be attractive to income-seeking investors. See the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_dividend_yield).
+
+> **Weighted Dividend Yield**
+
+This dividend yield ratio takes into account the (diluted) weighted average shares and actual dividends paid as found in the cash flow statement. It provides a more accurate reflection of the dividends paid out per share, considering any changes in the number of shares. See the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_weighted_dividend_yield).
+
+> **Price to Cash Flow Ratio (P/CF)**
+
+The price to cash flow ratio is a key valuation metric that helps investors assess the relative value of a company’s stock. It is similar to the price to earnings ratio, but uses cash flow instead of earnings in the denominator. See the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_price_to_cash_flow_ratio).
+
+
+> **Price to Free Cash Flow Ratio (P/FCF)**
+
+This price to free cash flow ratio provides insight into how the market values a company’s ability to generate free cash flow. It is a valuation ratio that compares a company’s market price to its free cash flow per share. See the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_price_to_free_cash_flow_ratio).
+
+> **Market Capitalization**
+
+Market capitalization, often referred to as “market cap,” is the total value of a company’s outstanding shares of stock in the stock market. It is calculated by multiplying the current market price per share by the total number of outstanding shares. See the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_market_cap).
+
+> **Enterprise Value**
+
+The Enterprise Value (EV) is a measure of a company’s total value, often used as a more comprehensive alternative to market capitalization. It is calculated as the sum of a company’s market capitalization, outstanding debt, minority interest, and preferred equity, minus the cash and cash equivalents. See the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_enterprise_value).
+
+> **EV to Sales Ratio**
+
+This EV to Sales ratio compares the enterprise value (EV) to the total revenue generated by the company. It can provide insights into how efficiently a company is using its revenue to generate value for its investors. See the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_ev_to_sales_ratio).
+
+> **EV to EBITDA Ratio**
+
+This EV to EBITDA ratio is a valuation ratio that measures a company’s total value (including debt and equity) relative to its EBITDA. It helps investors understand how many times the enterprise value exceeds the company’s EBITDA, providing insights into the company’s debt load and operating performance. See the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_ev_to_ebitda_ratio).
+
+> **EV to Operating Cashflow Ratio**
+
+The EV to Operating Cashflow Ratio is a valuation ratio that measures a company’s total value (including debt and equity) relative to its operating cash flow. This ratio provides insights into how many times the enterprise value exceeds the company’s operating cash flow, indicating the company’s ability to generate cash from its operations. See the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_ev_to_operating_cashflow_ratio).
+
+> **EV to EBIT**
+
+Calculate the enterprise value over earnings before interest and taxes (EBIT) ratio, which is a valuation metric that compares a company’s total value (including debt and equity) relative to its earnings before interest and taxes. See the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_ev_to_ebit).
+
+> **Earnings Yield**
+
+The earnings yield ratio is a valuation metric that provides insights into how much a company’s earnings contribute to its stock price. It compares the earnings per share to the market price per share, helping investors understand the earnings potential of the company relative to its current market value. See the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_earnings_yield).
+
+> **Dividend Payout Ratio**
+
+The payout ratio is a financial metric that helps investors assess the portion of a company’s earnings that is being distributed to shareholders in the form of dividends. It’s a valuable indicator for dividend investors as it indicates the sustainability of dividend payments and the company’s approach to distributing profits. See the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_dividend_payout_ratio).
+
+> **Reinvestment Rate**
+
+The reinvestment rate is a financial metric that helps investors assess the portion of a company’s earnings that is being retained by the company for future growth. It’s a valuable indicator for dividend investors as it indicates the sustainability of dividend payments and the company’s approach to distributing profits. See the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_reinvestment_rate).
+
+> **Tangible Asset Value**
+
+The tangible asset value is a financial metric that represents the total value of a company’s assets that can be used to generate revenue. Tangible assets are those physical assets that have a finite monetary value and can be sold, used, or consumed. See the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_tangible_asset_value).
+
+> **Net Current Asset Value**
+
+The net current asset value is a financial metric that represents the total value of a company’s current assets minus its current liabilities. It indicates the extent to which a company’s short -term assets exceed its short-term liabilities. See the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_net_current_asset_value).
+
 </details>
 
 ## Financial Models

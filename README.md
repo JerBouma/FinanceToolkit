@@ -315,7 +315,7 @@ The Ratios Module contains over 50+ ratios that can be used to analyse companies
 All of these ratios can be calculated based on (lagged) growth as well as trailing (e.g. TTM) metrics. This is embedded in all ratios as well as the financial statements themselves which means it is possible to calculate revenue growth and 12-month (TTM) Price-to-Earnings with the parameters `growth=True` and `trailing=4` respectively. Note that trailing is based on periods therefore TTM can only be calculated by setting `quarterly=True` in the Toolkit initialization.
 
 <details>
-  <summary>Efficiency Ratios ⚙️</summary>
+  <summary><b>Efficiency Ratios ⚙️</b></summary>
 
 The efficiency ratios are used to assess how well a company utilizes its assets and liabilities to generate revenue. They provide insight into the company’s operational efficiency and its ability to manage its assets and liabilities.
 

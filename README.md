@@ -1018,6 +1018,8 @@ Skewness is a statistical measure used in finance to assess the asymmetry in the
 
 Kurtosis is a statistical measure used in finance to evaluate the shape of the probability distribution of returns for an investment portfolio or asset over a defined time period. It assesses the “tailedness” of the return distribution, indicating whether returns have fatter or thinner tails compared to a normal distribution. Kurtosis plays a critical role in risk assessment by revealing the potential presence of extreme outliers or the likelihood of heavy tails in the return data. This information aids investors and analysts in understanding the degree of risk associated with an investment and assists in making more informed decisions regarding risk tolerance. In essence, kurtosis serves as a valuable tool for comprehending the distribution characteristics of returns, offering insights into the potential for rare but significant events in the financial markets. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/risk#get_kurtosis).
 
+</details>
+
 ## Technical Indicators
 
 The Technicals Module contains 30+ Technical Indicators that can be used to analyse companies. These ratios are divided into 4 categories which are breadth, momentum, overlap and volatility. Each indicator is calculated using the data from the Toolkit module. **Find the Notebook [here](https://www.jeroenbouma.com/projects/financetoolkit/technicals-module) and the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals) which includes an explanation about the indicator, the parameters and an example.**
@@ -1174,63 +1176,304 @@ Bollinger Bands are a volatility indicator that consists of three lines: an uppe
 
 The Economics Module contains a variety of Key Economic Indicators that help in understanding the health and performance of more than 60 different countries. This module can be called directly via the Toolkit but also separately if desired through `from financetoolkit import Economics`. **Find the Notebook [here](https://www.jeroenbouma.com/projects/financetoolkit/economics-module) and the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics) which includes an explanation about each indicator, the parameters and an example.**
 
-### Economy 💵
-- Gross Domestic Product (GDP) including Growth and Forecasts
-- Consumer Confidence Index (CCI)
-- Business Confidence Index (BCI)
-- Composite Leading Indicator (CLI)
-- Consumer Price Index (CPI)
-- Producer Price Index (PPI)
-- House and Rent Prices
-- Share Prices
+<details>
+    <summary><b>Economy 💵</b></summary>
 
-### Finance 💹
-- Long Term Interest Rates (10 year)
-- Short Term Interest Rates (3 month)
-- Narrow Money (M1)
-- Broad Money (M3)
-- Purchasing Power Parity (PPP)
-- Exchange Rates
+The economy section contains key economic indicators that help in understanding the health and performance of more than 60 different countries. This includes the Gross Domestic Product (GDP), Consumer Confidence Index (CCI), Business Confidence Index (BCI), Composite Leading Indicator (CLI), Consumer Price Index (CPI), Producer Price Index (PPI), House and Rent Prices, Share Prices and more.
 
-### Central Banks 🏦
-- Main Refinancing Operations (ECB)
-- Marginal Lending Facility (ECB)
-- Deposit Facility (ECB)
-- Effective Federal Funds Rate (FED)
-- Overnight Bank Funding Rate (FED)
-- Tri-Party General Collateral Rate (FED)
-- Broad General Collateral Rate (FED)
-- Secured Overnight Financing Rate (FED)
+> **Gross Domestic Product (GDP)**
 
-### Environment 💚
-- Renewable Energy as % of Total Energy
-- Environmental Tax as % of GDP
-- Greenhouse Gas Emissions
-- Crude Oil Production and Prices
+The Gross Domestic Product is the total value of goods produced and services provided in a country during one year. The data is available in two forms: compared to the previous year’s value or compared to the previous period. The year on year data is the GDP compared to the same quarter in the previous year. The quarter on quarter data is the GDP compared to the previous quarter. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_gross_domestic_product).
 
-### Government 🏛️
-- Deficit as % of GDP
-- Revenue as % of GDP
-- Spending as % of GDP
-- Debt as % of GDP
-- Financial Wealth as % of GDP
-- Production Costs as % of GDP
-- Central Spending based on the System of National accounts (SNA)
-- Trust in Government
+It is possible to view the growth rate on a quarterly or annual basis, the default is dependent on the quarterly parameter. The growth rate is the percentage change in the GDP compared to the previous period. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_gross_domestic_product_growth).
 
-### Jobs 🗂️
-- Unemployment Rates
-- Labour Productivity
-- Income Inequality
+Lastly, it is possible to view the growth rate on a quarterly or annual basis, the default is dependent on the quarterly parameter. The growth rate is the percentage change in the GDP compared to the previous period. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_gross_domestic_product_forecast).
 
-### Society 👪
-- Population
-- Young Population
-- Working Age Population
-- Elderly Population
-- Fertility Rates
-- Old-Age Dependency Ratio
-- Poverty Rate
+> **Consumer Confidence Index (CCI)**
+
+This consumer confidence indicator provides an indication of future developments of households consumption and saving, based upon answers regarding their expected financial situation, their sentiment about the general economic situation, unemployment and capability of savings.
+
+An indicator above 100 signals a boost in the consumers’ confidence towards the future economic situation, as a consequence of which they are less prone to save, and more inclined to spend money on major purchases in the next 12 months. Values below 100 indicate a pessimistic attitude towards future developments in the economy, possibly resulting in a tendency to save more and consume less. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_consumer_confidence_index).
+
+> **Business Confidence Index (BCI)**
+
+This business confidence indicator provides information on future developments, based upon opinion surveys on developments in production, orders and stocks of finished goods in the industry sector. It can be used to monitor output growth and to anticipate turning points in economic activity.
+
+Numbers above 100 suggest an increased confidence in near future business performance, and numbers below 100 indicate pessimism towards future performance. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_business_confidence_index).
+
+> **Composite Leading Indicator (CLI)**
+
+The composite leading indicator (CLI) is designed to provide early signals of turning points in business cycles showing fluctuation of the economic activity around its long term potential level. CLIs show short-term economic movements in qualitative rather than quantitative terms. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_composite_leading_indicator).
+
+> **Consumer Price Index (CPI)**
+
+Inflation measured by consumer price index (CPI) is defined as the change in the prices of a basket of goods and services that are typically purchased by specific groups of households. Inflation is measured in terms an index, 2015 base year with a breakdown for food, energy and total.
+
+Inflation measures the erosion of living standards. A consumer price index is estimated as a series of summary measures of the period -to -period proportional change in the prices of a fixed set of consumer goods and services of constant quantity and characteristics, acquired, used or paid for by the reference population.
+
+Each summary measure is constructed as a weighted average of a large number of elementary aggregate indices. Each of the elementary aggregate indices is estimated using a sample of prices for a defined set of goods and services obtained in, or by residents of, a specific region from a given set of outlets or other sources of consumption goods and services. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_consumer_price_index).
+
+> **Producer Price Index (PPI)**
+
+Producer price indices in manufacturing measure the rate of change in prices of products sold as they leave the producer. They exclude any taxes, transport and trade margins that the purchaser may have to pay. PPIs provide measures of average movements of prices received by the producers of various commodities. hey are often seen as advanced indicators of price changes throughout the economy, including changes in the prices of consumer goods and services.
+
+Manufacturing covers the production of semi -processed goods and other intermediate goods as well as final products such as consumer goods and capital equipment. A variety of price indices may be used to measure inflation in an economy. These include consumer price indices (CPI), price indices relating to specific goods and/or services, GDP deflators and producer price indices (PPI). Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_producer_price_index).
+
+> **House Prices**
+
+In most cases, the nominal house price index covers the sales of newly -built and existing dwellings, following the recommendations from the RPPI (Residential Property Prices Indices) manual.
+
+The real house price index is given by the ratio of the nominal house price index to the consumers’ expenditure deflator in each country from the OECD national accounts database. Both indices are seasonally adjusted. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_house_prices).
+
+> **Rent Prices**
+
+The price to rent ratio is the nominal house price index divided by the housing rent price index and can be considered as a measure of the profitability of house ownership. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_rent_prices).
+
+> **Share Prices**
+
+Share price indices are calculated from the prices of common shares of companies traded on national or foreign stock exchanges. They are usually determined by the stock exchange, using the closing daily values for the monthly data, and normally expressed as simple arithmetic averages of the daily data.
+
+A share price index measures how the value of the stocks in the index is changing, a share return index tells the investor what their “return” is, meaning how much money they would make as a result of investing in that basket of shares.
+
+A price index measures changes in the market capitalisation of the basket of shares in the index whereas a return index adds on to the price index the value of dividend payments, assuming they are re -invested in the same stocks. Occasionally agencies such as central banks will compile share indices. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_share_prices).
+
+</details>
+
+<details>
+    <summary><b>Finance 💹</b></summary>
+
+The finance metrics are used to assess the financial health of a country. This includes the long term interest rates, short term interest rates, narrow money, broad money, purchasing power parity and exchange rates.
+
+> **Long Term Interest Rates (10 year)**
+
+Long -term interest rates refer to government bonds maturing in ten years. Rates are mainly determined by the price charged by the lender, the risk from the borrower and the fall in the capital value. Long -term interest rates are generally averages of daily rates, measured as a percentage. These interest rates are implied by the prices at which the government bonds are traded on financial markets, not the interest rates at which the loans were issued.
+
+In all cases, they refer to bonds whose capital repayment is guaranteed by governments. Long -term interest rates are one of the determinants of business investment. Low long term interest rates encourage investment in new equipment and high interest rates discourage it. Investment is, in turn, a major source of economic growth. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_long_term_interest_rates).
+
+> **Short Term Interest Rates (3 month)**
+
+Short -term interest rates are the rates at which short -term borrowings are effected between financial institutions or the rate at which short -term government paper is issued or traded in the market. Short -term interest rates are generally averages of daily rates, measured as a percentage.
+
+Short -term interest rates are based on three -month money market rates where available. Typical standardised names are “money market rate” and “treasury bill rate”. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_short_term_interest_rates).
+
+> ***Narrow Money (M1)**
+
+M1 includes currency i.e. banknotes and coins, plus overnight deposits. M1 is expressed as a seasonally adjusted index based on 2015=100.
+
+Broad money (M3) includes currency, deposits with an agreed maturity of up to two years, deposits redeemable at notice of up to three months and repurchase agreements, money market fund shares/units and debt securities up to two years. M3 is measured as a seasonally adjusted index based on 2015=100. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_narrow_and_broad_money).
+
+> **Broad Money (M3)**
+
+Broad money (M3) includes currency, deposits with an agreed maturity of up to two years, deposits redeemable at notice of up to three months and repurchase agreements, money market fund shares/units and debt securities up to two years. M3 is measured as a seasonally adjusted index based on 2015=100. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_narrow_and_broad_money).
+
+> **Purchasing Power Parity (PPP)**
+
+Purchasing power parities (PPPs) are the rates of currency conversion that try to equalise the purchasing power of different currencies, by eliminating the differences in price levels between countries. The basket of goods and services priced is a sample of all those that are part of final expenditures: final consumption of households and government, fixed capital formation, and net exports. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_purchasing_power_parity).
+
+> **Exchange Rates**
+
+Exchange rates are defined as the price of one country’s’ currency in relation to another country’s currency. This indicator is measured in terms of national currency per US dollar. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_exchange_rates).
+
+</details>
+
+<details>
+    <summary><b>Central Banks 🏦</b></summary>
+
+The central bank metrics revolve around the interest rates of the European Central Bank (ECB) and the Federal Reserve (FED). This includes the main refinancing operations, marginal lending facility, deposit facility, effective federal funds rate, overnight bank funding rate, tri-party general collateral rate, broad general collateral rate and secured overnight financing rate.
+
+> **Main Refinancing Operations**
+
+The main refinancing operations (MRO) rate is the interest rate banks pay when they borrow money from the ECB for one week. When they do this, they have to provide collateral to guarantee that the money will be paid back. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_european_central_bank_rates).
+
+
+> **Marginal Lending Facility**
+
+The marginal lending facility rate is the interest rate banks pay when they borrow from the ECB overnight. When they do this, they have to provide collateral, for example securities, to guarantee that the money will be paid back. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_european_central_bank_rates).
+
+> **Deposit Facility**
+
+The deposit facility rate is one of the three interest rates the ECB sets every six weeks as part of its monetary policy. The rate defines the interest banks receive for depositing money with the central bank overnight. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_european_central_bank_rates).
+
+> **Effective Federal Funds Rate**
+
+The effective federal funds rate (EFFR) is calculated as a volume -weighted median of overnight federal funds transactions reported in the FR 2420 Report of Selected Money Market Rates. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_federal_reserve_rates).
+
+> **Overnight Bank Funding Rate**
+
+The overnight bank funding rate (OBFR) is calculated as a volume -weighted median of overnight federal funds transactions, Eurodollar transactions, and the domestic deposits reported as “Selected Deposits” in the FR 2420 Report. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_federal_reserve_rates).
+
+> **Tri-Party General Collateral Rate**
+
+The TGCR is calculated as a volume -weighted median of transaction -level tri -party repo data collected from the Bank of New York Mellon. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_federal_reserve_rates).
+
+> **Broad General Collateral Rate**
+
+The BGCR is calculated as a volume -weighted median of transaction -level tri -party repo data collected from the Bank of New York Mellon as well as GCF Repo transaction data obtained from the U.S. Department of the Treasury’s Office of Financial Research (OFR). Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_federal_reserve_rates).
+
+> **Secured Overnight Financing Rate**
+
+The SOFR is calculated as a volume -weighted median of transaction -level tri -party repo data collected from the Bank of New York Mellon as well as GCF Repo transaction data and data on bilateral Treasury repo transactions cleared through FICC’s DVP service, which are obtained from the U.S. Department of the Treasury’s Office of Financial Research (OFR). Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_federal_reserve_rates).
+
+</details>
+
+<details>
+    <summary><b>Environment 💚</b></summary>
+
+The environment metrics revolve around renewable energy, environmental tax, greenhouse gas emissions, crude oil production and crude oil prices of countries. This includes the renewable energy as a percentage of total energy, environmental tax as a percentage of GDP, greenhouse gas emissions, crude oil production and crude oil prices.
+
+> **Renewable Energy as % of Total Energy**
+
+Renewable energy is defined as the contribution of renewables to total primary energy supply (TPES). Renewables include the primary energy equivalent of hydro (excluding pumped storage), geothermal, solar, wind, tide and wave sources.
+
+Energy derived from solid biofuels, biogasoline, biodiesels, other liquid biofuels, biogases and the renewable fraction of municipal waste are also included. Biofuels are defined as fuels derived directly or indirectly from biomass (material obtained from living or recently living organisms).
+
+This includes wood, vegetal waste (including wood waste and crops used for energy production), ethanol, animal materials/wastes and sulphite lyes. Municipal waste comprises wastes produced by the residential, commercial and public service sectors that are collected by local authorities for disposal in a central location for the production of heat and/or power. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_environment).
+
+> **Environmental Tax as % of GDP**
+
+Environmentally related taxes are an important instrument for governments to shape relative prices of goods and services.
+
+The characteristics of such taxes included in the database (e.g. revenue, tax base, tax rates, exemptions, etc.) are used to construct the environmentally related tax revenues with a breakdown by environmental domain:
+
+- Energy products (including vehicle fuels);
+- Motor vehicles and transport services;
+- Measured or estimated emissions to air and water, ozone depleting substances, certain non -point sources of water pollution, waste management and noise, as well as management of water, land, soil, forests, biodiversity, wildlife and fish stocks.
+
+The data have been cross-validated and complemented with Revenue statistics from the OECD Tax statistics database and official national sources. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_environmental_tax).
+
+> **Greenhouse Gas Emissions**
+
+Greenhouse gases refer to the sum of seven gases that have direct effects on climate change:
+
+- Carbon Dioxide (CO2)
+- Methane (CH4)
+- Nitrous Oxide (N2O)
+- Chlorofluorocarbons (CFCs)
+- Hydrofluorocarbons (HFCs)
+- Perfluorocarbons (PFCs)
+- Sulphur Hexafluoride (SF6)
+- Nitrogen Trifluoride (NF3).
+
+The data are expressed in CO2 equivalents and refer to gross direct emissions from human activities. CO2 refers to gross direct emissions from fuel combustion only and data are provided by the International Energy Agency. Other air emissions include emissions of sulphur oxides (SOx) and nitrogen oxides (NOx) given as quantities of SO2 and NO2, emissions of carbon monoxide (CO), and emissions of volatile organic compounds (VOC), excluding methane.
+
+Air and greenhouse gas emissions are measured in tonnes per capita and kilogram per capita in which all metrics are converted to tonnes (1000kg) per capita. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_greenhouse_gas_emissions).
+
+> **Crude Oil Production**
+
+Crude oil production is defined as the quantities of oil extracted from the ground after the removal of inert matter or impurities. It includes crude oil, natural gas liquids (NGLs) and additives. This indicator is measured in thousand tonne of oil equivalent (toe).
+
+Crude oil is a mineral oil consisting of a mixture of hydrocarbons of natural origin, yellow to black in colour, and of variable density and viscosity. NGLs are the liquid or liquefied hydrocarbons produced in the manufacture, purification and stabilisation of natural gas.
+
+Additives are non -hydrocarbon substances added to or blended with a product to modify its properties, for example, to improve its combustion characteristics (e.g. MTBE and tetraethyl lead). Refinery production refers to the output of secondary oil products from an oil refinery. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_crude_oil_production_and_prices).
+
+> **Crude Oil Prices**
+
+Crude oil import prices come from the IEA’s Crude Oil Import Register and are influenced not only by traditional movements of supply and demand, but also by other factors such as geopolitics.
+
+Information is collected from national agencies according to the type of crude oil, by geographic origin and by quality of crude. Average prices are obtained by dividing value by volume as recorded by customs administrations for each tariff position.
+
+Values are recorded at the time of import and include cost, insurance and freight, but exclude import duties. The nominal crude oil spot price from 2003 to 2011 is for Dubai and from 1970 to 2002 for Arabian Light. This indicator is measured in USD per barrel of oil. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_crude_oil_production_and_prices).
+
+</details>
+
+<details>
+    <summary><b>Government 🏛️</b></summary>
+
+The government metrics revolve around the deficit, revenue, spending, debt, financial wealth and production costs of countries. This includes the deficit as a percentage of GDP, revenue as a percentage of GDP, spending as a percentage of GDP, debt as a percentage of GDP, financial wealth as a percentage of GDP and production costs as a percentage of GDP.
+
+> **Deficit as % of GDP**
+
+General government deficit is defined as the balance of income and expenditure of government, including capital income and capital expenditures. “Net lending” means that government has a surplus, and is providing financial resources to other sectors, while “net borrowing” means that government has a deficit, and requires financial resources from other sectors. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_government_statistics).
+
+> **Revenue as % of GDP**
+
+General government revenue is defined as the revenue required to finance the goods and services they provide to citizens and businesses, and to fulfil their redistributive role. Comparing levels of government revenues across countries provides an indication of the importance of the government sector in the economy in terms of available financial resources. The total amount of revenues collected by governments is determined by past and current political decisions. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_government_statistics).
+
+> **Spending as % of GDP**
+
+General government spending is defined as an indicator of the size of government across countries. The large variation in this indicator highlights the variety of countries’ approaches to delivering public goods and services and providing social protection, not necessarily differences in resources spent. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_government_statistics).
+
+> **Debt as % of GDP**
+
+General government debt -to -GDP ratio measures the gross debt of the general government as a percentage of GDP. It is a key indicator for the sustainability of government finance. Debt is calculated as the sum of the following liability categories (as applicable): currency and deposits; debt securities, loans; insurance, pensions and standardised guarantee schemes, and other accounts payable. Changes in government debt over time primarily reflect the impact of past government deficits. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_government_statistics).
+
+> **Financial Wealth as % of GDP**
+
+The net financial worth of the general government sector is the total value of its financial assets minus the total value of its outstanding liabilities. The general government sector consists of central, state and local governments as well as social security funds. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_government_statistics).
+
+> **Production Costs as % of GDP**
+
+General government production costs are decisions about the amount and type of goods and services governments produce, as well as on how best to produce them. They are often political in nature and based on a country’s social and cultural context. Governments use a mix of their own employees, capital, and outside contractors (non -profit institutions or private sector entities) to produce goods and services. Government production costs include: compensation costs of general government employees; goods and services used and financed by general government (including intermediate consumption and social transfer in kind via market producers paid for by government); and other costs, including depreciation of capital and other taxes on production less other subsidies on production. The data include government employment and intermediate consumption for output produced by the government for its own use, such as roads and other capital investment projects built by government employees. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_government_statistics).
+
+</details>
+
+<details>
+    <summary><b>Jobs 🗂️</b></summary>
+
+The jobs metrics revolve around the unemployment rates, labour productivity and income inequality of countries.
+
+> **Unemployment Rate**
+
+The unemployed are people of working age who are without work, are available for work, and have taken specific steps to find work. The uniform application of this definition results in estimates of unemployment rates that are more internationally comparable than estimates based on national definitions of unemployment.
+
+This indicator is measured in numbers of unemployed people as a percentage of the labour force and it is seasonally adjusted. The labour force is defined as the total number of unemployed people plus those in employment. Data are based on labour force surveys (LFS).
+
+For European Union countries where monthly LFS information is not available, the monthly unemployed figures are estimated by Eurostat. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_jobs).
+
+> **Labour Productivity**
+
+GDP per hour worked is a measure of labour productivity. It measures how efficiently labour input is combined with other factors of production and used in the production process. Labour input is defined as total hours worked of all persons engaged in production. Labour productivity only partially reflects the productivity of labour in terms of the personal capacities of workers or the intensity of their effort.
+
+The ratio between the output measure and the labour input depends to a large degree on the presence and/or use of other inputs (e.g. capital, intermediate inputs, technical, organisational and efficiency change, economies of scale). Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_jobs).
+
+> **Income Inequality**
+
+Income is defined as household disposable income in a particular year. It consists of earnings, self -employment and capital income and public cash transfers; income taxes and social security contributions paid by households are deducted. The income of the household is attributed to each of its members, with an adjustment to reflect differences in needs for households of different sizes. Income inequality among individuals is measured here by five indicators. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_jobs).
+
+</details>
+
+<details>
+    <summary><b>Society 👪</b></summary>
+
+The society metrics revolve around the population, young population, working age population, elderly population, fertility rates, old-age dependency ratio and poverty rate of countries.
+
+> **Population**
+
+Population is defined as all nationals present in, or temporarily absent from a country, and aliens permanently settled in a country. This indicator shows the number of people that usually live in an area. Growth rates are the annual changes in population resulting from births, deaths and net migration during the year. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_population_statistics).
+
+> **Young Population**
+
+The youth population is defined as those people aged less than 15 as a percentage of the total population. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_population_statistics).
+
+> **Working Age Population**
+
+The working age population is defined as those aged 15 to 64 as a percentage of the total population. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_population_statistics).
+
+> **Elderly Population**
+
+The elderly population is defined as those aged 65 and over as a percentage of the total population. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_population_statistics).
+
+> **Fertility Rates**
+
+The total fertility rate in a specific year is defined as the total number of children that would be born to each woman if she were to live to the end of her child -bearing years and give birth to children in alignment with the prevailing age-specific fertility rates. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_population_statistics).
+
+> **Old-Age Dependency Ratio**
+
+The old-age to working-age demographic ratio is defined as the number of individuals aged 65 and over per 100 people of working age defined as those at ages 20 to 64. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_population_statistics).
+
+> **Poverty Rate**
+
+The poverty rate is the ratio of the number of people (in a given age group) whose income falls below the poverty line; taken as half the median household income of the total population.
+
+It is also available by broad age group:
+
+- child poverty (0 to 17 year -olds);
+- working -age poverty (18 to 65 year -olds);
+- and elderly poverty (66 year -olds or more).
+
+However, two countries with the same poverty rates may differ in terms of the relative income -level of the poor. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_population_statistics).
+
+</details>
 
 # Questions & Answers
 

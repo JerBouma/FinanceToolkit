@@ -331,7 +331,6 @@ All of these ratios can be calculated based on (lagged) growth as well as traili
 - Fixed Asset Turnover
 - Operating Ratio
 </details>
-
 <details>
   <summary><h3>Liquidity Ratios 💧</h3></summary>
 
@@ -345,7 +344,7 @@ All of these ratios can be calculated based on (lagged) growth as well as traili
 </details>
 
 <details>
-  <summary><h3>Profitability Ratios 💰</h3></summary>
+  <summary>Profitability Ratios 💰</summary>
 
 - Gross Margin
 - Operating Margin
@@ -367,7 +366,7 @@ All of these ratios can be calculated based on (lagged) growth as well as traili
 </details>
 
 <details>
-  <summary><h3>Solvency Ratios 🪨</h3></summary>
+  <summary>Solvency Ratios 🪨</summary>
 
 - Debt to Assets Ratio
 - Debt to Equity Ratio
@@ -382,7 +381,7 @@ All of these ratios can be calculated based on (lagged) growth as well as traili
 </details>
 
 <details>
-  <summary><h3>Valuation Ratios ⚖️</h3></summary>
+  <summary>Valuation Ratios ⚖️</summary>
 
 - Earnings per Share (EPS)
 - Revenue per Share (RPS)

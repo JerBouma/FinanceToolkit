@@ -345,31 +345,31 @@ The accounts payable turnover ratio indicates how many times, on average, a comp
 
 > **Days of Accounts Payable Outstanding**
 
-The days payables outstanding (DPO) ratio is used to assess how efficiently a company manages its accounts payable. It calculates the average number of days it takes for a company to pay its suppliers after receiving an invoice. A higher DPO ratio indicates that the company is taking longer to pay its suppliers, which may have implications for its relationships with suppliers. See the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_days_of_accounts_payable_outstanding).
+The days payables outstanding (DPO) ratio is used to assess how efficiently a company manages its accounts payable. It calculates the average number of days it takes for a company to pay its suppliers after receiving an invoice. A higher DPO ratio indicates that the company is taking longer to pay its suppliers, which may have implications for its relationships with suppliers. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_days_of_accounts_payable_outstanding).
 
 > **Cash Conversion Cycle (CCC)**
 
-The Cash Conversion Cycle (CCC) is an important measure of a company’s liquidity management and efficiency in managing its working capital. It takes into account the time it takes to sell inventory, collect payments from customers, and pay suppliers. A shorter CCC indicates that a company is able to quickly convert its investments into cash, which can be a positive sign of efficient operations. See the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_cash_conversion_cycle).
+The Cash Conversion Cycle (CCC) is an important measure of a company’s liquidity management and efficiency in managing its working capital. It takes into account the time it takes to sell inventory, collect payments from customers, and pay suppliers. A shorter CCC indicates that a company is able to quickly convert its investments into cash, which can be a positive sign of efficient operations. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_cash_conversion_cycle).
 
 > **Cash Conversion Efficiency (CCE)**
 
-The cash conversion efficiency ratio is calculated by dividing the operating cash flow by the revenue. It indicates how much of a company’s sales are converted into cash. A higher cash conversion efficiency ratio is generally favorable, as it suggests that the company is able to convert its sales into cash more efficiently. See the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_cash_conversion_efficiency).
+The cash conversion efficiency ratio is calculated by dividing the operating cash flow by the revenue. It indicates how much of a company’s sales are converted into cash. A higher cash conversion efficiency ratio is generally favorable, as it suggests that the company is able to convert its sales into cash more efficiently. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_cash_conversion_efficiency).
 
 > **Receivables Turnover**
 
-The receivables turnover ratio is an important measure of how well a company manages its accounts receivable. It indicates how quickly a company collects payments from its customers. A higher turnover ratio is generally favorable as it suggests that the company is collecting payments more quickly, which improves its cash flow and working capital management. See the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_receivables_turnover).
+The receivables turnover ratio is an important measure of how well a company manages its accounts receivable. It indicates how quickly a company collects payments from its customers. A higher turnover ratio is generally favorable as it suggests that the company is collecting payments more quickly, which improves its cash flow and working capital management. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_receivables_turnover).
 
 > **SGA to Revenue Ratio**
 
-The SG&A to revenue ratio is calculated by dividing the total SG&A expenses by the company’s revenue and then multiplying by 100 to express it as a percentage. It provides insight into the efficiency of a company’s cost management and its ability to control its overhead costs. See the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_sga_to_revenue_ratio).
+The SG&A to revenue ratio is calculated by dividing the total SG&A expenses by the company’s revenue and then multiplying by 100 to express it as a percentage. It provides insight into the efficiency of a company’s cost management and its ability to control its overhead costs. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_sga_to_revenue_ratio).
 
 > **Fixed Asset Turnover**
 
-The Fixed Asset Turnover ratio is calculated by dividing the company’s net sales by the average fixed assets. It indicates how well a company is utilizing its fixed assets to generate revenue. A higher ratio suggests more efficient utilization of fixed assets. See the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_fixed_asset_turnover).
+The Fixed Asset Turnover ratio is calculated by dividing the company’s net sales by the average fixed assets. It indicates how well a company is utilizing its fixed assets to generate revenue. A higher ratio suggests more efficient utilization of fixed assets. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_fixed_asset_turnover).
 
 > **Operating Ratio**
 
-The operating ratio is calculated by dividing the company’s operating expenses by its net sales and multiplying by 100 to express it as a percentage. It provides insight into how efficiently a company is managing its operations. See the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_operating_ratio).
+The operating ratio is calculated by dividing the company’s operating expenses by its net sales and multiplying by 100 to express it as a percentage. It provides insight into how efficiently a company is managing its operations. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_operating_ratio).
 
 </details>
 <details>
@@ -379,31 +379,31 @@ The liquidity ratios are used to assess a company’s ability to meet its short-
 
 > **Current Ratio**
 
-The current ratio is calculated by dividing a company’s current assets by its current liabilities. It indicates whether a company can meet its short -term obligations using its short-term assets. See the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_current_ratio).
+The current ratio is calculated by dividing a company’s current assets by its current liabilities. It indicates whether a company can meet its short -term obligations using its short-term assets. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_current_ratio).
 
 > **Quick Ratio**
 
-The quick ratio is calculated by subtracting inventory from current assets and then dividing the result by current liabilities. It provides insight into a company’s ability to cover its short -term liabilities using its most liquid assets without relying on inventory. This ratio is also referred to as the Acid Test Ratio. See the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_quick_ratio).
+The quick ratio is calculated by subtracting inventory from current assets and then dividing the result by current liabilities. It provides insight into a company’s ability to cover its short -term liabilities using its most liquid assets without relying on inventory. This ratio is also referred to as the Acid Test Ratio. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_quick_ratio).
 
 > **Cash Ratio**
 
-The cash ratio is calculated by dividing the sum of cash and cash equivalents by current liabilities. It provides insight into a company’s immediate ability to cover its short -term obligations using its most liquid assets. See the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_cash_ratio).
+The cash ratio is calculated by dividing the sum of cash and cash equivalents by current liabilities. It provides insight into a company’s immediate ability to cover its short -term obligations using its most liquid assets. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_cash_ratio).
 
 > **Working Capital**
 
-The working capital is calculated by subtracting total current liabilities from total current assets. It represents the company’s short -term financial health and its ability to cover its current obligations using its liquid assets. See the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_working_capital).
+The working capital is calculated by subtracting total current liabilities from total current assets. It represents the company’s short -term financial health and its ability to cover its current obligations using its liquid assets. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_working_capital).
 
 > **Operating Cash Flow Ratio**
 
-The operating cash flow ratio is calculated by dividing operating cash flow by current liabilities. It indicates whether a company’s operating cash flow is sufficient to cover its short-term obligations. See the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_operating_cash_flow_ratio).
+The operating cash flow ratio is calculated by dividing operating cash flow by current liabilities. It indicates whether a company’s operating cash flow is sufficient to cover its short-term obligations. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_operating_cash_flow_ratio).
 
 > **Operating Cash Flow Sales Ratio**
 
-The operating cash flow to sales ratio is calculated by dividing operating cash flow by sales revenue. It indicates the proportion of sales revenue that is converted into cash from operating activities. See the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_operating_cash_flow_sales_ratio).
+The operating cash flow to sales ratio is calculated by dividing operating cash flow by sales revenue. It indicates the proportion of sales revenue that is converted into cash from operating activities. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_operating_cash_flow_sales_ratio).
 
 > **Short Term Coverage Ratio**
 
-The short-term coverage ratio is calculated by dividing operating cash flow by short -term debt. It assesses the company’s ability to meet its short -term obligations using its operating cash flow. See the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_short_term_coverage_ratio).
+The short-term coverage ratio is calculated by dividing operating cash flow by short -term debt. It assesses the company’s ability to meet its short -term obligations using its operating cash flow. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_short_term_coverage_ratio).
 
 </details>
 
@@ -414,72 +414,72 @@ The profitability ratios are used to assess a company’s ability to generate pr
 
 > **Gross Margin**
 
-The gross margin ratio is calculated by subtracting the cost of goods sold (COGS) from the total revenue and then dividing the result by the total revenue. It represents the portion of revenue that contributes to covering other expenses and generating profit. See the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_gross_margin).
+The gross margin ratio is calculated by subtracting the cost of goods sold (COGS) from the total revenue and then dividing the result by the total revenue. It represents the portion of revenue that contributes to covering other expenses and generating profit. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_gross_margin).
 
 > **Operating Margin**
 
-The operating margin ratio is calculated by subtracting the operating expenses from the total revenue and then dividing the result by the total revenue. It indicates how efficiently a company is managing its operating expenses in relation to its revenue. See the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_operating_margin).
+The operating margin ratio is calculated by subtracting the operating expenses from the total revenue and then dividing the result by the total revenue. It indicates how efficiently a company is managing its operating expenses in relation to its revenue. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_operating_margin).
 
 > **Net Profit Margin**
 
-The net profit margin ratio is calculated by dividing the net income by the total revenue. It indicates the portion of each dollar of revenue that represents profit after all expenses have been deducted. A higher net profit margin is generally considered favorable. See the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_net_profit_margin).
+The net profit margin ratio is calculated by dividing the net income by the total revenue. It indicates the portion of each dollar of revenue that represents profit after all expenses have been deducted. A higher net profit margin is generally considered favorable. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_net_profit_margin).
 
 > **Interest Burden Ratio**
 
-The Interest Burden or Interest Coverage Ratio is calculated by dividing the earnings before interest and taxes (EBIT) by the interest expenses. A higher ratio indicates that the company has more earnings to cover its interest expenses, which is generally considered favorable. See the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_interest_burden_ratio).
+The Interest Burden or Interest Coverage Ratio is calculated by dividing the earnings before interest and taxes (EBIT) by the interest expenses. A higher ratio indicates that the company has more earnings to cover its interest expenses, which is generally considered favorable. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_interest_burden_ratio).
 
 > **Income Before Tax Profit Margin**
 
-The Income Before Tax Profit Margin or Pretax Profit Margin is calculated by dividing the pre -tax profit by the revenue. It provides insight into how efficiently a company is able to generate profits from its revenue. See the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_income_before_tax_profit_margin).
+The Income Before Tax Profit Margin or Pretax Profit Margin is calculated by dividing the pre -tax profit by the revenue. It provides insight into how efficiently a company is able to generate profits from its revenue. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_income_before_tax_profit_margin).
 
 > **Effective Tax Rate**
 
-The effective tax rate is calculated by dividing the income tax expense by the pre-tax income. A financial ratio that measures the percentage of pretax income that is paid as taxes. See the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_effective_tax_rate).
+The effective tax rate is calculated by dividing the income tax expense by the pre-tax income. A financial ratio that measures the percentage of pretax income that is paid as taxes. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_effective_tax_rate).
 
 > **Return on Assets (RoA)**
 
-The return on assets is calculated by dividing the net income by the average total assets. Note that it is false to take the total assets at the end of the period given that income statements report over the period whereas a balance sheet reports on the period. See the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_return_on_assets).
+The return on assets is calculated by dividing the net income by the average total assets. Note that it is false to take the total assets at the end of the period given that income statements report over the period whereas a balance sheet reports on the period. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_return_on_assets).
 
 > **Return on Equity (RoE)**
 
-The return on equity is calculated by dividing the net income by the average shareholders’ equity. Shareholders’ equity represents the residual interest in the assets of a company after deducting liabilities. Note that it is false to take the total assets at the end of the period given that income statements report over the period whereas a balance sheet reports on the period. ROE provides insight into the company’s ability to generate profits from the investments made by its shareholders. A higher ROE indicates that the company is using its equity effectively to generate higher returns for its shareholders. See the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_return_on_equity).
+The return on equity is calculated by dividing the net income by the average shareholders’ equity. Shareholders’ equity represents the residual interest in the assets of a company after deducting liabilities. Note that it is false to take the total assets at the end of the period given that income statements report over the period whereas a balance sheet reports on the period. ROE provides insight into the company’s ability to generate profits from the investments made by its shareholders. A higher ROE indicates that the company is using its equity effectively to generate higher returns for its shareholders. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_return_on_equity).
 
 > **Return on Invested Capital (RoIC)**
 
-The return on invested capital is calculated by dividing the net operating profit after taxes (NOPAT) by the average invested capital. Invested capital includes both equity and debt, making this ratio a valuable measure of how efficiently a company generates returns for all of its investors. See the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_return_on_invested_capital).
+The return on invested capital is calculated by dividing the net operating profit after taxes (NOPAT) by the average invested capital. Invested capital includes both equity and debt, making this ratio a valuable measure of how efficiently a company generates returns for all of its investors. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_return_on_invested_capital).
 
 
 > **Income Quality Ratio**
 
-The income quality ratio provides insights into the quality of a company’s reported earnings. By comparing the cash flow from operating activities to the net income, this ratio helps assess whether a company’s reported profits are backed by actual cash flow. A higher income quality ratio suggests higher earnings quality and a better ability to convert profits into cash flow. See the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_income_quality_ratio).
+The income quality ratio provides insights into the quality of a company’s reported earnings. By comparing the cash flow from operating activities to the net income, this ratio helps assess whether a company’s reported profits are backed by actual cash flow. A higher income quality ratio suggests higher earnings quality and a better ability to convert profits into cash flow. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_income_quality_ratio).
 
 > **Return on Tangible Assets (RoTA)**
 
-The return on tangible assets (ROTA) provides insights into the efficiency with which a company utilizes its tangible assets to generate profits. Tangible assets include physical assets such as buildings, machinery, and equipment. ROTA indicates how well a company can generate profits from its core operational assets. See the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_return_on_tangible_assets).
+The return on tangible assets (ROTA) provides insights into the efficiency with which a company utilizes its tangible assets to generate profits. Tangible assets include physical assets such as buildings, machinery, and equipment. ROTA indicates how well a company can generate profits from its core operational assets. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_return_on_tangible_assets).
 
 > **Return on Capital Employed (RoCE)**
 
-The return on capital employed (ROCE) is a crucial financial metric that evaluates the efficiency and profitability of a company’s utilization of both equity and debt capital to generate profits. It assesses how well the company generates earnings relative to the total capital invested in the business. See the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_return_on_capital_employed).
+The return on capital employed (ROCE) is a crucial financial metric that evaluates the efficiency and profitability of a company’s utilization of both equity and debt capital to generate profits. It assesses how well the company generates earnings relative to the total capital invested in the business. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_return_on_capital_employed).
 
 > **Net Income per EBT**
 
-The net income per earnings before taxes (EBT) ratio helps evaluate the extent to which a company’s net income is generated from its operating activities before considering the impact of income taxes. It gives insights into how effectively a company generates profit relative to its taxable income. See the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_net_income_per_ebt).
+The net income per earnings before taxes (EBT) ratio helps evaluate the extent to which a company’s net income is generated from its operating activities before considering the impact of income taxes. It gives insights into how effectively a company generates profit relative to its taxable income. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_net_income_per_ebt).
 
 > **Free Cash Flow Operating Cash Flow Ratio**
 
-The free cash flow to operating cash flow ratio helps assess how well a company’s operating activities translate into free cash flow, which is the cash available after all expenses and investments. A higher ratio indicates that the company is generating strong free cash flow relative to its operating cash flow, which could signify efficient capital management. See the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_free_cash_flow_operating_cash_flow_ratio).
+The free cash flow to operating cash flow ratio helps assess how well a company’s operating activities translate into free cash flow, which is the cash available after all expenses and investments. A higher ratio indicates that the company is generating strong free cash flow relative to its operating cash flow, which could signify efficient capital management. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_free_cash_flow_operating_cash_flow_ratio).
 
 > **Tax Burden Ratio**
 
-The tax burden ratio measures the portion of a company’s earnings that is paid as taxes. A higher ratio indicates that a larger portion of the income is being retained by the company after taxes. This ratio provides insights into the tax efficiency of the company and its ability to manage its tax liabilities. See the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_tax_burden_ratio).
+The tax burden ratio measures the portion of a company’s earnings that is paid as taxes. A higher ratio indicates that a larger portion of the income is being retained by the company after taxes. This ratio provides insights into the tax efficiency of the company and its ability to manage its tax liabilities. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_tax_burden_ratio).
 
 > **EBT to EBIT**
 
-The EBT to EBIT ratio measures the proportion of a company’s earnings that is generated before paying interest and taxes. It provides insights into how a company’s operating performance is impacted by interest expenses and tax obligations. A higher ratio indicates that a larger portion of the company’s earnings is generated from its core operations before considering interest payments and taxes. See the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_ebt_to_ebit).
+The EBT to EBIT ratio measures the proportion of a company’s earnings that is generated before paying interest and taxes. It provides insights into how a company’s operating performance is impacted by interest expenses and tax obligations. A higher ratio indicates that a larger portion of the company’s earnings is generated from its core operations before considering interest payments and taxes. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_ebt_to_ebit).
 
 > **EBIT to Revenue**
 
-The EBIT to Revenue ratio measures the company’s ability to generate profit from its core operations relative to its revenue. It provides insights into the operational efficiency and profitability of the company, as it excludes the impact of interest expenses and taxes on its earnings. A higher ratio indicates that a larger portion of the company’s revenue is converted into operating profit. See the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_ebit_to_revenue).
+The EBIT to Revenue ratio measures the company’s ability to generate profit from its core operations relative to its revenue. It provides insights into the operational efficiency and profitability of the company, as it excludes the impact of interest expenses and taxes on its earnings. A higher ratio indicates that a larger portion of the company’s revenue is converted into operating profit. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_ebit_to_revenue).
 
 </details>
 
@@ -490,43 +490,43 @@ The solvency ratios are used to assess a company’s ability to meet its long-te
 
 > **Debt to Assets Ratio**
 
-This ratio, also known as the Debt Ratio, indicates the percentage of a company’s total assets that are funded by debt. It is a measure of a company’s financial leverage and indicates the extent to which a company relies on borrowed funds to finance its operations. A higher ratio implies a higher level of debt in the company’s capital structure, which could increase financial risk. See the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_debt_to_assets_ratio).
+This ratio, also known as the Debt Ratio, indicates the percentage of a company’s total assets that are funded by debt. It is a measure of a company’s financial leverage and indicates the extent to which a company relies on borrowed funds to finance its operations. A higher ratio implies a higher level of debt in the company’s capital structure, which could increase financial risk. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_debt_to_assets_ratio).
 
 > **Debt to Equity Ratio**
 
-The debt to equity ratio, for short the D/E ratio, indicates the relative contribution of debt and equity to a company’s capital structure. It helps assess the level of financial risk a company carries due to its debt obligations. A higher ratio implies a higher reliance on debt to finance the business, which could increase risk but also potentially lead to higher returns for shareholders. See the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_debt_to_equity_ratio).
+The debt to equity ratio, for short the D/E ratio, indicates the relative contribution of debt and equity to a company’s capital structure. It helps assess the level of financial risk a company carries due to its debt obligations. A higher ratio implies a higher reliance on debt to finance the business, which could increase risk but also potentially lead to higher returns for shareholders. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_debt_to_equity_ratio).
 
 > **Interest Coverage Ratio**
 
-The interest coverage ratio evaluates a company’s ability to meet its interest obligations from its operating income. A higher ratio indicates a company’s stronger ability to cover its interest payments using its earnings, implying lower financial risk. Conversely, a lower ratio suggests a company may have difficulty meeting its interest obligations and could be at higher risk of default. See the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_interest_coverage_ratio).
+The interest coverage ratio evaluates a company’s ability to meet its interest obligations from its operating income. A higher ratio indicates a company’s stronger ability to cover its interest payments using its earnings, implying lower financial risk. Conversely, a lower ratio suggests a company may have difficulty meeting its interest obligations and could be at higher risk of default. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_interest_coverage_ratio).
 
 > **Equity Multiplier**
 
-The equity multiplier helps assess the financial leverage of a company by indicating how much of its assets are financed by equity versus debt. A higher equity multiplier suggests that the company relies more on debt financing, which can amplify returns but also increases financial risk. Conversely, a lower equity multiplier indicates a larger portion of assets is financed by equity, potentially lowering financial risk. See the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_equity_multiplier).
+The equity multiplier helps assess the financial leverage of a company by indicating how much of its assets are financed by equity versus debt. A higher equity multiplier suggests that the company relies more on debt financing, which can amplify returns but also increases financial risk. Conversely, a lower equity multiplier indicates a larger portion of assets is financed by equity, potentially lowering financial risk. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_equity_multiplier).
 
 > **Debt Service Coverage Ratio**
 
-The debt service coverage ratio provides insights into a company’s ability to meet its debt obligations from its operating income. It is especially important for companies with significant debt obligations, as a lower ratio indicates higher financial risk and potential difficulties in servicing debt payments. See the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_debt_service_coverage_ratio).
+The debt service coverage ratio provides insights into a company’s ability to meet its debt obligations from its operating income. It is especially important for companies with significant debt obligations, as a lower ratio indicates higher financial risk and potential difficulties in servicing debt payments. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_debt_service_coverage_ratio).
 
 > **Free Cash Flow Yield**
 
-The free cash flow yield ratio is a measure of how efficiently a company generates free cash flow relative to its market value. It provides insights into whether the company’s valuation is reasonable compared to the amount of cash it generates. See the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_free_cash_flow_yield).
+The free cash flow yield ratio is a measure of how efficiently a company generates free cash flow relative to its market value. It provides insights into whether the company’s valuation is reasonable compared to the amount of cash it generates. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_free_cash_flow_yield).
 
 > **Net Debt to EBITDA Ratio**
 
-The net debt to EBITDA ratio is a measure of a company’s ability to manage its debt obligations in relation to its earnings and cash flow. A lower ratio indicates better financial health and a stronger ability to manage debt. See the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_net_debt_to_ebitda_ratio).
+The net debt to EBITDA ratio is a measure of a company’s ability to manage its debt obligations in relation to its earnings and cash flow. A lower ratio indicates better financial health and a stronger ability to manage debt. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_net_debt_to_ebitda_ratio).
 
 > **Cash Flow Coverage Ratio**
 
-The cash flow coverage ratio assesses a company’s ability to meet its debt obligations by comparing its operating cash flow to its total debt. A higher ratio indicates a stronger ability to cover its debt with cash generated from operations. See the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_cash_flow_coverage_ratio).
+The cash flow coverage ratio assesses a company’s ability to meet its debt obligations by comparing its operating cash flow to its total debt. A higher ratio indicates a stronger ability to cover its debt with cash generated from operations. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_cash_flow_coverage_ratio).
 
 > **CAPEX Coverage Ratio**
 
-The capex coverage ratio evaluates a company’s ability to fund its capital expenditures, which are essential for maintaining and growing its business, using the cash generated from its operations. A higher ratio indicates a stronger ability to fund capital investments from operating cash flow. See the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_capex_coverage_ratio).
+The capex coverage ratio evaluates a company’s ability to fund its capital expenditures, which are essential for maintaining and growing its business, using the cash generated from its operations. A higher ratio indicates a stronger ability to fund capital investments from operating cash flow. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_capex_coverage_ratio).
 
 > **CAPEX Dividend Coverage Ratio**
 
-The capex dividend coverage ratio assesses whether a company’s cash flow from operations is sufficient to cover both its capital expenditures (which are essential for maintaining and growing its business) and its dividend payments to shareholders. A higher ratio indicates a stronger ability to fund both capex and dividends from operating cash flow. See the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_capex_dividend_coverage_ratio).
+The capex dividend coverage ratio assesses whether a company’s cash flow from operations is sufficient to cover both its capital expenditures (which are essential for maintaining and growing its business) and its dividend payments to shareholders. A higher ratio indicates a stronger ability to fund both capex and dividends from operating cash flow. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_capex_dividend_coverage_ratio).
 
 </details>
 
@@ -537,97 +537,97 @@ The valuation ratios are used to assess the relative value of a company’s stoc
 
 > **Earnings per Share (EPS)**
 
-The earnings per share (EPS) is a widely used financial metric that helps investors understand the profitability of a company on a per -share basis. It provides insight into the portion of a company’s earnings that is allocated to each outstanding share of its common stock. EPS is an important measure for investors and analysts when assessing a company’s financial performance and comparing it to other companies. See the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_earnings_per_share).
+The earnings per share (EPS) is a widely used financial metric that helps investors understand the profitability of a company on a per -share basis. It provides insight into the portion of a company’s earnings that is allocated to each outstanding share of its common stock. EPS is an important measure for investors and analysts when assessing a company’s financial performance and comparing it to other companies. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_earnings_per_share).
 
 
 > **Revenue per Share (RPS)**
 
-The revenue per share is an important metric that provides insight into a company’s ability to generate revenue on a per -share basis. It can help investors understand the company’s revenue -generation efficiency and its overall financial health. See the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_revenue_per_share).
+The revenue per share is an important metric that provides insight into a company’s ability to generate revenue on a per -share basis. It can help investors understand the company’s revenue -generation efficiency and its overall financial health. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_revenue_per_share).
 
 > **Price Earnings Ratio (PE)**
 
-The price earnings ratio is a widely used valuation metric that helps investors assess the relative value of a company’s stock. A higher P/E ratio may indicate that the market has high expectations for the company’s future growth, while a lower P/E ratio may suggest that the company is undervalued. See the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_price_earnings_ratio).
+The price earnings ratio is a widely used valuation metric that helps investors assess the relative value of a company’s stock. A higher P/E ratio may indicate that the market has high expectations for the company’s future growth, while a lower P/E ratio may suggest that the company is undervalued. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_price_earnings_ratio).
 
 > **Price to Earnings Growth Ratio (PEG)**
 
-The price--to-earnings growth (PEG) ratio provides a more comprehensive valuation measure compared to the P/E ratio alone. It takes into account a company’s earnings growth rate, allowing investors to assess whether a stock is overvalued or undervalued relative to its growth prospects. See the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_price_to_earnings_growth_ratio).
+The price--to-earnings growth (PEG) ratio provides a more comprehensive valuation measure compared to the P/E ratio alone. It takes into account a company’s earnings growth rate, allowing investors to assess whether a stock is overvalued or undervalued relative to its growth prospects. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_price_to_earnings_growth_ratio).
 
 > **Book Value per Share**
 
-The book value per share is a fundamental valuation metric that reflects the net worth of a company attributed to each outstanding share of common stock. See the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_book_value_per_share).
+The book value per share is a fundamental valuation metric that reflects the net worth of a company attributed to each outstanding share of common stock. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_book_value_per_share).
 
 > **Price to Book Ratio (PB)**
 
-The price to book ratio is a key valuation metric that helps investors assess whether a company’s stock is overvalued or undervalued relative to its underlying net asset value. See the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_price_to_book_ratio).
+The price to book ratio is a key valuation metric that helps investors assess whether a company’s stock is overvalued or undervalued relative to its underlying net asset value. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_price_to_book_ratio).
 
 > **Interest Debt per Share**
 
-The interest debt per share ratio provides insight into how much interest a company pays on its debt relative to its shareholder base. It can help investors assess the financial burden of interest expenses on the company’s profitability. See the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_interest_debt_per_share).
+The interest debt per share ratio provides insight into how much interest a company pays on its debt relative to its shareholder base. It can help investors assess the financial burden of interest expenses on the company’s profitability. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_interest_debt_per_share).
 
 > **CAPEX per Share**
 
-The capex per share ratio provides insight into how much capital a company invests in its operations and growth initiatives relative to its shareholder base. It can help investors assess the level of reinvestment into the business. See the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_capex_per_share).
+The capex per share ratio provides insight into how much capital a company invests in its operations and growth initiatives relative to its shareholder base. It can help investors assess the level of reinvestment into the business. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_capex_per_share).
 
 > **Dividend Yield**
 
-The dividend yield ratio is used by investors to assess the income potential of an investment in a company’s stock based on the dividends it pays out. A higher dividend yield can be attractive to income-seeking investors. See the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_dividend_yield).
+The dividend yield ratio is used by investors to assess the income potential of an investment in a company’s stock based on the dividends it pays out. A higher dividend yield can be attractive to income-seeking investors. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_dividend_yield).
 
 > **Weighted Dividend Yield**
 
-This dividend yield ratio takes into account the (diluted) weighted average shares and actual dividends paid as found in the cash flow statement. It provides a more accurate reflection of the dividends paid out per share, considering any changes in the number of shares. See the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_weighted_dividend_yield).
+This dividend yield ratio takes into account the (diluted) weighted average shares and actual dividends paid as found in the cash flow statement. It provides a more accurate reflection of the dividends paid out per share, considering any changes in the number of shares. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_weighted_dividend_yield).
 
 > **Price to Cash Flow Ratio (P/CF)**
 
-The price to cash flow ratio is a key valuation metric that helps investors assess the relative value of a company’s stock. It is similar to the price to earnings ratio, but uses cash flow instead of earnings in the denominator. See the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_price_to_cash_flow_ratio).
+The price to cash flow ratio is a key valuation metric that helps investors assess the relative value of a company’s stock. It is similar to the price to earnings ratio, but uses cash flow instead of earnings in the denominator. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_price_to_cash_flow_ratio).
 
 
 > **Price to Free Cash Flow Ratio (P/FCF)**
 
-This price to free cash flow ratio provides insight into how the market values a company’s ability to generate free cash flow. It is a valuation ratio that compares a company’s market price to its free cash flow per share. See the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_price_to_free_cash_flow_ratio).
+This price to free cash flow ratio provides insight into how the market values a company’s ability to generate free cash flow. It is a valuation ratio that compares a company’s market price to its free cash flow per share. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_price_to_free_cash_flow_ratio).
 
 > **Market Capitalization**
 
-Market capitalization, often referred to as “market cap,” is the total value of a company’s outstanding shares of stock in the stock market. It is calculated by multiplying the current market price per share by the total number of outstanding shares. See the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_market_cap).
+Market capitalization, often referred to as “market cap,” is the total value of a company’s outstanding shares of stock in the stock market. It is calculated by multiplying the current market price per share by the total number of outstanding shares. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_market_cap).
 
 > **Enterprise Value**
 
-The Enterprise Value (EV) is a measure of a company’s total value, often used as a more comprehensive alternative to market capitalization. It is calculated as the sum of a company’s market capitalization, outstanding debt, minority interest, and preferred equity, minus the cash and cash equivalents. See the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_enterprise_value).
+The Enterprise Value (EV) is a measure of a company’s total value, often used as a more comprehensive alternative to market capitalization. It is calculated as the sum of a company’s market capitalization, outstanding debt, minority interest, and preferred equity, minus the cash and cash equivalents. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_enterprise_value).
 
 > **EV to Sales Ratio**
 
-This EV to Sales ratio compares the enterprise value (EV) to the total revenue generated by the company. It can provide insights into how efficiently a company is using its revenue to generate value for its investors. See the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_ev_to_sales_ratio).
+This EV to Sales ratio compares the enterprise value (EV) to the total revenue generated by the company. It can provide insights into how efficiently a company is using its revenue to generate value for its investors. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_ev_to_sales_ratio).
 
 > **EV to EBITDA Ratio**
 
-This EV to EBITDA ratio is a valuation ratio that measures a company’s total value (including debt and equity) relative to its EBITDA. It helps investors understand how many times the enterprise value exceeds the company’s EBITDA, providing insights into the company’s debt load and operating performance. See the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_ev_to_ebitda_ratio).
+This EV to EBITDA ratio is a valuation ratio that measures a company’s total value (including debt and equity) relative to its EBITDA. It helps investors understand how many times the enterprise value exceeds the company’s EBITDA, providing insights into the company’s debt load and operating performance. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_ev_to_ebitda_ratio).
 
 > **EV to Operating Cashflow Ratio**
 
-The EV to Operating Cashflow Ratio is a valuation ratio that measures a company’s total value (including debt and equity) relative to its operating cash flow. This ratio provides insights into how many times the enterprise value exceeds the company’s operating cash flow, indicating the company’s ability to generate cash from its operations. See the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_ev_to_operating_cashflow_ratio).
+The EV to Operating Cashflow Ratio is a valuation ratio that measures a company’s total value (including debt and equity) relative to its operating cash flow. This ratio provides insights into how many times the enterprise value exceeds the company’s operating cash flow, indicating the company’s ability to generate cash from its operations. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_ev_to_operating_cashflow_ratio).
 
 > **EV to EBIT**
 
-Calculate the enterprise value over earnings before interest and taxes (EBIT) ratio, which is a valuation metric that compares a company’s total value (including debt and equity) relative to its earnings before interest and taxes. See the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_ev_to_ebit).
+Calculate the enterprise value over earnings before interest and taxes (EBIT) ratio, which is a valuation metric that compares a company’s total value (including debt and equity) relative to its earnings before interest and taxes. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_ev_to_ebit).
 
 > **Earnings Yield**
 
-The earnings yield ratio is a valuation metric that provides insights into how much a company’s earnings contribute to its stock price. It compares the earnings per share to the market price per share, helping investors understand the earnings potential of the company relative to its current market value. See the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_earnings_yield).
+The earnings yield ratio is a valuation metric that provides insights into how much a company’s earnings contribute to its stock price. It compares the earnings per share to the market price per share, helping investors understand the earnings potential of the company relative to its current market value. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_earnings_yield).
 
 > **Dividend Payout Ratio**
 
-The payout ratio is a financial metric that helps investors assess the portion of a company’s earnings that is being distributed to shareholders in the form of dividends. It’s a valuable indicator for dividend investors as it indicates the sustainability of dividend payments and the company’s approach to distributing profits. See the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_dividend_payout_ratio).
+The payout ratio is a financial metric that helps investors assess the portion of a company’s earnings that is being distributed to shareholders in the form of dividends. It’s a valuable indicator for dividend investors as it indicates the sustainability of dividend payments and the company’s approach to distributing profits. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_dividend_payout_ratio).
 
 > **Reinvestment Rate**
 
-The reinvestment rate is a financial metric that helps investors assess the portion of a company’s earnings that is being retained by the company for future growth. It’s a valuable indicator for dividend investors as it indicates the sustainability of dividend payments and the company’s approach to distributing profits. See the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_reinvestment_rate).
+The reinvestment rate is a financial metric that helps investors assess the portion of a company’s earnings that is being retained by the company for future growth. It’s a valuable indicator for dividend investors as it indicates the sustainability of dividend payments and the company’s approach to distributing profits. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_reinvestment_rate).
 
 > **Tangible Asset Value**
 
-The tangible asset value is a financial metric that represents the total value of a company’s assets that can be used to generate revenue. Tangible assets are those physical assets that have a finite monetary value and can be sold, used, or consumed. See the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_tangible_asset_value).
+The tangible asset value is a financial metric that represents the total value of a company’s assets that can be used to generate revenue. Tangible assets are those physical assets that have a finite monetary value and can be sold, used, or consumed. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_tangible_asset_value).
 
 > **Net Current Asset Value**
 
-The net current asset value is a financial metric that represents the total value of a company’s current assets minus its current liabilities. It indicates the extent to which a company’s short -term assets exceed its short-term liabilities. See the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_net_current_asset_value).
+The net current asset value is a financial metric that represents the total value of a company’s current assets minus its current liabilities. It indicates the extent to which a company’s short -term assets exceed its short-term liabilities. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_net_current_asset_value).
 
 </details>
 
@@ -635,14 +635,40 @@ The net current asset value is a financial metric that represents the total valu
 
 The Models module is meant to execute well-known models such as DUPONT and the Discounted Cash Flow (DCF) model. These models are also directly related to the data retrieved from the Toolkit module. **Find the Notebook [here](https://www.jeroenbouma.com/projects/financetoolkit/models-module) and the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/models) which includes an explanation about the model, the parameters and an example.**
 
-- DuPont Analysis
-- Extended DuPont Analysis
-- Enterprise Value Breakdown
-- Weighted Average Cost of Capital (WACC)
-- Intrinsic Valuation
-- Altman Z-Score
-- Piotroski F-Score
-- Present Value of Growth Opportunities (PVGO)
+> **DuPont Analysis**
+
+The Dupont analysis is a method used to dissect and understand the factors that drive a company’s return on equity (ROE). It breaks down the ROE into three key components: Profit Margin, Asset Turnover, and Financial Leverage. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/models#get_dupont_analysis).
+
+> **Extended DuPont Analysis**
+
+The Extended Dupont analysis is an advanced method used to break down the return on equity (ROE) into multiple components, providing a more detailed insight into the factors influencing a company’s profitability. It considers additional metrics such as Return on Assets (ROA), Total Asset Turnover, Financial Leverage, and more. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/models#get_extended_dupont_analysis).
+
+> **Enterprise Value Breakdown**
+
+The Enterprise Value (EV) breakdown provides a detailed view of its components. This include the market capitalization, the total debt, the minority interest, the preferred equity, the cash and cash equivalents, and the enterprise value. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/models#get_enterprise_value_breakdown).
+
+> **Weighted Average Cost of Capital (WACC)**
+
+The Weighted Average Cost of Capital (WACC) is a financial metric used to estimate the cost of capital for a company. It represents the average rate of return a company must pay to its investors for using their capital. WACC takes into account the cost of both equity and debt, weighted by their respective proportions in the company’s capital structure. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/models#get_weighted_average_cost_of_capital).
+
+> **Intrinsic Valuation**
+
+Intrinsic value is a fundamental concept in finance and investing that represents the true worth or value of an asset, security, or investment, independent of its current market price or prevailing market sentiment. It is a concept often associated with the value investing philosophy, made famous by legendary investors like Benjamin Graham and Warren Buffett. Understanding intrinsic value is crucial for investors looking to make informed decisions about where to allocate their capital.
+
+This functionality uses DCF, or Discounted Cash Flow which is a widely used financial valuation method that allows investors and analysts to estimate the intrinsic value of an investment or business based on its expected future cash flows. It is a fundamental tool in finance and investment analysis, providing a systematic way to assess the present value of future cash flows while considering the time value of money. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/models#get_intrinsic_valuation).
+
+> **Altman Z-Score**
+
+The Altman Z -Score is a financial metric used to predict the likelihood of a company going bankrupt. The Altman Z -Score is calculated using several financial ratios, including working capital to total assets, retained earnings to total assets, earnings before interest and taxes (EBIT) to total assets, market value of equity to book value of total liabilities, and sales to total assets. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/models#get_altman_z_score).
+
+
+> **Piotroski F-Score**
+
+The Piotroski Score is a comprehensive financial assessment tool that helps investors and analysts evaluate a company’s financial health and fundamental strength. The Piotroski Score was developed by Joseph Piotroski and is based on a set of nine fundamental financial criteria. Each criterion is assigned a score of 0 or 1, and the scores are then summed to calculate the Piotroski Score. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/models#get_piotroski_f_score).
+
+> **Present Value of Growth Opportunities (PVGO)**
+
+The Present Value of Growth Opportunities (PVGO) is a financial metric that represents the present value of a company’s future growth opportunities. It is calculated as the difference between the company’s current stock price and the discounted value of its future cash flows. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/models#get_present_value_of_growth_opportunities).
 
 ## Options and Greeks
 

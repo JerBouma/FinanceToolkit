@@ -277,6 +277,8 @@ ___
 
 ## Functionality
 
+These are the core functionalities of the Finance Toolkit. For any calculation, it often first collects data via these functions. For example, financial ratios require the financial statements and historical data which are obtained through the Toolkit without needing to specify this first.
+
 <details>
     <summary><b>Financial Statements</b></summary>
 

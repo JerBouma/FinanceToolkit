@@ -28,7 +28,6 @@ The Finance Toolkit is complimented very well with the [Finance Database 🌎](h
 # Table of Contents
 
 1. [Installation](#installation)
-2. [Functionality](#functionality)
 2. [Basic Usage](#basic-usage)
 3. [Available Metrics](#available-metrics)
 4. [Questions & Answers](#questions--answers)
@@ -265,17 +264,11 @@ And below these Unemployment Rates are plotted over time:
 
 ![Economics](https://github.com/JerBouma/FinanceToolkit/assets/46355364/bb44bd4e-07a1-4ecf-a4eb-7fc09a960930)
 
-# Functionality
+# Available Functionality and Metrics
 
-The Finance Toolkit features the following functionality, also see [Basic Usage](#basic-usage) to see some of these functions in action and the [Code Documentation](https://www.jeroenbouma.com/projects/financetoolkit/docs) for a detailed explanation of each function.
+The Finance Toolkit has the ability to collect 30+ years of data and calculate 150+ financial metrics. The following list shows all of the available functionality and metrics.
 
-
-
-# Available Metrics
-
-The Finance Toolkit has the ability to calculate 150+ financial metrics. The following list shows all of the available metrics. Note that the Finance Toolkit is not limited to these ratios and indicators as it is possible to add custom ratios as well. See [this Notebook](https://www.jeroenbouma.com/projects/financetoolkit/custom-ratios) for more information.
-
-Each ratio and indicator has a corresponding function that can be called directly for example `ratios.get_return_on_equity` or `technicals.get_relative_strength_index`.
+Each ratio and indicator has a corresponding function that can be called directly for example `ratios.get_return_on_equity` or `technicals.get_relative_strength_index`. However, there are also functions that collect multiple ratios or indicators at once such as `ratios.collect_profitability_ratios`. These functions are useful when you want to collect a large amount of ratios or indicators at once.
 
 ___ 
 

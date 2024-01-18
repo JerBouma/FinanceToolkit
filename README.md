@@ -315,24 +315,49 @@ The Ratios Module contains over 50+ ratios that can be used to analyse companies
 All of these ratios can be calculated based on (lagged) growth as well as trailing (e.g. TTM) metrics. This is embedded in all ratios as well as the financial statements themselves which means it is possible to calculate revenue growth and 12-month (TTM) Price-to-Earnings with the parameters `growth=True` and `trailing=4` respectively. Note that trailing is based on periods therefore TTM can only be calculated by setting `quarterly=True` in the Toolkit initialization.
 
 <details>
-  <summary><h3>Efficiency Ratios ⚙️</h3></summary>
+  <summary>Efficiency Ratios ⚙️</summary>
 
-- Asset Turnover Ratio
-- Inventory Turnover Ratio
-- Days of Inventory Outstanding
-- Days of Sales Outstanding
-- Operating Cycle
-- Accounts Payables Turnover Ratio
-- Days of Accounts Payable Outstanding
-- Cash Conversion Cycle (CCC)
-- Cash Conversion Efficiency (CCE)
-- Receivables Turnover
-- SGA to Revenue Ratio
-- Fixed Asset Turnover
-- Operating Ratio
+**Asset Turnover Ratio**
+The asset turnover ratio is calculated by dividing the company’s net sales (revenue) by its average total assets. It measures how well a company utilizes its assets to generate revenue. A higher asset turnover ratio indicates that the company is generating more revenue per unit of assets, which is generally seen as a positive sign of operational efficiency.
+
+**Inventory Turnover Ratio**
+The inventory turnover ratio is calculated by dividing the cost of goods sold (COGS) by the average inventory value. It indicates how many times a company’s inventory is sold and replaced over a period. A higher inventory turnover ratio suggests that a company is effectively managing its inventory by quickly converting it into sales.
+
+**Days of Inventory Outstanding**
+The days sales in inventory ratio (DSI) is calculated by dividing the average inventory by the cost of goods sold (COGS) and then multiplying by the number of days in the period. It represents the average number of days it takes for a company to sell its inventory. A lower DSI indicates that the company is selling its inventory more quickly.
+
+**Days of Sales Outstanding**
+The days of sales outstanding (DSO) ratio is calculated by dividing the accounts receivable by the total credit sales and then multiplying by the number of days in the period. It represents the average number of days it takes for a company to collect payment on its credit sales. A lower DSO indicates that the company is collecting payments more quickly.
+
+**Operating Cycle**
+The operating cycle represents the total time required to purchase inventory, convert it into finished goods, sell the goods to customers, and collect the accounts receivable. It is calculated by adding the days sales in inventory (DSI) and the days of sales outstanding (DSO).
+
+**Accounts Payables Turnover Ratio**
+The accounts payable turnover ratio indicates how many times, on average, a company pays off its accounts payable during a specific period. A higher turnover ratio is generally favorable, as it suggests that the company is efficiently managing its payments to suppliers.
+
+**Days of Accounts Payable Outstanding**
+The days payables outstanding (DPO) ratio is used to assess how efficiently a company manages its accounts payable. It calculates the average number of days it takes for a company to pay its suppliers after receiving an invoice. A higher DPO ratio indicates that the company is taking longer to pay its suppliers, which may have implications for its relationships with suppliers.
+
+**Cash Conversion Cycle (CCC)**
+The Cash Conversion Cycle (CCC) is an important measure of a company’s liquidity management and efficiency in managing its working capital. It takes into account the time it takes to sell inventory, collect payments from customers, and pay suppliers. A shorter CCC indicates that a company is able to quickly convert its investments into cash, which can be a positive sign of efficient operations.
+
+**Cash Conversion Efficiency (CCE)**
+The cash conversion efficiency ratio is calculated by dividing the operating cash flow by the revenue. It indicates how much of a company’s sales are converted into cash. A higher cash conversion efficiency ratio is generally favorable, as it suggests that the company is able to convert its sales into cash more efficiently.
+
+**Receivables Turnover**
+The receivables turnover ratio is an important measure of how well a company manages its accounts receivable. It indicates how quickly a company collects payments from its customers. A higher turnover ratio is generally favorable as it suggests that the company is collecting payments more quickly, which improves its cash flow and working capital management.
+
+**SGA to Revenue Ratio**
+The SG&A to revenue ratio is calculated by dividing the total SG&A expenses by the company’s revenue and then multiplying by 100 to express it as a percentage. It provides insight into the efficiency of a company’s cost management and its ability to control its overhead costs.
+
+**Fixed Asset Turnover**
+The Fixed Asset Turnover ratio is calculated by dividing the company’s net sales by the average fixed assets. It indicates how well a company is utilizing its fixed assets to generate revenue. A higher ratio suggests more efficient utilization of fixed assets.
+
+**Operating Ratio**
+The operating ratio is calculated by dividing the company’s operating expenses by its net sales and multiplying by 100 to express it as a percentage. It provides insight into how efficiently a company is managing its operations.
 </details>
 <details>
-  <summary><h3>Liquidity Ratios 💧</h3></summary>
+  <summary>Liquidity Ratios 💧</summary>
 
 - Current Ratio
 - Quick Ratio

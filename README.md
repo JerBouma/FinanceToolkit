@@ -316,6 +316,7 @@ All of these ratios can be calculated based on (lagged) growth as well as traili
 
 <details>
   <summary><h3>Efficiency Ratios ⚙️</h3></summary>
+
 - Asset Turnover Ratio
 - Inventory Turnover Ratio
 - Days of Inventory Outstanding

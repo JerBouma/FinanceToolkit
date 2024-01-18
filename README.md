@@ -1025,7 +1025,7 @@ Kurtosis is a statistical measure used in finance to evaluate the shape of the p
 The Technicals Module contains 30+ Technical Indicators that can be used to analyse companies. These ratios are divided into 4 categories which are breadth, momentum, overlap and volatility. Each indicator is calculated using the data from the Toolkit module. **Find the Notebook [here](https://www.jeroenbouma.com/projects/financetoolkit/technicals-module) and the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals) which includes an explanation about the indicator, the parameters and an example.**
 
 <details>
-    <summary>Breadth Indicators 💨</summary>
+    <summary><b>Breadth Indicators 💨</b></summary>
 
 Breadth indicators are mathematical formulas that measure the number of advancing and declining stocks, and/or their volume, to calculate the participation in a stock index's price movements.
 

@@ -286,6 +286,66 @@ Acquire a full history of both annual and quarterly financial statements, includ
 
 These financial statements are normalized to facilitate straightforward comparisons between companies such as automatic currency conversions of the entire of the financial statement. Additionally, variations in accounting periods among companies are automatically standardized, ensuring that each company's year or quarter aligns with the corresponding calendar period. Next to that, there is also a [statististics statement](https://www.jeroenbouma.com/projects/financetoolkit/docs#get_statistics_statement) that gives insights into the reported currency, CIK ID and SEC links.
 
+As an example:
+
+```python
+from financetoolkit import Toolkit
+
+toolkit = Toolkit(["MSFT", "MU"], api_key="FINANCIAL_MODELING_PREP_KEY", quarterly=True, start_date='2022-05-01')
+
+balance_sheet_statements = toolkit.get_balance_sheet_statement()
+
+balance_sheet_statements.loc['MU']
+```
+
+Which returns:
+
+|                                          |      2022Q2 |      2022Q3 |      2022Q4 |      2023Q1 |      2023Q2 |
+|:-----------------------------------------|------------:|------------:|------------:|------------:|------------:|
+| Cash and Cash Equivalents                |  9.157e+09  |  8.262e+09  |  9.574e+09  |  9.798e+09  |  9.298e+09  |
+| Short Term Investments                   |  1.07e+09   |  1.069e+09  |  1.007e+09  |  1.02e+09   |  1.054e+09  |
+| Cash and Short Term Investments          |  1.0227e+10 |  9.331e+09  |  1.0581e+10 |  1.0818e+10 |  1.0352e+10 |
+| Accounts Receivable                      |  6.229e+09  |  5.13e+09   |  3.318e+09  |  2.278e+09  |  2.429e+09  |
+| Inventory                                |  5.629e+09  |  6.663e+09  |  8.359e+09  |  8.129e+09  |  8.238e+09  |
+| Other Current Assets                     |  6.08e+08   |  6.44e+08   |  6.63e+08   |  6.73e+08   |  7.15e+08   |
+| Total Current Assets                     |  2.2708e+10 |  2.1781e+10 |  2.2921e+10 |  2.1898e+10 |  2.1734e+10 |
+| Property, Plant and Equipment            |  3.7355e+10 |  3.9227e+10 |  4.0028e+10 |  3.9758e+10 |  3.9382e+10 |
+| Goodwill                                 |  1.228e+09  |  1.228e+09  |  1.228e+09  |  1.228e+09  |  1.252e+09  |
+| Intangible Assets                        |  4.15e+08   |  4.21e+08   |  4.28e+08   |  4.1e+08    |  4.1e+08    |
+| Long Term Investments                    |  1.646e+09  |  1.647e+09  |  1.426e+09  |  1.212e+09  |  9.73e+08   |
+| Tax Assets                               |  6.82e+08   |  7.02e+08   |  6.72e+08   |  6.97e+08   |  7.08e+08   |
+| Other Fixed Assets                       |  1.262e+09  |  1.277e+09  |  1.171e+09  |  1.317e+09  |  1.221e+09  |
+| Fixed Assets                             |  4.2588e+10 |  4.4502e+10 |  4.4953e+10 |  4.4622e+10 |  4.3946e+10 |
+| Other Assets                             |  0          |  0          |  0          |  0          |  0          |
+| Total Assets                             |  6.5296e+10 |  6.6283e+10 |  6.7874e+10 |  6.652e+10  |  6.568e+10  |
+| Accounts Payable                         |  2.019e+09  |  2.142e+09  |  1.789e+09  |  1.689e+09  |  1.64e+09   |
+| Short Term Debt                          |  1.07e+08   |  1.03e+08   |  1.71e+08   |  2.37e+08   |  2.59e+08   |
+| Tax Payables                             |  3.82e+08   |  4.2e+08    |  4.19e+08   |  2.41e+08   |  1.48e+08   |
+| Deferred Revenue                         |  0          |  0          |  0          |  0          | -1.64e+09   |
+| Other Current Liabilities                |  4.883e+09  |  5.294e+09  |  4.565e+09  |  3.329e+09  |  4.845e+09  |
+| Total Current Liabilities                |  7.009e+09  |  7.539e+09  |  6.525e+09  |  5.255e+09  |  5.104e+09  |
+| Long Term Debt                           |  7.485e+09  |  7.413e+09  |  1.0719e+10 |  1.2647e+10 |  1.3589e+10 |
+| Deferred Revenue Non Current             |  6.63e+08   |  5.89e+08   |  5.16e+08   |  5.29e+08   |  6.32e+08   |
+| Deferred Tax Liabilities                 |  0          |  0          |  0          |  0          |  0          |
+| Other Non Current Liabilities            |  8.58e+08   |  8.35e+08   |  8.08e+08   |  8.32e+08   |  9.5e+08    |
+| Total Non Current Liabilities            |  9.006e+09  |  8.837e+09  |  1.2043e+10 |  1.4008e+10 |  1.5171e+10 |
+| Other Liabilities                        |  0          |  0          |  0          |  0          |  0          |
+| Capital Lease Obligations                |  6.29e+08   |  6.1e+08    |  6.25e+08   |  6.1e+08    |  6.03e+08   |
+| Total Liabilities                        |  1.6015e+10 |  1.6376e+10 |  1.8568e+10 |  1.9263e+10 |  2.0275e+10 |
+| Preferred Stock                          |  0          |  0          |  0          |  0          |  0          |
+| Common Stock                             |  1.22e+08   |  1.23e+08   |  1.23e+08   |  1.23e+08   |  1.24e+08   |
+| Retained Earnings                        |  4.5916e+10 |  4.7274e+10 |  4.6873e+10 |  4.4426e+10 |  4.2391e+10 |
+| Accumulated Other Comprehensive Income   | -3.64e+08   | -5.6e+08    | -4.73e+08   | -3.73e+08   | -3.4e+08    |
+| Other Total Shareholder Equity           |  3.607e+09  |  3.07e+09   |  2.783e+09  |  3.081e+09  |  3.23e+09   |
+| Total Shareholder Equity                 |  4.9281e+10 |  4.9907e+10 |  4.9306e+10 |  4.7257e+10 |  4.5405e+10 |
+| Total Equity                             |  4.9281e+10 |  4.9907e+10 |  4.9306e+10 |  4.7257e+10 |  4.5405e+10 |
+| Total Liabilities and Shareholder Equity |  6.5296e+10 |  6.6283e+10 |  6.7874e+10 |  6.652e+10  |  6.568e+10  |
+| Minority Interest                        |  0          |  0          |  0          |  0          |  0          |
+| Total Liabilities and Equity             |  6.5296e+10 |  6.6283e+10 |  6.7874e+10 |  6.652e+10  |  6.568e+10  |
+| Total Investments                        |  2.716e+09  |  2.716e+09  |  2.433e+09  |  2.232e+09  |  2.027e+09  |
+| Total Debt                               |  7.592e+09  |  7.516e+09  |  1.089e+10  |  1.2884e+10 |  1.3848e+10 |
+| Net Debt                                 | -1.565e+09  | -7.46e+08   |  1.316e+09  |  3.086e+09  |  4.55e+09   |
+
 </details>
 
 <details>
@@ -293,7 +353,88 @@ These financial statements are normalized to facilitate straightforward comparis
 
 Obtain the [profile](https://www.jeroenbouma.com/projects/financetoolkit/docs#get_profile) of the specified tickers. These include important metrics such as the beta, market capitalization, currency, isin, industry, and ipo date that give an overall understanding about the company.
 
+As an example:
+
+```python
+from financetoolkit import Toolkit
+
+toolkit = Toolkit(["MSFT", "AAPL"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+toolkit.get_profile()
+```
+
+Which returns:
+
+|                       | MSFT                      | AAPL                  |
+|:----------------------|:--------------------------|:----------------------|
+| Symbol                | MSFT                      | AAPL                  |
+| Price                 | 316.48                    | 174.49                |
+| Beta                  | 0.903706                  | 1.286802              |
+| Average Volume        | 28153120                  | 57348456              |
+| Market Capitalization | 2353183809372             | 2744500935588         |
+| Last Dividend         | 2.7199999999999998        | 0.96                  |
+| Range                 | 213.43-366.78             | 124.17-198.23         |
+| Changes               | -0.4                      | 0.49                  |
+| Company Name          | Microsoft Corporation     | Apple Inc.            |
+| Currency              | USD                       | USD                   |
+| CIK                   | 789019                    | 320193                |
+| ISIN                  | US5949181045              | US0378331005          |
+| CUSIP                 | 594918104                 | 37833100              |
+| Exchange              | NASDAQ Global Select      | NASDAQ Global Select  |
+| Exchange Short Name   | NASDAQ                    | NASDAQ                |
+| Industry              | Software—Infrastructure   | Consumer Electronics  |
+| Website               | https://www.microsoft.com | https://www.apple.com |
+| CEO                   | Mr. Satya  Nadella        | Mr. Timothy D. Cook   |
+| Sector                | Technology                | Technology            |
+| Country               | US                        | US                    |
+| Full Time Employees   | 221000                    | 164000                |
+| Phone                 | 425 882 8080              | 408 996 1010          |
+| Address               | One Microsoft Way         | One Apple Park Way    |
+| City                  | Redmond                   | Cupertino             |
+| State                 | WA                        | CA                    |
+| ZIP Code              | 98052-6399                | 95014                 |
+| DCF Difference        | 4.56584                   | 4.15176               |
+| DCF                   | 243.594                   | 150.082               |
+| IPO Date              | 1986-03-13                | 1980-12-12            |
+
 Get the [quote](https://www.jeroenbouma.com/projects/financetoolkit/docs#get_quote) of the specified tickers. These include important metrics such as the price, changes, day low, day high, year low, year high, market capitalization, volume, average volume, open, previous close, earnings per share (EPS), price to earnings ratio (PE), earnings announcement, shares outstanding and timestamp that give an overall understanding about the company.
+
+As an example:
+
+```python
+from financetoolkit import Toolkit
+
+toolkit = Toolkit(["TSLA", "AAPL"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+toolkit.get_quote()
+```
+
+Which returns:
+
+|                        | TSLA                         | AAPL                         |
+|:-----------------------|:-----------------------------|:-----------------------------|
+| Symbol                 | TSLA                         | AAPL                         |
+| Name                   | Tesla, Inc.                  | Apple Inc.                   |
+| Price                  | 215.49                       | 174.49                       |
+| Changes Percentage     | -1.7015                      | 0.2816                       |
+| Change                 | -3.73                        | 0.49                         |
+| Day Low                | 212.36                       | 171.96                       |
+| Day High               | 217.58                       | 175.1                        |
+| Year High              | 313.8                        | 198.23                       |
+| Year Low               | 101.81                       | 124.17                       |
+| Market Capitalization  | 682995534313                 | 2744500935588                |
+| Price Average 50 Days  | 258.915                      | 187.129                      |
+| Price Average 200 Days | 196.52345                    | 161.4698                     |
+| Exchange               | NASDAQ                       | NASDAQ                       |
+| Volume                 | 136276584                    | 61172150                     |
+| Average Volume         | 133110158                    | 57348456                     |
+| Open                   | 214.12                       | 172.3                        |
+| Previous Close         | 219.22                       | 174                          |
+| EPS                    | 3.08                         | 5.89                         |
+| PE                     | 69.96                        | 29.62                        |
+| Earnings Announcement  | 2023-10-17T20:00:00.000+0000 | 2023-10-25T10:59:00.000+0000 |
+| Shares Outstanding     | 3169499904                   | 15728700416                  |
+| Timestamp              | 2023-08-18 20:00:00          | 2023-08-18 20:00:01          |
 
 Get the [rating](https://www.jeroenbouma.com/projects/financetoolkit/docs#get_rating) of the specified tickers. These scores and recommendations are categorized as follows:
 
@@ -304,6 +445,28 @@ Get the [rating](https://www.jeroenbouma.com/projects/financetoolkit/docs#get_ra
 - Debt to Equity (DE)
 - Price Earnings (PE)
 - Price to Book (PB)
+
+As an example:
+
+```python
+from financetoolkit import Toolkit
+
+toolkit = Toolkit(["AMZN", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+rating = toolkit.get_rating()
+
+rating.loc['AMZN', 'Rating Recommendation'].tail()
+```
+
+Which returns:
+
+| date                | Rating Recommendation   |
+|:--------------------|:------------------------|
+| 2023-08-01 00:00:00 | Strong Buy              |
+| 2023-08-02 00:00:00 | Strong Buy              |
+| 2023-08-03 00:00:00 | Strong Buy              |
+| 2023-08-04 00:00:00 | Strong Buy              |
+| 2023-08-07 00:00:00 | Strong Buy              |
 
 </details>
 
@@ -329,6 +492,32 @@ If a benchmark ticker is selected, it also calculates the benchmark ticker toget
 
 Important to note is that when an api_key is included in the Toolkit initialization that the data collection defaults to FinancialModelingPrep which is a more stable source and utilises your subscription. However, if this is undesired, it can be disabled by setting `historical_source` to “YahooFinance”. If data collection fails from FinancialModelingPrep it automatically reverts back to YahooFinance.
 
+As an example:
+
+```python
+from financetoolkit import Toolkit
+
+toolkit = Toolkit("AAPL", api_key="FINANCIAL_MODELING_PREP_KEY")
+
+toolkit.get_historical_data(period="yearly")
+```
+
+Which returns:
+
+| Date   |     Open |     High |      Low |    Close |   Adj Close |      Volume |   Dividends |     Return |   Volatility |   Excess Return |   Excess Volatility |   Cumulative Return |
+|:-------|---------:|---------:|---------:|---------:|------------:|------------:|------------:|-----------:|-------------:|----------------:|--------------------:|--------------------:|
+| 2013   |  19.7918 |  20.0457 |  19.7857 |  20.0364 |     17.5889 | 2.23084e+08 |    0.108929 |  0         |     0.240641 |       0         |            0.244248 |             1       |
+| 2014   |  28.205  |  28.2825 |  27.5525 |  27.595  |     24.734  | 1.65614e+08 |    0.461429 |  0.406225  |     0.216574 |       0.384525  |            0.219536 |             1.40623 |
+| 2015   |  26.7525 |  26.7575 |  26.205  |  26.315  |     23.9886 | 1.63649e+08 |    0.5075   | -0.0301373 |     0.267373 |      -0.0528273 |            0.269845 |             1.36385 |
+| 2016   |  29.1625 |  29.3    |  28.8575 |  28.955  |     26.9824 | 1.22345e+08 |    0.5575   |  0.124804  |     0.233383 |       0.100344  |            0.240215 |             1.53406 |
+| 2017   |  42.63   |  42.6475 |  42.305  |  42.3075 |     40.0593 | 1.04e+08    |    0.615    |  0.484644  |     0.176058 |       0.460594  |            0.17468  |             2.27753 |
+| 2018   |  39.6325 |  39.84   |  39.12   |  39.435  |     37.9    | 1.40014e+08 |    0.705    | -0.0539019 |     0.287421 |      -0.0807619 |            0.289905 |             2.15477 |
+| 2019   |  72.4825 |  73.42   |  72.38   |  73.4125 |     71.615  | 1.00806e+08 |    0.76     |  0.889578  |     0.261384 |       0.870388  |            0.269945 |             4.0716  |
+| 2020   | 134.08   | 134.74   | 131.72   | 132.69   |    130.559  | 9.91166e+07 |    0.8075   |  0.823067  |     0.466497 |       0.813897  |            0.470743 |             7.4228  |
+| 2021   | 178.09   | 179.23   | 177.26   | 177.57   |    175.795  | 6.40623e+07 |    0.865    |  0.346482  |     0.251019 |       0.331362  |            0.251429 |             9.99467 |
+| 2022   | 128.41   | 129.95   | 127.43   | 129.93   |    129.378  | 7.70342e+07 |    0.91     | -0.264042  |     0.356964 |      -0.302832  |            0.377293 |             7.35566 |
+| 2023   | 187.84   | 188.51   | 187.68   | 188.108  |    188.108  | 4.72009e+06 |    0.71     |  0.453941  |     0.213359 |       0.412901  |            0.22327  |            10.6947  |
+
 </details>
 
 <details>
@@ -345,6 +534,26 @@ It returns the following columns:
 
 By default, the Finance Toolkit uses the 10 Year Treasury Bond as risk-free rate but this can be changed by setting `risk_free_rate` to any of the other treasury rates.
 
+As an example:
+
+```python
+from financetoolkit import Toolkit
+
+companies = Toolkit(["AAPL", "MSFT"], api_key="FINANCIAL_MODELING_PREP_KEY", start_date="2023-08-10")
+
+companies.get_treasury_data()
+```
+
+Which returns:
+
+| date       |   13 Week |   5 Year |   10 Year |   30 Year |
+|:-----------|----------:|---------:|----------:|----------:|
+| 2023-10-16 |    0.0533 |   0.0472 |    0.0471 |    0.0487 |
+| 2023-10-17 |    0.0534 |   0.0487 |    0.0485 |    0.0495 |
+| 2023-10-18 |    0.0533 |   0.0492 |    0.049  |    0.05   |
+| 2023-10-19 |    0.0531 |   0.0496 |    0.0499 |    0.051  |
+| 2023-10-20 |    0.053  |   0.0491 |    0.0496 |    0.0512 |
+
 </details>
 
 <details>
@@ -358,6 +567,33 @@ Obtain [Earnings Calendars](https://www.jeroenbouma.com/projects/financetoolkit/
 - Revenue: The actual revenue.
 - Revenue Estimate: The estimated revenue.
 
+As an example:
+
+```python
+from financetoolkit import Toolkit
+
+toolkit = Toolkit(
+    ["AAPL", "MSFT", "GOOGL", "AMZN"], api_key="FINANCIAL_MODELING_PREP_KEY", start_date="2022-08-01", quarterly=False
+)
+
+earning_calendar = toolkit.get_earnings_calendar()
+
+earning_calendar.loc['AMZN']
+```
+
+Which returns:
+
+| date        |    EPS |   Estimated EPS |       Revenue |   Estimated Revenue | Fiscal Date Ending   | Time   |
+|:------------|-------:|----------------:|--------------:|--------------------:|:---------------------|:-------|
+| 2022-10-27  |   0.17 |            0.22 |   1.27101e+11 |       nan           | 2022-09-30           | amc    |
+| 2023-02-02  |   0.25 |            0.18 |   1.49204e+11 |         1.5515e+11  | 2022-12-31           | amc    |
+| 2023-04-27  |   0.31 |            0.21 |   1.27358e+11 |         1.24551e+11 | 2023-03-31           | amc    |
+| 2023-08-03  |   0.65 |            0.35 |   1.34383e+11 |         1.19573e+11 | 2023-06-30           | amc    |
+| 2023-10-25  | nan    |            0.56 | nan           |         1.41407e+11 | 2023-09-30           | amc    |
+| 2024-01-31  | nan    |          nan    | nan           |       nan           | 2023-12-30           | amc    |
+| 2024-04-25  | nan    |          nan    | nan           |       nan           | 2024-03-30           | amc    |
+| 2024-08-01  | nan    |          nan    | nan           |       nan           | 2024-06-30           | amc    |
+
 Furthermore, find [Dividend Calendars](https://www.jeroenbouma.com/projects/financetoolkit/docs#get_dividend_calendar) which includes:
 
 - Date: The date of the dividend.
@@ -366,6 +602,30 @@ Furthermore, find [Dividend Calendars](https://www.jeroenbouma.com/projects/fina
 - Record Date: The record date of the dividend.
 - Payment Date: The payment date of the dividend.
 - Declaration Date: The declaration date of the dividend.
+
+As an example:
+
+```python
+from financetoolkit import Toolkit
+
+toolkit = Toolkit(
+    ["AAPL", "MSFT", "GOOGL", "AMZN"], api_key="FINANCIAL_MODELING_PREP_KEY", start_date="2022-08-01", quarterly=False
+)
+
+dividend_calendar = toolkit.get_dividend_calendar()
+
+dividend_calendar.loc['AAPL']
+```
+
+Which returns:
+
+| date       |   Adj Dividend |   Dividend | Record Date   | Payment Date   | Declaration Date   |
+|:-----------|---------------:|-----------:|:--------------|:---------------|:-------------------|
+| 2022-08-05 |           0.23 |       0.23 | 2022-08-08    | 2022-08-11     | 2022-07-28         |
+| 2022-11-04 |           0.23 |       0.23 | 2022-11-07    | 2022-11-10     | 2022-10-27         |
+| 2023-02-10 |           0.23 |       0.23 | 2022-12-28    | 2023-02-16     | 2022-12-19         |
+| 2023-05-12 |           0.24 |       0.24 | 2023-05-15    | 2023-05-18     | 2023-05-04         |
+| 2023-08-11 |           0.24 |       0.24 | 2023-08-14    | 2023-08-17     | 2023-08-03         |
 
 </details>
 
@@ -376,6 +636,44 @@ Obtain the [Analyst Estimates](https://www.jeroenbouma.com/projects/financetoolk
 
 It includes the lower, average and upper bound for each estimate which gives insights whether analysts have reached a consensus on the prices or think wildly different. The larger the difference between the lower and upper bound, the more uncertain the analysts are.
 
+As an example:
+
+```python
+from financetoolkit import Toolkit
+
+toolkit = Toolkit(
+    ["AAPL", "MSFT", "GOOGL", "AMZN"], api_key="FINANCIAL_MODELING_PREP_KEY", start_date="2021-05-01", quarterly=False
+)
+
+analyst_estimates = toolkit.get_analyst_estimates()
+
+analyst_estimates.loc['AAPL']
+```
+
+Which returns:
+
+|                               |         2021 |         2022 |         2023 |         2024 |
+|:------------------------------|-------------:|-------------:|-------------:|-------------:|
+| Estimated Revenue Low         |  2.98738e+11 |  3.07919e+11 |  3.3871e+11  |  2.93633e+11 |
+| Estimated Revenue High        |  4.48107e+11 |  4.61878e+11 |  5.08066e+11 |  4.4045e+11  |
+| Estimated Revenue Average     |  3.73422e+11 |  3.84898e+11 |  4.23388e+11 |  3.67042e+11 |
+| Estimated EBITDA Low          |  8.50991e+10 |  1.00742e+11 |  1.10816e+11 |  1.07415e+11 |
+| Estimated EBITDA High         |  1.27649e+11 |  1.51113e+11 |  1.66224e+11 |  1.61122e+11 |
+| Estimated EBITDA Average      |  1.06374e+11 |  1.25928e+11 |  1.3852e+11  |  1.34269e+11 |
+| Estimated EBIT Low            |  7.62213e+10 |  9.05428e+10 |  9.9597e+10  |  9.81566e+10 |
+| Estimated EBIT High           |  1.14332e+11 |  1.35814e+11 |  1.49396e+11 |  1.47235e+11 |
+| Estimated EBIT Average        |  9.52766e+10 |  1.13178e+11 |  1.24496e+11 |  1.22696e+11 |
+| Estimated Net Income Low      |  6.54258e+10 |  7.62265e+10 |  8.38492e+10 |  8.23371e+10 |
+| Estimated Net Income High     |  9.81387e+10 |  1.1434e+11  |  1.25774e+11 |  1.23506e+11 |
+| Estimated Net Income Average  |  8.17822e+10 |  9.52832e+10 |  1.04811e+11 |  1.02921e+11 |
+| Estimated SGA Expense Low     |  1.48491e+10 |  1.85317e+10 |  2.03848e+10 |  2.04857e+10 |
+| Estimated SGA Expense High    |  2.22737e+10 |  2.77975e+10 |  3.05772e+10 |  3.07286e+10 |
+| Estimated SGA Expense Average |  1.85614e+10 |  2.31646e+10 |  2.5481e+10  |  2.56072e+10 |
+| Estimated EPS Average         |  4.26        |  5.465       |  6.01        |  6.2612      |
+| Estimated EPS High            |  5.12        |  6.56        |  7.21        |  7.5135      |
+| Estimated EPS Low             |  3.4         |  4.37        |  4.81        |  5.009       |
+| Number of Analysts            | 14           | 16           | 12           | 10           |
+
 </details>
 
 <details>
@@ -383,7 +681,59 @@ It includes the lower, average and upper bound for each estimate which gives ins
 
 Retrieve the [product revenue segmentation](https://www.jeroenbouma.com/projects/financetoolkit/docs#get_revenue_product_segmentationPermalink) for each company. This is for example iPhone, iPad, Mac, Wearables, Services, and Other Products for Apple and helps understand the products that grow the fastest and slowest. 
 
+As an example:
+
+```python
+from financetoolkit import Toolkit
+
+toolkit = Toolkit(
+    ["AAPL", "MSFT", "GOOGL", "AMZN"], api_key="FINANCIAL_MODELING_PREP_KEY", start_date="2021-05-01", quarterly=False
+)
+
+product_segmentation = toolkit.get_revenue_product_segmentation()
+
+product_segmentation.loc['MSFT']
+```
+
+Which returns:
+
+|                                    |     2022Q2 |     2022Q3 |     2022Q4 |     2023Q1 |      2023Q2 |
+|:-----------------------------------|-----------:|-----------:|-----------:|-----------:|------------:|
+| Devices                            | 1.581e+09  | 1.448e+09  | 1.43e+09   | 1.282e+09  |  1.361e+09  |
+| Enterprise Services                | 1.902e+09  | 1.876e+09  | 1.862e+09  | 2.007e+09  |  1.977e+09  |
+| Gaming                             | 3.455e+09  | 3.61e+09   | 4.758e+09  | 3.607e+09  |  3.491e+09  |
+| Linked In Corporation              | 3.712e+09  | 3.663e+09  | 3.876e+09  | 3.697e+09  |  3.909e+09  |
+| Office Products And Cloud Services | 1.1639e+10 | 1.1548e+10 | 1.1837e+10 | 1.2438e+10 |  1.2905e+10 |
+| Other Products And Services        | 1.403e+09  | 1.348e+09  | 1.359e+09  | 1.428e+09  | -3.924e+09  |
+| Search And News Advertising        | 2.926e+09  | 2.928e+09  | 3.223e+09  | 3.045e+09  |  3.012e+09  |
+| Server Products And Cloud Services | 1.8839e+10 | 1.8388e+10 | 1.9594e+10 | 2.0025e+10 |  2.1963e+10 |
+| Windows                            | 6.408e+09  | 5.313e+09  | 4.808e+09  | 5.328e+09  |  6.058e+09  |
+
 It is also possible to retrieve the [geographic revenue segmentation](https://www.jeroenbouma.com/projects/financetoolkit/docs#get_revenue_geographic_segmentation) which includes regions such as Americas, Europe, Greater China, Japan, and Rest of Asia Pacific and helps understand where companies retrieve their revenue from. As an example, a company like Microsoft might be based in the United States, their revenue streams are truly global.
+
+As an example:
+
+```python
+from financetoolkit import Toolkit
+
+toolkit = Toolkit(
+    ["AAPL", "MSFT", "GOOGL", "AMZN"], api_key="FINANCIAL_MODELING_PREP_KEY", start_date="2021-05-01", quarterly=False
+)
+
+geographic_segmentation = toolkit.get_revenue_geographic_segmentation()
+
+geographic_segmentation.loc['AAPL']
+```
+
+Which returns:
+
+|              |       2020 |       2021 |       2022 |       2023 |
+|:-------------|-----------:|-----------:|-----------:|-----------:|
+| Americas     | 4.631e+10  | 5.1496e+10 | 4.9278e+10 | 3.5383e+10 |
+| Asia Pacific | 8.225e+09  | 9.81e+09   | 9.535e+09  | 5.63e+09   |
+| China        | 2.1313e+10 | 2.5783e+10 | 2.3905e+10 | 1.5758e+10 |
+| Europe       | 2.7306e+10 | 2.9749e+10 | 2.7681e+10 | 2.0205e+10 |
+| Japan        | 8.285e+09  | 7.107e+09  | 6.755e+09  | 4.821e+09  |
 
 </details>
 
@@ -397,6 +747,29 @@ It is also possible to retrieve the [geographic revenue segmentation](https://ww
 - Governance (G): Governance examines a company’s internal structures, policies, and leadership. It assesses aspects such as board independence, executive compensation, transparency, and the presence of anti-corruption measures. A high governance score signifies strong leadership and a commitment to maintaining high ethical standards and accountability
 
 ESG scores provide investors with a holistic view of a company’s sustainability and ethical practices, allowing them to make more informed investment decisions. These scores are increasingly used to identify socially responsible investments and guide capital towards companies that prioritize long-term sustainability and responsible business practices. As the importance of ESG considerations continues to grow, companies are motivated to improve their ESG scores, not only for ethical reasons but also to attract investors who value sustainable and responsible business practices.
+
+As an example:
+
+```python
+from financetoolkit import Toolkit
+
+toolkit = Toolkit(
+    ["MSFT", "TSLA", "AMZN"], api_key="FINANCIAL_MODELING_PREP_KEY", start_date="2022-08-01", quarterly=False
+)
+
+esg_scores = toolkit.get_esg_scores()
+
+esg_scores.xs("MSFT", level=1, axis=1)
+```
+
+Which returns:
+
+| date   |   Environmental Score |   Social Score |   Governance Score |   ESG Score |
+|:-------|----------------------:|---------------:|-------------------:|------------:|
+| 2022Q3 |                 72.42 |          58.39 |              61.13 |       63.98 |
+| 2022Q4 |                 72.22 |          58.05 |              61.27 |       63.85 |
+| 2023Q1 |                 72.6  |          58.74 |              61.88 |       64.41 |
+| 2023Q2 |                 73.54 |          60.73 |              63.44 |       65.9  |
 
 </details>
 

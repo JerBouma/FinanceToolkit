@@ -704,6 +704,8 @@ The Black Scholes Model is based on several assumptions, including the following
 Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/options#get_black_scholes_model).
 
 </details>
+
+</details>
     <summary><b>First-Order Greeks</b></summary>
 
 > **Delta**

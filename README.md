@@ -269,131 +269,7 @@ And below these Unemployment Rates are plotted over time:
 
 The Finance Toolkit features the following functionality, also see [Basic Usage](#basic-usage) to see some of these functions in action and the [Code Documentation](https://www.jeroenbouma.com/projects/financetoolkit/docs) for a detailed explanation of each function.
 
-<details>
-    <summary><b>Discover Instruments</b></summary>
 
-Obtain lists of companies, cryptocurrencies, forex, commodities, etfs and indices including screeners, quotes, performance metrics and more to find and select tickers to use in the Finance Toolkit. For more information have a look [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/discovery).
-
-</details>
-
-<details>
-    <summary><b>Company Overview</b></summary>
-
-Obtain company profiles including a general description about the company as well as the current quote, the rating and recommendation based on a variety of different metrics such as the Discounted Cash Flow (DCF) and Return on Equity (RoE).
-
-</details>
-
-<details>
-    <summary><b>Historical Market Data</b></summary>
-
-Obtain a full history of OHLC, dividends, (excess) returns, cumulative returns and (excess) volatility calculations on a daily, weekly, quarterly or yearly basis. This includes the normalization of the data as well as auto-adjustments for missing values. It can also be obtained from both FinancialModelingPrep and Yahoo Finance.
-
-</details>
-
-<details>
-    <summary><b>Treasury Rates</b></summary>
-
-Just like the historical market data, obtain a full history for the treasury rates which also serve as risk-free rate by default allowing for calculations such as the Sharpe Ratio. This also includes normalization of the data as well as auto-adjustments for missing values. It can also be obtained from both FinancialModelingPrep and Yahoo Finance.
-
-</details>
-
-<details>
-    <summary><b>Dividends Calendar</b></summary>
-
-Obtain the (adjusted) dividend and the the related record, payment and declaration dates. This represent both past and future dividend cashflows based on official statements from the selected companies.
-
-</details>
-
-<details>
-    <summary><b>Analyst Estimates</b></summary>
-
-Obtain the expected Revenue, Earnings-per-Share (EPS), EBITDA, EBIT, Net Income, and SGA Expense from the past and future from a large collection of analysts. For each metric, it includes the lower bound, upper bound and median based on the analyst consensus.
-
-</details>
-
-<details>
-    <summary><b>Earnings Calendar</b></summary>
-
-Retrieve precise dates for past and future earnings releases, including analyst expectations. These metrics are presented for both Earnings-per-Share (EPS) and Revenue.
-
-</details>
-
-<details>
-    <summary><b>Revenue Segmentation</b></summary>
-
-Retrieve revenue segmentation based on both product design and geographic location for each company. Normalization is applied to ensure accurate comparisons of revenue streams over time among different companies.
-
-</details>
-
-<details>
-    <summary><b>ESG Scores</b></summary>
-
-Retrieve comprehensive Environmental, Social, and Governance (ESG) scores for each company. The scores encompass various factors such as carbon footprint, diversity and inclusion efforts, ethical business practices, and board effectiveness. This information provides a holistic view of a company's sustainability and ethical practices in alignment with ESG criteria.
-
-</details>
-
-<details>
-    <summary><b>Financial Statements</b></summary>
-
-Acquire a full history of both annual and quarterly financial statements, including balance sheets, income statements, and cash flow statements. These financial statements are normalized to facilitate straightforward comparisons between companies such as automatic currency conversions of the entire of the financial statement. Additionally, variations in accounting periods among companies are automatically standardized, ensuring that each company's year or quarter aligns with the corresponding calendar period.
-
-</details>
-
-<details>
-    <summary><b>Financial Ratios</b></summary>
-
-Acquire 50+ financial ratios categorized into their key financial domains, including Efficiency, Liquidity, Profitability, Solvency, and Valuation.<br><br>*Efficiency ratios*, such as Inventory Turnover and Asset Turnover provide insights into operational effectiveness. *Liquidity ratios*, including the Current and Quick Ratios, gauge the company's short-term financial viability. *Profitability ratios*, for example Return on Equity (RoE) and Net Profit Margin, shed light on the company's ability to generate profits. *Solvency ratios*, which include the Debt-to-Equity ratio or Interest Coverage ratio, assess the company's long-term financial stability. *Valuation ratios*, such as the Price-to-Earnings (P/E) ratio and Earnings Yield, offer perspectives on the company's market valuation.<br><br>Find all of them [here](#financial-ratios).
-
-</details>
-
-<details>
-    <summary><b>Custom Ratios</b></summary>
-
-Define custom ratios and calculate these automatically based on the balance sheet, income and cash flow statements. With this, it is possible to calculate any collection of custom ratios without needing to understanding the backend of the Finance Toolkit. Learn how [here](https://www.jeroenbouma.com/projects/financetoolkit/custom-ratios).
-
-</details>
-
-<details>
-    <summary><b>Financial Models</b></summary>
-
-Access a variety of financial models that combine the historical market data and financial statements. This is for example the DUPONT analysis, Weighted Average Cost of Capital (WACC), and Altman Z-Score. Find all of them [here](#financial-models).
-
-</details>
-
-<details>
-    <summary><b>Options and Greeks</b></summary>
-
-Access valuation methods such as the Black Scholes Model as well as real market prices for both call and put options. Next to that, calculate all First, Second and Third-Order Greeks such as Delta, Gamma, Theta, Vega, Rho, Veta and Ultima that explain option sensitivities. Find all of them [here](#options-and-greeks).
-
-</details>
-
-<details>
-    <summary><b>Performance Metrics</b></summary>
-
-Access a variety of performance metrics, including Jensens Alpha, Capital Asset Pricing Model (CAPM), and (Rolling) Sharpe Ratio. These metrics provide a comprehensive evaluation of a company's financial performance, risk-adjusted returns, and its relationship with market benchmarks. Find all of them [here](#performance-metrics).
-
-</details>
-
-<details>
-    <summary><b>Risk Metrics</b></summary>
-
-Access a diverse set of risk metrics, including the Value at Risk (VaR), GARCH, and Entropic Value at Risk (eVaR). These metrics are meant to gauge the potential major losses that can occur over time as well as estimate future volatilities. Find all of them [here](#risk-metrics).
-
-</details>
-
-<details>
-    <summary><b>Technical Indicators</b></summary>
-
-Access an extensive array of more than 40 technical indicators such as the Relative Strength Index (RSI), Exponential Moving Average (EMA), and Bollinger Bands. These technical indicators are key to understanding short-term market trends, momentum, and volatility. Find all of them [here](#technical-indicators).
-
-</details>
-
-<details>
-    <summary><b>Key Economic Indicators</b></summary>
-
-Access an extensive collection of over 50 macro-economic indicators such as Gross Domestic Product (GDP), Consumer Price Index (CPI), and Federal Funds Rate (FED). These indicators serve as barometers to understand the economic, environmental and social climate of 60+ countries. Find all of them [here](#key-economic-indicators).
-
-</details>
 
 # Available Metrics
 
@@ -406,9 +282,242 @@ ___
 <b><div align="center">Find a variety of How-To Guides including Code Documentation for the FinanceToolkit <a href="https://www.jeroenbouma.com/projects/financetoolkit">here</a>.</div></b>
 ___
 
+## General Functionality
+
+<details>
+    <summary><b>Financial Statements</b></summary>
+
+Acquire a full history of both annual and quarterly financial statements, including [balance sheets](https://www.jeroenbouma.com/projects/financetoolkit/docs#get_balance_sheet_statement), [income statements](https://www.jeroenbouma.com/projects/financetoolkit/docs#get_income_statement), and [cash flow statements](https://www.jeroenbouma.com/projects/financetoolkit/docs#get_cash_flow_statement).
+
+These financial statements are normalized to facilitate straightforward comparisons between companies such as automatic currency conversions of the entire of the financial statement. Additionally, variations in accounting periods among companies are automatically standardized, ensuring that each company's year or quarter aligns with the corresponding calendar period. Next to that, there is also a [statististics statement](https://www.jeroenbouma.com/projects/financetoolkit/docs#get_statistics_statement) that gives insights into the reported currency, CIK ID and SEC links.
+
+<details>
+    <summary><b>Company Overviews</b></summary>
+
+Obtain the [profile](https://www.jeroenbouma.com/projects/financetoolkit/docs#get_profile) of the specified tickers. These include important metrics such as the beta, market capitalization, currency, isin, industry, and ipo date that give an overall understanding about the company.
+
+Get the [quote](https://www.jeroenbouma.com/projects/financetoolkit/docs#get_quote) of the specified tickers. These include important metrics such as the price, changes, day low, day high, year low, year high, market capitalization, volume, average volume, open, previous close, earnings per share (EPS), price to earnings ratio (PE), earnings announcement, shares outstanding and timestamp that give an overall understanding about the company.
+
+Get the [rating](https://www.jeroenbouma.com/projects/financetoolkit/docs#get_rating) of the specified tickers. These scores and recommendations are categorized as follows:
+
+- An overall rating
+- Discounted Cash Flow (DCF)
+- Return on Equity (ROE)
+- Return on Assets (ROA)
+- Debt to Equity (DE)
+- Price Earnings (PE)
+- Price to Book (PB)
+
+</details>
+
+<details>
+    <summary><b>Historical Market Data</b></summary>
+
+Obtain [historical market data](https://www.jeroenbouma.com/projects/financetoolkit/docs#get_historical_data) for the specified tickers. This contains the following columns:
+
+- Open: The opening price for the period.
+- High: The highest price for the period.
+- Low: The lowest price for the period.
+- Close: The closing price for the period.
+- Adj Close: The adjusted closing price for the period.
+- Volume: The volume for the period.
+- Dividends: The dividends for the period.
+- Return: The return for the period.
+- Volatility: The volatility for the period.
+- Excess Return: The excess return for the period. This is defined as the return minus the a predefined risk free rate. Only calculated when excess_return is True.
+- Excess Volatility: The excess volatility for the period. This is defined as the volatility of the excess return. Only calculated when `excess_return` is True.
+- Cumulative Return: The cumulative return for the period.
+
+If a benchmark ticker is selected, it also calculates the benchmark ticker together with the results. By default this is set to “SPY” (S&P 500 Index) but can be any ticker. This is relevant for calculations for models such as CAPM, Alpha and Beta.
+
+Important to note is that when an api_key is included in the Toolkit initialization that the data collection defaults to FinancialModelingPrep which is a more stable source and utilises your subscription. However, if this is undesired, it can be disabled by setting `historical_source` to “YahooFinance”. If data collection fails from FinancialModelingPrep it automatically reverts back to YahooFinance.
+
+<details>
+    <summary><b>Treasury Rates</b></summary>
+
+Just like the historical market data, obtain a full history for the [treasury rates](https://www.jeroenbouma.com/projects/financetoolkit/docs#get_treasury_data) which also serve as risk-free rate by default allowing for calculations such as the Sharpe Ratio. This also includes normalization of the data as well as auto-adjustments for missing values. It can also be obtained from both FinancialModelingPrep and Yahoo Finance.
+
+It returns the following columns:
+
+- 13 Week Treasury Bill: The 13 Week Treasury Bill for the period.
+- 5 Year Treasury Bond: The 5 Year Treasury Bond for the period.
+- 10 Year Treasury Bond: The 10 Year Treasury Bond for the period.
+- 30 Year Treasury Bond: The 30 Year Treasury Bond for the period.
+
+By default, the Finance Toolkit uses the 10 Year Treasury Bond as risk-free rate but this can be changed by setting `risk_free_rate` to any of the other treasury rates.
+
+<details>
+    <summary><b>Earnings & Dividend Calendars</b></summary>
+
+Obtain [Earnings Calendars](https://www.jeroenbouma.com/projects/financetoolkit/docs#get_earnings_calendar) for any range of companies. You have the option to obtain the actual dates or to convert to the corresponding quarters and can obtain a rich history. This returns:
+
+- Date: The date of the earnings release.
+- EPS: The actual earnings-per-share.
+- EPS Estimate: The estimated earnings-per-share.
+- Revenue: The actual revenue.
+- Revenue Estimate: The estimated revenue.
+
+Furthermore, find [Dividend Calendars](https://www.jeroenbouma.com/projects/financetoolkit/docs#get_dividend_calendar) which includes:
+
+- Date: The date of the dividend.
+- Adj Dividend: The adjusted dividend amount.
+- Dividend: The dividend amount.
+- Record Date: The record date of the dividend.
+- Payment Date: The payment date of the dividend.
+- Declaration Date: The declaration date of the dividend.
+
+<details>
+    <summary><b>Analyst Estimates</b></summary>
+
+Obtain the [Analyst Estimates](https://www.jeroenbouma.com/projects/financetoolkit/docs#get_analyst_estimates) which include estimates for Revenue, Earnings-per-Share (EPS), EBITDA, EBIT, Net Income, and SGA Expense from the past and future from a large collection of analysts. It includes the lower, average and upper bound for each estimate which gives insights whether analysts have reached a consensus on the prices or think wildly different. The larger the difference between the lower and upper bound, the more uncertain the analysts are.
+
+<details>
+    <summary><b>Revenue Segmentations</b></summary>
+
+Retrieve the [product revenue segmentation](https://www.jeroenbouma.com/projects/financetoolkit/docs#get_revenue_product_segmentationPermalink) for each company. This is for example iPhone, iPad, Mac, Wearables, Services, and Other Products for Apple and helps understand the products that grow the fastest and slowest. 
+
+It is also possible to retrieve the [geographic revenue segmentation](https://www.jeroenbouma.com/projects/financetoolkit/docs#get_revenue_geographic_segmentation) which includes regions such as Americas, Europe, Greater China, Japan, and Rest of Asia Pacific and helps understand where companies retrieve their revenue from. As an example, a company like Microsoft might be based in the United States, their revenue streams are truly global.
+
+</details>
+
+<details>
+    <summary><b>ESG Scores</b></summary>
+
+[ESG scores](https://www.jeroenbouma.com/projects/financetoolkit/docs#get_esg_scores), which stands for Environmental, Social, and Governance scores, are a crucial metric used by investors and organizations to assess a company’s sustainability and ethical practices. These scores provide valuable insights into a company’s performance in three key areas:
+
+- Environmental (E): The environmental component evaluates a company’s impact on the planet and its efforts to mitigate environmental risks. It includes factors like carbon emissions, energy efficiency, water management, and waste reduction. A high environmental score indicates a company’s commitment to eco -friendly practices and reducing its ecological footprint.
+- Social (S): The social component focuses on how a company interacts with its employees, customers, suppliers, and the communities in which it operates. Key factors in the social score include labor practices, diversity and inclusion, human rights, product safety, and community engagement. A strong social score reflects a company’s dedication to fostering positive relationships and contributing positively to society.
+- Governance (G): Governance examines a company’s internal structures, policies, and leadership. It assesses aspects such as board independence, executive compensation, transparency, and the presence of anti -corruption measures. A high governance score signifies strong leadership and a commitment to maintaining high ethical standards and accountability
+
+ESG scores provide investors with a holistic view of a company’s sustainability and ethical practices, allowing them to make more informed investment decisions. These scores are increasingly used to identify socially responsible investments and guide capital towards companies that prioritize long -term sustainability and responsible business practices. As the importance of ESG considerations continues to grow, companies are motivated to improve their ESG scores, not only for ethical reasons but also to attract investors who value sustainable and responsible business practices.
+
+</details>
+
+## Discover Instruments
+
+The Discovery module contains lists of companies, cryptocurrencies, forex, commodities, etfs and indices including screeners, quotes, performance metrics and more to find and select tickers to use in the Finance Toolkit.  **Find the Notebook [here](https://www.jeroenbouma.com/projects/financetoolkit/discovery-module) and the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/discovery) which includes an explanation about the functionality, the parameters and an example.**
+
+<details>
+    <summary><b>Companies</b></summary>
+
+Screen stocks, obtain a list of companies, quotes, floating shares, sectors performance, biggest gainers, biggest losers, most active stocks and delisted companies.
+
+> **Stock Screener**
+
+Screen stocks based on a set of criteria. This can be useful to find companies that match a specific criteria or your analysis. Further filtering can be done by utilising the Finance Toolkit and calculating the relevant ratios to filter by. This can be:
+
+- Market capitalization (market_cap_higher, market_cap_lower)
+- Price (price_higher, price_lower)
+- Beta (beta_higher, beta_lower)
+- Volume (volume_higher, volume_lower)
+- Dividend (dividend_higher, dividend_lower)
+
+Note that the limit is 1000 companies. Thus if you hit the 1000, it is recommended to narrow down your search to prevent companies from being excluded simply because of this limit. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/discovery#get_stock_screener).
+
+> **Company List**
+
+The stock list function returns a complete list of all the symbols that can be used in the FinanceToolkit. These are over 60.000 symbols. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/discovery#get_company_list).
+
+> **Company Quotes**
+
+Returns the real time stock prices for each company. This includes the bid and ask size, the volume, the bid and ask price, the last sales price and the last sales size. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/discovery#get_company_quotes).
+
+> **Floating Shares**
+
+Returns the shares float for each company. The shares float is the number of shares available for trading for each company. It also includes the number of shares outstanding and the date. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/discovery#get_floating_shares).
+
+> **Sectors Performance**
+
+Returns the sectors performance for each sector. This features the sector performance over the last months. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/discovery#get_sectors_performance).
+
+> **Biggest Gainers**
+
+Returns the biggest gainers for the day. This includes the symbol, the name, the price, the change and the change percentage. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/discovery#get_biggest_gainers).
+
+> **Biggest Losers**
+
+Returns the biggest losers for the day. This includes the symbol, the name, the price, the change and the change percentage. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/discovery#get_biggest_losers).
+
+> **Most Active**
+
+Returns the most active stocks for the day. This includes the symbol, the name, the price, the change and the change percentage. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/discovery#get_most_active_stocks).
+
+> **Delisted Companies**
+
+The delisted stocks function returns a complete list of all delisted stocks including the IPO and delisted date. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/discovery#get_delisted_stocks).
+
+</details>
+
+<details>
+    <summary><b>Cryptocurrencies</b></summary>
+
+Obtain cryptocurrency lists and cryptocurrency quotes that can be used in the Finance Toolkit.
+
+> **Cryptocurrency List**
+
+The crypto list function returns a complete list of all crypto symbols that can be used in the FinanceToolkit. These are over 4.000 symbols. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/discovery#get_crypto_list).
+
+> **Cryptocurrency Quotes**
+
+Returns the quotes for each crypto. This includes the symbol, the name, the price, the change, the change percentage, day low, day high, year high, year low, market cap, 50 day average, 200 day average, volume, average volume, open, previous close, EPS, PE, earnings announcement, shares outstanding and the timestamp. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/discovery#get_crypto_quotes).
+
+</details>
+
+<details>
+    <summary><b>Forex</b></summary>
+
+Obtain forex lists and forex quotes that can be used in the Finance Toolkit.
+
+
+> **Forex List**
+
+The forex list function returns a complete list of all forex symbols that can be used in the FinanceToolkit. These are over 1.000 symbols. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/discovery#get_forex_list).
+
+> **Forex Quotes**
+
+Returns the quotes for each forex. This includes the symbol, the name, the price, the change, the change percentage, day low, day high, year high, year low, market cap, 50 day average, 200 day average, volume, average volume, open, previous close, EPS, PE, earnings announcement, shares outstanding and the timestamp. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/discovery#get_forex_quotes).
+
+</details>
+
+<details>
+    <summary><b>Commodities</b></summary>
+
+Obtain commodity lists and company quotes that can be used in the Finance Toolkit.
+
+> **Commodity List**
+
+The commodity list function returns a complete list of all commodity symbols that can be used in the FinanceToolkit. These are over 1.000 symbols. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/discovery#get_commodity_list).
+
+> **Commodity Quotes**
+
+Returns the quotes for each commodity. This includes the symbol, the name, the price, the change, the change percentage, day low, day high, year high, year low, market cap, 50 day average, 200 day average, volume, average volume, open, previous close, EPS, PE, earnings announcement, shares outstanding and the timestamp. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/discovery#get_commodity_quotes).
+
+</details>
+
+<details>
+    <summary><b>ETFs & Indices</b></summary>
+
+Obtain ETF and Index lists and quotes that can be used in the Finance Toolkit.
+
+> **ETF List**
+
+The etf list function returns a complete list of all etf symbols that can be used in the FinanceToolkit. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/discovery#get_etf_list).
+
+> **Index List**
+
+The index list function returns a complete list of all etf symbols that can be used in the FinanceToolkit. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/discovery#get_index_list).
+
+> **Index Quotes**
+
+Returns the quotes for each index. This includes the symbol, the name, the price, the change, the change percentage, day low, day high, year high, year low, market cap, 50 day average, 200 day average, volume, average volume, open, previous close, EPS, PE, earnings announcement, shares outstanding and the timestamp. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/discovery#get_index_quotes).
+
+</details>
+
 ## Financial Ratios
 
 The Ratios Module contains over 50+ ratios that can be used to analyse companies. These ratios are divided into 5 categories which are efficiency, liquidity, profitability, solvency and valuation. Each ratio is calculated using the data from the Toolkit module.  **Find the Notebook [here](https://www.jeroenbouma.com/projects/financetoolkit/ratios-module) and the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios) which includes an explanation about the ratio, the parameters and an example.**
+
+It is also possible to define custom ratios and calculate these automatically based on the balance sheet, income and cash flow statements. With this, it is possible to calculate any collection of custom ratios without needing to understanding the backend of the Finance Toolkit. Learn how [here](https://www.jeroenbouma.com/projects/financetoolkit/custom-ratios).
 
 All of these ratios can be calculated based on (lagged) growth as well as trailing (e.g. TTM) metrics. This is embedded in all ratios as well as the financial statements themselves which means it is possible to calculate revenue growth and 12-month (TTM) Price-to-Earnings with the parameters `growth=True` and `trailing=4` respectively. Note that trailing is based on periods therefore TTM can only be calculated by setting `quarterly=True` in the Toolkit initialization.
 

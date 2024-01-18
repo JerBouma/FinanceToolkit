@@ -782,6 +782,30 @@ The Discovery module contains lists of companies, cryptocurrencies, forex, commo
 
 Screen stocks, obtain a list of companies, quotes, floating shares, sectors performance, biggest gainers, biggest losers, most active stocks and delisted companies.
 
+> **Search Instruments**
+
+The search instruments function allows you to search for a company or financial instrument by name. It returns a dataframe with all the symbols that match the query. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/discovery#search_instruments).
+
+As an example:
+
+```python
+from financetoolkit import Discovery
+
+discovery = Discovery(api_key="FINANCIAL_MODELING_PREP_KEY")
+
+discovery.search_instruments(query='META')
+```
+
+Which returns:
+
+| Symbol   | Name                                  | Currency   | Exchange               | Exchange Code   |
+|:---------|:--------------------------------------|:-----------|:-----------------------|:----------------|
+| META     | Meta Platforms, Inc.                  | USD        | NASDAQ Global Select   | NASDAQ          |
+| META.L   | WisdomTree Industrial Metals Enhanced | USD        | London Stock Exchange  | LSE             |
+| METAUSD  | Metadium USD                          | USD        | CCC                    | CRYPTO          |
+| META.MI  | WisdomTree Industrial Metals Enhanced | EUR        | Milan                  | MIL             |
+| META.JK  | PT Nusantara Infrastructure Tbk       | IDR        | Jakarta Stock Exchange | JKT             |
+
 > **Stock Screener**
 
 Screen stocks based on a set of criteria. This can be useful to find companies that match a specific criteria or your analysis. Further filtering can be done by utilising the Finance Toolkit and calculating the relevant ratios to filter by. This can be:
@@ -794,37 +818,280 @@ Screen stocks based on a set of criteria. This can be useful to find companies t
 
 Note that the limit is 1000 companies. Thus if you hit the 1000, it is recommended to narrow down your search to prevent companies from being excluded simply because of this limit. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/discovery#get_stock_screener).
 
+As an example:
+
+```python
+from financetoolkit import Discovery
+
+discovery = Discovery(api_key="FINANCIAL_MODELING_PREP_KEY")
+
+discovery.get_stock_screener(
+    market_cap_higher=1000000,
+    market_cap_lower=200000000000,
+    price_higher=100,
+    price_lower=200,
+    beta_higher=1,
+    beta_lower=1.5,
+    volume_higher=100000,
+    volume_lower=2000000,
+    dividend_higher=1,
+    dividend_lower=2,
+    is_etf=False
+)
+```
+
+Which returns:
+
+| Symbol   | Name              |   Market Cap | Sector            | Industry               |   Beta |   Price |   Dividend |   Volume | Exchange                | Exchange Code   | Country   |
+|:---------|:------------------|-------------:|:------------------|:-----------------------|-------:|--------:|-----------:|---------:|:------------------------|:----------------|:----------|
+| NKE      | NIKE, Inc.        | 163403295604 | Consumer Cyclical | Footwear & Accessories |  1.079 | 107.36  |       1.48 |  1045865 | New York Stock Exchange | NYSE            | US        |
+| SAF.PA   | Safran SA         |  66234006559 | Industrials       | Aerospace & Defense    |  1.339 | 160.16  |       1.35 |   119394 | Paris                   | EURONEXT        | FR        |
+| ROST     | Ross Stores, Inc. |  46724188589 | Consumer Cyclical | Apparel Retail         |  1.026 | 138.785 |       1.34 |   169879 | NASDAQ Global Select    | NASDAQ          | US        |
+| HES      | Hess Corporation  |  44694706090 | Energy            | Oil & Gas E&P          |  1.464 | 145.51  |       1.75 |   123147 | New York Stock Exchange | NYSE            | US        |
+
 > **Company List**
 
 The stock list function returns a complete list of all the symbols that can be used in the FinanceToolkit. These are over 60.000 symbols. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/discovery#get_company_list).
+
+As an example:
+
+```python
+from financetoolkit import Discovery
+
+discovery = Discovery(api_key="FINANCIAL_MODELING_PREP_KEY")
+
+stock_list = discovery.get_stock_list()
+
+# The total list equals over 60.000 rows
+stock_list.iloc[38000:38010]
+```
+
+Which returns:
+
+| Symbol      | Name                         |   Price | Exchange                        | Exchange Code   |
+|:------------|:-----------------------------|--------:|:--------------------------------|:----------------|
+| LEO.V       | Lion Copper and Gold Corp.   |   0.09  | Toronto Stock Exchange Ventures | TSX             |
+| LEOF.TA     | Lewinsky-Ofer Ltd.           | 263.1   | Tel Aviv                        | TLV             |
+| LEON        | Leone Asset Management, Inc. |   0.066 | Other OTC                       | OTC             |
+| LEON.SW     | Leonteq AG                   |  34.35  | Swiss Exchange                  | SIX             |
+| LER.AX      | Leaf Resources Limited       |   0.014 | Australian Securities Exchange  | ASX             |
+| LERTHAI.BO  | LERTHAI FINANCE LIMITED      | 265     | Bombay Stock Exchange           | BSE             |
+| LES.WA      | Less S.A.                    |   0.22  | Warsaw Stock Exchange           | WSE             |
+| LESAF       | Le Saunda Holdings Limited   |   0.071 | Other OTC                       | PNK             |
+| LESHAIND.BO | Lesha Industries Limited     |   4.68  | Bombay Stock Exchange           | BSE             |
+| LESL        | Leslie's, Inc.               |   6.91  | NASDAQ Global Select            | NASDAQ          |
 
 > **Company Quotes**
 
 Returns the real time stock prices for each company. This includes the bid and ask size, the volume, the bid and ask price, the last sales price and the last sales size. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/discovery#get_company_quotes).
 
+As an example:
+
+```python
+from financetoolkit import Discovery
+
+discovery = Discovery(api_key="FINANCIAL_MODELING_PREP_KEY")
+
+stock_quotes = discovery.get_stock_quotes()
+
+stock_quotes.iloc[3000:3010]
+```
+
+Which returns:
+
+| Symbol   |  Bid Size |   Ask Price |           Volume |   Ask Size |   Bid Price |   Last Sale Price |   Last Sale Size |   Last Sale Time |
+|:---------|----------:|------------:|-----------------:|-----------:|------------:|------------------:|-----------------:|-----------------:|
+| EIPX     |         0 |        0    |  59676           |          0 |        0    |           21.28   |                0 |      1.7039e+12  |
+| EIRL     |         2 |       64.67 |   5455           |          2 |       57.7  |           61.1316 |                0 |      1.7039e+12  |
+| EIS      |        10 |       61.71 |  15886           |          2 |       56.2  |           58.1909 |                0 |      1.7039e+12  |
+| EIX      |         1 |       75.7  |      1.41398e+06 |          1 |       50.1  |           71.49   |                0 |      1.70389e+12 |
+| EJAN     |         1 |       31.42 | 252595           |          1 |       28.1  |           28.67   |                0 |      1.7039e+12  |
+| EJH      |         6 |        3.83 |      0           |          8 |        3.82 |            3.82   |              100 |      1.7042e+12  |
+| EJUL     |         2 |       27.97 |  10226           |          2 |       23.16 |           23.63   |                0 |      1.7039e+12  |
+| EKG      |         4 |       20    |   1197           |          1 |        6.38 |           15.9357 |                0 |      1.70388e+12 |
+| EKSO     |         3 |        2.54 |      0           |          5 |        2.31 |            2.31   |              100 |      1.7042e+12  |
+| EL       |         1 |      143.9  |      0           |          1 |      142.5  |          143      |              100 |      1.7042e+12  |
+
 > **Floating Shares**
 
 Returns the shares float for each company. The shares float is the number of shares available for trading for each company. It also includes the number of shares outstanding and the date. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/discovery#get_floating_shares).
+
+As an example:
+
+```python
+from financetoolkit import Discovery
+
+discovery = Discovery(api_key="FINANCIAL_MODELING_PREP_KEY")
+
+shares_float = discovery.get_stock_shares_float()
+
+shares_float.iloc[50000:50010]
+```
+
+Which returns:
+
+| Symbol   | Date                |   Free Float |   Float Shares |   Outstanding Shares |
+|:---------|:--------------------|-------------:|---------------:|---------------------:|
+| OPY.AX   | NaT                 |     51.4746  |      119853548 |          2.3284e+08  |
+| OPYGY    | NaT                 |      4.49504 |       60892047 |          1.35465e+09 |
+| OQAL     | 2024-01-01 13:12:23 |      0       |              0 |     226543           |
+| OQLGF    | 2023-12-31 21:48:07 |      0.6765  |        1150607 |          1.70082e+08 |
+| OR       | 2024-01-02 05:18:03 |     99.3281  |      183921869 |          1.85166e+08 |
+| OR-R.BK  | 2024-01-01 05:29:30 |     23.153   |     2778360000 |          1.2e+10     |
+| OR.BK    | 2024-01-02 03:52:39 |     22.7847  |     2734164000 |          1.2e+10     |
+| OR.PA    | 2024-01-02 07:57:35 |     45.2727  |      242084445 |          5.34725e+08 |
+| OR.SW    | 2023-12-31 13:38:10 |     45.2727  |      355743960 |          7.8578e+08  |
+| OR.TO    | 2023-12-31 17:56:33 |     99.3317  |      183928535 |          1.85166e+08 |
 
 > **Sectors Performance**
 
 Returns the sectors performance for each sector. This features the sector performance over the last months. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/discovery#get_sectors_performance).
 
+As an example:
+
+```python
+from financetoolkit import Discovery
+
+discovery = Discovery(api_key="FINANCIAL_MODELING_PREP_KEY")
+
+sectors_performance = discovery.get_sectors_performance()
+
+sectors_performance.tail()
+```
+
+Which returns:
+
+| Date       |   Utilities |   Basic Materials |   Communication Services |   Consumer Cyclical |   Consumer Defensive |   Energy |   Financial Services |   Healthcare |   Industrials |   Real Estate |   Technology |
+|:-----------|------------:|------------------:|-------------------------:|--------------------:|---------------------:|---------:|---------------------:|-------------:|--------------:|--------------:|-------------:|
+| 2023-12-27 |     0.13511 |           0.40986 |                 -0.23963 |             0.10358 |              0.48048 | -0.27499 |              0.30153 |      0.75715 |       0.30234 |       0.35946 |      0.02372 |
+| 2023-12-28 |     0.80513 |          -0.45131 |                 -0.15858 |            -0.45874 |              0.03828 | -0.81641 |              0.02954 |     -0.01345 |       0.22808 |       0.59612 |     -0.15283 |
+| 2023-12-29 |    -0.01347 |          -0.14525 |                 -0.15072 |            -0.58879 |              0.18141 | -0.42463 |             -0.34718 |     -0.082   |      -0.2181  |      -0.52222 |     -0.57062 |
+| 2024-01-01 |    -0.01347 |          -0.14536 |                 -0.15074 |            -0.58877 |              0.18141 | -0.41917 |             -0.34753 |     -0.08193 |      -0.21821 |      -0.52216 |     -0.5708  |
+| 2024-01-02 |    -0.01347 |          -0.14536 |                 -0.15074 |            -0.58877 |              0.18141 | -0.41917 |             -0.34779 |     -0.08193 |      -0.21823 |      -0.52281 |     -0.57073 |
+
 > **Biggest Gainers**
 
 Returns the biggest gainers for the day. This includes the symbol, the name, the price, the change and the change percentage. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/discovery#get_biggest_gainers).
+
+As an example:
+
+```python
+from financetoolkit import Discovery
+
+discovery = Discovery(api_key="FINANCIAL_MODELING_PREP_KEY")
+
+biggest_gainers = discovery.get_biggest_gainers()
+
+biggest_gainers.head(10)
+```
+
+Which returns:
+
+| Symbol   | Name                                                   |   Change |   Price |   Change % |
+|:---------|:-------------------------------------------------------|---------:|--------:|-----------:|
+| AAME     | Atlantic American Corporation                          |   0.3001 |  2.4501 |    13.9581 |
+| ADAP     | Adaptimmune Therapeutics plc                           |   0.1029 |  0.793  |    14.9109 |
+| ADTX     | Aditxt, Inc.                                           |   1.81   |  6.63   |    37.5519 |
+| AFMD     | Affimed N.V.                                           |   0.0861 |  0.625  |    15.977  |
+| AIH      | Aesthetic Medical International Holdings Group Limited |   0.1016 |  0.6896 |    17.2789 |
+| ANTE     | AirNet Technology Inc.                                 |   0.1229 |  0.8299 |    17.3833 |
+| APRE     | Aprea Therapeutics, Inc.                               |   1.04   |  4.7    |    28.4153 |
+| ASTR     | Astra Space, Inc.                                      |   0.55   |  2.28   |    31.7919 |
+| BHG      | Bright Health Group, Inc.                              |   2.37   |  7.63   |    45.057  |
+| BROG     | Brooge Energy Limited                                  |   0.73   |  3.68   |    24.7458 |
 
 > **Biggest Losers**
 
 Returns the biggest losers for the day. This includes the symbol, the name, the price, the change and the change percentage. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/discovery#get_biggest_losers).
 
+As an example:
+
+```python
+from financetoolkit import Discovery
+
+discovery = Discovery(api_key="FINANCIAL_MODELING_PREP_KEY")
+
+biggest_losers = discovery.get_biggest_losers()
+
+biggest_losers.head(10)
+```
+
+Which returns:
+
+| Symbol   | Name                                       |   Change |   Price |   Change % |
+|:---------|:-------------------------------------------|---------:|--------:|-----------:|
+| AGAE     | Allied Gaming & Entertainment Inc.         |  -0.2    |  1.06   |   -15.873  |
+| AVTX     | Avalo Therapeutics, Inc.                   |  -2.7339 |  9.1    |   -23.1023 |
+| BAYAR    | Bayview Acquisition Corp Right             |  -0.03   |  0.12   |   -20      |
+| BBLG     | Bone Biologics Corporation                 |  -1.48   |  4.52   |   -24.6667 |
+| BKYI     | BIO-key International, Inc.                |  -0.6    |  3      |   -16.6667 |
+| BREA     | Brera Holdings PLC Class B Ordinary Shares |  -0.2064 |  0.6112 |   -25.2446 |
+| BTBT     | Bit Digital, Inc.                          |  -0.86   |  4.23   |   -16.8959 |
+| BTCS     | BTCS Inc.                                  |  -0.69   |  1.63   |   -29.7414 |
+| BTDR     | Bitdeer Technologies Group                 |  -3.36   |  9.86   |   -25.416  |
+| BYN      | Banyan Acquisition Corporation             |  -2.035  | 10.9    |   -15.7325 |
+
 > **Most Active**
 
 Returns the most active stocks for the day. This includes the symbol, the name, the price, the change and the change percentage. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/discovery#get_most_active_stocks).
 
+As an example:
+
+```python
+from financetoolkit import Discovery
+
+discovery = Discovery(api_key="FINANCIAL_MODELING_PREP_KEY")
+
+most_active_stocks = discovery.get_most_active_stocks()
+
+most_active_stocks.head(10)
+```
+
+Which returns:
+
+| Symbol   | Name                           |   Change |   Price |   Change % |
+|:---------|:-------------------------------|---------:|--------:|-----------:|
+| AAPL     | Apple Inc.                     |    -1.05 |  192.53 |    -0.5424 |
+| ADTX     | Aditxt, Inc.                   |     1.81 |    6.63 |    37.5519 |
+| AMD      | Advanced Micro Devices, Inc.   |    -1.35 |  147.41 |    -0.9075 |
+| AMZN     | Amazon.com, Inc.               |    -1.44 |  151.94 |    -0.9388 |
+| BAC      | Bank of America Corporation    |    -0.21 |   33.67 |    -0.6198 |
+| BITF     | Bitfarms Ltd.                  |    -0.41 |    2.91 |   -12.3494 |
+| BITO     | ProShares Bitcoin Strategy ETF |    -0.33 |   20.49 |    -1.585  |
+| CAN      | Canaan Inc.                    |    -0.5  |    2.31 |   -17.7936 |
+| CLSK     | CleanSpark, Inc.               |    -2.08 |   11.03 |   -15.8657 |
+| DISH     | DISH Network Corporation       |     0.11 |    5.77 |     1.9435 |
+
 > **Delisted Companies**
 
 The delisted stocks function returns a complete list of all delisted stocks including the IPO and delisted date. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/discovery#get_delisted_stocks).
+
+As an example:
+
+```python
+from financetoolkit import Discovery
+
+discovery = Discovery(api_key="FINANCIAL_MODELING_PREP_KEY")
+
+delisted_stocks = discovery.get_delisted_stocks()
+
+delisted_stocks.head(10)
+```
+
+Which returns:
+
+| Symbol   | Name                                         | Exchange   | IPO Date   | Delisted Date   |
+|:---------|:---------------------------------------------|:-----------|:-----------|:----------------|
+| AAIC     | Arlington Asset Investment Corp.             | NYSE       | 1997-12-23 | 2023-12-14      |
+| ABCM     | Abcam plc                                    | NASDAQ     | 2010-12-03 | 2023-12-12      |
+| ADZ      | DB Agriculture Short ETN                     | AMEX       | 2008-04-16 | 2023-10-27      |
+| AENZ     | Aenza S.A.A.                                 | NYSE       | 2013-07-24 | 2023-12-08      |
+| AKUMQ    | Akumin Inc                                   | NASDAQ     | 2018-03-08 | 2023-10-25      |
+| ALTMW    | Kinetik Holdings Inc - Warrants (09/11/2023) | NASDAQ     | 2017-05-01 | 2023-11-07      |
+| ARCE     | Arco Platform Limited                        | NASDAQ     | 2018-09-26 | 2023-12-07      |
+| ARTEW    | Artemis Strategic Investment Corporation     | NASDAQ     | 2021-11-22 | 2023-11-03      |
+| ASPAU    | Abri SPAC I, Inc.                            | NASDAQ     | 2021-08-10 | 2023-11-02      |
+| AVID     | Avid Technology, Inc.                        | NASDAQ     | 1993-03-12 | 2023-11-07      |
 
 </details>
 
@@ -837,9 +1104,63 @@ Obtain cryptocurrency lists and cryptocurrency quotes that can be used in the Fi
 
 The crypto list function returns a complete list of all crypto symbols that can be used in the FinanceToolkit. These are over 4.000 symbols. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/discovery#get_crypto_list).
 
+As an example:
+
+```python
+from financetoolkit import Discovery
+
+discovery = Discovery(api_key="FINANCIAL_MODELING_PREP_KEY")
+
+crypto_list = discovery.get_crypto_list()
+
+crypto_list.head(10)
+```
+
+Which returns:
+
+| Symbol       | Name                                 | Currency   | Exchange   |
+|:-------------|:-------------------------------------|:-----------|:-----------|
+| .ALPHAUSD    | .Alpha USD                           | USD        | CCC        |
+| 00USD        | 00 Token USD                         | USD        | CCC        |
+| 0NEUSD       | Stone USD                            | USD        | CCC        |
+| 0X0USD       | 0x0.ai USD                           | USD        | CCC        |
+| 0X1USD       | 0x1.tools: AI Multi-tool Plaform USD | USD        | CCC        |
+| 0XAUSD       | 0xApe USD                            | USD        | CCC        |
+| 0XBTCUSD     | 0xBitcoin USD                        | USD        | CCC        |
+| 0XENCRYPTUSD | Encryption AI USD                    | USD        | CCC        |
+| 0XGASUSD     | 0xGasless USD                        | USD        | CCC        |
+| 0XMRUSD      | 0xMonero USD                         | USD        | CCC        |
+
 > **Cryptocurrency Quotes**
 
 Returns the quotes for each crypto. This includes the symbol, the name, the price, the change, the change percentage, day low, day high, year high, year low, market cap, 50 day average, 200 day average, volume, average volume, open, previous close, EPS, PE, earnings announcement, shares outstanding and the timestamp. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/discovery#get_crypto_quotes).
+
+As an example:
+
+```python
+from financetoolkit import Discovery
+
+discovery = Discovery(api_key="FINANCIAL_MODELING_PREP_KEY")
+
+crypto_quotes = discovery.get_crypto_quotes()
+
+crypto_quotes.head(10)
+```
+
+Which returns:
+
+| Symbol       | Name                                 |        Price |   Change % |       Change |      Day Low |    Day High |   Year High |     Year Low |       Market Cap |   50 Day Avg |   200 Day Avg |      Volume |       Avg Volume |        Open |   Previous Close |   EPS |   PE |   Earnings Announcement |   Shares Outstanding | Timestamp           |
+|:-------------|:-------------------------------------|-------------:|-----------:|-------------:|-------------:|------------:|------------:|-------------:|-----------------:|-------------:|--------------:|------------:|-----------------:|------------:|-----------------:|------:|-----:|------------------------:|---------------------:|:--------------------|
+| .ALPHAUSD    | .Alpha USD                           | 21.4023      |    0       |  0           | 21.3991      | 21.4023     |  193.252    | 21.4023      |      0           | 23.7774      |  51.0497      |     30      |    162           | 21.4023     |      21.4023     |   nan |  nan |                     nan |        nan           | 2022-10-10 23:28:00 |
+| 00USD        | 00 Token USD                         |  0.082484    |    0.67363 |  0.00055192  |  0.0808863   |  0.0857288  |    0.28559  |  0.062939    |      0           |  0.0853295   |   0.0824169   | 210396      | 235403           |  0.0819321  |       0.0819321  |   nan |  nan |                     nan |          0           | 2024-01-02 14:05:40 |
+| 0NEUSD       | Stone USD                            |  7.39e-10    |   -1.70872 | -1.3e-11     |  7.37e-10    |  7.79e-10   |    7.76e-10 |  7.52e-10    |      0           |  0           |   0           |   1110.14   |    nan           |  7.52e-10   |       7.52e-10   |   nan |  nan |                     nan |          0           | 2024-01-02 14:05:12 |
+| 0X0USD       | 0x0.ai USD                           |  0.15383     |    4.3101  |  0.00635643  |  0.14748     |  0.1551     |    0.17925  |  0.000275    |      1.33615e+08 |  0.12582     |   0.0734378   | 805257      |      1.17131e+06 |  0.14748    |       0.14748    |   nan |  nan |                     nan |          8.68563e+08 | 2024-01-02 14:05:13 |
+| 0X1USD       | 0x1.tools: AI Multi-tool Plaform USD |  0.00596268  |    2.65558 |  0.000154248 |  0.00580843  |  0.00608836 |    0.48504  |  0.005089    |      0           |  0.00587516  |   0.0448096   |     42.9976 |    216           |  0.00580843 |       0.00580843 |   nan |  nan |                     nan |          0           | 2024-01-02 14:06:00 |
+| 0XAUSD       | 0xApe USD                            |  9.86177e-06 |  -99.9921  | -0.12519     |  9.86177e-06 |  0.12527    |    0.12527  |  9.86177e-06 |      0           |  1.08846e-05 |   1.08846e-05 |    197      |    nan           |  0.1252     |       0.1252     |   nan |  nan |                     nan |        nan           | 2023-06-24 18:30:00 |
+| 0XBTCUSD     | 0xBitcoin USD                        |  0.097478    |    0.6003  |  0.00058167  |  0.0944255   |  0.10393    |    4.13419  |  0.03222     | 946195           |  0.17478     |   0.39561     |    344.45   |  97856           |  0.0968963  |       0.0968963  |   nan |  nan |                     nan |          9.70675e+06 | 2024-01-02 14:05:24 |
+| 0XENCRYPTUSD | Encryption AI USD                    |  0.0213021   |    0       |  0           |  0.0213021   |  0.0213021  |   15.4064   |  0.020326    |      0           |  1.55438     |   3.26515     |      2      | 202458           |  0.0213021  |       0.0213021  |   nan |  nan |                     nan |        nan           | 2023-07-26 18:30:00 |
+| 0XGASUSD     | 0xGasless USD                        |  0.11228     |   12.1894  |  0.0121997   |  0.10008     |  0.11228    |    0.19216  |  3.7e-05     |      0           |  0.038569    |   0.0143848   |   8700      |   9628           |  0.10008    |       0.10008    |   nan |  nan |                     nan |          0           | 2024-01-02 14:06:00 |
+| 0XMRUSD      | 0xMonero USD                         |  0.0497938   |  -38.9213  | -0.0317302   |  0.0496646   |  2.79013    |    0.18734  |  0.0418889   |      0           |  0.13616     |   0.11633     |    347.276  |     11           |  0.081524   |       0.081524   |   nan |  nan |                     nan |        nan           | 2024-01-02 14:05:07 |
 
 </details>
 
@@ -848,14 +1169,67 @@ Returns the quotes for each crypto. This includes the symbol, the name, the pric
 
 Obtain forex lists and forex quotes that can be used in the Finance Toolkit.
 
-
 > **Forex List**
 
 The forex list function returns a complete list of all forex symbols that can be used in the FinanceToolkit. These are over 1.000 symbols. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/discovery#get_forex_list).
 
+As an example:
+
+```python
+from financetoolkit import Discovery
+
+discovery = Discovery(api_key="FINANCIAL_MODELING_PREP_KEY")
+
+forex_list = discovery.get_forex_list()
+
+forex_list.head(10)
+```
+
+Which returns:
+
+| Symbol   | Name    | Currency   | Exchange   |
+|:---------|:--------|:-----------|:-----------|
+| AEDAUD   | AED/AUD | AUD        | CCY        |
+| AEDBHD   | AED/BHD | BHD        | CCY        |
+| AEDCAD   | AED/CAD | CAD        | CCY        |
+| AEDCHF   | AED/CHF | CHF        | CCY        |
+| AEDDKK   | AED/DKK | DKK        | CCY        |
+| AEDEUR   | AED/EUR | EUR        | CCY        |
+| AEDGBP   | AED/GBP | GBP        | CCY        |
+| AEDILS   | AED/ILS | ILS        | CCY        |
+| AEDINR   | AED/INR | INR        | CCY        |
+| AEDJOD   | AED/JOD | JOD        | CCY        |
+
 > **Forex Quotes**
 
 Returns the quotes for each forex. This includes the symbol, the name, the price, the change, the change percentage, day low, day high, year high, year low, market cap, 50 day average, 200 day average, volume, average volume, open, previous close, EPS, PE, earnings announcement, shares outstanding and the timestamp. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/discovery#get_forex_quotes).
+
+As an example:
+
+```python
+from financetoolkit import Discovery
+
+discovery = Discovery(api_key="FINANCIAL_MODELING_PREP_KEY")
+
+forex_quotes = discovery.get_forex_quotes()
+
+forex_quotes.head(10)
+```
+
+Which returns:
+
+| Symbol   | Name    |    Price |     Change % |       Change |   Day Low |   Day High |   Year High |   Year Low |   50 Day Avg |   200 Day Avg |   Volume |   Avg Volume |     Open |   Previous Close | Timestamp           |
+|:---------|:--------|---------:|-------------:|-------------:|----------:|-----------:|------------:|-----------:|-------------:|--------------:|---------:|-------------:|---------:|-----------------:|:--------------------|
+| AEDAUD   | AED/AUD |  0.40089 |    0.40826   |   0.00163    |   0.39766 |    0.40118 |     0.43341 |  0.38041   |      0.41514 |       0.41372 |       11 |     nan      |  0.39921 |          0.39926 | 2024-01-02 14:02:15 |
+| AEDBHD   | AED/BHD |  0.10262 |    0.0608637 |   6.2422e-05 |   0.10244 |    0.10266 |     0.10323 |  0.0991399 |      0.10264 |       0.10241 |       37 |      48.006  |  0.10256 |          0       | 2024-01-02 13:46:14 |
+| AEDCAD   | AED/CAD |  0.36177 |    0.43587   |   0.00157    |   0.35996 |    0.36295 |     0.37817 |  0.35657   |      0.3701  |       0.36716 |       14 |     nan      |  0.36002 |          0.3602  | 2024-01-02 14:02:15 |
+| AEDCHF   | AED/CHF |  0.23062 |    0.8704    |   0.00199    |   0.22847 |    0.23099 |     0.25693 |  0.2278    |      0.23976 |       0.24231 |      nan |     nan      |  0.22847 |          0.22863 | 2024-01-02 14:02:15 |
+| AEDDKK   | AED/DKK |  1.84023 |   84.023     |   0.84023    |   1.83775 |    1.84081 |     1.94068 |  1.78424   |      1.86572 |       1.87037 |       16 |      49.5329 |  1.83874 |          1       | 2024-01-02 09:37:59 |
+| AEDEUR   | AED/EUR |  0.2486  |    0.81044   |   0.00199857 |   0.24636 |    0.24871 |     0.265   |  0.2417    |      0.25271 |       0.25197 |       38 |     nan      |  0.24668 |          0.2466  | 2024-01-02 14:02:15 |
+| AEDGBP   | AED/GBP |  0.21499 |    0.75924   |   0.00162    |   0.21298 |    0.2157  |     0.23039 |  0.2073    |      0.21802 |       0.21732 |       14 |     nan      |  0.2133  |          0.21337 | 2024-01-02 14:02:15 |
+| AEDILS   | AED/ILS |  0.98746 | -100         | nan          |   0.98385 |    0.99536 |     1.1108  |  0.97828   |      1.01241 |       1.03478 |      923 |     549.264  |  0.98761 |        nan       | 2024-01-02 14:05:06 |
+| AEDINR   | AED/INR | 22.7025  |    0.14076   |   0.0319101  |  22.625   |   22.72    |    22.72    | 20.1966    |     19.8653  |      20.1966  |       14 |     nan      | 22.7082  |         22.6706  | 2024-01-02 14:02:15 |
+| AEDJOD   | AED/JOD |  0.19335 |   -3.32563   |  -0.00665126 |   0.19315 |    0.19364 |     0.19412 |  0.19185   |      0.19314 |       0.19315 |       38 |      18.8451 |  0.19331 |          0.2     | 2024-01-02 13:51:18 |
 
 </details>
 
@@ -868,9 +1242,63 @@ Obtain commodity lists and company quotes that can be used in the Finance Toolki
 
 The commodity list function returns a complete list of all commodity symbols that can be used in the FinanceToolkit. These are over 1.000 symbols. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/discovery#get_commodity_list).
 
+As an example:
+
+```python
+from financetoolkit import Discovery
+
+discovery = Discovery(api_key="FINANCIAL_MODELING_PREP_KEY")
+
+commodity_list = discovery.get_commodity_list()
+
+commodity_list.head(10)
+```
+
+Which returns:
+
+| Symbol   | Name                   | Currency   | Exchange   |
+|:---------|:-----------------------|:-----------|:-----------|
+| ALIUSD   | Aluminum Futures       | USD        | COMEX      |
+| BZUSD    | Brent Crude Oil        | USD        | ICE        |
+| CCUSD    | Cocoa                  | USD        | ICE        |
+| CLUSD    | Crude Oil              | USD        | CME        |
+| CTUSX    | Cotton                 | USX        | ICE        |
+| DCUSD    | Class III Milk Futures | USD        | CME        |
+| DXUSD    | US Dollar              | USD        | ICE        |
+| ESUSD    | E-Mini S&P 500         | USD        | CME        |
+| GCUSD    | Gold Futures           | USD        | CME        |
+| GFUSX    | Feeder Cattle Futures  | USX        | CME        |
+
 > **Commodity Quotes**
 
 Returns the quotes for each commodity. This includes the symbol, the name, the price, the change, the change percentage, day low, day high, year high, year low, market cap, 50 day average, 200 day average, volume, average volume, open, previous close, EPS, PE, earnings announcement, shares outstanding and the timestamp. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/discovery#get_commodity_quotes).
+
+As an example:
+
+```python
+from financetoolkit import Discovery
+
+discovery = Discovery(api_key="FINANCIAL_MODELING_PREP_KEY")
+
+commodity_quotes = discovery.get_commodity_quotes()
+
+commodity_quotes.head(10)
+```
+
+Which returns:
+
+| Symbol   | Name                   |    Price |   Change % |   Change |   Day Low |   Day High |   Year High |   Year Low |   50 Day Avg |   200 Day Avg |   Volume |       Avg Volume |     Open |   Previous Close | Timestamp           |
+|:---------|:-----------------------|---------:|-----------:|---------:|----------:|-----------:|------------:|-----------:|-------------:|--------------:|---------:|-----------------:|---------:|-----------------:|:--------------------|
+| ALIUSD   | Aluminum Futures       | 2347     | -1.12691   |  -26.75  |  2344     |    2383.5  |     2670.75 |    2073.25 |    2200.86   |     2221.04   |     4321 |     22           | 2370.75  |         2373.75  | 2024-01-02 13:54:40 |
+| BZUSD    | Brent Crude Oil        |   78.1   |  1.37591   |    1.06  |    77.21  |      79.06 |       97.63 |      68.2  |      81.291  |       81.9377 |     2285 |  30060           |   77.21  |           77.04  | 2024-01-02 14:10:12 |
+| CCUSD    | Cocoa                  | 4249.5   |  1.27502   |   53.5   |   101.03  |    4274.5  |     4478    |    2507    |    4115.52   |     3483.99   |    18596 |  14509           | 4209     |         4196     | 2024-01-02 14:10:12 |
+| CLUSD    | Crude Oil              |   72.63  |  1.36776   |    0.98  |    71.63  |      73.65 |       95.03 |      63.64 |      76.3836 |       77.7364 |    37720 | 307715           |   71.71  |           71.65  | 2024-01-02 14:10:12 |
+| CTUSX    | Cotton                 |   80.78  | -0.2716    |   -0.22  |     3.87  |      81.75 |       90.75 |      74.77 |      79.8394 |       82.7224 |      960 |  15911           |   80.87  |           81     | 2024-01-02 14:10:00 |
+| DCUSD    | Class III Milk Futures |   16.35  |  1.5528    |    0.25  |    15.43  |      17.16 |       20.49 |      13.75 |      16.6668 |       16.7265 |       51 |    212           |   16.1   |           16.1   | 2024-01-02 13:36:35 |
+| DXUSD    | US Dollar              |  101.862 |  0.82452   |    0.833 |   101.027 |     101.88 |      107.05 |      99.22 |     103.915  |      103.24   |     2999 |  14880           |  101.065 |          101.029 | 2024-01-02 14:10:10 |
+| ESUSD    | E-Mini S&P 500         | 4783     | -0.76763   |  -37     |  4777.75  |    4828    |     4841.5  |    3808.75 |    4527.31   |     4378.91   |    75910 |      1.63378e+06 | 4818     |         4820     | 2024-01-02 14:00:13 |
+| GCUSD    | Gold Futures           | 2075     |  0.15446   |    3.2   |  2071.4   |    2094.7  |     2130.2  |    1808.1  |    2003.86   |     1960.64   |    38456 |   3511           | 2072.7   |         2071.8   | 2024-01-02 14:00:13 |
+| GFUSX    | Feeder Cattle Futures  |  223.125 |  0.0112057 |    0.025 |   222.725 |     224.45 |      257.5  |     177.55 |     226.9    |      230.114  |     4395 |   3915           |  224.4   |          223.1   | 2023-12-29 19:04:57 |
 
 </details>
 
@@ -883,13 +1311,94 @@ Obtain ETF and Index lists and quotes that can be used in the Finance Toolkit.
 
 The etf list function returns a complete list of all etf symbols that can be used in the FinanceToolkit. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/discovery#get_etf_list).
 
+As an example:
+
+```python
+from financetoolkit import Discovery
+
+discovery = Discovery(api_key="FINANCIAL_MODELING_PREP_KEY")
+
+etf_list = discovery.get_etf_list()
+
+etf_list.head(10)
+```
+
+Which returns:
+
+| Symbol    | Name                                                                                            |      Price | Exchange              | Exchange Code   |
+|:----------|:------------------------------------------------------------------------------------------------|-----------:|:----------------------|:----------------|
+| 01002T.TW | Cathay No.1 REIT                                                                                |    17.29   | Taiwan                | TAI             |
+| 020Y.L    | iShares IV Public Limited Company - iShares Euro Government Bond 20yr Target Duration UCITS ETF |     3.9522 | London Stock Exchange | LSE             |
+| 069500.KS | KODEX 200                                                                                       | 36390      | KSE                   | KSC             |
+| 069660.KS | KOSEF 200                                                                                       | 36370      | KSE                   | KSC             |
+| 091160.KS | Kodex Semicon                                                                                   | 36840      | KSE                   | KSC             |
+| 091170.KS | Kodex Banks                                                                                     |  6695      | KSE                   | KSC             |
+| 091180.KS | Kodex Autos                                                                                     | 19450      | KSE                   | KSC             |
+| 091220.KS | Mirae Asset TIGER Banks ETF                                                                     |  6845      | KSE                   | KSC             |
+| 091230.KS | Mirae Asset TIGER Semicon ETF                                                                   | 38400      | KSE                   | KSC             |
+| 098560.KS | Mirae Asset TIGER Media & Telecom ETF                                                           |  7335      | KSE                   | KSC             |
+
 > **Index List**
 
 The index list function returns a complete list of all etf symbols that can be used in the FinanceToolkit. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/discovery#get_index_list).
 
+As an example:
+
+```python
+from financetoolkit import Discovery
+
+discovery = Discovery(api_key="FINANCIAL_MODELING_PREP_KEY")
+
+index_list = discovery.get_index_list()
+
+index_list.head(10)
+```
+
+Which returns:
+
+| Symbol      | Name                          | Currency   | Exchange               |
+|:------------|:------------------------------|:-----------|:-----------------------|
+| 000001.SS   | SSE Composite Index           | CNY        | Shanghai               |
+| 399967.SZ   | CSI NATIONAL DEFENSE          | CNY        | Shenzhen               |
+| 512.HK      | CES CHINA HK MAINLAND INDEX   | HKD        | HKSE                   |
+| DX-Y.NYB    | US Dollar/USDX - Index - Cash | USD        | ICE Futures            |
+| FTSEMIB.MI  | FTSE MIB Index                | EUR        | Milan                  |
+| IAR.BA      | MERVAL ARGENTINA              | USD        | Buenos Aires           |
+| IDX30.JK    | IDX30                         | IDR        | Jakarta Stock Exchange |
+| IMOEX.ME    | MOEX Russia Index             | RUB        | MCX                    |
+| ITLMS.MI    | FTSE Italia All-Share Index   | EUR        | Milan                  |
+| KOSPI200.KS | KOSPI 200 Index               | KRW        | KSE                    |
+
 > **Index Quotes**
 
 Returns the quotes for each index. This includes the symbol, the name, the price, the change, the change percentage, day low, day high, year high, year low, market cap, 50 day average, 200 day average, volume, average volume, open, previous close, EPS, PE, earnings announcement, shares outstanding and the timestamp. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/discovery#get_index_quotes).
+
+As an example:
+
+```python
+from financetoolkit import Discovery
+
+discovery = Discovery(api_key="FINANCIAL_MODELING_PREP_KEY")
+
+index_quotes = discovery.get_index_quotes()
+
+index_quotes.head(10)
+```
+
+Which returns:
+
+| Symbol      | Name                          |     Price |   Change % |     Change |   Day Low |   Day High |   Year High |   Year Low |   50 Day Avg |   200 Day Avg |     Volume |   Avg Volume |      Open |   Previous Close |   Timestamp |
+|:------------|:------------------------------|----------:|-----------:|-----------:|----------:|-----------:|------------:|-----------:|-------------:|--------------:|-----------:|-------------:|----------:|-----------------:|------------:|
+| 000001.SS   | SSE Composite Index           |  2962.28  |    -0.4255 |   -12.6587 |  2962.28  |   2976.27  |    3418.95  |   2882.02  |     2999.76  |      3160.83  |  349408228 |       290686 |  2972.78  |         2974.93  |  1704178820 |
+| 399967.SZ   | CSI NATIONAL DEFENSE          |  9891.22  |     0.4875 |    47.9902 |  9834.98  |  10041.4   |   10041.4   |   9834.98  |        0     |         0     | 1115610197 |            0 |  9857.19  |         9843.23  |  1704184147 |
+| 512.HK      | CES CHINA HK MAINLAND INDEX   |  6901.25  |     0      |     0      |  6786.45  |   6912.54  |    6912.54  |   6786.45  |        0     |         0     | 2785244718 |            0 |  6862.61  |          nan     |  1434960128 |
+| DX-Y.NYB    | US Dollar/USDX - Index - Cash |   102.136 |     0.7924 |     0.803  |   101.34  |    102.167 |     107.35  |     99.58  |      104.108 |       103.421 |          0 |            0 |   101.417 |          101.333 |  1704204265 |
+| FTSEMIB.MI  | FTSE MIB Index                | 30396.8   |     0.1488 |    45.1699 | 30326.9   |  30863.6   |   30863.6   |  24111     |    29233.6   |     28164     |          0 |    473923362 | 30519.5   |        30351.6   |  1704203960 |
+| IAR.BA      | MERVAL ARGENTINA              | 33784.6   |     0      | 33784.6    | 33227.6   |  33871.5   |   33871.5   |  33227.6   |        0     |         0     |          0 |            0 | 33227.6   |          nan     |  1576872141 |
+| IDX30.JK    | IDX30                         |   498.424 |     0.6486 |     3.212  |   492.621 |    498.424 |     498.424 |    492.621 |        0     |         0     |          0 |            0 |   493.985 |          495.212 |  1704186018 |
+| IMOEX.ME    | MOEX Russia Index             |  2222.51  |    -0.1859 |    -4.1399 |  2202.52  |   2234.55  |    4292.68  |   1681.55  |     2264.41  |      3183.63  |          0 |            0 |  2225.02  |         2226.65  |  1657295461 |
+| ITLMS.MI    | FTSE Italia All-Share Index   | 32507     |     0.0859 |    27.9004 | 32434.3   |  32999.1   |   32999.1   |  23017.3   |    22902.7   |     23017.3   |          0 |            0 | 32651.2   |        32479.1   |  1704203955 |
+| KOSPI200.KS | KOSPI 200 Index               |   360.55  |     0.7151 |     2.56   |   355.96  |    361.53  |     361.53  |    355.96  |        0     |         0     |     106709 |            0 |   356.43  |          357.99  |  1704186335 |
 
 </details>
 
@@ -905,6 +1414,20 @@ All of these ratios can be calculated based on (lagged) growth as well as traili
   <summary><b>Efficiency Ratios ⚙️</b></summary>
 
 The efficiency ratios are used to assess how well a company utilizes its assets and liabilities to generate revenue. They provide insight into the company’s operational efficiency and its ability to manage its assets and liabilities.
+
+All ratios can be called by using `get_` or `collect_` to get a single ratio or to obtain all ratios of the category respectively. E.g. `get_asset_turnover_ratio` or `collect_efficiency_ratios`. As an example:
+
+```python
+from financetoolkit import Toolkit
+
+toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+# Collect all Ratios
+toolkit.ratios.collect_efficiency_ratios()
+
+# Get an Individual Ratio
+toolkit.ratios.get_asset_turnover_ratio()
+```
 
 > **Asset Turnover Ratio**
 
@@ -964,6 +1487,20 @@ The operating ratio is calculated by dividing the company’s operating expenses
 
 The liquidity ratios are used to assess a company’s ability to meet its short-term obligations using its short-term assets. They provide insight into the company’s short-term financial health and its ability to cover its current obligations using its liquid assets.
 
+All ratios can be called by using `get_` or `collect_` to get a single ratio or to obtain all ratios of the category respectively. E.g. `get_current_ratio` or `collect_liquidity_ratios`. As an example:
+
+```python
+from financetoolkit import Toolkit
+
+toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+# Collect all Ratios
+toolkit.ratios.collect_liquidity_ratios()
+
+# Get an Individual Ratio
+toolkit.ratios.get_current_ratio()
+```
+
 > **Current Ratio**
 
 The current ratio is calculated by dividing a company’s current assets by its current liabilities. It indicates whether a company can meet its short-term obligations using its short-term assets. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_current_ratio).
@@ -998,6 +1535,20 @@ The short-term coverage ratio is calculated by dividing operating cash flow by s
   <summary><b>Profitability Ratios 💰</b></summary>
 
 The profitability ratios are used to assess a company’s ability to generate profits from its operations. They provide insight into the company’s operational efficiency and its ability to generate profits from its revenue.
+
+All ratios can be called by using `get_` or `collect_` to get a single ratio or to obtain all ratios of the category respectively. E.g. `get_gross_margin` or `collect_liquidity_ratios`. As an example:
+
+```python
+from financetoolkit import Toolkit
+
+toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+# Collect all Ratios
+toolkit.ratios.collect_profitability_ratios()
+
+# Get an Individual Ratio
+toolkit.ratios.get_current_ratio()
+```
 
 > **Gross Margin**
 
@@ -1075,6 +1626,20 @@ The EBIT to Revenue ratio measures the company’s ability to generate profit fr
 
 The solvency ratios are used to assess a company’s ability to meet its long-term obligations using its long-term assets. They provide insight into the company’s long-term financial health and its ability to cover its long-term obligations using its long-term assets.
 
+All ratios can be called by using `get_` or `collect_` to get a single ratio or to obtain all ratios of the category respectively. E.g. `get_debt_to_assets_ratio` or `collect_solvency_ratios`. As an example:
+
+```python
+from financetoolkit import Toolkit
+
+toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+# Collect all Ratios
+toolkit.ratios.collect_solvency_ratios()
+
+# Get an Individual Ratio
+toolkit.ratios.get_debt_to_assets_ratio()
+```
+
 > **Debt to Assets Ratio**
 
 This ratio, also known as the Debt Ratio, indicates the percentage of a company’s total assets that are funded by debt. It is a measure of a company’s financial leverage and indicates the extent to which a company relies on borrowed funds to finance its operations. A higher ratio implies a higher level of debt in the company’s capital structure, which could increase financial risk. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_debt_to_assets_ratio).
@@ -1121,6 +1686,20 @@ The capex dividend coverage ratio assesses whether a company’s cash flow from 
   <summary><b>Valuation Ratios ⚖️</b></summary>
 
 The valuation ratios are used to assess the relative value of a company’s stock. They provide insight into the company’s valuation and its attractiveness as an investment opportunity.
+
+All ratios can be called by using `get_` or `collect_` to get a single ratio or to obtain all ratios of the category respectively. E.g. `get_earnings_per_share` or `collect_valuation_ratios`. As an example:
+
+```python
+from financetoolkit import Toolkit
+
+toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+# Collect all Ratios
+toolkit.ratios.collect_valuation_ratios()
+
+# Get an Individual Ratio
+toolkit.ratios.get_earnings_per_share()
+```
 
 > **Earnings per Share (EPS)**
 
@@ -1227,6 +1806,17 @@ The Models module is meant to execute well-known models such as DUPONT and the D
 
 The financial models are used to analyze a company’s financial performance and assess its financial health. They provide insights into the company’s profitability, efficiency, liquidity, solvency, and valuation.
 
+All models can be called by using `get_`. E.g. `get_dupont_analysis` or `get_weighted_average_cost_of_capital`. As an example:
+
+```python
+from financetoolkit import Toolkit
+
+toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+# Get Financial Model results
+toolkit.ratios.get_weighted_average_cost_of_capital()
+```
+
 > **DuPont Analysis**
 
 The Dupont analysis is a method used to dissect and understand the factors that drive a company’s return on equity (ROE). It breaks down the ROE into three key components: Profit Margin, Asset Turnover, and Financial Leverage. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/models#get_dupont_analysis).
@@ -1299,6 +1889,20 @@ Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolki
 
 The first-order greeks are Delta, Dual Delta, Vega, Theta, Rho, Epsilon and Lambda. These greeks are used to assess the sensitivity of an option’s price to changes in the underlying asset’s price, volatility, time to expiration, risk-free interest rate, dividend yield, and strike price.
 
+All greeks can be called by using `get_` or `collect_` to get a single greek or to obtain all greeks of the order respectively. E.g. `get_delta` or `collect_first_order_greeks`. As an example:
+
+```python
+from financetoolkit import Toolkit
+
+toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+# Collect all Greeks
+toolkit.options.collect_first_order_greeks()
+
+# Get an Individual Greek
+toolkit.options.get_delta()
+```
+
 > **Delta**
 
 The delta is the rate of change of the option price with respect to the price of the underlying asset. The Delta can be interpreted as follows:
@@ -1363,6 +1967,20 @@ Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolki
     <summary><b>Second-Order Greeks</b></summary>
 
 The second-order greeks are are Gamma, Dual Gamma, Vanna, Charm, Vomma, Vera and Veta. These greeks are used to assess the sensitivity of the first-order greeks to small changes in the underlying asset’s price, volatility, time to expiration, risk-free interest rate, dividend yield, and strike price.
+
+All greeks can be called by using `get_` or `collect_` to get a single greek or to obtain all greeks of the order respectively. E.g. `get_gamma` or `collect_second_order_greeks`. As an example:
+
+```python
+from financetoolkit import Toolkit
+
+toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+# Collect all Greeks
+toolkit.options.collect_second_order_greeks()
+
+# Get an Individual Greek
+toolkit.options.get_gamma()
+```
 
 > **Gamma**
 
@@ -1433,6 +2051,20 @@ The partial derivative is the rate of change of the option price with respect to
 
 The third-order greeks are Speed, Zomma, Color and Ultima. These greeks are used to assess the sensitivity of the second-order greeks to small changes in the underlying asset’s price, volatility, time to expiration, risk-free interest rate, dividend yield, and strike price.
 
+All greeks can be called by using `get_` or `collect_` to get a single greek or to obtain all greeks of the order respectively. E.g. `get_ultima` or `collect_third_order_greeks`. As an example:
+
+```python
+from financetoolkit import Toolkit
+
+toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+# Collect all Greeks
+toolkit.options.collect_third_order_greeks()
+
+# Get an Individual Greek
+toolkit.options.get_ultima()
+```
+
 > **Speed**
 
 The speed is the rate of change of the gamma with respect to the price of the underlying asset. The Speed can be interpreted as follows:
@@ -1479,6 +2111,17 @@ The Performance module is meant to calculate important performance metrics such 
     <summary><b>Performance Metrics</b></summary>
 
 The performance metrics are used to assess the performance of a portfolio or investment strategy. They provide insights into the risk-adjusted returns of a portfolio or investment strategy, and can be used to compare the performance of different portfolios or investment strategies.
+
+All performance metrics can be called by using `get_` to get a single metric. E.g. `get_alpha` or `get_beta`. As an example:
+
+```python
+from financetoolkit import Toolkit
+
+toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+# Get Performance Metric Results
+toolkit.performance.get_beta()
+```
 
 > **Beta**
 
@@ -1573,6 +2216,17 @@ The Risk module is meant to calculate important risk metrics such as Value at Ri
 
 The risk metrics are used to assess the risk of a portfolio or investment strategy. It helps in understanding maximum drawdowns, value at risk, conditional value at risk, volatility forecasts through GARCH and EWMA and more.
 
+All risk metrics can be called by using `get_` to get a single metric. E.g. `get_value_at_risk` or `get_skewness`. As an example:
+
+```python
+from financetoolkit import Toolkit
+
+toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+# Get Risk Metric Results
+toolkit.risk.get_value_at_risk()
+```
+
 > **Value at Risk (VaR)**
 
 Value at Risk (VaR) is a risk management metric that quantifies the maximum potential loss an investment portfolio or asset may experience over a specified time horizon and confidence level. It provides insights into the downside risk associated with an investment and helps investors make informed decisions about risk tolerance. The VaR is calculated as the quantile of the return distribution, representing the loss threshold that is not expected to be exceeded with a given confidence level (e.g., 5% for alpha=0.05). Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/risk#get_value_at_risk).
@@ -1616,6 +2270,20 @@ The Technicals Module contains 30+ Technical Indicators that can be used to anal
 
 Breadth indicators are mathematical formulas that measure the number of advancing and declining stocks, and/or their volume, to calculate the participation in a stock index's price movements.
 
+All technical indicators can be called by using `get_` or `collect_` to get a single indicator or to obtain all indicators of the category respectively. E.g. `get_mcclellan_oscillator` or `collect_breadth_indicators`. As an example:
+
+```python
+from financetoolkit import Toolkit
+
+toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+# Collect all Technical Indicators
+toolkit.ratios.collect_breadth_indicators()
+
+# Get an Individual Indicator
+toolkit.ratios.get_mcclellan_oscillator()
+```
+
 > **McClellan Oscillator**
 
 The McClellan Oscillator is a breadth indicator that measures the difference between the exponential moving average of advancing stocks and the exponential moving average of declining stocks. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals#get_mcclellan_oscillator).
@@ -1642,6 +2310,20 @@ The Chaikin Oscillator is a momentum-based indicator that combines price and vol
     <summary><b>Momentum Indicators ⏱️</b></summary>
 
 Momentrum indicators are technical analysis tools used to determine the strength or weakness of a stock's price. Momentum measures the rate of the rise or fall of stock prices. Common momentum indicators include the relative strength index (RSI) and moving average convergence divergence (MACD).
+
+All technical indicators can be called by using `get_` or `collect_` to get a single indicator or to obtain all indicators of the category respectively. E.g. `get_williams_percent_r` or `collect_momentum_indicators`. As an example:
+
+```python
+from financetoolkit import Toolkit
+
+toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+# Collect all Technical Indicators
+toolkit.ratios.collect_momentum_indicators()
+
+# Get an Individual Indicator
+toolkit.ratios.get_williams_percent_r()
+```
 
 > **Money Flow Index**
 
@@ -1714,6 +2396,20 @@ The Balance of Power (BOP) indicator measures the strength of buyers versus sell
 
 Overlap indicators are technical analysis tools that use the same scale as prices on a chart. They are plotted directly on top of the price chart and provide insights into the price action of an asset.
 
+All technical indicators can be called by using `get_` or `collect_` to get a single indicator or to obtain all indicators of the category respectively. E.g. `get_trix` or `collect_overlap_indicators`. As an example:
+
+```python
+from financetoolkit import Toolkit
+
+toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+# Collect all Technical Indicators
+toolkit.ratios.collect_overlap_indicators()
+
+# Get an Individual Indicator
+toolkit.ratios.get_trix()
+```
+
 > **Simple Moving Average (SMA)**
 
 The Moving Average (MA) is a commonly used technical indicator that smooths out price data by calculating the average price over a specified number of periods. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals#get_moving_average).
@@ -1741,6 +2437,20 @@ The Triangular Moving Average (TMA) is a smoothed version of the Simple Moving A
 
 Volatility indicators are technical analysis tools that measure the volatility of an asset’s price movements. They are used to identify potential breakouts and reversals in the market.
 
+All technical indicators can be called by using `get_` or `collect_` to get a single indicator or to obtain all indicators of the category respectively. E.g. `get_true_range` or `collect_volatility_indicators`. As an example:
+
+```python
+from financetoolkit import Toolkit
+
+toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+# Collect all Technical Indicators
+toolkit.ratios.collect_volatility_indicators()
+
+# Get an Individual Indicator
+toolkit.ratios.get_true_range()
+```
+
 > **True Range (TR)**
 
 The True Range (TR) is a measure of market volatility that considers the differences between the high and low prices and the previous closing price. It provides insights into the price movement of an asset. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals#get_true_range).
@@ -1767,6 +2477,17 @@ The Economics Module contains a variety of Key Economic Indicators that help in 
     <summary><b>Economy 💵</b></summary>
 
 The economy section contains key economic indicators that help in understanding the health and performance of more than 60 different countries. This includes the Gross Domestic Product (GDP), Consumer Confidence Index (CCI), Business Confidence Index (BCI), Composite Leading Indicator (CLI), Consumer Price Index (CPI), Producer Price Index (PPI), House and Rent Prices, Share Prices and more.
+
+All economy metrics can be called by using `get_` to get a single metric. E.g. `get_gross_domestic_product` or `get_consumer_price_index`. As an example:
+
+```python
+from financetoolkit import Toolkit
+
+toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+# Get Economy Results
+toolkit.economics.get_consumer_price_index()
+```
 
 > **Gross Domestic Product (GDP)**
 
@@ -1831,6 +2552,17 @@ A price index measures changes in the market capitalisation of the basket of sha
 
 The finance metrics are used to assess the financial health of a country. This includes the long term interest rates, short term interest rates, narrow money, broad money, purchasing power parity and exchange rates.
 
+All finance metrics can be called by using `get_` to get a single metric. E.g. `get_long_term_interest_rate` or `get_narrow_and_broad_money`. As an example:
+
+```python
+from financetoolkit import Toolkit
+
+toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+# Get Finance Results
+toolkit.economics.get_long_term_interest_rate()
+```
+
 > **Long Term Interest Rates (10 year)**
 
 Long-term interest rates refer to government bonds maturing in ten years. Rates are mainly determined by the price charged by the lender, the risk from the borrower and the fall in the capital value. Long-term interest rates are generally averages of daily rates, measured as a percentage. These interest rates are implied by the prices at which the government bonds are traded on financial markets, not the interest rates at which the loans were issued.
@@ -1867,6 +2599,17 @@ Exchange rates are defined as the price of one country’s’ currency in relati
     <summary><b>Central Banks 🏦</b></summary>
 
 The central bank metrics revolve around the interest rates of the European Central Bank (ECB) and the Federal Reserve (FED). This includes the main refinancing operations, marginal lending facility, deposit facility, effective federal funds rate, overnight bank funding rate, tri-party general collateral rate, broad general collateral rate and secured overnight financing rate.
+
+All central bank metrics can be called by using `get_` to get a single metric. E.g. `get_european_central_bank_rates` or `get_federal_reserve_rates`. As an example:
+
+```python
+from financetoolkit import Toolkit
+
+toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+# Get Central Bank Results
+toolkit.economics.get_european_central_bank_rates()
+```
 
 > **Main Refinancing Operations**
 
@@ -1907,6 +2650,17 @@ The SOFR is calculated as a volume-weighted median of transaction-level tri-part
     <summary><b>Environment 💚</b></summary>
 
 The environment metrics revolve around renewable energy, environmental tax, greenhouse gas emissions, crude oil production and crude oil prices of countries. This includes the renewable energy as a percentage of total energy, environmental tax as a percentage of GDP, greenhouse gas emissions, crude oil production and crude oil prices.
+
+All environment metrics can be called by using `get_` to get a single metric. E.g. `get_renewable_energy` or `get_crude_oil_prices`. As an example:
+
+```python
+from financetoolkit import Toolkit
+
+toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+# Get Environment Results
+toolkit.economics.get_crude_oil_prices()
+```
 
 > **Renewable Energy as % of Total Energy**
 
@@ -1968,6 +2722,17 @@ Values are recorded at the time of import and include cost, insurance and freigh
 
 The government metrics revolve around the deficit, revenue, spending, debt, financial wealth and production costs of countries. This includes the deficit as a percentage of GDP, revenue as a percentage of GDP, spending as a percentage of GDP, debt as a percentage of GDP, financial wealth as a percentage of GDP and production costs as a percentage of GDP.
 
+All government metrics can be called by using `get_` to get a single metric. E.g. `get_government_statistics` or `get_trust_in_government`. As an example:
+
+```python
+from financetoolkit import Toolkit
+
+toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+# Get Government Results
+toolkit.economics.get_government_statistics()
+```
+
 > **Deficit as % of GDP**
 
 General government deficit is defined as the balance of income and expenditure of government, including capital income and capital expenditures. “Net lending” means that government has a surplus, and is providing financial resources to other sectors, while “net borrowing” means that government has a deficit, and requires financial resources from other sectors. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_government_statistics).
@@ -1999,6 +2764,17 @@ General government production costs are decisions about the amount and type of g
 
 The jobs metrics revolve around the unemployment rates, labour productivity and income inequality of countries.
 
+All jobs metrics can be called by using `get_` to get a single metric. E.g. `get_unemployment_rate` or `get_income_inequality`. As an example:
+
+```python
+from financetoolkit import Toolkit
+
+toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+# Get Jobs Results
+toolkit.economics.get_income_inequality()
+```
+
 > **Unemployment Rate**
 
 The unemployed are people of working age who are without work, are available for work, and have taken specific steps to find work. The uniform application of this definition results in estimates of unemployment rates that are more internationally comparable than estimates based on national definitions of unemployment.
@@ -2023,6 +2799,17 @@ Income is defined as household disposable income in a particular year. It consis
     <summary><b>Society 👪</b></summary>
 
 The society metrics revolve around the population, young population, working age population, elderly population, fertility rates, old-age dependency ratio and poverty rate of countries.
+
+All society metrics can be called by using `get_` to get a single metric. E.g. `get_population_statistics` or `get_poverty_rate`. As an example:
+
+```python
+from financetoolkit import Toolkit
+
+toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+# Get Society Results
+toolkit.economics.get_poverty_rate()
+```
 
 > **Population**
 

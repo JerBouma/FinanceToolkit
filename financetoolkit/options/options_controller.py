@@ -874,7 +874,7 @@ class Options:
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
 
         Returns:
-            pd.DataFrame: the gamma values containing the tickers and strike prices as the index and the
+            pd.DataFrame: the dual delta values containing the tickers and strike prices as the index and the
             time to expiration as the columns.
 
         As an example:
@@ -1156,7 +1156,7 @@ class Options:
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
 
         Returns:
-            pd.DataFrame: the vega values containing the tickers and strike prices as the index and the
+            pd.DataFrame: the theta values containing the tickers and strike prices as the index and the
             time to expiration as the columns.
 
         As an example:
@@ -1301,7 +1301,7 @@ class Options:
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
 
         Returns:
-            pd.DataFrame: the vega values containing the tickers and strike prices as the index and the
+            pd.DataFrame: the rho values containing the tickers and strike prices as the index and the
             time to expiration as the columns.
 
         As an example:
@@ -1442,7 +1442,7 @@ class Options:
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
 
         Returns:
-            pd.DataFrame: the lambda values containing the tickers and strike prices as the index and the
+            pd.DataFrame: the epsilon values containing the tickers and strike prices as the index and the
             time to expiration as the columns.
 
         As an example:
@@ -2579,7 +2579,7 @@ class Options:
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
 
         Returns:
-            pd.DataFrame: the gamma values containing the tickers and strike prices as the index and the
+            pd.DataFrame: the vera values containing the tickers and strike prices as the index and the
             time to expiration as the columns.
 
         As an example:
@@ -3240,7 +3240,7 @@ class Options:
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
 
         Returns:
-            pd.DataFrame: the gamma values containing the tickers and strike prices as the index and the
+            pd.DataFrame: the zomma values containing the tickers and strike prices as the index and the
             time to expiration as the columns.
 
         As an example:
@@ -3518,7 +3518,7 @@ class Options:
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
 
         Returns:
-            pd.DataFrame: the gamma values containing the tickers and strike prices as the index and the
+            pd.DataFrame: the ultima values containing the tickers and strike prices as the index and the
             time to expiration as the columns.
 
         As an example:

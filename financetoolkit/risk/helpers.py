@@ -21,10 +21,24 @@ def handle_return_data_periods(self, period: str, within_period: bool):
     Returns:
         pd.Series: the returns for the period.
     """
-    if period == "daily":
+    if period == "intraday":
+        if self._intraday_historical.empty:
+            raise ValueError(
+                "Please define the 'intraday_period' parameter when initializing the Toolkit."
+            )
         return (
-            self._daily_returns if within_period else self._daily_historical["Return"]
+            self._intraday_returns
+            if within_period
+            else self._intraday_historical["Return"]
         )
+    if period == "daily":
+        if within_period:
+            if self._intraday_historical.empty:
+                raise ValueError(
+                    "Please define the 'daily_period' parameter when initializing the Toolkit."
+                )
+            return self._daily_returns
+        return self._daily_historical["Return"].fillna(0)
     if period == "weekly":
         return (
             self._weekly_returns if within_period else self._weekly_historical["Return"]
@@ -46,4 +60,6 @@ def handle_return_data_periods(self, period: str, within_period: bool):
             self._yearly_returns if within_period else self._yearly_historical["Return"]
         )
 
-    raise ValueError("Period must be daily, monthly, weekly, quarterly, or yearly.")
+    raise ValueError(
+        "Period must be intraday, daily, monthly, weekly, quarterly, or yearly."
+    )

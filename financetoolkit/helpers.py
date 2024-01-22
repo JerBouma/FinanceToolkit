@@ -6,7 +6,6 @@ import time
 import warnings
 from io import StringIO
 
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import requests
@@ -14,7 +13,7 @@ from urllib3.exceptions import MaxRetryError
 
 RETRY_LIMIT = 12
 
-# pylint: disable=comparison-with-itself
+# pylint: disable=comparison-with-itself,too-many-locals
 
 
 def get_financial_data(
@@ -133,6 +132,7 @@ def convert_currencies(
     financial_statement_currencies: pd.Series,
     exchange_rate_data: pd.DataFrame,
     items_not_to_adjust: list[str] | None = None,
+    financial_statement_name: str | None = None,
 ):
     """
     Based on the retrieved currency definitions (e.g. EURUSD=X) for each ticker, obtained
@@ -216,8 +216,8 @@ def convert_currencies(
 
     if currencies_text:
         print(
-            "The financial statement from the following tickers are "
-            f"converted: {', '.join(currencies_text)}"
+            f"The {financial_statement_name if financial_statement_name else 'financial statement'} "
+            f"from the following tickers are converted: {', '.join(currencies_text)}"
         )
 
     return financial_statement_data
@@ -379,30 +379,28 @@ def handle_errors(func):
             function_name = func.__name__
             print(
                 f"An error occurred while trying to run the function "
-                f"{function_name}. This is {e}. Usually this is due to incomplete "
-                "financial statements. "
+                f"{function_name}. {e}"
             )
             return pd.Series(dtype="object")
         except AttributeError as e:
             function_name = func.__name__
             print(
                 f"An error occurred while trying to run the function "
-                f"{function_name}. This is {e}. Usually this is due to incomplete "
-                "financial statements. "
+                f"{function_name}. {e}"
             )
             return pd.Series(dtype="object")
         except ZeroDivisionError as e:
             function_name = func.__name__
             print(
                 f"An error occurred while trying to run the function "
-                f"{function_name}. This is {e}. This is due to a division by zero."
+                f"{function_name}. {e} This is due to a division by zero."
             )
             return pd.Series(dtype="object")
         except IndexError as e:
             function_name = func.__name__
             print(
                 f"An error occurred while trying to run the function "
-                f"{function_name}. This is {e}. This is due to missing data."
+                f"{function_name}. {e} This is due to missing data."
             )
             return pd.Series(dtype="object")
 
@@ -492,81 +490,3 @@ def check_for_error_messages(
             del dataset_dictionary[ticker]
 
     return dataset_dictionary
-
-
-class FinanceFrame(pd.DataFrame):
-    "This class contains custom functionality related to the Finance Toolkit. It is meant to allow for easy plotting."
-
-    def plot(self, *args, **kwargs):
-        """
-        Plot the FinanceFrame using the Finance Toolkit style.
-
-        Args:
-            *args: The arguments to be passed to the pandas plot function.
-            **kwargs: The keyword arguments to be passed to the pandas plot function.
-
-        Returns:
-            The result of the pandas plot function.
-        """
-        financetoolkit_style = {
-            "axes.axisbelow": True,
-            "axes.edgecolor": "#eee8d5",
-            "axes.facecolor": "white",
-            "axes.grid": True,
-            "axes.grid.axis": "y",
-            "axes.labelcolor": "#657b83",
-            "axes.labelsize": 12.0,
-            "axes.prop_cycle": plt.cycler(
-                "color",
-                [
-                    "#7eb0d5",
-                    "#fd7f6f",
-                    "#b2e061",
-                    "#bd7ebe",
-                    "#ffb55a",
-                    "#ffee65",
-                    "#beb9db",
-                    "#fdcce5",
-                    "#8bd3c7",
-                ],
-            ),
-            "axes.titlesize": "large",
-            "figure.facecolor": "#fdf6e3",  # Dark background color
-            "legend.labelcolor": "#657b83",
-            "grid.color": "lightgray",
-            "grid.linewidth": 0.5,
-            "lines.linewidth": 2.0,
-            "xtick.color": "#657b83",
-            "ytick.color": "#657b83",
-            "figure.figsize": [15, 5],  # figure size in inches
-            "lines.marker": "o",
-            "lines.markersize": 5,
-            "legend.loc": "upper center",
-            "legend.frameon": False,
-        }
-
-        plt.style.use(financetoolkit_style)
-
-        result = super().plot(*args, **kwargs)
-
-        # Remove x-axis and y-axis labels
-        plt.xlabel(None)
-        plt.ylabel(None)
-
-        # Add a watermark
-        watermark_text = "Source: Finance Toolkit"
-        plt.text(
-            0.08,
-            -0.10,
-            watermark_text,
-            fontsize=10,
-            color="#657b83",
-            alpha=0.5,
-            ha="center",
-            va="center",
-            transform=plt.gca().transAxes,
-        )
-
-        plt.legend(loc="upper center", bbox_to_anchor=(0.6, -0.05), ncol=4)
-
-        return result

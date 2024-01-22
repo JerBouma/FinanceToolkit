@@ -29,7 +29,7 @@ The Finance Toolkit is complimented very well with the [Finance Database 🌎](h
 
 1. [Installation](#installation)
 2. [Basic Usage](#basic-usage)
-3. [Available Functionality and Metrics](#available-functionality-and-metrics)
+3. [Functionality and Metrics](#core-functionality-and-metrics)
 4. [Questions & Answers](#questions--answers)
 5. [Contributing](#contributing)
 6. [Contact](#contact)
@@ -264,9 +264,9 @@ And below these Unemployment Rates are plotted over time:
 
 ![Economics](https://github.com/JerBouma/FinanceToolkit/assets/46355364/bb44bd4e-07a1-4ecf-a4eb-7fc09a960930)
 
-# Available Functionality and Metrics
+# Core Functionality and Metrics
 
-The Finance Toolkit has the ability to collect 30+ years of data and calculate 150+ financial metrics. The following list shows all of the available functionality and metrics.
+The Finance Toolkit has the ability to collect 30+ years of financial statements and calculate 150+ financial metrics. The following list shows all of the available functionality and metrics.
 
 Each ratio and indicator has a corresponding function that can be called directly for example `ratios.get_return_on_equity` or `technicals.get_relative_strength_index`. However, there are also functions that collect multiple ratios or indicators at once such as `ratios.collect_profitability_ratios`. These functions are useful when you want to collect a large amount of ratios or indicators at once.
 
@@ -275,7 +275,7 @@ ___
 <b><div align="center">Find a variety of How-To Guides including Code Documentation for the FinanceToolkit <a href="https://www.jeroenbouma.com/projects/financetoolkit">here</a>.</div></b>
 ___
 
-## Functionality
+## Core Functionality
 
 These are the core functionalities of the Finance Toolkit. For any calculation, it often first collects data via these functions. For example, financial ratios require the financial statements and historical data which are obtained through the Toolkit without needing to specify this first.
 
@@ -284,7 +284,13 @@ These are the core functionalities of the Finance Toolkit. For any calculation, 
 
 Acquire a full history of both annual and quarterly financial statements, including [balance sheets](https://www.jeroenbouma.com/projects/financetoolkit/docs#get_balance_sheet_statement), [income statements](https://www.jeroenbouma.com/projects/financetoolkit/docs#get_income_statement), and [cash flow statements](https://www.jeroenbouma.com/projects/financetoolkit/docs#get_cash_flow_statement).
 
-These financial statements are normalized to facilitate straightforward comparisons between companies such as automatic currency conversions of the entire of the financial statement. Additionally, variations in accounting periods among companies are automatically standardized, ensuring that each company's year or quarter aligns with the corresponding calendar period. Next to that, there is also a [statististics statement](https://www.jeroenbouma.com/projects/financetoolkit/docs#get_statistics_statement) that gives insights into the reported currency, CIK ID and SEC links.
+These financial statements are adjusted for the following reasons:
+
+    - The financial statements are automatically standardized (based on [these files](https://github.com/JerBouma/FinanceToolkit/tree/main/financetoolkit/normalization) to allow for the ability to enter any type of dataset given that the names used are what all of the functionalities rely on.
+    - The fiscal year of each company is automatically converted to the calendar year so that all companies can be compared on the same basis. As an example, Apple's Q4 2023 is related to the period July 2023 until September 2023 which corresponds to Q3 2023. This means that in the Finance Toolkit these results are reported in the Q3 2023 column.
+    - When `convert_currency=True` (automatically enabled with a Premium FMP plan) the currency of the historical data is compared to the currency of the financial statements. If they do not match, the financial statement data is converted to the currency of the historical data. This is done to ensure that calculations such as the Price-to-Earnings Ratio (PE) have both the Share Price and Earnings denoted in the same currency.
+
+To get insights related to the reported currency, CIK ID and SEC Links, it is possible to retrieve a [statististics statement](https://www.jeroenbouma.com/projects/financetoolkit/docs#get_statistics_statement) as well.
 
 As an example:
 
@@ -471,7 +477,7 @@ Which returns:
 </details>
 
 <details>
-    <summary><b>Historical Market Data</b></summary>
+    <summary><b>(Intraday) Historical Market Data</b></summary>
 
 Obtain [historical market data](https://www.jeroenbouma.com/projects/financetoolkit/docs#get_historical_data) for the specified tickers. This contains the following columns:
 
@@ -490,7 +496,9 @@ Obtain [historical market data](https://www.jeroenbouma.com/projects/financetool
 
 If a benchmark ticker is selected, it also calculates the benchmark ticker together with the results. By default this is set to “SPY” (S&P 500 Index) but can be any ticker. This is relevant for calculations for models such as CAPM, Alpha and Beta.
 
-Important to note is that when an api_key is included in the Toolkit initialization that the data collection defaults to FinancialModelingPrep which is a more stable source and utilises your subscription. However, if this is undesired, it can be disabled by setting `historical_source` to “YahooFinance”. If data collection fails from FinancialModelingPrep it automatically reverts back to YahooFinance.
+Important to note is that when an `api_key` is included in the Toolkit initialization that the data collection defaults to FinancialModelingPrep which is a more stable source and utilises your subscription. However, if this is undesired, it can be disabled by setting `historical_source` to `YahooFinance`. If data collection fails from FinancialModelingPrep it automatically reverts back to YahooFinance.
+
+You are able to specify the `period` which can be `daily` (default), `weekly`, `monthly`, `quarterly` or `yearly`.
 
 As an example:
 
@@ -518,6 +526,38 @@ Which returns:
 | 2022   | 128.41   | 129.95   | 127.43   | 129.93   |    129.378  | 7.70342e+07 |    0.91     | -0.264042  |     0.356964 |      -0.302832  |            0.377293 |             7.35566 |
 | 2023   | 187.84   | 188.51   | 187.68   | 188.108  |    188.108  | 4.72009e+06 |    0.71     |  0.453941  |     0.213359 |       0.412901  |            0.22327  |            10.6947  |
 
+It is also possible to retrieve [intraday data](https://www.jeroenbouma.com/projects/financetoolkit/docs#get_intraday_data). This has the option to get you 1 minute, 5 minute, 15 minute, 30 minute or 1 hour data. It can also be used as part of the Risk, Performance and Technicals modules when defining `intraday_period` as part of the Toolkit initialization. 
+
+As an example:
+
+```python
+from financetoolkit import Toolkit
+
+toolkit = Toolkit("MSFT", api_key="FINANCIAL_MODELING_PREP_KEY")
+
+toolkit.get_intraday_data(period="1min")
+```
+
+Which returns:
+
+| date             |   Open |   High |     Low |   Close |   Volume |   Return |   Volatility |   Cumulative Return |
+|:-----------------|-------:|-------:|--------:|--------:|---------:|---------:|-------------:|--------------------:|
+| 2024-01-19 15:45 | 397.64 | 397.88 | 397.63  | 397.88  |    49202 |   0.0006 |       0.0005 |              1.0266 |
+| 2024-01-19 15:46 | 397.86 | 397.93 | 397.788 | 397.82  |    68913 |  -0.0002 |       0.0005 |              1.0264 |
+| 2024-01-19 15:47 | 397.81 | 397.97 | 397.76  | 397.78  |    62605 |  -0.0001 |       0.0005 |              1.0263 |
+| 2024-01-19 15:48 | 397.78 | 397.85 | 397.675 | 397.845 |    62146 |   0.0002 |       0.0005 |              1.0265 |
+| 2024-01-19 15:49 | 397.85 | 397.97 | 397.8   | 397.94  |    72700 |   0.0002 |       0.0005 |              1.0267 |
+| 2024-01-19 15:50 | 397.92 | 398.27 | 397.9   | 398.04  |   140754 |   0.0003 |       0.0005 |              1.027  |
+| 2024-01-19 15:51 | 398.04 | 398.15 | 397.96  | 398     |   122208 |  -0.0001 |       0.0005 |              1.0269 |
+| 2024-01-19 15:52 | 397.99 | 398.26 | 397.98  | 398.05  |    83546 |   0.0001 |       0.0005 |              1.027  |
+| 2024-01-19 15:53 | 398.04 | 398.12 | 397.98  | 398.09  |    85098 |   0.0001 |       0.0005 |              1.0271 |
+| 2024-01-19 15:54 | 398.1  | 398.52 | 398.03  | 398.45  |   187358 |   0.0009 |       0.0005 |              1.028  |
+| 2024-01-19 15:55 | 398.45 | 398.62 | 398.25  | 398.335 |   237902 |  -0.0003 |       0.0005 |              1.0278 |
+| 2024-01-19 15:56 | 398.33 | 398.44 | 398.3   | 398.415 |   149157 |   0.0002 |       0.0005 |              1.028  |
+| 2024-01-19 15:57 | 398.42 | 398.5  | 398.29  | 398.43  |   181074 |   0      |       0.0005 |              1.028  |
+| 2024-01-19 15:58 | 398.46 | 398.47 | 398.29  | 398.35  |   278802 |  -0.0002 |       0.0005 |              1.0278 |
+| 2024-01-19 15:59 | 398.35 | 398.66 | 398.22  | 398.66  |   586344 |   0.0008 |       0.0005 |              1.0286 |
+
 </details>
 
 <details>
@@ -527,10 +567,10 @@ Just like the historical market data, obtain a full history for the [treasury ra
 
 It returns the following columns:
 
-- 13 Week Treasury Bill: The 13 Week Treasury Bill for the period.
-- 5 Year Treasury Bond: The 5 Year Treasury Bond for the period.
-- 10 Year Treasury Bond: The 10 Year Treasury Bond for the period.
-- 30 Year Treasury Bond: The 30 Year Treasury Bond for the period.
+- 13 Week Treasury Bond
+- 5 Year Treasury Bond
+- 10 Year Treasury Bond
+- 30 Year Treasury Bond
 
 By default, the Finance Toolkit uses the 10 Year Treasury Bond as risk-free rate but this can be changed by setting `risk_free_rate` to any of the other treasury rates.
 
@@ -851,7 +891,7 @@ Which returns:
 
 > **Company List**
 
-The stock list function returns a complete list of all the symbols that can be used in the FinanceToolkit. These are over 60.000 symbols. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/discovery#get_company_list).
+The stock list function returns a complete list of all the symbols that can be used in the FinanceToolkit. These are over 60.000 symbols. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/discovery#get_stock_list).
 
 As an example:
 
@@ -883,7 +923,7 @@ Which returns:
 
 > **Company Quotes**
 
-Returns the real time stock prices for each company. This includes the bid and ask size, the volume, the bid and ask price, the last sales price and the last sales size. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/discovery#get_company_quotes).
+Returns the real time stock prices for each company. This includes the bid and ask size, the volume, the bid and ask price, the last sales price and the last sales size. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/discovery#get_stock_quotes).
 
 As an example:
 
@@ -914,7 +954,7 @@ Which returns:
 
 > **Floating Shares**
 
-Returns the shares float for each company. The shares float is the number of shares available for trading for each company. It also includes the number of shares outstanding and the date. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/discovery#get_floating_shares).
+Returns the shares float for each company. The shares float is the number of shares available for trading for each company. It also includes the number of shares outstanding and the date. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/discovery#get_stock_shares_float).
 
 As an example:
 
@@ -1586,7 +1626,6 @@ The return on equity is calculated by dividing the net income by the average sha
 
 The return on invested capital is calculated by dividing the net operating profit after taxes (NOPAT) by the average invested capital. Invested capital includes both equity and debt, making this ratio a valuable measure of how efficiently a company generates returns for all of its investors. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_return_on_invested_capital).
 
-
 > **Income Quality Ratio**
 
 The income quality ratio provides insights into the quality of a company’s reported earnings. By comparing the cash flow from operating activities to the net income, this ratio helps assess whether a company’s reported profits are backed by actual cash flow. A higher income quality ratio suggests higher earnings quality and a better ability to convert profits into cash flow. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_income_quality_ratio).
@@ -1804,7 +1843,7 @@ The Models module is meant to execute well-known models such as DUPONT and the D
 <details>
   <summary><b>Financial Models</b></summary>
 
-The financial models are used to analyze a company’s financial performance and assess its financial health. They provide insights into the company’s profitability, efficiency, liquidity, solvency, and valuation.
+The financial models are used to analyze a company’s financial performance and assess its financial health. They provide insights into the company’s profitability, efficiency, liquidity, solvency, and valuation given that they tend to combine both the financial ratios and the financial statements.
 
 All models can be called by using `get_`. E.g. `get_dupont_analysis` or `get_weighted_average_cost_of_capital`. As an example:
 
@@ -1846,7 +1885,7 @@ The Altman Z-Score is a financial metric used to predict the likelihood of a com
 
 > **Piotroski F-Score**
 
-The Piotroski Score is a comprehensive financial assessment tool that helps investors and analysts evaluate a company’s financial health and fundamental strength. The Piotroski Score was developed by Joseph Piotroski and is based on a set of nine fundamental financial criteria. Each criterion is assigned a score of 0 or 1, and the scores are then summed to calculate the Piotroski Score. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/models#get_piotroski_f_score).
+The Piotroski Score is a comprehensive financial assessment tool that helps investors and analysts evaluate a company’s financial health and fundamental strength. The Piotroski Score was developed by Joseph Piotroski and is based on a set of nine fundamental financial criteria. Each criterion is assigned a score of 0 or 1, and the scores are then summed to calculate the Piotroski Score. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/models#get_piotroski_score).
 
 > **Present Value of Growth Opportunities (PVGO)**
 
@@ -2110,7 +2149,7 @@ The Performance module is meant to calculate important performance metrics such 
 <details>
     <summary><b>Performance Metrics</b></summary>
 
-The performance metrics are used to assess the performance of a portfolio or investment strategy. They provide insights into the risk-adjusted returns of a portfolio or investment strategy, and can be used to compare the performance of different portfolios or investment strategies.
+The performance metrics are used to assess the performance of a portfolio or investment strategy. They provide insights into the risk-adjusted returns of a portfolio or investment strategy, and can be used to compare the performance of different assets or investment strategies.
 
 All performance metrics can be called by using `get_` to get a single metric. E.g. `get_alpha` or `get_beta`. As an example:
 
@@ -2163,7 +2202,7 @@ The Fama and French 5 Factor model is a widely used financial model that helps e
 - Profitability (RMW): Measures the historical excess return of high profitability stocks over low profitability stocks.
 - Investment (CMA): Quantifies the historical excess return of low investment stocks over high investment stocks.
 
-The model can perform both a Simple Linear Regression on each factor as well as a Multi Linear Regression which includes all factors. Generally, a multi linear regression is applied but if you wish to see individual R-squared values for each factor you can select the simple linear regression method. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/performance#get_fama_french_5_factor_model).
+The model can perform both a Simple Linear Regression on each factor as well as a Multi Linear Regression which includes all factors. Generally, a multi linear regression is applied but if you wish to see individual R-squared values for each factor you can select the simple linear regression method. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/performance#get_fama_and_french_model).
 
 > **Alpha**
 
@@ -2203,7 +2242,7 @@ The Information Ratio (IR), also known as the Information Coefficient, is a fina
 
 > **Compound Annual Growth Rate (CAGR)**
 
-The Compound Annual Growth Rate is a measure that provides the mean growth rate of an investment over a specified period of time. It is a useful measure for comparing the performance of investments over different time periods or across different asset classes. The CGR is calculated by taking the ratio of the final value to the initial value, raising it to the inverse of the number of periods, and then subtracting one. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/performance#get_compound_annual_growth_rate).
+The Compound Annual Growth Rate is a measure that provides the mean growth rate of an investment over a specified period of time. It is a useful measure for comparing the performance of investments over different time periods or across different asset classes. The CGR is calculated by taking the ratio of the final value to the initial value, raising it to the inverse of the number of periods, and then subtracting one. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/performance#get_compound_growth_rate).
 
 </details>
 
@@ -2290,7 +2329,7 @@ The McClellan Oscillator is a breadth indicator that measures the difference bet
 
 > **Advancers/Decliners Ratio**
 
-The Advancers/Decliners ratio is a breadth indicator that measures the number of advancing stocks (stocks with positive price changes) versus the number of declining stocks (stocks with negative price changes). Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals#get_advancers_decliners_ratio).
+The Advancers/Decliners ratio is a breadth indicator that measures the number of advancing stocks (stocks with positive price changes) versus the number of declining stocks (stocks with negative price changes). Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals#get_advancers_decliners).
 
 > **On-Balance Volume (OBV)**
 
@@ -2331,7 +2370,7 @@ The Money Flow Index is a momentum indicator that measures the strength and dire
 
 > **Williams %R**
 
-The Williams %R is a momentum indicator that measures the level of the close price relative to the high-low range over a certain number of periods. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals#get_williams_r).
+The Williams %R is a momentum indicator that measures the level of the close price relative to the high-low range over a certain number of periods. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals#get_williams_percent_r).
 
 > **Aroon Indicator**
 
@@ -2424,7 +2463,7 @@ DEMA is a technical indicator that attempts to reduce the lag from traditional m
 
 > **Triple Exponential Moving Average (TRIX)**
 
-Trix is a momentum oscillator that calculates the percentage rate of change of a triple exponentially smoothed moving average. It helps identify overbought and oversold conditions in a market. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals#get_triple_exponential_moving_average).
+Trix is a momentum oscillator that calculates the percentage rate of change of a triple exponentially smoothed moving average. It helps identify overbought and oversold conditions in a market. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals#get_trix).
 
 > **Triangular Moving Average (TMA)**
 
@@ -2461,7 +2500,7 @@ The Average True Range (ATR) is a technical indicator that measures the volatili
 
 > **Keltners Channels**
 
-The Keltner Channels are a technical indicator that uses volatility to identify potential breakouts and reversals in the market. They consist of an upper band, lower band, and middle line. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals#get_keltners_channels).
+The Keltner Channels are a technical indicator that uses volatility to identify potential breakouts and reversals in the market. They consist of an upper band, lower band, and middle line. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals#get_keltner_channels).
 
 > **Bollinger Bands**
 
@@ -2567,13 +2606,13 @@ toolkit.economics.get_long_term_interest_rate()
 
 Long-term interest rates refer to government bonds maturing in ten years. Rates are mainly determined by the price charged by the lender, the risk from the borrower and the fall in the capital value. Long-term interest rates are generally averages of daily rates, measured as a percentage. These interest rates are implied by the prices at which the government bonds are traded on financial markets, not the interest rates at which the loans were issued.
 
-In all cases, they refer to bonds whose capital repayment is guaranteed by governments. Long-term interest rates are one of the determinants of business investment. Low long term interest rates encourage investment in new equipment and high interest rates discourage it. Investment is, in turn, a major source of economic growth. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_long_term_interest_rates).
+In all cases, they refer to bonds whose capital repayment is guaranteed by governments. Long-term interest rates are one of the determinants of business investment. Low long term interest rates encourage investment in new equipment and high interest rates discourage it. Investment is, in turn, a major source of economic growth. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_long_term_interest_rate).
 
 > **Short Term Interest Rates (3 month)**
 
 Short-term interest rates are the rates at which short-term borrowings are effected between financial institutions or the rate at which short-term government paper is issued or traded in the market. Short-term interest rates are generally averages of daily rates, measured as a percentage.
 
-Short-term interest rates are based on three-month money market rates where available. Typical standardised names are “money market rate” and “treasury bill rate”. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_short_term_interest_rates).
+Short-term interest rates are based on three-month money market rates where available. Typical standardised names are “money market rate” and “treasury bill rate”. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_short_term_interest_rate).
 
 > ***Narrow Money (M1)**
 
@@ -2697,7 +2736,7 @@ Greenhouse gases refer to the sum of seven gases that have direct effects on cli
 
 The data are expressed in CO2 equivalents and refer to gross direct emissions from human activities. CO2 refers to gross direct emissions from fuel combustion only and data are provided by the International Energy Agency. Other air emissions include emissions of sulphur oxides (SOx) and nitrogen oxides (NOx) given as quantities of SO2 and NO2, emissions of carbon monoxide (CO), and emissions of volatile organic compounds (VOC), excluding methane.
 
-Air and greenhouse gas emissions are measured in tonnes per capita and kilogram per capita in which all metrics are converted to tonnes (1000kg) per capita. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_greenhouse_gas_emissions).
+Air and greenhouse gas emissions are measured in tonnes per capita and kilogram per capita in which all metrics are converted to tonnes (1000kg) per capita. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_greenhouse_emissions).
 
 > **Crude Oil Production**
 
@@ -2705,7 +2744,7 @@ Crude oil production is defined as the quantities of oil extracted from the grou
 
 Crude oil is a mineral oil consisting of a mixture of hydrocarbons of natural origin, yellow to black in colour, and of variable density and viscosity. NGLs are the liquid or liquefied hydrocarbons produced in the manufacture, purification and stabilisation of natural gas.
 
-Additives are non-hydrocarbon substances added to or blended with a product to modify its properties, for example, to improve its combustion characteristics (e.g. MTBE and tetraethyl lead). Refinery production refers to the output of secondary oil products from an oil refinery. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_crude_oil_production_and_prices).
+Additives are non-hydrocarbon substances added to or blended with a product to modify its properties, for example, to improve its combustion characteristics (e.g. MTBE and tetraethyl lead). Refinery production refers to the output of secondary oil products from an oil refinery. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_crude_oil_production).
 
 > **Crude Oil Prices**
 
@@ -2713,7 +2752,7 @@ Crude oil import prices come from the IEA’s Crude Oil Import Register and are 
 
 Information is collected from national agencies according to the type of crude oil, by geographic origin and by quality of crude. Average prices are obtained by dividing value by volume as recorded by customs administrations for each tariff position.
 
-Values are recorded at the time of import and include cost, insurance and freight, but exclude import duties. The nominal crude oil spot price from 2003 to 2011 is for Dubai and from 1970 to 2002 for Arabian Light. This indicator is measured in USD per barrel of oil. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_crude_oil_production_and_prices).
+Values are recorded at the time of import and include cost, insurance and freight, but exclude import duties. The nominal crude oil spot price from 2003 to 2011 is for Dubai and from 1970 to 2002 for Arabian Light. This indicator is measured in USD per barrel of oil. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_crude_oil_prices).
 
 </details>
 
@@ -2757,6 +2796,14 @@ The net financial worth of the general government sector is the total value of i
 
 General government production costs are decisions about the amount and type of goods and services governments produce, as well as on how best to produce them. They are often political in nature and based on a country’s social and cultural context. Governments use a mix of their own employees, capital, and outside contractors (non-profit institutions or private sector entities) to produce goods and services. Government production costs include: compensation costs of general government employees; goods and services used and financed by general government (including intermediate consumption and social transfer in kind via market producers paid for by government); and other costs, including depreciation of capital and other taxes on production less other subsidies on production. The data include government employment and intermediate consumption for output produced by the government for its own use, such as roads and other capital investment projects built by government employees. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_government_statistics).
 
+> **Central Government Spending**
+
+Central government expenditure is defined as the central government budget expenditure as reported in the final central government accounts. Data are based on the System of National accounts (SNA), a set of internationally agreed concepts, definitions, classifications and rules for national accounting. Central government spending by function is the breakdown of expenditures on the basis of the activities governments support. The classification system used to provide this breakdown on an internationally comparable basis is known as Classification of Functions of Government (COFOG). Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_central_government_spending).
+
+> **Trust in Government**
+
+Trust in government refers to the share of people who report having confidence in the national government. The data shown reflect the share of respondents answering “yes” (the other response categories being “no”, and “dont know”) to the survey question: “In this country, do you have confidence in… national government? The sample is ex ante designed to be nationally representative of the population aged 15 and over. This indicator is measured as a percentage of all survey respondents. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_trust_in_government).
+
 </details>
 
 <details>
@@ -2781,17 +2828,17 @@ The unemployed are people of working age who are without work, are available for
 
 This indicator is measured in numbers of unemployed people as a percentage of the labour force and it is seasonally adjusted. The labour force is defined as the total number of unemployed people plus those in employment. Data are based on labour force surveys (LFS).
 
-For European Union countries where monthly LFS information is not available, the monthly unemployed figures are estimated by Eurostat. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_jobs).
+For European Union countries where monthly LFS information is not available, the monthly unemployed figures are estimated by Eurostat. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_unemployment_rate).
 
 > **Labour Productivity**
 
 GDP per hour worked is a measure of labour productivity. It measures how efficiently labour input is combined with other factors of production and used in the production process. Labour input is defined as total hours worked of all persons engaged in production. Labour productivity only partially reflects the productivity of labour in terms of the personal capacities of workers or the intensity of their effort.
 
-The ratio between the output measure and the labour input depends to a large degree on the presence and/or use of other inputs (e.g. capital, intermediate inputs, technical, organisational and efficiency change, economies of scale). Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_jobs).
+The ratio between the output measure and the labour input depends to a large degree on the presence and/or use of other inputs (e.g. capital, intermediate inputs, technical, organisational and efficiency change, economies of scale). Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_labour_productivity).
 
 > **Income Inequality**
 
-Income is defined as household disposable income in a particular year. It consists of earnings, self-employment and capital income and public cash transfers; income taxes and social security contributions paid by households are deducted. The income of the household is attributed to each of its members, with an adjustment to reflect differences in needs for households of different sizes. Income inequality among individuals is measured here by five indicators. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_jobs).
+Income is defined as household disposable income in a particular year. It consists of earnings, self-employment and capital income and public cash transfers; income taxes and social security contributions paid by households are deducted. The income of the household is attributed to each of its members, with an adjustment to reflect differences in needs for households of different sizes. Income inequality among individuals is measured here by five indicators. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_income_inequality).
 
 </details>
 
@@ -2845,7 +2892,7 @@ It is also available by broad age group:
 - working-age poverty (18 to 65 year-olds);
 - and elderly poverty (66 year-olds or more).
 
-However, two countries with the same poverty rates may differ in terms of the relative income-level of the poor. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_population_statistics).
+However, two countries with the same poverty rates may differ in terms of the relative income-level of the poor. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_poverty_rate).
 
 </details>
 

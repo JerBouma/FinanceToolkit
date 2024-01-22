@@ -1,19 +1,19 @@
 ,,2021,2022,2023
-AAPL,Debt-to-Assets Ratio,,,
-AAPL,Debt-to-Equity Ratio,4.255,5.1869,5.2521
-AAPL,Debt Service Coverage Ratio,-0.589,-0.6202,-0.6019
-AAPL,Equity Multiplier,0.0,5.9657,6.9629
-AAPL,Free Cash Flow Yield,-0.9792,-0.9965,0.0
-AAPL,Net-Debt to EBITDA Ratio,51.6013,35.7574,-0.8899
-AAPL,Cash Flow Coverage Ratio,-0.981,-0.9728,0.0
-AAPL,CAPEX Coverage Ratio,-636.5696,-514.8119,-32.7239
-AAPL,Dividend CAPEX Coverage Ratio,-0.6082,-0.5735,-0.7361
-MSFT,Debt-to-Assets Ratio,-1.0555,-1.0417,-1.0272
-MSFT,Debt-to-Equity Ratio,1.4398,1.2648,1.0833
-MSFT,Debt Service Coverage Ratio,0.432,0.9945,1.6531
-MSFT,Equity Multiplier,0.0,1.8104,1.51
-MSFT,Free Cash Flow Yield,-0.9841,-0.994,0.0
-MSFT,Net-Debt to EBITDA Ratio,61.2397,38.8723,-0.8326
-MSFT,Cash Flow Coverage Ratio,-0.9839,-0.9749,0.0
-MSFT,CAPEX Coverage Ratio,-315.9091,-265.156,-10.3682
-MSFT,Dividend CAPEX Coverage Ratio,-0.4675,-0.4378,-0.4218
+AAPL,Debt-to-Assets Ratio,,-0.0102,-0.0978
+AAPL,Debt-to-Equity Ratio,,0.1653,-0.0883
+AAPL,Debt Service Coverage Ratio,,0.0767,-0.0443
+AAPL,Equity Multiplier,,6.4999,0.0925
+AAPL,Free Cash Flow Yield,,0.2785,306.8713
+AAPL,Net-Debt to EBITDA Ratio,,-0.1066,-0.0774
+AAPL,Cash Flow Coverage Ratio,,0.2785,32.9109
+AAPL,CAPEX Coverage Ratio,,0.0336,1.0937
+AAPL,Dividend CAPEX Coverage Ratio,,0.1249,0.2957
+MSFT,Debt-to-Assets Ratio,,-0.1547,-0.1548
+MSFT,Debt-to-Equity Ratio,,-0.2153,-0.2226
+MSFT,Debt Service Coverage Ratio,,0.0929,0.0342
+MSFT,Equity Multiplier,,2.0714,-0.0764
+MSFT,Free Cash Flow Yield,,0.1653,152.5887
+MSFT,Net-Debt to EBITDA Ratio,,-0.2535,-0.355
+MSFT,Cash Flow Coverage Ratio,,0.1653,24.7163
+MSFT,CAPEX Coverage Ratio,,-0.0225,-0.088
+MSFT,Dividend CAPEX Coverage Ratio,,0.032,-0.0621

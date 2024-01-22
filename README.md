@@ -286,9 +286,9 @@ Acquire a full history of both annual and quarterly financial statements, includ
 
 These financial statements are adjusted for the following reasons:
 
-    - The financial statements are automatically standardized (based on [these files](https://github.com/JerBouma/FinanceToolkit/tree/main/financetoolkit/normalization) to allow for the ability to enter any type of dataset given that the names used are what all of the functionalities rely on.
-    - The fiscal year of each company is automatically converted to the calendar year so that all companies can be compared on the same basis. As an example, Apple's Q4 2023 is related to the period July 2023 until September 2023 which corresponds to Q3 2023. This means that in the Finance Toolkit these results are reported in the Q3 2023 column.
-    - When `convert_currency=True` (automatically enabled with a Premium FMP plan) the currency of the historical data is compared to the currency of the financial statements. If they do not match, the financial statement data is converted to the currency of the historical data. This is done to ensure that calculations such as the Price-to-Earnings Ratio (PE) have both the Share Price and Earnings denoted in the same currency.
+- The financial statements are automatically standardized (based on [these files](https://github.com/JerBouma/FinanceToolkit/tree/main/financetoolkit/normalization) to allow for the ability to enter any type of dataset given that the names used are what all of the functionalities rely on.
+- The fiscal year of each company is automatically converted to the calendar year so that all companies can be compared on the same basis. As an example, Apple's Q4 2023 is related to the period July 2023 until September 2023 which corresponds to Q3 2023. This means that in the Finance Toolkit these results are reported in the Q3 2023 column.
+- When `convert_currency=True` (automatically enabled with a Premium FMP plan) the currency of the historical data is compared to the currency of the financial statements. If they do not match, the financial statement data is converted to the currency of the historical data. This is done to ensure that calculations such as the Price-to-Earnings Ratio (PE) have both the Share Price and Earnings denoted in the same currency.
 
 To get insights related to the reported currency, CIK ID and SEC Links, it is possible to retrieve a [statististics statement](https://www.jeroenbouma.com/projects/financetoolkit/docs#get_statistics_statement) as well.
 

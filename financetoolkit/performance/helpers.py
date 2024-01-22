@@ -121,7 +121,7 @@ def handle_fama_and_french_data(dataset, period: str, correlation: bool = False)
     if period == "intraday":
         raise ValueError("Fama and French data is not available for intraday data.")
     if period == "daily":
-        return dataset.corr() if correlation else dataset
+        raise ValueError("Fama and French data is not available for daily data.")
     if period == "weekly":
         return dataset.groupby(pd.Grouper(freq="W")).apply(
             lambda x: x.corr() if correlation else x

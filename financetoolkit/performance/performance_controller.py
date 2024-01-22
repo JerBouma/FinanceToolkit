@@ -1,6 +1,8 @@
 """Performance Module"""
 __docformat__ = "google"
 
+import warnings
+
 import pandas as pd
 
 from financetoolkit.helpers import calculate_growth
@@ -400,6 +402,7 @@ class Performance:
         toolkit.performance.get_factor_asset_correlations()
         ```
         """
+
         factors_to_calculate = (
             factors_to_calculate
             if factors_to_calculate
@@ -449,11 +452,13 @@ class Performance:
                     - merged_df.loc[dataset_period]["RF"]
                 )
 
-                factor_correlations[ticker][
-                    dataset_period
-                ] = performance_model.get_factor_asset_correlations(
-                    factors=factor_data, excess_return=excess_returns
-                )
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    factor_correlations[ticker][
+                        dataset_period
+                    ] = performance_model.get_factor_asset_correlations(
+                        factors=factor_data, excess_return=excess_returns
+                    )
 
         factor_asset_correlations = pd.DataFrame.from_dict(
             {

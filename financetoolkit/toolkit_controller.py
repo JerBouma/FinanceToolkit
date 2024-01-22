@@ -134,8 +134,9 @@ class Toolkit:
         and can thus be overridden.
         reverse_dates (bool): A boolean indicating whether to reverse the dates in the financial statements.
         intraday_period (str): A string containing the intraday period. This can be 1min, 5min, 15min, 30min or 1hour.
-        Defaults to None which means it will not use intraday data. Note that this is only relevant if you have are
-        looking to utilize intraday data through the Toolkit.
+        This is used to collect intraday data. Note that this is only relevant if you have are looking to utilize
+        intraday data through the Toolkit and wish to access Risk, Performance and Technicals for very short
+        timeframes. Defaults to None which means it will not use intraday data.
         rounding (int): An integer indicating the number of decimals to round the results to.
         remove_invalid_tickers (bool): A boolean indicating whether to remove invalid tickers. Defaults to False.
         sleep_timer (bool): Whether to set a sleep timer when the rate limit is reached. Note that this only works
@@ -211,6 +212,16 @@ class Toolkit:
             else:
                 self._tickers.append(ticker)
 
+        self._benchmark_ticker = benchmark_ticker
+
+        if self._benchmark_ticker in self._tickers:
+            print(
+                f"Please note that the benchmark ticker ({self._benchmark_ticker}) is also "
+                "included in the tickers. Therefore, this ticker will be removed from the "
+                "tickers list."
+            )
+            self._tickers.remove(self._benchmark_ticker)
+
         if start_date and re.match(r"^\d{4}-\d{2}-\d{2}$", start_date) is None:
             raise ValueError(
                 "Please input a valid start date (%Y-%m-%d) like '2010-01-01'"
@@ -243,7 +254,6 @@ class Toolkit:
         self._end_date = end_date if end_date else datetime.now().strftime("%Y-%m-%d")
         self._quarterly = quarterly
         self._risk_free_rate = risk_free_rate
-        self._benchmark_ticker = benchmark_ticker
         self._rounding = rounding
         self._remove_invalid_tickers = remove_invalid_tickers
         self._invalid_tickers: list = []

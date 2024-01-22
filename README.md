@@ -526,7 +526,7 @@ Which returns:
 | 2022   | 128.41   | 129.95   | 127.43   | 129.93   |    129.378  | 7.70342e+07 |    0.91     | -0.264042  |     0.356964 |      -0.302832  |            0.377293 |             7.35566 |
 | 2023   | 187.84   | 188.51   | 187.68   | 188.108  |    188.108  | 4.72009e+06 |    0.71     |  0.453941  |     0.213359 |       0.412901  |            0.22327  |            10.6947  |
 
-It is also possible to retrieve [intraday data](https://www.jeroenbouma.com/projects/financetoolkit/docs#get_historical_data). This has the option to get you 1 minute, 5 minute, 15 minute, 30 minute or 1 hour data. It can also be used as part of the Risk, Performance and Technicals modules when defining `intraday_period` as part of the Toolkit initialization. 
+It is also possible to retrieve [intraday data](https://www.jeroenbouma.com/projects/financetoolkit/docs#get_intraday_data). This has the option to get you 1 minute, 5 minute, 15 minute, 30 minute or 1 hour data. It can also be used as part of the Risk, Performance and Technicals modules when defining `intraday_period` as part of the Toolkit initialization. 
 
 As an example:
 

@@ -164,8 +164,8 @@ def handle_errors(func):
             function_name = func.__name__
             if "Benchmark" in str(e):
                 print(
-                    f"Please set a benchmark_ticker in the Toolkit class to calculate {function_name}."
-                    "\nFor example: toolkit = Toolkit(['TSLA', 'AAPL', 'MSFT'], benchmark_ticker='SPY')"
+                    f"Please set a benchmark_ticker in the Toolkit class to calculate {function_name}. "
+                    "For example: toolkit = Toolkit(['TSLA', 'AAPL', 'MSFT'], benchmark_ticker='SPY')"
                 )
             else:
                 print(
@@ -178,8 +178,8 @@ def handle_errors(func):
             function_name = func.__name__
             if "Benchmark" in str(e):
                 print(
-                    f"Please set a benchmark_ticker in the Toolkit class to calculate {function_name}."
-                    "\nFor example: toolkit = Toolkit(['TSLA', 'AAPL', 'MSFT'], benchmark_ticker='SPY')"
+                    f"Please set a benchmark_ticker in the Toolkit class to calculate {function_name}. "
+                    "For example: toolkit = Toolkit(['TSLA', 'AAPL', 'MSFT'], benchmark_ticker='SPY')"
                 )
             else:
                 print(
@@ -191,8 +191,8 @@ def handle_errors(func):
             function_name = func.__name__
             if "Benchmark" in str(e):
                 print(
-                    f"Please set a benchmark_ticker in the Toolkit class to calculate {function_name}."
-                    "\nFor example: toolkit = Toolkit(['TSLA', 'AAPL', 'MSFT'], benchmark_ticker='SPY')"
+                    f"Please set a benchmark_ticker in the Toolkit class to calculate {function_name}. "
+                    "For example: toolkit = Toolkit(['TSLA', 'AAPL', 'MSFT'], benchmark_ticker='SPY')"
                 )
             else:
                 print(

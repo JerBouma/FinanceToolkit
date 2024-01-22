@@ -889,7 +889,9 @@ class Toolkit:
         tickers = (
             self._daily_historical_data.columns.get_level_values(1).unique().tolist()
         )
-        tickers.remove("Benchmark")
+
+        if "Benchmark" in tickers:
+            tickers.remove("Benchmark")
 
         return Performance(
             tickers=tickers,
@@ -1945,16 +1947,13 @@ class Toolkit:
             )
 
         if self._intraday_period != period or self._intraday_historical_data.empty:
-            ticker_list = (
-                self._tickers + [self._benchmark_ticker]
-                if self._benchmark_ticker
-                else self._tickers
-            )
             (
                 self._intraday_historical_data,
                 self._invalid_tickers,
             ) = _get_historical_data(
-                tickers=ticker_list,
+                tickers=self._tickers + [self._benchmark_ticker]
+                if self._benchmark_ticker
+                else self._tickers,
                 api_key=self._api_key,
                 source=self._historical_source,
                 start=self._start_date,

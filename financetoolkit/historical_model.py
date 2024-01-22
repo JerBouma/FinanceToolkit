@@ -217,13 +217,23 @@ def get_historical_data(
             historical_data_dict[ticker] = pd.DataFrame(
                 data=0,
                 index=pd.PeriodIndex(pd.date_range(start, end), freq="D"),
-                columns=["Open", "High", "Low", "Close", "Adj Close", "Volume"],
+                columns=[
+                    "Open",
+                    "High",
+                    "Low",
+                    "Close",
+                    "Adj Close",
+                    "Volume",
+                    "Return",
+                    "Volatility",
+                    "Cumulative Return",
+                ],
             )
 
+    reorder_tickers = [ticker for ticker in tickers if ticker in historical_data_dict]
+
     historical_data = pd.concat(historical_data_dict).unstack(level=0)
-    historical_data = historical_data.reindex(
-        list(historical_data_dict.keys()), level=1, axis=1
-    )
+    historical_data = historical_data.reindex(reorder_tickers, level=1, axis=1)
 
     if "Dividends" in historical_data.columns:
         historical_data["Dividends"] = historical_data["Dividends"].fillna(0)

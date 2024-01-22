@@ -39,6 +39,7 @@ class Performance:
         rounding: int | None = 4,
         start_date: str | None = None,
         end_date: str | None = None,
+        intraday_period: str | None = None,
         progress_bar: bool = True,
     ):
         """
@@ -82,6 +83,7 @@ class Performance:
         self._progress_bar: bool = progress_bar
 
         # Historical Data
+        self._intraday_historical_data = historical_data["intraday"]
         self._daily_historical_data = historical_data["daily"]
         self._weekly_historical_data = historical_data["weekly"]
         self._monthly_historical_data = historical_data["monthly"]
@@ -103,6 +105,38 @@ class Performance:
         self._factor_correlations: pd.DataFrame = pd.DataFrame()
 
         # Within Period Calculations
+        if not self._intraday_historical_data.empty:
+            # Remove NaN values from the intraday historical data
+            self._daily_within_historical_data = (
+                self._intraday_historical_data.groupby(pd.Grouper(freq="D"))
+                .apply(lambda x: x)
+                .dropna(how="all", axis=0)
+            )
+
+            if intraday_period in ["15min", "30min", "1hour"]:
+                self._intraday_within_historical_data = (
+                    self._intraday_historical_data.groupby(pd.Grouper(freq="D")).apply(
+                        lambda x: x
+                    )
+                )
+
+                # The intraday historical data should be equal to the daily historical data
+                self._intraday_historical_data = self._daily_historical_data
+            else:
+                self._intraday_within_historical_data = (
+                    self._intraday_historical_data.groupby(pd.Grouper(freq="H")).apply(
+                        lambda x: x
+                    )
+                )
+
+                # The intraday historical data is grouped by hour and the last value is taken
+                # and any NaN values (which occur because the market is closed) are dropped
+                self._intraday_historical_data = (
+                    self._intraday_historical_data.groupby(pd.Grouper(freq="H"))
+                    .last()
+                    .dropna()
+                )
+
         self._weekly_within_historical_data = self._daily_historical_data.groupby(
             pd.Grouper(freq="W")
         ).apply(lambda x: x)
@@ -115,6 +149,12 @@ class Performance:
         self._yearly_within_historical_data = self._daily_historical_data.groupby(
             pd.Grouper(freq="Y")
         ).apply(lambda x: x)
+
+        # Risk Free Rate of Intraday Historical Data is set to be equal to the last value of the daily risk free rate
+        self._intraday_risk_free_rate_data = pd.Series(
+            self._daily_risk_free_rate_data.iloc[-1],
+            index=self._intraday_historical_data.index,
+        )
 
     @handle_errors
     def get_beta(
@@ -174,13 +214,6 @@ class Performance:
         toolkit.performance.get_beta()
         ```
         """
-        if period == "daily":
-            print(
-                "Daily Beta is not an option as the standard deviation for 1 day is close to zero. "
-                "Therefore, it does not give any useful insights."
-            )
-            return pd.Series(dtype="object")
-
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
         historical_data = handle_return_data_periods(
@@ -199,6 +232,8 @@ class Performance:
         beta = beta.round(rounding if rounding else self._rounding).loc[
             self._start_date : self._end_date
         ]
+
+        beta = beta.dropna(how="all", axis=0)
 
         if growth:
             return calculate_growth(
@@ -276,13 +311,6 @@ class Performance:
         toolkit.performance.get_capital_asset_pricing_model()
         ```
         """
-        if period == "daily":
-            print(
-                "Daily CAPM is not an option as the standard deviation for 1 day is close to zero. "
-                "Therefore, it does not give any useful insights."
-            )
-            return pd.Series(dtype="object")
-
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
         historical_data = handle_return_data_periods(self, period, within_period=True)
@@ -303,6 +331,8 @@ class Performance:
         capm = capm.round(rounding if rounding else self._rounding).loc[
             self._start_date : self._end_date
         ]
+
+        capm = capm.dropna(how="all", axis=0)
 
         if show_full_results:
             full_results = pd.concat(
@@ -370,12 +400,6 @@ class Performance:
         toolkit.performance.get_factor_asset_correlations()
         ```
         """
-        if period == "daily":
-            raise ValueError(
-                "Daily results is not an option as it would attempt to calculate the correlation between "
-                "two numbers which will not give any meaningful results."
-            )
-
         factors_to_calculate = (
             factors_to_calculate
             if factors_to_calculate
@@ -625,11 +649,6 @@ class Performance:
                 f"Method {method} is not a valid method. Please select from: simple or multi (default). "
                 "This refers to a simple linear regression (regression of each factor on each asset return series) "
                 "or a multi linear regression (regression of all factors on each asset return series) respectively"
-            )
-        if period == "daily":
-            raise ValueError(
-                "Daily Fama and French results is not an option as it would attempt to do a linear regression on "
-                "a single data point which will not give any meaningful results."
             )
 
         factors_to_calculate = (
@@ -894,6 +913,8 @@ class Performance:
             self._start_date : self._end_date
         ]
 
+        alpha = alpha.dropna(how="all", axis=0)
+
         if show_full_results:
             full_results = pd.concat([returns, benchmark_returns, alpha], axis=1).loc[
                 self._start_date : self._end_date
@@ -916,7 +937,6 @@ class Performance:
 
         return alpha
 
-    @handle_errors
     def get_jensens_alpha(
         self,
         period: str | None = None,
@@ -964,13 +984,6 @@ class Performance:
         toolkit.performance.get_jensens_alpha()
         ```
         """
-        if period == "daily":
-            print(
-                "Daily Jensen's Alpha is not an option as the standard deviation for 1 day is close to zero. "
-                "Therefore, it does not give any useful insights."
-            )
-            return pd.Series(dtype="object")
-
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
         historical_data = handle_return_data_periods(self, period, within_period=True)
@@ -996,6 +1009,8 @@ class Performance:
         jensens_alpha = jensens_alpha.round(
             rounding if rounding else self._rounding
         ).loc[self._start_date : self._end_date]
+
+        jensens_alpha = jensens_alpha.dropna(how="all", axis=0)
 
         if growth:
             return calculate_growth(
@@ -1055,13 +1070,6 @@ class Performance:
         toolkit.performance.get_treynor_ratio()
         ```
         """
-        if period == "daily":
-            print(
-                "Daily Treynor Ratio is not an option as the standard deviation for 1 day is close to zero. "
-                "Therefore, it does not give any useful insights."
-            )
-            return pd.Series(dtype="object")
-
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
         historical_data = handle_return_data_periods(self, period, within_period=True)
@@ -1083,6 +1091,8 @@ class Performance:
         treynor_ratio = treynor_ratio.round(
             rounding if rounding else self._rounding
         ).loc[self._start_date : self._end_date]
+
+        treynor_ratio = treynor_ratio.dropna(how="all", axis=0)
 
         if growth:
             return calculate_growth(
@@ -1157,13 +1167,6 @@ class Performance:
         toolkit.performance.get_sharpe_ratio()
         ```
         """
-        if period == "daily":
-            print(
-                "Daily Sharpe Ratio is not an option as standard deviation for 1 day "
-                "is close to zero. Therefore, it does not give any useful insights."
-            )
-            return pd.Series(dtype="object")
-
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
         historical_data = handle_return_data_periods(
@@ -1181,6 +1184,8 @@ class Performance:
         sharpe_ratio = sharpe_ratio.round(rounding if rounding else self._rounding).loc[
             self._start_date : self._end_date
         ]
+
+        sharpe_ratio = sharpe_ratio.dropna(how="all", axis=0)
 
         if growth:
             return calculate_growth(
@@ -1251,13 +1256,6 @@ class Performance:
         toolkit.performance.get_sortino_ratio()
         ```
         """
-        if period == "daily":
-            print(
-                "Daily Sortino Ratio is not an option as standard deviation for 1 day "
-                "is close to zero. Therefore, it does not give any useful insights."
-            )
-            return pd.Series(dtype="object")
-
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
         historical_data = handle_return_data_periods(self, period, within_period=True)
@@ -1268,6 +1266,8 @@ class Performance:
         sortino_ratio = sortino_ratio.round(
             rounding if rounding else self._rounding
         ).loc[self._start_date : self._end_date]
+
+        sortino_ratio = sortino_ratio.dropna(how="all", axis=0)
 
         if growth:
             return calculate_growth(
@@ -1324,11 +1324,12 @@ class Performance:
         """
 
         period = period if period else "quarterly" if self._quarterly else "yearly"
+        return_column = "Return" if period == "intraday" else "Excess Return"
 
         historical_data = handle_return_data_periods(self, period, True)
         returns = historical_data.loc[:, "Return"][self._tickers]
         historical_data_within_period = handle_return_data_periods(self, period, False)
-        excess_return = historical_data_within_period.loc[:, "Excess Return"][
+        excess_return = historical_data_within_period.loc[:, return_column][
             self._tickers
         ]
 
@@ -1340,6 +1341,8 @@ class Performance:
         ulcer_performance_index = ulcer_performance_index.round(
             rounding if rounding else self._rounding
         ).loc[self._start_date : self._end_date]
+
+        ulcer_performance_index = ulcer_performance_index.dropna(how="all", axis=0)
 
         if growth:
             return calculate_growth(
@@ -1400,13 +1403,6 @@ class Performance:
         toolkit.performance.get_m2_ratio()
         ```
         """
-        if period == "daily":
-            print(
-                "Daily M@ Ratio is not an option as the standard deviation for 1 day is close to zero. "
-                "Therefore, it does not give any useful insights."
-            )
-            return pd.Series(dtype="object")
-
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
         historical_period_data = handle_return_data_periods(
@@ -1425,6 +1421,8 @@ class Performance:
         m2_ratio = m2_ratio.round(rounding if rounding else self._rounding).loc[
             self._start_date : self._end_date
         ]
+
+        m2_ratio = m2_ratio.dropna(how="all", axis=0)
 
         if growth:
             return calculate_growth(
@@ -1485,13 +1483,6 @@ class Performance:
         toolkit.performance.get_tracking_error()
         ```
         """
-        if period == "daily":
-            print(
-                "Daily Tracking Error is not an option as the standard deviation for 1 day is close to zero. "
-                "Therefore, it does not give any useful insights."
-            )
-            return pd.Series(dtype="object")
-
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
         historical_data = handle_return_data_periods(self, period, within_period=True)
@@ -1505,6 +1496,8 @@ class Performance:
         tracking_error = tracking_error.round(
             rounding if rounding else self._rounding
         ).loc[self._start_date : self._end_date]
+
+        tracking_error = tracking_error.dropna(how="all", axis=0)
 
         if growth:
             return calculate_growth(
@@ -1574,13 +1567,6 @@ class Performance:
         toolkit.performance.get_information_ratio()
         ```
         """
-        if period == "daily":
-            print(
-                "Daily Information Ratio is not an option as the standard deviation for 1 day is close to zero. "
-                "Therefore, it does not give any useful insights."
-            )
-            return pd.Series(dtype="object")
-
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
         historical_data = handle_return_data_periods(self, period, within_period=True)

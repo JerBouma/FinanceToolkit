@@ -194,7 +194,7 @@ class Ratios:
 
         if len(self._tickers) == 1:
             return (
-                self._all_ratios_growth[self._tickers[0]]
+                self._all_ratios_growth.loc[self._tickers[0]]
                 if growth
                 else all_ratios.loc[self._tickers[0]]
             )
@@ -3846,7 +3846,7 @@ class Ratios:
                 self._solvency_ratios,
                 lag=lag,
                 rounding=rounding if rounding else self._rounding,
-                axis="index",
+                axis="columns",
             )
 
         if len(self._tickers) == 1:

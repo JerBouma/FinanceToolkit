@@ -430,7 +430,6 @@ def get_analyst_estimates(
     api_key: str = "",
     quarter: bool = False,
     start_date: str | None = None,
-    end_date: str | None = None,
     rounding: int | None = 4,
     sleep_timer: bool = False,
     progress_bar: bool = True,
@@ -464,7 +463,6 @@ def get_analyst_estimates(
         api_key (str): API key for the financial data provider.
         quarter (bool): Whether to retrieve quarterly data. Defaults to False (annual data).
         start_date (str): The start date to filter data with.
-        end_date (str): The end date to filter data with.
         sleep_timer (bool): Whether to set a sleep timer when the rate limit is reached. Note that this only works
         if you have a Premium subscription (Starter or higher) from FinancialModelingPrep. Defaults to False.
         progress_bar (bool): Whether to show a progress bar when retrieving data over 10 tickers. Defaults to True.
@@ -596,8 +594,12 @@ def get_analyst_estimates(
                 "ratio calculations."
             )
 
+        analyst_estimates_total.columns = pd.PeriodIndex(
+            analyst_estimates_total.columns, freq="Q" if quarter else "Y"
+        )
+
         analyst_estimates_total = analyst_estimates_total.sort_index(axis=1).truncate(
-            before=start_date, after=end_date, axis=1
+            before=start_date, axis=1
         )
 
         analyst_estimates_total = analyst_estimates_total.round(rounding)
@@ -723,7 +725,9 @@ def get_profile(
             axis=0,
         )
 
-    return profile_dataframe, no_data
+        return profile_dataframe, no_data
+
+    return pd.DataFrame(), no_data
 
 
 def get_quote(

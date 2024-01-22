@@ -17,6 +17,7 @@ from financetoolkit.risk import (
 )
 
 # pylint: disable=too-many-instance-attributes,too-few-public-methods,too-many-lines,too-many-locals
+# pylint: disable=too-many-boolean-expressions
 
 
 class Risk:
@@ -35,6 +36,8 @@ class Risk:
         quarterly_historical: pd.DataFrame = pd.DataFrame(),
         yearly_historical: pd.DataFrame = pd.DataFrame(),
         risk_free_rate: pd.DataFrame = pd.DataFrame(),
+        intraday_historical: pd.DataFrame = pd.DataFrame(),
+        intraday_period: str | None = None,
         quarterly: bool = False,
         rounding: int | None = 4,
     ):
@@ -84,7 +87,8 @@ class Risk:
         | 2023   |  1.8549 |  1.8238 |
         """
         if (
-            daily_historical.empty
+            intraday_historical.empty
+            and daily_historical.empty
             and weekly_historical.empty
             and monthly_historical.empty
             and quarterly_historical.empty
@@ -93,7 +97,8 @@ class Risk:
             raise ValueError("At least one historical DataFrame is required.")
 
         self._tickers = tickers
-        self._daily_historical = daily_historical
+        self._intraday_historical = intraday_historical.fillna(0)
+        self._daily_historical = daily_historical.fillna(0)
         self._weekly_historical = weekly_historical
         self._monthly_historical = monthly_historical
         self._quarterly_historical = quarterly_historical
@@ -103,7 +108,27 @@ class Risk:
         self._rounding: int | None = rounding
 
         # Return Calculations
-        self._daily_returns = self._daily_historical["Return"]
+        if not self._intraday_historical.empty:
+            self._daily_returns = (
+                self._intraday_historical["Return"]
+                .groupby(pd.Grouper(freq="D"))
+                .apply(lambda x: x)
+            )
+
+            if intraday_period in ["15min", "30min", "1hour"]:
+                self._intraday_returns = (
+                    self._intraday_historical["Return"]
+                    .groupby(pd.Grouper(freq="D"))
+                    .apply(lambda x: x)
+                )
+
+            else:
+                self._intraday_returns = (
+                    self._intraday_historical["Return"]
+                    .groupby(pd.Grouper(freq="H"))
+                    .apply(lambda x: x)
+                )
+
         self._weekly_returns = (
             self._daily_historical["Return"]
             .groupby(pd.Grouper(freq="W"))

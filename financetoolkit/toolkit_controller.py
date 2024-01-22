@@ -75,7 +75,6 @@ class Toolkit:
         risk_free_rate: str = "10y",
         benchmark_ticker: str | None = "SPY",
         historical_source: str | None = None,
-        check_asset_class: bool = False,
         historical: pd.DataFrame = pd.DataFrame(),
         balance: pd.DataFrame = pd.DataFrame(),
         income: pd.DataFrame = pd.DataFrame(),
@@ -83,6 +82,7 @@ class Toolkit:
         format_location: str = "",
         convert_currency: bool | None = None,
         reverse_dates: bool = False,
+        intraday_period: str | None = None,
         rounding: int | None = 4,
         remove_invalid_tickers: bool = False,
         sleep_timer: bool | None = None,
@@ -118,12 +118,6 @@ class Toolkit:
         or YahooFinance. Defaults to FinancialModelingPrep. It is automatically defined if you enter an API Key from
         FinancialModelingPrep. You can overwrite this by filling this parameter. Note that for the Free plan the amount
         of historical data is limited to 5 years. If you want to collect more data, you need to upgrade to a paid plan.
-        check_asset_class (bool): Whether to check if the asset class will work for the function you are trying to
-        execute. Defaults to None. If you are trying to execute a function that requires a specific asset class, this
-        will raise an error if the asset class is not correct. If you set this to False, it will simply make an attempt
-        to collect data but could lead to confusing results. The parameter is built in to limit the API calls as it
-        needs to acquire the data from Yahoo Finance. It is turned on when the amount of tickers are < 20 and turned
-        off when the amount of tickers is higher than 20. Can be overridden when you set it to True or False.
         historical (pd.DataFrame): A DataFrame containing historical data. This is a custom dataset only relevant if
         you are looking to use custom data. See for more information the following Notebook:
         https://www.jeroenbouma.com/projects/financetoolkit/external-datasets
@@ -139,6 +133,9 @@ class Toolkit:
         If you are using a Premium plan from FinancialModelingPrep, this will be set to True. Defaults to None
         and can thus be overridden.
         reverse_dates (bool): A boolean indicating whether to reverse the dates in the financial statements.
+        intraday_period (str): A string containing the intraday period. This can be 1min, 5min, 15min, 30min or 1hour.
+        Defaults to None which means it will not use intraday data. Note that this is only relevant if you have are
+        looking to utilize intraday data through the Toolkit.
         rounding (int): An integer indicating the number of decimals to round the results to.
         remove_invalid_tickers (bool): A boolean indicating whether to remove invalid tickers. Defaults to False.
         sleep_timer (bool): Whether to set a sleep timer when the rate limit is reached. Note that this only works
@@ -247,9 +244,6 @@ class Toolkit:
         self._quarterly = quarterly
         self._risk_free_rate = risk_free_rate
         self._benchmark_ticker = benchmark_ticker
-        self._check_asset_class = (
-            True if len(tickers) < TICKER_LIMIT else check_asset_class
-        )
         self._rounding = rounding
         self._remove_invalid_tickers = remove_invalid_tickers
         self._invalid_tickers: list = []
@@ -265,6 +259,19 @@ class Toolkit:
         self._historical = historical
         self._currencies: list = []
         self._statement_currencies: pd.Series = pd.Series()
+
+        if intraday_period and intraday_period not in [
+            "1min",
+            "5min",
+            "15min",
+            "30min",
+            "1hour",
+        ]:
+            raise ValueError(
+                "Please select a valid intraday period (1min, 5min, 15min, 30min or 1hour)"
+            )
+
+        self._intraday_period = intraday_period
 
         if self._api_key:
             # Initialization of FinancialModelingPrep Variables
@@ -300,6 +307,7 @@ class Toolkit:
             )
 
         # Initialization of Historical Variables
+        self._intraday_historical_data: pd.DataFrame = pd.DataFrame()
         self._daily_historical_data: pd.DataFrame = (
             historical if not historical.empty else pd.DataFrame()
         )
@@ -537,15 +545,9 @@ class Toolkit:
         else:
             self.get_historical_data(period="yearly")
 
-        if not self._historical_statistics.empty:
-            tickers = [
-                ticker
-                for ticker in self._historical_statistics.columns
-                if self._historical_statistics.loc["Instrument Type", ticker]
-                == "EQUITY"
-            ]
-        else:
-            tickers = self._tickers
+        tickers = (
+            self._balance_sheet_statement.index.get_level_values(0).unique().tolist()
+        )
 
         return Ratios(
             tickers=tickers,
@@ -651,15 +653,9 @@ class Toolkit:
         else:
             self.get_historical_data(period="yearly")
 
-        if not self._historical_statistics.empty:
-            tickers = [
-                ticker
-                for ticker in self._historical_statistics.columns
-                if self._historical_statistics.loc["Instrument Type", ticker]
-                == "EQUITY"
-            ]
-        else:
-            tickers = self._tickers
+        tickers = (
+            self._balance_sheet_statement.index.get_level_values(0).unique().tolist()
+        )
 
         return Models(
             tickers=tickers,
@@ -794,34 +790,29 @@ class Toolkit:
         if not self._end_date:
             self._end_date = datetime.today().strftime("%Y-%m-%d")
 
-        self.get_historical_data(period="daily")
-        self.get_historical_data(period="weekly")
-        self.get_historical_data(period="monthly")
-        self.get_historical_data(period="quarterly")
-        self.get_historical_data(period="yearly")
+        for period in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
+            self.get_historical_data(period=period)
+
+        if self._intraday_period:
+            if self._intraday_period in ["1min", "5min", "15min", "30min", "1hour"]:
+                self.get_intraday_data(period=self._intraday_period)
+            else:
+                raise ValueError(
+                    "The intraday period must be one of '1min', '5min', '15min', '30min' or '1hour'."
+                )
 
         tickers = (
             self._daily_historical_data.columns.get_level_values(1).unique().tolist()
         )
-        tickers.remove("Benchmark")
 
         return Technicals(
             tickers=tickers,
-            daily_historical=self._daily_historical_data.drop(
-                "Benchmark", axis=1, level=1, errors="ignore"
-            ),
-            weekly_historical=self._weekly_historical_data.drop(
-                "Benchmark", axis=1, level=1, errors="ignore"
-            ),
-            monthly_historical=self._monthly_historical_data.drop(
-                "Benchmark", axis=1, level=1, errors="ignore"
-            ),
-            quarterly_historical=self._quarterly_historical_data.drop(
-                "Benchmark", axis=1, level=1, errors="ignore"
-            ),
-            yearly_historical=self._yearly_historical_data.drop(
-                "Benchmark", axis=1, level=1, errors="ignore"
-            ),
+            intraday_historical=self._intraday_historical_data,
+            daily_historical=self._daily_historical_data,
+            weekly_historical=self._weekly_historical_data,
+            monthly_historical=self._monthly_historical_data,
+            quarterly_historical=self._quarterly_historical_data,
+            yearly_historical=self._yearly_historical_data,
             rounding=self._rounding,
             start_date=self._start_date,
             end_date=self._end_date,
@@ -867,13 +858,19 @@ class Toolkit:
         if not self._end_date:
             self._end_date = datetime.today().strftime("%Y-%m-%d")
 
-        self.get_historical_data(period="daily")
-        self.get_historical_data(period="weekly")
-        self.get_historical_data(period="monthly")
-        self.get_historical_data(period="quarterly")
-        self.get_historical_data(period="yearly")
+        for period in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
+            self.get_historical_data(period=period)
+
+        if self._intraday_period:
+            if self._intraday_period in ["1min", "5min", "15min", "30min", "1hour"]:
+                self.get_intraday_data(period=self._intraday_period)
+            else:
+                raise ValueError(
+                    "The intraday period must be one of '1min', '5min', '15min', '30min' or '1hour'."
+                )
 
         historical_data = {
+            "intraday": self._intraday_historical_data,
             "daily": self._daily_historical_data,
             "weekly": self._weekly_historical_data,
             "monthly": self._monthly_historical_data,
@@ -902,6 +899,7 @@ class Toolkit:
             rounding=self._rounding,
             start_date=self._start_date,
             end_date=self._end_date,
+            intraday_period=self._intraday_period,
             progress_bar=self._progress_bar,
         )
 
@@ -951,11 +949,16 @@ class Toolkit:
         if not self._end_date:
             self._end_date = datetime.today().strftime("%Y-%m-%d")
 
-        self.get_historical_data(period="daily")
-        self.get_historical_data(period="weekly")
-        self.get_historical_data(period="monthly")
-        self.get_historical_data(period="quarterly")
-        self.get_historical_data(period="yearly")
+        for period in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
+            self.get_historical_data(period=period)
+
+        if self._intraday_period:
+            if self._intraday_period in ["1min", "5min", "15min", "30min", "1hour"]:
+                self.get_intraday_data(period=self._intraday_period)
+            else:
+                raise ValueError(
+                    "The intraday period must be one of '1min', '5min', '15min', '30min' or '1hour'."
+                )
 
         tickers = (
             self._daily_historical_data.columns.get_level_values(1).unique().tolist()
@@ -971,6 +974,8 @@ class Toolkit:
             risk_free_rate=self._quarterly_risk_free_rate
             if self._quarterly
             else self._yearly_risk_free_rate,
+            intraday_historical=self._intraday_historical_data,
+            intraday_period=self._intraday_period,
             quarterly=self._quarterly,
             rounding=self._rounding,
         )
@@ -1084,39 +1089,9 @@ class Toolkit:
                 "above affiliate link which also supports the project."
             )
 
-        if self._check_asset_class:
-            if self._historical_statistics.empty:
-                self.get_historical_statistics(
-                    progress_bar=progress_bar
-                    if progress_bar is not None
-                    else self._progress_bar
-                )
-
-            tickers = [
-                ticker
-                for ticker in self._historical_statistics.columns
-                if self._historical_statistics.loc["Instrument Type", ticker]
-                == "EQUITY"
-            ]
-            no_data_tickers = set(self._tickers) - set(tickers)
-        else:
-            tickers = self._tickers
-            no_data_tickers = set([])
-
-        if not tickers:
-            raise ValueError(
-                "Only for Equities, ETFs and Mutual Funds it is possible to acquire Profiles. None of the inputted tickers "
-                "are considered any of these classifications."
-            )
-        if no_data_tickers:
-            print(
-                f"Only for Equities, ETFs and Mutual Funds it is possible to acquire Profiles. Therefore, the "
-                f"following tickers yield no data: {', '.join(no_data_tickers)}"
-            )
-
         if self._profile.empty:
             self._profile, self._invalid_tickers = _get_profile(
-                tickers=tickers,
+                tickers=self._tickers,
                 api_key=self._api_key,
                 progress_bar=progress_bar
                 if progress_bar is not None
@@ -1264,39 +1239,9 @@ class Toolkit:
                 "above affiliate link which also supports the project."
             )
 
-        if self._check_asset_class:
-            if self._historical_statistics.empty:
-                self.get_historical_statistics(
-                    progress_bar=progress_bar
-                    if progress_bar is not None
-                    else self._progress_bar
-                )
-
-            tickers = [
-                ticker
-                for ticker in self._historical_statistics.columns
-                if self._historical_statistics.loc["Instrument Type", ticker]
-                == "EQUITY"
-            ]
-            no_data_tickers = set(self._tickers) - set(tickers)
-        else:
-            tickers = self._tickers
-            no_data_tickers = set([])
-
-        if not tickers:
-            raise ValueError(
-                "Only for Equities it is possible to acquire Ratings. None of the inputted tickers "
-                "are considered any of these classifications."
-            )
-        if no_data_tickers:
-            print(
-                f"Only for Equities it is possible to acquire Ratings. Therefore, the "
-                f"following tickers yield no data: {', '.join(no_data_tickers)}"
-            )
-
         if self._rating.empty:
             self._rating, self._invalid_tickers = _get_rating(
-                tickers=tickers,
+                tickers=self._tickers,
                 api_key=self._api_key,
                 progress_bar=progress_bar
                 if progress_bar is not None
@@ -1383,46 +1328,15 @@ class Toolkit:
                 "using the above affiliate link which also supports the project."
             )
 
-        if self._check_asset_class:
-            if self._historical_statistics.empty:
-                self.get_historical_statistics(
-                    progress_bar=progress_bar
-                    if progress_bar is not None
-                    else self._progress_bar
-                )
-
-            tickers = [
-                ticker
-                for ticker in self._historical_statistics.columns
-                if self._historical_statistics.loc["Instrument Type", ticker]
-                == "EQUITY"
-            ]
-            no_data_tickers = set(self._tickers) - set(tickers)
-        else:
-            tickers = self._tickers
-            no_data_tickers = set([])
-
-        if not tickers:
-            raise ValueError(
-                "Only for Equities it is possible to acquire Analyst Estimates. None of the inputted tickers "
-                "are considered an Equity."
-            )
-        if no_data_tickers:
-            print(
-                f"Only for Equities it is possible to acquire Analyst Estimates. Therefore, the "
-                f"following tickers yield no data: {', '.join(no_data_tickers)}"
-            )
-
         if self._analyst_estimates.empty or overwrite:
             (
                 self._analyst_estimates,
                 self._invalid_tickers,
             ) = _get_analyst_estimates(
-                tickers=tickers,
+                tickers=self._tickers,
                 api_key=self._api_key,
                 quarter=self._quarterly,
                 start_date=self._start_date,
-                end_date=self._end_date,
                 rounding=rounding if rounding else self._rounding,
                 sleep_timer=self._sleep_timer,
                 progress_bar=progress_bar
@@ -1444,11 +1358,11 @@ class Toolkit:
                 rounding=rounding if rounding else self._rounding,
             )
 
-        if len(tickers) == 1 and not self._analyst_estimates.empty:
+        if len(self._tickers) == 1 and not self._analyst_estimates.empty:
             return (
-                self._analyst_estimates_growth.loc[tickers[0]]
+                self._analyst_estimates_growth.loc[self._tickers[0]]
                 if growth
-                else self._analyst_estimates.loc[tickers[0]]
+                else self._analyst_estimates.loc[self._tickers[0]]
             )
 
         return self._analyst_estimates_growth if growth else self._analyst_estimates
@@ -1508,42 +1422,12 @@ class Toolkit:
                 "the above affiliate link which also supports the project."
             )
 
-        if self._check_asset_class:
-            if self._historical_statistics.empty:
-                self.get_historical_statistics(
-                    progress_bar=progress_bar
-                    if progress_bar is not None
-                    else self._progress_bar
-                )
-
-            tickers = [
-                ticker
-                for ticker in self._historical_statistics.columns
-                if self._historical_statistics.loc["Instrument Type", ticker]
-                == "EQUITY"
-            ]
-            no_data_tickers = set(self._tickers) - set(tickers)
-        else:
-            tickers = self._tickers
-            no_data_tickers = set([])
-
-        if not tickers:
-            raise ValueError(
-                "Only for Equities it is possible to acquire the Earnings Calendar. None of the inputted tickers "
-                "are considered an Equity."
-            )
-        if no_data_tickers:
-            print(
-                f"Only for Equities it is possible to acquire the Earnings Calendar. Therefore, the "
-                f"following tickers yield no data: {', '.join(no_data_tickers)}"
-            )
-
         if self._earnings_calendar.empty or overwrite:
             (
                 self._earnings_calendar,
                 self._invalid_tickers,
             ) = _get_earnings_calendar(
-                tickers=tickers,
+                tickers=self._tickers,
                 api_key=self._api_key,
                 start_date=self._start_date,
                 end_date=self._end_date,
@@ -1565,8 +1449,8 @@ class Toolkit:
                 if ticker not in self._invalid_tickers
             ]
 
-        if len(tickers) == 1 and not self._earnings_calendar.empty:
-            return earnings_calendar.loc[tickers[0]]
+        if len(self._tickers) == 1 and not self._earnings_calendar.empty:
+            return earnings_calendar.loc[self._tickers[0]]
 
         return earnings_calendar
 
@@ -1618,42 +1502,12 @@ class Toolkit:
                 "You can get 15% off by using the above affiliate link which also supports the project."
             )
 
-        if self._check_asset_class:
-            if self._historical_statistics.empty:
-                self.get_historical_statistics(
-                    progress_bar=progress_bar
-                    if progress_bar is not None
-                    else self._progress_bar
-                )
-
-            tickers = [
-                ticker
-                for ticker in self._historical_statistics.columns
-                if self._historical_statistics.loc["Instrument Type", ticker]
-                == "EQUITY"
-            ]
-            no_data_tickers = set(self._tickers) - set(tickers)
-        else:
-            tickers = self._tickers
-            no_data_tickers = set([])
-
-        if not tickers:
-            raise ValueError(
-                "Only for Equities it is possible to acquire Geographic Revenue Segmentation. None of the inputted tickers "
-                "are considered an Equity."
-            )
-        if no_data_tickers:
-            print(
-                f"Only for Equities it is possible to acquire Geographic Revenue Segmentation. Therefore, the "
-                f"following tickers yield no data: {', '.join(no_data_tickers)}"
-            )
-
         if self._revenue_geographic_segmentation.empty or overwrite:
             (
                 self._revenue_geographic_segmentation,
                 self._invalid_tickers,
             ) = _get_revenue_segmentation(
-                tickers=tickers,
+                tickers=self._tickers,
                 method="geographic",
                 api_key=self._api_key,
                 quarter=self._quarterly,
@@ -1672,8 +1526,8 @@ class Toolkit:
                 if ticker not in self._invalid_tickers
             ]
 
-        if len(tickers) == 1 and not self._revenue_geographic_segmentation.empty:
-            return self._revenue_geographic_segmentation.loc[tickers[0]]
+        if len(self._tickers) == 1 and not self._revenue_geographic_segmentation.empty:
+            return self._revenue_geographic_segmentation.loc[self._tickers[0]]
 
         return self._revenue_geographic_segmentation
 
@@ -1729,36 +1583,6 @@ class Toolkit:
                 "the above affiliate link which also supports the project."
             )
 
-        if self._check_asset_class:
-            if self._historical_statistics.empty:
-                self.get_historical_statistics(
-                    progress_bar=progress_bar
-                    if progress_bar is not None
-                    else self._progress_bar
-                )
-
-            tickers = [
-                ticker
-                for ticker in self._historical_statistics.columns
-                if self._historical_statistics.loc["Instrument Type", ticker]
-                == "EQUITY"
-            ]
-            no_data_tickers = set(self._tickers) - set(tickers)
-        else:
-            tickers = self._tickers
-            no_data_tickers = set([])
-
-        if not tickers:
-            raise ValueError(
-                "Only for Equities it is possible to acquire Product Revenue Segmentation. None of the inputted tickers "
-                "are considered an Equity."
-            )
-        if no_data_tickers:
-            print(
-                f"Only for Equities it is possible to acquire Product Revenue Segmentation. Therefore, the "
-                f"following tickers yield no data: {', '.join(no_data_tickers)}"
-            )
-
         if self._revenue_product_segmentation.empty or overwrite:
             (
                 self._revenue_product_segmentation,
@@ -1783,8 +1607,8 @@ class Toolkit:
                 if ticker not in self._invalid_tickers
             ]
 
-        if len(tickers) == 1 and not self._revenue_product_segmentation.empty:
-            return self._revenue_product_segmentation.loc[tickers[0]]
+        if len(self._tickers) == 1 and not self._revenue_product_segmentation.empty:
+            return self._revenue_product_segmentation.loc[self._tickers[0]]
 
         return self._revenue_product_segmentation
 
@@ -2032,6 +1856,149 @@ class Toolkit:
             "Please choose from daily, weekly, monthly, quarterly or yearly as period."
         )
 
+    def get_intraday_data(
+        self,
+        period: str = "1hour",
+        return_column: str = "Close",
+        fill_nan: bool = True,
+        rounding: int | None = None,
+        progress_bar: bool | None = None,
+    ):
+        """
+        Returns intraday historical data for the specified tickers. This contains the following columns:
+            - Open: The opening price for the period.
+            - High: The highest price for the period.
+            - Low: The lowest price for the period.
+            - Close: The closing price for the period.
+            - Volume: The volume for the period.
+            - Return: The return for the period.
+            - Volatility: The volatility for the period.
+            - Cumulative Return: The cumulative return for the period.
+
+        Keep in mind that this data is available for a shorter period. This means that the start date is
+        ignored if the difference between the start and end date is bigger than the maximum period.
+
+        If a benchmark ticker is selected, it also calculates the benchmark ticker together with the results.
+        By default this is set to "SPY" (S&P 500 Index) but can be any ticker. This is relevant for calculations
+        for models such as CAPM, Alpha and Beta.
+
+        Please note that this functionality is only available through Financial Modeling Prep. Therefore, an
+        api_key is required to use this functionality.
+
+        Args:
+            start (str): The start date for the historical data. Defaults to None.
+            end (str): The end date for the historical data. Defaults to None.
+            period (str): The interval at which the historical data should be
+            returned - daily, weekly, monthly, quarterly, or yearly.
+            Defaults to "daily".
+            return_column (str): The column to use for the return calculation. Defaults to "Close".
+            fill_nan (bool): Defines whether to forward fill NaN values. This defaults
+            to True to prevent holes in the dataset. This is especially relevant for
+            technical indicators.
+            rounding (int): Defines the number of decimal places to round the data to.
+            progress_bar (bool, optional): Whether to show a progress bar. Defaults to None.
+
+        Returns:
+            pandas.DataFrame: The intraday data for the specified tickers.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit("MSFT", api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.get_intraday_data(period="1min")
+        ```
+
+        Which returns:
+
+        | date             |   Open |   High |     Low |   Close |   Volume |   Return |   Volatility |   Cumulative Return |
+        |:-----------------|-------:|-------:|--------:|--------:|---------:|---------:|-------------:|--------------------:|
+        | 2024-01-19 15:45 | 397.64 | 397.88 | 397.63  | 397.88  |    49202 |   0.0006 |       0.0005 |              1.0266 |
+        | 2024-01-19 15:46 | 397.86 | 397.93 | 397.788 | 397.82  |    68913 |  -0.0002 |       0.0005 |              1.0264 |
+        | 2024-01-19 15:47 | 397.81 | 397.97 | 397.76  | 397.78  |    62605 |  -0.0001 |       0.0005 |              1.0263 |
+        | 2024-01-19 15:48 | 397.78 | 397.85 | 397.675 | 397.845 |    62146 |   0.0002 |       0.0005 |              1.0265 |
+        | 2024-01-19 15:49 | 397.85 | 397.97 | 397.8   | 397.94  |    72700 |   0.0002 |       0.0005 |              1.0267 |
+        | 2024-01-19 15:50 | 397.92 | 398.27 | 397.9   | 398.04  |   140754 |   0.0003 |       0.0005 |              1.027  |
+        | 2024-01-19 15:51 | 398.04 | 398.15 | 397.96  | 398     |   122208 |  -0.0001 |       0.0005 |              1.0269 |
+        | 2024-01-19 15:52 | 397.99 | 398.26 | 397.98  | 398.05  |    83546 |   0.0001 |       0.0005 |              1.027  |
+        | 2024-01-19 15:53 | 398.04 | 398.12 | 397.98  | 398.09  |    85098 |   0.0001 |       0.0005 |              1.0271 |
+        | 2024-01-19 15:54 | 398.1  | 398.52 | 398.03  | 398.45  |   187358 |   0.0009 |       0.0005 |              1.028  |
+        | 2024-01-19 15:55 | 398.45 | 398.62 | 398.25  | 398.335 |   237902 |  -0.0003 |       0.0005 |              1.0278 |
+        | 2024-01-19 15:56 | 398.33 | 398.44 | 398.3   | 398.415 |   149157 |   0.0002 |       0.0005 |              1.028  |
+        | 2024-01-19 15:57 | 398.42 | 398.5  | 398.29  | 398.43  |   181074 |   0      |       0.0005 |              1.028  |
+        | 2024-01-19 15:58 | 398.46 | 398.47 | 398.29  | 398.35  |   278802 |  -0.0002 |       0.0005 |              1.0278 |
+        | 2024-01-19 15:59 | 398.35 | 398.66 | 398.22  | 398.66  |   586344 |   0.0008 |       0.0005 |              1.0286 |
+        """
+        if not self._api_key:
+            return print(
+                "The requested data requires the api_key parameter to be set, consider obtaining a key with the "
+                "following link: https://www.jeroenbouma.com/fmp"
+                "\nThis functionality also requires a Professional or Enterprise subscription. You can get 15% off by using "
+                "the above affiliate link which also supports the project."
+            )
+
+        if period not in ["1min", "5min", "15min", "30min", "1hour"]:
+            raise ValueError(
+                "Please choose from 1min, 5min, 15min, 30min or 1hour as period."
+            )
+
+        if self._intraday_period != period or self._intraday_historical_data.empty:
+            ticker_list = (
+                self._tickers + [self._benchmark_ticker]
+                if self._benchmark_ticker
+                else self._tickers
+            )
+            (
+                self._intraday_historical_data,
+                self._invalid_tickers,
+            ) = _get_historical_data(
+                tickers=ticker_list,
+                api_key=self._api_key,
+                source=self._historical_source,
+                start=self._start_date,
+                end=self._end_date,
+                interval=period,
+                return_column=return_column,
+                risk_free_rate=pd.DataFrame(),
+                include_dividends=False,
+                progress_bar=progress_bar
+                if progress_bar is not None
+                else self._progress_bar,
+                fill_nan=fill_nan,
+                rounding=rounding if rounding else self._rounding,
+                sleep_timer=self._sleep_timer,
+                show_errors=True,
+                tqdm_message="Obtaining intraday data",
+            )
+
+        # Save the period to prevent having to reacquire the data
+        self._intraday_period = period
+
+        # Change the benchmark ticker name to Benchmark
+        self._intraday_historical_data = self._intraday_historical_data.rename(
+            columns={self._benchmark_ticker: "Benchmark"}, level=1
+        )
+
+        if self._remove_invalid_tickers:
+            self._tickers = [
+                ticker
+                for ticker in self._tickers
+                if ticker not in self._invalid_tickers
+            ]
+
+        historical_data = self._intraday_historical_data.loc[
+            self._start_date : self._end_date, :
+        ].copy()
+
+        historical_data.loc[historical_data.index[0], "Return"] = 0
+
+        if len(self._tickers) == 1 and not self._benchmark_ticker:
+            return historical_data.xs(self._tickers[0], level=1, axis="columns")
+
+        return historical_data
+
     def get_dividend_calendar(
         self,
         overwrite: bool = False,
@@ -2090,42 +2057,12 @@ class Toolkit:
                 "the above affiliate link which also supports the project."
             )
 
-        if self._check_asset_class:
-            if self._historical_statistics.empty:
-                self.get_historical_statistics(
-                    progress_bar=progress_bar
-                    if progress_bar is not None
-                    else self._progress_bar
-                )
-
-            tickers = [
-                ticker
-                for ticker in self._historical_statistics.columns
-                if self._historical_statistics.loc["Instrument Type", ticker]
-                == "EQUITY"
-            ]
-            no_data_tickers = set(self._tickers) - set(tickers)
-        else:
-            tickers = self._tickers
-            no_data_tickers = set([])
-
-        if not tickers:
-            raise ValueError(
-                "Only for Equities it is possible to acquire the Dividend Calendar. None of the inputted tickers "
-                "are considered an Equity."
-            )
-        if no_data_tickers:
-            print(
-                f"Only for Equities it is possible to acquire the Dividend Calendar. Therefore, the "
-                f"following tickers yield no data: {', '.join(no_data_tickers)}"
-            )
-
         if self._dividend_calendar.empty or overwrite:
             (
                 self._dividend_calendar,
                 self._invalid_tickers,
             ) = _get_dividend_calendar(
-                tickers=tickers,
+                tickers=self._tickers,
                 api_key=self._api_key,
                 start_date=self._start_date,
                 end_date=self._end_date,
@@ -2146,8 +2083,8 @@ class Toolkit:
                 if ticker not in self._invalid_tickers
             ]
 
-        if len(tickers) == 1 and not self._dividend_calendar.empty:
-            return dividend_calendar.loc[tickers[0]]
+        if len(self._tickers) == 1 and not self._dividend_calendar.empty:
+            return dividend_calendar.loc[self._tickers[0]]
 
         return dividend_calendar
 
@@ -2227,42 +2164,12 @@ class Toolkit:
                 "the above affiliate link which also supports the project."
             )
 
-        if self._check_asset_class:
-            if self._historical_statistics.empty:
-                self.get_historical_statistics(
-                    progress_bar=progress_bar
-                    if progress_bar is not None
-                    else self._progress_bar
-                )
-
-            tickers = [
-                ticker
-                for ticker in self._historical_statistics.columns
-                if self._historical_statistics.loc["Instrument Type", ticker]
-                == "EQUITY"
-            ]
-            no_data_tickers = set(self._tickers) - set(tickers)
-        else:
-            tickers = self._tickers
-            no_data_tickers = set([])
-
-        if not tickers:
-            raise ValueError(
-                "Only for Equities it is possible to acquire the ESG Scores. None of the inputted tickers "
-                "are considered an Equity."
-            )
-        if no_data_tickers:
-            print(
-                f"Only for Equities it is possible to acquire the ESG Scores. Therefore, the "
-                f"following tickers yield no data: {', '.join(no_data_tickers)}"
-            )
-
         if self._esg_scores.empty or overwrite:
             (
                 self._esg_scores,
                 self._invalid_tickers,
             ) = _get_esg_scores(
-                tickers=tickers,
+                tickers=self._tickers,
                 api_key=self._api_key,
                 quarter=self._quarterly,
                 start_date=self._start_date,
@@ -2282,8 +2189,8 @@ class Toolkit:
                 if ticker not in self._invalid_tickers
             ]
 
-        if len(tickers) == 1 and not self._esg_scores.empty:
-            return esg_scores.xs(tickers[0], axis=1, level=1)
+        if len(self._tickers) == 1 and not self._esg_scores.empty:
+            return esg_scores.xs(self._tickers[0], axis=1, level=1)
 
         return esg_scores
 
@@ -2335,8 +2242,9 @@ class Toolkit:
         """
 
         if self._historical_statistics.empty:
-            self._historical_statistics = _get_historical_statistics(
+            self._historical_statistics, _ = _get_historical_statistics(
                 tickers=self._tickers,
+                api_key=self._api_key if self._api_key is not None else None,
                 progress_bar=progress_bar
                 if progress_bar is not None
                 else self._progress_bar,
@@ -2845,43 +2753,13 @@ class Toolkit:
                 "above affiliate link which also supports the project."
             )
 
-        if self._check_asset_class:
-            if self._historical_statistics.empty:
-                self.get_historical_statistics(
-                    progress_bar=progress_bar
-                    if progress_bar is not None
-                    else self._progress_bar
-                )
-
-            tickers = [
-                ticker
-                for ticker in self._historical_statistics.columns
-                if self._historical_statistics.loc["Instrument Type", ticker]
-                == "EQUITY"
-            ]
-            no_data_tickers = set(self._tickers) - set(tickers)
-        else:
-            tickers = self._tickers
-            no_data_tickers = set([])
-
-        if not tickers:
-            raise ValueError(
-                "Only for Equities it is possible to acquire Balance Sheet Statements. None of the inputted tickers "
-                "are considered an Equity."
-            )
-        if no_data_tickers:
-            print(
-                f"Only for Equities it is possible to acquire Balance Sheet Statements. Therefore, the "
-                f"following tickers yield no data: {', '.join(no_data_tickers)}"
-            )
-
         if self._balance_sheet_statement.empty or overwrite:
             (
                 self._balance_sheet_statement,
                 self._statistics_statement,
                 self._invalid_tickers,
             ) = _get_financial_statements(
-                tickers=tickers,
+                tickers=self._tickers,
                 statement="balance",
                 api_key=self._api_key,
                 quarter=self._quarterly,
@@ -2932,17 +2810,18 @@ class Toolkit:
                 exchange_rate_data=self.get_exchange_rates(
                     period="quarterly" if self._quarterly else "yearly"
                 )["Adj Close"],
+                financial_statement_name="balance sheet statement",
             )
 
         balance_sheet_statement = balance_sheet_statement.round(
             rounding if rounding else self._rounding
         )
 
-        if len(tickers) == 1 and not self._balance_sheet_statement.empty:
+        if len(self._tickers) == 1 and not self._balance_sheet_statement.empty:
             return (
-                self._balance_sheet_statement_growth.loc[tickers[0]]
+                self._balance_sheet_statement_growth.loc[self._tickers[0]]
                 if growth
-                else balance_sheet_statement.loc[tickers[0]]
+                else balance_sheet_statement.loc[self._tickers[0]]
             )
 
         return (
@@ -3033,43 +2912,13 @@ class Toolkit:
                 "above affiliate link which also supports the project."
             )
 
-        if self._check_asset_class:
-            if self._historical_statistics.empty:
-                self.get_historical_statistics(
-                    progress_bar=progress_bar
-                    if progress_bar is not None
-                    else self._progress_bar
-                )
-
-            tickers = [
-                ticker
-                for ticker in self._historical_statistics.columns
-                if self._historical_statistics.loc["Instrument Type", ticker]
-                == "EQUITY"
-            ]
-            no_data_tickers = set(self._tickers) - set(tickers)
-        else:
-            tickers = self._tickers
-            no_data_tickers = set([])
-
-        if not tickers:
-            raise ValueError(
-                "Only for Equities it is possible to acquire Income Statements. None of the inputted tickers "
-                "are considered an Equity."
-            )
-        if no_data_tickers:
-            print(
-                f"Only for Equities it is possible to acquire Income Statements. Therefore, the "
-                f"following tickers yield no data: {', '.join(no_data_tickers)}"
-            )
-
         if self._income_statement.empty or overwrite:
             (
                 self._income_statement,
                 self._statistics_statement,
                 self._invalid_tickers,
             ) = _get_financial_statements(
-                tickers=tickers,
+                tickers=self._tickers,
                 statement="income",
                 api_key=self._api_key,
                 quarter=self._quarterly,
@@ -3129,17 +2978,18 @@ class Toolkit:
                     "Weighted Average Shares",
                     "Weighted Average Shares Diluted",
                 ],
+                financial_statement_name="income statement",
             )
 
         income_statement = income_statement.round(
             rounding if rounding else self._rounding
         )
 
-        if len(tickers) == 1 and not self._income_statement.empty:
+        if len(self._tickers) == 1 and not self._income_statement.empty:
             return (
-                self._income_statement_growth.loc[tickers[0]]
+                self._income_statement_growth.loc[self._tickers[0]]
                 if growth
-                else income_statement.loc[tickers[0]]
+                else income_statement.loc[self._tickers[0]]
             )
 
         return self._income_statement_growth if growth else income_statement
@@ -3230,43 +3080,13 @@ class Toolkit:
                 "above affiliate link which also supports the project."
             )
 
-        if self._check_asset_class:
-            if self._historical_statistics.empty:
-                self.get_historical_statistics(
-                    progress_bar=progress_bar
-                    if progress_bar is not None
-                    else self._progress_bar
-                )
-
-            tickers = [
-                ticker
-                for ticker in self._historical_statistics.columns
-                if self._historical_statistics.loc["Instrument Type", ticker]
-                == "EQUITY"
-            ]
-            no_data_tickers = set(self._tickers) - set(tickers)
-        else:
-            tickers = self._tickers
-            no_data_tickers = set([])
-
-        if not tickers:
-            raise ValueError(
-                "Only for Equities it is possible to acquire Cash Flow Statements. None of the inputted tickers "
-                "are considered an Equity."
-            )
-        if no_data_tickers:
-            print(
-                f"Only for Equities it is possible to acquire Income Statements. Therefore, the "
-                f"following tickers yield no data: {', '.join(no_data_tickers)}"
-            )
-
         if self._cash_flow_statement.empty or overwrite:
             (
                 self._cash_flow_statement,
                 self._statistics_statement,
                 self._invalid_tickers,
             ) = _get_financial_statements(
-                tickers=tickers,
+                tickers=self._tickers,
                 statement="cashflow",
                 api_key=self._api_key,
                 quarter=self._quarterly,
@@ -3315,17 +3135,18 @@ class Toolkit:
                 exchange_rate_data=self.get_exchange_rates(
                     period="quarterly" if self._quarterly else "yearly"
                 )["Adj Close"],
+                financial_statement_name="cash flow statement",
             )
 
         cash_flow_statement = cash_flow_statement.round(
             rounding if rounding else self._rounding
         )
 
-        if len(tickers) == 1 and not self._cash_flow_statement.empty:
+        if len(self._tickers) == 1 and not self._cash_flow_statement.empty:
             return (
-                self._cash_flow_statement_growth.loc[tickers[0]]
+                self._cash_flow_statement_growth.loc[self._tickers[0]]
                 if growth
-                else cash_flow_statement.loc[tickers[0]]
+                else cash_flow_statement.loc[self._tickers[0]]
             )
         return self._cash_flow_statement_growth if growth else cash_flow_statement
 
@@ -3381,43 +3202,13 @@ class Toolkit:
                 "above affiliate link which also supports the project."
             )
 
-        if self._check_asset_class:
-            if self._historical_statistics.empty:
-                self.get_historical_statistics(
-                    progress_bar=progress_bar
-                    if progress_bar is not None
-                    else self._progress_bar
-                )
-
-            tickers = [
-                ticker
-                for ticker in self._historical_statistics.columns
-                if self._historical_statistics.loc["Instrument Type", ticker]
-                == "EQUITY"
-            ]
-            no_data_tickers = set(self._tickers) - set(tickers)
-        else:
-            tickers = self._tickers
-            no_data_tickers = set([])
-
-        if not tickers:
-            raise ValueError(
-                "Only for Equities it is possible to acquire Statistics Statements. None of the inputted tickers "
-                "are considered an Equity."
-            )
-        if no_data_tickers:
-            print(
-                f"Only for Equities it is possible to acquire Statistics Statements. Therefore, the "
-                f"following tickers yield no data: {', '.join(no_data_tickers)}"
-            )
-
         if self._statistics_statement.empty or overwrite:
             (
                 self._balance_sheet_statement,
                 self._statistics_statement,
                 self._invalid_tickers,
             ) = _get_financial_statements(
-                tickers=tickers,
+                tickers=self._tickers,
                 statement="balance",
                 api_key=self._api_key,
                 quarter=self._quarterly,
@@ -3438,8 +3229,8 @@ class Toolkit:
                 if ticker not in self._invalid_tickers
             ]
 
-        if len(tickers) == 1 and not self._statistics_statement.empty:
-            return self._statistics_statement.loc[tickers[0]]
+        if len(self._tickers) == 1 and not self._statistics_statement.empty:
+            return self._statistics_statement.loc[self._tickers[0]]
 
         return self._statistics_statement
 

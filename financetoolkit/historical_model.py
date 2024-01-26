@@ -242,7 +242,7 @@ def get_historical_data(
 
     if fill_nan:
         # Interpolation is done when there are NaN values in the DataFrame
-        # while technically, that specific date doesn't have a value, it is
+        # while technically, that specific date doesn't have a value, it
         # smoothens the result with limited impact on any metric.
         historical_data = historical_data.interpolate(limit_area="inside")
 

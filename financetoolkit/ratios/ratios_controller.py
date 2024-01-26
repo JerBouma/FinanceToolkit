@@ -182,11 +182,18 @@ class Ratios:
             rounding if rounding else self._rounding
         )
 
-        all_ratios = self._all_ratios
+        # In case sorting accidentally fails, the index is sorted again
+        # to follow the same order as the financial statements
+        available_columns = [
+            column
+            for column in self._income_statement.columns
+            if column in self._all_ratios
+        ]
+        self._all_ratios = self._all_ratios.reindex(available_columns, axis=1)
 
         if growth:
             self._all_ratios_growth = calculate_growth(
-                all_ratios,
+                self._all_ratios,
                 lag=lag,
                 rounding=rounding if rounding else self._rounding,
                 axis="columns",
@@ -196,10 +203,10 @@ class Ratios:
             return (
                 self._all_ratios_growth.loc[self._tickers[0]]
                 if growth
-                else all_ratios.loc[self._tickers[0]]
+                else self._all_ratios.loc[self._tickers[0]]
             )
 
-        return self._all_ratios_growth if growth else all_ratios
+        return self._all_ratios_growth if growth else self._all_ratios
 
     @handle_errors
     def collect_custom_ratios(
@@ -513,14 +520,19 @@ class Ratios:
             .dropna(axis="columns", how="all")
         )
 
-        # In case sorting accidentally fails, the index is sorted again
-        # to follow the same order as the financial statements
-        self._efficiency_ratios = self._efficiency_ratios.reindex(
-            self._income_statement.columns, axis=1
-        )
-
         self._efficiency_ratios = self._efficiency_ratios.round(
             rounding if rounding else self._rounding
+        )
+
+        # In case sorting accidentally fails, the index is sorted again
+        # to follow the same order as the financial statements
+        available_columns = [
+            column
+            for column in self._income_statement.columns
+            if column in self._efficiency_ratios
+        ]
+        self._efficiency_ratios = self._efficiency_ratios.reindex(
+            available_columns, axis=1
         )
 
         if growth:
@@ -1756,8 +1768,13 @@ class Ratios:
 
         # In case sorting accidentally fails, the index is sorted again
         # to follow the same order as the financial statements
+        available_columns = [
+            column
+            for column in self._income_statement.columns
+            if column in self._liquidity_ratios
+        ]
         self._liquidity_ratios = self._liquidity_ratios.reindex(
-            self._income_statement.columns, axis=1
+            available_columns, axis=1
         )
 
         if growth:
@@ -2397,8 +2414,13 @@ class Ratios:
 
         # In case sorting accidentally fails, the index is sorted again
         # to follow the same order as the financial statements
+        available_columns = [
+            column
+            for column in self._income_statement.columns
+            if column in self._profitability_ratios
+        ]
         self._profitability_ratios = self._profitability_ratios.reindex(
-            self._income_statement.columns, axis=1
+            available_columns, axis=1
         )
 
         if growth:
@@ -3859,9 +3881,12 @@ class Ratios:
 
         # In case sorting accidentally fails, the index is sorted again
         # to follow the same order as the financial statements
-        self._solvency_ratios = self._solvency_ratios.reindex(
-            self._income_statement.columns, axis=1
-        )
+        available_columns = [
+            column
+            for column in self._income_statement.columns
+            if column in self._solvency_ratios
+        ]
+        self._solvency_ratios = self._solvency_ratios.reindex(available_columns, axis=1)
 
         if growth:
             self._solvency_ratios_growth = calculate_growth(
@@ -4787,8 +4812,13 @@ class Ratios:
 
         # In case sorting accidentally fails, the index is sorted again
         # to follow the same order as the financial statements
+        available_columns = [
+            column
+            for column in self._income_statement.columns
+            if column in self._valuation_ratios
+        ]
         self._valuation_ratios = self._valuation_ratios.reindex(
-            self._income_statement.columns, axis=1
+            available_columns, axis=1
         )
 
         if growth:

@@ -11,10 +11,10 @@ from financetoolkit.risk import (
     cvar_model,
     evar_model,
     garch_model,
-    helpers,
     risk_model,
     var_model,
 )
+from financetoolkit.risk.helpers import determine_within_historical_data
 
 # pylint: disable=too-many-instance-attributes,too-few-public-methods,too-many-lines,too-many-locals
 # pylint: disable=too-many-boolean-expressions
@@ -30,13 +30,7 @@ class Risk:
     def __init__(
         self,
         tickers: str | list[str],
-        daily_historical: pd.DataFrame = pd.DataFrame(),
-        weekly_historical: pd.DataFrame = pd.DataFrame(),
-        monthly_historical: pd.DataFrame = pd.DataFrame(),
-        quarterly_historical: pd.DataFrame = pd.DataFrame(),
-        yearly_historical: pd.DataFrame = pd.DataFrame(),
-        risk_free_rate: pd.DataFrame = pd.DataFrame(),
-        intraday_historical: pd.DataFrame = pd.DataFrame(),
+        historical_data: pd.DataFrame = pd.DataFrame(),
         intraday_period: str | None = None,
         quarterly: bool = False,
         rounding: int | None = 4,
@@ -86,68 +80,28 @@ class Risk:
         | 2022   | -0.8026 | -1.0046 |
         | 2023   |  1.8549 |  1.8238 |
         """
-        if (
-            intraday_historical.empty
-            and daily_historical.empty
-            and weekly_historical.empty
-            and monthly_historical.empty
-            and quarterly_historical.empty
-            and yearly_historical.empty
-        ):
-            raise ValueError("At least one historical DataFrame is required.")
-
+        self._historical_data = historical_data
         self._tickers = tickers
-        self._intraday_historical = intraday_historical.fillna(0)
-        self._daily_historical = daily_historical.fillna(0)
-        self._weekly_historical = weekly_historical
-        self._monthly_historical = monthly_historical
-        self._quarterly_historical = quarterly_historical
-        self._yearly_historical = yearly_historical
-        self._risk_free_rate = risk_free_rate
         self._quarterly = quarterly
         self._rounding: int | None = rounding
 
-        # Return Calculations
-        if not self._intraday_historical.empty:
-            self._daily_returns = (
-                self._intraday_historical["Return"]
-                .groupby(pd.Grouper(freq="D"))
-                .apply(lambda x: x)
+        # Within Return Calculations
+        daily_historical_data = self._historical_data["daily"].copy().fillna(0)
+        intraday_historical_data = self._historical_data["intraday"].copy().fillna(0)
+
+        daily_historical_data.index = pd.DatetimeIndex(
+            daily_historical_data.to_timestamp().index
+        )
+
+        if not self._historical_data["intraday"].empty:
+            intraday_historical_data.index = pd.DatetimeIndex(
+                intraday_historical_data.to_timestamp().index
             )
 
-            if intraday_period in ["15min", "30min", "1hour"]:
-                self._intraday_returns = (
-                    self._intraday_historical["Return"]
-                    .groupby(pd.Grouper(freq="D"))
-                    .apply(lambda x: x)
-                )
-
-            else:
-                self._intraday_returns = (
-                    self._intraday_historical["Return"]
-                    .groupby(pd.Grouper(freq="H"))
-                    .apply(lambda x: x)
-                )
-
-        self._weekly_returns = (
-            self._daily_historical["Return"]
-            .groupby(pd.Grouper(freq="W"))
-            .apply(lambda x: x)
-        )
-        self._monthly_returns = (
-            self._daily_historical["Return"]
-            .groupby(pd.Grouper(freq="M"))
-            .apply(lambda x: x)
-        )
-        self._quarterly_returns = (
-            self._daily_historical["Return"]
-            .groupby(pd.Grouper(freq="Q"))
-            .apply(lambda x: x)
-        )
-        self._yearly_returns = (
-            self._daily_historical["Return"]
-            .groupby(pd.Grouper(freq="Y"))
-            .apply(lambda x: x)
+        self._within_historical_data = determine_within_historical_data(
+            daily_historical_data=daily_historical_data,
+            intraday_historical_data=intraday_historical_data,
+            intraday_period=intraday_period,
         )
 
     @handle_errors
@@ -222,7 +176,11 @@ class Risk:
         | 2023 | -0.0271 | -0.054  |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
-        returns = helpers.handle_return_data_periods(self, period, within_period)
+        returns = (
+            self._within_historical_data[period]["Return"]
+            if within_period
+            else self._historical_data[period]["Return"]
+        )
 
         if distribution == "historic":
             value_at_risk = var_model.get_var_historic(returns, alpha)
@@ -317,7 +275,11 @@ class Risk:
         | 2023 | -0.0397 | -0.0747 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
-        returns = helpers.handle_return_data_periods(self, period, within_period)
+        returns = (
+            self._within_historical_data[period]["Return"]
+            if within_period
+            else self._historical_data[period]["Return"]
+        )
 
         if distribution == "historic":
             conditional_value_at_risk = cvar_model.get_cvar_historic(returns, alpha)
@@ -413,7 +375,11 @@ class Risk:
         | 2023 | -0.0471 | -0.0793 | -0.0188 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
-        returns = helpers.handle_return_data_periods(self, period, within_period)
+        returns = (
+            self._within_historical_data[period]["Return"]
+            if within_period
+            else self._historical_data[period]["Return"]
+        )
 
         entropic_value_at_risk = evar_model.get_evar_gaussian(returns, alpha)
 
@@ -492,7 +458,11 @@ class Risk:
         | 2023 | -0.1964 | -0.2823 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
-        returns = helpers.handle_return_data_periods(self, period, within_period)
+        returns = (
+            self._within_historical_data[period]["Return"]
+            if within_period
+            else self._historical_data[period]["Return"]
+        )
 
         maximum_drawdown = risk_model.get_max_drawdown(returns)
 
@@ -572,7 +542,7 @@ class Risk:
         | 2023 | 0.0475 | 0.0815 |      0.0186 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
-        returns = helpers.handle_return_data_periods(self, period, True)
+        returns = self._within_historical_data[period]["Return"]
 
         ulcer_index = risk_model.get_ui(returns, rolling)
 
@@ -651,10 +621,15 @@ class Risk:
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
         returns = (
-            helpers.handle_return_data_periods(self, period, within_period)
+            (
+                self._within_historical_data[period]["Return"]
+                if within_period
+                else self._historical_data[period]["Return"]
+            )
             .dropna()
             .replace(0, 1e-100)
         )
+
         garch_sigma_2 = garch_model.get_garch(
             returns=returns,
             weights=None,
@@ -745,7 +720,11 @@ class Risk:
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
         returns = (
-            helpers.handle_return_data_periods(self, period, within_period)
+            (
+                self._within_historical_data[period]["Return"]
+                if within_period
+                else self._historical_data[period]["Return"]
+            )
             .dropna()
             .replace(0, 1e-100)
         )
@@ -757,11 +736,11 @@ class Risk:
         period_symbol = (
             "W"
             if period == "weekly"
-            else "M"
+            else "ME"
             if period == "monthly"
-            else "Q"
+            else "QE"
             if period == "quarterly"
-            else "Y"
+            else "YE"
         )
         period_index = pd.PeriodIndex(
             pd.date_range(
@@ -844,7 +823,11 @@ class Risk:
         | 2023 |  0.5252 |  0.0318 | -0.0972 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
-        returns = helpers.handle_return_data_periods(self, period, within_period)
+        returns = (
+            self._within_historical_data[period]["Return"]
+            if within_period
+            else self._historical_data[period]["Return"]
+        )
 
         skewness = risk_model.get_skewness(returns)
 
@@ -924,7 +907,11 @@ class Risk:
         | 2023 | 4.2908 |  4.4568 | 4.07   |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
-        returns = helpers.handle_return_data_periods(self, period, within_period)
+        returns = (
+            self._within_historical_data[period]["Return"]
+            if within_period
+            else self._historical_data[period]["Return"]
+        )
 
         kurtosis = risk_model.get_kurtosis(returns, fisher=fisher)
 

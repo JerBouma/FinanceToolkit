@@ -28,12 +28,7 @@ class Technicals:
     def __init__(
         self,
         tickers: str | list[str],
-        intraday_historical: pd.DataFrame = pd.DataFrame(),
-        daily_historical: pd.DataFrame = pd.DataFrame(),
-        weekly_historical: pd.DataFrame = pd.DataFrame(),
-        monthly_historical: pd.DataFrame = pd.DataFrame(),
-        quarterly_historical: pd.DataFrame = pd.DataFrame(),
-        yearly_historical: pd.DataFrame = pd.DataFrame(),
+        historical_data: pd.DataFrame,
         rounding: int | None = 4,
         start_date: str | None = None,
         end_date: str | None = None,
@@ -82,23 +77,8 @@ class Technicals:
         | 2023-08-24 | 66.4527 | 35.4399 |
         | 2023-08-25 | 63.4837 | 32.3323 |
         """
-        if (
-            intraday_historical.empty
-            and daily_historical.empty
-            and weekly_historical.empty
-            and monthly_historical.empty
-            and quarterly_historical.empty
-            and yearly_historical.empty
-        ):
-            raise ValueError("At least one historical DataFrame is required.")
-
         self._tickers = tickers
-        self._intraday_historical = intraday_historical
-        self._daily_historical = daily_historical
-        self._weekly_historical = weekly_historical
-        self._monthly_historical = monthly_historical
-        self._quarterly_historical = quarterly_historical
-        self._yearly_historical = yearly_historical
+        self._historical_data = historical_data
         self._rounding: int | None = rounding
         self._start_date: str | None = start_date
         self._end_date: str | None = end_date
@@ -153,6 +133,22 @@ class Technicals:
         toolkit.technicals.collect_all_indicators()
         ```
         """
+        if period not in [
+            "intraday",
+            "daily",
+            "weekly",
+            "monthly",
+            "quarterly",
+            "yearly",
+        ]:
+            raise ValueError(
+                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
+            )
+        if period == "intraday" and self._historical_data[period].empty:
+            raise ValueError(
+                "Please define the 'intraday_period' parameter when initializing the Toolkit."
+            )
+
         self._all_indicators = pd.concat(
             [
                 self.collect_breadth_indicators(
@@ -226,6 +222,22 @@ class Technicals:
         toolkit.technicals.collect_breadth_indicators()
         ```
         """
+        if period not in [
+            "intraday",
+            "daily",
+            "weekly",
+            "monthly",
+            "quarterly",
+            "yearly",
+        ]:
+            raise ValueError(
+                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
+            )
+        if period == "intraday" and self._historical_data[period].empty:
+            raise ValueError(
+                "Please define the 'intraday_period' parameter when initializing the Toolkit."
+            )
+
         breadth_indicators: dict = {}
 
         breadth_indicators["McClellan Oscillator"] = self.get_mcclellan_oscillator(
@@ -333,27 +345,25 @@ class Technicals:
         toolkit.technicals.get_mcclellan_oscillator()
         ```
         """
-        if period == "intraday":
-            if self._intraday_historical.empty:
-                raise ValueError(
-                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
-                )
-            historical_data = self._intraday_historical
-            close_column = "Close"
-        elif period == "daily":
-            historical_data = self._daily_historical
-        elif period == "weekly":
-            historical_data = self._weekly_historical
-        elif period == "monthly":
-            historical_data = self._monthly_historical
-        elif period == "quarterly":
-            historical_data = self._quarterly_historical
-        elif period == "yearly":
-            historical_data = self._yearly_historical
-        else:
+        if period not in [
+            "intraday",
+            "daily",
+            "weekly",
+            "monthly",
+            "quarterly",
+            "yearly",
+        ]:
             raise ValueError(
                 "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
             )
+        if period == "intraday":
+            if self._historical_data[period].empty:
+                raise ValueError(
+                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
+                )
+            close_column = "Close"
+
+        historical_data = self._historical_data[period]
 
         mcclellan_oscillator = pd.DataFrame(
             index=historical_data.loc[self._start_date : self._end_date].index
@@ -424,27 +434,25 @@ class Technicals:
         toolkit.technicals.get_advancers_decliners()
         ```
         """
-        if period == "intraday":
-            if self._intraday_historical.empty:
-                raise ValueError(
-                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
-                )
-            historical_data = self._intraday_historical
-            close_column = "Close"
-        elif period == "daily":
-            historical_data = self._daily_historical
-        elif period == "weekly":
-            historical_data = self._weekly_historical
-        elif period == "monthly":
-            historical_data = self._monthly_historical
-        elif period == "quarterly":
-            historical_data = self._quarterly_historical
-        elif period == "yearly":
-            historical_data = self._yearly_historical
-        else:
+        if period not in [
+            "intraday",
+            "daily",
+            "weekly",
+            "monthly",
+            "quarterly",
+            "yearly",
+        ]:
             raise ValueError(
                 "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
             )
+        if period == "intraday":
+            if self._historical_data[period].empty:
+                raise ValueError(
+                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
+                )
+            close_column = "Close"
+
+        historical_data = self._historical_data[period]
 
         advancers_decliners = breadth_model.get_advancers_decliners(
             historical_data[close_column],
@@ -510,27 +518,25 @@ class Technicals:
         toolkit.technicals.get_on_balance_volume()
         ```
         """
-        if period == "intraday":
-            if self._intraday_historical.empty:
-                raise ValueError(
-                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
-                )
-            historical_data = self._intraday_historical
-            close_column = "Close"
-        elif period == "daily":
-            historical_data = self._daily_historical
-        elif period == "weekly":
-            historical_data = self._weekly_historical
-        elif period == "monthly":
-            historical_data = self._monthly_historical
-        elif period == "quarterly":
-            historical_data = self._quarterly_historical
-        elif period == "yearly":
-            historical_data = self._yearly_historical
-        else:
+        if period not in [
+            "intraday",
+            "daily",
+            "weekly",
+            "monthly",
+            "quarterly",
+            "yearly",
+        ]:
             raise ValueError(
                 "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
             )
+        if period == "intraday":
+            if self._historical_data[period].empty:
+                raise ValueError(
+                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
+                )
+            close_column = "Close"
+
+        historical_data = self._historical_data[period]
 
         on_balance_volume = breadth_model.get_on_balance_volume(
             historical_data[close_column],
@@ -598,27 +604,25 @@ class Technicals:
         toolkit.technicals.get_accumulation_distribution_line()
         ```
         """
-        if period == "intraday":
-            if self._intraday_historical.empty:
-                raise ValueError(
-                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
-                )
-            historical_data = self._intraday_historical
-            close_column = "Close"
-        elif period == "daily":
-            historical_data = self._daily_historical
-        elif period == "weekly":
-            historical_data = self._weekly_historical
-        elif period == "monthly":
-            historical_data = self._monthly_historical
-        elif period == "quarterly":
-            historical_data = self._quarterly_historical
-        elif period == "yearly":
-            historical_data = self._yearly_historical
-        else:
+        if period not in [
+            "intraday",
+            "daily",
+            "weekly",
+            "monthly",
+            "quarterly",
+            "yearly",
+        ]:
             raise ValueError(
                 "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
             )
+        if period == "intraday":
+            if self._historical_data[period].empty:
+                raise ValueError(
+                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
+                )
+            close_column = "Close"
+
+        historical_data = self._historical_data[period]
 
         accumulation_distribution_line = pd.DataFrame(
             index=historical_data.loc[self._start_date : self._end_date].index
@@ -704,27 +708,25 @@ class Technicals:
         toolkit.technicals.get_chaikin_oscillator()
         ```
         """
-        if period == "intraday":
-            if self._intraday_historical.empty:
-                raise ValueError(
-                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
-                )
-            historical_data = self._intraday_historical
-            close_column = "Close"
-        elif period == "daily":
-            historical_data = self._daily_historical
-        elif period == "weekly":
-            historical_data = self._weekly_historical
-        elif period == "monthly":
-            historical_data = self._monthly_historical
-        elif period == "quarterly":
-            historical_data = self._quarterly_historical
-        elif period == "yearly":
-            historical_data = self._yearly_historical
-        else:
+        if period not in [
+            "intraday",
+            "daily",
+            "weekly",
+            "monthly",
+            "quarterly",
+            "yearly",
+        ]:
             raise ValueError(
                 "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
             )
+        if period == "intraday":
+            if self._historical_data[period].empty:
+                raise ValueError(
+                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
+                )
+            close_column = "Close"
+
+        historical_data = self._historical_data[period]
 
         chaikin_oscillator = breadth_model.get_chaikin_oscillator(
             historical_data["High"],
@@ -789,6 +791,22 @@ class Technicals:
         toolkit.technicals.collect_momentum_indicators()
         ```
         """
+        if period not in [
+            "intraday",
+            "daily",
+            "weekly",
+            "monthly",
+            "quarterly",
+            "yearly",
+        ]:
+            raise ValueError(
+                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
+            )
+        if period == "intraday" and self._historical_data[period].empty:
+            raise ValueError(
+                "Please define the 'intraday_period' parameter when initializing the Toolkit."
+            )
+
         momentum_indicators: dict = {}
 
         momentum_indicators["Money Flow Index"] = self.get_money_flow_index(
@@ -958,27 +976,25 @@ class Technicals:
         toolkit.technicals.get_money_flow_index()
         ```
         """
-        if period == "intraday":
-            if self._intraday_historical.empty:
-                raise ValueError(
-                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
-                )
-            historical_data = self._intraday_historical
-            close_column = "Close"
-        elif period == "daily":
-            historical_data = self._daily_historical
-        elif period == "weekly":
-            historical_data = self._weekly_historical
-        elif period == "monthly":
-            historical_data = self._monthly_historical
-        elif period == "quarterly":
-            historical_data = self._quarterly_historical
-        elif period == "yearly":
-            historical_data = self._yearly_historical
-        else:
+        if period not in [
+            "intraday",
+            "daily",
+            "weekly",
+            "monthly",
+            "quarterly",
+            "yearly",
+        ]:
             raise ValueError(
                 "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
             )
+        if period == "intraday":
+            if self._historical_data[period].empty:
+                raise ValueError(
+                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
+                )
+            close_column = "Close"
+
+        historical_data = self._historical_data[period]
 
         money_flow_index = momentum_model.get_money_flow_index(
             historical_data["High"],
@@ -1051,27 +1067,25 @@ class Technicals:
         toolkit.technicals.get_williams_percent_r()
         ```
         """
-        if period == "intraday":
-            if self._intraday_historical.empty:
-                raise ValueError(
-                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
-                )
-            historical_data = self._intraday_historical
-            close_column = "Close"
-        elif period == "daily":
-            historical_data = self._daily_historical
-        elif period == "weekly":
-            historical_data = self._weekly_historical
-        elif period == "monthly":
-            historical_data = self._monthly_historical
-        elif period == "quarterly":
-            historical_data = self._quarterly_historical
-        elif period == "yearly":
-            historical_data = self._yearly_historical
-        else:
+        if period not in [
+            "intraday",
+            "daily",
+            "weekly",
+            "monthly",
+            "quarterly",
+            "yearly",
+        ]:
             raise ValueError(
                 "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
             )
+        if period == "intraday":
+            if self._historical_data[period].empty:
+                raise ValueError(
+                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
+                )
+            close_column = "Close"
+
+        historical_data = self._historical_data[period]
 
         williams_percent_r = momentum_model.get_williams_percent_r(
             historical_data["High"],
@@ -1142,27 +1156,25 @@ class Technicals:
         toolkit.technicals.get_aroon_indicator()
         ```
         """
-        if period == "intraday":
-            if self._intraday_historical.empty:
-                raise ValueError(
-                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
-                )
-            historical_data = self._intraday_historical
-            close_column = "Close"
-        elif period == "daily":
-            historical_data = self._daily_historical
-        elif period == "weekly":
-            historical_data = self._weekly_historical
-        elif period == "monthly":
-            historical_data = self._monthly_historical
-        elif period == "quarterly":
-            historical_data = self._quarterly_historical
-        elif period == "yearly":
-            historical_data = self._yearly_historical
-        else:
+        if period not in [
+            "intraday",
+            "daily",
+            "weekly",
+            "monthly",
+            "quarterly",
+            "yearly",
+        ]:
             raise ValueError(
                 "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
             )
+        if period == "intraday":
+            if self._historical_data[period].empty:
+                raise ValueError(
+                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
+                )
+            close_column = "Close"
+
+        historical_data = self._historical_data[period]
 
         aroon_indicator_dict = {}
 
@@ -1245,27 +1257,25 @@ class Technicals:
         toolkit.technicals.get_commodity_channel_index()
         ```
         """
-        if period == "intraday":
-            if self._intraday_historical.empty:
-                raise ValueError(
-                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
-                )
-            historical_data = self._intraday_historical
-            close_column = "Close"
-        elif period == "daily":
-            historical_data = self._daily_historical
-        elif period == "weekly":
-            historical_data = self._weekly_historical
-        elif period == "monthly":
-            historical_data = self._monthly_historical
-        elif period == "quarterly":
-            historical_data = self._quarterly_historical
-        elif period == "yearly":
-            historical_data = self._yearly_historical
-        else:
+        if period not in [
+            "intraday",
+            "daily",
+            "weekly",
+            "monthly",
+            "quarterly",
+            "yearly",
+        ]:
             raise ValueError(
                 "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
             )
+        if period == "intraday":
+            if self._historical_data[period].empty:
+                raise ValueError(
+                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
+                )
+            close_column = "Close"
+
+        historical_data = self._historical_data[period]
 
         commodity_channel_index = pd.DataFrame(
             index=historical_data.loc[self._start_date : self._end_date].index
@@ -1347,27 +1357,25 @@ class Technicals:
         toolkit.technicals.get_relative_vigor_index()
         ```
         """
-        if period == "intraday":
-            if self._intraday_historical.empty:
-                raise ValueError(
-                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
-                )
-            historical_data = self._intraday_historical
-            close_column = "Close"
-        elif period == "daily":
-            historical_data = self._daily_historical
-        elif period == "weekly":
-            historical_data = self._weekly_historical
-        elif period == "monthly":
-            historical_data = self._monthly_historical
-        elif period == "quarterly":
-            historical_data = self._quarterly_historical
-        elif period == "yearly":
-            historical_data = self._yearly_historical
-        else:
+        if period not in [
+            "intraday",
+            "daily",
+            "weekly",
+            "monthly",
+            "quarterly",
+            "yearly",
+        ]:
             raise ValueError(
                 "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
             )
+        if period == "intraday":
+            if self._historical_data[period].empty:
+                raise ValueError(
+                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
+                )
+            close_column = "Close"
+
+        historical_data = self._historical_data[period]
 
         relative_vigor_index = momentum_model.get_relative_vigor_index(
             historical_data["Open"],
@@ -1438,27 +1446,25 @@ class Technicals:
         toolkit.technicals.get_force_index()
         ```
         """
-        if period == "intraday":
-            if self._intraday_historical.empty:
-                raise ValueError(
-                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
-                )
-            historical_data = self._intraday_historical
-            close_column = "Close"
-        elif period == "daily":
-            historical_data = self._daily_historical
-        elif period == "weekly":
-            historical_data = self._weekly_historical
-        elif period == "monthly":
-            historical_data = self._monthly_historical
-        elif period == "quarterly":
-            historical_data = self._quarterly_historical
-        elif period == "yearly":
-            historical_data = self._yearly_historical
-        else:
+        if period not in [
+            "intraday",
+            "daily",
+            "weekly",
+            "monthly",
+            "quarterly",
+            "yearly",
+        ]:
             raise ValueError(
                 "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
             )
+        if period == "intraday":
+            if self._historical_data[period].empty:
+                raise ValueError(
+                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
+                )
+            close_column = "Close"
+
+        historical_data = self._historical_data[period]
 
         force_index = momentum_model.get_force_index(
             historical_data[close_column],
@@ -1535,27 +1541,25 @@ class Technicals:
         toolkit.technicals.get_ultimate_oscillator()
         ```
         """
-        if period == "intraday":
-            if self._intraday_historical.empty:
-                raise ValueError(
-                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
-                )
-            historical_data = self._intraday_historical
-            close_column = "Close"
-        elif period == "daily":
-            historical_data = self._daily_historical
-        elif period == "weekly":
-            historical_data = self._weekly_historical
-        elif period == "monthly":
-            historical_data = self._monthly_historical
-        elif period == "quarterly":
-            historical_data = self._quarterly_historical
-        elif period == "yearly":
-            historical_data = self._yearly_historical
-        else:
+        if period not in [
+            "intraday",
+            "daily",
+            "weekly",
+            "monthly",
+            "quarterly",
+            "yearly",
+        ]:
             raise ValueError(
                 "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
             )
+        if period == "intraday":
+            if self._historical_data[period].empty:
+                raise ValueError(
+                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
+                )
+            close_column = "Close"
+
+        historical_data = self._historical_data[period]
 
         ultimate_oscillator = pd.DataFrame(
             index=historical_data.loc[self._start_date : self._end_date].index
@@ -1637,27 +1641,25 @@ class Technicals:
         toolkit.technicals.get_percentage_price_oscillator()
         ```
         """
-        if period == "intraday":
-            if self._intraday_historical.empty:
-                raise ValueError(
-                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
-                )
-            historical_data = self._intraday_historical
-            close_column = "Close"
-        elif period == "daily":
-            historical_data = self._daily_historical
-        elif period == "weekly":
-            historical_data = self._weekly_historical
-        elif period == "monthly":
-            historical_data = self._monthly_historical
-        elif period == "quarterly":
-            historical_data = self._quarterly_historical
-        elif period == "yearly":
-            historical_data = self._yearly_historical
-        else:
+        if period not in [
+            "intraday",
+            "daily",
+            "weekly",
+            "monthly",
+            "quarterly",
+            "yearly",
+        ]:
             raise ValueError(
                 "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
             )
+        if period == "intraday":
+            if self._historical_data[period].empty:
+                raise ValueError(
+                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
+                )
+            close_column = "Close"
+
+        historical_data = self._historical_data[period]
 
         percentage_price_oscillator = momentum_model.get_percentage_price_oscillator(
             historical_data[close_column],
@@ -1731,27 +1733,25 @@ class Technicals:
         toolkit.technicals.get_detrended_price_oscillator()
         ```
         """
-        if period == "intraday":
-            if self._intraday_historical.empty:
-                raise ValueError(
-                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
-                )
-            historical_data = self._intraday_historical
-            close_column = "Close"
-        elif period == "daily":
-            historical_data = self._daily_historical
-        elif period == "weekly":
-            historical_data = self._weekly_historical
-        elif period == "monthly":
-            historical_data = self._monthly_historical
-        elif period == "quarterly":
-            historical_data = self._quarterly_historical
-        elif period == "yearly":
-            historical_data = self._yearly_historical
-        else:
+        if period not in [
+            "intraday",
+            "daily",
+            "weekly",
+            "monthly",
+            "quarterly",
+            "yearly",
+        ]:
             raise ValueError(
                 "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
             )
+        if period == "intraday":
+            if self._historical_data[period].empty:
+                raise ValueError(
+                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
+                )
+            close_column = "Close"
+
+        historical_data = self._historical_data[period]
 
         detrended_price_oscillator = momentum_model.get_detrended_price_oscillator(
             historical_data[close_column], window
@@ -1823,27 +1823,25 @@ class Technicals:
         toolkit.technicals.get_average_directional_index()
         ```
         """
-        if period == "intraday":
-            if self._intraday_historical.empty:
-                raise ValueError(
-                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
-                )
-            historical_data = self._intraday_historical
-            close_column = "Close"
-        elif period == "daily":
-            historical_data = self._daily_historical
-        elif period == "weekly":
-            historical_data = self._weekly_historical
-        elif period == "monthly":
-            historical_data = self._monthly_historical
-        elif period == "quarterly":
-            historical_data = self._quarterly_historical
-        elif period == "yearly":
-            historical_data = self._yearly_historical
-        else:
+        if period not in [
+            "intraday",
+            "daily",
+            "weekly",
+            "monthly",
+            "quarterly",
+            "yearly",
+        ]:
             raise ValueError(
                 "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
             )
+        if period == "intraday":
+            if self._historical_data[period].empty:
+                raise ValueError(
+                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
+                )
+            close_column = "Close"
+
+        historical_data = self._historical_data[period]
 
         average_directional_index = pd.DataFrame(
             index=historical_data.loc[self._start_date : self._end_date].index
@@ -1925,27 +1923,25 @@ class Technicals:
         toolkit.technicals.get_chande_momentum_oscillator()
         ```
         """
-        if period == "intraday":
-            if self._intraday_historical.empty:
-                raise ValueError(
-                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
-                )
-            historical_data = self._intraday_historical
-            close_column = "Close"
-        elif period == "daily":
-            historical_data = self._daily_historical
-        elif period == "weekly":
-            historical_data = self._weekly_historical
-        elif period == "monthly":
-            historical_data = self._monthly_historical
-        elif period == "quarterly":
-            historical_data = self._quarterly_historical
-        elif period == "yearly":
-            historical_data = self._yearly_historical
-        else:
+        if period not in [
+            "intraday",
+            "daily",
+            "weekly",
+            "monthly",
+            "quarterly",
+            "yearly",
+        ]:
             raise ValueError(
                 "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
             )
+        if period == "intraday":
+            if self._historical_data[period].empty:
+                raise ValueError(
+                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
+                )
+            close_column = "Close"
+
+        historical_data = self._historical_data[period]
 
         chande_momentum_oscillator = momentum_model.get_chande_momentum_oscillator(
             historical_data[close_column], window
@@ -2024,27 +2020,25 @@ class Technicals:
         toolkit.technicals.get_ichimoku_cloud()
         ```
         """
-        if period == "intraday":
-            if self._intraday_historical.empty:
-                raise ValueError(
-                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
-                )
-            historical_data = self._intraday_historical
-            close_column = "Close"
-        elif period == "daily":
-            historical_data = self._daily_historical
-        elif period == "weekly":
-            historical_data = self._weekly_historical
-        elif period == "monthly":
-            historical_data = self._monthly_historical
-        elif period == "quarterly":
-            historical_data = self._quarterly_historical
-        elif period == "yearly":
-            historical_data = self._yearly_historical
-        else:
+        if period not in [
+            "intraday",
+            "daily",
+            "weekly",
+            "monthly",
+            "quarterly",
+            "yearly",
+        ]:
             raise ValueError(
                 "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
             )
+        if period == "intraday":
+            if self._historical_data[period].empty:
+                raise ValueError(
+                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
+                )
+            close_column = "Close"
+
+        historical_data = self._historical_data[period]
 
         ichimoku_cloud_dict = {}
 
@@ -2134,27 +2128,25 @@ class Technicals:
         toolkit.technicals.get_stochastic_oscillator()
         ```
         """
-        if period == "intraday":
-            if self._intraday_historical.empty:
-                raise ValueError(
-                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
-                )
-            historical_data = self._intraday_historical
-            close_column = "Close"
-        elif period == "daily":
-            historical_data = self._daily_historical
-        elif period == "weekly":
-            historical_data = self._weekly_historical
-        elif period == "monthly":
-            historical_data = self._monthly_historical
-        elif period == "quarterly":
-            historical_data = self._quarterly_historical
-        elif period == "yearly":
-            historical_data = self._yearly_historical
-        else:
+        if period not in [
+            "intraday",
+            "daily",
+            "weekly",
+            "monthly",
+            "quarterly",
+            "yearly",
+        ]:
             raise ValueError(
                 "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
             )
+        if period == "intraday":
+            if self._historical_data[period].empty:
+                raise ValueError(
+                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
+                )
+            close_column = "Close"
+
+        historical_data = self._historical_data[period]
 
         stochastic_oscillator_dict = {}
 
@@ -2251,27 +2243,25 @@ class Technicals:
         toolkit.technicals.get_moving_average_convergence_divergence()
         ```
         """
-        if period == "intraday":
-            if self._intraday_historical.empty:
-                raise ValueError(
-                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
-                )
-            historical_data = self._intraday_historical
-            close_column = "Close"
-        elif period == "daily":
-            historical_data = self._daily_historical
-        elif period == "weekly":
-            historical_data = self._weekly_historical
-        elif period == "monthly":
-            historical_data = self._monthly_historical
-        elif period == "quarterly":
-            historical_data = self._quarterly_historical
-        elif period == "yearly":
-            historical_data = self._yearly_historical
-        else:
+        if period not in [
+            "intraday",
+            "daily",
+            "weekly",
+            "monthly",
+            "quarterly",
+            "yearly",
+        ]:
             raise ValueError(
                 "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
             )
+        if period == "intraday":
+            if self._historical_data[period].empty:
+                raise ValueError(
+                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
+                )
+            close_column = "Close"
+
+        historical_data = self._historical_data[period]
 
         macd_dict = {}
 
@@ -2355,27 +2345,25 @@ class Technicals:
         toolkit.technicals.get_relative_strength_index()
         ```
         """
-        if period == "intraday":
-            if self._intraday_historical.empty:
-                raise ValueError(
-                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
-                )
-            historical_data = self._intraday_historical
-            close_column = "Close"
-        elif period == "daily":
-            historical_data = self._daily_historical
-        elif period == "weekly":
-            historical_data = self._weekly_historical
-        elif period == "monthly":
-            historical_data = self._monthly_historical
-        elif period == "quarterly":
-            historical_data = self._quarterly_historical
-        elif period == "yearly":
-            historical_data = self._yearly_historical
-        else:
+        if period not in [
+            "intraday",
+            "daily",
+            "weekly",
+            "monthly",
+            "quarterly",
+            "yearly",
+        ]:
             raise ValueError(
                 "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
             )
+        if period == "intraday":
+            if self._historical_data[period].empty:
+                raise ValueError(
+                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
+                )
+            close_column = "Close"
+
+        historical_data = self._historical_data[period]
 
         relative_strength_index = momentum_model.get_relative_strength_index(
             historical_data[close_column], window
@@ -2442,27 +2430,25 @@ class Technicals:
         toolkit.technicals.get_balance_of_power()
         ```
         """
-        if period == "intraday":
-            if self._intraday_historical.empty:
-                raise ValueError(
-                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
-                )
-            historical_data = self._intraday_historical
-            close_column = "Close"
-        elif period == "daily":
-            historical_data = self._daily_historical
-        elif period == "weekly":
-            historical_data = self._weekly_historical
-        elif period == "monthly":
-            historical_data = self._monthly_historical
-        elif period == "quarterly":
-            historical_data = self._quarterly_historical
-        elif period == "yearly":
-            historical_data = self._yearly_historical
-        else:
+        if period not in [
+            "intraday",
+            "daily",
+            "weekly",
+            "monthly",
+            "quarterly",
+            "yearly",
+        ]:
             raise ValueError(
                 "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
             )
+        if period == "intraday":
+            if self._historical_data[period].empty:
+                raise ValueError(
+                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
+                )
+            close_column = "Close"
+
+        historical_data = self._historical_data[period]
 
         balance_of_power = momentum_model.get_balance_of_power(
             historical_data["Open"],
@@ -2525,6 +2511,22 @@ class Technicals:
         toolkit.technicals.collect_overlap_indicators()
         ```
         """
+        if period not in [
+            "intraday",
+            "daily",
+            "weekly",
+            "monthly",
+            "quarterly",
+            "yearly",
+        ]:
+            raise ValueError(
+                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
+            )
+        if period == "intraday" and self._historical_data[period].empty:
+            raise ValueError(
+                "Please define the 'intraday_period' parameter when initializing the Toolkit."
+            )
+
         overlap_indicators: dict = {}
 
         overlap_indicators["Simple Moving Average (SMA)"] = self.get_moving_average(
@@ -2632,27 +2634,25 @@ class Technicals:
         toolkit.technicals.get_moving_average()
         ```
         """
-        if period == "intraday":
-            if self._intraday_historical.empty:
-                raise ValueError(
-                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
-                )
-            historical_data = self._intraday_historical
-            close_column = "Close"
-        elif period == "daily":
-            historical_data = self._daily_historical
-        elif period == "weekly":
-            historical_data = self._weekly_historical
-        elif period == "monthly":
-            historical_data = self._monthly_historical
-        elif period == "quarterly":
-            historical_data = self._quarterly_historical
-        elif period == "yearly":
-            historical_data = self._yearly_historical
-        else:
+        if period not in [
+            "intraday",
+            "daily",
+            "weekly",
+            "monthly",
+            "quarterly",
+            "yearly",
+        ]:
             raise ValueError(
                 "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
             )
+        if period == "intraday":
+            if self._historical_data[period].empty:
+                raise ValueError(
+                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
+                )
+            close_column = "Close"
+
+        historical_data = self._historical_data[period]
 
         moving_average = overlap_model.get_moving_average(
             historical_data[close_column], window
@@ -2722,27 +2722,25 @@ class Technicals:
         toolkit.technicals.get_exponential_moving_average()
         ```
         """
-        if period == "intraday":
-            if self._intraday_historical.empty:
-                raise ValueError(
-                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
-                )
-            historical_data = self._intraday_historical
-            close_column = "Close"
-        elif period == "daily":
-            historical_data = self._daily_historical
-        elif period == "weekly":
-            historical_data = self._weekly_historical
-        elif period == "monthly":
-            historical_data = self._monthly_historical
-        elif period == "quarterly":
-            historical_data = self._quarterly_historical
-        elif period == "yearly":
-            historical_data = self._yearly_historical
-        else:
+        if period not in [
+            "intraday",
+            "daily",
+            "weekly",
+            "monthly",
+            "quarterly",
+            "yearly",
+        ]:
             raise ValueError(
                 "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
             )
+        if period == "intraday":
+            if self._historical_data[period].empty:
+                raise ValueError(
+                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
+                )
+            close_column = "Close"
+
+        historical_data = self._historical_data[period]
 
         exponential_moving_average = overlap_model.get_exponential_moving_average(
             historical_data[close_column], window
@@ -2814,27 +2812,25 @@ class Technicals:
         toolkit.technicals.get_double_exponential_moving_average()
         ```
         """
-        if period == "intraday":
-            if self._intraday_historical.empty:
-                raise ValueError(
-                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
-                )
-            historical_data = self._intraday_historical
-            close_column = "Close"
-        elif period == "daily":
-            historical_data = self._daily_historical
-        elif period == "weekly":
-            historical_data = self._weekly_historical
-        elif period == "monthly":
-            historical_data = self._monthly_historical
-        elif period == "quarterly":
-            historical_data = self._quarterly_historical
-        elif period == "yearly":
-            historical_data = self._yearly_historical
-        else:
+        if period not in [
+            "intraday",
+            "daily",
+            "weekly",
+            "monthly",
+            "quarterly",
+            "yearly",
+        ]:
             raise ValueError(
                 "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
             )
+        if period == "intraday":
+            if self._historical_data[period].empty:
+                raise ValueError(
+                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
+                )
+            close_column = "Close"
+
+        historical_data = self._historical_data[period]
 
         double_exponential_moving_average = (
             overlap_model.get_double_exponential_moving_average(
@@ -2912,27 +2908,25 @@ class Technicals:
         toolkit.technicals.get_trix()
         ```
         """
-        if period == "intraday":
-            if self._intraday_historical.empty:
-                raise ValueError(
-                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
-                )
-            historical_data = self._intraday_historical
-            close_column = "Close"
-        elif period == "daily":
-            historical_data = self._daily_historical
-        elif period == "weekly":
-            historical_data = self._weekly_historical
-        elif period == "monthly":
-            historical_data = self._monthly_historical
-        elif period == "quarterly":
-            historical_data = self._quarterly_historical
-        elif period == "yearly":
-            historical_data = self._yearly_historical
-        else:
+        if period not in [
+            "intraday",
+            "daily",
+            "weekly",
+            "monthly",
+            "quarterly",
+            "yearly",
+        ]:
             raise ValueError(
                 "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
             )
+        if period == "intraday":
+            if self._historical_data[period].empty:
+                raise ValueError(
+                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
+                )
+            close_column = "Close"
+
+        historical_data = self._historical_data[period]
 
         trix = overlap_model.get_trix(historical_data[close_column], window).loc[
             self._start_date : self._end_date
@@ -3009,27 +3003,25 @@ class Technicals:
         toolkit.technicals.get_bollinger_bands()
         ```
         """
-        if period == "intraday":
-            if self._intraday_historical.empty:
-                raise ValueError(
-                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
-                )
-            historical_data = self._intraday_historical
-            close_column = "Close"
-        elif period == "daily":
-            historical_data = self._daily_historical
-        elif period == "weekly":
-            historical_data = self._weekly_historical
-        elif period == "monthly":
-            historical_data = self._monthly_historical
-        elif period == "quarterly":
-            historical_data = self._quarterly_historical
-        elif period == "yearly":
-            historical_data = self._yearly_historical
-        else:
+        if period not in [
+            "intraday",
+            "daily",
+            "weekly",
+            "monthly",
+            "quarterly",
+            "yearly",
+        ]:
             raise ValueError(
                 "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
             )
+        if period == "intraday":
+            if self._historical_data[period].empty:
+                raise ValueError(
+                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
+                )
+            close_column = "Close"
+
+        historical_data = self._historical_data[period]
 
         bollinger_bands_dict = {}
 
@@ -3109,27 +3101,25 @@ class Technicals:
         toolkit.technicals.get_triangular_moving_average()
         ```
         """
-        if period == "intraday":
-            if self._intraday_historical.empty:
-                raise ValueError(
-                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
-                )
-            historical_data = self._intraday_historical
-            close_column = "Close"
-        elif period == "daily":
-            historical_data = self._daily_historical
-        elif period == "weekly":
-            historical_data = self._weekly_historical
-        elif period == "monthly":
-            historical_data = self._monthly_historical
-        elif period == "quarterly":
-            historical_data = self._quarterly_historical
-        elif period == "yearly":
-            historical_data = self._yearly_historical
-        else:
+        if period not in [
+            "intraday",
+            "daily",
+            "weekly",
+            "monthly",
+            "quarterly",
+            "yearly",
+        ]:
             raise ValueError(
                 "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
             )
+        if period == "intraday":
+            if self._historical_data[period].empty:
+                raise ValueError(
+                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
+                )
+            close_column = "Close"
+
+        historical_data = self._historical_data[period]
 
         triangular_moving_average = overlap_model.get_triangular_moving_average(
             historical_data[close_column], window
@@ -3189,6 +3179,22 @@ class Technicals:
         toolkit.technicals.collect_volatility_indicators()
         ```
         """
+        if period not in [
+            "intraday",
+            "daily",
+            "weekly",
+            "monthly",
+            "quarterly",
+            "yearly",
+        ]:
+            raise ValueError(
+                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
+            )
+        if period == "intraday" and self._historical_data[period].empty:
+            raise ValueError(
+                "Please define the 'intraday_period' parameter when initializing the Toolkit."
+            )
+
         volatility_indicators: dict = {}
 
         bollinger_bands = self.get_bollinger_bands(
@@ -3297,27 +3303,25 @@ class Technicals:
         toolkit.technicals.get_true_range()
         ```
         """
-        if period == "intraday":
-            if self._intraday_historical.empty:
-                raise ValueError(
-                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
-                )
-            historical_data = self._intraday_historical
-            close_column = "Close"
-        elif period == "daily":
-            historical_data = self._daily_historical
-        elif period == "weekly":
-            historical_data = self._weekly_historical
-        elif period == "monthly":
-            historical_data = self._monthly_historical
-        elif period == "quarterly":
-            historical_data = self._quarterly_historical
-        elif period == "yearly":
-            historical_data = self._yearly_historical
-        else:
+        if period not in [
+            "intraday",
+            "daily",
+            "weekly",
+            "monthly",
+            "quarterly",
+            "yearly",
+        ]:
             raise ValueError(
                 "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
             )
+        if period == "intraday":
+            if self._historical_data[period].empty:
+                raise ValueError(
+                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
+                )
+            close_column = "Close"
+
+        historical_data = self._historical_data[period]
 
         true_range = pd.DataFrame(
             index=historical_data.loc[self._start_date : self._end_date].index
@@ -3399,27 +3403,25 @@ class Technicals:
         toolkit.technicals.get_average_true_range()
         ```
         """
-        if period == "intraday":
-            if self._intraday_historical.empty:
-                raise ValueError(
-                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
-                )
-            historical_data = self._intraday_historical
-            close_column = "Close"
-        elif period == "daily":
-            historical_data = self._daily_historical
-        elif period == "weekly":
-            historical_data = self._weekly_historical
-        elif period == "monthly":
-            historical_data = self._monthly_historical
-        elif period == "quarterly":
-            historical_data = self._quarterly_historical
-        elif period == "yearly":
-            historical_data = self._yearly_historical
-        else:
+        if period not in [
+            "intraday",
+            "daily",
+            "weekly",
+            "monthly",
+            "quarterly",
+            "yearly",
+        ]:
             raise ValueError(
                 "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
             )
+        if period == "intraday":
+            if self._historical_data[period].empty:
+                raise ValueError(
+                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
+                )
+            close_column = "Close"
+
+        historical_data = self._historical_data[period]
 
         average_true_range = pd.DataFrame(
             index=historical_data.loc[self._start_date : self._end_date].index
@@ -3506,27 +3508,25 @@ class Technicals:
         toolkit.technicals.get_keltner_channels()
         ```
         """
-        if period == "intraday":
-            if self._intraday_historical.empty:
-                raise ValueError(
-                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
-                )
-            historical_data = self._intraday_historical
-            close_column = "Close"
-        elif period == "daily":
-            historical_data = self._daily_historical
-        elif period == "weekly":
-            historical_data = self._weekly_historical
-        elif period == "monthly":
-            historical_data = self._monthly_historical
-        elif period == "quarterly":
-            historical_data = self._quarterly_historical
-        elif period == "yearly":
-            historical_data = self._yearly_historical
-        else:
+        if period not in [
+            "intraday",
+            "daily",
+            "weekly",
+            "monthly",
+            "quarterly",
+            "yearly",
+        ]:
             raise ValueError(
                 "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
             )
+        if period == "intraday":
+            if self._historical_data[period].empty:
+                raise ValueError(
+                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
+                )
+            close_column = "Close"
+
+        historical_data = self._historical_data[period]
 
         keltner_channels_dict = {}
 

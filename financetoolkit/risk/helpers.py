@@ -1,13 +1,32 @@
 """Risk Helpers Module"""
 __docformat__ = "google"
 
+import pandas as pd
 
 # pylint: disable=protected-access
 
+PERIOD_TRANSLATION: dict[str, str | dict[str, str]] = {
+    "intraday": {
+        "1min": "h",
+        "5min": "h",
+        "15min": "D",
+        "30min": "D",
+        "1hour": "D",
+    },
+    "weekly": "W",
+    "monthly": "M",
+    "quarterly": "Q",
+    "yearly": "Y",
+}
 
-def handle_return_data_periods(self, period: str, within_period: bool):
+
+def determine_within_historical_data(
+    daily_historical_data: pd.DataFrame,
+    intraday_historical_data: pd.DataFrame,
+    intraday_period: str | None,
+):
     """
-    This function is a specific function solely related to the Risk controller. It
+    This function is a specific function solely related to the Ratios controller. It
     therefore also requires a self instance to exists with specific parameters.
 
     Args:
@@ -21,45 +40,47 @@ def handle_return_data_periods(self, period: str, within_period: bool):
     Returns:
         pd.Series: the returns for the period.
     """
-    if period == "intraday":
-        if self._intraday_historical.empty:
-            raise ValueError(
-                "Please define the 'intraday_period' parameter when initializing the Toolkit."
-            )
-        return (
-            self._intraday_returns
-            if within_period
-            else self._intraday_historical["Return"]
-        )
-    if period == "daily":
-        if within_period:
-            if self._intraday_historical.empty:
-                raise ValueError(
-                    "Please define the 'daily_period' parameter when initializing the Toolkit."
-                )
-            return self._daily_returns
-        return self._daily_historical["Return"].fillna(0)
-    if period == "weekly":
-        return (
-            self._weekly_returns if within_period else self._weekly_historical["Return"]
-        )
-    if period == "monthly":
-        return (
-            self._monthly_returns
-            if within_period
-            else self._monthly_historical["Return"]
-        )
-    if period == "quarterly":
-        return (
-            self._quarterly_returns
-            if within_period
-            else self._quarterly_historical["Return"]
-        )
-    if period == "yearly":
-        return (
-            self._yearly_returns if within_period else self._yearly_historical["Return"]
+    within_historical_data = {}
+
+    for period, symbol in PERIOD_TRANSLATION.items():
+        if not intraday_period and period == "intraday":
+            continue
+
+        period_symbol = (
+            symbol[intraday_period] if period == "intraday" else symbol  # type: ignore
         )
 
-    raise ValueError(
-        "Period must be intraday, daily, monthly, weekly, quarterly, or yearly."
-    )
+        if not intraday_historical_data.empty and period in [
+            "intraday",
+            "daily",
+        ]:
+            within_historical_data[period] = (
+                intraday_historical_data.groupby(pd.Grouper(freq=period_symbol))
+                .apply(lambda x: x)
+                .dropna(how="all", axis=0)
+            )
+        else:
+            within_historical_data[period] = daily_historical_data.groupby(
+                pd.Grouper(
+                    freq=f"{period_symbol}E"
+                    if period_symbol in ["M", "Q", "Y"]
+                    else period_symbol
+                )
+            ).apply(lambda x: x)
+
+        within_historical_data[period].index = within_historical_data[
+            period
+        ].index.set_levels(
+            [
+                pd.PeriodIndex(
+                    within_historical_data[period].index.levels[0],
+                    freq=period_symbol,
+                ),
+                pd.PeriodIndex(
+                    within_historical_data[period].index.levels[1],
+                    freq="D" if period != "intraday" else "min",
+                ),
+            ],
+        )
+
+    return within_historical_data

@@ -1,22 +1,22 @@
 ,,,2020,2021,2022,2023
-AAPL,Days of Inventory Outstanding (DIO),Lag 1,,,0.032,0.0214
-AAPL,Days of Inventory Outstanding (DIO),Lag 2,,,,0.054
-AAPL,Days of Inventory Outstanding (DIO),Lag 3,,,,
-AAPL,Days of Sales Outstanding (DSO),Lag 1,,,0.1726,-0.1725
-AAPL,Days of Sales Outstanding (DSO),Lag 2,,,,-0.0296
-AAPL,Days of Sales Outstanding (DSO),Lag 3,,,,
-AAPL,Operating Cycle (CC),Lag 1,,,0.1487,-0.1428
-AAPL,Operating Cycle (CC),Lag 2,,,,-0.0153
-AAPL,Operating Cycle (CC),Lag 3,,,,
-AAPL,Days of Accounts Payable Outstanding (DPO),Lag 1,,,0.1669,0.1129
-AAPL,Days of Accounts Payable Outstanding (DPO),Lag 2,,,,0.2986
-AAPL,Days of Accounts Payable Outstanding (DPO),Lag 3,,,,
-AAPL,Cash Conversion Cycle (CCC),Lag 1,,,0.1998,0.5541
-AAPL,Cash Conversion Cycle (CCC),Lag 2,,,,0.8646
-AAPL,Cash Conversion Cycle (CCC),Lag 3,,,,
-AAPL,Cash Conversion Efficiency (CCE),Lag 1,,-0.0323,0.0893,-0.0691
-AAPL,Cash Conversion Efficiency (CCE),Lag 2,,,0.0541,0.0141
-AAPL,Cash Conversion Efficiency (CCE),Lag 3,,,,-0.0187
+AAPL,Days of Inventory Outstanding,Lag 1,,,0.032,0.0214
+AAPL,Days of Inventory Outstanding,Lag 2,,,,0.054
+AAPL,Days of Inventory Outstanding,Lag 3,,,,
+AAPL,Days of Sales Outstanding,Lag 1,,,0.1726,-0.1725
+AAPL,Days of Sales Outstanding,Lag 2,,,,-0.0296
+AAPL,Days of Sales Outstanding,Lag 3,,,,
+AAPL,Operating Cycle,Lag 1,,,0.1487,-0.1428
+AAPL,Operating Cycle,Lag 2,,,,-0.0153
+AAPL,Operating Cycle,Lag 3,,,,
+AAPL,Days of Accounts Payable Outstanding,Lag 1,,,0.1669,0.1129
+AAPL,Days of Accounts Payable Outstanding,Lag 2,,,,0.2986
+AAPL,Days of Accounts Payable Outstanding,Lag 3,,,,
+AAPL,Cash Conversion Cycle,Lag 1,,,0.1998,0.5541
+AAPL,Cash Conversion Cycle,Lag 2,,,,0.8646
+AAPL,Cash Conversion Cycle,Lag 3,,,,
+AAPL,Cash Conversion Efficiency,Lag 1,,-0.0323,0.0893,-0.0691
+AAPL,Cash Conversion Efficiency,Lag 2,,,0.0541,0.0141
+AAPL,Cash Conversion Efficiency,Lag 3,,,,-0.0187
 AAPL,Receivables Turnover,Lag 1,,,0.1727,-0.1725
 AAPL,Receivables Turnover,Lag 2,,,,-0.0296
 AAPL,Receivables Turnover,Lag 3,,,,
@@ -38,24 +38,24 @@ AAPL,Asset Turnover Ratio,Lag 3,,,,
 AAPL,Operating Ratio,Lag 1,,-0.0742,-0.0073,0.0067
 AAPL,Operating Ratio,Lag 2,,,-0.0809,-0.0006
 AAPL,Operating Ratio,Lag 3,,,,-0.0748
-MSFT,Days of Inventory Outstanding (DIO),Lag 1,,,0.1736,-0.0691
-MSFT,Days of Inventory Outstanding (DIO),Lag 2,,,,0.0925
-MSFT,Days of Inventory Outstanding (DIO),Lag 3,,,,
-MSFT,Days of Sales Outstanding (DSO),Lag 1,,,-0.004,0.0566
-MSFT,Days of Sales Outstanding (DSO),Lag 2,,,,0.0524
-MSFT,Days of Sales Outstanding (DSO),Lag 3,,,,
-MSFT,Operating Cycle (CC),Lag 1,,,0.0266,0.0319
-MSFT,Operating Cycle (CC),Lag 2,,,,0.0593
-MSFT,Operating Cycle (CC),Lag 3,,,,
-MSFT,Days of Accounts Payable Outstanding (DPO),Lag 1,,,0.0285,0.0329
-MSFT,Days of Accounts Payable Outstanding (DPO),Lag 2,,,,0.0623
-MSFT,Days of Accounts Payable Outstanding (DPO),Lag 3,,,,
-MSFT,Cash Conversion Cycle (CCC),Lag 1,,,0.0641,0.0508
-MSFT,Cash Conversion Cycle (CCC),Lag 2,,,,0.1182
-MSFT,Cash Conversion Cycle (CCC),Lag 3,,,,
-MSFT,Cash Conversion Efficiency (CCE),Lag 1,,0.0759,-0.0162,-0.0797
-MSFT,Cash Conversion Efficiency (CCE),Lag 2,,,0.0584,-0.0946
-MSFT,Cash Conversion Efficiency (CCE),Lag 3,,,,-0.0259
+MSFT,Days of Inventory Outstanding,Lag 1,,,0.1736,-0.0691
+MSFT,Days of Inventory Outstanding,Lag 2,,,,0.0925
+MSFT,Days of Inventory Outstanding,Lag 3,,,,
+MSFT,Days of Sales Outstanding,Lag 1,,,-0.004,0.0566
+MSFT,Days of Sales Outstanding,Lag 2,,,,0.0524
+MSFT,Days of Sales Outstanding,Lag 3,,,,
+MSFT,Operating Cycle,Lag 1,,,0.0266,0.0319
+MSFT,Operating Cycle,Lag 2,,,,0.0593
+MSFT,Operating Cycle,Lag 3,,,,
+MSFT,Days of Accounts Payable Outstanding,Lag 1,,,0.0285,0.0329
+MSFT,Days of Accounts Payable Outstanding,Lag 2,,,,0.0623
+MSFT,Days of Accounts Payable Outstanding,Lag 3,,,,
+MSFT,Cash Conversion Cycle,Lag 1,,,0.0641,0.0508
+MSFT,Cash Conversion Cycle,Lag 2,,,,0.1182
+MSFT,Cash Conversion Cycle,Lag 3,,,,
+MSFT,Cash Conversion Efficiency,Lag 1,,0.0759,-0.0162,-0.0797
+MSFT,Cash Conversion Efficiency,Lag 2,,,0.0584,-0.0946
+MSFT,Cash Conversion Efficiency,Lag 3,,,,-0.0259
 MSFT,Receivables Turnover,Lag 1,,,-0.0038,0.0564
 MSFT,Receivables Turnover,Lag 2,,,,0.0523
 MSFT,Receivables Turnover,Lag 3,,,,

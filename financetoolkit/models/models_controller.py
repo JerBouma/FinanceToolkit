@@ -89,9 +89,28 @@ class Models:
         self._historical_data: pd.DataFrame = period_historical
         self._risk_free_rate: pd.DataFrame = risk_free_rate
 
-        self._within_historical_data = self._daily_historical.groupby(
-            pd.Grouper(freq="Q" if quarterly else "Y")
+        daily_historical_datetime = self._daily_historical.copy()
+        daily_historical_datetime.index = pd.DatetimeIndex(
+            daily_historical_datetime.to_timestamp().index
+        )
+
+        self._within_historical_data = daily_historical_datetime.groupby(
+            pd.Grouper(freq="QE" if quarterly else "YE")
         ).apply(lambda x: x)
+
+        self._within_historical_data.index = (
+            self._within_historical_data.index.set_levels(
+                [
+                    pd.PeriodIndex(
+                        self._within_historical_data.index.levels[0],
+                        freq="Q" if quarterly else "Y",
+                    ),
+                    pd.PeriodIndex(
+                        self._within_historical_data.index.levels[1], freq="D"
+                    ),
+                ],
+            )
+        )
 
         # Initialization of Model Variables
         self._dupont_analysis: pd.DataFrame = pd.DataFrame()

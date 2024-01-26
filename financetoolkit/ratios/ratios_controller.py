@@ -467,22 +467,22 @@ class Ratios:
         efficiency_ratios: dict = {}
 
         efficiency_ratios[
-            "Days of Inventory Outstanding (DIO)"
+            "Days of Inventory Outstanding"
         ] = self.get_days_of_inventory_outstanding(days=days, trailing=trailing)
         efficiency_ratios[
-            "Days of Sales Outstanding (DSO)"
+            "Days of Sales Outstanding"
         ] = self.get_days_of_sales_outstanding(days=days, trailing=trailing)
-        efficiency_ratios["Operating Cycle (CC)"] = self.get_operating_cycle(
+        efficiency_ratios["Operating Cycle"] = self.get_operating_cycle(
             trailing=trailing
         )
         efficiency_ratios[
-            "Days of Accounts Payable Outstanding (DPO)"
+            "Days of Accounts Payable Outstanding"
         ] = self.get_days_of_accounts_payable_outstanding(days=days, trailing=trailing)
+        efficiency_ratios["Cash Conversion Cycle"] = self.get_cash_conversion_cycle(
+            days=days, trailing=trailing
+        )
         efficiency_ratios[
-            "Cash Conversion Cycle (CCC)"
-        ] = self.get_cash_conversion_cycle(days=days, trailing=trailing)
-        efficiency_ratios[
-            "Cash Conversion Efficiency (CCE)"
+            "Cash Conversion Efficiency"
         ] = self.get_cash_conversion_efficiency(trailing=trailing)
         efficiency_ratios["Receivables Turnover"] = self.get_receivables_turnover(
             trailing=trailing
@@ -517,11 +517,9 @@ class Ratios:
             rounding if rounding else self._rounding
         )
 
-        efficiency_ratios_df = self._efficiency_ratios
-
         if growth:
             self._efficiency_ratios_growth = calculate_growth(
-                efficiency_ratios_df,
+                self._efficiency_ratios,
                 lag=lag,
                 rounding=rounding if rounding else self._rounding,
                 axis="columns",
@@ -531,10 +529,10 @@ class Ratios:
             return (
                 self._efficiency_ratios_growth[self._tickers[0]]
                 if growth
-                else efficiency_ratios_df.loc[self._tickers[0]]
+                else self._efficiency_ratios.loc[self._tickers[0]]
             )
 
-        return self._efficiency_ratios_growth if growth else efficiency_ratios_df
+        return self._efficiency_ratios_growth if growth else self._efficiency_ratios
 
     @handle_errors
     def get_asset_turnover_ratio(
@@ -2343,17 +2341,17 @@ class Ratios:
         profitability_ratios["Effective Tax Rate"] = self.get_effective_tax_rate(
             trailing=trailing
         )
-        profitability_ratios["Return on Assets (ROA)"] = self.get_return_on_assets(
+        profitability_ratios["Return on Assets"] = self.get_return_on_assets(
             trailing=trailing
         )
-        profitability_ratios["Return on Equity (ROE)"] = self.get_return_on_equity(
+        profitability_ratios["Return on Equity"] = self.get_return_on_equity(
             trailing=trailing
         )
         profitability_ratios[
-            "Return on Invested Capital (ROIC)"
+            "Return on Invested Capital"
         ] = self.get_return_on_invested_capital(trailing=trailing)
         profitability_ratios[
-            "Return on Capital Employed (ROCE)"
+            "Return on Capital Employed"
         ] = self.get_return_on_capital_employed(trailing=trailing)
         profitability_ratios[
             "Return on Tangible Assets"
@@ -4675,24 +4673,24 @@ class Ratios:
         """
         valuation_ratios: dict = {}
 
-        valuation_ratios["Earnings per Share (EPS)"] = self.get_earnings_per_share(
+        valuation_ratios["Earnings per Share"] = self.get_earnings_per_share(
             include_dividends=include_dividends, diluted=diluted, trailing=trailing
         )
-        valuation_ratios["Revenue per Share (RPS)"] = self.get_revenue_per_share(
+        valuation_ratios["Revenue per Share"] = self.get_revenue_per_share(
             diluted=diluted, trailing=trailing
         )
-        valuation_ratios["Price-to-Earnings (PE)"] = self.get_price_earnings_ratio(
+        valuation_ratios["Price-to-Earnings"] = self.get_price_earnings_ratio(
             include_dividends=include_dividends, diluted=diluted, trailing=trailing
         )
         valuation_ratios[
-            "Price-to-Earnings-Growth (PEG)"
+            "Price-to-Earnings-Growth"
         ] = self.get_price_to_earnings_growth_ratio(
             include_dividends=include_dividends, diluted=diluted, trailing=trailing
         )
         valuation_ratios["Book Value per Share"] = self.get_book_value_per_share(
             diluted=diluted, trailing=trailing
         )
-        valuation_ratios["Price-to-Book (PB)"] = self.get_price_to_book_ratio(
+        valuation_ratios["Price-to-Book"] = self.get_price_to_book_ratio(
             diluted=diluted, trailing=trailing
         )
         valuation_ratios["Interest Debt per Share"] = self.get_interest_debt_per_share(
@@ -4721,11 +4719,11 @@ class Ratios:
         valuation_ratios["Weighted Dividend Yield"] = self.get_weighted_dividend_yield(
             diluted=diluted, trailing=trailing
         )
+        valuation_ratios["Price-to-Cash-Flow"] = self.get_price_to_cash_flow_ratio(
+            diluted=diluted, trailing=trailing
+        )
         valuation_ratios[
-            "Price-to-Cash-Flow (P/CF)"
-        ] = self.get_price_to_cash_flow_ratio(diluted=diluted, trailing=trailing)
-        valuation_ratios[
-            "Price-to-Free-Cash-Flow (P/FCF)"
+            "Price-to-Free-Cash-Flow"
         ] = self.get_price_to_free_cash_flow_ratio(diluted=diluted, trailing=trailing)
         valuation_ratios["Market Cap"] = self.get_market_cap(
             diluted=diluted, trailing=trailing

@@ -1,10 +1,10 @@
 ,,2021,2022,2023
-AAPL,Days of Inventory Outstanding (DIO),,9.2674,9.5081
-AAPL,Days of Sales Outstanding (DSO),,48.3506,47.614
-AAPL,Operating Cycle (CC),,57.6181,57.1221
-AAPL,Days of Accounts Payable Outstanding (DPO),,90.2774,102.4091
-AAPL,Cash Conversion Cycle (CCC),,-32.6593,-45.287
-AAPL,Cash Conversion Efficiency (CCE),0.2885,0.2976,0.2992
+AAPL,Days of Inventory Outstanding,,9.2674,9.5081
+AAPL,Days of Sales Outstanding,,48.3506,47.614
+AAPL,Operating Cycle,,57.6181,57.1221
+AAPL,Days of Accounts Payable Outstanding,,90.2774,102.4091
+AAPL,Cash Conversion Cycle,,-32.6593,-45.287
+AAPL,Cash Conversion Efficiency,0.2885,0.2976,0.2992
 AAPL,Receivables Turnover,,0.1325,0.1304
 AAPL,Inventory Turnover Ratio,40.0303,38.7899,37.9777
 AAPL,Accounts Payable Turnover Ratio,4.3887,3.7609,3.3795
@@ -12,12 +12,12 @@ AAPL,SGA-to-Revenue Ratio,0.0654,0.0619,0.0643
 AAPL,Fixed Asset Turnover,,1.832,1.8086
 AAPL,Asset Turnover Ratio,,1.1027,1.1037
 AAPL,Operating Ratio,0.7263,0.6995,0.6994
-MSFT,Days of Inventory Outstanding (DIO),,17.3299,17.9215
-MSFT,Days of Sales Outstanding (DSO),,75.8966,77.9738
-MSFT,Operating Cycle (CC),,93.2265,95.8953
-MSFT,Days of Accounts Payable Outstanding (DPO),,98.2636,101.1928
-MSFT,Cash Conversion Cycle (CCC),,-5.0371,-5.2975
-MSFT,Cash Conversion Efficiency (CCE),0.4417,0.4525,0.4306
+MSFT,Days of Inventory Outstanding,,17.3299,17.9215
+MSFT,Days of Sales Outstanding,,75.8966,77.9738
+MSFT,Operating Cycle,,93.2265,95.8953
+MSFT,Days of Accounts Payable Outstanding,,98.2636,101.1928
+MSFT,Cash Conversion Cycle,,-5.0371,-5.2975
+MSFT,Cash Conversion Efficiency,0.4417,0.4525,0.4306
 MSFT,Receivables Turnover,,0.2079,0.2136
 MSFT,Inventory Turnover Ratio,23.0554,19.6457,21.1032
 MSFT,Accounts Payable Turnover Ratio,3.7722,3.6677,3.551

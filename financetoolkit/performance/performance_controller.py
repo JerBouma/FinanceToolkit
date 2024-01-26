@@ -8,10 +8,9 @@ import pandas as pd
 from financetoolkit.helpers import calculate_growth
 from financetoolkit.performance import performance_model
 from financetoolkit.performance.helpers import (
+    determine_within_dataset,
+    determine_within_historical_data,
     handle_errors,
-    handle_fama_and_french_data,
-    handle_return_data_periods,
-    handle_risk_free_data_periods,
 )
 from financetoolkit.risk.risk_model import get_ui
 
@@ -85,19 +84,8 @@ class Performance:
         self._progress_bar: bool = progress_bar
 
         # Historical Data
-        self._intraday_historical_data = historical_data["intraday"]
-        self._daily_historical_data = historical_data["daily"]
-        self._weekly_historical_data = historical_data["weekly"]
-        self._monthly_historical_data = historical_data["monthly"]
-        self._quarterly_historical_data = historical_data["quarterly"]
-        self._yearly_historical_data = historical_data["yearly"]
-
-        # Risk Free Data
-        self._daily_risk_free_rate_data = risk_free_rate_data["daily"]
-        self._weekly_risk_free_rate_data = risk_free_rate_data["weekly"]
-        self._monthly_risk_free_rate_data = risk_free_rate_data["monthly"]
-        self._quarterly_risk_free_rate_data = risk_free_rate_data["quarterly"]
-        self._yearly_risk_free_rate_data = risk_free_rate_data["yearly"]
+        self._historical_data = historical_data
+        self._risk_free_rate_data = risk_free_rate_data
 
         # Fama and French
         self._fama_and_french_dataset: pd.DataFrame = pd.DataFrame()
@@ -107,55 +95,28 @@ class Performance:
         self._factor_correlations: pd.DataFrame = pd.DataFrame()
 
         # Within Period Calculations
-        if not self._intraday_historical_data.empty:
-            # Remove NaN values from the intraday historical data
-            self._daily_within_historical_data = (
-                self._intraday_historical_data.groupby(pd.Grouper(freq="D"))
-                .apply(lambda x: x)
-                .dropna(how="all", axis=0)
+        daily_historical_data = self._historical_data["daily"].copy()
+        intraday_historical_data = self._historical_data["intraday"].copy()
+
+        daily_historical_data.index = pd.DatetimeIndex(
+            daily_historical_data.to_timestamp().index
+        )
+
+        if not self._historical_data["intraday"].empty:
+            intraday_historical_data.index = pd.DatetimeIndex(
+                intraday_historical_data.to_timestamp().index
             )
 
-            if intraday_period in ["15min", "30min", "1hour"]:
-                self._intraday_within_historical_data = (
-                    self._intraday_historical_data.groupby(pd.Grouper(freq="D")).apply(
-                        lambda x: x
-                    )
-                )
-
-                # The intraday historical data should be equal to the daily historical data
-                self._intraday_historical_data = self._daily_historical_data
-            else:
-                self._intraday_within_historical_data = (
-                    self._intraday_historical_data.groupby(pd.Grouper(freq="H")).apply(
-                        lambda x: x
-                    )
-                )
-
-                # The intraday historical data is grouped by hour and the last value is taken
-                # and any NaN values (which occur because the market is closed) are dropped
-                self._intraday_historical_data = (
-                    self._intraday_historical_data.groupby(pd.Grouper(freq="H"))
-                    .last()
-                    .dropna()
-                )
-
-        self._weekly_within_historical_data = self._daily_historical_data.groupby(
-            pd.Grouper(freq="W")
-        ).apply(lambda x: x)
-        self._monthly_within_historical_data = self._daily_historical_data.groupby(
-            pd.Grouper(freq="M")
-        ).apply(lambda x: x)
-        self._quarterly_within_historical_data = self._daily_historical_data.groupby(
-            pd.Grouper(freq="Q")
-        ).apply(lambda x: x)
-        self._yearly_within_historical_data = self._daily_historical_data.groupby(
-            pd.Grouper(freq="Y")
-        ).apply(lambda x: x)
+        self._within_historical_data = determine_within_historical_data(
+            daily_historical_data=daily_historical_data,
+            intraday_historical_data=intraday_historical_data,
+            intraday_period=intraday_period,
+        )
 
         # Risk Free Rate of Intraday Historical Data is set to be equal to the last value of the daily risk free rate
         self._intraday_risk_free_rate_data = pd.Series(
-            self._daily_risk_free_rate_data.iloc[-1],
-            index=self._intraday_historical_data.index,
+            self._historical_data["daily"].iloc[-1],
+            index=self._historical_data["intraday"].index,
         )
 
     @handle_errors
@@ -218,9 +179,12 @@ class Performance:
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
-        historical_data = handle_return_data_periods(
-            self, period, within_period=not rolling
+        historical_data = (
+            self._within_historical_data[period]
+            if not rolling
+            else self._historical_data[period]
         )
+
         returns = historical_data.loc[:, "Return"][self._tickers]
         benchmark_returns = historical_data.loc[:, "Return"][self._benchmark_name]
 
@@ -315,16 +279,16 @@ class Performance:
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
-        historical_data = handle_return_data_periods(self, period, within_period=True)
+        historical_data = self._within_historical_data[period]
         returns = historical_data.loc[:, "Return"][self._tickers]
         benchmark_returns = historical_data.loc[:, "Return"][self._benchmark_name]
 
         beta = performance_model.get_beta(returns, benchmark_returns)
 
-        risk_free_rate = handle_risk_free_data_periods(self, period)
-        benchmark_returns = handle_return_data_periods(
-            self, period, within_period=False
-        ).loc[:, "Return"][self._benchmark_name]
+        risk_free_rate = self._risk_free_rate_data[period]
+        benchmark_returns = self._historical_data[period].loc[:, "Return"][
+            self._benchmark_name
+        ]
 
         capm = performance_model.get_capital_asset_pricing_model(
             risk_free_rate, beta, benchmark_returns
@@ -417,9 +381,7 @@ class Performance:
 
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
-        historical_data_within = handle_return_data_periods(
-            self, period, within_period=True
-        )
+        historical_data_within = self._within_historical_data[period]
         returns = historical_data_within.loc[:, "Return"][self._tickers]
 
         if self._fama_and_french_dataset.empty:
@@ -427,8 +389,8 @@ class Performance:
                 performance_model.obtain_fama_and_french_dataset()
             )
 
-        fama_and_french_period = handle_fama_and_french_data(
-            self._fama_and_french_dataset, period
+        fama_and_french_period = determine_within_dataset(
+            dataset=self._fama_and_french_dataset, period=period, correlation=False
         )
 
         merged_df = fama_and_french_period.merge(
@@ -471,7 +433,7 @@ class Performance:
         factor_order = factor_asset_correlations.index
 
         factor_asset_correlations = (
-            factor_asset_correlations.stack(level=1)
+            factor_asset_correlations.stack(level=1, future_stack=True)
             .unstack(level=0)
             .reindex(factor_order, level=1, axis=1)
             .reindex(self._tickers, level=0, axis=1)
@@ -551,7 +513,7 @@ class Performance:
                 performance_model.obtain_fama_and_french_dataset()
             )
 
-        fama_and_french_period = handle_fama_and_french_data(
+        fama_and_french_period = determine_within_dataset(
             self._fama_and_french_dataset[factors_to_calculate],
             period,
             correlation=True,
@@ -670,19 +632,17 @@ class Performance:
 
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
-        historical_data_within = handle_return_data_periods(
-            self, period, within_period=True
-        )
+        historical_data_within = self._within_historical_data[period]
         returns = historical_data_within.loc[:, "Return"][self._tickers]
 
-        historical_data = handle_return_data_periods(self, period, within_period=False)
+        historical_data = self._historical_data[period]
         returns_total = historical_data.loc[:, "Return"][self._tickers]
 
         self._fama_and_french_dataset = (
             performance_model.obtain_fama_and_french_dataset()
         )
-        fama_and_french_period = handle_fama_and_french_data(
-            self._fama_and_french_dataset, period
+        fama_and_french_period = determine_within_dataset(
+            self._fama_and_french_dataset, period, correlation=False
         )
 
         merged_df = fama_and_french_period.merge(
@@ -795,9 +755,9 @@ class Performance:
                     2
                 ).unique()
 
-                fama_and_french_model = fama_and_french_model.stack(sort=False).unstack(
-                    level=[2, 1, 3]
-                )
+                fama_and_french_model = fama_and_french_model.stack(
+                    future_stack=True
+                ).unstack(level=[2, 1, 3])
 
                 fama_and_french_model = (
                     fama_and_french_model.sort_index(axis=1)
@@ -908,7 +868,7 @@ class Performance:
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
-        historical_data = handle_return_data_periods(self, period, within_period=False)
+        historical_data = self._historical_data[period]
         returns = historical_data.loc[:, "Return"][self._tickers]
         benchmark_returns = historical_data.loc[:, "Return"][self._benchmark_name]
 
@@ -991,21 +951,20 @@ class Performance:
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
-        historical_data = handle_return_data_periods(self, period, within_period=True)
-        returns = historical_data.loc[:, "Return"][self._tickers]
-        benchmark_returns = historical_data.loc[:, "Return"][self._benchmark_name]
+        historical_within_data = self._within_historical_data[period]
+        returns = historical_within_data.loc[:, "Return"][self._tickers]
+        benchmark_returns = historical_within_data.loc[:, "Return"][
+            self._benchmark_name
+        ]
 
         beta = performance_model.get_beta(returns, benchmark_returns)
 
-        historical_period_data = handle_return_data_periods(
-            self, period, within_period=False
-        )
-        period_returns = historical_period_data.loc[:, "Return"][self._tickers]
+        historical_data = self._historical_data[period]
 
-        risk_free_rate = handle_risk_free_data_periods(self, period)
-        benchmark_returns = handle_return_data_periods(
-            self, period, within_period=False
-        ).loc[:, "Return"][self._benchmark_name]
+        period_returns = historical_data.loc[:, "Return"][self._tickers]
+
+        risk_free_rate = self._risk_free_rate_data[period]
+        benchmark_returns = historical_data.loc[:, "Return"][self._benchmark_name]
 
         jensens_alpha = performance_model.get_jensens_alpha(
             period_returns, risk_free_rate, beta, benchmark_returns
@@ -1077,17 +1036,18 @@ class Performance:
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
-        historical_data = handle_return_data_periods(self, period, within_period=True)
-        returns = historical_data.loc[:, "Return"][self._tickers]
-        benchmark_returns = historical_data.loc[:, "Return"][self._benchmark_name]
+        historical_within_data = self._within_historical_data[period]
+        returns = historical_within_data.loc[:, "Return"][self._tickers]
+        benchmark_returns = historical_within_data.loc[:, "Return"][
+            self._benchmark_name
+        ]
 
         beta = performance_model.get_beta(returns, benchmark_returns)
 
-        historical_period_data = handle_return_data_periods(
-            self, period, within_period=False
-        )
-        period_returns = historical_period_data.loc[:, "Return"][self._tickers]
-        risk_free_rate = handle_risk_free_data_periods(self, period)
+        historical_data = self._historical_data[period]
+
+        period_returns = historical_data.loc[:, "Return"][self._tickers]
+        risk_free_rate = self._risk_free_rate_data[period]
 
         treynor_ratio = performance_model.get_treynor_ratio(
             period_returns, risk_free_rate, beta
@@ -1174,8 +1134,10 @@ class Performance:
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
-        historical_data = handle_return_data_periods(
-            self, period, within_period=not rolling
+        historical_data = (
+            self._within_historical_data[period]
+            if not rolling
+            else self._historical_data[period]
         )
         excess_return = historical_data.loc[:, "Excess Return"][self._tickers]
 
@@ -1263,7 +1225,7 @@ class Performance:
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
-        historical_data = handle_return_data_periods(self, period, within_period=True)
+        historical_data = self._within_historical_data[period]
         excess_return = historical_data.loc[:, "Excess Return"][self._tickers]
 
         sortino_ratio = performance_model.get_sortino_ratio(excess_return)
@@ -1331,9 +1293,9 @@ class Performance:
         period = period if period else "quarterly" if self._quarterly else "yearly"
         return_column = "Return" if period == "intraday" else "Excess Return"
 
-        historical_data = handle_return_data_periods(self, period, True)
+        historical_data = self._within_historical_data[period]
         returns = historical_data.loc[:, "Return"][self._tickers]
-        historical_data_within_period = handle_return_data_periods(self, period, False)
+        historical_data_within_period = self._historical_data[period]
         excess_return = historical_data_within_period.loc[:, return_column][
             self._tickers
         ]
@@ -1410,14 +1372,12 @@ class Performance:
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
-        historical_period_data = handle_return_data_periods(
-            self, period, within_period=False
-        )
+        historical_period_data = self._historical_data[period]
         period_returns = historical_period_data.loc[:, "Return"][self._tickers]
         period_standard_deviation = historical_period_data.loc[:, "Volatility"][
             self._tickers
         ]
-        risk_free_rate = handle_risk_free_data_periods(self, period)
+        risk_free_rate = self._risk_free_rate_data[period]
 
         m2_ratio = performance_model.get_m2_ratio(
             period_returns, risk_free_rate, period_standard_deviation
@@ -1490,7 +1450,7 @@ class Performance:
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
-        historical_data = handle_return_data_periods(self, period, within_period=True)
+        historical_data = self._within_historical_data[period]
         returns = historical_data.loc[:, "Return"][self._tickers]
         benchmark_returns = historical_data.loc[:, "Return"][self._benchmark_name]
 
@@ -1574,7 +1534,7 @@ class Performance:
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
-        historical_data = handle_return_data_periods(self, period, within_period=True)
+        historical_data = self._within_historical_data[period]
         returns = historical_data.loc[:, "Return"][self._tickers]
         benchmark_returns = historical_data.loc[:, "Return"][self._benchmark_name]
 
@@ -1637,33 +1597,43 @@ class Performance:
         toolkit.performance.get_compound_growth_rate()
         ```
         """
-        prices = self._yearly_historical_data.loc[:, "Adj Close"].loc[
-            self._start_date : self._end_date
-        ]
+        prices = (
+            self._historical_data["yearly"]
+            .loc[:, "Adj Close"]
+            .loc[self._start_date : self._end_date]
+        )
 
         cagr = performance_model.get_compound_growth_rate(prices, len(prices))
 
-        prices = self._quarterly_historical_data.loc[:, "Adj Close"].loc[
-            self._start_date : self._end_date
-        ]
+        prices = (
+            self._historical_data["quarterly"]
+            .loc[:, "Adj Close"]
+            .loc[self._start_date : self._end_date]
+        )
 
         cqgr = performance_model.get_compound_growth_rate(prices, len(prices))
 
-        prices = self._monthly_historical_data.loc[:, "Adj Close"].loc[
-            self._start_date : self._end_date
-        ]
+        prices = (
+            self._historical_data["monthly"]
+            .loc[:, "Adj Close"]
+            .loc[self._start_date : self._end_date]
+        )
 
         cqgr = performance_model.get_compound_growth_rate(prices, len(prices))
 
-        prices = self._weekly_historical_data.loc[:, "Adj Close"].loc[
-            self._start_date : self._end_date
-        ]
+        prices = (
+            self._historical_data["weekly"]
+            .loc[:, "Adj Close"]
+            .loc[self._start_date : self._end_date]
+        )
 
         cwgr = performance_model.get_compound_growth_rate(prices, len(prices))
 
-        prices = self._daily_historical_data.loc[:, "Adj Close"].loc[
-            self._start_date : self._end_date
-        ]
+        prices = (
+            self._historical_data["daily"]
+            .loc[:, "Adj Close"]
+            .loc[self._start_date : self._end_date]
+        )
 
         cdgr = performance_model.get_compound_growth_rate(prices, len(prices))
 

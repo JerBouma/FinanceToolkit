@@ -28,31 +28,28 @@ def handle_errors(func):
             function_name = func.__name__
             print(
                 "There is an index name missing in the provided historical dataset. "
-                f"This is {e}. This is required for the function ({function_name}) "
-                "to run. Please fill this column to be able to calculate the ratios."
+                f"{e}"
             )
             return pd.Series(dtype="object")
         except ValueError as e:
             function_name = func.__name__
             print(
                 f"An error occurred while trying to run the function "
-                f"{function_name}. This is {e}. Usually this is due to incomplete "
-                "historical data. "
+                f"{function_name}. {e}"
             )
             return pd.Series(dtype="object")
         except AttributeError as e:
             function_name = func.__name__
             print(
                 f"An error occurred while trying to run the function "
-                f"{function_name}. This is {e}. Usually this is due to incomplete "
-                "historical data. "
+                f"{function_name}. {e}"
             )
             return pd.Series(dtype="object")
         except ZeroDivisionError as e:
             function_name = func.__name__
             print(
                 f"An error occurred while trying to run the function "
-                f"{function_name}. This is {e}. This is due to a division by zero."
+                f"{function_name}. {e}"
             )
             return pd.Series(dtype="object")
 

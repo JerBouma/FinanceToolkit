@@ -1,18 +1,18 @@
 ,,2021,2022,2023
-AAPL,Earnings per Share (EPS),4.4221,5.8596,6.1235
-AAPL,Revenue per Share (RPS),18.618,22.9023,24.1958
-AAPL,Price-to-Earnings (PE),39.7549,22.08,
-AAPL,Price-to-Earnings-Growth (PEG),,67.9176,
+AAPL,Earnings per Share,4.4221,5.8596,6.1235
+AAPL,Revenue per Share,18.618,22.9023,24.1958
+AAPL,Price-to-Earnings,39.7549,22.08,
+AAPL,Price-to-Earnings-Growth,,67.9176,
 AAPL,Book Value per Share,3.7341,3.4275,3.5104
-AAPL,Price-to-Book (PB),47.0796,37.7476,
+AAPL,Price-to-Book,47.0796,37.7476,
 AAPL,Interest Debt per Share,800241647.4205,756048315.6364,425588139.002
 AAPL,CAPEX per Share,-0.5348,-0.6566,-0.3332
 AAPL,Earnings Yield,0.0252,0.0453,
 AAPL,Dividend Payout Ratio,0.1877,0.1507,0.1518
 AAPL,Dividend Yield,0.0198,0.0137,
 AAPL,Weighted Dividend Yield,0.0047,0.0068,
-AAPL,Price-to-Cash-Flow (P/CF),16.0512,9.3384,
-AAPL,Price-to-Free-Cash-Flow (P/FCF),36.3539,21.0093,
+AAPL,Price-to-Cash-Flow,16.0512,9.3384,
+AAPL,Price-to-Free-Cash-Flow,36.3539,21.0093,
 AAPL,Market Cap,6046312781400.0,4294217682440.0,
 AAPL,Enterprise Value,6210511781400.0,4480419682440.0,
 AAPL,EV-to-Sales,9.6989,5.8942,
@@ -21,20 +21,20 @@ AAPL,EV-to-EBITDA,31.4334,17.8664,
 AAPL,EV-to-Operating-Cash-Flow,33.6227,19.8083,
 AAPL,Tangible Asset Value,128429000000.0,113762000000.0,112818000000.0
 AAPL,Net Current Asset Value,47676000000.0,-9222000000.0,-20319000000.0
-MSFT,Earnings per Share (EPS),6.9029,8.8466,9.6655
-MSFT,Revenue per Share (RPS),20.3455,24.1852,27.3238
-MSFT,Price-to-Earnings (PE),47.9422,26.9245,
-MSFT,Price-to-Earnings-Growth (PEG),,95.6126,
+MSFT,Earnings per Share,6.9029,8.8466,9.6655
+MSFT,Revenue per Share,20.3455,24.1852,27.3238
+MSFT,Price-to-Earnings,47.9422,26.9245,
+MSFT,Price-to-Earnings-Growth,,95.6126,
 MSFT,Book Value per Share,17.0226,20.3677,24.8311
-MSFT,Price-to-Book (PB),19.4412,11.6945,
+MSFT,Price-to-Book,19.4412,11.6945,
 MSFT,Interest Debt per Share,543993910.9193,517552264.7139,499141106.1162
 MSFT,CAPEX per Share,-2.3584,-2.9382,-3.4634
 MSFT,Earnings Yield,0.0209,0.0371,
 MSFT,Dividend Payout Ratio,0.2999,0.2586,0.2614
 MSFT,Dividend Yield,0.0133,0.0203,
 MSFT,Weighted Dividend Yield,0.0063,0.0096,
-MSFT,Price-to-Cash-Flow (P/CF),18.3225,10.8337,
-MSFT,Price-to-Free-Cash-Flow (P/FCF),49.929,29.7534,
+MSFT,Price-to-Cash-Flow,18.3225,10.8337,
+MSFT,Price-to-Free-Cash-Flow,49.929,29.7534,
 MSFT,Market Cap,5060403540000.0,3608102120000.0,
 MSFT,Enterprise Value,5171376540000.0,3708992120000.0,
 MSFT,EV-to-Sales,16.6227,10.124,

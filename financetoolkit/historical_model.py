@@ -91,6 +91,21 @@ def get_historical_data(
         The index of the DataFrame is the date of the data and the columns are a multi-index
         with the ticker symbol(s) as the first level and the OHLC data as the second level.
     """
+    empty_historical_data = pd.DataFrame(
+        data=0,
+        index=pd.PeriodIndex(pd.date_range(start, end), freq="D"),
+        columns=[
+            "Open",
+            "High",
+            "Low",
+            "Close",
+            "Adj Close",
+            "Volume",
+            "Return",
+            "Volatility",
+            "Cumulative Return",
+        ],
+    )
 
     def worker(ticker, historical_data_dict):
         historical_data = pd.DataFrame()
@@ -156,6 +171,7 @@ def get_historical_data(
 
         if historical_data.empty:
             no_data.append(ticker)
+            historical_data_dict[ticker] = empty_historical_data
         if not historical_data.empty:
             historical_data_dict[ticker] = historical_data
 
@@ -214,21 +230,7 @@ def get_historical_data(
         # even if no data is found. This is mostly applicable when nothing
         # can be found at all.
         for ticker in tickers:
-            historical_data_dict[ticker] = pd.DataFrame(
-                data=0,
-                index=pd.PeriodIndex(pd.date_range(start, end), freq="D"),
-                columns=[
-                    "Open",
-                    "High",
-                    "Low",
-                    "Close",
-                    "Adj Close",
-                    "Volume",
-                    "Return",
-                    "Volatility",
-                    "Cumulative Return",
-                ],
-            )
+            historical_data_dict[ticker] = empty_historical_data
 
     reorder_tickers = [ticker for ticker in tickers if ticker in historical_data_dict]
 
@@ -239,7 +241,10 @@ def get_historical_data(
         historical_data["Dividends"] = historical_data["Dividends"].fillna(0)
 
     if fill_nan:
-        historical_data = historical_data.ffill()
+        # Interpolation is done when there are NaN values in the DataFrame
+        # while technically, that specific date doesn't have a value, it is
+        # smoothens the result with limited impact on any metric.
+        historical_data = historical_data.interpolate(limit_area="inside")
 
     if rounding:
         historical_data = historical_data.round(rounding)
@@ -513,6 +518,10 @@ def get_historical_data_from_yahoo_finance(
 
             historical_data["Dividends"] = dividends
 
+            historical_data["Dividends"] = historical_data["Dividends"].infer_objects(
+                copy=False
+            )
+
             historical_data["Dividends"] = historical_data["Dividends"].fillna(0)
         except (HTTPError, URLError, RemoteDisconnected):
             historical_data["Dividends"] = 0
@@ -616,7 +625,7 @@ def get_intraday_data_from_financial_modeling_prep(
         return pd.DataFrame()
 
     if interval in ["1min", "5min", "15min", "30min"]:
-        frequency = "T"
+        frequency = "min"
     elif interval in ["1hour", "4hour"]:
         frequency = "H"
     else:
@@ -981,40 +990,34 @@ def get_historical_statistics_from_financial_modeling_prep(
         pd.Series: A Sries containing the statistics for the given ticker.
     """
     profile, _ = fundamentals_model.get_profile(
-        tickers=ticker, api_key=api_key, progress_bar=False
+        tickers=ticker, api_key=api_key, progress_bar=False, report_missing=False
+    )
+
+    profile_df = pd.Series(
+        [np.nan] * 9,
+        index=[
+            "Currency",
+            "Symbol",
+            "Exchange Name",
+            "Instrument Type",
+            "First Trade Date",
+            "Regular Market Time",
+            "GMT Offset",
+            "Timezone",
+            "Exchange Timezone Name",
+        ],
+        dtype=object,
     )
 
     if not profile.empty:
         profile = profile.loc[:, ticker]
 
-        profile_df = pd.Series(
-            [
-                profile.loc["Currency"],
-                profile.loc["Symbol"],
-                profile.loc["Exchange Short Name"],
-                np.nan,
-                profile.loc["IPO Date"],
-                np.nan,
-                np.nan,
-                np.nan,
-                np.nan,
-            ],
-            index=[
-                "Currency",
-                "Symbol",
-                "Exchange Name",
-                "Instrument Type",
-                "First Trade Date",
-                "Regular Market Time",
-                "GMT Offset",
-                "Timezone",
-                "Exchange Timezone Name",
-            ],
-        )
+        profile_df.loc["Currency"] = profile.loc["Currency"]
+        profile_df.loc["Symbol"] = profile.loc["Symbol"]
+        profile_df.loc["Exchange Name"] = profile.loc["Exchange Short Name"]
+        profile_df.loc["IPO Date"] = profile.loc["IPO Date"]
 
-        return profile_df
-
-    return pd.DataFrame()
+    return profile_df
 
 
 def get_historical_statistics_from_yahoo_finance(ticker: str) -> pd.Series:

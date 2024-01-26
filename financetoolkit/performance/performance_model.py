@@ -112,7 +112,9 @@ def get_rolling_beta(
         pd.Series | pd.DataFrame: Rolling beta values.
     """
     returns = pd.DataFrame(returns) if isinstance(returns, pd.Series) else returns
-    rolling_cov = pd.DataFrame(columns=returns.columns, dtype=np.float64)
+    rolling_cov = pd.DataFrame(
+        index=returns.index, columns=returns.columns, dtype=np.float64
+    )
 
     for column in returns.columns:
         rolling_cov.loc[:, column] = get_covariance(
@@ -160,7 +162,7 @@ def get_capital_asset_pricing_model(
     """
     if isinstance(beta, pd.DataFrame):
         capital_asset_pricing_model = pd.DataFrame(
-            columns=beta.columns, dtype=np.float64
+            index=beta.index, columns=beta.columns, dtype=np.float64
         )
         for column in capital_asset_pricing_model.columns:
             capital_asset_pricing_model.loc[:, column] = risk_free_rate + beta[
@@ -376,7 +378,9 @@ def get_alpha(
         pd.Series: A Series of Sharpe ratios with time as index and assets as columns.
     """
     if isinstance(asset_returns, pd.DataFrame):
-        alpha = pd.DataFrame(columns=asset_returns.columns, dtype=np.float64)
+        alpha = pd.DataFrame(
+            index=asset_returns.index, columns=asset_returns.columns, dtype=np.float64
+        )
         for column in alpha.columns:
             alpha.loc[:, column] = asset_returns[column] - benchmark_returns
     if isinstance(asset_returns, (pd.Series | float)):
@@ -401,7 +405,9 @@ def get_jensens_alpha(
         pd.Series: A Series of Sharpe ratios with time as index and assets as columns.
     """
     if isinstance(beta, pd.DataFrame) and isinstance(asset_returns, pd.DataFrame):
-        jensens_alpha = pd.DataFrame(columns=beta.columns, dtype=np.float64)
+        jensens_alpha = pd.DataFrame(
+            index=beta.index, columns=beta.columns, dtype=np.float64
+        )
         for column in jensens_alpha.columns:
             jensens_alpha.loc[:, column] = asset_returns[column] - (
                 risk_free_rate + beta[column] * (benchmark_returns - risk_free_rate)
@@ -437,7 +443,9 @@ def get_treynor_ratio(
         pd.Series: A Series of Treynor ratios with time as index and assets as columns.
     """
     if isinstance(beta, pd.DataFrame) and isinstance(asset_returns, pd.DataFrame):
-        treynor_ratio = pd.DataFrame(columns=beta.columns, dtype=np.float64)
+        treynor_ratio = pd.DataFrame(
+            index=beta.index, columns=beta.columns, dtype=np.float64
+        )
         for column in treynor_ratio.columns:
             treynor_ratio.loc[:, column] = (
                 asset_returns[column] - risk_free_rate
@@ -571,7 +579,9 @@ def get_m2_ratio(
     if isinstance(asset_returns, pd.DataFrame) and isinstance(
         asset_standard_deviation, pd.DataFrame
     ):
-        m2_ratio = pd.DataFrame(columns=asset_returns.columns, dtype=np.float64)
+        m2_ratio = pd.DataFrame(
+            index=asset_returns.index, columns=asset_returns.columns, dtype=np.float64
+        )
         for column in m2_ratio.columns:
             m2_ratio.loc[:, column] = (
                 asset_returns[column] - risk_free_rate
@@ -610,7 +620,9 @@ def get_tracking_error(
 
             return tracking_error
 
-        tracking_error = pd.DataFrame(columns=asset_returns.columns, dtype=np.float64)
+        tracking_error = pd.DataFrame(
+            index=asset_returns.index, columns=asset_returns.columns, dtype=np.float64
+        )
         for column in tracking_error.columns:
             tracking_error.loc[:, column] = (asset_returns - benchmark_returns).std()
 
@@ -645,7 +657,7 @@ def get_information_ratio(
             return information_ratio
 
         information_ratio = pd.DataFrame(
-            columns=asset_returns.columns, dtype=np.float64
+            index=asset_returns.index, columns=asset_returns.columns, dtype=np.float64
         )
         for column in information_ratio.columns:
             difference = asset_returns[column] - benchmark_returns

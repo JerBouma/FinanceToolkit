@@ -5,10 +5,10 @@ AAPL,Net Profit Margin,,0.2375,0.2558,0.2531
 AAPL,Interest Coverage Ratio,,35.8059,44.9738,83.5353
 AAPL,Income Before Tax Profit Margin,,0.2753,0.3004,0.2994
 AAPL,Effective Tax Rate,,0.1373,0.1482,0.1548
-AAPL,Return on Assets (ROA),,,0.2821,0.2793
-AAPL,Return on Equity (ROE),,,1.606,1.7371
-AAPL,Return on Invested Capital (ROIC),,,0.6181,0.6544
-AAPL,Return on Capital Employed (ROCE),,0.4095,0.5512,0.5806
+AAPL,Return on Assets,,,0.2821,0.2793
+AAPL,Return on Equity,,,1.606,1.7371
+AAPL,Return on Invested Capital,,,0.6181,0.6544
+AAPL,Return on Capital Employed,,0.4095,0.5512,0.5806
 AAPL,Return on Tangible Assets,,,0.1547,0.1519
 AAPL,Income Quality Ratio,,1.2145,1.163,1.1824
 AAPL,Net Income per EBT,,0.8627,0.8518,0.8452
@@ -21,10 +21,10 @@ MSFT,Net Profit Margin,,0.3393,0.3658,0.3537
 MSFT,Interest Coverage Ratio,,29.8475,40.6997,49.6718
 MSFT,Income Before Tax Profit Margin,,0.399,0.4226,0.4218
 MSFT,Effective Tax Rate,,0.1497,0.1344,0.1614
-MSFT,Return on Assets (ROA),,,0.201,0.1967
-MSFT,Return on Equity (ROE),,,0.4712,0.426
-MSFT,Return on Invested Capital (ROIC),,,0.4032,0.393
-MSFT,Return on Capital Employed (ROCE),,0.2722,0.3093,0.3065
+MSFT,Return on Assets,,,0.201,0.1967
+MSFT,Return on Equity,,,0.4712,0.426
+MSFT,Return on Invested Capital,,,0.4032,0.393
+MSFT,Return on Capital Employed,,0.2722,0.3093,0.3065
 MSFT,Return on Tangible Assets,,,0.1257,0.1257
 MSFT,Income Quality Ratio,,1.3019,1.237,1.2172
 MSFT,Net Income per EBT,,0.8503,0.8656,0.8386

@@ -7,8 +7,26 @@ import pandas as pd
 
 # pylint: disable=protected-access
 
+PERIOD_TRANSLATION: dict[str, str | dict[str, str]] = {
+    "intraday": {
+        "1min": "h",
+        "5min": "h",
+        "15min": "D",
+        "30min": "D",
+        "1hour": "D",
+    },
+    "weekly": "W",
+    "monthly": "M",
+    "quarterly": "Q",
+    "yearly": "Y",
+}
 
-def handle_return_data_periods(self, period: str, within_period: bool):
+
+def determine_within_historical_data(
+    daily_historical_data: pd.DataFrame,
+    intraday_historical_data: pd.DataFrame,
+    intraday_period: str | None,
+):
     """
     This function is a specific function solely related to the Ratios controller. It
     therefore also requires a self instance to exists with specific parameters.
@@ -24,53 +42,55 @@ def handle_return_data_periods(self, period: str, within_period: bool):
     Returns:
         pd.Series: the returns for the period.
     """
-    if period == "intraday":
-        if self._intraday_historical_data.empty:
-            raise ValueError(
-                "Please define the 'intraday_period' parameter when initializing the Toolkit."
+    within_historical_data = {}
+
+    for period, symbol in PERIOD_TRANSLATION.items():
+        if not intraday_period and period == "intraday":
+            continue
+
+        period_symbol = (
+            symbol[intraday_period] if period == "intraday" else symbol  # type: ignore
+        )
+
+        if not intraday_historical_data.empty and period in [
+            "intraday",
+            "daily",
+        ]:
+            within_historical_data[period] = (
+                intraday_historical_data.groupby(pd.Grouper(freq=period_symbol))
+                .apply(lambda x: x)
+                .dropna(how="all", axis=0)
             )
-        return (
-            self._intraday_within_historical_data
-            if within_period
-            else self._intraday_historical_data
-        )
-    if period == "daily":
-        if within_period:
-            if self._intraday_historical_data.empty:
-                raise ValueError(
-                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
+        else:
+            within_historical_data[period] = daily_historical_data.groupby(
+                pd.Grouper(
+                    freq=f"{period_symbol}E"
+                    if period_symbol in ["M", "Q", "Y"]
+                    else period_symbol
                 )
-            return self._daily_within_historical_data
-        return self._daily_historical_data
-    if period == "weekly":
-        return (
-            self._weekly_within_historical_data
-            if within_period
-            else self._weekly_historical_data
-        )
-    if period == "monthly":
-        return (
-            self._monthly_within_historical_data
-            if within_period
-            else self._monthly_historical_data
-        )
-    if period == "quarterly":
-        return (
-            self._quarterly_within_historical_data
-            if within_period
-            else self._quarterly_historical_data
-        )
-    if period == "yearly":
-        return (
-            self._yearly_within_historical_data
-            if within_period
-            else self._yearly_historical_data
+            ).apply(lambda x: x)
+
+        within_historical_data[period].index = within_historical_data[
+            period
+        ].index.set_levels(
+            [
+                pd.PeriodIndex(
+                    within_historical_data[period].index.levels[0],
+                    freq=period_symbol,
+                ),
+                pd.PeriodIndex(
+                    within_historical_data[period].index.levels[1],
+                    freq="D" if period != "intraday" else "min",
+                ),
+            ],
         )
 
-    raise ValueError("Period must be weekly, monthly, quarterly, or yearly.")
+    return within_historical_data
 
 
-def handle_risk_free_data_periods(self, period: str):
+def determine_within_dataset(
+    dataset: pd.DataFrame, period: str, correlation: bool = False
+):
     """
     This function is a specific function solely related to the Ratios controller. It
     therefore also requires a self instance to exists with specific parameters.
@@ -86,60 +106,31 @@ def handle_risk_free_data_periods(self, period: str):
     Returns:
         pd.Series: the returns for the period.
     """
-    if period == "intraday":
-        return self._intraday_risk_free_rate_data
-    if period == "daily":
-        return self._daily_risk_free_rate_data
-    if period == "weekly":
-        return self._weekly_risk_free_rate_data
-    if period == "monthly":
-        return self._monthly_risk_free_rate_data
-    if period == "quarterly":
-        return self._quarterly_risk_free_rate_data
-    if period == "yearly":
-        return self._yearly_risk_free_rate_data
+    dataset_new = dataset.copy()
+    dataset_new.index = pd.DatetimeIndex(dataset_new.to_timestamp().index)
+    period_symbol = PERIOD_TRANSLATION[period]
 
-    raise ValueError("Period must be daily, monthly, weekly, quarterly, or yearly.")
-
-
-def handle_fama_and_french_data(dataset, period: str, correlation: bool = False):
-    """
-    This function is a specific function solely related to the Ratios controller. It
-    therefore also requires a self instance to exists with specific parameters.
-
-    Args:
-        period (str): the period to return the data for.
-        within_period (bool): whether to return the data within the period or the
-        entire period.
-
-    Raises:
-        ValueError: if the period is not daily, monthly, weekly, quarterly, or yearly.
-
-    Returns:
-        pd.Series: the returns for the period.
-    """
-    if period == "intraday":
-        raise ValueError("Fama and French data is not available for intraday data.")
-    if period == "daily":
-        raise ValueError("Fama and French data is not available for daily data.")
-    if period == "weekly":
-        return dataset.groupby(pd.Grouper(freq="W")).apply(
-            lambda x: x.corr() if correlation else x
+    within_historical_data = dataset_new.groupby(
+        pd.Grouper(
+            freq=f"{period_symbol}E"
+            if period_symbol in ["M", "Q", "Y"]
+            else period_symbol
         )
-    if period == "monthly":
-        return dataset.groupby(pd.Grouper(freq="M")).apply(
-            lambda x: x.corr() if correlation else x
-        )
-    if period == "quarterly":
-        return dataset.groupby(pd.Grouper(freq="Q")).apply(
-            lambda x: x.corr() if correlation else x
-        )
-    if period == "yearly":
-        return dataset.groupby(pd.Grouper(freq="Y")).apply(
-            lambda x: x.corr() if correlation else x
-        )
+    ).apply(lambda x: x.corr() if correlation else x)
 
-    raise ValueError("Period must be weekly, monthly, quarterly, or yearly.")
+    within_historical_data.index = within_historical_data.index.set_levels(
+        [
+            pd.PeriodIndex(
+                within_historical_data.index.levels[0],
+                freq=period_symbol,
+            ),
+            within_historical_data.index.levels[1]
+            if correlation
+            else pd.PeriodIndex(within_historical_data.index.levels[1], freq="D"),
+        ],
+    )
+
+    return within_historical_data
 
 
 def handle_errors(func):

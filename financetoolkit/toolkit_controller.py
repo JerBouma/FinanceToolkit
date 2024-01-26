@@ -815,14 +815,18 @@ class Toolkit:
             self._daily_historical_data.columns.get_level_values(1).unique().tolist()
         )
 
+        historical_data = {
+            "intraday": self._intraday_historical_data,
+            "daily": self._daily_historical_data,
+            "weekly": self._weekly_historical_data,
+            "monthly": self._monthly_historical_data,
+            "quarterly": self._quarterly_historical_data,
+            "yearly": self._yearly_historical_data,
+        }
+
         return Technicals(
             tickers=tickers,
-            intraday_historical=self._intraday_historical_data,
-            daily_historical=self._daily_historical_data,
-            weekly_historical=self._weekly_historical_data,
-            monthly_historical=self._monthly_historical_data,
-            quarterly_historical=self._quarterly_historical_data,
-            yearly_historical=self._yearly_historical_data,
+            historical_data=historical_data,
             rounding=self._rounding,
             start_date=self._start_date,
             end_date=self._end_date,
@@ -976,17 +980,18 @@ class Toolkit:
             self._daily_historical_data.columns.get_level_values(1).unique().tolist()
         )
 
+        historical_data = {
+            "intraday": self._intraday_historical_data,
+            "daily": self._daily_historical_data,
+            "weekly": self._weekly_historical_data,
+            "monthly": self._monthly_historical_data,
+            "quarterly": self._quarterly_historical_data,
+            "yearly": self._yearly_historical_data,
+        }
+
         return Risk(
             tickers=tickers,
-            daily_historical=self._daily_historical_data,
-            weekly_historical=self._weekly_historical_data,
-            monthly_historical=self._monthly_historical_data,
-            quarterly_historical=self._quarterly_historical_data,
-            yearly_historical=self._yearly_historical_data,
-            risk_free_rate=self._quarterly_risk_free_rate
-            if self._quarterly
-            else self._yearly_risk_free_rate,
-            intraday_historical=self._intraday_historical_data,
+            historical_data=historical_data,
             intraday_period=self._intraday_period,
             quarterly=self._quarterly,
             rounding=self._rounding,
@@ -1673,7 +1678,8 @@ class Toolkit:
             fill_nan (bool): Defines whether to forward fill NaN values. This defaults
             to True to prevent holes in the dataset. This is especially relevant for
             technical indicators.
-            overwrite (bool): Defines whether to overwrite the existing data.
+            overwrite (bool): Defines whether to overwrite the existing data. If this is not enabled, the function
+            will return the earlier retrieved data. This is done to prevent too many API calls. Defaults to False.
             rounding (int): Defines the number of decimal places to round the data to.
             sleep_timer (bool): Defines whether to include a sleep timer to prevent
             overloading the API. Defaults to True.
@@ -1715,7 +1721,9 @@ class Toolkit:
         """
         if self._daily_risk_free_rate.empty or overwrite:
             self.get_treasury_data(
-                risk_free_rate=self._risk_free_rate, show_errors=False
+                risk_free_rate=self._risk_free_rate,
+                show_errors=False,
+                fill_nan=fill_nan,
             )
 
         if self._daily_historical_data.empty or overwrite:
@@ -2268,6 +2276,7 @@ class Toolkit:
         self,
         period: str = "daily",
         risk_free_rate: str | None = None,
+        fill_nan: bool = True,
         divide_ohlc_by: int | float | None = 100,
         rounding: int | None = None,
         show_errors: bool = False,
@@ -2365,6 +2374,7 @@ class Toolkit:
                 divide_ohlc_by=divide_ohlc_by,
                 rounding=rounding if rounding else self._rounding,
                 show_errors=show_errors,
+                fill_nan=fill_nan,
                 sleep_timer=self._sleep_timer,
                 tqdm_message="Obtaining treasury data",
             )
@@ -2816,9 +2826,9 @@ class Toolkit:
             balance_sheet_statement = helpers.convert_currencies(
                 financial_statement_data=balance_sheet_statement,
                 financial_statement_currencies=self._statement_currencies,
-                exchange_rate_data=self.get_exchange_rates(
-                    period="quarterly" if self._quarterly else "yearly"
-                )["Adj Close"],
+                exchange_rate_data=self._quarterly_exchange_rate_data["Adj Close"]
+                if self._quarterly
+                else self._yearly_exchange_rate_data["Adj Close"],
                 financial_statement_name="balance sheet statement",
             )
 

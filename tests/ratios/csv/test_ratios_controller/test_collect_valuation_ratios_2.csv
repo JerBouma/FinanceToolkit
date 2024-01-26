@@ -1,22 +1,22 @@
 ,,,2020,2021,2022,2023
-AAPL,Earnings per Share (EPS),Lag 1,,0.714,0.0889,0.0034
-AAPL,Earnings per Share (EPS),Lag 2,,,0.8665,0.0926
-AAPL,Earnings per Share (EPS),Lag 3,,,,0.8728
-AAPL,Revenue per Share (RPS),Lag 1,,0.385,0.1135,0.0035
-AAPL,Revenue per Share (RPS),Lag 2,,,0.5422,0.1175
-AAPL,Revenue per Share (RPS),Lag 3,,,,0.5477
-AAPL,Price-to-Earnings (PE),Lag 1,,-0.2144,-0.3241,0.0
-AAPL,Price-to-Earnings (PE),Lag 2,,,-0.4691,-0.3241
-AAPL,Price-to-Earnings (PE),Lag 3,,,,-0.4691
-AAPL,Price-to-Earnings-Growth (PEG),Lag 1,,,4.4281,0.0
-AAPL,Price-to-Earnings-Growth (PEG),Lag 2,,,,4.4281
-AAPL,Price-to-Earnings-Growth (PEG),Lag 3,,,,
+AAPL,Earnings per Share,Lag 1,,0.714,0.0889,0.0034
+AAPL,Earnings per Share,Lag 2,,,0.8665,0.0926
+AAPL,Earnings per Share,Lag 3,,,,0.8728
+AAPL,Revenue per Share,Lag 1,,0.385,0.1135,0.0035
+AAPL,Revenue per Share,Lag 2,,,0.5422,0.1175
+AAPL,Revenue per Share,Lag 3,,,,0.5477
+AAPL,Price-to-Earnings,Lag 1,,-0.2144,-0.3241,0.0
+AAPL,Price-to-Earnings,Lag 2,,,-0.4691,-0.3241
+AAPL,Price-to-Earnings,Lag 3,,,,-0.4691
+AAPL,Price-to-Earnings-Growth,Lag 1,,,4.4281,0.0
+AAPL,Price-to-Earnings-Growth,Lag 2,,,,4.4281
+AAPL,Price-to-Earnings-Growth,Lag 3,,,,
 AAPL,Book Value per Share,Lag 1,,0.0036,-0.1703,0.2663
 AAPL,Book Value per Share,Lag 2,,,-0.1673,0.0506
 AAPL,Book Value per Share,Lag 3,,,,0.0544
-AAPL,Price-to-Book (PB),Lag 1,,0.3417,-0.113,0.0
-AAPL,Price-to-Book (PB),Lag 2,,,0.1901,-0.113
-AAPL,Price-to-Book (PB),Lag 3,,,,0.1901
+AAPL,Price-to-Book,Lag 1,,0.3417,-0.113,0.0
+AAPL,Price-to-Book,Lag 2,,,0.1901,-0.113
+AAPL,Price-to-Book,Lag 3,,,,0.1901
 AAPL,Interest Debt per Share,Lag 1,,-0.2014,0.1142,-1.0
 AAPL,Interest Debt per Share,Lag 2,,,-0.1102,-1.0
 AAPL,Interest Debt per Share,Lag 3,,,,-1.0
@@ -35,12 +35,12 @@ AAPL,Dividend Yield,Lag 3,,,,-0.65
 AAPL,Weighted Dividend Yield,Lag 1,,-0.2097,0.4286,0.0
 AAPL,Weighted Dividend Yield,Lag 2,,,0.129,0.4286
 AAPL,Weighted Dividend Yield,Lag 3,,,,0.129
-AAPL,Price-to-Cash-Flow (P/CF),Lag 1,,0.0046,-0.3932,0.0
-AAPL,Price-to-Cash-Flow (P/CF),Lag 2,,,-0.3904,-0.3932
-AAPL,Price-to-Cash-Flow (P/CF),Lag 3,,,,-0.3904
-AAPL,Price-to-Free-Cash-Flow (P/FCF),Lag 1,,0.0225,-0.4058,0.0
-AAPL,Price-to-Free-Cash-Flow (P/FCF),Lag 2,,,-0.3924,-0.4058
-AAPL,Price-to-Free-Cash-Flow (P/FCF),Lag 3,,,,-0.3924
+AAPL,Price-to-Cash-Flow,Lag 1,,0.0046,-0.3932,0.0
+AAPL,Price-to-Cash-Flow,Lag 2,,,-0.3904,-0.3932
+AAPL,Price-to-Cash-Flow,Lag 3,,,,-0.3904
+AAPL,Price-to-Free-Cash-Flow,Lag 1,,0.0225,-0.4058,0.0
+AAPL,Price-to-Free-Cash-Flow,Lag 2,,,-0.3924,-0.4058
+AAPL,Price-to-Free-Cash-Flow,Lag 3,,,,-0.3924
 AAPL,Market Cap,Lag 1,,0.2956,-0.2876,0.0
 AAPL,Market Cap,Lag 2,,,-0.077,-0.2876
 AAPL,Market Cap,Lag 3,,,,-0.077
@@ -65,24 +65,24 @@ AAPL,Tangible Asset Value,Lag 3,,,,-0.0489
 AAPL,Net Current Asset Value,Lag 1,,-0.7559,-2.9858,-0.9062
 AAPL,Net Current Asset Value,Lag 2,,,-1.4848,-1.1862
 AAPL,Net Current Asset Value,Lag 3,,,,-1.0455
-MSFT,Earnings per Share (EPS),Lag 1,,0.3973,0.1979,0.0039
-MSFT,Earnings per Share (EPS),Lag 2,,,0.6738,0.2025
-MSFT,Earnings per Share (EPS),Lag 3,,,,0.6803
-MSFT,Revenue per Share (RPS),Lag 1,,0.1869,0.1902,0.0785
-MSFT,Revenue per Share (RPS),Lag 2,,,0.4127,0.2837
-MSFT,Revenue per Share (RPS),Lag 3,,,,0.5236
-MSFT,Price-to-Earnings (PE),Lag 1,,0.0912,-0.3991,0.0
-MSFT,Price-to-Earnings (PE),Lag 2,,,-0.3443,-0.3991
-MSFT,Price-to-Earnings (PE),Lag 3,,,,-0.3443
-MSFT,Price-to-Earnings-Growth (PEG),Lag 1,,,0.2063,0.0
-MSFT,Price-to-Earnings-Growth (PEG),Lag 2,,,,0.2063
-MSFT,Price-to-Earnings-Growth (PEG),Lag 3,,,,
+MSFT,Earnings per Share,Lag 1,,0.3973,0.1979,0.0039
+MSFT,Earnings per Share,Lag 2,,,0.6738,0.2025
+MSFT,Earnings per Share,Lag 3,,,,0.6803
+MSFT,Revenue per Share,Lag 1,,0.1869,0.1902,0.0785
+MSFT,Revenue per Share,Lag 2,,,0.4127,0.2837
+MSFT,Revenue per Share,Lag 3,,,,0.5236
+MSFT,Price-to-Earnings,Lag 1,,0.0912,-0.3991,0.0
+MSFT,Price-to-Earnings,Lag 2,,,-0.3443,-0.3991
+MSFT,Price-to-Earnings,Lag 3,,,,-0.3443
+MSFT,Price-to-Earnings-Growth,Lag 1,,,0.2063,0.0
+MSFT,Price-to-Earnings-Growth,Lag 2,,,,0.2063
+MSFT,Price-to-Earnings-Growth,Lag 3,,,,
 MSFT,Book Value per Share,Lag 1,,0.212,0.1835,0.2495
 MSFT,Book Value per Share,Lag 2,,,0.4344,0.4788
 MSFT,Book Value per Share,Lag 3,,,,0.7924
-MSFT,Price-to-Book (PB),Lag 1,,0.258,-0.3919,0.0
-MSFT,Price-to-Book (PB),Lag 2,,,-0.2349,-0.3919
-MSFT,Price-to-Book (PB),Lag 3,,,,-0.2349
+MSFT,Price-to-Book,Lag 1,,0.258,-0.3919,0.0
+MSFT,Price-to-Book,Lag 2,,,-0.2349,-0.3919
+MSFT,Price-to-Book,Lag 3,,,,-0.2349
 MSFT,Interest Debt per Share,Lag 1,,-0.0608,-0.036,-0.0341
 MSFT,Interest Debt per Share,Lag 2,,,-0.0945,-0.0688
 MSFT,Interest Debt per Share,Lag 3,,,,-0.1254
@@ -101,12 +101,12 @@ MSFT,Dividend Yield,Lag 3,,,,0.1146
 MSFT,Weighted Dividend Yield,Lag 1,,-0.2747,0.5303,0.0
 MSFT,Weighted Dividend Yield,Lag 2,,,0.1099,0.5303
 MSFT,Weighted Dividend Yield,Lag 3,,,,0.1099
-MSFT,Price-to-Cash-Flow (P/CF),Lag 1,,0.1938,-0.3852,0.0
-MSFT,Price-to-Cash-Flow (P/CF),Lag 2,,,-0.266,-0.3852
-MSFT,Price-to-Cash-Flow (P/CF),Lag 3,,,,-0.266
-MSFT,Price-to-Free-Cash-Flow (P/FCF),Lag 1,,0.2171,-0.3856,0.0
-MSFT,Price-to-Free-Cash-Flow (P/FCF),Lag 2,,,-0.2522,-0.3856
-MSFT,Price-to-Free-Cash-Flow (P/FCF),Lag 3,,,,-0.2522
+MSFT,Price-to-Cash-Flow,Lag 1,,0.1938,-0.3852,0.0
+MSFT,Price-to-Cash-Flow,Lag 2,,,-0.266,-0.3852
+MSFT,Price-to-Cash-Flow,Lag 3,,,,-0.266
+MSFT,Price-to-Free-Cash-Flow,Lag 1,,0.2171,-0.3856,0.0
+MSFT,Price-to-Free-Cash-Flow,Lag 2,,,-0.2522,-0.3856
+MSFT,Price-to-Free-Cash-Flow,Lag 3,,,,-0.2522
 MSFT,Market Cap,Lag 1,,0.5099,-0.2867,0.0
 MSFT,Market Cap,Lag 2,,,0.077,-0.2867
 MSFT,Market Cap,Lag 3,,,,0.077

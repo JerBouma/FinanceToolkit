@@ -622,7 +622,10 @@ def get_analyst_estimates(
 
 
 def get_profile(
-    tickers: list[str] | str, api_key: str, progress_bar: bool = True
+    tickers: list[str] | str,
+    api_key: str,
+    progress_bar: bool = True,
+    report_missing: bool = True,
 ) -> pd.DataFrame:
     """
     Gives information about the profile of a company which includes i.a. beta, company description, industry and sector.
@@ -714,16 +717,26 @@ def get_profile(
     # Checks if any errors are in the dataset and if this is the case, reports them
     profile_dict = helpers.check_for_error_messages(profile_dict)
 
-    if no_data:
+    if no_data and report_missing:
         print(f"No data found for the following tickers: {', '.join(no_data)}")
 
     if profile_dict:
-        profile_dataframe = pd.concat(profile_dict)[0].unstack(level=0)
-        profile_dataframe = profile_dataframe.rename(index=naming)
-        profile_dataframe = profile_dataframe.drop(
-            ["image", "defaultImage", "isEtf", "isActivelyTrading", "isAdr", "isFund"],
-            axis=0,
-        )
+        try:
+            profile_dataframe = pd.concat(profile_dict)[0].unstack(level=0)
+            profile_dataframe = profile_dataframe.rename(index=naming)
+            profile_dataframe = profile_dataframe.drop(
+                [
+                    "image",
+                    "defaultImage",
+                    "isEtf",
+                    "isActivelyTrading",
+                    "isAdr",
+                    "isFund",
+                ],
+                axis=0,
+            )
+        except (ValueError, KeyError):
+            return pd.DataFrame(), no_data
 
         return profile_dataframe, no_data
 

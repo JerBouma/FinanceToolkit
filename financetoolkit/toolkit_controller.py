@@ -658,10 +658,24 @@ class Toolkit:
                 f"{self._balance_sheet_statement.columns[-1].year + 5}-01-01"
             )
 
-        if self._quarterly:
-            self.get_historical_data(period="quarterly")
-        else:
-            self.get_historical_data(period="yearly")
+        for period in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
+            self.get_historical_data(period=period)
+
+        historical_data = {
+            "daily": self._daily_historical_data,
+            "weekly": self._weekly_historical_data,
+            "monthly": self._monthly_historical_data,
+            "quarterly": self._quarterly_historical_data,
+            "yearly": self._yearly_historical_data,
+        }
+
+        risk_free_rate_data = {
+            "daily": self._daily_risk_free_rate,
+            "weekly": self._weekly_risk_free_rate,
+            "monthly": self._monthly_risk_free_rate,
+            "quarterly": self._quarterly_risk_free_rate,
+            "yearly": self._yearly_risk_free_rate,
+        }
 
         tickers = (
             self._balance_sheet_statement.index.get_level_values(0).unique().tolist()
@@ -669,13 +683,8 @@ class Toolkit:
 
         return Models(
             tickers=tickers,
-            daily_historical=self._daily_historical_data,
-            period_historical=self._quarterly_historical_data
-            if self._quarterly
-            else self._yearly_historical_data,
-            risk_free_rate=self._quarterly_risk_free_rate
-            if self._quarterly
-            else self._yearly_risk_free_rate,
+            historical_data=historical_data,
+            risk_free_rate_data=risk_free_rate_data,
             balance=self._balance_sheet_statement,
             income=self._income_statement,
             cash=self._cash_flow_statement,

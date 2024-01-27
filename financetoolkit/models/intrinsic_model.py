@@ -104,3 +104,33 @@ def get_intrinsic_value(
     return pd.DataFrame.from_dict(
         components, orient="index", columns=[f"Periods = {periods}"]
     )
+
+
+def get_gorden_growth_model(
+    dividends_per_share: float,
+    rate_of_return: float,
+    growth_rate: float,
+):
+    """
+    Calculates the intrinsic value of a stock using the Gorden Growth Model.
+
+    The Gorden Growth Model is a method for calculating the intrinsic value of a stock,
+    based on a future series of dividends that grow at a constant rate. It is a popular
+    and straightforward variant of the dividend discount model (DDM). The Gorden Growth
+    Model assumes that dividends increase at a constant rate indefinitely. The model
+    is named after Myron J. Gorden of the University of Washington Foster School of
+    Business, who originally published it in 1959.
+
+    The formula is as follows:
+
+        Intrinsic Value = Dividends Per Share / (Rate of Return - Growth Rate)
+
+    Args:
+        dividends_per_share (float): the dividends per share.
+        rate_of_return (float): the rate of return.
+        growth_rate (float): the growth rate.
+
+    Returns:
+        float: the intrinsic value of the stock.
+    """
+    return (dividends_per_share * (1 + growth_rate)) / (rate_of_return - growth_rate)

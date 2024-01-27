@@ -1877,10 +1877,13 @@ Intrinsic value is a fundamental concept in finance and investing that represent
 
 This functionality uses DCF, or Discounted Cash Flow which is a widely used financial valuation method that allows investors and analysts to estimate the intrinsic value of an investment or business based on its expected future cash flows. It is a fundamental tool in finance and investment analysis, providing a systematic way to assess the present value of future cash flows while considering the time value of money. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/models#get_intrinsic_valuation).
 
+> **Gordon Growth Model**
+
+The Gordon Growth Model, also known as the Dividend Discount Model (DDM) with Constant Growth, is a method used to estimate the intrinsic value of a stock based on its expected future dividends. The model assumes that dividends will grow at a constant rate indefinitely. The formula essentially discounts the future expected dividends to their present value, taking into account the required rate of return and the growth rate. The numerator represents the expected dividend in the next period. The denominator represents the required rate of return minus the growth rate. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/models#get_gordon_growth_model).
+
 > **Altman Z-Score**
 
 The Altman Z-Score is a financial metric used to predict the likelihood of a company going bankrupt. The Altman Z-Score is calculated using several financial ratios, including working capital to total assets, retained earnings to total assets, earnings before interest and taxes (EBIT) to total assets, market value of equity to book value of total liabilities, and sales to total assets. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/models#get_altman_z_score).
-
 
 > **Piotroski F-Score**
 

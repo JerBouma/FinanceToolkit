@@ -729,7 +729,7 @@ class Models:
 
         The formula is as follows:
 
-        - Intrinsic Value = Next Period's Dividend per Share / (Rate of Return - Growth Rate)
+        - Intrinsic Value = (Dividends Per Share * (1 + Growth Rate)) / (Rate of Return - Growth Rate)
 
         The formula essentially discounts the future expected dividends to their present value, taking into account
         the required rate of return and the growth rate. The numerator represents the expected dividend in the

@@ -1879,7 +1879,7 @@ This functionality uses DCF, or Discounted Cash Flow which is a widely used fina
 
 > **Gordon Growth Model**
 
-The Gordon Growth Model, also known as the Dividend Discount Model (DDM) with Constant Growth, is a method used to estimate the intrinsic value of a stock based on its expected future dividends. The model assumes that dividends will grow at a constant rate indefinitely. The formula essentially discounts the future expected dividends to their present value, taking into account the required rate of return and the growth rate. The numerator represents the expected dividend in the next period. The denominator represents the required rate of return minus the growth rate. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/models#get_gordon_growth_model).
+The Gordon Growth Model, also known as the Dividend Discount Model (DDM) with Constant Growth, is a method used to estimate the intrinsic value of a stock based on its expected future dividends. The model assumes that dividends will grow at a constant rate indefinitely. The formula essentially discounts the future expected dividends to their present value, taking into account the required rate of return and the growth rate. The numerator represents the expected dividend in the next period and the denominator represents the required rate of return minus the growth rate. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/models#get_gordon_growth_model).
 
 > **Altman Z-Score**
 

@@ -123,7 +123,7 @@ def get_gorden_growth_model(
 
     The formula is as follows:
 
-        Intrinsic Value = Dividends Per Share / (Rate of Return - Growth Rate)
+    - Intrinsic Value = (Dividends Per Share * (1 + Growth Rate)) / (Rate of Return - Growth Rate)
 
     Args:
         dividends_per_share (float): the dividends per share.

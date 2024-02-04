@@ -16,14 +16,29 @@ def get_option_expiry_dates(ticker: str):
         pd.DataFrame: Option expiry dates.
     """
 
-    response = requests.get(
-        f"https://query1.finance.yahoo.com/v7/finance/options/{ticker}",
-        timeout=60,
-        headers={
-            "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit"
-            "/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36"
-        },
-    )
+    try:
+        response = requests.get(
+            f"https://query1.finance.yahoo.com/v6/finance/options/{ticker}",
+            timeout=60,
+            headers={
+                "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit"
+                "/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36"
+            },
+        )
+
+        response.raise_for_status()
+    except requests.exceptions.HTTPError:
+        response = requests.get(
+            f"https://query1.finance.yahoo.com/v7/finance/options/{ticker}",
+            timeout=60,
+            headers={
+                "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit"
+                "/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36"
+            },
+        )
+
+        if response.status_code != 200:  # noqa
+            return pd.DataFrame()
 
     result = response.json()
 
@@ -52,14 +67,30 @@ def get_option_chains(tickers: list[str], expiration_date: str):
     result_dict = {}
 
     for ticker in tickers:
-        response = requests.get(
-            f"https://query1.finance.yahoo.com/v7/finance/options/{ticker}?date={expiration_date}",
-            timeout=60,
-            headers={
-                "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit"
-                "/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36"
-            },
-        )
+        try:
+            response = requests.get(
+                f"https://query1.finance.yahoo.com/v6/finance/options/{ticker}?date={expiration_date}",
+                timeout=60,
+                headers={
+                    "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit"
+                    "/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36"
+                },
+            )
+
+            response.raise_for_status()
+        except requests.exceptions.HTTPError:
+            response = requests.get(
+                f"https://query1.finance.yahoo.com/v7/finance/options/{ticker}?date={expiration_date}",
+                timeout=60,
+                headers={
+                    "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit"
+                    "/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36"
+                },
+            )
+
+            if response.status_code != 200:  # noqa
+                result_dict[ticker] = pd.DataFrame()
+                continue
 
         result = response.json()
 

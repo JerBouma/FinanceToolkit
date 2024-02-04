@@ -14,6 +14,22 @@ options_module = toolkit.options
 # pylint: disable=missing-function-docstring
 
 
+def test_get_binomial_model(recorder):
+    recorder.capture(options_module.get_binomial_model())
+    recorder.capture(options_module.get_binomial_model(put_option=True))
+    recorder.capture(options_module.get_binomial_model(american_option=True))
+    recorder.capture(
+        options_module.get_binomial_model(
+            strike_price_range=0.10,
+            strike_step_size=2,
+            risk_free_rate=0.01,
+            dividend_yield=0.005,
+            timesteps=2,
+            rounding=2,
+        )
+    )
+
+
 def test_get_black_scholes_model(recorder):
     recorder.capture(options_module.get_black_scholes_model())
     recorder.capture(options_module.get_black_scholes_model(put_option=True))

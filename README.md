@@ -1923,6 +1923,22 @@ The Black Scholes Model is based on several assumptions, including the following
 
 Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/options#get_black_scholes_model).
 
+> **Binomial Option Pricing Model**
+
+The Binomial Option Pricing Model is a mathematical model used to estimate the price of European and American style options. It does so by creating a binomial tree of price paths for the underlying asset, and then working backwards through the tree to determine the price of the option at each node.
+
+The resulting output is a DataFrame containing the tickers, strike prices and movements as the index and the time to expiration as the columns. The movements index contains the number of up movements and the number of down movements. The output is the binomial tree displayed in a table. E.g. when using 10 time steps, the table for each strike price from each company will contain the actual binomial tree as also depicted in the image as seen below. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/options#get_binomial_model).
+
+![Binomial Tree](https://upload.wikimedia.org/wikipedia/commons/2/2e/Arbre_Binomial_Options_Reelles.png)
+
+> **Stock Price Simulation**
+
+Simulate the Stock Price based on the Binomial Model, a mathematical model used to estimate the price of European and American style options. It does so by creating a binomial tree of price paths for the underlying asset based on the stock price, volatility, risk free rate, dividend yield and time to expiration. The stock price is then simulated based on the up and down movements.
+
+The resulting output is a DataFrame containing the tickers and movements as the index and the time to expiration as the columns. The movements index contains the number of up movements and the number of down movements. The output is the binomial tree displayed in a table. E.g. when using 10 time steps, the table from each company will contain the actual binomial tree's stock prices as also depicted in the image as seen below. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/options#get_binomial_model).
+
+![Stock Price Simulation](https://i.stack.imgur.com/NQilh.png)
+
 </details>
 
 <details>

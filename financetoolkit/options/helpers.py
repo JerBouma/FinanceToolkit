@@ -28,21 +28,36 @@ def define_strike_prices(
     strike_prices_per_ticker = {}
 
     for ticker in tickers:
-        strike_prices_per_ticker[ticker] = list(
-            range(
-                strike_step_size
-                * round(
-                    int(stock_price.loc[ticker] * (1 - strike_price_range))
-                    / strike_step_size
-                ),
-                strike_step_size
-                * round(
-                    int(stock_price.loc[ticker] * (1 + strike_price_range))
-                    / strike_step_size
-                ),
-                strike_step_size,
+        if strike_price_range < 0 or strike_step_size < 0:
+            raise ValueError(
+                "The strike price range and the strike step size must be positive."
             )
-        )
+        if strike_price_range > 1:
+            raise ValueError("The strike price range must be between 0 and 1.")
+        if strike_step_size == 0:
+            raise ValueError("The strike step size must be greater than 0.")
+
+        if strike_price_range == 0:
+            strike_prices_per_ticker[ticker] = [
+                strike_step_size
+                * round(int(stock_price.loc[ticker]) / strike_step_size)
+            ]
+        else:
+            strike_prices_per_ticker[ticker] = list(
+                range(
+                    strike_step_size
+                    * round(
+                        int(stock_price.loc[ticker] * (1 - strike_price_range))
+                        / strike_step_size
+                    ),
+                    strike_step_size
+                    * round(
+                        int(stock_price.loc[ticker] * (1 + strike_price_range))
+                        / strike_step_size
+                    ),
+                    strike_step_size,
+                )
+            )
 
     return strike_prices_per_ticker
 
@@ -85,13 +100,104 @@ def create_greek_dataframe(
     return greek_dataframe
 
 
+def create_binomial_tree_dataframe(
+    binomial_tree_dictionary: dict[str, dict[float, pd.DataFrame]],
+    start_date: pd.PeriodIndex,
+    time_to_expiration: int,
+):
+    """
+    Creates the DataFrame that correctly displays the binomial tree for each ticker and strike price.
+    over time (the time of expiration).
+
+    Args:
+        binomial_tree_dictionary (dict[str, dict[float, dict[float, float]]]): a dictionary
+        containing the binomial tree for each ticker, strike price and expiration date.
+        start_date (str): the start date that should be excluded out of the DataFrame.
+
+    Returns:
+        pd.DataFrame: the DataFrame that correctly displays the binomial tree for each ticker
+        and strike price.
+    """
+    binomial_tree_dataframe = pd.DataFrame.from_dict(
+        {
+            (ticker, strike_price, movement): values
+            for ticker, strike_prices in binomial_tree_dictionary.items()
+            for strike_price, movements in strike_prices.items()
+            for movement, values in movements.T.items()
+        },
+        orient="index",
+    )
+
+    start_date_string = pd.to_datetime(str(start_date))
+    end_date_string = pd.to_datetime(
+        str(start_date_string + pd.Timedelta(days=time_to_expiration * 365))
+    )
+
+    binomial_tree_dataframe.columns = pd.date_range(
+        start=start_date_string,
+        end=end_date_string,
+        periods=len(binomial_tree_dataframe.columns),
+    )
+
+    binomial_tree_dataframe.columns = pd.PeriodIndex(
+        binomial_tree_dataframe.columns, freq="D"
+    )
+
+    binomial_tree_dataframe.index.names = ["Ticker", "Strike Price", "Movement"]
+
+    return binomial_tree_dataframe
+
+
+def create_stock_simulation_dataframe(
+    stock_simulation_dictonary: dict[str, dict[float, dict[float, float]]],
+    start_date: pd.PeriodIndex,
+    time_to_expiration: int,
+):
+    """
+    Creates the DataFrame that correctly displays the binomial tree for each ticker and strike price.
+    over time (the time of expiration).
+
+    Args:
+        binomial_tree_dictionary (dict[str, dict[float, dict[float, float]]]): a dictionary
+        containing the binomial tree for each ticker, strike price and expiration date.
+        start_date (str): the start date that should be excluded out of the DataFrame.
+
+    Returns:
+        pd.DataFrame: the DataFrame that correctly displays the binomial tree for each ticker
+        and strike price.
+    """
+    stock_simulation_dataframe = pd.concat(stock_simulation_dictonary)
+
+    start_date_string = pd.to_datetime(str(start_date))
+    end_date_string = pd.to_datetime(
+        str(start_date_string + pd.Timedelta(days=time_to_expiration * 365))
+    )
+
+    stock_simulation_dataframe.columns = pd.date_range(
+        start=start_date_string,
+        end=end_date_string,
+        periods=len(stock_simulation_dataframe.columns),
+    )
+
+    stock_simulation_dataframe.columns = pd.PeriodIndex(
+        stock_simulation_dataframe.columns, freq="D"
+    )
+
+    stock_simulation_dataframe.index.names = ["Ticker", "Movement"]
+
+    return stock_simulation_dataframe
+
+
 def show_input_info(
     start_date: str,
     end_date: str,
     stock_prices: pd.Series,
     volatility: pd.Series,
     risk_free_rate: float,
-    dividend_yield: dict[str, float],
+    dividend_yield: dict[str, float] | None = None,
+    up_movement_dict: dict | None = None,
+    down_movement_dict: dict | None = None,
+    risk_neutral_probability_dict: dict | None = None,
 ):
     """
     Based on the input parameters, print the input information.
@@ -116,16 +222,39 @@ def show_input_info(
         for ticker, volatility_value in volatility.items()
     ]
 
-    dividend_yield_list = [
-        (f"{ticker} ({round(dividend_yield_value * 100, 2)}%)")
-        for ticker, dividend_yield_value in dividend_yield.items()
-    ]
-
     print(
         f"Based on the period {start_date} to {end_date} "
         "the following parameters were used:\n"
         f"Stock Price: {', '.join(stock_price_list)}\n"
-        f"Volatility: {', '.join(volatility_list)}\n"
-        f"Dividend Yield: {', '.join(dividend_yield_list)}\n"
-        f"Risk Free Rate: {round(risk_free_rate * 100, 2)}%\n"
+        f"Volatility: {', '.join(volatility_list)}"
     )
+
+    if dividend_yield is not None:
+        dividend_yield_list = [
+            (f"{ticker} ({round(dividend_yield_value * 100, 2)}%)")
+            for ticker, dividend_yield_value in dividend_yield.items()
+        ]
+        print(f"Dividend Yield: {', '.join(dividend_yield_list)}")
+
+    if up_movement_dict is not None:
+        up_movement_list = [
+            (f"{ticker} ({round(up_movement * 100, 2)}%)")
+            for ticker, up_movement in up_movement_dict.items()
+        ]
+        print(f"Up Movement: {', '.join(up_movement_list)}")
+
+    if down_movement_dict is not None:
+        down_movement_list = [
+            (f"{ticker} ({round(down_movement * 100, 2)}%)")
+            for ticker, down_movement in down_movement_dict.items()
+        ]
+        print(f"Down Movement: {', '.join(down_movement_list)}")
+
+    if risk_neutral_probability_dict is not None:
+        risk_neutral_probability_list = [
+            (f"{ticker} ({round(risk_neutral_probability * 100, 2)}%)")
+            for ticker, risk_neutral_probability in risk_neutral_probability_dict.items()
+        ]
+        print(f"Risk Neutral Probability: {', '.join(risk_neutral_probability_list)}")
+
+    print(f"Risk Free Rate: {round(risk_free_rate * 100, 2)}%")

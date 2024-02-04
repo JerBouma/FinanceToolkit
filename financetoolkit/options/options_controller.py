@@ -406,20 +406,20 @@ class Options:
 
         - up movement (u) = e^(σ * sqrt(t))
         - down movement (d) = 1 / u
-        - risk neutral probability (p) = (e^((r - q) * t) - d) / (u - d)
-        - stock price at each node = S * u^j * d^(n - j)
-        - call option price at expiration date = max(S - K, 0)
-        - put option price at expiration date = max(K - S, 0)
+        - risk neutral probability (p) = (e^((r — q) * t) — d) / (u — d)
+        - stock price at each node = S * u^j * d^(n — j)
+        - call option price at expiration date = max(S — K, 0)
+        - put option price at expiration date = max(K — S, 0)
 
         For European Style options:
 
-        - call option price at each node = (p * C_u + (1 - p) * C_d) * e^(—r * t)
-        - put option price at each node = (p * P_u + (1 - p) * P_d) * e^(—r * t)
+        - call option price at each node = (p * C_u + (1 — p) * C_d) * e^(—r * t)
+        - put option price at each node = (p * P_u + (1 — p) * P_d) * e^(—r * t)
 
         For American Style options:
 
-        - call option price at each node = max(S - K, (p * C_u + (1 - p) * C_d) * e^(—r * t))
-        - put option price at each node = max(K - S, (p * P_u + (1 - p) * P_d) * e^(—r * t))
+        - call option price at each node = max(S — K, (p * C_u + (1 — p) * C_d) * e^(—r * t))
+        - put option price at each node = max(K — S, (p * P_u + (1 — p) * P_d) * e^(—r * t))
 
         Where S is the stock price, K is the strike price, r is the risk free rate, σ is the volatility, t is the time to
         expiration, j is the number of up movements, n is the number of time steps, C_u is the call option price at the up
@@ -615,7 +615,7 @@ class Options:
 
         - up movement (u) = e^(σ * sqrt(t))
         - down movement (d) = 1 / u
-        - stock price at each node = S * u^j * d^(n - j)
+        - stock price at each node = S * u^j * d^(n — j)
 
         Where S is the stock price, r is the risk free rate, σ is the volatility, t is the time to
         expiration, j is the number of up movements, n is the number of time steps.

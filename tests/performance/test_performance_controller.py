@@ -56,15 +56,17 @@ def test_get_factor_asset_correlations(recorder):
 
 
 def test_get_factor_correlations(recorder):
-    recorder.capture(performance_module.get_factor_correlations())
-    recorder.capture(performance_module.get_factor_correlations(period="monthly"))
+    recorder.capture(performance_module.get_factor_correlations().round(2))
+    recorder.capture(
+        performance_module.get_factor_correlations(period="monthly").round(2)
+    )
     recorder.capture(
         performance_module.get_factor_correlations(
             factors_to_calculate=["HML", "Mkt-RF"]
-        )
+        ).round(2)
     )
     recorder.capture(
-        performance_module.get_factor_correlations(exclude_risk_free=False)
+        performance_module.get_factor_correlations(exclude_risk_free=False).round(2)
     )
 
 

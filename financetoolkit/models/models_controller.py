@@ -9,6 +9,7 @@ from financetoolkit.models import (
     dupont_model,
     enterprise_model,
     growth_model,
+    helpers,
     intrinsic_model,
     piotroski_model,
     wacc_model,
@@ -30,9 +31,8 @@ class Models:
     def __init__(
         self,
         tickers: str | list[str],
-        daily_historical: pd.DataFrame,
-        period_historical: pd.DataFrame,
-        risk_free_rate: pd.DataFrame,
+        historical_data: pd.DataFrame,
+        risk_free_rate_data: pd.DataFrame,
         balance: pd.DataFrame,
         income: pd.DataFrame,
         cash: pd.DataFrame,
@@ -82,34 +82,22 @@ class Models:
         self._balance_sheet_statement: pd.DataFrame = balance
         self._income_statement: pd.DataFrame = income
         self._cash_flow_statement: pd.DataFrame = cash
+        self._quarterly = quarterly
         self._rounding = rounding
 
-        # Initialization of Historical Data
-        self._daily_historical: pd.DataFrame = daily_historical
-        self._historical_data: pd.DataFrame = period_historical
-        self._risk_free_rate: pd.DataFrame = risk_free_rate
+        # Historical Data
+        self._historical_data = historical_data
+        self._risk_free_rate_data = risk_free_rate_data
 
-        daily_historical_datetime = self._daily_historical.copy()
-        daily_historical_datetime.index = pd.DatetimeIndex(
-            daily_historical_datetime.to_timestamp().index
+        # Within Period Calculations
+        daily_historical_data = self._historical_data["daily"].copy()
+
+        daily_historical_data.index = pd.DatetimeIndex(
+            daily_historical_data.to_timestamp().index
         )
 
-        self._within_historical_data = daily_historical_datetime.groupby(
-            pd.Grouper(freq="QE" if quarterly else "YE")
-        ).apply(lambda x: x)
-
-        self._within_historical_data.index = (
-            self._within_historical_data.index.set_levels(
-                [
-                    pd.PeriodIndex(
-                        self._within_historical_data.index.levels[0],
-                        freq="Q" if quarterly else "Y",
-                    ),
-                    pd.PeriodIndex(
-                        self._within_historical_data.index.levels[1], freq="D"
-                    ),
-                ],
-            )
+        self._within_historical_data = helpers.determine_within_historical_data(
+            daily_historical_data=daily_historical_data,
         )
 
         # Initialization of Model Variables
@@ -353,9 +341,11 @@ class Models:
 
         years = self._cash_flow_statement.columns
         begin, end = str(years[0]), str(years[-1])
-        share_prices = self._historical_data.loc[begin:end, "Adj Close"][
-            self._tickers
-        ].T
+        share_prices = (
+            self._historical_data["quarterly" if self._quarterly else "yearly"]
+            .loc[begin:end, "Adj Close"][self._tickers]
+            .T
+        )
 
         self._enterprise_value_breakdown = (
             enterprise_model.get_enterprise_value_breakdown(
@@ -482,24 +472,28 @@ class Models:
         years = self._cash_flow_statement.columns
         begin, end = str(years[0]), str(years[-1])
 
-        share_prices = self._historical_data.loc[begin:end, "Adj Close"][
-            self._tickers
-        ].T
+        share_prices = (
+            self._historical_data["quarterly" if self._quarterly else "yearly"]
+            .loc[begin:end, "Adj Close"][self._tickers]
+            .T
+        )
 
-        risk_free_rate = self._risk_free_rate.loc[begin:end, "Adj Close"]
+        risk_free_rate = self._risk_free_rate_data[
+            "quarterly" if self._quarterly else "yearly"
+        ].loc[begin:end, "Adj Close"]
 
-        returns_within = self._within_historical_data.loc[begin:end, "Return"][
-            self._tickers
-        ]
-        benchmark_returns_within = self._within_historical_data.loc[
-            begin:end, "Return"
-        ][self._benchmark_name]
+        returns_within = self._within_historical_data[
+            "quarterly" if self._quarterly else "yearly"
+        ].loc[begin:end, "Return"][self._tickers]
+        benchmark_returns_within = self._within_historical_data[
+            "quarterly" if self._quarterly else "yearly"
+        ].loc[begin:end, "Return"][self._benchmark_name]
 
         beta = get_beta(returns_within, benchmark_returns_within)
 
-        benchmark_returns = self._historical_data.loc[begin:end, "Return"][
-            self._benchmark_name
-        ]
+        benchmark_returns = self._historical_data[
+            "quarterly" if self._quarterly else "yearly"
+        ].loc[begin:end, "Return"][self._benchmark_name]
 
         self._weighted_average_cost_of_capital = (
             wacc_model.get_weighted_average_cost_of_capital(
@@ -721,6 +715,110 @@ class Models:
 
         return self._intrinsic_values
 
+    def get_gorden_growth_model(
+        self,
+        rate_of_return: float,
+        growth_rate: float,
+        project_periods: int = 5,
+        rounding: int | None = None,
+    ):
+        """
+        The Gordon Growth Model, also known as the Dividend Discount Model (DDM) with Constant Growth,
+        is a method used to estimate the intrinsic value of a stock based on its expected future dividends.
+        The model assumes that dividends will grow at a constant rate indefinitely.
+
+        The formula is as follows:
+
+        - Intrinsic Value = (Dividends Per Share * (1 + Growth Rate)) / (Rate of Return - Growth Rate)
+
+        The formula essentially discounts the future expected dividends to their present value, taking into account
+        the required rate of return and the growth rate. The numerator represents the expected dividend in the
+        next period. The denominator represents the required rate of return minus the growth rate.
+
+        Investors often use the Gordon Growth Model to compare the intrinsic value of a stock with its current
+        market price. If the intrinsic value is higher than the market price, some investors may interpret it
+        as an indication that the stock is undervalued.
+
+        It's important to note that the Gordon Growth Model is based on several assumptions, including the
+        assumption of constant growth in dividends. It is most applicable to mature companies with stable and
+        predictable dividend growth. If a company's dividend growth is expected to fluctuate or if it does
+        not pay dividends, alternative valuation models may be more appropriate.
+
+        The assumption of constant growth of dividends is often unrealistic. In reality, dividends may fluctuate
+        or even be suspended. Therefore, the Gordon Growth Model should be used with caution and in conjunction
+        with other valuation methods.
+
+        Args:
+            rate_of_return (float): The required rate of return.
+            growth_rate (float): The growth rate of the dividends.
+            project_periods (int, optional): The number of periods to project the the stock price. Defaults to 5.
+            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+
+        Returns:
+            pd.DataFrame: DataFrame containing the intrinsic value for each ticker over time.
+
+        Notes:
+        - The results are highly dependent on the input. Therefore, think carefully about each input parameter to
+        ensure the results are accurate (given your beliefs)
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "MSFT"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.models.get_gorden_growth_model(0.20, 0.05)
+        ```
+        """
+        dividends_per_share = self._historical_data[
+            "quarterly" if self._quarterly else "yearly"
+        ]["Dividends"]
+
+        gorden_growth_model: dict[str, dict[str, float]] = {}
+        previous_period = dividends_per_share.index[0]
+
+        periods = pd.period_range(
+            start=dividends_per_share.index[0],
+            periods=project_periods + len(dividends_per_share.index),
+            freq="Q" if self._quarterly else "Y",
+        )
+
+        for ticker in self._tickers:
+            gorden_growth_model[ticker] = {}
+
+            for period in periods:
+                previous_period_location = periods.get_loc(previous_period)
+                period_location = periods.get_loc(period)
+                distance = period_location - previous_period_location
+
+                if (period_location + 1) < len(dividends_per_share.index):
+                    previous_period = period
+
+                dividends_per_share_value = (
+                    dividends_per_share.loc[period, ticker]
+                    if period != dividends_per_share.index[-1]
+                    and period in dividends_per_share.index
+                    else dividends_per_share.loc[previous_period, ticker]
+                    * (1 + growth_rate) ** distance
+                )
+
+                gorden_growth_model[ticker][
+                    period
+                ] = intrinsic_model.get_gorden_growth_model(
+                    dividends_per_share=dividends_per_share_value,
+                    rate_of_return=rate_of_return,
+                    growth_rate=growth_rate,
+                )
+
+        gorden_growth_model_df = pd.DataFrame(gorden_growth_model)
+
+        gorden_growth_model_df = gorden_growth_model_df.round(
+            rounding if rounding else self._rounding
+        )
+
+        return gorden_growth_model_df
+
     @handle_errors
     def get_altman_z_score(
         self,
@@ -817,9 +915,11 @@ class Models:
         years = self._balance_sheet_statement.columns
         begin, end = str(years[0]), str(years[-1])
 
-        share_prices = self._historical_data.loc[begin:end, "Adj Close"][
-            self._tickers
-        ].T
+        share_prices = (
+            self._historical_data["quarterly" if self._quarterly else "yearly"]
+            .loc[begin:end, "Adj Close"][self._tickers]
+            .T
+        )
 
         average_shares = (
             self._income_statement.loc[:, "Weighted Average Shares Diluted", :]
@@ -1105,9 +1205,11 @@ class Models:
         )
 
         historical_prices = (
-            self._daily_historical["Adj Close"]
+            self._historical_data["daily"]["Adj Close"]
             if calculate_daily
-            else self._historical_data["Adj Close"]
+            else self._historical_data["quarterly" if self._quarterly else "yearly"][
+                "Adj Close"
+            ]
         )
 
         pvgo = growth_model.get_present_value_of_growth_opportunities(

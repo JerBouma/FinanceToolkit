@@ -54,6 +54,17 @@ def test_get_weighted_average_cost_of_capital(recorder):
     )
 
 
+def test_get_gorden_growth_model(recorder):
+    recorder.capture(
+        models_module.get_gorden_growth_model(rate_of_return=0.1, growth_rate=0.09)
+    )
+    recorder.capture(
+        models_module.get_gorden_growth_model(
+            rate_of_return=0.2, growth_rate=0.1, project_periods=10
+        )
+    )
+
+
 def test_get_altman_z_score(recorder):
     recorder.capture(models_module.get_altman_z_score())
     recorder.capture(models_module.get_altman_z_score(growth=True))

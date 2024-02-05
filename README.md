@@ -1923,6 +1923,12 @@ The Black Scholes Model is based on several assumptions, including the following
 
 Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/options#get_black_scholes_model).
 
+> **Implied Volatility**
+
+The Implied Volatility (IV) is based on the Black Scholes Model and the actual option prices for any of the available expiration dates. Implied Volatility (IV) is a measure of how much the market expects the price of the underlying asset to fluctuate in the future. It is a key component of options pricing and can also be used to calculate the theoretical value of an option. It makes it possible to plot the Volatility Smile for each company and each expiration date as seen below. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/options#get_implied_volatility).
+
+<img style="background-color: white;" alt="Volatility Smile" width="400" src="https://upload.wikimedia.org/wikipedia/commons/thumb/e/ef/Volatility_smile.svg/1920px-Volatility_smile.svg.png">
+
 > **Binomial Option Pricing Model**
 
 The Binomial Option Pricing Model is a mathematical model used to estimate the price of European and American style options. It does so by creating a binomial tree of price paths for the underlying asset, and then working backwards through the tree to determine the price of the option at each node.

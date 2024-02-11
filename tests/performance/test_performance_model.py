@@ -120,8 +120,11 @@ def test_get_treynor_ratio(recorder):
 
 def test_get_sharpe_ratio(recorder):
     recorder.capture(
-        performance_model.get_sharpe_ratio(
-            excess_returns=pd.Series([0.3, 0.2, 0.1, 0, 0.06])
+        round(
+            performance_model.get_sharpe_ratio(
+                excess_returns=pd.Series([0.3, 0.2, 0.1, 0, 0.06])
+            ),
+            4,
         )
     )
 

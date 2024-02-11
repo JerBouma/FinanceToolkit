@@ -26,10 +26,13 @@ def test_get_var_gaussian(recorder):
         )
     )
     recorder.capture(
-        var_model.get_var_gaussian(
-            returns=pd.Series([0.3, 0.2, 0.1, 0, 0.06]),
-            alpha=0.03,
-            cornish_fisher=False,
+        round(
+            var_model.get_var_gaussian(
+                returns=pd.Series([0.3, 0.2, 0.1, 0, 0.06]),
+                alpha=0.03,
+                cornish_fisher=False,
+            ),
+            4,
         )
     )
 

@@ -1,8 +1,11 @@
 """Options Module"""
 __docformat__ = "google"
 
+from datetime import datetime
+
 import numpy as np
 import pandas as pd
+from scipy.optimize import minimize
 
 from financetoolkit.options import (
     binomial_trees_model,
@@ -13,7 +16,7 @@ from financetoolkit.options import (
 )
 from financetoolkit.ratios import valuation_model
 
-# pylint: disable=too-many-instance-attributes,too-few-public-methods,too-many-lines,too-many-locals
+# pylint: disable=too-many-instance-attributes,too-few-public-methods,too-many-lines,too-many-locals,cell-var-from-loop
 # pylint: disable=line-too-long,too-many-public-methods
 # ruff: noqa: E501
 
@@ -120,6 +123,8 @@ class Options:
     def get_option_chains(
         self,
         expiration_date: str | None = None,
+        put_option: bool = False,
+        show_expiration_dates: bool = False,
         rounding: int | None = None,
     ):
         """
@@ -175,11 +180,15 @@ class Options:
         """
         expiry_dates = options_model.get_option_expiry_dates(ticker=self._tickers[0])
 
+        if show_expiration_dates:
+            return list(expiry_dates.index)
+
         if expiry_dates.empty:
             raise ValueError(
                 "The expiration dates are not available. This is usually because no valid tickers were provided."
             )
         if expiration_date is None:
+            expiration_date = expiry_dates.index[0]
             expiration_date_value = expiry_dates.loc[expiry_dates.index[0]].iloc[0]
         elif expiration_date not in expiry_dates.index:
             raise ValueError(
@@ -189,7 +198,9 @@ class Options:
             expiration_date_value = expiry_dates.loc[expiration_date].iloc[0]
 
         option_chains = options_model.get_option_chains(
-            tickers=self._tickers, expiration_date=expiration_date_value
+            tickers=self._tickers,
+            expiration_date=expiration_date_value,
+            put_option=put_option,
         )
 
         option_chains["Change"] = option_chains["Change"].round(
@@ -202,10 +213,7 @@ class Options:
             rounding if rounding else self._rounding
         )
 
-        tickers = option_chains.index.get_level_values(0).unique()
-
-        if len(tickers) == 1:
-            option_chains = option_chains.loc[tickers[0]]
+        option_chains.name = expiration_date
 
         return option_chains
 
@@ -235,10 +243,10 @@ class Options:
 
         The Black Scholes Model is based on several assumptions, including the following:
 
-            - The option is European and can only be exercised at expiration.
-            - The underlying stock follows a lognormal distribution.
-            - The risk—free rate and volatility of the underlying stock are known and constant.
-            - The returns on the underlying stock are normally distributed.
+        - The option is European and can only be exercised at expiration.
+        - The underlying stock follows a lognormal distribution.
+        - The risk—free rate and volatility of the underlying stock are known and constant.
+        - The returns on the underlying stock are normally distributed.
 
         By default the most recent risk free rate, dividend yield and stock price is used, you can alter this by changing
         the start date. The volatility is calculated based on the daily returns of the stock price and the selected
@@ -246,10 +254,10 @@ class Options:
 
         The formulas are as follows:
 
-            - d1 = (ln(S / K) + (r — q + (σ^2) / 2) * t) / (σ * sqrt(t))
-            - d2 = d1 — σ * sqrt(t)
-            - Call Option Price = S * e^(—q * t) * N(d1) — K * e^(—r * t) * N(d2)
-            - Put Option Price = K * e^(—r * t) * N(—d2) — S * e^(—q * t) * N(—d1)
+        - d1 = (ln(S / K) + (r — q + (σ^2) / 2) * t) / (σ * sqrt(t))
+        - d2 = d1 — σ * sqrt(t)
+        - Call Option Price = S * e^(—q * t) * N(d1) — K * e^(—r * t) * N(d2)
+        - Put Option Price = K * e^(—r * t) * N(—d2) — S * e^(—q * t) * N(—d1)
 
         Where S is the stock price, K is the strike price, r is the risk free rate, q is the dividend yield, σ is the
         volatility, t is the time to expiration, N(d1) is the cumulative normal distribution of d1 and N(d2) is the
@@ -379,6 +387,188 @@ class Options:
 
         return black_scholes_df
 
+    def get_implied_volatility(
+        self,
+        expiration_date: str | None = None,
+        put_option: bool = False,
+        risk_free_rate: float | None = None,
+        dividend_yield: float | None = None,
+        show_expiration_dates: bool = False,
+        show_input_info: bool = False,
+        rounding: int | None = None,
+    ):
+        """
+        Calculate the Implied Volatility (IV) based on the Black Scholes Model and the actual option prices for
+        any of the available expiration dates.
+
+        Implied Volatility (IV) is a measure of how much the market expects the price of the underlying asset to
+        fluctuate in the future. It is a key component of options pricing and can also be used to calculate the
+        theoretical value of an option.
+
+        By default the most recent risk free rate, dividend yield and stock price is used, you can alter this by changing
+        the start date. The volatility is calculated based on the daily returns of the stock price and the selected
+        period (this can be altered by defining this accordingly when defining the Toolkit class, start_date and end_date).
+
+        The formulas are as follows:
+
+        - d1 = (ln(S / K) + (r — q + (σ^2) / 2) * t) / (σ * sqrt(t))
+        - d2 = d1 — σ * sqrt(t)
+        - Call Option Price = S * e^(—q * t) * N(d1) — K * e^(—r * t) * N(d2)
+        - Put Option Price = K * e^(—r * t) * N(—d2) — S * e^(—q * t) * N(—d1)
+
+        Where S is the stock price, K is the strike price, r is the risk free rate, q is the dividend yield, σ is the
+        volatility, t is the time to expiration, N(d1) is the cumulative normal distribution of d1 and N(d2) is the
+        the cumulative normal distribution of d2.
+
+        In which the Implied Volatility is then calculated as follows:
+
+        - Implied Volatility = MINIMIZE(Black Scholes Theoretical Price — Actual Option Price)
+
+        To determine the Implied Volatility, the Black Scholes Model is used to calculate the theoretical option price in
+        which sigma (σ) is the only unknown variable. The actual option price is then used to determine the implied
+        volatility by minimizing the difference between the theoretical and actual option price.
+
+        Args:
+            expiration_date (str | None, optional): The expiration date to use for the calculation. Defaults to None
+            which means it will use the most recent expiration date.
+            put_option (bool, optional): Whether to calculate the put option price. Defaults to False which means
+            it will calculate the call option price.
+            risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None which
+            means it will use the current risk free rate.
+            dividend_yield (float, optional): The dividend yield to use for the calculation. Defaults to None which
+            means it will use the dividend yield as obtained through annual historical data.
+            show_expiration_dates (bool, optional): Whether to show the expiration dates. Defaults to False.
+            show_input_info (bool, optional): Whether to show the input information. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+
+        Returns:
+            pd.Series | list[str]: Implied Volatility values containing the tickers as the index and the expiration
+            dates as the columns. If show_expiration_dates is True, it will return a list of expiration dates.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["MSFT", "AAPL"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        implied_volatility = toolkit.options.get_implied_volatility()
+
+        implied_volatility.loc['AAPL']
+        ```
+
+        Which returns:
+
+        |       |   2024-02-09 |
+        |------:|-------------:|
+        | 162.5 |       0.2828 |
+        | 165   |       1.0238 |
+        | 167.5 |       0.7867 |
+        | 170   |       0.6984 |
+        | 172.5 |       0.6796 |
+        | 175   |       0.4611 |
+        | 177.5 |       0.4423 |
+        | 180   |       0.4154 |
+        | 182.5 |       0.3541 |
+        | 185   |       0.3506 |
+        | 187.5 |       0.3331 |
+        | 190   |       0.3329 |
+        | 192.5 |       0.3411 |
+        | 195   |       0.361  |
+        | 197.5 |       0.3833 |
+        | 200   |       0.4033 |
+        | 202.5 |       0.4477 |
+        | 205   |       0.4452 |
+        | 207.5 |       0.518  |
+        """
+        option_chains = self.get_option_chains(
+            expiration_date=expiration_date if expiration_date is not None else None,
+            show_expiration_dates=show_expiration_dates,
+            put_option=put_option,
+        )
+
+        if show_expiration_dates:
+            # While the name implies option chains, it actually returns the expiration dates
+            return option_chains
+
+        current_period = self._daily_historical.index[-1]
+        stock_price = self._prices.loc[current_period]
+        volatility = self._volatility.loc[current_period]
+
+        risk_free_rate = (
+            risk_free_rate
+            if risk_free_rate is not None
+            else self._risk_free_rate.loc[current_period]
+        )
+
+        tickers = option_chains.index.get_level_values(0).unique()
+        today = datetime.today()
+        dividend_yield_value: dict[str, float] = {}
+        implied_volatility: dict[str, dict[float, float]] = {}
+
+        for ticker in tickers:
+            implied_volatility[ticker] = {}
+            option_chain = option_chains.loc[ticker]
+            dividend_yield_value[ticker] = (
+                dividend_yield
+                if dividend_yield is not None
+                else self._dividend_yield[ticker].loc[: str(current_period)].iloc[-1]
+            )
+
+            for strike_price, row in option_chain.iterrows():
+                # The expiration date is used to calculate the days to expiration
+                # which serves as input for the time to expiration parameter in the Black Scholes Model.
+                days_to_expiration = (pd.to_datetime(row["Expiration"]) - today).days
+
+                def objective_function(sigma: float):
+                    return (
+                        black_scholes_model.get_black_scholes(
+                            stock_price=stock_price.loc[ticker],
+                            strike_price=strike_price,
+                            risk_free_rate=risk_free_rate,
+                            time_to_expiration=days_to_expiration / 365,
+                            volatility=sigma,
+                            dividend_yield=dividend_yield_value[ticker],
+                            put_option=put_option,
+                        )
+                        - row["Last Price"]
+                    ) ** 2
+
+                # The minimize function is used to find the implied volatility value that minimizes
+                # the objective function. This means that the difference between the output of the
+                # Black Scholes Model and the market option price is minimized.
+                implied_volatility_value = minimize(
+                    objective_function, volatility.loc[ticker]
+                ).x[0]
+
+                # Values that are equal to the current volatility refer to not being able to resolve
+                # and thus are not added to the implied volatility dictionary.
+                if round(implied_volatility_value, 4) != round(
+                    volatility.loc[ticker], 4
+                ):
+                    implied_volatility[ticker][strike_price] = implied_volatility_value
+
+        implied_volatility_df = pd.DataFrame(implied_volatility).unstack().dropna()
+
+        implied_volatility_df = implied_volatility_df.round(
+            rounding if rounding else self._rounding
+        )
+
+        # The Expiration date is used as the name of the DataFrame
+        implied_volatility_df.name = option_chains.name
+
+        if show_input_info:
+            helpers.show_input_info(
+                start_date=self._daily_historical.index[0],
+                end_date=self._daily_historical.index[-1],
+                stock_prices=stock_price,
+                volatility=volatility,
+                risk_free_rate=risk_free_rate,
+                dividend_yield=dividend_yield_value,
+            )
+
+        return implied_volatility_df
+
     def get_binomial_model(
         self,
         start_date: str | None = None,
@@ -461,7 +651,7 @@ class Options:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "MSFT"], api_key=API_KEY)
+        toolkit = Toolkit(["AAPL", "MSFT"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         binomial_trees_model = toolkit.options.get_binomial_trees_model(
             start_date='2024-02-02'

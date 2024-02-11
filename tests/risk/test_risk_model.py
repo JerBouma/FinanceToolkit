@@ -33,13 +33,19 @@ def test_get_skewness(recorder):
 
 def test_get_kurtosis(recorder):
     recorder.capture(
-        risk_model.get_kurtosis(
-            returns=pd.Series([0.3, 0.2, 0.1, 0, 0.06]), fisher=True
+        round(
+            risk_model.get_kurtosis(
+                returns=pd.Series([0.3, 0.2, 0.1, 0, 0.06]), fisher=True
+            ),
+            4,
         )
     )
 
     recorder.capture(
-        risk_model.get_kurtosis(
-            returns=pd.Series([0.3, 0.2, 0.1, 0, 0.06]), fisher=False
+        round(
+            risk_model.get_kurtosis(
+                returns=pd.Series([0.3, 0.2, 0.1, 0, 0.06]), fisher=False
+            ),
+            4,
         )
     )

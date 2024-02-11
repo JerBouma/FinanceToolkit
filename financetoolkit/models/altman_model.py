@@ -154,11 +154,9 @@ def get_altman_z_score(
 
     The formula is as follows:
 
-        - Altman Z-Score = 1.2 * Working Capital to Total Assets Ratio
-                           + 1.4 * Retained Earnings to Total Assets Ratio
-                           + 3.3 * Earnings Before Interest and Taxes to Total Assets Ratio
-                           + 0.6 * Market Value of Equity to Book Value of Total Liabilities Ratio
-                           + 1.0 * Sales to Total Assets Ratio
+    Altman Z-Score = 1.2 * Working Capital to Total Assets Ratio + 1.4 * Retained Earnings to Total Assets Ratio
+    + 3.3 * Earnings Before Interest and Taxes to Total Assets Ratio
+    + 0.6 * Market Value of Equity to Book Value of Total Liabilities Ratio + 1.0 * Sales to Total Assets Ratio
 
     Args:
         working_capital_to_total_assets_ratio (float | pd.Series | pd.DataFrame): The Working Capital to Total

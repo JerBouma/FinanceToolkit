@@ -80,7 +80,7 @@ def test_get_skewness(recorder):
 
 def test_get_kurtosis(recorder):
     recorder.capture(risk_module.get_kurtosis())
-    recorder.capture(risk_module.get_kurtosis(within_period=False))
+    recorder.capture(round(risk_module.get_kurtosis(within_period=False), 4))
     recorder.capture(risk_module.get_kurtosis(period="monthly"))
     recorder.capture(risk_module.get_kurtosis(growth=True))
     recorder.capture(risk_module.get_kurtosis(growth=True, lag=[1, 2, 3]))

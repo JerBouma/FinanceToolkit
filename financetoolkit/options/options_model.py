@@ -53,13 +53,16 @@ def get_option_expiry_dates(ticker: str):
     return ticker_result
 
 
-def get_option_chains(tickers: list[str], expiration_date: str):
+def get_option_chains(
+    tickers: list[str], expiration_date: str, put_option: bool = False
+):
     """
     Get the option chains for a given list of tickers and expiration date.
 
     Args:
         tickers (list[str]): List of ticker symbols.
         expiration_date (str): Option expiration date.
+        put_option (bool, optional): Whether to get put options. Defaults to False.
 
     Returns:
         pd.DataFrame: Option chains.
@@ -95,7 +98,9 @@ def get_option_chains(tickers: list[str], expiration_date: str):
         result = response.json()
 
         ticker_result = pd.DataFrame(
-            result["optionChain"]["result"][0]["options"][0]["calls"]
+            result["optionChain"]["result"][0]["options"][0][
+                "puts" if put_option else "calls"
+            ]
         )
 
         if ticker_result.empty:

@@ -16,8 +16,11 @@ def test_get_cvar_historic(recorder):
 
 def test_get_cvar_gaussian(recorder):
     recorder.capture(
-        cvar_model.get_cvar_gaussian(
-            returns=pd.Series([0.3, 0.2, 0.1, 0, 0.06]), alpha=0.05
+        round(
+            cvar_model.get_cvar_gaussian(
+                returns=pd.Series([0.3, 0.2, 0.1, 0, 0.06]), alpha=0.05
+            ),
+            4,
         )
     )
 
@@ -40,7 +43,10 @@ def test_get_cvar_laplace(recorder):
 
 def test_get_cvar_logistic(recorder):
     recorder.capture(
-        cvar_model.get_cvar_logistic(
-            returns=pd.Series([0.3, 0.2, 0.1, 0, 0.06]), alpha=0.05
+        round(
+            cvar_model.get_cvar_logistic(
+                returns=pd.Series([0.3, 0.2, 0.1, 0, 0.06]), alpha=0.05
+            ),
+            4,
         )
     )

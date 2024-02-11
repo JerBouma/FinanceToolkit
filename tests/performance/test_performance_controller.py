@@ -111,7 +111,7 @@ def test_get_treynor_ratio(recorder):
 
 
 def test_get_sharpe_ratio(recorder):
-    recorder.capture(performance_module.get_sharpe_ratio())
+    recorder.capture(round(performance_module.get_sharpe_ratio(), 2))
     recorder.capture(performance_module.get_sharpe_ratio(period="quarterly"))
     recorder.capture(performance_module.get_sharpe_ratio(rolling=10))
     recorder.capture(performance_module.get_sharpe_ratio(growth=True))

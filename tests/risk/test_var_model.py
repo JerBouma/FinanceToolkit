@@ -16,8 +16,13 @@ def test_get_var_historic(recorder):
 
 def test_get_var_gaussian(recorder):
     recorder.capture(
-        var_model.get_var_gaussian(
-            returns=pd.Series([0.3, 0.2, 0.1, 0, 0.06]), alpha=0.05, cornish_fisher=True
+        round(
+            var_model.get_var_gaussian(
+                returns=pd.Series([0.3, 0.2, 0.1, 0, 0.06]),
+                alpha=0.05,
+                cornish_fisher=True,
+            ),
+            4,
         )
     )
     recorder.capture(

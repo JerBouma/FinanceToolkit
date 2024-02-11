@@ -516,7 +516,7 @@ class Options:
             )
 
             for strike_price, row in option_chain.iterrows():
-                # That expiration date is used to calculate the days to expiration
+                # The expiration date is used to calculate the days to expiration
                 # which serves as input for the time to expiration parameter in the Black Scholes Model.
                 days_to_expiration = (pd.to_datetime(row["Expiration"]) - today).days
 

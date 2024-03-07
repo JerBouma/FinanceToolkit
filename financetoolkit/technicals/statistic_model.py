@@ -142,12 +142,14 @@ def get_ar_weights_lsm(series: np.ndarray, p: int) -> tuple:
             - numpy array of estimated parameters (phi),
             - float representing the sigma squared of the white noise.
     """
-    X = np.column_stack([series[i: -p+i if -p+i else None] for i in range(1, p + 1)])
+    X = np.column_stack(
+        [series[i : -p + i if -p + i else None] for i in range(1, p + 1)]
+    )
     Y = series[p:]
-    
+
     # Solving for AR coefficients using the Least Squares Method
     phi, residuals, rank, s = np.linalg.lstsq(X, Y, rcond=None)
-    
+
     # Estimate the variance of the white noise as the mean squared error of the residuals
     residuals = Y - X.dot(phi)
     sigma2 = np.mean(residuals**2)
@@ -173,11 +175,14 @@ def estimate_ar_weights_yule_walker(series: pd.Series, p: int) -> tuple:
             - numpy array of estimated parameters (phi),
             - float representing the sigma squared of the white noise.
     """
-    autocov = [np.correlate(series, series, mode='full')[len(series)-1-i] / len(series) for i in range(p+1)]
+    autocov = [
+        np.correlate(series, series, mode="full")[len(series) - 1 - i] / len(series)
+        for i in range(p + 1)
+    ]
 
     # Create the Yule-Walker matrices
     R = scipy.linalg.toeplitz(autocov[:p])
-    r = autocov[1:p+1]
+    r = autocov[1 : p + 1]
 
     # Solve the Yule-Walker equations
     phi = np.linalg.solve(R, r)
@@ -266,11 +271,13 @@ def ma_likelihood(params, data: np.ndarray) -> float:
     theta = params[:-1]
     sigma2 = params[-1]
     n = len(data)
-    errors = np.zeros(n) # Zero-initialized errors to store the errors
+    errors = np.zeros(n)  # Zero-initialized errors to store the errors
 
     for t in range(q, n):
-        errors[t] = data[t] - np.dot(theta, errors[t-q:t][::-1])
-    likelihood = -n/2 * np.log(2 * np.pi * sigma2) - np.sum(errors[q:]**2) / (2 * sigma2)
+        errors[t] = data[t] - np.dot(theta, errors[t - q : t][::-1])
+    likelihood = -n / 2 * np.log(2 * np.pi * sigma2) - np.sum(errors[q:] ** 2) / (
+        2 * sigma2
+    )
     return -likelihood
 
 
@@ -301,7 +308,7 @@ def fit_ma_model(data: np.ndarray, q: int) -> tuple:
     year = "1976",
     URL = "https://www.nber.org/books-and-chapters/annals-economic-and-social-measurement-volume-5-number-1",
     }
-    
+
     Args:
         data (np.ndarray): Observed time series data.
         q (int): The order of the MA model.
@@ -318,21 +325,24 @@ def fit_ma_model(data: np.ndarray, q: int) -> tuple:
     initial_params[-1] = np.var(data)
 
     # Minimize the negative likelihood
-    result = scipy.optimize.minimize(ma_likelihood, initial_params, args=(data_adjusted,), method='L-BFGS-B')
+    result = scipy.optimize.minimize(
+        ma_likelihood, initial_params, args=(data_adjusted,), method="L-BFGS-B"
+    )
 
     if result.success:
         fitted_params = result.x
         return fitted_params[:-1], fitted_params[-1]
     else:
         raise RuntimeError("Optimization failed.")
-    
+
+
 def get_ma(
-        data: np.ndarray | pd.Series | pd.DataFrame,
-        q: int,
-        steps: int = 1,
-        theta: np.ndarray = None,
-        sigma2: float = 1,
-    ):
+    data: np.ndarray | pd.Series | pd.DataFrame,
+    q: int,
+    steps: int = 1,
+    theta: np.ndarray = None,
+    sigma2: float = 1,
+):
     """
     Predict values using an MA(q) model.
 
@@ -362,18 +372,22 @@ def get_ma(
         raise ValueError("Theta (MA coefficients) must be provided.")
 
     if len(data) < q:
-        raise ValueError("Number of observations in data must be at least equal to the order of the MA model (q).")
-    
+        raise ValueError(
+            "Number of observations in data must be at least equal to the order of the MA model (q)."
+        )
+
     if theta is None or sigma2 is None:
         theta, sigma2 = fit_ma_model(data, q)
     mu = np.mean(data)
-    errors = np.random.normal(0, sigma2, steps + q)  # Generate white noise errors for simulation
+    errors = np.random.normal(
+        0, sigma2, steps + q
+    )  # Generate white noise errors for simulation
 
     predictions = np.zeros(steps)
     for i in range(steps):
         if q > 0:
-            error_terms = errors[i:i+q] if i+q <= steps else errors[i:steps]
-            predictions[i] = mu + np.dot(theta[:len(error_terms)], error_terms[::-1])
+            error_terms = errors[i : i + q] if i + q <= steps else errors[i:steps]
+            predictions[i] = mu + np.dot(theta[: len(error_terms)], error_terms[::-1])
         else:
             predictions[i] = mu
 

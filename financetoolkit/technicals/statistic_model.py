@@ -142,17 +142,15 @@ def get_ar_weights_lsm(series: np.ndarray, p: int) -> tuple:
             - numpy array of estimated parameters (phi),
             - float representing the sigma squared of the white noise.
     """
-    X = np.column_stack(
-        [series[i : -p + i if -p + i else None] for i in range(1, p + 1)]
-    )
+    X = np.column_stack([series[i : len(series) - p + i] for i in range(p)])
     Y = series[p:]
 
     # Solving for AR coefficients using the Least Squares Method
     phi, residuals, rank, s = np.linalg.lstsq(X, Y, rcond=None)
-
-    # Estimate the variance of the white noise as the mean squared error of the residuals
-    residuals = Y - X.dot(phi)
-    sigma2 = np.mean(residuals**2)
+    if residuals.size > 0:
+        sigma2 = residuals[0] / len(Y)
+    else:
+        sigma2 = 0
 
     return phi, sigma2
 

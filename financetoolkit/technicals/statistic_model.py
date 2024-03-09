@@ -146,7 +146,7 @@ def get_ar_weights_lsm(series: np.ndarray, p: int) -> tuple:
     Y = series[p:]
 
     # Solving for AR coefficients using the Least Squares Method
-    phi, residuals, rank, s = np.linalg.lstsq(X, Y, rcond=None)
+    phi, residuals, _, _ = np.linalg.lstsq(X, Y, rcond=None)
     if residuals.size > 0:
         sigma2 = residuals[0] / len(Y)
     else:
@@ -195,7 +195,6 @@ def get_ar(
     data: np.ndarray | pd.Series | pd.DataFrame,
     steps: int = 1,
     phi: np.ndarray | None = None,
-    c: float | None = None,
     p: int = 1,
     method: str = "lsm",
 ) -> np.ndarray | pd.Series | pd.DataFrame:
@@ -223,7 +222,7 @@ def get_ar(
             to consider. It is only used if c or phi isn't provided. Defaults to 1.
         method (str, optional): The method to use to estimate the AR parameters. Can be
             'lsm' (Least Squares Method) or 'yw' (Yule-Walker Method). Defaults to 'lsm'.
-            See the wheight calculation functions documentation for more details.
+            See the weight calculation functions documentation for more details.
 
     Returns:
         np.ndarray | pd.Series | pd.DataFrame: Predicted values for the specified
@@ -233,24 +232,24 @@ def get_ar(
         if data.index.nlevels != 1:
             raise ValueError("Expects single index DataFrame, no other value.")
         return data.aggregate(get_ar)
-    elif isinstance(data, pd.Series):
-        return get_ar(data.values, phi, c, steps)
-    elif isinstance(data, np.ndarray):
-        if phi is None:
-            if method == "lsm":
-                phi, _ = get_ar_weights_lsm(data, p)
-            elif method == "yw":
-                phi, _ = estimate_ar_weights_yule_walker(data, p)
-            else:
-                raise ValueError("Method must be 'lsm' or 'yw'.")
+    if isinstance(data, pd.Series):
+        data = data.values
 
-        predictions = np.zeros(steps)
-        for i in range(steps):
-            X_recent = data[-p:]
-            X_next = np.dot(phi, X_recent[::-1])
-            predictions[i] = X_next
+    if phi is None:
+        if method == "lsm":
+            phi, _ = get_ar_weights_lsm(data, p)
+        elif method == "yw":
+            phi, _ = estimate_ar_weights_yule_walker(data, p)
+        else:
+            raise ValueError("Method must be 'lsm' or 'yw'.")
 
-        return predictions
+    predictions = np.zeros(steps)
+    for i in range(steps):
+        X_recent = data[-p:]
+        X_next = np.dot(phi, X_recent[::-1])
+        predictions[i] = X_next
+
+    return predictions
 
 
 def ma_likelihood(params, data: np.ndarray) -> float:
@@ -330,8 +329,7 @@ def fit_ma_model(data: np.ndarray, q: int) -> tuple:
     if result.success:
         fitted_params = result.x
         return fitted_params[:-1], fitted_params[-1]
-    else:
-        raise RuntimeError("Optimization failed.")
+    raise RuntimeError("Optimization failed.")
 
 
 def get_ma(
@@ -363,7 +361,7 @@ def get_ma(
         if data.index.nlevels != 1:
             raise ValueError("Expects single index DataFrame.")
         return data.aggregate(get_ma)
-    elif isinstance(data, pd.Series):
+    if isinstance(data, pd.Series):
         data = data.values
 
     if theta is None:

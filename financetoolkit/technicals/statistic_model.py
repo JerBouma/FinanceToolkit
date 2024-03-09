@@ -147,10 +147,7 @@ def get_ar_weights_lsm(series: np.ndarray, p: int) -> tuple:
 
     # Solving for AR coefficients using the Least Squares Method
     phi, residuals, _, _ = np.linalg.lstsq(X, Y, rcond=None)
-    if residuals.size > 0:
-        sigma2 = residuals[0] / len(Y)
-    else:
-        sigma2 = 0
+    sigma2 = residuals[0] / len(Y) if residuals.size > 0 else 0
 
     return phi, sigma2
 
@@ -254,7 +251,7 @@ def get_ar(
 
 def ma_likelihood(params, data: np.ndarray) -> float:
     """
-    Calculate the negative log-likelihood for an MA(q) model.
+    Calculate the negative log-likelihood for an MA(q) model and the residuals/errors.
 
     Args:
         params (np.ndarray): Model parameters where the last element is the variance of the
@@ -262,20 +259,24 @@ def ma_likelihood(params, data: np.ndarray) -> float:
         data (np.ndarray): Observed time series data.
 
     Returns:
-        float: The negative log-likelihood of the MA model.
+        tuple:
+            - float: The negative log-likelihood of the MA model.
+            - np.ndarray: Residuals/errors from the MA model.
     """
     q = len(params) - 1
     theta = params[:-1]
     sigma2 = params[-1]
     n = len(data)
-    errors = np.zeros(n)  # Zero-initialized errors to store the errors
+
+    errors = np.zeros(n)
 
     for t in range(q, n):
         errors[t] = data[t] - np.dot(theta, errors[t - q : t][::-1])
     likelihood = -n / 2 * np.log(2 * np.pi * sigma2) - np.sum(errors[q:] ** 2) / (
         2 * sigma2
     )
-    return -likelihood
+
+    return -likelihood, errors
 
 
 def fit_ma_model(data: np.ndarray, q: int) -> tuple:
@@ -283,7 +284,7 @@ def fit_ma_model(data: np.ndarray, q: int) -> tuple:
     Fit an MA(q) model to the time series data.
 
     Finds the parameters of the MA model that minimize the negative log-likelihood of
-    the observed data.
+    the observed data and calculate residuals.
 
     This MLE method is described in:
     @inbook{NBERc12707,
@@ -311,25 +312,27 @@ def fit_ma_model(data: np.ndarray, q: int) -> tuple:
         q (int): The order of the MA model.
 
     Returns:
-        tuple: The parameters theta and sigma of the fitted MA model.
+        tuple:
+            - np.ndarray: The parameters theta of the fitted MA model.
+            - float: The variance sigma of the fitted MA model.
+            - np.ndarray: The residuals/errors from the fitted MA model.
     """
-    # Adjust for the mean, centering the data around zero
-    mu = np.mean(data)
-    data_adjusted = data - mu
-
-    # Initial parameter guesses
     initial_params = np.zeros(q + 1)
     initial_params[-1] = np.var(data)
 
-    # Minimize the negative likelihood
+    # Minimize the negative log-likelihood
     result = scipy.optimize.minimize(
-        ma_likelihood, initial_params, args=(data_adjusted,), method="L-BFGS-B"
+        lambda params, data: ma_likelihood(params, data)[0],
+        initial_params,
+        args=(data,),
+        method="L-BFGS-B",
     )
 
-    if result.success:
-        fitted_params = result.x
-        return fitted_params[:-1], fitted_params[-1]
-    raise RuntimeError("Optimization failed.")
+    if not result.success:
+        raise RuntimeError("Optimization failed to converge.")
+    _, errors = ma_likelihood(result.x, data)
+
+    return result.x[:-1], result.x[-1], errors[q:]
 
 
 def get_ma(
@@ -337,8 +340,8 @@ def get_ma(
     q: int,
     steps: int = 1,
     theta: np.ndarray = None,
-    sigma2: float = 1,
-):
+    errors: np.ndarray = None,
+) -> np.ndarray | pd.Series | pd.DataFrame:
     """
     Predict values using an MA(q) model.
 
@@ -349,10 +352,10 @@ def get_ma(
 
     Args:
         data (np.ndarray | pd.Series | pd.DataFrame): The data to predict values for with MA(q).
+        q (int): The order of the moving average model, indicating how many past error terms to consider.
         steps (int, optional): The number of future time steps to predict. Defaults to 1.
         theta (np.ndarray | None): Estimated parameters of the MA model.
-        sigma2 (float): Estimated variance of the error term (white noise) in the MA model.
-        q (int): The order of the moving average model, indicating how many past error terms to consider.
+        errors (np.ndarray | None): Array of past errors (residuals) from the model.
 
     Returns:
         np.ndarray | pd.Series | pd.DataFrame: Predicted values for the specified number of future steps.
@@ -362,29 +365,27 @@ def get_ma(
             raise ValueError("Expects single index DataFrame.")
         return data.aggregate(get_ma)
     if isinstance(data, pd.Series):
-        data = data.values
+        data = data.to_numpy()
 
-    if theta is None:
-        raise ValueError("Theta (MA coefficients) must be provided.")
+    if theta is None or errors is None:
+        theta, _, errors = fit_ma_model(data, q)
 
     if len(data) < q:
-        raise ValueError(
-            "Number of observations in data must be at least equal to the order of the MA model (q)."
-        )
+        raise ValueError("Data length must be at least equal to the MA order (q).")
 
-    if theta is None or sigma2 is None:
-        theta, sigma2 = fit_ma_model(data, q)
     mu = np.mean(data)
-    errors = np.random.normal(
-        0, sigma2, steps + q
-    )  # Generate white noise errors for simulation
+    predictions = np.full(steps, mu)
 
-    predictions = np.zeros(steps)
     for i in range(steps):
-        if q > 0:
-            error_terms = errors[i : i + q] if i + q <= steps else errors[i:steps]
-            predictions[i] = mu + np.dot(theta[: len(error_terms)], error_terms[::-1])
-        else:
-            predictions[i] = mu
+        if i < q:
+            # For each step, use up to q past errors, padding with zeros if necessary
+            relevant_errors = (
+                errors[-q:]
+                if i == 0
+                else np.concatenate((errors[-(q - i) :], np.zeros(i)))
+            )
+            predictions[i] += np.dot(
+                theta[: len(relevant_errors)], relevant_errors[::-1]
+            )
 
     return predictions

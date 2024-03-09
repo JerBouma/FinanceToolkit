@@ -138,18 +138,25 @@ def get_ar_weights_lsm(series: np.ndarray, p: int) -> tuple:
         p (int): The order of the autoregressive model, indicating how many past values to consider.
 
     Returns:
-        tuple: A tuple containing two elements:
-            - numpy array of estimated parameters (phi),
+        tuple: A tuple containing three elements:
+            - numpy array of estimated parameters phi,
+            - float representing the estimated constant c,
             - float representing the sigma squared of the white noise.
     """
-    X = np.column_stack([series[i : len(series) - p + i] for i in range(p)])
+    X = np.column_stack(
+        [np.ones(len(series) - p)] + [series[i : len(series) - p + i] for i in range(p)]
+    )
     Y = series[p:]
 
-    # Solving for AR coefficients using the Least Squares Method
-    phi, residuals, _, _ = np.linalg.lstsq(X, Y, rcond=None)
-    sigma2 = residuals[0] / len(Y) if residuals.size > 0 else 0
+    # Solving for AR coefficients and constant term using the Least Squares Method
+    params = np.linalg.lstsq(X, Y, rcond=None)[0]
+    phi = params[1:]
+    c = params[0]
 
-    return phi, sigma2
+    residuals = Y - X @ params
+    sigma2 = residuals @ residuals / len(Y)
+
+    return phi, c, sigma2
 
 
 def estimate_ar_weights_yule_walker(series: pd.Series, p: int) -> tuple:
@@ -166,8 +173,9 @@ def estimate_ar_weights_yule_walker(series: pd.Series, p: int) -> tuple:
         p (int): The order of the autoregressive model.
 
     Returns:
-        tuple: A tuple containing two elements:
-            - numpy array of estimated parameters (phi),
+        tuple: A tuple containing three elements:
+            - numpy array of estimated parameters phi,
+            - float representing the estimated constant c,
             - float representing the sigma squared of the white noise.
     """
     autocov = [
@@ -181,18 +189,19 @@ def estimate_ar_weights_yule_walker(series: pd.Series, p: int) -> tuple:
 
     # Solve the Yule-Walker equations
     phi = np.linalg.solve(R, r)
+    mu = series.mean()
+    c = mu * (1 - np.sum(phi))
+    sigma2 = autocov[0] - phi @ r
 
-    # Estimate the variance of the white noise
-    sigma2 = autocov[0] - np.dot(phi, r)
-
-    return phi, sigma2
+    return phi, c, sigma2
 
 
 def get_ar(
     data: np.ndarray | pd.Series | pd.DataFrame,
+    p: int = 1,
     steps: int = 1,
     phi: np.ndarray | None = None,
-    p: int = 1,
+    c: float | None = None,
     method: str = "lsm",
 ) -> np.ndarray | pd.Series | pd.DataFrame:
     """
@@ -210,13 +219,15 @@ def get_ar(
     'cuts off' after lag p.
 
     Args:
-        data (np.ndarray):
+        data (np.ndarray | pd.Series | pd.DataFrame):
             The data to predict values for with AR(p). The number of observations should be at
-            least equal to the order of the AR model.
-        steps (int, optional): The number of future time steps to predict. Defaults to 1.
-        phi (np.ndarray | pd.Series, pd.DataFrame): Estimated parameters of the AR model.
+            least equal to the order of the AR model. Note that it calculates the AR model
+            for each column of the DataFrame separately.
         p (int): The order of the autoregressive model, indicating how many past values
             to consider. It is only used if c or phi isn't provided. Defaults to 1.
+        steps (int, optional): The number of future time steps to predict. Defaults to 1.
+        phi (np.ndarray | None): Estimated parameters of the AR model.
+        c (float | None): The constant term of the AR model.
         method (str, optional): The method to use to estimate the AR parameters. Can be
             'lsm' (Least Squares Method) or 'yw' (Yule-Walker Method). Defaults to 'lsm'.
             See the weight calculation functions documentation for more details.
@@ -228,23 +239,29 @@ def get_ar(
     if isinstance(data, pd.DataFrame):
         if data.index.nlevels != 1:
             raise ValueError("Expects single index DataFrame, no other value.")
-        return data.aggregate(get_ar)
+        return data.aggregate(
+            lambda x: get_ar(x, steps=steps, phi=phi, p=p, method=method)
+        )
     if isinstance(data, pd.Series):
-        data = data.values
+        data = data.to_numpy()
 
     if phi is None:
         if method == "lsm":
-            phi, _ = get_ar_weights_lsm(data, p)
+            phi, c, _ = get_ar_weights_lsm(data, p)
         elif method == "yw":
-            phi, _ = estimate_ar_weights_yule_walker(data, p)
+            phi, c, _ = estimate_ar_weights_yule_walker(data, p)
         else:
             raise ValueError("Method must be 'lsm' or 'yw'.")
 
     predictions = np.zeros(steps)
+    recent_values = list(data[-p:])
+
     for i in range(steps):
-        X_recent = data[-p:]
-        X_next = np.dot(phi, X_recent[::-1])
-        predictions[i] = X_next
+        next_value = c + phi @ recent_values
+        predictions[i] = next_value
+
+        recent_values.append(next_value)
+        recent_values.pop(0)
 
     return predictions
 
@@ -271,7 +288,7 @@ def ma_likelihood(params, data: np.ndarray) -> float:
     errors = np.zeros(n)
 
     for t in range(q, n):
-        errors[t] = data[t] - np.dot(theta, errors[t - q : t][::-1])
+        errors[t] = data[t] - theta @ errors[t - q : t][::-1]
     likelihood = -n / 2 * np.log(2 * np.pi * sigma2) - np.sum(errors[q:] ** 2) / (
         2 * sigma2
     )
@@ -352,7 +369,9 @@ def get_ma(
 
     Args:
         data (np.ndarray | pd.Series | pd.DataFrame): The data to predict values for with MA(q).
+            Note that it calculates the AR model for each column of the DataFrame separately.
         q (int): The order of the moving average model, indicating how many past error terms to consider.
+            It is only used if theta or errors isn't provided.
         steps (int, optional): The number of future time steps to predict. Defaults to 1.
         theta (np.ndarray | None): Estimated parameters of the MA model.
         errors (np.ndarray | None): Array of past errors (residuals) from the model.
@@ -363,7 +382,9 @@ def get_ma(
     if isinstance(data, pd.DataFrame):
         if data.index.nlevels != 1:
             raise ValueError("Expects single index DataFrame.")
-        return data.aggregate(get_ma)
+        return data.aggregate(
+            lambda x: get_ma(x, q=q, steps=steps, theta=theta, errors=errors)
+        )
     if isinstance(data, pd.Series):
         data = data.to_numpy()
 
@@ -378,14 +399,11 @@ def get_ma(
 
     for i in range(steps):
         if i < q:
-            # For each step, use up to q past errors, padding with zeros if necessary
             relevant_errors = (
                 errors[-q:]
                 if i == 0
                 else np.concatenate((errors[-(q - i) :], np.zeros(i)))
             )
-            predictions[i] += np.dot(
-                theta[: len(relevant_errors)], relevant_errors[::-1]
-            )
+            predictions[i] += theta[: len(relevant_errors)] @ relevant_errors[::-1]
 
     return predictions

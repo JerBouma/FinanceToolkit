@@ -1,6 +1,7 @@
 """Weighted Average Cost of Capital Module"""
 __docformat__ = "google"
 
+import numpy as np
 import pandas as pd
 
 from financetoolkit.performance import performance_model
@@ -135,6 +136,14 @@ def get_weighted_average_cost_of_capital(
 
     # Calculate the Cost of Debt
     cost_of_debt = get_cost_of_debt(interest_expense, total_debt)
+
+    # If the cost of debt is Inf, change it to 0
+    if np.inf in cost_of_debt.to_numpy():
+        print(
+            "Please note that the Cost of Debt contains Inf. This is due to Total Debt being 0, "
+            "therefore Cost of Debt is adjusted to 0 for those periods."
+        )
+        cost_of_debt = cost_of_debt.replace([np.inf, -np.inf], 0)
 
     # Calculate the Corporate Tax Rate
     corporate_tax_rate = profitability_model.get_effective_tax_rate(

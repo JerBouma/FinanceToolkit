@@ -2710,6 +2710,40 @@ The SOFR is calculated as a volume-weighted median of transaction-level tri-part
 </details>
 
 <details>
+    <summary><b>Fixed Income 📃 </b></summary>
+
+The fixed income metrics revolve around option-adjusted spreads, effective yields and total returns of corporate bonds based on the ICE BofA US Corporate Indices. It is possible to view both the indices of the ratings (AAA, AA, A, BBB, BB, B and CCC) and the maturities (1-3 years, 3-5 years, 5-7 years, 7-10 years, 10-15 years, 15-30 years and 30+ years).
+
+All fixed income metrics can be called by using `get_` to get a single metric. E.g. `get_option_adjusted_spread` or `get_yield_to_worst`. As an example:
+
+```python
+from financetoolkit import Toolkit
+
+toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+# Get Fixed Income Results
+toolkit.economics.get_option_adjusted_spread()
+```
+
+> Option-Adjusted Spread (OAS)
+
+The Option-Adjusted Spread (OAS) is the spread relative to a risk-free interest rate, usually measured in basis points (bp), that equates the theoretical present value of a series of uncertain cash flows to the market price of a fixed-income investment. The spread is added to the risk-free rate to compensate for the uncertainty of the cash flows. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_option_adjusted_spread).
+
+> Effective Yield
+
+The Effective Yield is the yield of a bond, calculated by dividing the bond's coupon payments by its market price. The effective yield is not the same as the stated yield, which is the yield on the bond's coupon payments divided by the bond's principal value. The effective yield is a more accurate measure of a bond's return, as it takes into account the fact that the investor will not hold the bond to maturity and will likely sell it before it matures. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_effective_yield).
+
+> Total Return
+
+The total return is the actual rate of return of an investment or a pool of investments over a given evaluation period. Total return includes interest, capital gains, dividends and distributions realized over a given period of time. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_total_return).
+
+> Yield to Worst
+
+Yield to worst is the lowest potential yield that a bond can generate without the issuer defaulting. The standard US convention for this series is to use semi-annual coupon payments, whereas the standard in the foreign markets is to use coupon payments with frequencies of annual, semi-annual, quarterly, and monthly. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_yield_to_worst).
+
+</details>
+
+<details>
     <summary><b>Environment 💚</b></summary>
 
 The environment metrics revolve around renewable energy, environmental tax, greenhouse gas emissions, crude oil production and crude oil prices of countries. This includes the renewable energy as a percentage of total energy, environmental tax as a percentage of GDP, greenhouse gas emissions, crude oil production and crude oil prices.

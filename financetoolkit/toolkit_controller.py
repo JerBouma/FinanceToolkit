@@ -2556,12 +2556,16 @@ class Toolkit:
                     else self._progress_bar
                 )
 
-            self._statement_currencies, self._currencies = helpers.determine_currencies(
-                statement_currencies=self._statistics_statement.xs(
-                    "Reported Currency", axis=0, level=1
-                ),
-                historical_currencies=self._historical_statistics.loc["Currency"],
-            )
+            if not self._statistics_statement.empty:
+                (
+                    self._statement_currencies,
+                    self._currencies,
+                ) = helpers.determine_currencies(
+                    statement_currencies=self._statistics_statement.xs(
+                        "Reported Currency", axis=0, level=1
+                    ),
+                    historical_currencies=self._historical_statistics.loc["Currency"],
+                )
 
         if self._daily_exchange_rate_data.empty or overwrite:
             self._daily_exchange_rate_data, _ = _get_historical_data(
@@ -2992,9 +2996,9 @@ class Toolkit:
             income_statement = helpers.convert_currencies(
                 financial_statement_data=income_statement,
                 financial_statement_currencies=self._statement_currencies,
-                exchange_rate_data=self.get_exchange_rates(
-                    period="quarterly" if self._quarterly else "yearly"
-                )["Adj Close"],
+                exchange_rate_data=self._quarterly_exchange_rate_data["Adj Close"]
+                if self._quarterly
+                else self._yearly_exchange_rate_data["Adj Close"],
                 items_not_to_adjust=[
                     "Gross Profit Ratio",
                     "EBITDA Ratio",
@@ -3160,9 +3164,9 @@ class Toolkit:
             cash_flow_statement = helpers.convert_currencies(
                 financial_statement_data=cash_flow_statement,
                 financial_statement_currencies=self._statement_currencies,
-                exchange_rate_data=self.get_exchange_rates(
-                    period="quarterly" if self._quarterly else "yearly"
-                )["Adj Close"],
+                exchange_rate_data=self._quarterly_exchange_rate_data["Adj Close"]
+                if self._quarterly
+                else self._yearly_exchange_rate_data["Adj Close"],
                 financial_statement_name="cash flow statement",
             )
 

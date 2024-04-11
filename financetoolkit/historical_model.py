@@ -234,6 +234,9 @@ def get_historical_data(
 
     reorder_tickers = [ticker for ticker in tickers if ticker in historical_data_dict]
 
+    if not historical_data_dict:
+        raise ValueError("No data found for the given tickers.")
+
     historical_data = pd.concat(historical_data_dict).unstack(level=0)
     historical_data = historical_data.reindex(reorder_tickers, level=1, axis=1)
 

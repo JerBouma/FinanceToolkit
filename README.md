@@ -2569,7 +2569,7 @@ The bond statistics contains a variety of different metrics to evaluate a bond. 
 - **DV01:** The dollar value of a 0.01% change in yield to maturity.
 - **Convexity:** The second derivative of the bond price with respect to the yield to maturity.
 
-It gives a complete overview of the bond's performance. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/fixedincome#get_bond_statistics) and an example below which shows the bond statistics for three different bonds.
+It gives a complete overview of the bond's performance. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/fixedincome#get_bond_statistics) and an example below which shows the bond statistics for six different bonds using this functionality.
 
 |                     |   Bond 1 |   Bond 2 |   Bond 3 |    Bond 4 |   Bond 5 |   Bond 6 |
 |:--------------------|---------:|---------:|---------:|----------:|---------:|---------:|

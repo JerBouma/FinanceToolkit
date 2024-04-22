@@ -1056,6 +1056,7 @@ class Toolkit:
         return FixedIncome(
             start_date=self._start_date,
             end_date=self._end_date,
+            quarterly=self._quarterly,
             rounding=self._rounding,
         )
 

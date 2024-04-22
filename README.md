@@ -2571,22 +2571,22 @@ The bond statistics contains a variety of different metrics to evaluate a bond. 
 
 It gives a complete overview of the bond's performance. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/fixedincome#get_bond_statistics) and an example below which shows the bond statistics for three different bonds.
 
-|                     |   Bond 1 |   Bond 2 |   Bond 3 |
-|:--------------------|---------:|---------:|---------:|
-| Par Value           | 100      | 250      |  50      |
-| Coupon Rate         |   0.05   |   0.02   |   0.075  |
-| Years to Maturity   |   5      |  10      |   2      |
-| Yield to Maturity   |   0.08   |   0.021  |   0.03   |
-| Frequency           |   1      |   1      |   4      |
-| Present Value       |  88.0219 | 247.766  |  54.3518 |
-| Current Yield       |   0.0568 |   0.0202 |   0.069  |
-| Effective Yield     |   0.05   |   0.02   |   0.0771 |
-| Macaulay's Duration |   4.5116 |   9.1576 |   1.8849 |
-| Modified Duration   |   4.1774 |   8.9693 |   1.8709 |
-| Effective Duration  |   4.0677 |   8.5181 |   1.8477 |
-| Dollar Duration     |   3.677  |  22.2228 |   1.0168 |
-| DV01                |   0.0004 |   0.0022 |   0      |
-| Convexity           |  22.4017 |  93.7509 |   4.0849 |
+|                     |   Bond 1 |   Bond 2 |   Bond 3 |    Bond 4 |   Bond 5 |   Bond 6 |
+|:--------------------|---------:|---------:|---------:|----------:|---------:|---------:|
+| Par Value           | 100      | 250      |  50      | 1000      |  85      | 320      |
+| Coupon Rate         |   0.05   |   0.02   |   0.075  |    0      |   0.15   |   0.015  |
+| Years to Maturity   |   5      |  10      |   2      |   10      |   3      |   1      |
+| Yield to Maturity   |   0.08   |   0.021  |   0.03   |    0      |   0.16   |   0.04   |
+| Frequency           |   1      |   1      |   4      |    1      |   2      |  12      |
+| Present Value       |  88.0219 | 247.766  |  54.3518 | 1000      |  83.0353 | 312.171  |
+| Current Yield       |   0.0568 |   0.0202 |   0.069  |    0      |   0.1535 |   0.0154 |
+| Effective Yield     |   0.05   |   0.02   |   0.0771 |    0      |   0.1556 |   0.0151 |
+| Macaulay's Duration |   4.5116 |   9.1576 |   1.8849 |   10      |   2.5667 |   0.9932 |
+| Modified Duration   |   4.1774 |   8.9693 |   1.8709 |   10      |   2.3766 |   0.9899 |
+| Effective Duration  |   4.0677 |   8.5181 |   1.8477 |    9.4713 |   2.2952 |   0.9844 |
+| Dollar Duration     |   3.677  |  22.2228 |   1.0168 |  100      |   1.9734 |   3.0902 |
+| DV01                |   0.0004 |   0.0022 |   0      |    0.01   |   0.0001 |   0      |
+| Convexity           |  22.4017 |  93.7509 |   4.0849 |  110      |   7.0923 |   1.0662 |
 
 > **Present Value**
 

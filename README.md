@@ -2572,9 +2572,11 @@ The bond statistics contains a variety of different metrics to evaluate a bond. 
 It gives a complete overview of the bond's performance. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/fixedincome#get_bond_statistics).
 
 > **Present Value**
+
 The bond price is the present value of the bond's future cash flows. It is calculated by discounting the bond's coupon payments and principal repayment to the present value using the bond's yield to maturity. The present value is depicted over a variety of coupon rates and years of maturities. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/fixedincome#get_bond_price).
 
 > **Duration**
+
 The bond duration is a measure of the bond's sensitivity to changes in interest rates. It is the weighted average of the bond's cash flows, where the weights are the present value of each cash flow divided by the bond's price. It is possible to calculate the following durations:
 
 - Macaulay's Duration: The weighted average time to receive the bond's cash flows.
@@ -2585,8 +2587,8 @@ The bond duration is a measure of the bond's sensitivity to changes in interest 
 The duration values are depicted over a variety of coupon rates and years of maturities. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/fixedincome#get_bond_duration).
 
 > **Yield to Maturity**
-The Yield to Maturity (YTM) is the total return anticipated on a bond if it is held until it matures. It is the internal rate of return of an investment in a bond if the investor holds the bond until maturity and receives all payments as scheduled. The yield to maturity is depicted over a variety of coupon rates and years of maturities. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/fixedincome#get_yield_to_maturity).
 
+The Yield to Maturity (YTM) is the total return anticipated on a bond if it is held until it matures. It is the internal rate of return of an investment in a bond if the investor holds the bond until maturity and receives all payments as scheduled. The yield to maturity is depicted over a variety of coupon rates and years of maturities. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/fixedincome#get_yield_to_maturity).
 
 </details>
 
@@ -2605,9 +2607,11 @@ fixedincome.get_derivative_price(model="black")
 ```
 
 > **Black Model**
+
 The Black Model is a mathematical model used to calculate the price of European-style options. It is based on the Black-Scholes model but is used for interest rate options. The Black Model is used to value interest rate options, such as caps, floors, and swaptions. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/fixedincome#get_derivative_price).
 
 > **Bachelier Model**
+
 The Bachelier Model is a mathematical model used to calculate the price of European-style options. It is based on the normal distribution and is used for interest rate options as opposed to the Black model which uses a log-normal distribution. The Bachelier Model is used to value interest rate options, such as caps, floors, and swaptions. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/fixedincome#get_derivative_price).
 
 </details>

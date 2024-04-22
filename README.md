@@ -2717,7 +2717,7 @@ Short-term interest rates are based on three-month money market rates where avai
 
 The Corporate Bonds section features the widely used ICE BofA benchmarks which include option-adjusted spreads, effective yields and the total returns. It is possible to view both the indices of the ratings (AAA, AA, A, BBB, BB, B and CCC) and the maturities (1-3 years, 3-5 years, 5-7 years, 7-10 years, 10-15 years, 15-30 years and 30+ years).
 
-All corporate bond metrics can be called by using `get_` to get a single metric. E.g. `get_option_adjusted_spread` or `get_yield_to_worst`. As an example:
+All corporate bond metrics can be called by using `get_` to get a single metric. E.g. `get_ice_bofa_option_adjusted_spread` or `get_ice_bofa_yield_to_worst`. As an example:
 
 ```python
 from financetoolkit import FixedIncome

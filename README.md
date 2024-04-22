@@ -2620,7 +2620,7 @@ from financetoolkit import FixedIncome
 
 fixedincome = FixedIncome()
 
-fixedincome.get_derivative_price(model="black")
+fixedincome.get_derivative_price(model_type="black")
 ```
 
 > **Black Model**

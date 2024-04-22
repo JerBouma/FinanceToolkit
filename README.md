@@ -2569,7 +2569,24 @@ The bond statistics contains a variety of different metrics to evaluate a bond. 
 - **DV01:** The dollar value of a 0.01% change in yield to maturity.
 - **Convexity:** The second derivative of the bond price with respect to the yield to maturity.
 
-It gives a complete overview of the bond's performance. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/fixedincome#get_bond_statistics).
+It gives a complete overview of the bond's performance. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/fixedincome#get_bond_statistics) and an example below:
+
+|                     |        Bond |
+|:--------------------|---------:|
+| Par Value           | 100      |
+| Coupon Rate         |   0.05   |
+| Years to Maturity   |   5      |
+| Yield to Maturity   |   0.08   |
+| Frequency           |   1      |
+| Present Value       |  88.0219 |
+| Current Yield       |   0.0568 |
+| Effective Yield     |   0.05   |
+| Macaulay's Duration |   4.5116 |
+| Modified Duration   |   4.1774 |
+| Effective Duration  |   4.0677 |
+| Dollar Duration     |   3.677  |
+| DV01                |   0.0004 |
+| Convexity           |  22.4017 |
 
 > **Present Value**
 

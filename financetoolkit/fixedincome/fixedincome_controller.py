@@ -702,7 +702,7 @@ class FixedIncome:
 
     def get_derivative_price(
         self,
-        model_type: str = "black",
+        model: str = "black",
         fixed_rate: float = 0.05,
         strike_rate: float | list | np.ndarray | None = None,
         volatility: float = 0.01,
@@ -732,7 +732,7 @@ class FixedIncome:
         for multiple scenarios outside of the standard sample.
 
         Args:
-            model_type (str, optional): The type of model to use for calculating the derivative price. Defaults to "black".
+            model (str, optional): The type of model to use for calculating the derivative price. Defaults to "black".
             fixed_rate (float, optional): The fixed rate received by the fixed leg of the derivative. Defaults to None.
             strike_rate (float | list, optional): The strike rate for the derivative. Defaults to None which means it calculates the
                 derivative price a range of strike prices. Can also be a list of strike rates (e.g. [0.01, 0.02, 0.03, 0.04, 0.05]).
@@ -793,7 +793,7 @@ class FixedIncome:
         |         0.13  |     943822   |     913641   |     884425   |    856143    |    828766    |     802264   |     776609   |    751775    |    727735    |    704464    |
 
         """
-        model_type_lower = model_type.lower()
+        model_lower = model.lower()
 
         strike_rate = (
             np.arange(
@@ -834,7 +834,7 @@ class FixedIncome:
         for strike in strike_rate:
             derivative_prices[strike], derivative_payoffs[strike] = {}, {}
             for maturity in years_to_maturity:
-                if model_type_lower == "black":
+                if model_lower == "black":
                     (
                         derivative_prices[strike][maturity],
                         derivative_payoffs[strike][maturity],
@@ -847,7 +847,7 @@ class FixedIncome:
                         notional=notional,
                         is_receiver=is_receiver,
                     )
-                elif model_type_lower == "bachelier":
+                elif model_lower == "bachelier":
                     (
                         derivative_prices[strike][maturity],
                         derivative_payoffs[strike][maturity],
@@ -875,7 +875,7 @@ class FixedIncome:
                 f"Fixed Rate: {fixed_rate * 100}%, Volatility: {volatility * 100}%, "
                 f"Risk Free Rate: {risk_free_rate * 100}%, "
                 f"Holder: {'Receiver' if is_receiver else 'Payer'}, "
-                f"Notional: {notional:,}, Model: {model_type_lower.title()} Model"
+                f"Notional: {notional:,}, Model: {model_lower.title()} Model"
             )
 
         if include_payoff:

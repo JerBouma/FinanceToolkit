@@ -52,6 +52,20 @@ def get_current_yield(par_value: float, coupon_rate: float, bond_price: float):
     return current_yield
 
 
+def get_effective_yield(coupon_rate: float, frequency: int) -> float:
+    """
+    Calculate the effective yield of a bond, taking into account reinvestment of coupon payments.
+
+    Args:
+        coupon_rate (float): The annual coupon rate (in decimal).
+        frequency (int): The number of coupon payments per year.
+
+    Returns:
+        float: The effective yield of the bond.
+    """
+    return (1 + (coupon_rate / frequency)) ** frequency - 1
+
+
 def get_yield_to_maturity(
     par_value: float,
     coupon_rate: float,
@@ -112,6 +126,9 @@ def get_macaulays_duration(
     """
     Calculate Macaulay's duration of a bond.
 
+    Macaulay's duration is a measure of the weighted average time until the bond's cash flows are received.
+    It takes into account the timing and amount of each cash flow, as well as the yield to maturity.
+
     Args:
         par_value (float): The face value of the bond.
         coupon_rate (float): The annual coupon rate (in decimal).
@@ -153,7 +170,10 @@ def get_modified_duration(
     par_value, coupon_rate, years_to_maturity, yield_to_maturity, frequency
 ):
     """
-    Calculate modified duration of a bond.
+    Calculate the modified duration of a bond.
+
+    The modified duration of a bond measures the sensitivity of its price to changes in yield to maturity.
+    It is a useful metric for assessing the interest rate risk associated with a bond investment.
 
     Args:
         par_value (float): The face value of the bond.
@@ -185,6 +205,9 @@ def get_effective_duration(
 ):
     """
     Calculate the effective duration of a bond.
+
+    The effective duration of a bond measures the sensitivity of the bond's price to changes in the yield to maturity.
+    It provides an estimate of the percentage change in the bond's price for a given change in yield.
 
     Args:
         par_value (float): The face value of the bond.
@@ -219,6 +242,8 @@ def get_dollar_duration(
 ):
     """
     Calculate the bond's dollar duration.
+
+    The dollar duration is calculated by multiplying the bond's modified duration by the bond's price
 
     Args:
         par_value (float): The face value of the bond.

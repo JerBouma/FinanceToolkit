@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 import numpy as np
 import pandas as pd
 
+from financetoolkit.economics import oecd_model
 from financetoolkit.fixedincome import (
     bond_model,
     derivative_model,
@@ -15,7 +16,7 @@ from financetoolkit.fixedincome import (
     fed_model,
     fred_model,
 )
-from financetoolkit.helpers import handle_errors
+from financetoolkit.helpers import calculate_growth, handle_errors
 
 # pylint: disable=too-many-instance-attributes,too-few-public-methods,too-many-lines,
 # pylint: disable=too-many-locals,line-too-long,too-many-public-methods
@@ -32,6 +33,7 @@ class FixedIncome:
         self,
         start_date: str | None = None,
         end_date: str | None = None,
+        quarterly: bool = True,
         rounding: int | None = 4,
     ):
         """
@@ -40,6 +42,7 @@ class FixedIncome:
         Args:
             start_date (str | None, optional): The start date to retrieve data from. Defaults to None.
             end_date (str | None, optional): The end date to retrieve data from. Defaults to None.
+            quarterly (bool, optional): Whether to return the data quarterly. Defaults to True.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
 
         As an example:
@@ -90,15 +93,17 @@ class FixedIncome:
             else (datetime.now() - timedelta(days=365 * 100)).strftime("%Y-%m-%d")
         )
         self._end_date = end_date if end_date else datetime.now().strftime("%Y-%m-%d")
+        self._quarterly = quarterly
         self._rounding: int | None = rounding
 
     def collect_bond_statistics(
         self,
-        par_value: float,
-        coupon_rate: float,
-        years_to_maturity: float,
-        yield_to_maturity: float,
+        par_value: float = 100,
+        coupon_rate: float = 0.05,
+        years_to_maturity: int = 5,
+        yield_to_maturity: float = 0.08,
         frequency: int = 1,
+        show_input_info: bool = True,
     ):
         """
         Collect the bond statistics for a given bond which includes the following fields:
@@ -121,11 +126,12 @@ class FixedIncome:
         sensitivity to changes in interest rates to be able to apply a hedging strategy.
 
         Args:
-            par_value (float): The face value of the bond.
-            coupon_rate (float): The annual coupon rate (in decimal).
-            years_to_maturity (int): The number of years until the bond matures.
-            yield_to_maturity (float): The yield to maturity of the bond (in decimal).
+            par_value (float): The face value of the bond. Defaults to 100.
+            coupon_rate (float): The annual coupon rate (in decimal). Defaults to 0.05.
+            years_to_maturity (int): The number of years until the bond matures. Defaults to 5.
+            yield_to_maturity (float): The yield to maturity of the bond (in decimal). Defaults to 0.08.
             frequency (int): The number of coupon payments per year. Defaults to 1.
+            show_input_info (bool, optional): Whether to display input information. Defaults to True.
 
         Returns:
             pd.Series: A pandas Series containing the bond statistics.
@@ -150,6 +156,10 @@ class FixedIncome:
             par_value=par_value,
             coupon_rate=coupon_rate,
             bond_price=bond_statistics["Present Value"],
+        )
+
+        bond_statistics["Effective Yield"] = bond_model.get_effective_yield(
+            coupon_rate=coupon_rate, frequency=frequency
         )
 
         bond_statistics["Macaulay's Duration"] = bond_model.get_macaulays_duration(
@@ -200,14 +210,21 @@ class FixedIncome:
             frequency=frequency,
         )
 
+        if show_input_info:
+            print(
+                f"Par Value: {par_value:,}, Coupon Rate: {coupon_rate * 100}%, "
+                f"Years to Maturity: {years_to_maturity}, Yield to Maturity: {yield_to_maturity * 100}%, "
+                f"Frequency: {frequency}"
+            )
+
         return pd.Series(bond_statistics).round(self._rounding)
 
-    def get_bond_price(
+    def get_present_value(
         self,
-        par_value: float | None = None,
+        par_value: float = 100,
         coupon_rate: float | range | np.ndarray | list | None = None,
         years_to_maturity: float | range | list | None = None,
-        yield_to_maturity: float | None = None,
+        yield_to_maturity: float = 0.08,
         frequency: int = 1,
         show_input_info: bool = True,
     ):
@@ -239,9 +256,6 @@ class FixedIncome:
         Returns:
             pandas.DataFrame: A DataFrame containing the bond prices for different coupon rates and years to maturity.
         """
-        par_value = par_value if par_value is not None else 100
-        yield_to_maturity = yield_to_maturity if yield_to_maturity is not None else 0.05
-
         coupon_rate = (
             np.arange(max(0.05 - 0.005 * 20, 0.005), 0.05 + 0.005 * 20, 0.005)
             if coupon_rate is None
@@ -291,13 +305,13 @@ class FixedIncome:
 
         return bond_prices_df.round(2)
 
-    def get_bond_duration(
+    def get_duration(
         self,
         duration_type: str = "modified",
-        par_value: float | None = None,
+        par_value: float = 100,
         coupon_rate: float | np.ndarray | list | None = None,
         years_to_maturity: float | range | list | None = None,
-        yield_to_maturity: float | None = None,
+        yield_to_maturity: float = 0.08,
         frequency: int = 1,
         show_input_info: bool = True,
     ):
@@ -332,8 +346,6 @@ class FixedIncome:
             pandas.DataFrame: A DataFrame containing the bond duration for different coupon rates and years to maturity.
         """
         duration_type_lower = duration_type.lower()
-        par_value = par_value if par_value is not None else 100
-        yield_to_maturity = yield_to_maturity if yield_to_maturity is not None else 0.05
 
         coupon_rate = (
             np.arange(max(0.05 - 0.005 * 20, 0.005), 0.05 + 0.005 * 20, 0.005)
@@ -415,8 +427,8 @@ class FixedIncome:
 
     def get_yield_to_maturity(
         self,
-        par_value: float | None = None,
-        coupon_rate: float | None = None,
+        par_value: float = 100,
+        coupon_rate: float = 0.05,
         years_to_maturity: float | range | list | None = None,
         bond_price: float | list | None = None,
         frequency: int = 1,
@@ -458,8 +470,6 @@ class FixedIncome:
         Returns:
             pandas.DataFrame: A DataFrame containing the yield to maturity for different bond prices and years to maturity.
         """
-        par_value = par_value if par_value is not None else 100
-
         if bond_price is None:
             # Determine the step size based on the input number
             step_size = par_value / 10
@@ -475,8 +485,6 @@ class FixedIncome:
                 for i in range(1, 21)
                 if int(par_value - i * step_size) > 0
             )
-
-        coupon_rate = coupon_rate if coupon_rate is not None else 0.05
 
         years_to_maturity_dates = (
             [
@@ -528,12 +536,176 @@ class FixedIncome:
 
         return yield_to_maturities_df.round(self._rounding)
 
+    def get_long_term_interest_rate(
+        self,
+        period: str | None = None,
+        forecast: bool = False,
+        growth: bool = False,
+        lag: int = 1,
+        rounding: int | None = None,
+    ):
+        """
+        Long-term interest rates refer to government bonds maturing in ten years.
+        Rates are mainly determined by the price charged by the lender, the risk
+        from the borrower and the fall in the capital value. Long-term interest rates
+        are generally averages of daily rates, measured as a percentage. These interest
+        rates are implied by the prices at which the government bonds are traded on
+        financial markets, not the interest rates at which the loans were issued.
+
+        In all cases, they refer to bonds whose capital repayment is guaranteed by governments.
+        Long-term interest rates are one of the determinants of business investment. Low long
+        term interest rates encourage investment in new equipment and high interest rates
+        discourage it. Investment is, in turn, a major source of economic growth
+
+        See definition: https://data.oecd.org/interest/long-term-interest-rates.htm
+
+        Args:
+            period (str | None, optional): Whether to return the monthly, quarterly or the annual data.
+            growth (bool, optional): Whether to return the growth data or the actual data.
+            lag (int, optional): The number of periods to lag the data by.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+
+        Returns:
+            pd.DataFrame: A DataFrame containing the Long Term Interest Rate.
+
+        As an example:
+
+        ```python
+        from financetoolkit import FixedIncome
+
+        fixedincome = FixedIncome(start_date='2023-05-01', end_date='2023-12-31')
+
+        long_term_interest_rate = fixedincome.get_long_term_interest_rate(period='monthly')
+
+        long_term_interest_rate.loc[:, ['Japan', 'United States', 'Brazil']]
+        ```
+
+        Which returns:
+
+        |         |   Japan |   United States |   Brazil |
+        |:--------|--------:|----------------:|---------:|
+        | 2023-05 |  0.0043 |          0.0357 |   0.0728 |
+        | 2023-06 |  0.004  |          0.0375 |   0.0728 |
+        | 2023-07 |  0.0059 |          0.039  |   0.07   |
+        | 2023-08 |  0.0064 |          0.0417 |   0.07   |
+        | 2023-09 |  0.0076 |          0.0438 |   0.07   |
+        | 2023-10 |  0.0095 |          0.048  |   0.0655 |
+        | 2023-11 |  0.0066 |          0.045  |   0.0655 |
+        """
+        period = (
+            period
+            if period is not None
+            else "quarterly"
+            if self._quarterly
+            else "yearly"
+        )
+
+        long_term_interest_rate = oecd_model.get_long_term_interest_rate(
+            period=period, forecast=forecast
+        )
+
+        if growth:
+            long_term_interest_rate = calculate_growth(
+                long_term_interest_rate,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
+                axis="rows",
+            )
+
+        long_term_interest_rate = long_term_interest_rate.loc[
+            self._start_date : None if forecast else self._end_date
+        ]
+
+        return long_term_interest_rate.round(rounding if rounding else self._rounding)
+
+    def get_short_term_interest_rate(
+        self,
+        period: str | None = None,
+        forecast: bool = False,
+        growth: bool = False,
+        lag: int = 1,
+        rounding: int | None = None,
+    ):
+        """
+        Short-term interest rates are the rates at which short-term borrowings are
+        effected between financial institutions or the rate at which short-term government
+        paper is issued or traded in the market. Short-term interest rates are generally
+        averages of daily rates, measured as a percentage.
+
+        Short-term interest rates are based on three-month money market rates where available.
+        Typical standardised names are "money market rate" and "treasury bill rate".
+
+        See definition: https://data.oecd.org/interest/short-term-interest-rates.htm
+
+        Args:
+            period (str | None, optional): Whether to return the monthly, quarterly or the annual data.
+            growth (bool, optional): Whether to return the growth data or the actual data.
+            lag (int, optional): The number of periods to lag the data by.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+
+        Returns:
+            pd.DataFrame: A DataFrame containing the Short Term Interest Rate.
+
+        As an example:
+
+        ```python
+        from financetoolkit import FixedIncome
+
+        fixedincome = FixedIncome(start_date='2023-05-01')
+
+        short_term_interest_rate = fixedincome.get_short_term_interest_rate(period='quarterly', forecast=True)
+
+        short_term_interest_rate.loc[:, ['Japan', 'United States', 'China']]
+        ```
+
+        Which returns:
+
+        |        |   Japan |   United States |   China |
+        |:-------|--------:|----------------:|--------:|
+        | 2023Q2 | -0.0003 |          0.0513 |  0.0435 |
+        | 2023Q3 | -0.0003 |          0.0543 |  0.0435 |
+        | 2023Q4 | -0.0003 |          0.0543 |  0.0435 |
+        | 2024Q1 |  0.0007 |          0.0536 |  0.0435 |
+        | 2024Q2 |  0.0017 |          0.0513 |  0.043  |
+        | 2024Q3 |  0.0027 |          0.0488 |  0.043  |
+        | 2024Q4 |  0.0037 |          0.0468 |  0.0425 |
+        | 2025Q1 |  0.0047 |          0.0448 |  0.0425 |
+        | 2025Q2 |  0.0057 |          0.0423 |  0.0425 |
+        | 2025Q3 |  0.0067 |          0.0408 |  0.0425 |
+        | 2025Q4 |  0.0077 |          0.0398 |  0.0425 |
+        """
+        period = (
+            period
+            if period is not None
+            else "quarterly"
+            if self._quarterly
+            else "yearly"
+        )
+
+        short_term_interest_rate = oecd_model.get_short_term_interest_rate(
+            period=period, forecast=forecast
+        )
+
+        if growth:
+            short_term_interest_rate = calculate_growth(
+                short_term_interest_rate,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
+                axis="rows",
+            )
+
+        short_term_interest_rate = short_term_interest_rate.loc[
+            self._start_date : None if forecast else self._end_date
+        ]
+
+        return short_term_interest_rate.round(rounding if rounding else self._rounding)
+
     def get_derivative_price(
         self,
         model_type: str = "black",
-        fixed_rate: float | None = None,
+        fixed_rate: float = 0.05,
         strike_rate: float | list | np.ndarray | None = None,
-        volatility: float | None = None,
+        volatility: float = 0.01,
         years_to_maturity: float | list | range | None = None,
         risk_free_rate: float | None = None,
         notional: float = 10_000_000,
@@ -622,8 +794,6 @@ class FixedIncome:
 
         """
         model_type_lower = model_type.lower()
-        fixed_rate = fixed_rate if fixed_rate is not None else 0.0325
-        volatility = volatility if volatility is not None else 0.01
 
         strike_rate = (
             np.arange(

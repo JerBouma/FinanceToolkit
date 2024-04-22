@@ -2554,20 +2554,20 @@ fixedincome.get_present_value()
 
 The bond statistics contains a variety of different metrics to evaluate a bond. These include:
 
-- Par Value: The face value of the bond.
-- Coupon Rate: The annual coupon rate (in decimal).
-- Years to Maturity: The number of years until the bond matures.
-- Yield to Maturity: The yield to maturity of the bond (in decimal).
-- Frequency: The number of coupon payments per year.
-- Present Value: The present value of the bond.
-- Current Yield: The annual coupon payment divided by the bond price.
-- Effective Yield: The return on a bond that has its interest payments (or coupons) reinvested at the same rate by the bondholder.
-- Macaulay's Duration: The weighted average time to receive the bond's cash flows.
-- Modified Duration: The Macaulay's duration divided by 1 plus the yield to maturity.
-- Effective Duration: The percentage change in the bond price for a 1% change in the yield to maturity.
-- Dollar Duration: The modified duration multiplied by the bond price.
-- DV01: The dollar value of a 0.01% change in yield to maturity.
-- Convexity: The second derivative of the bond price with respect to the yield to maturity.
+- **Par Value:** The face value of the bond.
+- **Coupon Rate:** The annual coupon rate (in decimal).
+- **Years to Maturity:** The number of years until the bond matures.
+- **Yield to Maturity:** The yield to maturity of the bond (in decimal).
+- **Frequency:** The number of coupon payments per year.
+- **Present Value:** The present value of the bond.
+- **Current Yield:** The annual coupon payment divided by the bond price.
+- **Effective Yield:** The return on a bond that has its interest payments (or coupons) reinvested at the same rate by the bondholder.
+- **Macaulay's Duration:** The weighted average time to receive the bond's cash flows.
+- **Modified Duration:** The Macaulay's duration divided by 1 plus the yield to maturity.
+- **Effective Duration:** The percentage change in the bond price for a 1% change in the yield to maturity.
+- **Dollar Duration:** The modified duration multiplied by the bond price.
+- **DV01:** The dollar value of a 0.01% change in yield to maturity.
+- **Convexity:** The second derivative of the bond price with respect to the yield to maturity.
 
 It gives a complete overview of the bond's performance. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/fixedincome#get_bond_statistics).
 
@@ -2579,10 +2579,10 @@ The bond price is the present value of the bond's future cash flows. It is calcu
 
 The bond duration is a measure of the bond's sensitivity to changes in interest rates. It is the weighted average of the bond's cash flows, where the weights are the present value of each cash flow divided by the bond's price. It is possible to calculate the following durations:
 
-- Macaulay's Duration: The weighted average time to receive the bond's cash flows.
-- Modified Duration: The Macaulay's duration divided by 1 plus the yield to maturity.
-- Effective Duration: The percentage change in the bond price for a 1% change in the yield to maturity.
-- Dollar Duration: The modified duration multiplied by the bond price.
+- **Macaulay's Duration:** The weighted average time to receive the bond's cash flows.
+- **Modified Duration:** The Macaulay's duration divided by 1 plus the yield to maturity.
+- **Effective Duration:** The percentage change in the bond price for a 1% change in the yield to maturity.
+- **Dollar Duration:** The modified duration multiplied by the bond price.
 
 The duration values are depicted over a variety of coupon rates and years of maturities. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/fixedincome#get_bond_duration).
 

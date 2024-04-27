@@ -13,6 +13,7 @@ from financetoolkit.fixedincome import (
     bond_model,
     derivative_model,
     ecb_model,
+    euribor_model,
     fed_model,
     fred_model,
 )
@@ -536,174 +537,10 @@ class FixedIncome:
 
         return yield_to_maturities_df.round(self._rounding)
 
-    def get_long_term_interest_rate(
-        self,
-        period: str | None = None,
-        forecast: bool = False,
-        growth: bool = False,
-        lag: int = 1,
-        rounding: int | None = None,
-    ):
-        """
-        Long-term interest rates refer to government bonds maturing in ten years.
-        Rates are mainly determined by the price charged by the lender, the risk
-        from the borrower and the fall in the capital value. Long-term interest rates
-        are generally averages of daily rates, measured as a percentage. These interest
-        rates are implied by the prices at which the government bonds are traded on
-        financial markets, not the interest rates at which the loans were issued.
-
-        In all cases, they refer to bonds whose capital repayment is guaranteed by governments.
-        Long-term interest rates are one of the determinants of business investment. Low long
-        term interest rates encourage investment in new equipment and high interest rates
-        discourage it. Investment is, in turn, a major source of economic growth
-
-        See definition: https://data.oecd.org/interest/long-term-interest-rates.htm
-
-        Args:
-            period (str | None, optional): Whether to return the monthly, quarterly or the annual data.
-            growth (bool, optional): Whether to return the growth data or the actual data.
-            lag (int, optional): The number of periods to lag the data by.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
-
-        Returns:
-            pd.DataFrame: A DataFrame containing the Long Term Interest Rate.
-
-        As an example:
-
-        ```python
-        from financetoolkit import FixedIncome
-
-        fixedincome = FixedIncome(start_date='2023-05-01', end_date='2023-12-31')
-
-        long_term_interest_rate = fixedincome.get_long_term_interest_rate(period='monthly')
-
-        long_term_interest_rate.loc[:, ['Japan', 'United States', 'Brazil']]
-        ```
-
-        Which returns:
-
-        |         |   Japan |   United States |   Brazil |
-        |:--------|--------:|----------------:|---------:|
-        | 2023-05 |  0.0043 |          0.0357 |   0.0728 |
-        | 2023-06 |  0.004  |          0.0375 |   0.0728 |
-        | 2023-07 |  0.0059 |          0.039  |   0.07   |
-        | 2023-08 |  0.0064 |          0.0417 |   0.07   |
-        | 2023-09 |  0.0076 |          0.0438 |   0.07   |
-        | 2023-10 |  0.0095 |          0.048  |   0.0655 |
-        | 2023-11 |  0.0066 |          0.045  |   0.0655 |
-        """
-        period = (
-            period
-            if period is not None
-            else "quarterly"
-            if self._quarterly
-            else "yearly"
-        )
-
-        long_term_interest_rate = oecd_model.get_long_term_interest_rate(
-            period=period, forecast=forecast
-        )
-
-        if growth:
-            long_term_interest_rate = calculate_growth(
-                long_term_interest_rate,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-                axis="rows",
-            )
-
-        long_term_interest_rate = long_term_interest_rate.loc[
-            self._start_date : None if forecast else self._end_date
-        ]
-
-        return long_term_interest_rate.round(rounding if rounding else self._rounding)
-
-    def get_short_term_interest_rate(
-        self,
-        period: str | None = None,
-        forecast: bool = False,
-        growth: bool = False,
-        lag: int = 1,
-        rounding: int | None = None,
-    ):
-        """
-        Short-term interest rates are the rates at which short-term borrowings are
-        effected between financial institutions or the rate at which short-term government
-        paper is issued or traded in the market. Short-term interest rates are generally
-        averages of daily rates, measured as a percentage.
-
-        Short-term interest rates are based on three-month money market rates where available.
-        Typical standardised names are "money market rate" and "treasury bill rate".
-
-        See definition: https://data.oecd.org/interest/short-term-interest-rates.htm
-
-        Args:
-            period (str | None, optional): Whether to return the monthly, quarterly or the annual data.
-            growth (bool, optional): Whether to return the growth data or the actual data.
-            lag (int, optional): The number of periods to lag the data by.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
-
-        Returns:
-            pd.DataFrame: A DataFrame containing the Short Term Interest Rate.
-
-        As an example:
-
-        ```python
-        from financetoolkit import FixedIncome
-
-        fixedincome = FixedIncome(start_date='2023-05-01')
-
-        short_term_interest_rate = fixedincome.get_short_term_interest_rate(period='quarterly', forecast=True)
-
-        short_term_interest_rate.loc[:, ['Japan', 'United States', 'China']]
-        ```
-
-        Which returns:
-
-        |        |   Japan |   United States |   China |
-        |:-------|--------:|----------------:|--------:|
-        | 2023Q2 | -0.0003 |          0.0513 |  0.0435 |
-        | 2023Q3 | -0.0003 |          0.0543 |  0.0435 |
-        | 2023Q4 | -0.0003 |          0.0543 |  0.0435 |
-        | 2024Q1 |  0.0007 |          0.0536 |  0.0435 |
-        | 2024Q2 |  0.0017 |          0.0513 |  0.043  |
-        | 2024Q3 |  0.0027 |          0.0488 |  0.043  |
-        | 2024Q4 |  0.0037 |          0.0468 |  0.0425 |
-        | 2025Q1 |  0.0047 |          0.0448 |  0.0425 |
-        | 2025Q2 |  0.0057 |          0.0423 |  0.0425 |
-        | 2025Q3 |  0.0067 |          0.0408 |  0.0425 |
-        | 2025Q4 |  0.0077 |          0.0398 |  0.0425 |
-        """
-        period = (
-            period
-            if period is not None
-            else "quarterly"
-            if self._quarterly
-            else "yearly"
-        )
-
-        short_term_interest_rate = oecd_model.get_short_term_interest_rate(
-            period=period, forecast=forecast
-        )
-
-        if growth:
-            short_term_interest_rate = calculate_growth(
-                short_term_interest_rate,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-                axis="rows",
-            )
-
-        short_term_interest_rate = short_term_interest_rate.loc[
-            self._start_date : None if forecast else self._end_date
-        ]
-
-        return short_term_interest_rate.round(rounding if rounding else self._rounding)
-
     def get_derivative_price(
         self,
         model: str = "black",
-        fixed_rate: float = 0.05,
+        forward_rate: float = 0.05,
         strike_rate: float | list | np.ndarray | None = None,
         volatility: float = 0.01,
         years_to_maturity: float | list | range | None = None,
@@ -733,7 +570,7 @@ class FixedIncome:
 
         Args:
             model (str, optional): The type of model to use for calculating the derivative price. Defaults to "black".
-            fixed_rate (float, optional): The fixed rate received by the fixed leg of the derivative. Defaults to None.
+            forward_rate (float, optional): The forward rate as derived from the swap curve. Defaults to None.
             strike_rate (float | list, optional): The strike rate for the derivative. Defaults to None which means it calculates the
                 derivative price a range of strike prices. Can also be a list of strike rates (e.g. [0.01, 0.02, 0.03, 0.04, 0.05]).
             volatility (float, optional): The volatility of the underlying asset. Defaults to None.
@@ -758,7 +595,7 @@ class FixedIncome:
 
         # You can also provide lists of values for the strike rate and years to maturity
         # to define your own strike rates and years to maturity to display in the DataFrame
-        fixedincome.get_derivative_price(model_type='black', fixed_rate=0.0325)
+        fixedincome.get_derivative_price(model_type='black', forward_rate=0.0325)
         ```
 
         Which returns:
@@ -798,12 +635,12 @@ class FixedIncome:
         strike_rate = (
             np.arange(
                 max(
-                    fixed_rate - 0.005 * 20
+                    forward_rate - 0.005 * 20
                     if not is_receiver
-                    else fixed_rate - 0.005 * 5,
+                    else forward_rate - 0.005 * 5,
                     0.005,
                 ),
-                fixed_rate + 0.005 * 20 if is_receiver else fixed_rate + 0.005 * 5,
+                forward_rate + 0.005 * 20 if is_receiver else forward_rate + 0.005 * 5,
                 0.005,
             )
             if strike_rate is None
@@ -829,7 +666,7 @@ class FixedIncome:
         derivative_prices: dict[str, dict[float, float]] = {}
         derivative_payoffs: dict[str, dict[float, float]] = {}
 
-        risk_free_rate = risk_free_rate if risk_free_rate is not None else fixed_rate
+        risk_free_rate = risk_free_rate if risk_free_rate is not None else forward_rate
 
         for strike in strike_rate:
             derivative_prices[strike], derivative_payoffs[strike] = {}, {}
@@ -839,7 +676,7 @@ class FixedIncome:
                         derivative_prices[strike][maturity],
                         derivative_payoffs[strike][maturity],
                     ) = derivative_model.get_black_price(
-                        fixed_rate=fixed_rate,
+                        forward_rate=forward_rate,
                         strike_rate=strike,
                         volatility=volatility,
                         years_to_maturity=maturity,
@@ -852,7 +689,7 @@ class FixedIncome:
                         derivative_prices[strike][maturity],
                         derivative_payoffs[strike][maturity],
                     ) = derivative_model.get_bachelier_price(
-                        fixed_rate=fixed_rate,
+                        forward_rate=forward_rate,
                         strike_rate=strike,
                         volatility=volatility,
                         years_to_maturity=maturity,
@@ -872,7 +709,7 @@ class FixedIncome:
 
         if show_input_info:
             print(
-                f"Fixed Rate: {fixed_rate * 100}%, Volatility: {volatility * 100}%, "
+                f"Forward Rate: {forward_rate * 100}%, Volatility: {volatility * 100}%, "
                 f"Risk Free Rate: {risk_free_rate * 100}%, "
                 f"Holder: {'Receiver' if is_receiver else 'Payer'}, "
                 f"Notional: {notional:,}, Model: {model_lower.title()} Model"
@@ -892,7 +729,116 @@ class FixedIncome:
 
         return derivative_prices_df.round(2)
 
-    def get_european_central_bank_rates(self, rate: str | None = None):
+    def get_government_bond_yield(
+        self,
+        short_term: bool = False,
+        period: str | None = None,
+        forecast: bool = False,
+        growth: bool = False,
+        lag: int = 1,
+        rounding: int | None = None,
+    ):
+        """
+        Long-term interest rates refer to government bonds maturing in ten years.
+        Rates are mainly determined by the price charged by the lender, the risk
+        from the borrower and the fall in the capital value. Long-term interest rates
+        are generally averages of daily rates, measured as a percentage. These interest
+        rates are implied by the prices at which the government bonds are traded on
+        financial markets, not the interest rates at which the loans were issued.
+
+        In all cases, they refer to bonds whose capital repayment is guaranteed by governments.
+        Long-term interest rates are one of the determinants of business investment. Low long
+        term interest rates encourage investment in new equipment and high interest rates
+        discourage it. Investment is, in turn, a major source of economic growth
+
+        See definition: https://data.oecd.org/interest/long-term-interest-rates.htm
+
+        Short-term interest rates are the rates at which short-term borrowings are
+        effected between financial institutions or the rate at which short-term government
+        paper is issued or traded in the market. Short-term interest rates are generally
+        averages of daily rates, measured as a percentage.
+
+        Short-term interest rates are based on three-month money market rates where available.
+        Typical standardised names are "money market rate" and "treasury bill rate".
+
+        See definition: https://data.oecd.org/interest/short-term-interest-rates.htm
+
+        Args:
+            short_term (bool, optional): Whether to return the short-term interest rate. Defaults to False.
+                This means that the long-term interest rate will be returned.
+            period (str | None, optional): Whether to return the monthly, quarterly or the annual data.
+            forecast (bool, optional): Whether to return the forecasted data. Defaults to False.
+            growth (bool, optional): Whether to return the growth data or the actual data.
+            lag (int, optional): The number of periods to lag the data by.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+
+        Returns:
+            pd.DataFrame: A DataFrame containing the Long Term Interest Rate.
+
+        As an example:
+
+        ```python
+        from financetoolkit import FixedIncome
+
+        fixedincome = FixedIncome(start_date='2023-05-01', end_date='2023-12-31')
+
+        long_term_interest_rate = fixedincome.get_government_bond_yield(short_term=False, period='monthly')
+
+        long_term_interest_rate.loc[:, ['Japan', 'United States', 'Brazil']]
+        ```
+
+        Which returns:
+
+        |         |   Japan |   United States |   Brazil |
+        |:--------|--------:|----------------:|---------:|
+        | 2023-05 |  0.0043 |          0.0357 |   0.0728 |
+        | 2023-06 |  0.004  |          0.0375 |   0.0728 |
+        | 2023-07 |  0.0059 |          0.039  |   0.07   |
+        | 2023-08 |  0.0064 |          0.0417 |   0.07   |
+        | 2023-09 |  0.0076 |          0.0438 |   0.07   |
+        | 2023-10 |  0.0095 |          0.048  |   0.0655 |
+        | 2023-11 |  0.0066 |          0.045  |   0.0655 |
+        """
+        period = (
+            period
+            if period is not None
+            else "quarterly"
+            if self._quarterly
+            else "yearly"
+        )
+
+        if short_term:
+            government_bond_yield = oecd_model.get_short_term_interest_rate(
+                period=period, forecast=forecast
+            )
+        else:
+            government_bond_yield = oecd_model.get_long_term_interest_rate(
+                period=period, forecast=forecast
+            )
+
+        if government_bond_yield.empty:
+            raise ValueError(
+                "No data available for the selected period "
+                f"{'and forecast' if forecast else ''}."
+            )
+
+        if growth:
+            government_bond_yield = calculate_growth(
+                government_bond_yield,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
+                axis="rows",
+            )
+
+        government_bond_yield = government_bond_yield.loc[
+            self._start_date : None if forecast else self._end_date
+        ]
+
+        return government_bond_yield.round(rounding if rounding else self._rounding)
+
+    def get_european_central_bank_rates(
+        self, rate: str | None = None, rounding: int | None = None
+    ):
         """
         The Governing Council of the ECB sets the key interest rates for the
         euro area. The available rates are:
@@ -971,9 +917,13 @@ class FixedIncome:
 
         ecb_rates = ecb_rates.loc[self._start_date : self._end_date]
 
+        ecb_rates = ecb_rates.round(rounding if rounding else self._rounding)
+
         return ecb_rates
 
-    def get_federal_reserve_rates(self, rate: str = "EFFR"):
+    def get_federal_reserve_rates(
+        self, rate: str = "EFFR", rounding: int | None = None
+    ):
         """
         Get the Federal Reserve rates as published by the Federal Reserve Bank of New York.
         The federal funds market consists of domestic unsecured borrowings in U.S. dollars
@@ -1068,7 +1018,75 @@ class FixedIncome:
 
         fed_data = fed_data.loc[self._start_date : self._end_date]
 
+        fed_data = fed_data.round(rounding if rounding else self._rounding)
+
         return fed_data
+
+    @handle_errors
+    def get_euribor_rates(
+        self,
+        maturities: str | list | None = None,
+        nominal: bool = True,
+        rounding: int | None = None,
+    ):
+        """
+        Euribor rates, short for Euro Interbank Offered Rate, are the interest rates at which a panel
+        of European banks lend funds to one another in the interbank market. These rates are published
+        daily by the European Money Markets Institute (EMMI) and serve as a benchmark for various
+        financial products and contracts, including mortgages, loans, and derivatives, across the Eurozone.
+
+        The Euribor rates are determined for different maturities, typically ranging from overnight to 12 months
+        The most common maturities are 1 month, 3 months, 6 months, and 12 months. Each maturity represents
+        the time period for which the funds are borrowed, with longer maturities generally implying higher
+        interest rates due to increased uncertainty and risk over longer time horizons.
+
+        For more information, see for example: https://data.ecb.europa.eu/data/datasets/FM/FM.M.U2.EUR.RT.MM.EURIBOR6MD_.HSTA
+
+        Args:
+            maturities (str | list | None, optional): Maturities for which to retrieve rates. Defaults to None.
+                When set to None, it will retrieve rates for 1 month, 3 months, 6 months, and 12 months.
+            nominal (bool, optional): Flag indicating whether to retrieve nominal rates. Defaults to True.
+            rounding (int | None, optional): Rounding precision for the rates. Defaults to None.
+
+        Returns:
+            pandas.DataFrame: DataFrame containing the Euribor rates for the specified maturities.
+        """
+        if isinstance(maturities, str):
+            maturities = [maturities]
+
+        maturity_names = {
+            "1M": "1-Month",
+            "3M": "3-Month",
+            "6M": "6-Month",
+            "1Y": "12-Month",
+        }
+
+        maturities = ["1M", "3M", "6M", "1Y"] if maturities is None else maturities
+        euribor_rates = pd.DataFrame(
+            columns=[maturity_names[maturity] for maturity in maturities]
+        )
+
+        for maturity in maturities:
+            if maturity not in ["1M", "3M", "6M", "1Y"]:
+                print(
+                    f"Invalid maturity: {maturity}, please choose from 1M, 3M, 6M, 1Y."
+                )
+
+            maturity_name = maturity_names[maturity]
+
+            if not nominal and maturity == "3M" and len(maturities) > 1:
+                print("Please note that only the 3-Month Euribor rate has a real rate.")
+
+            euribor_rates[maturity_name] = euribor_model.get_euribor_rate(
+                maturity=maturity,
+                nominal=nominal if not nominal and maturity == "3M" else True,
+            )
+
+        euribor_rates = euribor_rates.loc[self._start_date : self._end_date]
+
+        euribor_rates = euribor_rates.round(rounding if rounding else self._rounding)
+
+        return euribor_rates
 
     @handle_errors
     def get_ice_bofa_option_adjusted_spread(

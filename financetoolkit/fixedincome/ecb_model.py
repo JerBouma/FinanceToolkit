@@ -3,32 +3,7 @@ __docformat__ = "google"
 
 import pandas as pd
 
-BASE_URL = "https://data-api.ecb.europa.eu/service/data/FM/"
-EXTENSIONS = "?format=csvdata"
-
-
-def collect_ecb_data(ecb_data_string: str) -> pd.DataFrame:
-    """
-    Collect the data from the ECB API and return it as a DataFrame.
-
-    Args:
-        ecb_data_string (str): The string that is appended to the base URL to
-            get the data from the ECB API.
-
-    Returns:
-       pd.DataFrame: A DataFrame containing the data from the ECB API.
-    """
-    ecb_data = pd.read_csv(f"{BASE_URL}{ecb_data_string}{EXTENSIONS}")
-
-    ecb_data = ecb_data.set_index("TIME_PERIOD")
-
-    ecb_data.index = pd.PeriodIndex(data=ecb_data.index, freq="D")
-
-    ecb_data.index.name = None
-
-    ecb_data = ecb_data["OBS_VALUE"]
-
-    return ecb_data
+from financetoolkit.fixedincome.helpers import collect_ecb_data
 
 
 def get_main_refinancing_operations() -> pd.DataFrame:
@@ -42,7 +17,9 @@ def get_main_refinancing_operations() -> pd.DataFrame:
     """
     ecb_data_string = "D.U2.EUR.4F.KR.MRR_RT.LEV"
 
-    main_refinancing_operations = collect_ecb_data(ecb_data_string)
+    main_refinancing_operations = collect_ecb_data(
+        ecb_data_string=ecb_data_string, dataset="FM", frequency="D"
+    )
 
     # Convert to percentage
     main_refinancing_operations = main_refinancing_operations / 100
@@ -64,7 +41,9 @@ def get_marginal_lending_facility() -> pd.DataFrame:
     """
     ecb_data_string = "D.U2.EUR.4F.KR.MLFR.LEV"
 
-    marginal_lending_facility = collect_ecb_data(ecb_data_string)
+    marginal_lending_facility = collect_ecb_data(
+        ecb_data_string=ecb_data_string, dataset="FM", frequency="D"
+    )
 
     # Convert to percentage
     marginal_lending_facility = marginal_lending_facility / 100
@@ -83,7 +62,9 @@ def get_deposit_facility() -> pd.DataFrame:
     """
     ecb_data_string = "D.U2.EUR.4F.KR.DFR.LEV"
 
-    deposit_facility = collect_ecb_data(ecb_data_string)
+    deposit_facility = collect_ecb_data(
+        ecb_data_string=ecb_data_string, dataset="FM", frequency="D"
+    )
 
     # Convert to percentage
     deposit_facility = deposit_facility / 100

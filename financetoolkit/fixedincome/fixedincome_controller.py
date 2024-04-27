@@ -56,7 +56,7 @@ class FixedIncome:
             end_date='2024-01-15',
         )
 
-        fixedincome.get_effective_yield(maturity=False)
+        fixedincome.get_ice_bofa_effective_yield(maturity=False)
         ```
 
         Which returns:
@@ -234,7 +234,7 @@ class FixedIncome:
         future cash flows, which includes the coupon payments and the par value of the bond at maturity. The bond price is calculated
         using the following formula:
 
-        - Bond Price = (C / r) * (1 - (1 + r)^-n) + F / (1 + r)^n
+        - Bond Price = (C / r) * (1 — (1 + r)^-n) + F / (1 + r)^n
 
         where:
 
@@ -445,7 +445,7 @@ class FixedIncome:
 
         The yield to maturity is calculated using the following formula:
 
-        - Bond Price = (C / r) * (1 - (1 + r)^-n) + F / (1 + r)^n
+        - Bond Price = (C / r) * (1 — (1 + r)^-n) + F / (1 + r)^n
 
         where:
 
@@ -1050,6 +1050,25 @@ class FixedIncome:
 
         Returns:
             pandas.DataFrame: DataFrame containing the Euribor rates for the specified maturities.
+
+        As an example:
+
+        ```python
+        from financetoolkit import FixedIncome
+
+        fixedincome = FixedIncome(start_date='2023-12-01')
+
+        euribor_rates = fixedincome.get_euribor_rates()
+        ```
+
+        Which returns:
+
+        |         |   1-Month |   3-Month |   6-Month |   12-Month |
+        |:--------|----------:|----------:|----------:|-----------:|
+        | 2023-12 |    0.0386 |    0.0393 |    0.0392 |     0.0367 |
+        | 2024-01 |    0.0387 |    0.0393 |    0.0389 |     0.0361 |
+        | 2024-02 |    0.0387 |    0.0392 |    0.039  |     0.0367 |
+        | 2024-03 |    0.0385 |    0.0392 |    0.0389 |     0.0372 |
         """
         if isinstance(maturities, str):
             maturities = [maturities]

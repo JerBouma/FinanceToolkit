@@ -5,7 +5,7 @@ from scipy.stats import norm
 
 
 def get_black_price(
-    fixed_rate: float,
+    forward_rate: float,
     strike_rate: float,
     volatility: float,
     years_to_maturity: float,
@@ -25,7 +25,7 @@ def get_black_price(
     For more information, see: https://en.wikipedia.org/wiki/Black_model
 
     Args:
-        fixed_rate (float): Fixed rate of the underlying swap.
+        forward_rate (float): Forward rate of the underlying swap.
         strike_rate (float): Strike rate of the swaption.
         volatility (float): Volatility of the underlying swap.
         years_to_maturity (float): years to maturity of the swaption.
@@ -38,14 +38,14 @@ def get_black_price(
         tuple[float, float]: A tuple containing the price of the swaption and the payoff of the underlying option.
     """
     d1 = (
-        np.log(fixed_rate / strike_rate) + 0.5 * volatility**2 * years_to_maturity
+        np.log(forward_rate / strike_rate) + 0.5 * volatility**2 * years_to_maturity
     ) / (volatility * np.sqrt(years_to_maturity))
     d2 = d1 - volatility * np.sqrt(years_to_maturity)
 
     if is_receiver:
-        payoff = -fixed_rate * norm.cdf(-d1) + strike_rate * norm.cdf(-d2)
+        payoff = -forward_rate * norm.cdf(-d1) + strike_rate * norm.cdf(-d2)
     else:
-        payoff = fixed_rate * norm.cdf(d1) - strike_rate * norm.cdf(d2)
+        payoff = forward_rate * norm.cdf(d1) - strike_rate * norm.cdf(d2)
 
     present_value = np.exp(-risk_free_rate * years_to_maturity)
     swaption_price = notional * present_value * payoff
@@ -54,7 +54,7 @@ def get_black_price(
 
 
 def get_bachelier_price(
-    fixed_rate: float,
+    forward_rate: float,
     strike_rate: float,
     volatility: float,
     years_to_maturity: float,
@@ -71,7 +71,7 @@ def get_bachelier_price(
     For more information, see: https://en.wikipedia.org/wiki/Bachelier_model
 
     Args:
-        fixed_rate (float): Fixed rate of the underlying swap.
+        forward_rate (float): Forward rate of the underlying swap.
         strike_rate (float): Strike rate of the swaption.
         volatility (float): Volatility of the underlying swap.
         years_to_maturity (float): years to maturity of the swaption.
@@ -82,14 +82,14 @@ def get_bachelier_price(
     Returns:
         tuple[float, float]: A tuple containing the price of the swaption and the payoff of the underlying option.
     """
-    d = (fixed_rate - strike_rate) / (volatility * np.sqrt(years_to_maturity))
+    d = (forward_rate - strike_rate) / (volatility * np.sqrt(years_to_maturity))
 
     if is_receiver:
-        payoff = (strike_rate - fixed_rate) * norm.cdf(-d) + volatility * np.sqrt(
+        payoff = (strike_rate - forward_rate) * norm.cdf(-d) + volatility * np.sqrt(
             years_to_maturity
         ) * norm.pdf(-d)
     else:
-        payoff = (fixed_rate - strike_rate) * norm.cdf(d) + volatility * np.sqrt(
+        payoff = (forward_rate - strike_rate) * norm.cdf(d) + volatility * np.sqrt(
             years_to_maturity
         ) * norm.pdf(d)
 

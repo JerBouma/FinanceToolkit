@@ -111,6 +111,9 @@ value_at_risk = companies.risk.get_value_at_risk(period="weekly")
 # a Technical example
 ichimoku_cloud = companies.technicals.get_ichimoku_cloud()
 
+# a Fixed Income example
+corporate_bond_yields = companies.fixed_income.get_ice_bofa_effective_yield()
+
 # an Economics example
 unemployment_rates = companies.economics.get_unemployment_rate()
 ````
@@ -245,6 +248,12 @@ Get the Ichimoku Cloud parameters based on the historical market data. This can 
 And below the Ichimoku Cloud parameters are plotted for Apple and Microsoft side-by-side.
 
 ![Technicals](https://github.com/JerBouma/FinanceToolkit/assets/46355364/1ced5b34-2410-4206-8ddf-bb053bcb21b2)
+
+### Obtaining Fixed Income Metrics
+
+Get access to the ICE BofA Corporate Bond benchmark indices and a variety of other bond and derivative related valuations within the `fixedincome` module. For example, see the Effective Yield for the ICE BofA Corporate Bond Index below:
+
+
 
 ### Understanding Key Economic Indicators
 

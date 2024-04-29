@@ -263,7 +263,7 @@ Get access to the ICE BofA Corporate Bond benchmark indices and a variety of oth
 
 And below Effective Yields, Option-Adjusted Spreads (OAS), Yield to Worst and Total Returns are plotted over time for the different maturity periods.
 
-![Fixed Income](https://github.com/JerBouma/FinanceToolkit/assets/46355364/816cf251-4152-4341-a08e-a36268f5f721)
+![Fixed Income](https://github.com/JerBouma/FinanceToolkit/assets/46355364/74eaa407-c178-4710-890d-8318dffce577)
 
 ### Understanding Key Economic Indicators
 

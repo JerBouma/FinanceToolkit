@@ -136,6 +136,43 @@ class FixedIncome:
 
         Returns:
             pd.Series: A pandas Series containing the bond statistics.
+
+        As an example:
+
+        ```python
+        from financetoolkit import FixedIncome
+
+        fixedincome = FixedIncome()
+
+        # This is one example and below a collection of different bonds
+        # is shown with different characteristics
+        fixedincome.collect_bond_statistics(
+            par_value=100,
+            coupon_rate=0.05,
+            years_to_maturity=5,
+            yield_to_maturity=0.08,
+            frequency=1,
+        )
+        ```
+
+        Which returns:
+
+        |                     |   Bond 1 |   Bond 2 |   Bond 3 |    Bond 4 |   Bond 5 |   Bond 6 |
+        |:--------------------|---------:|---------:|---------:|----------:|---------:|---------:|
+        | Par Value           | 100      | 250      |  50      | 1000      |  85      | 320      |
+        | Coupon Rate         |   0.05   |   0.02   |   0.075  |    0      |   0.15   |   0.015  |
+        | Years to Maturity   |   5      |  10      |   2      |   10      |   3      |   1      |
+        | Yield to Maturity   |   0.08   |   0.021  |   0.03   |    0      |   0.16   |   0.04   |
+        | Frequency           |   1      |   1      |   4      |    1      |   2      |  12      |
+        | Present Value       |  88.0219 | 247.766  |  54.3518 | 1000      |  83.0353 | 312.171  |
+        | Current Yield       |   0.0568 |   0.0202 |   0.069  |    0      |   0.1535 |   0.0154 |
+        | Effective Yield     |   0.05   |   0.02   |   0.0771 |    0      |   0.1556 |   0.0151 |
+        | Macaulay's Duration |   4.5116 |   9.1576 |   1.8849 |   10      |   2.5667 |   0.9932 |
+        | Modified Duration   |   4.1774 |   8.9693 |   1.8709 |   10      |   2.3766 |   0.9899 |
+        | Effective Duration  |   4.0677 |   8.5181 |   1.8477 |    9.4713 |   2.2952 |   0.9844 |
+        | Dollar Duration     |   3.677  |  22.2228 |   1.0168 |  100      |   1.9734 |   3.0902 |
+        | DV01                |   0.0004 |   0.0022 |   0      |    0.01   |   0.0001 |   0      |
+        | Convexity           |  22.4017 |  93.7509 |   4.0849 |  110      |   7.0923 |   1.0662 |
         """
         bond_statistics = {
             "Par Value": par_value,
@@ -836,277 +873,6 @@ class FixedIncome:
 
         return government_bond_yield.round(rounding if rounding else self._rounding)
 
-    def get_european_central_bank_rates(
-        self, rate: str | None = None, rounding: int | None = None
-    ):
-        """
-        The Governing Council of the ECB sets the key interest rates for the
-        euro area. The available rates are:
-
-        - Main refinancing operations (refinancing)
-        - Marginal lending facility (lending)
-        - Deposit facility (deposit)
-
-        The main refinancing operations (MRO) rate is the interest rate banks
-        pay when they borrow money from the ECB for one week. When they do this,
-        they have to provide collateral to guarantee that the money will be paid back.
-
-        The marginal lending facility rate is the interest rate banks pay when they
-        borrow from the ECB overnight. When they do this, they have to provide collateral,
-        for example securities, to guarantee that the money will be paid back.
-
-        The deposit facility rate is one of the three interest rates the ECB sets every
-        six weeks as part of its monetary policy. The rate defines the interest banks
-        receive for depositing money with the central bank overnight.
-
-        See source: https://data.ecb.europa.eu/main-figures/
-
-        Args:
-            rate (str, optional): The rate to return. Defaults to None, which returns all rates.
-                Choose between 'refinancing', 'lending' or 'deposit'.
-
-        Returns:
-            pd.DataFrame: A DataFrame containing the ECB rates.
-
-        As an example:
-
-        ```python
-        from financetoolkit import FixedIncome
-
-        fixedincome = FixedIncome(start_date='2023-12-01')
-
-        fixedincome.get_european_central_bank_rates()
-        ```
-
-        Which returns:
-
-        |            |   Refinancing |   Lending |   Deposit |
-        |:-----------|--------------:|----------:|----------:|
-        | 2023-12-01 |         0.045 |    0.0475 |      0.04 |
-        | 2023-12-02 |         0.045 |    0.0475 |      0.04 |
-        | 2023-12-03 |         0.045 |    0.0475 |      0.04 |
-        | 2023-12-04 |         0.045 |    0.0475 |      0.04 |
-        | 2023-12-05 |         0.045 |    0.0475 |      0.04 |
-        | 2023-12-06 |         0.045 |    0.0475 |      0.04 |
-        | 2023-12-07 |         0.045 |    0.0475 |      0.04 |
-        | 2023-12-08 |         0.045 |    0.0475 |      0.04 |
-        | 2023-12-09 |         0.045 |    0.0475 |      0.04 |
-        | 2023-12-10 |         0.045 |    0.0475 |      0.04 |
-        | 2023-12-11 |         0.045 |    0.0475 |      0.04 |
-        | 2023-12-12 |         0.045 |    0.0475 |      0.04 |
-        | 2023-12-13 |         0.045 |    0.0475 |      0.04 |
-        | 2023-12-14 |         0.045 |    0.0475 |      0.04 |
-        | 2023-12-15 |         0.045 |    0.0475 |      0.04 |
-        | 2023-12-16 |         0.045 |    0.0475 |      0.04 |
-        | 2023-12-17 |         0.045 |    0.0475 |      0.04 |
-        | 2023-12-18 |         0.045 |    0.0475 |      0.04 |
-        """
-        ecb_rates = pd.DataFrame()
-
-        if rate and rate not in ["refinancing", "lending", "deposit"]:
-            raise ValueError(
-                "Rate must be one of 'refinancing', 'lending' or 'deposit' or left empty for all."
-            )
-
-        if not rate or rate == "refinancing":
-            ecb_rates["Refinancing"] = ecb_model.get_main_refinancing_operations()
-        if not rate or rate == "lending":
-            ecb_rates["Lending"] = ecb_model.get_marginal_lending_facility()
-        if not rate or rate == "deposit":
-            ecb_rates["Deposit"] = ecb_model.get_deposit_facility()
-
-        ecb_rates = ecb_rates.loc[self._start_date : self._end_date]
-
-        ecb_rates = ecb_rates.round(rounding if rounding else self._rounding)
-
-        return ecb_rates
-
-    def get_federal_reserve_rates(
-        self, rate: str = "EFFR", rounding: int | None = None
-    ):
-        """
-        Get the Federal Reserve rates as published by the Federal Reserve Bank of New York.
-        The federal funds market consists of domestic unsecured borrowings in U.S. dollars
-        by depository institutions from other depository institutions and certain other
-        entities, primarily government-sponsored enterprises.
-
-        The following rates are available:
-
-        - Effective Federal Funds Rate (EFFR)
-        - Overnight Bank Funding Rate (OBFR)
-        - Tri-Party General Collateral Rate (TGCR)
-        - Broad General Collateral Rate (BGCR)
-        - Secured Overnight Financing Rate (SOFR)
-
-        The effective federal funds rate (EFFR) is calculated as a volume-weighted median
-        of overnight federal funds transactions reported in the FR 2420 Report of Selected
-        Money Market Rates.
-
-        The overnight bank funding rate (OBFR) is calculated as a volume-weighted median
-        of overnight federal funds transactions, Eurodollar transactions, and the
-        domestic deposits reported as “Selected Deposits” in the FR 2420 Report.
-
-        The TGCR is calculated as a volume-weighted median of transaction-level
-        tri-party repo data collected from the Bank of New York Mellon.
-
-        The BGCR is calculated as a volume-weighted median of transaction-level
-        tri-party repo data collected from the Bank of New York Mellon as well
-        as GCF Repo transaction data obtained from the U.S. Department of the
-        Treasury’s Office of Financial Research (OFR).
-
-        The SOFR is calculated as a volume-weighted median of transaction-level
-        tri-party repo data collected from the Bank of New York Mellon as well as
-        GCF Repo transaction data and data on bilateral Treasury repo transactions
-        cleared through FICC's DVP service, which are obtained from the U.S.
-        Department of the Treasury’s Office of Financial Research (OFR).
-
-        The New York Fed publishes the rates for the prior business day on the New
-        York Fed’s website between 8:00 and 9:00 a.m.
-
-        See source: https://www.newyorkfed.org/markets/reference-rates/
-
-        Args:
-            rate (str): The rate to return. Defaults to 'EFFR' (Effective Federal Funds Rate).
-
-        Returns:
-            pd.DataFrame: A DataFrame containing the Federal Reserve rates including the rate,
-                percentiles, volume and upper and lower bounds.
-
-        As an example:
-
-        ```python
-        from financetoolkit import FixedIncome
-
-        fixedincome = FixedIncome(start_date='2023-12-01')
-
-        effr = fixedincome.get_federal_reserve_rates()
-
-        effr.loc[:, ['Rate', '1st Percentile', '25th Percentile', '75th Percentile', '99th Percentile']]
-        ```
-
-        Which returns:
-
-        | Effective Date   |   Rate |   1st Percentile |   25th Percentile |   75th Percentile |   99th Percentile |
-        |:-----------------|-------:|-----------------:|------------------:|------------------:|------------------:|
-        | 2023-12-01       | 0.0533 |            0.053 |            0.0532 |            0.0533 |            0.0544 |
-        | 2023-12-04       | 0.0533 |            0.053 |            0.0532 |            0.0533 |            0.0545 |
-        | 2023-12-05       | 0.0533 |            0.053 |            0.0532 |            0.0533 |            0.0545 |
-        | 2023-12-06       | 0.0533 |            0.053 |            0.0532 |            0.0533 |            0.0545 |
-        | 2023-12-07       | 0.0533 |            0.053 |            0.0531 |            0.0534 |            0.0545 |
-        | 2023-12-08       | 0.0533 |            0.053 |            0.0532 |            0.0533 |            0.0545 |
-        | 2023-12-11       | 0.0533 |            0.053 |            0.0532 |            0.0533 |            0.0545 |
-        | 2023-12-12       | 0.0533 |            0.053 |            0.0531 |            0.0533 |            0.0544 |
-        | 2023-12-13       | 0.0533 |            0.053 |            0.0531 |            0.0533 |            0.0545 |
-        | 2023-12-14       | 0.0533 |            0.053 |            0.0531 |            0.0533 |            0.0535 |
-        """
-        rate = rate.upper()
-
-        if rate == "EFFR":
-            fed_data = fed_model.get_effective_federal_funds_rate()
-        elif rate == "OBFR":
-            fed_data = fed_model.get_overnight_banking_funding_rate()
-        elif rate == "TGCR":
-            fed_data = fed_model.get_tri_party_general_collateral_rate()
-        elif rate == "BGCR":
-            fed_data = fed_model.get_broad_general_collateral_rate()
-        elif rate == "SOFR":
-            fed_data = fed_model.get_secured_overnight_financing_rate()
-        else:
-            raise ValueError(
-                "Rate must be one of 'EFFR', 'OBFR', 'TGCR', 'BGCR' or 'SOFR'."
-            )
-
-        fed_data = fed_data.loc[self._start_date : self._end_date]
-
-        fed_data = fed_data.round(rounding if rounding else self._rounding)
-
-        return fed_data
-
-    @handle_errors
-    def get_euribor_rates(
-        self,
-        maturities: str | list | None = None,
-        nominal: bool = True,
-        rounding: int | None = None,
-    ):
-        """
-        Euribor rates, short for Euro Interbank Offered Rate, are the interest rates at which a panel
-        of European banks lend funds to one another in the interbank market. These rates are published
-        daily by the European Money Markets Institute (EMMI) and serve as a benchmark for various
-        financial products and contracts, including mortgages, loans, and derivatives, across the Eurozone.
-
-        The Euribor rates are determined for different maturities, typically ranging from overnight to 12 months
-        The most common maturities are 1 month, 3 months, 6 months, and 12 months. Each maturity represents
-        the time period for which the funds are borrowed, with longer maturities generally implying higher
-        interest rates due to increased uncertainty and risk over longer time horizons.
-
-        For more information, see for example: https://data.ecb.europa.eu/data/datasets/FM/FM.M.U2.EUR.RT.MM.EURIBOR6MD_.HSTA
-
-        Args:
-            maturities (str | list | None, optional): Maturities for which to retrieve rates. Defaults to None.
-                When set to None, it will retrieve rates for 1 month, 3 months, 6 months, and 12 months.
-            nominal (bool, optional): Flag indicating whether to retrieve nominal rates. Defaults to True.
-            rounding (int | None, optional): Rounding precision for the rates. Defaults to None.
-
-        Returns:
-            pandas.DataFrame: DataFrame containing the Euribor rates for the specified maturities.
-
-        As an example:
-
-        ```python
-        from financetoolkit import FixedIncome
-
-        fixedincome = FixedIncome(start_date='2023-12-01')
-
-        euribor_rates = fixedincome.get_euribor_rates()
-        ```
-
-        Which returns:
-
-        |         |   1-Month |   3-Month |   6-Month |   12-Month |
-        |:--------|----------:|----------:|----------:|-----------:|
-        | 2023-12 |    0.0386 |    0.0393 |    0.0392 |     0.0367 |
-        | 2024-01 |    0.0387 |    0.0393 |    0.0389 |     0.0361 |
-        | 2024-02 |    0.0387 |    0.0392 |    0.039  |     0.0367 |
-        | 2024-03 |    0.0385 |    0.0392 |    0.0389 |     0.0372 |
-        """
-        if isinstance(maturities, str):
-            maturities = [maturities]
-
-        maturity_names = {
-            "1M": "1-Month",
-            "3M": "3-Month",
-            "6M": "6-Month",
-            "1Y": "12-Month",
-        }
-
-        maturities = ["1M", "3M", "6M", "1Y"] if maturities is None else maturities
-        euribor_rates = pd.DataFrame(
-            columns=[maturity_names[maturity] for maturity in maturities]
-        )
-
-        for maturity in maturities:
-            if maturity not in ["1M", "3M", "6M", "1Y"]:
-                print(
-                    f"Invalid maturity: {maturity}, please choose from 1M, 3M, 6M, 1Y."
-                )
-
-            maturity_name = maturity_names[maturity]
-
-            if not nominal and maturity == "3M" and len(maturities) > 1:
-                print("Please note that only the 3-Month Euribor rate has a real rate.")
-
-            euribor_rates[maturity_name] = euribor_model.get_euribor_rate(
-                maturity=maturity,
-                nominal=nominal if not nominal and maturity == "3M" else True,
-            )
-
-        euribor_rates = euribor_rates.loc[self._start_date : self._end_date]
-
-        euribor_rates = euribor_rates.round(rounding if rounding else self._rounding)
-
-        return euribor_rates
-
     @handle_errors
     def get_ice_bofa_option_adjusted_spread(
         self,
@@ -1382,3 +1148,274 @@ class FixedIncome:
         yield_to_worst = yield_to_worst.round(rounding if rounding else self._rounding)
 
         return yield_to_worst
+
+    @handle_errors
+    def get_euribor_rates(
+        self,
+        maturities: str | list | None = None,
+        nominal: bool = True,
+        rounding: int | None = None,
+    ):
+        """
+        Euribor rates, short for Euro Interbank Offered Rate, are the interest rates at which a panel
+        of European banks lend funds to one another in the interbank market. These rates are published
+        daily by the European Money Markets Institute (EMMI) and serve as a benchmark for various
+        financial products and contracts, including mortgages, loans, and derivatives, across the Eurozone.
+
+        The Euribor rates are determined for different maturities, typically ranging from overnight to 12 months
+        The most common maturities are 1 month, 3 months, 6 months, and 12 months. Each maturity represents
+        the time period for which the funds are borrowed, with longer maturities generally implying higher
+        interest rates due to increased uncertainty and risk over longer time horizons.
+
+        For more information, see for example: https://data.ecb.europa.eu/data/datasets/FM/FM.M.U2.EUR.RT.MM.EURIBOR6MD_.HSTA
+
+        Args:
+            maturities (str | list | None, optional): Maturities for which to retrieve rates. Defaults to None.
+                When set to None, it will retrieve rates for 1 month, 3 months, 6 months, and 12 months.
+            nominal (bool, optional): Flag indicating whether to retrieve nominal rates. Defaults to True.
+            rounding (int | None, optional): Rounding precision for the rates. Defaults to None.
+
+        Returns:
+            pandas.DataFrame: DataFrame containing the Euribor rates for the specified maturities.
+
+        As an example:
+
+        ```python
+        from financetoolkit import FixedIncome
+
+        fixedincome = FixedIncome(start_date='2023-12-01')
+
+        euribor_rates = fixedincome.get_euribor_rates()
+        ```
+
+        Which returns:
+
+        |         |   1-Month |   3-Month |   6-Month |   12-Month |
+        |:--------|----------:|----------:|----------:|-----------:|
+        | 2023-12 |    0.0386 |    0.0393 |    0.0392 |     0.0367 |
+        | 2024-01 |    0.0387 |    0.0393 |    0.0389 |     0.0361 |
+        | 2024-02 |    0.0387 |    0.0392 |    0.039  |     0.0367 |
+        | 2024-03 |    0.0385 |    0.0392 |    0.0389 |     0.0372 |
+        """
+        if isinstance(maturities, str):
+            maturities = [maturities]
+
+        maturity_names = {
+            "1M": "1-Month",
+            "3M": "3-Month",
+            "6M": "6-Month",
+            "1Y": "12-Month",
+        }
+
+        maturities = ["1M", "3M", "6M", "1Y"] if maturities is None else maturities
+        euribor_rates = pd.DataFrame(
+            columns=[maturity_names[maturity] for maturity in maturities]
+        )
+
+        for maturity in maturities:
+            if maturity not in ["1M", "3M", "6M", "1Y"]:
+                print(
+                    f"Invalid maturity: {maturity}, please choose from 1M, 3M, 6M, 1Y."
+                )
+
+            maturity_name = maturity_names[maturity]
+
+            if not nominal and maturity == "3M" and len(maturities) > 1:
+                print("Please note that only the 3-Month Euribor rate has a real rate.")
+
+            euribor_rates[maturity_name] = euribor_model.get_euribor_rate(
+                maturity=maturity,
+                nominal=nominal if not nominal and maturity == "3M" else True,
+            )
+
+        euribor_rates = euribor_rates.loc[self._start_date : self._end_date]
+
+        euribor_rates = euribor_rates.round(rounding if rounding else self._rounding)
+
+        return euribor_rates
+
+    def get_european_central_bank_rates(
+        self, rate: str | None = None, rounding: int | None = None
+    ):
+        """
+        The Governing Council of the ECB sets the key interest rates for the
+        euro area. The available rates are:
+
+        - Main refinancing operations (refinancing)
+        - Marginal lending facility (lending)
+        - Deposit facility (deposit)
+
+        The main refinancing operations (MRO) rate is the interest rate banks
+        pay when they borrow money from the ECB for one week. When they do this,
+        they have to provide collateral to guarantee that the money will be paid back.
+
+        The marginal lending facility rate is the interest rate banks pay when they
+        borrow from the ECB overnight. When they do this, they have to provide collateral,
+        for example securities, to guarantee that the money will be paid back.
+
+        The deposit facility rate is one of the three interest rates the ECB sets every
+        six weeks as part of its monetary policy. The rate defines the interest banks
+        receive for depositing money with the central bank overnight.
+
+        See source: https://data.ecb.europa.eu/main-figures/
+
+        Args:
+            rate (str, optional): The rate to return. Defaults to None, which returns all rates.
+                Choose between 'refinancing', 'lending' or 'deposit'.
+
+        Returns:
+            pd.DataFrame: A DataFrame containing the ECB rates.
+
+        As an example:
+
+        ```python
+        from financetoolkit import FixedIncome
+
+        fixedincome = FixedIncome(start_date='2023-12-01')
+
+        fixedincome.get_european_central_bank_rates()
+        ```
+
+        Which returns:
+
+        |            |   Refinancing |   Lending |   Deposit |
+        |:-----------|--------------:|----------:|----------:|
+        | 2023-12-01 |         0.045 |    0.0475 |      0.04 |
+        | 2023-12-02 |         0.045 |    0.0475 |      0.04 |
+        | 2023-12-03 |         0.045 |    0.0475 |      0.04 |
+        | 2023-12-04 |         0.045 |    0.0475 |      0.04 |
+        | 2023-12-05 |         0.045 |    0.0475 |      0.04 |
+        | 2023-12-06 |         0.045 |    0.0475 |      0.04 |
+        | 2023-12-07 |         0.045 |    0.0475 |      0.04 |
+        | 2023-12-08 |         0.045 |    0.0475 |      0.04 |
+        | 2023-12-09 |         0.045 |    0.0475 |      0.04 |
+        | 2023-12-10 |         0.045 |    0.0475 |      0.04 |
+        | 2023-12-11 |         0.045 |    0.0475 |      0.04 |
+        | 2023-12-12 |         0.045 |    0.0475 |      0.04 |
+        | 2023-12-13 |         0.045 |    0.0475 |      0.04 |
+        | 2023-12-14 |         0.045 |    0.0475 |      0.04 |
+        | 2023-12-15 |         0.045 |    0.0475 |      0.04 |
+        | 2023-12-16 |         0.045 |    0.0475 |      0.04 |
+        | 2023-12-17 |         0.045 |    0.0475 |      0.04 |
+        | 2023-12-18 |         0.045 |    0.0475 |      0.04 |
+        """
+        ecb_rates = pd.DataFrame()
+
+        if rate and rate not in ["refinancing", "lending", "deposit"]:
+            raise ValueError(
+                "Rate must be one of 'refinancing', 'lending' or 'deposit' or left empty for all."
+            )
+
+        if not rate or rate == "refinancing":
+            ecb_rates["Refinancing"] = ecb_model.get_main_refinancing_operations()
+        if not rate or rate == "lending":
+            ecb_rates["Lending"] = ecb_model.get_marginal_lending_facility()
+        if not rate or rate == "deposit":
+            ecb_rates["Deposit"] = ecb_model.get_deposit_facility()
+
+        ecb_rates = ecb_rates.loc[self._start_date : self._end_date]
+
+        ecb_rates = ecb_rates.round(rounding if rounding else self._rounding)
+
+        return ecb_rates
+
+    def get_federal_reserve_rates(
+        self, rate: str = "EFFR", rounding: int | None = None
+    ):
+        """
+        Get the Federal Reserve rates as published by the Federal Reserve Bank of New York.
+        The federal funds market consists of domestic unsecured borrowings in U.S. dollars
+        by depository institutions from other depository institutions and certain other
+        entities, primarily government-sponsored enterprises.
+
+        The following rates are available:
+
+        - Effective Federal Funds Rate (EFFR)
+        - Overnight Bank Funding Rate (OBFR)
+        - Tri-Party General Collateral Rate (TGCR)
+        - Broad General Collateral Rate (BGCR)
+        - Secured Overnight Financing Rate (SOFR)
+
+        The effective federal funds rate (EFFR) is calculated as a volume-weighted median
+        of overnight federal funds transactions reported in the FR 2420 Report of Selected
+        Money Market Rates.
+
+        The overnight bank funding rate (OBFR) is calculated as a volume-weighted median
+        of overnight federal funds transactions, Eurodollar transactions, and the
+        domestic deposits reported as “Selected Deposits” in the FR 2420 Report.
+
+        The TGCR is calculated as a volume-weighted median of transaction-level
+        tri-party repo data collected from the Bank of New York Mellon.
+
+        The BGCR is calculated as a volume-weighted median of transaction-level
+        tri-party repo data collected from the Bank of New York Mellon as well
+        as GCF Repo transaction data obtained from the U.S. Department of the
+        Treasury’s Office of Financial Research (OFR).
+
+        The SOFR is calculated as a volume-weighted median of transaction-level
+        tri-party repo data collected from the Bank of New York Mellon as well as
+        GCF Repo transaction data and data on bilateral Treasury repo transactions
+        cleared through FICC's DVP service, which are obtained from the U.S.
+        Department of the Treasury’s Office of Financial Research (OFR).
+
+        The New York Fed publishes the rates for the prior business day on the New
+        York Fed’s website between 8:00 and 9:00 a.m.
+
+        See source: https://www.newyorkfed.org/markets/reference-rates/
+
+        Args:
+            rate (str): The rate to return. Defaults to 'EFFR' (Effective Federal Funds Rate).
+
+        Returns:
+            pd.DataFrame: A DataFrame containing the Federal Reserve rates including the rate,
+                percentiles, volume and upper and lower bounds.
+
+        As an example:
+
+        ```python
+        from financetoolkit import FixedIncome
+
+        fixedincome = FixedIncome(start_date='2023-12-01')
+
+        effr = fixedincome.get_federal_reserve_rates()
+
+        effr.loc[:, ['Rate', '1st Percentile', '25th Percentile', '75th Percentile', '99th Percentile']]
+        ```
+
+        Which returns:
+
+        | Effective Date   |   Rate |   1st Percentile |   25th Percentile |   75th Percentile |   99th Percentile |
+        |:-----------------|-------:|-----------------:|------------------:|------------------:|------------------:|
+        | 2023-12-01       | 0.0533 |            0.053 |            0.0532 |            0.0533 |            0.0544 |
+        | 2023-12-04       | 0.0533 |            0.053 |            0.0532 |            0.0533 |            0.0545 |
+        | 2023-12-05       | 0.0533 |            0.053 |            0.0532 |            0.0533 |            0.0545 |
+        | 2023-12-06       | 0.0533 |            0.053 |            0.0532 |            0.0533 |            0.0545 |
+        | 2023-12-07       | 0.0533 |            0.053 |            0.0531 |            0.0534 |            0.0545 |
+        | 2023-12-08       | 0.0533 |            0.053 |            0.0532 |            0.0533 |            0.0545 |
+        | 2023-12-11       | 0.0533 |            0.053 |            0.0532 |            0.0533 |            0.0545 |
+        | 2023-12-12       | 0.0533 |            0.053 |            0.0531 |            0.0533 |            0.0544 |
+        | 2023-12-13       | 0.0533 |            0.053 |            0.0531 |            0.0533 |            0.0545 |
+        | 2023-12-14       | 0.0533 |            0.053 |            0.0531 |            0.0533 |            0.0535 |
+        """
+        rate = rate.upper()
+
+        if rate == "EFFR":
+            fed_data = fed_model.get_effective_federal_funds_rate()
+        elif rate == "OBFR":
+            fed_data = fed_model.get_overnight_banking_funding_rate()
+        elif rate == "TGCR":
+            fed_data = fed_model.get_tri_party_general_collateral_rate()
+        elif rate == "BGCR":
+            fed_data = fed_model.get_broad_general_collateral_rate()
+        elif rate == "SOFR":
+            fed_data = fed_model.get_secured_overnight_financing_rate()
+        else:
+            raise ValueError(
+                "Rate must be one of 'EFFR', 'OBFR', 'TGCR', 'BGCR' or 'SOFR'."
+            )
+
+        fed_data = fed_data.loc[self._start_date : self._end_date]
+
+        fed_data = fed_data.round(rounding if rounding else self._rounding)
+
+        return fed_data

@@ -261,7 +261,7 @@ Get access to the ICE BofA Corporate Bond benchmark indices and a variety of oth
 | 2024-04-24 | 0.0518 | 0.0531 | 0.0559 | 0.0592 | 0.0664 | 0.0778 | 0.1361 |
 | 2024-04-25 | 0.0524 | 0.0537 | 0.0564 | 0.0598 | 0.0673 | 0.079  | 0.1368 |
 
-And below Effective Yields, Option-Adjusted Spreads (OAS), Yield to Worst and Total Returns are plotted over time for the different maturity periods.
+And below Effective Yields and Option-Adjusted Spreads (OAS) including their distributions over time for the different maturity periods.
 
 ![Fixed Income](https://github.com/JerBouma/FinanceToolkit/assets/46355364/74eaa407-c178-4710-890d-8318dffce577)
 

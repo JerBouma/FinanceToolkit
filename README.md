@@ -2632,7 +2632,7 @@ The Yield to Maturity (YTM) is the total return anticipated on a bond if it is h
     <summary><b>Derivative Valuations</b></summary>
 The Derivative Valuations section contains a variety of models that can be used to value derivative instruments such as Swaptions. These models include the Black Model and the Bachelier Model.
 
-All derivative valuations can be called by using `get_` to get a single valuation. E.g. `get_derivative_price`: As an example:
+All derivative valuations can be called by using `get_` to get a single valuation. E.g. `get_derivative_price`. As an example:
 
 ```python
 from financetoolkit import FixedIncome

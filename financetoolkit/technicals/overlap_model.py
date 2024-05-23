@@ -105,8 +105,9 @@ def get_support_resistance_levels(
         sensitivity (float): The sensitivity threshold for identifying levels.
 
     Returns:
-        support_levels (dict): A dictionary with dates as keys and support levels as values.
-        resistance_levels (dict): A dictionary with dates as keys and resistance levels as values.
+        support_resistance_levels (pd.DataFrame): A DataFrame with support and resistance levels.
+            The DataFrame has two columns: "Resistance" and "Support".
+            The index of the DataFrame represents the dates, and the values represent the levels.
     """
     # Identify local maxima and minima
     local_maxima_indices = argrelextrema(prices.values, np.greater, order=window)[0]

@@ -1,7 +1,9 @@
-"""Profitability Module"""
+"""Overlap Module"""
 __docformat__ = "google"
 
+import numpy as np
 import pandas as pd
+from scipy.signal import argrelextrema
 
 
 def get_moving_average(prices: pd.Series, window: int) -> pd.Series:
@@ -89,3 +91,67 @@ def get_triangular_moving_average(prices: pd.Series, window: int) -> pd.Series:
     tri_ma = tri_sum / ((window + 1) / 2)
 
     return tri_ma
+
+
+def get_support_resistance_levels(
+    prices: pd.Series, window: int = 5, sensitivity: float = 0.05
+):
+    """
+    Calculate support and resistance levels from historical price data.
+
+    Parameters:
+        prices (pd.Series): A pandas Series of historical closing prices.
+        window (int): The window size to use for identifying local maxima and minima.
+        sensitivity (float): The sensitivity threshold for identifying levels.
+
+    Returns:
+        support_levels (dict): A dictionary with dates as keys and support levels as values.
+        resistance_levels (dict): A dictionary with dates as keys and resistance levels as values.
+    """
+    # Identify local maxima and minima
+    local_maxima_indices = argrelextrema(prices.values, np.greater, order=window)[0]
+    local_minima_indices = argrelextrema(prices.values, np.less, order=window)[0]
+
+    local_maxima_prices = prices.iloc[local_maxima_indices]
+    local_minima_prices = prices.iloc[local_minima_indices]
+
+    # Initialize dictionaries for support and resistance levels
+    resistance_levels: dict[pd.PeriodIndex, float] = {}
+    support_levels: dict[pd.PeriodIndex, float] = {}
+
+    # Calculate resistance levels
+    for idx, price in zip(local_maxima_indices, local_maxima_prices):
+        if not resistance_levels:
+            resistance_levels[prices.index[idx]] = price
+        else:
+            close_to_existing = False
+            for date, level in resistance_levels.items():
+                if abs(price - level) / level < sensitivity:
+                    resistance_levels[date] = (resistance_levels[date] + price) / 2
+                    close_to_existing = True
+                    break
+            if not close_to_existing:
+                resistance_levels[prices.index[idx]] = price
+
+    # Calculate support levels
+    for idx, price in zip(local_minima_indices, local_minima_prices):
+        if not support_levels:
+            support_levels[prices.index[idx]] = price
+        else:
+            close_to_existing = False
+            for date, level in support_levels.items():
+                if abs(price - level) / level < sensitivity:
+                    support_levels[date] = (support_levels[date] + price) / 2
+                    close_to_existing = True
+                    break
+            if not close_to_existing:
+                support_levels[prices.index[idx]] = price
+
+    support_resistance_levels = pd.DataFrame(
+        {
+            "Resistance": pd.Series(resistance_levels),
+            "Support": pd.Series(support_levels),
+        }
+    ).sort_index()
+
+    return support_resistance_levels

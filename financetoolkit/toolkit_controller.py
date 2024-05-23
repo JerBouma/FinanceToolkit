@@ -3029,7 +3029,20 @@ class Toolkit:
         income_statement = self._income_statement
 
         if trailing:
+            # This is a special case where the trailing period does not make sense
+            # for the Weighted Average Shares and Weighted Average Shares Diluted.
+            weighted_average_shares = income_statement.loc[
+                :, ["Weighted Average Shares", "Weighted Average Shares Diluted"], :
+            ]
+
+            # The rolling window is calculated for the rest of the income statement.
             income_statement = self._income_statement.T.rolling(trailing).sum().T
+
+            # The Weighted Average Shares and Weighted Average Shares Diluted should
+            # not be summed up but rather kept equal to the current value.
+            income_statement.loc[
+                weighted_average_shares.index
+            ] = weighted_average_shares
 
         if growth:
             self._income_statement_growth = _calculate_growth(

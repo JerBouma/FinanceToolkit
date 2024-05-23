@@ -3135,6 +3135,109 @@ class Technicals:
 
         return triangular_moving_average.round(rounding if rounding else self._rounding)
 
+    @handle_errors
+    def get_support_resistance_levels(
+        self,
+        sensitivity: float = 0.05,
+        period: str = "daily",
+        close_column: str = "Adj Close",
+        window: int = 14,
+        rounding: int | None = None,
+    ) -> pd.Series | pd.DataFrame:
+        """
+        Retrieves the support and resistance levels for the specified period and assets.
+
+        The Support and Resistance Levels are price levels where the price tends to stop and reverse.
+
+        - Support Levels: These are the valleys where the price tends to stop going down and may start to go up.
+        Think of support levels as "floors" that the price has trouble falling below.
+        - Resistance Levels: These are the peaks where the price tends to stop going up and may start to go down.
+        Think of resistance levels as "ceilings" that the price has trouble breaking through.
+
+        It does so by:
+
+        - Looking for Peaks and Valleys: The function looks at the stock prices and finds the high points
+        (peaks) and low points (valleys) over time.
+        - Grouping Similar Peaks and Valleys: Sometimes, prices will stop at similar points multiple times.
+        The function groups these similar peaks and valleys together to identify key resistance and
+        support levels.
+
+        Args:
+            sensitivity (float, optional): The sensitivity parameter to determine the significance of the peaks
+                and valleys. A higher sensitivity value will result in fewer support and resistance levels
+                being identified. Defaults to 0.05.
+            period (str, optional): The time period to consider for historical data.
+                Can be "daily", "weekly", "quarterly", or "yearly". Defaults to "daily".
+            close_column (str, optional): The column name for closing prices in the historical data.
+                Defaults to "Adj Close".
+            window (int, optional): Number of periods for calculating support and resistance levels.
+                The number of periods (time intervals) over which to calculate the support and resistance levels.
+                Defaults to 14.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                If None, the rounding value specified during the initialization of the Toolkit instance will be used.
+                Defaults to None.
+
+        Returns:
+           pd.DataFrame: The support and resistance levels for each asset.
+
+        Raises:
+            ValueError: If the specified `period` is not one of the valid options.
+
+        Notes:
+        - The method retrieves historical data based on the specified `period` and calculates the
+          support and resistance levels for each asset in the Toolkit instance.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(tickers=["AAPL", "MSFT"])
+
+        support_resistance_levels = toolkit.technicals.get_support_resistance_levels()
+        ```
+        """
+        if period not in [
+            "intraday",
+            "daily",
+            "weekly",
+            "monthly",
+            "quarterly",
+            "yearly",
+        ]:
+            raise ValueError(
+                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
+            )
+        if period == "intraday":
+            if self._historical_data[period].empty:
+                raise ValueError(
+                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
+                )
+            close_column = "Close"
+
+        historical_data = self._historical_data[period]
+
+        support_resistance_levels = {}
+
+        for ticker in historical_data[close_column].columns:
+            support_resistance_levels[
+                ticker
+            ] = overlap_model.get_support_resistance_levels(
+                prices=historical_data[close_column][ticker],
+                window=window,
+                sensitivity=sensitivity,
+            )
+
+        support_resistance_levels_df = (
+            pd.concat(support_resistance_levels, axis=1)
+            .swaplevel(1, 0, axis=1)
+            .sort_index(axis=1)
+        )
+
+        return support_resistance_levels_df.round(
+            rounding if rounding else self._rounding
+        )
+
     def collect_volatility_indicators(
         self,
         period: str = "daily",

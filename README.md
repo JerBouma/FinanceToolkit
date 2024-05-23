@@ -114,6 +114,9 @@ ichimoku_cloud = companies.technicals.get_ichimoku_cloud()
 # a Fixed Income example
 corporate_bond_yields = companies.fixed_income.get_ice_bofa_effective_yield()
 
+# a Fixed Income example
+corporate_bond_yields = companies.fixed_income.get_ice_bofa_effective_yield()
+
 # an Economics example
 unemployment_rates = companies.economics.get_unemployment_rate()
 ````
@@ -280,6 +283,7 @@ Get insights for 60+ countries into key economic indicators such as the Consumer
 
 And below these Unemployment Rates are plotted over time:
 
+![Economics](https://github.com/JerBouma/FinanceToolkit/assets/46355364/0bba2ce2-9846-42de-a89d-737cdcd07b31)
 ![Economics](https://github.com/JerBouma/FinanceToolkit/assets/46355364/0bba2ce2-9846-42de-a89d-737cdcd07b31)
 
 # Core Functionality and Metrics
@@ -2548,6 +2552,223 @@ The Keltner Channels are a technical indicator that uses volatility to identify 
 > **Bollinger Bands**
 
 Bollinger Bands are a volatility indicator that consists of three lines: an upper band, a middle band (simple moving average), and a lower band. The upper and lower bands are calculated as the moving average plus and minus a specified number of standard deviations, respectively. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals#get_bollinger_bands).
+
+</details>
+
+## Fixed Income
+
+The Fixed Income module contains a wide variety of fixed income related calculations such as the Effective Yield, the Macaulay Duration, the Modified Duration Convexity, the Yield to Maturity and models such as Black and Bachelier to valuate derivative instruments such as Swaptions. This module can be called directly via the Toolkit but also separately if desired through `from financetoolkit import FixedIncome`. **Find the Notebook [here](https://www.jeroenbouma.com/projects/financetoolkit/fixedincome-module) and the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/fixedincome) which includes an explanation about each indicator, the parameters and an example.**
+
+<details>
+    <summary><b>Bond Valuations</b></summary>
+The Bond Valuations section contains a variety of metrics to evaluate the performance of bonds. These metrics include Present Value calculations, the Effective Yield, the Macaulay and Modified Duration and convexity.
+
+All bond valuations can be called by using `get_` to get a single valuation. E.g. `get_present_value` or `get_duration`. As an example:
+
+```python
+from financetoolkit import FixedIncome
+
+fixedincome = FixedIncome()
+
+fixedincome.get_present_value()
+```
+
+> **Bond Statistics**
+
+The bond statistics contains a variety of different metrics to evaluate a bond. These include:
+
+- **Par Value:** The face value of the bond.
+- **Coupon Rate:** The annual coupon rate (in decimal).
+- **Years to Maturity:** The number of years until the bond matures.
+- **Yield to Maturity:** The yield to maturity of the bond (in decimal).
+- **Frequency:** The number of coupon payments per year.
+- **Present Value:** The present value of the bond.
+- **Current Yield:** The annual coupon payment divided by the bond price.
+- **Effective Yield:** The return on a bond that has its interest payments (or coupons) reinvested at the same rate by the bondholder.
+- **Macaulay's Duration:** The weighted average time to receive the bond's cash flows.
+- **Modified Duration:** The Macaulay's duration divided by 1 plus the yield to maturity.
+- **Effective Duration:** The percentage change in the bond price for a 1% change in the yield to maturity.
+- **Dollar Duration:** The modified duration multiplied by the bond price.
+- **DV01:** The dollar value of a 0.01% change in yield to maturity.
+- **Convexity:** The second derivative of the bond price with respect to the yield to maturity.
+
+It gives a complete overview of the bond's performance. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/fixedincome#get_bond_statistics) and an example below which shows the bond statistics for six different bonds using this functionality.
+
+|                     |   Bond 1 |   Bond 2 |   Bond 3 |    Bond 4 |   Bond 5 |   Bond 6 |
+|:--------------------|---------:|---------:|---------:|----------:|---------:|---------:|
+| Par Value           | 100      | 250      |  50      | 1000      |  85      | 320      |
+| Coupon Rate         |   0.05   |   0.02   |   0.075  |    0      |   0.15   |   0.015  |
+| Years to Maturity   |   5      |  10      |   2      |   10      |   3      |   1      |
+| Yield to Maturity   |   0.08   |   0.021  |   0.03   |    0      |   0.16   |   0.04   |
+| Frequency           |   1      |   1      |   4      |    1      |   2      |  12      |
+| Present Value       |  88.0219 | 247.766  |  54.3518 | 1000      |  83.0353 | 312.171  |
+| Current Yield       |   0.0568 |   0.0202 |   0.069  |    0      |   0.1535 |   0.0154 |
+| Effective Yield     |   0.05   |   0.02   |   0.0771 |    0      |   0.1556 |   0.0151 |
+| Macaulay's Duration |   4.5116 |   9.1576 |   1.8849 |   10      |   2.5667 |   0.9932 |
+| Modified Duration   |   4.1774 |   8.9693 |   1.8709 |   10      |   2.3766 |   0.9899 |
+| Effective Duration  |   4.0677 |   8.5181 |   1.8477 |    9.4713 |   2.2952 |   0.9844 |
+| Dollar Duration     |   3.677  |  22.2228 |   1.0168 |  100      |   1.9734 |   3.0902 |
+| DV01                |   0.0004 |   0.0022 |   0      |    0.01   |   0.0001 |   0      |
+| Convexity           |  22.4017 |  93.7509 |   4.0849 |  110      |   7.0923 |   1.0662 |
+
+> **Present Value**
+
+The bond price is the present value of the bond's future cash flows. It is calculated by discounting the bond's coupon payments and principal repayment to the present value using the bond's yield to maturity. The present value is depicted over a variety of coupon rates and years of maturities. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/fixedincome#get_bond_price).
+
+> **Duration**
+
+The bond duration is a measure of the bond's sensitivity to changes in interest rates. It is the weighted average of the bond's cash flows, where the weights are the present value of each cash flow divided by the bond's price. It is possible to calculate the following durations:
+
+- **Macaulay's Duration:** The weighted average time to receive the bond's cash flows.
+- **Modified Duration:** The Macaulay's duration divided by 1 plus the yield to maturity.
+- **Effective Duration:** The percentage change in the bond price for a 1% change in the yield to maturity.
+- **Dollar Duration:** The modified duration multiplied by the bond price.
+
+The duration values are depicted over a variety of coupon rates and years of maturities. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/fixedincome#get_bond_duration).
+
+> **Yield to Maturity**
+
+The Yield to Maturity (YTM) is the total return anticipated on a bond if it is held until it matures. It is the internal rate of return of an investment in a bond if the investor holds the bond until maturity and receives all payments as scheduled. The yield to maturity is depicted over a variety of coupon rates and years of maturities. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/fixedincome#get_yield_to_maturity).
+
+</details>
+
+<details>
+    <summary><b>Derivative Valuations</b></summary>
+The Derivative Valuations section contains a variety of models that can be used to value derivative instruments such as Swaptions. These models include the Black Model and the Bachelier Model.
+
+All derivative valuations can be called by using `get_` to get a single valuation. E.g. `get_derivative_price`. As an example:
+
+```python
+from financetoolkit import FixedIncome
+
+fixedincome = FixedIncome()
+
+fixedincome.get_derivative_price(model_type="black")
+```
+
+> **Black Model**
+
+The Black Model is a mathematical model used to calculate the price of European-style options. It is based on the Black-Scholes model but is used for interest rate options. The Black Model is used to value interest rate options, such as caps, floors, and swaptions. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/fixedincome#get_derivative_price).
+
+> **Bachelier Model**
+
+The Bachelier Model is a mathematical model used to calculate the price of European-style options. It is based on the normal distribution and is used for interest rate options as opposed to the Black model which uses a log-normal distribution. The Bachelier Model is used to value interest rate options, such as caps, floors, and swaptions. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/fixedincome#get_derivative_price).
+
+</details>
+
+<details>
+    <summary><b>Central Banks</b></summary>
+
+The central bank metrics revolve around the interest rates of the European Central Bank (ECB) and the Federal Reserve (FED). This includes the main refinancing operations, marginal lending facility, deposit facility, effective federal funds rate, overnight bank funding rate, tri-party general collateral rate, broad general collateral rate and secured overnight financing rate.
+
+All central bank metrics can be called by using `get_` to get a single metric. E.g. `get_european_central_bank_rates` or `get_federal_reserve_rates`. As an example:
+
+```python
+from financetoolkit import FixedIncome
+
+fixedincome = FixedIncome()
+
+fixedincome.get_european_central_bank_rates()
+```
+
+> **Main Refinancing Operations**
+
+The main refinancing operations (MRO) rate is the interest rate banks pay when they borrow money from the ECB for one week. When they do this, they have to provide collateral to guarantee that the money will be paid back. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/fixedincome#get_european_central_bank_rates).
+
+
+> **Marginal Lending Facility**
+
+The marginal lending facility rate is the interest rate banks pay when they borrow from the ECB overnight. When they do this, they have to provide collateral, for example securities, to guarantee that the money will be paid back. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/fixedincome#get_european_central_bank_rates).
+
+> **Deposit Facility**
+
+The deposit facility rate is one of the three interest rates the ECB sets every six weeks as part of its monetary policy. The rate defines the interest banks receive for depositing money with the central bank overnight. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/fixedincome#get_european_central_bank_rates).
+
+> **Euribor Rates**
+
+The Euro Interbank Offered Rate (Euribor) is a daily reference rate based on the averaged interest rates at which Eurozone banks offer to lend unsecured funds to other banks in the euro wholesale money market. It is widely used as the base rate for a variety of financial products, including mortgages, savings accounts, and derivatives. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/fixedincome#get_euribor_rates).
+
+> **Effective Federal Funds Rate**
+
+The effective federal funds rate (EFFR) is calculated as a volume-weighted median of overnight federal funds transactions reported in the FR 2420 Report of Selected Money Market Rates. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/fixedincome#get_federal_reserve_rates).
+
+> **Overnight Bank Funding Rate**
+
+The overnight bank funding rate (OBFR) is calculated as a volume-weighted median of overnight federal funds transactions, Eurodollar transactions, and the domestic deposits reported as “Selected Deposits” in the FR 2420 Report. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/fixedincome#get_federal_reserve_rates).
+
+> **Tri-Party General Collateral Rate**
+
+The TGCR is calculated as a volume-weighted median of transaction-level tri-party repo data collected from the Bank of New York Mellon. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/fixedincome#get_federal_reserve_rates).
+
+> **Broad General Collateral Rate**
+
+The BGCR is calculated as a volume-weighted median of transaction-level tri-party repo data collected from the Bank of New York Mellon as well as GCF Repo transaction data obtained from the U.S. Department of the Treasury’s Office of Financial Research (OFR). Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/fixedincome#get_federal_reserve_rates).
+
+> **Secured Overnight Financing Rate (SOFR)**
+
+The SOFR is calculated as a volume-weighted median of transaction-level tri-party repo data collected from the Bank of New York Mellon as well as GCF Repo transaction data and data on bilateral Treasury repo transactions cleared through FICC’s DVP service, which are obtained from the U.S. Department of the Treasury’s Office of Financial Research (OFR). Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/fixedincome#get_federal_reserve_rates).
+
+</details>
+
+<details>
+    <summary><b>Government Bonds</b></summary>
+
+It is possible to view both short-term (3-month) and long-term (10-year) interest rates for each of the available countries. These rates relate to the interest rates at which countries issue government bonds and are used as a benchmark for other interest rates in the economy. For example, the German government bond yield is an overall indicator of the European economy.
+
+These interest rates can be obtained with `get_government_bond_yield`. As an example:
+
+```python
+from financetoolkit import FixedIncome
+
+fixedincome = FixedIncome()
+
+fixedincome.get_government_bond_yield()
+```
+
+> **Long Term Interest Rates (10 year)**
+
+Long-term interest rates refer to government bonds maturing in ten years. Rates are mainly determined by the price charged by the lender, the risk from the borrower and the fall in the capital value. Long-term interest rates are generally averages of daily rates, measured as a percentage. These interest rates are implied by the prices at which the government bonds are traded on financial markets, not the interest rates at which the loans were issued.
+
+In all cases, they refer to bonds whose capital repayment is guaranteed by governments. Long-term interest rates are one of the determinants of business investment. Low long term interest rates encourage investment in new equipment and high interest rates discourage it. Investment is, in turn, a major source of economic growth. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/fixedincome#get_government_bond_yield).
+
+> **Short Term Interest Rates (3 month)**
+
+Short-term interest rates are the rates at which short-term borrowings are effected between financial institutions or the rate at which short-term government paper is issued or traded in the market. Short-term interest rates are generally averages of daily rates, measured as a percentage.
+
+Short-term interest rates are based on three-month money market rates where available. Typical standardised names are “money market rate” and “treasury bill rate”. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/fixedincome#get_government_bond_yield).
+
+</details>
+
+<details>
+    <summary><b>Corporate Bonds</b></summary>
+
+The Corporate Bonds section features the widely used ICE BofA benchmarks which include option-adjusted spreads, effective yields and the total returns. It is possible to view both the indices of the ratings (AAA, AA, A, BBB, BB, B and CCC) and the maturities (1-3 years, 3-5 years, 5-7 years, 7-10 years, 10-15 years, 15-30 years and 30+ years).
+
+All corporate bond metrics can be called by using `get_` to get a single metric. E.g. `get_ice_bofa_option_adjusted_spread` or `get_ice_bofa_yield_to_worst`. As an example:
+
+```python
+from financetoolkit import FixedIncome
+
+fixedincome = FixedIncome()
+
+fixedincome.get_ice_bofa_option_adjusted_spread()
+```
+
+> **Option-Adjusted Spread (OAS)**
+
+The Option-Adjusted Spread (OAS) is the spread relative to a risk-free interest rate, usually measured in basis points (bp), that equates the theoretical present value of a series of uncertain cash flows to the market price of a fixed-income investment. The spread is added to the risk-free rate to compensate for the uncertainty of the cash flows. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/fixedincome#get_ice_bofa_option_adjusted_spread).
+
+> **Effective Yield**
+
+The Effective Yield is the yield of a bond, calculated by dividing the bond's coupon payments by its market price. The effective yield is not the same as the stated yield, which is the yield on the bond's coupon payments divided by the bond's principal value. The effective yield is a more accurate measure of a bond's return, as it takes into account the fact that the investor will not hold the bond to maturity and will likely sell it before it matures. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/fixedincome#get_ice_bofa_effective_yield).
+
+> **Total Return**
+
+The total return is the actual rate of return of an investment or a pool of investments over a given evaluation period. Total return includes interest, capital gains, dividends and distributions realized over a given period of time. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/fixedincome#get_ice_bofa_total_return).
+
+> **Yield to Worst**
+
+Yield to worst is the lowest potential yield that a bond can generate without the issuer defaulting. The standard US convention for this series is to use semi-annual coupon payments, whereas the standard in the foreign markets is to use coupon payments with frequencies of annual, semi-annual, quarterly, and monthly. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/fixedincome#get_ice_bofa_yield_to_worst).
 
 </details>
 

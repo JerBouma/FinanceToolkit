@@ -481,6 +481,16 @@ def get_analyst_estimates(
         try:
             analyst_estimates = analyst_estimates.drop("symbol", axis=1)
 
+            # One day is deducted from the date because it could be that
+            # the date is reported as 2023-07-01 while the data is about the
+            # second quarter of 2023. This usually happens when companies
+            # have a different financial year than the calendar year. It doesn't
+            # matter for others that are correctly reporting since 2023-06-31
+            # minus one day is still 2023
+            analyst_estimates["date"] = pd.to_datetime(
+                analyst_estimates["date"]
+            ) - pd.offsets.Day(1)
+
             if quarter:
                 analyst_estimates["date"] = pd.to_datetime(
                     analyst_estimates["date"]
@@ -593,7 +603,6 @@ def get_analyst_estimates(
                 "issues when values are zero and is predominantly relevant for "
                 "ratio calculations."
             )
-
         analyst_estimates_total.columns = pd.PeriodIndex(
             analyst_estimates_total.columns, freq="Q" if quarter else "Y"
         )

@@ -284,7 +284,6 @@ Get insights for 60+ countries into key economic indicators such as the Consumer
 And below these Unemployment Rates are plotted over time:
 
 ![Economics](https://github.com/JerBouma/FinanceToolkit/assets/46355364/0bba2ce2-9846-42de-a89d-737cdcd07b31)
-![Economics](https://github.com/JerBouma/FinanceToolkit/assets/46355364/0bba2ce2-9846-42de-a89d-737cdcd07b31)
 
 # Core Functionality and Metrics
 

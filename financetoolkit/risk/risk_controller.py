@@ -105,6 +105,66 @@ class Risk:
         )
 
     @handle_errors
+    def collect_all_metrics(
+        self,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+    ):
+        """
+        Calculates and collects all risk metrics.
+
+        Args:
+            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            trailing (int): Defines whether to select a trailing period.
+            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+
+        Returns:
+            pd.Series or pd.DataFrame: Risk metrics calculated based on the specified parameters.
+
+        Notes:
+        - The method calculates various risk metrics for each asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the ratio values
+          using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.risk.collect_all_metrics()
+        ```
+        """
+        risk_metrics = {
+            "Value at Risk": self.get_value_at_risk(
+                rounding=rounding, growth=growth, lag=lag
+            ),
+            "Conditional Value at Risk": self.get_conditional_value_at_risk(
+                rounding=rounding, growth=growth, lag=lag
+            ),
+            "Entropic Value at Risk": self.get_entropic_value_at_risk(
+                rounding=rounding, growth=growth, lag=lag
+            ),
+            "Maximum Drawdown": self.get_maximum_drawdown(
+                rounding=rounding, growth=growth, lag=lag
+            ),
+            "Ulcer Index": self.get_ulcer_index(
+                rounding=rounding, growth=growth, lag=lag
+            ),
+            "GARCH": self.get_garch(rounding=rounding, growth=growth, lag=lag),
+            "Skewness": self.get_skewness(rounding=rounding, growth=growth, lag=lag),
+            "Kurtosis": self.get_kurtosis(rounding=rounding, growth=growth, lag=lag),
+        }
+
+        risk_metrics = pd.concat(risk_metrics, axis=1)
+
+        return risk_metrics
+
+    @handle_errors
     def get_value_at_risk(
         self,
         period: str | None = None,

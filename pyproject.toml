@@ -60,6 +60,11 @@ pytest-timeout = "^2.1.0"
 pytest-recorder = "^0.2.3"
 ipykernel = "^6.25.2"
 
+
+[tool.poetry.group.dashboard.dependencies]
+plotly = "^5.22.0"
+streamlit = "^1.36.0"
+
 [build-system]
 requires = ["setuptools<65.5.0", "poetry-core>=1.0.0"]
 build-backend = "poetry.core.masonry.api"

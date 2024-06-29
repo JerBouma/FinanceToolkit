@@ -39,7 +39,8 @@ if st.session_state["invalid_api_key"]:
         This dashboard is powered entirely by the Finance Toolkit and gves access to all relevant financial ratios,
         indicators and performance measurements. Key features of the dashboard are:
 
-        - Compare any amount of tickers of any range of period (10+ years for Premium users, 5 years for Free users).
+        - Compare a small or large selection of tickers for any period (10+ years for Premium users, max 5 years for
+        Free users).
         - Plot any item from the Financial Statements (Balance Sheet, Income Statement, Cash Flow Statement).
         - Compare a large selection of financial ratios, technical indicators, performance metrics and risk metrics.
         - Show quarterly results, growth rates, trailing twelve months (TTM) as well as tables (with download

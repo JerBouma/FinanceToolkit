@@ -120,6 +120,75 @@ class Performance:
         )
 
     @handle_errors
+    def collect_all_metrics(
+        self,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+    ):
+        """
+        Calculates and collects all performance metrics.
+
+        Args:
+            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            trailing (int): Defines whether to select a trailing period.
+            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+
+        Returns:
+            pd.Series or pd.DataFrame: Performance metrics calculated based on the specified parameters.
+
+        Notes:
+        - The method calculates various performance metrics for each asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the ratio values
+          using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.performance.collect_all_metrics()
+        ```
+        """
+        performance_metrics = {
+            "Alpha": self.get_alpha(rounding=rounding, growth=growth, lag=lag),
+            "Beta": self.get_beta(rounding=rounding, growth=growth, lag=lag),
+            "CAPM": self.get_capital_asset_pricing_model(
+                rounding=rounding, growth=growth, lag=lag
+            ),
+            "Jensen's Alpha": self.get_jensens_alpha(
+                rounding=rounding, growth=growth, lag=lag
+            ),
+            "Treynor Ratio": self.get_treynor_ratio(
+                rounding=rounding, growth=growth, lag=lag
+            ),
+            "Sharpe Ratio": self.get_sharpe_ratio(
+                rounding=rounding, growth=growth, lag=lag
+            ),
+            "Sortino Ratio": self.get_sortino_ratio(
+                rounding=rounding, growth=growth, lag=lag
+            ),
+            "Ulcer Index": self.get_ulcer_performance_index(
+                rounding=rounding, growth=growth, lag=lag
+            ),
+            "M2 Ratio": self.get_m2_ratio(rounding=rounding, growth=growth, lag=lag),
+            "Tracking Error": self.get_tracking_error(
+                rounding=rounding, growth=growth, lag=lag
+            ),
+            "Information Ratio": self.get_information_ratio(
+                rounding=rounding, growth=growth, lag=lag
+            ),
+        }
+
+        performance_metrics = pd.concat(performance_metrics, axis=1)
+
+        return performance_metrics
+
+    @handle_errors
     def get_beta(
         self,
         period: str | None = None,

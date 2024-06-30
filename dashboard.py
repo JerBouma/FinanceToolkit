@@ -17,12 +17,6 @@ if "is_expanded" not in st.session_state:
 if st.session_state["invalid_api_key"]:
     helpers.load_css("app/assets/style.css")
 
-    st.markdown(
-        """
-        """,
-        unsafe_allow_html=True,
-    )
-
     st.session_state["welcome_msg"].markdown(
         body="""
         ## Welcome to the Finance Toolkit dashboard! 👋
@@ -45,7 +39,7 @@ if st.session_state["invalid_api_key"]:
         """
     )
 
-    st.video(
+    st.session_state["intro_video"].video(
         "app/assets/financetoolkit-dashboard.mov",
         autoplay=True,
         muted=True,
@@ -53,7 +47,7 @@ if st.session_state["invalid_api_key"]:
         end_time=66,
     )
 
-    st.markdown(
+    st.session_state["mobile_user"].markdown(
         """
         <div class="mobile-only"><h3>📱 Mobile Users</h3><b>Given that you are viewing this page on mobile,
         please open the sidebar (arrow in the top left) to get started! Once you've entered your API key it
@@ -70,6 +64,8 @@ if "perform_initalization" not in st.session_state:
 
 if not st.session_state["invalid_api_key"]:
     st.session_state["welcome_msg"].empty()
+    st.session_state["intro_video"].empty()
+    st.session_state["mobile_user"].empty()
 
     st.title("🛠️ Finance Toolkit")
     st.markdown(
@@ -116,6 +112,7 @@ if not st.session_state["invalid_api_key"]:
         - **MD** (Market Data) includes all market data such as adjusted close, cumulative return, and more.
         - **PF** (Performance Metrics) includes all performance metrics such as Sharpe ratio, Sortino ratio, and more.
         - **RI** (Risk Metrics) includes all risk metrics such as Value at Risk, Conditional Value at Risk, and more.
+        - **TI** (Technical Indicators) includes all technical indicators such as Moving Averages, RSI, and more.
 
         Once you have selected all the configurations you can press the **Collect Data** button to collect data and plot
         (and show tables) according to your selections. You can always change the configurations and press the button

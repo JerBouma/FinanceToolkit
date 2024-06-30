@@ -19,7 +19,7 @@ if st.session_state["invalid_api_key"]:
 
     st.session_state["welcome_msg"].markdown(
         body="""
-        ## Welcome to the Finance Toolkit dashboard! 👋
+        ## Welcome to the Finance Toolkit Dashboard! 👋
 
         This dashboard is powered by the Finance Toolkit, an open-source toolkit in which 200+ relevant financial ratios,
         indicators and performance measurements are written down in the most simplistic way allowing for complete

@@ -19,8 +19,14 @@ The Finance Toolkit not only supports Equities. Even for Options, Currencies, Cr
 
 The Finance Toolkit is complimented very well with the [Finance Database 🌎](https://github.com/JerBouma/FinanceDatabase), a database that features 300.000+ symbols containing Equities, ETFs, Funds, Indices, Currencies, Cryptocurrencies and Money Markets. By utilising both, it is possible to do a fully-fledged competitive analysis with the tickers found from the FinanceDatabase inputted into the FinanceToolkit.
 
+---
+
+**Interested in seeing the Finance Toolkit in action?** Find below a dashboard that can plot most of the metrics found inside the Finance Toolkit. [**Find the dashboard here.**](https://financetoolkit.streamlit.app/)
+
 <p align="center">
-    <img src="examples/Finance Toolkit - Video Demo.gif" alt="Finance Toolkit Illustration" width="100%" onerror="this.style.display = 'none'"/>
+    <a href="https://financetoolkit.streamlit.app/">
+        <img src="app/assets/financetoolkit-dashboard.gif" alt="Finance Toolkit Illustration" width="100%" onerror="this.style.display = 'none'"/>
+    </a>
 </p>
 
 ---
@@ -290,6 +296,10 @@ And below these Unemployment Rates are plotted over time:
 The Finance Toolkit has the ability to collect 30+ years of financial statements and calculate 150+ financial metrics. The following list shows all of the available functionality and metrics.
 
 Each ratio and indicator has a corresponding function that can be called directly for example `ratios.get_return_on_equity` or `technicals.get_relative_strength_index`. However, there are also functions that collect multiple ratios or indicators at once such as `ratios.collect_profitability_ratios`. These functions are useful when you want to collect a large amount of ratios or indicators at once.
+
+<p align="center">
+    <img src="examples/Finance Toolkit - Video Demo.gif" alt="Finance Toolkit Illustration" width="100%" onerror="this.style.display = 'none'"/>
+</p>
 
 ___ 
 

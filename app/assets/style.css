@@ -1,0 +1,27 @@
+/* Hide elements with class "mobile-only" on screens wider than 768px (common breakpoint for mobile) */
+@media (min-width: 768px) {
+    .mobile-only {
+        display: none;
+    }
+}
+
+/* Show elements with class "mobile-only" on screens smaller than 768px */
+@media (max-width: 767px) {
+    .mobile-only {
+        display: block;
+    }
+}   
+
+/* Hide elements with class "mobile-only" on screens wider than 768px (common breakpoint for mobile) */
+@media (min-width: 768px) {
+    .desktop-only {
+        display: block;
+    }
+}
+
+/* Show elements with class "mobile-only" on screens smaller than 768px */
+@media (min-width: 767px) {
+    .desktop-only {
+        display: none;
+    }
+}   

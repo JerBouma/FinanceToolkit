@@ -8,6 +8,8 @@ import streamlit as st
 from app import helpers
 from financetoolkit import Toolkit
 
+# pylint: disable=protected-access
+
 
 def initalize_session_state(session_state: st.session_state):
     """
@@ -21,6 +23,13 @@ def initalize_session_state(session_state: st.session_state):
     """
     if "welcome_msg" not in session_state or session_state["invalid_api_key"]:
         session_state["welcome_msg"] = st.empty()
+
+    if "intro_video" not in session_state or session_state["invalid_api_key"]:
+        session_state["intro_video"] = st.empty()
+
+    if "mobile_user" not in session_state or session_state["invalid_api_key"]:
+        session_state["mobile_user"] = st.empty()
+
     if "sidebar_image" not in session_state or session_state["invalid_api_key"]:
         session_state["sidebar_image"] = st.sidebar.image(
             "https://github.com/JerBouma/FinanceToolkit/assets/46355364/198d47bd-e1b3-492d-acc4-5d9f02d1d009"
@@ -80,9 +89,11 @@ def create_api_key_sidebar(session_state: st.session_state):
     )
 
     session_state["api_key_explanation"].markdown(
-        "Access all **200+ metrics** from the Finance Toolkit right in your browser! Once you've entered your API key, "
-        "you will automatically be able to access a rich history of financial data from any "
-        "stock you choose.\n\n**To obtain an API key (with a 15% discount), please visit [this page](https://www.jeroenbouma.com/fmp).**"
+        """
+        Access all **200+ metrics** from the Finance Toolkit right in your browser! Once you've entered your API key,
+        you will automatically be able to access a rich history of financial data from any stock you choose.\n\n
+        **To obtain an API key (with a 15% discount), please visit [this page](https://www.jeroenbouma.com/fmp).**
+        """
     )
 
     if session_state["api_key_value"] != api_key_value and len(api_key_value) > 0:

@@ -1,9 +1,11 @@
+"""Dashboard Module"""
+
 import streamlit as st
 
-from app import initalization_model, metrics_view, socials_model
+from app import helpers, initalization_model, metrics_view, socials_model
 
 st.set_page_config(
-    page_title="Finance Toolkit in Streamlit", page_icon="📈", layout="wide"
+    page_title="Finance Toolkit Dashboard", page_icon="🛠️", layout="wide"
 )
 
 
@@ -13,41 +15,51 @@ if "is_expanded" not in st.session_state:
     st.session_state["is_expanded"] = True
 
 if st.session_state["invalid_api_key"]:
-    st.session_state["welcome_msg"].markdown(
+    helpers.load_css("app/assets/style.css")
+
+    st.markdown(
         """
+        """,
+        unsafe_allow_html=True,
+    )
+
+    st.session_state["welcome_msg"].markdown(
+        body="""
         ## Welcome to the Finance Toolkit dashboard! 👋
 
-        While browsing a variety of websites, I repeatedly observed significant fluctuations in the same financial metric
-        among different sources.
-        Similarly, the reported financial statements often didn't line up, and there was limited information on the
-        methodology used to calculate each metric.
+        This dashboard is powered by the Finance Toolkit, an open-source toolkit in which 200+ relevant financial ratios,
+        indicators and performance measurements are written down in the most simplistic way allowing for complete
+        transparency of the method of calculation. Once you've entered you're API key you are ready to go!
 
-        For example, Microsoft's Price-to-Earnings (PE) ratio on the 6th of May, 2023 is reported to
-        be 28.93 (Stockopedia), 32.05 (Morningstar),
-        32.66 (Macrotrends), 33.09 (Finance Charts), 33.66 (Y Charts), 33.67 (Wall Street Journal), 33.80
-        (Yahoo Finance) and 34.4 (Companies Market Cap). All of these calculations are correct, however the
-        method of calculation varies leading to different results. Therefore, collecting data from multiple
-        sources can lead to wrong interpretation of the results given that one source could apply a different
-        definition than another. And that is, if that definition is even available as often the underlying
-        methods are hidden behind a paid subscription.
+        The key features of this dashboard are as follows:
 
-        **This is why I designed the Finance Toolkit**, this is an open-source toolkit in which all relevant financial
-        ratios 200+ indicators
-        and performance measurements are written down in the most simplistic way allowing for complete transparency
-        of the method of calculation.
-
-        This dashboard is powered entirely by the Finance Toolkit and gves access to all relevant financial ratios,
-        indicators and performance measurements. Key features of the dashboard are:
-
-        - Compare a small or large selection of tickers for any period (10+ years for Premium users, max 5 years for
+        - 🏢 Compare a small or large selection of tickers for any period (10+ years for Premium users, max 5 years for
         Free users).
-        - Plot any item from the Financial Statements (Balance Sheet, Income Statement, Cash Flow Statement).
-        - Compare a large selection of financial ratios, technical indicators, performance metrics and risk metrics.
-        - Show quarterly results, growth rates, trailing twelve months (TTM) as well as tables (with download
-        to CSV option)
+        - 📃 Plot any item from the Financial Statements, e.g. Shareholder's Equity from the Balance Sheet, Revenue from
+        the Income Statement and Operating Cash Flow from the Cash Flow Statement.
+        - 💸 Compare 150+ financial ratios, technical indicators, performance metrics and risk metrics.
+        - 📈 Show quarterly results, growth rates, trailing twelve months (TTM) as well as tables (with the option
+        to download the data)
 
-        Once you've entered you're API key you are ready to go!
+        Find below a demonstration of what is possible once you have entered your API key.
         """
+    )
+
+    st.video(
+        "app/assets/financetoolkit-dashboard.mov",
+        autoplay=True,
+        muted=True,
+        start_time=3,
+        end_time=66,
+    )
+
+    st.markdown(
+        """
+        <div class="mobile-only"><h3>📱 Mobile Users</h3><b>Given that you are viewing this page on mobile,
+        please open the sidebar (arrow in the top left) to get started! Once you've entered your API key it
+        should automatically proceed.</b></div>
+        """,
+        unsafe_allow_html=True,
     )
 
     st.session_state = initalization_model.create_api_key_sidebar(st.session_state)

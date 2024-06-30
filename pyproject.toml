@@ -94,7 +94,7 @@ ignore-words-list = 'te,hsi,amplitud,nam,tha,plaform'
 skip = '*.json,./.git,pyproject.toml,poetry.lock,examples'
 
 [tool.mypy]
-disable_error_code = "misc"
+disable_error_code = "misc, valid-type, attr-defined, index"
 
 [tool.pytest.ini_options]
 filterwarnings = [

@@ -151,7 +151,7 @@ def get_historical_data(
                     sleep_timer=sleep_timer,
                 )
 
-                if not historical_data.empty:
+                if not historical_data.empty and not historical_data.isnull().all().all():
                     fmp_tickers.append(ticker)
 
             if source == "YahooFinance" or historical_data.empty:
@@ -169,7 +169,7 @@ def get_historical_data(
                 if not historical_data.empty:
                     yf_tickers.append(ticker)
 
-        if historical_data.empty:
+        if historical_data.empty and not historical_data.isnull().all().all():
             no_data.append(ticker)
             historical_data_dict[ticker] = empty_historical_data
         if not historical_data.empty:

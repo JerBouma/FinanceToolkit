@@ -21,10 +21,10 @@ The Finance Toolkit is complimented very well with the [Finance Database 🌎](h
 
 ---
 
-**Interested in seeing the Finance Toolkit in action?** Find below a dashboard that can plot most of the metrics found inside the Finance Toolkit. <a href="https://financetoolkit.streamlit.app/" target="_blank">**Find the dashboard here.**</a>
+**Interested in seeing the Finance Toolkit in action?** Find below a dashboard that can plot most of the metrics found inside the Finance Toolkit. <a href="https://www.jeroenbouma.com/projects/financetoolkit/interactive-dashboard" target="_blank">**Find the dashboard here.**</a>
 
 <p align="center">
-    <a href="https://financetoolkit.streamlit.app/" target="_blank">
+    <a href="https://www.jeroenbouma.com/projects/financetoolkit/interactive-dashboard" target="_blank">
         <img src="app/assets/financetoolkit-dashboard.gif" alt="Finance Toolkit Illustration" width="100%" onerror="this.style.display = 'none'"/>
     </a>
 </p>

@@ -6323,7 +6323,7 @@ class Ratios:
         ```
         """
         if trailing:
-            dividend_payout_ratio = self.get_dividend_payout_ratio(trailing=True)
+            dividend_payout_ratio = self.get_dividend_payout_ratio(trailing=trailing)
             reinvestment_ratio = valuation_model.get_reinvestment_ratio(
                 dividend_payout_ratio=dividend_payout_ratio,
             )

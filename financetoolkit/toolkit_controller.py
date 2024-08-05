@@ -2621,9 +2621,18 @@ class Toolkit:
                     historical_currencies=self._historical_statistics.loc["Currency"],
                 )
 
+        # Separate currencies that are merely a comparison between the same currency
+        # and currencies that are actual exchange rates.
+        currencies_to_collect_data_for = [
+            currency for currency in self._currencies if currency[:3] != currency[3:6]
+        ]
+        currencies_to_fill_to_one = [
+            currency for currency in self._currencies if currency[:3] == currency[3:6]
+        ]
+
         if self._daily_exchange_rate_data.empty or overwrite:
             self._daily_exchange_rate_data, _ = _get_historical_data(
-                tickers=self._currencies,
+                tickers=currencies_to_collect_data_for,
                 api_key=self._api_key,
                 source=self._historical_source,
                 start=self._start_date,
@@ -2642,10 +2651,19 @@ class Toolkit:
                 tqdm_message="Obtaining exchange data",
             )
 
-            # For exchange data, it is possible that data on USDUSD=X is
-            # collected which should always be 1. In that case, everything
-            # should match with 1 which is why backfilling is used.
-            self._daily_exchange_rate_data = self._daily_exchange_rate_data.bfill()
+            # For exchange data, it is possible that a ticker such as USDUSD=X
+            # exists which should always be 1. This data is added here.
+            if currencies_to_fill_to_one:
+                upper_columns = self._daily_exchange_rate_data.columns.get_level_values(
+                    level=0
+                ).unique()
+                for currency in currencies_to_fill_to_one:
+                    for column in upper_columns:
+                        self._daily_exchange_rate_data[column, currency] = 1
+
+                self._daily_exchange_rate_data = self._daily_exchange_rate_data.reindex(
+                    upper_columns, axis=1, level=0
+                )
 
         if period == "daily":
             historical_data = self._daily_exchange_rate_data.loc[

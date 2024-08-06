@@ -2631,25 +2631,46 @@ class Toolkit:
         ]
 
         if self._daily_exchange_rate_data.empty or overwrite:
-            self._daily_exchange_rate_data, _ = _get_historical_data(
-                tickers=currencies_to_collect_data_for,
-                api_key=self._api_key,
-                source=self._historical_source,
-                start=self._start_date,
-                end=self._end_date,
-                interval="1d",
-                return_column=return_column,
-                risk_free_rate=pd.DataFrame(),
-                include_dividends=False,
-                progress_bar=progress_bar
-                if progress_bar is not None
-                else self._progress_bar,
-                fill_nan=fill_nan,
-                rounding=rounding if rounding else self._rounding,
-                sleep_timer=self._sleep_timer,
-                show_ticker_seperation=show_ticker_seperation,
-                tqdm_message="Obtaining exchange data",
-            )
+            if currencies_to_collect_data_for:
+                self._daily_exchange_rate_data, _ = _get_historical_data(
+                    tickers=currencies_to_collect_data_for,
+                    api_key=self._api_key,
+                    source=self._historical_source,
+                    start=self._start_date,
+                    end=self._end_date,
+                    interval="1d",
+                    return_column=return_column,
+                    risk_free_rate=pd.DataFrame(),
+                    include_dividends=False,
+                    progress_bar=progress_bar
+                    if progress_bar is not None
+                    else self._progress_bar,
+                    fill_nan=fill_nan,
+                    rounding=rounding if rounding else self._rounding,
+                    sleep_timer=self._sleep_timer,
+                    show_ticker_seperation=show_ticker_seperation,
+                    tqdm_message="Obtaining exchange data",
+                )
+            else:
+                # In case there is no conversion needed, it should just create an empty DataFrame
+                self._daily_exchange_rate_data = pd.DataFrame(
+                    index=pd.PeriodIndex(
+                        pd.date_range(
+                            start=self._start_date, end=self._end_date, freq="D"
+                        )
+                    ),
+                    columns=[
+                        "Open",
+                        "High",
+                        "Low",
+                        "Close",
+                        "Adj Close",
+                        "Volume",
+                        "Return",
+                        "Volatility",
+                        "Cumulative Return",
+                    ],
+                )
 
             # For exchange data, it is possible that a ticker such as USDUSD=X
             # exists which should always be 1. This data is added here.

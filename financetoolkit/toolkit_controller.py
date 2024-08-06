@@ -2652,24 +2652,28 @@ class Toolkit:
                     tqdm_message="Obtaining exchange data",
                 )
             else:
-                # In case there is no conversion needed, it should just create an empty DataFrame
+                # In case there is no conversion needed, it should create a placeholder
+                # DataFrame that works with the rest of the Toolkit.
                 self._daily_exchange_rate_data = pd.DataFrame(
+                    data=1,
                     index=pd.PeriodIndex(
                         pd.date_range(
                             start=self._start_date, end=self._end_date, freq="D"
                         )
                     ),
-                    columns=[
-                        "Open",
-                        "High",
-                        "Low",
-                        "Close",
-                        "Adj Close",
-                        "Volume",
-                        "Return",
-                        "Volatility",
-                        "Cumulative Return",
-                    ],
+                    columns=pd.MultiIndex.from_tuples(
+                        [
+                            ("Open", "USDUSD=X"),
+                            ("High", "USDUSD=X"),
+                            ("Low", "USDUSD=X"),
+                            ("Close", "USDUSD=X"),
+                            ("Adj Close", "USDUSD=X"),
+                            ("Volume", "USDUSD=X"),
+                            ("Return", "USDUSD=X"),
+                            ("Volatility", "USDUSD=X"),
+                            ("Cumulative Return", "USDUSD=X"),
+                        ]
+                    ),
                 )
 
             # For exchange data, it is possible that a ticker such as USDUSD=X

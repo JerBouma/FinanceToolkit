@@ -120,9 +120,6 @@ ichimoku_cloud = companies.technicals.get_ichimoku_cloud()
 # a Fixed Income example
 corporate_bond_yields = companies.fixed_income.get_ice_bofa_effective_yield()
 
-# a Fixed Income example
-corporate_bond_yields = companies.fixed_income.get_ice_bofa_effective_yield()
-
 # an Economics example
 unemployment_rates = companies.economics.get_unemployment_rate()
 ````
@@ -2781,223 +2778,6 @@ Yield to worst is the lowest potential yield that a bond can generate without th
 
 </details>
 
-## Fixed Income
-
-The Fixed Income module contains a wide variety of fixed income related calculations such as the Effective Yield, the Macaulay Duration, the Modified Duration Convexity, the Yield to Maturity and models such as Black and Bachelier to valuate derivative instruments such as Swaptions. This module can be called directly via the Toolkit but also separately if desired through `from financetoolkit import FixedIncome`. **Find the Notebook [here](https://www.jeroenbouma.com/projects/financetoolkit/fixedincome-module) and the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/fixedincome) which includes an explanation about each indicator, the parameters and an example.**
-
-<details>
-    <summary><b>Bond Valuations</b></summary>
-The Bond Valuations section contains a variety of metrics to evaluate the performance of bonds. These metrics include Present Value calculations, the Effective Yield, the Macaulay and Modified Duration and convexity.
-
-All bond valuations can be called by using `get_` to get a single valuation. E.g. `get_present_value` or `get_duration`. As an example:
-
-```python
-from financetoolkit import FixedIncome
-
-fixedincome = FixedIncome()
-
-fixedincome.get_present_value()
-```
-
-> **Bond Statistics**
-
-The bond statistics contains a variety of different metrics to evaluate a bond. These include:
-
-- **Par Value:** The face value of the bond.
-- **Coupon Rate:** The annual coupon rate (in decimal).
-- **Years to Maturity:** The number of years until the bond matures.
-- **Yield to Maturity:** The yield to maturity of the bond (in decimal).
-- **Frequency:** The number of coupon payments per year.
-- **Present Value:** The present value of the bond.
-- **Current Yield:** The annual coupon payment divided by the bond price.
-- **Effective Yield:** The return on a bond that has its interest payments (or coupons) reinvested at the same rate by the bondholder.
-- **Macaulay's Duration:** The weighted average time to receive the bond's cash flows.
-- **Modified Duration:** The Macaulay's duration divided by 1 plus the yield to maturity.
-- **Effective Duration:** The percentage change in the bond price for a 1% change in the yield to maturity.
-- **Dollar Duration:** The modified duration multiplied by the bond price.
-- **DV01:** The dollar value of a 0.01% change in yield to maturity.
-- **Convexity:** The second derivative of the bond price with respect to the yield to maturity.
-
-It gives a complete overview of the bond's performance. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/fixedincome#get_bond_statistics) and an example below which shows the bond statistics for six different bonds using this functionality.
-
-|                     |   Bond 1 |   Bond 2 |   Bond 3 |    Bond 4 |   Bond 5 |   Bond 6 |
-|:--------------------|---------:|---------:|---------:|----------:|---------:|---------:|
-| Par Value           | 100      | 250      |  50      | 1000      |  85      | 320      |
-| Coupon Rate         |   0.05   |   0.02   |   0.075  |    0      |   0.15   |   0.015  |
-| Years to Maturity   |   5      |  10      |   2      |   10      |   3      |   1      |
-| Yield to Maturity   |   0.08   |   0.021  |   0.03   |    0      |   0.16   |   0.04   |
-| Frequency           |   1      |   1      |   4      |    1      |   2      |  12      |
-| Present Value       |  88.0219 | 247.766  |  54.3518 | 1000      |  83.0353 | 312.171  |
-| Current Yield       |   0.0568 |   0.0202 |   0.069  |    0      |   0.1535 |   0.0154 |
-| Effective Yield     |   0.05   |   0.02   |   0.0771 |    0      |   0.1556 |   0.0151 |
-| Macaulay's Duration |   4.5116 |   9.1576 |   1.8849 |   10      |   2.5667 |   0.9932 |
-| Modified Duration   |   4.1774 |   8.9693 |   1.8709 |   10      |   2.3766 |   0.9899 |
-| Effective Duration  |   4.0677 |   8.5181 |   1.8477 |    9.4713 |   2.2952 |   0.9844 |
-| Dollar Duration     |   3.677  |  22.2228 |   1.0168 |  100      |   1.9734 |   3.0902 |
-| DV01                |   0.0004 |   0.0022 |   0      |    0.01   |   0.0001 |   0      |
-| Convexity           |  22.4017 |  93.7509 |   4.0849 |  110      |   7.0923 |   1.0662 |
-
-> **Present Value**
-
-The bond price is the present value of the bond's future cash flows. It is calculated by discounting the bond's coupon payments and principal repayment to the present value using the bond's yield to maturity. The present value is depicted over a variety of coupon rates and years of maturities. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/fixedincome#get_bond_price).
-
-> **Duration**
-
-The bond duration is a measure of the bond's sensitivity to changes in interest rates. It is the weighted average of the bond's cash flows, where the weights are the present value of each cash flow divided by the bond's price. It is possible to calculate the following durations:
-
-- **Macaulay's Duration:** The weighted average time to receive the bond's cash flows.
-- **Modified Duration:** The Macaulay's duration divided by 1 plus the yield to maturity.
-- **Effective Duration:** The percentage change in the bond price for a 1% change in the yield to maturity.
-- **Dollar Duration:** The modified duration multiplied by the bond price.
-
-The duration values are depicted over a variety of coupon rates and years of maturities. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/fixedincome#get_bond_duration).
-
-> **Yield to Maturity**
-
-The Yield to Maturity (YTM) is the total return anticipated on a bond if it is held until it matures. It is the internal rate of return of an investment in a bond if the investor holds the bond until maturity and receives all payments as scheduled. The yield to maturity is depicted over a variety of coupon rates and years of maturities. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/fixedincome#get_yield_to_maturity).
-
-</details>
-
-<details>
-    <summary><b>Derivative Valuations</b></summary>
-The Derivative Valuations section contains a variety of models that can be used to value derivative instruments such as Swaptions. These models include the Black Model and the Bachelier Model.
-
-All derivative valuations can be called by using `get_` to get a single valuation. E.g. `get_derivative_price`. As an example:
-
-```python
-from financetoolkit import FixedIncome
-
-fixedincome = FixedIncome()
-
-fixedincome.get_derivative_price(model_type="black")
-```
-
-> **Black Model**
-
-The Black Model is a mathematical model used to calculate the price of European-style options. It is based on the Black-Scholes model but is used for interest rate options. The Black Model is used to value interest rate options, such as caps, floors, and swaptions. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/fixedincome#get_derivative_price).
-
-> **Bachelier Model**
-
-The Bachelier Model is a mathematical model used to calculate the price of European-style options. It is based on the normal distribution and is used for interest rate options as opposed to the Black model which uses a log-normal distribution. The Bachelier Model is used to value interest rate options, such as caps, floors, and swaptions. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/fixedincome#get_derivative_price).
-
-</details>
-
-<details>
-    <summary><b>Central Banks</b></summary>
-
-The central bank metrics revolve around the interest rates of the European Central Bank (ECB) and the Federal Reserve (FED). This includes the main refinancing operations, marginal lending facility, deposit facility, effective federal funds rate, overnight bank funding rate, tri-party general collateral rate, broad general collateral rate and secured overnight financing rate.
-
-All central bank metrics can be called by using `get_` to get a single metric. E.g. `get_european_central_bank_rates` or `get_federal_reserve_rates`. As an example:
-
-```python
-from financetoolkit import FixedIncome
-
-fixedincome = FixedIncome()
-
-fixedincome.get_european_central_bank_rates()
-```
-
-> **Main Refinancing Operations**
-
-The main refinancing operations (MRO) rate is the interest rate banks pay when they borrow money from the ECB for one week. When they do this, they have to provide collateral to guarantee that the money will be paid back. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/fixedincome#get_european_central_bank_rates).
-
-
-> **Marginal Lending Facility**
-
-The marginal lending facility rate is the interest rate banks pay when they borrow from the ECB overnight. When they do this, they have to provide collateral, for example securities, to guarantee that the money will be paid back. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/fixedincome#get_european_central_bank_rates).
-
-> **Deposit Facility**
-
-The deposit facility rate is one of the three interest rates the ECB sets every six weeks as part of its monetary policy. The rate defines the interest banks receive for depositing money with the central bank overnight. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/fixedincome#get_european_central_bank_rates).
-
-> **Euribor Rates**
-
-The Euro Interbank Offered Rate (Euribor) is a daily reference rate based on the averaged interest rates at which Eurozone banks offer to lend unsecured funds to other banks in the euro wholesale money market. It is widely used as the base rate for a variety of financial products, including mortgages, savings accounts, and derivatives. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/fixedincome#get_euribor_rates).
-
-> **Effective Federal Funds Rate**
-
-The effective federal funds rate (EFFR) is calculated as a volume-weighted median of overnight federal funds transactions reported in the FR 2420 Report of Selected Money Market Rates. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/fixedincome#get_federal_reserve_rates).
-
-> **Overnight Bank Funding Rate**
-
-The overnight bank funding rate (OBFR) is calculated as a volume-weighted median of overnight federal funds transactions, Eurodollar transactions, and the domestic deposits reported as “Selected Deposits” in the FR 2420 Report. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/fixedincome#get_federal_reserve_rates).
-
-> **Tri-Party General Collateral Rate**
-
-The TGCR is calculated as a volume-weighted median of transaction-level tri-party repo data collected from the Bank of New York Mellon. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/fixedincome#get_federal_reserve_rates).
-
-> **Broad General Collateral Rate**
-
-The BGCR is calculated as a volume-weighted median of transaction-level tri-party repo data collected from the Bank of New York Mellon as well as GCF Repo transaction data obtained from the U.S. Department of the Treasury’s Office of Financial Research (OFR). Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/fixedincome#get_federal_reserve_rates).
-
-> **Secured Overnight Financing Rate (SOFR)**
-
-The SOFR is calculated as a volume-weighted median of transaction-level tri-party repo data collected from the Bank of New York Mellon as well as GCF Repo transaction data and data on bilateral Treasury repo transactions cleared through FICC’s DVP service, which are obtained from the U.S. Department of the Treasury’s Office of Financial Research (OFR). Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/fixedincome#get_federal_reserve_rates).
-
-</details>
-
-<details>
-    <summary><b>Government Bonds</b></summary>
-
-It is possible to view both short-term (3-month) and long-term (10-year) interest rates for each of the available countries. These rates relate to the interest rates at which countries issue government bonds and are used as a benchmark for other interest rates in the economy. For example, the German government bond yield is an overall indicator of the European economy.
-
-These interest rates can be obtained with `get_government_bond_yield`. As an example:
-
-```python
-from financetoolkit import FixedIncome
-
-fixedincome = FixedIncome()
-
-fixedincome.get_government_bond_yield()
-```
-
-> **Long Term Interest Rates (10 year)**
-
-Long-term interest rates refer to government bonds maturing in ten years. Rates are mainly determined by the price charged by the lender, the risk from the borrower and the fall in the capital value. Long-term interest rates are generally averages of daily rates, measured as a percentage. These interest rates are implied by the prices at which the government bonds are traded on financial markets, not the interest rates at which the loans were issued.
-
-In all cases, they refer to bonds whose capital repayment is guaranteed by governments. Long-term interest rates are one of the determinants of business investment. Low long term interest rates encourage investment in new equipment and high interest rates discourage it. Investment is, in turn, a major source of economic growth. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/fixedincome#get_government_bond_yield).
-
-> **Short Term Interest Rates (3 month)**
-
-Short-term interest rates are the rates at which short-term borrowings are effected between financial institutions or the rate at which short-term government paper is issued or traded in the market. Short-term interest rates are generally averages of daily rates, measured as a percentage.
-
-Short-term interest rates are based on three-month money market rates where available. Typical standardised names are “money market rate” and “treasury bill rate”. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/fixedincome#get_government_bond_yield).
-
-</details>
-
-<details>
-    <summary><b>Corporate Bonds</b></summary>
-
-The Corporate Bonds section features the widely used ICE BofA benchmarks which include option-adjusted spreads, effective yields and the total returns. It is possible to view both the indices of the ratings (AAA, AA, A, BBB, BB, B and CCC) and the maturities (1-3 years, 3-5 years, 5-7 years, 7-10 years, 10-15 years, 15-30 years and 30+ years).
-
-All corporate bond metrics can be called by using `get_` to get a single metric. E.g. `get_ice_bofa_option_adjusted_spread` or `get_ice_bofa_yield_to_worst`. As an example:
-
-```python
-from financetoolkit import FixedIncome
-
-fixedincome = FixedIncome()
-
-fixedincome.get_ice_bofa_option_adjusted_spread()
-```
-
-> **Option-Adjusted Spread (OAS)**
-
-The Option-Adjusted Spread (OAS) is the spread relative to a risk-free interest rate, usually measured in basis points (bp), that equates the theoretical present value of a series of uncertain cash flows to the market price of a fixed-income investment. The spread is added to the risk-free rate to compensate for the uncertainty of the cash flows. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/fixedincome#get_ice_bofa_option_adjusted_spread).
-
-> **Effective Yield**
-
-The Effective Yield is the yield of a bond, calculated by dividing the bond's coupon payments by its market price. The effective yield is not the same as the stated yield, which is the yield on the bond's coupon payments divided by the bond's principal value. The effective yield is a more accurate measure of a bond's return, as it takes into account the fact that the investor will not hold the bond to maturity and will likely sell it before it matures. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/fixedincome#get_ice_bofa_effective_yield).
-
-> **Total Return**
-
-The total return is the actual rate of return of an investment or a pool of investments over a given evaluation period. Total return includes interest, capital gains, dividends and distributions realized over a given period of time. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/fixedincome#get_ice_bofa_total_return).
-
-> **Yield to Worst**
-
-Yield to worst is the lowest potential yield that a bond can generate without the issuer defaulting. The standard US convention for this series is to use semi-annual coupon payments, whereas the standard in the foreign markets is to use coupon payments with frequencies of annual, semi-annual, quarterly, and monthly. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/fixedincome#get_ice_bofa_yield_to_worst).
-
-</details>
-
 ## Key Economic Indicators
 
 The Economics Module contains a variety of Key Economic Indicators that help in understanding the health and performance of more than 60 different countries. This module can be called directly via the Toolkit but also separately if desired through `from financetoolkit import Economics`. **Find the Notebook [here](https://www.jeroenbouma.com/projects/financetoolkit/economics-module) and the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics) which includes an explanation about each indicator, the parameters and an example.**
@@ -3015,7 +2795,7 @@ from financetoolkit import Toolkit
 toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
 # Get Economy Results
-toolkit.economics.get_consumer_price_index()
+toolkit.economics.get_consumer_confidence_index()
 ```
 
 > **Gross Domestic Product (GDP)**
@@ -3041,20 +2821,6 @@ Numbers above 100 suggest an increased confidence in near future business perfor
 > **Composite Leading Indicator (CLI)**
 
 The composite leading indicator (CLI) is designed to provide early signals of turning points in business cycles showing fluctuation of the economic activity around its long term potential level. CLIs show short-term economic movements in qualitative rather than quantitative terms. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_composite_leading_indicator).
-
-> **Consumer Price Index (CPI)**
-
-Inflation measured by consumer price index (CPI) is defined as the change in the prices of a basket of goods and services that are typically purchased by specific groups of households. Inflation is measured in terms an index, 2015 base year with a breakdown for food, energy and total.
-
-Inflation measures the erosion of living standards. A consumer price index is estimated as a series of summary measures of the period-to-period proportional change in the prices of a fixed set of consumer goods and services of constant quantity and characteristics, acquired, used or paid for by the reference population.
-
-Each summary measure is constructed as a weighted average of a large number of elementary aggregate indices. Each of the elementary aggregate indices is estimated using a sample of prices for a defined set of goods and services obtained in, or by residents of, a specific region from a given set of outlets or other sources of consumption goods and services. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_consumer_price_index).
-
-> **Producer Price Index (PPI)**
-
-Producer price indices in manufacturing measure the rate of change in prices of products sold as they leave the producer. They exclude any taxes, transport and trade margins that the purchaser may have to pay. PPIs provide measures of average movements of prices received by the producers of various commodities. hey are often seen as advanced indicators of price changes throughout the economy, including changes in the prices of consumer goods and services.
-
-Manufacturing covers the production of semi-processed goods and other intermediate goods as well as final products such as consumer goods and capital equipment. A variety of price indices may be used to measure inflation in an economy. These include consumer price indices (CPI), price indices relating to specific goods and/or services, GDP deflators and producer price indices (PPI). Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_producer_price_index).
 
 > **House Prices**
 
@@ -3104,23 +2870,13 @@ Short-term interest rates are the rates at which short-term borrowings are effec
 
 Short-term interest rates are based on three-month money market rates where available. Typical standardised names are “money market rate” and “treasury bill rate”. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_short_term_interest_rate).
 
-> ***Narrow Money (M1)**
-
-M1 includes currency i.e. banknotes and coins, plus overnight deposits. M1 is expressed as a seasonally adjusted index based on 2015=100.
-
-Broad money (M3) includes currency, deposits with an agreed maturity of up to two years, deposits redeemable at notice of up to three months and repurchase agreements, money market fund shares/units and debt securities up to two years. M3 is measured as a seasonally adjusted index based on 2015=100. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_narrow_and_broad_money).
-
-> **Broad Money (M3)**
-
-Broad money (M3) includes currency, deposits with an agreed maturity of up to two years, deposits redeemable at notice of up to three months and repurchase agreements, money market fund shares/units and debt securities up to two years. M3 is measured as a seasonally adjusted index based on 2015=100. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_narrow_and_broad_money).
-
-> **Purchasing Power Parity (PPP)**
-
-Purchasing power parities (PPPs) are the rates of currency conversion that try to equalise the purchasing power of different currencies, by eliminating the differences in price levels between countries. The basket of goods and services priced is a sample of all those that are part of final expenditures: final consumption of households and government, fixed capital formation, and net exports. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_purchasing_power_parity).
-
 > **Exchange Rates**
 
 Exchange rates are defined as the price of one country’s’ currency in relation to another country’s currency. This indicator is measured in terms of national currency per US dollar. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_exchange_rates).
+
+> **Trust in Government**
+
+Trust in government refers to the share of people who report having confidence in the national government. The data shown reflect the share of respondents answering “yes” (the other response categories being “no”, and “dont know”) to the survey question: “In this country, do you have confidence in… national government? The sample is ex ante designed to be nationally representative of the population aged 15 and over. This indicator is measured as a percentage of all survey respondents. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_trust_in_government).
 
 </details>
 
@@ -3148,109 +2904,22 @@ Energy derived from solid biofuels, biogasoline, biodiesels, other liquid biofue
 
 This includes wood, vegetal waste (including wood waste and crops used for energy production), ethanol, animal materials/wastes and sulphite lyes. Municipal waste comprises wastes produced by the residential, commercial and public service sectors that are collected by local authorities for disposal in a central location for the production of heat and/or power. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_renewable_energy).
 
-> **Environmental Tax as % of GDP**
+> **Carbon Footprint**
 
-Environmentally related taxes are an important instrument for governments to shape relative prices of goods and services.
+The carbon footprint is a measure of the total amount of greenhouse gases produced to directly and indirectly support human activities, usually expressed in equivalent tons of carbon dioxide (CO2).
 
-The characteristics of such taxes included in the database (e.g. revenue, tax base, tax rates, exemptions, etc.) are used to construct the environmentally related tax revenues with a breakdown by environmental domain:
+The carbon footprint is a subset of the ecological footprint and of the more comprehensive Life Cycle Assessment (LCA). An individual, nation, or organization's carbon footprint can be measured by undertaking a GHG emissions assessment or other calculative activities denoted as carbon accounting.
 
-- Energy products (including vehicle fuels);
-- Motor vehicles and transport services;
-- Measured or estimated emissions to air and water, ozone depleting substances, certain non-point sources of water pollution, waste management and noise, as well as management of water, land, soil, forests, biodiversity, wildlife and fish stocks.
-
-The data have been cross-validated and complemented with Revenue statistics from the OECD Tax statistics database and official national sources. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_environmental_tax).
-
-> **Greenhouse Gas Emissions**
-
-Greenhouse gases refer to the sum of seven gases that have direct effects on climate change:
-
-- Carbon Dioxide (CO2)
-- Methane (CH4)
-- Nitrous Oxide (N2O)
-- Chlorofluorocarbons (CFCs)
-- Hydrofluorocarbons (HFCs)
-- Perfluorocarbons (PFCs)
-- Sulphur Hexafluoride (SF6)
-- Nitrogen Trifluoride (NF3).
-
-The data are expressed in CO2 equivalents and refer to gross direct emissions from human activities. CO2 refers to gross direct emissions from fuel combustion only and data are provided by the International Energy Agency. Other air emissions include emissions of sulphur oxides (SOx) and nitrogen oxides (NOx) given as quantities of SO2 and NO2, emissions of carbon monoxide (CO), and emissions of volatile organic compounds (VOC), excluding methane.
-
-Air and greenhouse gas emissions are measured in tonnes per capita and kilogram per capita in which all metrics are converted to tonnes (1000kg) per capita. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_greenhouse_emissions).
-
-> **Crude Oil Production**
-
-Crude oil production is defined as the quantities of oil extracted from the ground after the removal of inert matter or impurities. It includes crude oil, natural gas liquids (NGLs) and additives. This indicator is measured in thousand tonne of oil equivalent (toe).
-
-Crude oil is a mineral oil consisting of a mixture of hydrocarbons of natural origin, yellow to black in colour, and of variable density and viscosity. NGLs are the liquid or liquefied hydrocarbons produced in the manufacture, purification and stabilisation of natural gas.
-
-Additives are non-hydrocarbon substances added to or blended with a product to modify its properties, for example, to improve its combustion characteristics (e.g. MTBE and tetraethyl lead). Refinery production refers to the output of secondary oil products from an oil refinery. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_crude_oil_production).
-
-> **Crude Oil Prices**
-
-Crude oil import prices come from the IEA’s Crude Oil Import Register and are influenced not only by traditional movements of supply and demand, but also by other factors such as geopolitics.
-
-Information is collected from national agencies according to the type of crude oil, by geographic origin and by quality of crude. Average prices are obtained by dividing value by volume as recorded by customs administrations for each tariff position.
-
-Values are recorded at the time of import and include cost, insurance and freight, but exclude import duties. The nominal crude oil spot price from 2003 to 2011 is for Dubai and from 1970 to 2002 for Arabian Light. This indicator is measured in USD per barrel of oil. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_crude_oil_prices).
+The data have been cross-validated and complemented with Revenue statistics from the OECD Tax statistics database and official national sources. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_carbon_footprint).
 
 </details>
 
 <details>
-    <summary><b>Government 🏛️</b></summary>
+    <summary><b>Jobs & Society 🗂️</b></summary>
 
-The government metrics revolve around the deficit, revenue, spending, debt, financial wealth and production costs of countries. This includes the deficit as a percentage of GDP, revenue as a percentage of GDP, spending as a percentage of GDP, debt as a percentage of GDP, financial wealth as a percentage of GDP and production costs as a percentage of GDP.
+The jobs metrics revolve around the unemployment rates, labour productivity and income inequality of countries. Society metrics include the population and poverty rates of countries. 
 
-All government metrics can be called by using `get_` to get a single metric. E.g. `get_government_statistics` or `get_trust_in_government`. As an example:
-
-```python
-from financetoolkit import Toolkit
-
-toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
-
-# Get Government Results
-toolkit.economics.get_government_statistics()
-```
-
-> **Deficit as % of GDP**
-
-General government deficit is defined as the balance of income and expenditure of government, including capital income and capital expenditures. “Net lending” means that government has a surplus, and is providing financial resources to other sectors, while “net borrowing” means that government has a deficit, and requires financial resources from other sectors. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_government_statistics).
-
-> **Revenue as % of GDP**
-
-General government revenue is defined as the revenue required to finance the goods and services they provide to citizens and businesses, and to fulfil their redistributive role. Comparing levels of government revenues across countries provides an indication of the importance of the government sector in the economy in terms of available financial resources. The total amount of revenues collected by governments is determined by past and current political decisions. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_government_statistics).
-
-> **Spending as % of GDP**
-
-General government spending is defined as an indicator of the size of government across countries. The large variation in this indicator highlights the variety of countries’ approaches to delivering public goods and services and providing social protection, not necessarily differences in resources spent. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_government_statistics).
-
-> **Debt as % of GDP**
-
-General government debt-to-GDP ratio measures the gross debt of the general government as a percentage of GDP. It is a key indicator for the sustainability of government finance. Debt is calculated as the sum of the following liability categories (as applicable): currency and deposits; debt securities, loans; insurance, pensions and standardised guarantee schemes, and other accounts payable. Changes in government debt over time primarily reflect the impact of past government deficits. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_government_statistics).
-
-> **Financial Wealth as % of GDP**
-
-The net financial worth of the general government sector is the total value of its financial assets minus the total value of its outstanding liabilities. The general government sector consists of central, state and local governments as well as social security funds. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_government_statistics).
-
-> **Production Costs as % of GDP**
-
-General government production costs are decisions about the amount and type of goods and services governments produce, as well as on how best to produce them. They are often political in nature and based on a country’s social and cultural context. Governments use a mix of their own employees, capital, and outside contractors (non-profit institutions or private sector entities) to produce goods and services. Government production costs include: compensation costs of general government employees; goods and services used and financed by general government (including intermediate consumption and social transfer in kind via market producers paid for by government); and other costs, including depreciation of capital and other taxes on production less other subsidies on production. The data include government employment and intermediate consumption for output produced by the government for its own use, such as roads and other capital investment projects built by government employees. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_government_statistics).
-
-> **Central Government Spending**
-
-Central government expenditure is defined as the central government budget expenditure as reported in the final central government accounts. Data are based on the System of National accounts (SNA), a set of internationally agreed concepts, definitions, classifications and rules for national accounting. Central government spending by function is the breakdown of expenditures on the basis of the activities governments support. The classification system used to provide this breakdown on an internationally comparable basis is known as Classification of Functions of Government (COFOG). Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_central_government_spending).
-
-> **Trust in Government**
-
-Trust in government refers to the share of people who report having confidence in the national government. The data shown reflect the share of respondents answering “yes” (the other response categories being “no”, and “dont know”) to the survey question: “In this country, do you have confidence in… national government? The sample is ex ante designed to be nationally representative of the population aged 15 and over. This indicator is measured as a percentage of all survey respondents. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_trust_in_government).
-
-</details>
-
-<details>
-    <summary><b>Jobs 🗂️</b></summary>
-
-The jobs metrics revolve around the unemployment rates, labour productivity and income inequality of countries.
-
-All jobs metrics can be called by using `get_` to get a single metric. E.g. `get_unemployment_rate` or `get_income_inequality`. As an example:
+All job and society metrics can be called by using `get_` to get a single metric. E.g. `get_unemployment_rate` or `get_income_inequality`. As an example:
 
 ```python
 from financetoolkit import Toolkit
@@ -3279,57 +2948,13 @@ The ratio between the output measure and the labour input depends to a large deg
 
 Income is defined as household disposable income in a particular year. It consists of earnings, self-employment and capital income and public cash transfers; income taxes and social security contributions paid by households are deducted. The income of the household is attributed to each of its members, with an adjustment to reflect differences in needs for households of different sizes. Income inequality among individuals is measured here by five indicators. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_income_inequality).
 
-</details>
-
-<details>
-    <summary><b>Society 👪</b></summary>
-
-The society metrics revolve around the population, young population, working age population, elderly population, fertility rates, old-age dependency ratio and poverty rate of countries.
-
-All society metrics can be called by using `get_` to get a single metric. E.g. `get_population_statistics` or `get_poverty_rate`. As an example:
-
-```python
-from financetoolkit import Toolkit
-
-toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
-
-# Get Society Results
-toolkit.economics.get_poverty_rate()
-```
-
 > **Population**
 
 Population is defined as all nationals present in, or temporarily absent from a country, and aliens permanently settled in a country. This indicator shows the number of people that usually live in an area. Growth rates are the annual changes in population resulting from births, deaths and net migration during the year. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_population_statistics).
 
-> **Young Population**
-
-The youth population is defined as those people aged less than 15 as a percentage of the total population. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_population_statistics).
-
-> **Working Age Population**
-
-The working age population is defined as those aged 15 to 64 as a percentage of the total population. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_population_statistics).
-
-> **Elderly Population**
-
-The elderly population is defined as those aged 65 and over as a percentage of the total population. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_population_statistics).
-
-> **Fertility Rates**
-
-The total fertility rate in a specific year is defined as the total number of children that would be born to each woman if she were to live to the end of her child-bearing years and give birth to children in alignment with the prevailing age-specific fertility rates. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_population_statistics).
-
-> **Old-Age Dependency Ratio**
-
-The old-age to working-age demographic ratio is defined as the number of individuals aged 65 and over per 100 people of working age defined as those at ages 20 to 64. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_population_statistics).
-
 > **Poverty Rate**
 
 The poverty rate is the ratio of the number of people (in a given age group) whose income falls below the poverty line; taken as half the median household income of the total population.
-
-It is also available by broad age group:
-
-- child poverty (0 to 17 year-olds);
-- working-age poverty (18 to 65 year-olds);
-- and elderly poverty (66 year-olds or more).
 
 However, two countries with the same poverty rates may differ in terms of the relative income-level of the poor. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_poverty_rate).
 

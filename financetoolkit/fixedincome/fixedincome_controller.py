@@ -770,7 +770,6 @@ class FixedIncome:
         self,
         short_term: bool = False,
         period: str | None = None,
-        forecast: bool = False,
         growth: bool = False,
         lag: int = 1,
         rounding: int | None = None,
@@ -804,7 +803,6 @@ class FixedIncome:
             short_term (bool, optional): Whether to return the short-term interest rate. Defaults to False.
                 This means that the long-term interest rate will be returned.
             period (str | None, optional): Whether to return the monthly, quarterly or the annual data.
-            forecast (bool, optional): Whether to return the forecasted data. Defaults to False.
             growth (bool, optional): Whether to return the growth data or the actual data.
             lag (int, optional): The number of periods to lag the data by.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
@@ -846,18 +844,15 @@ class FixedIncome:
 
         if short_term:
             government_bond_yield = oecd_model.get_short_term_interest_rate(
-                period=period, forecast=forecast
+                period=period,
             )
         else:
             government_bond_yield = oecd_model.get_long_term_interest_rate(
-                period=period, forecast=forecast
+                period=period,
             )
 
         if government_bond_yield.empty:
-            raise ValueError(
-                "No data available for the selected period "
-                f"{'and forecast' if forecast else ''}."
-            )
+            raise ValueError("No data available for the selected period ")
 
         if growth:
             government_bond_yield = calculate_growth(
@@ -868,7 +863,7 @@ class FixedIncome:
             )
 
         government_bond_yield = government_bond_yield.loc[
-            self._start_date : None if forecast else self._end_date
+            self._start_date : self._end_date
         ]
 
         return government_bond_yield.round(rounding if rounding else self._rounding)

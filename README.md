@@ -2904,7 +2904,7 @@ Energy derived from solid biofuels, biogasoline, biodiesels, other liquid biofue
 
 This includes wood, vegetal waste (including wood waste and crops used for energy production), ethanol, animal materials/wastes and sulphite lyes. Municipal waste comprises wastes produced by the residential, commercial and public service sectors that are collected by local authorities for disposal in a central location for the production of heat and/or power. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_renewable_energy).
 
-> **Carbon EmissionsP**
+> **Carbon Footprint**
 
 The carbon footprint is a measure of the total amount of greenhouse gases produced to directly and indirectly support human activities, usually expressed in equivalent tons of carbon dioxide (CO2).
 
@@ -2955,12 +2955,6 @@ Population is defined as all nationals present in, or temporarily absent from a 
 > **Poverty Rate**
 
 The poverty rate is the ratio of the number of people (in a given age group) whose income falls below the poverty line; taken as half the median household income of the total population.
-
-It is also available by broad age group:
-
-- child poverty (0 to 17 year-olds);
-- working-age poverty (18 to 65 year-olds);
-- and elderly poverty (66 year-olds or more).
 
 However, two countries with the same poverty rates may differ in terms of the relative income-level of the poor. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_poverty_rate).
 

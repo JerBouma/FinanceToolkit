@@ -41,7 +41,8 @@ def test_toolkit_cash(recorder):
 
 def test_toolkit_historical(recorder):
     toolkit = Toolkit(
-        tickers=["AAPL", "MSFT"], start_date="2010-01-01", end_date="2020-01-01"
+        tickers=["AAPL", "MSFT"],
+        historical=historical_dataset,
     )
 
     recorder.capture(toolkit.get_historical_data(period="yearly").round(0))
@@ -67,6 +68,7 @@ def test_toolkit_ratios(recorder):
 def test_toolkit_models(recorder):
     toolkit = Toolkit(
         tickers=["AAPL", "MSFT"],
+        historical=historical_dataset,
         balance=balance_dataset,
         income=income_dataset,
         cash=cash_dataset,

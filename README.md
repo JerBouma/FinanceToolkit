@@ -3015,7 +3015,7 @@ from financetoolkit import Toolkit
 toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
 # Get Economy Results
-toolkit.economics.get_consumer_price_index()
+toolkit.economics.get_consumer_confidence_index()
 ```
 
 > **Gross Domestic Product (GDP)**
@@ -3041,20 +3041,6 @@ Numbers above 100 suggest an increased confidence in near future business perfor
 > **Composite Leading Indicator (CLI)**
 
 The composite leading indicator (CLI) is designed to provide early signals of turning points in business cycles showing fluctuation of the economic activity around its long term potential level. CLIs show short-term economic movements in qualitative rather than quantitative terms. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_composite_leading_indicator).
-
-> **Consumer Price Index (CPI)**
-
-Inflation measured by consumer price index (CPI) is defined as the change in the prices of a basket of goods and services that are typically purchased by specific groups of households. Inflation is measured in terms an index, 2015 base year with a breakdown for food, energy and total.
-
-Inflation measures the erosion of living standards. A consumer price index is estimated as a series of summary measures of the period-to-period proportional change in the prices of a fixed set of consumer goods and services of constant quantity and characteristics, acquired, used or paid for by the reference population.
-
-Each summary measure is constructed as a weighted average of a large number of elementary aggregate indices. Each of the elementary aggregate indices is estimated using a sample of prices for a defined set of goods and services obtained in, or by residents of, a specific region from a given set of outlets or other sources of consumption goods and services. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_consumer_price_index).
-
-> **Producer Price Index (PPI)**
-
-Producer price indices in manufacturing measure the rate of change in prices of products sold as they leave the producer. They exclude any taxes, transport and trade margins that the purchaser may have to pay. PPIs provide measures of average movements of prices received by the producers of various commodities. hey are often seen as advanced indicators of price changes throughout the economy, including changes in the prices of consumer goods and services.
-
-Manufacturing covers the production of semi-processed goods and other intermediate goods as well as final products such as consumer goods and capital equipment. A variety of price indices may be used to measure inflation in an economy. These include consumer price indices (CPI), price indices relating to specific goods and/or services, GDP deflators and producer price indices (PPI). Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_producer_price_index).
 
 > **House Prices**
 
@@ -3104,23 +3090,13 @@ Short-term interest rates are the rates at which short-term borrowings are effec
 
 Short-term interest rates are based on three-month money market rates where available. Typical standardised names are “money market rate” and “treasury bill rate”. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_short_term_interest_rate).
 
-> ***Narrow Money (M1)**
-
-M1 includes currency i.e. banknotes and coins, plus overnight deposits. M1 is expressed as a seasonally adjusted index based on 2015=100.
-
-Broad money (M3) includes currency, deposits with an agreed maturity of up to two years, deposits redeemable at notice of up to three months and repurchase agreements, money market fund shares/units and debt securities up to two years. M3 is measured as a seasonally adjusted index based on 2015=100. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_narrow_and_broad_money).
-
-> **Broad Money (M3)**
-
-Broad money (M3) includes currency, deposits with an agreed maturity of up to two years, deposits redeemable at notice of up to three months and repurchase agreements, money market fund shares/units and debt securities up to two years. M3 is measured as a seasonally adjusted index based on 2015=100. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_narrow_and_broad_money).
-
-> **Purchasing Power Parity (PPP)**
-
-Purchasing power parities (PPPs) are the rates of currency conversion that try to equalise the purchasing power of different currencies, by eliminating the differences in price levels between countries. The basket of goods and services priced is a sample of all those that are part of final expenditures: final consumption of households and government, fixed capital formation, and net exports. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_purchasing_power_parity).
-
 > **Exchange Rates**
 
 Exchange rates are defined as the price of one country’s’ currency in relation to another country’s currency. This indicator is measured in terms of national currency per US dollar. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_exchange_rates).
+
+> **Trust in Government**
+
+Trust in government refers to the share of people who report having confidence in the national government. The data shown reflect the share of respondents answering “yes” (the other response categories being “no”, and “dont know”) to the survey question: “In this country, do you have confidence in… national government? The sample is ex ante designed to be nationally representative of the population aged 15 and over. This indicator is measured as a percentage of all survey respondents. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_trust_in_government).
 
 </details>
 
@@ -3148,109 +3124,22 @@ Energy derived from solid biofuels, biogasoline, biodiesels, other liquid biofue
 
 This includes wood, vegetal waste (including wood waste and crops used for energy production), ethanol, animal materials/wastes and sulphite lyes. Municipal waste comprises wastes produced by the residential, commercial and public service sectors that are collected by local authorities for disposal in a central location for the production of heat and/or power. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_renewable_energy).
 
-> **Environmental Tax as % of GDP**
+> **Carbon EmissionsP**
 
-Environmentally related taxes are an important instrument for governments to shape relative prices of goods and services.
+The carbon footprint is a measure of the total amount of greenhouse gases produced to directly and indirectly support human activities, usually expressed in equivalent tons of carbon dioxide (CO2).
 
-The characteristics of such taxes included in the database (e.g. revenue, tax base, tax rates, exemptions, etc.) are used to construct the environmentally related tax revenues with a breakdown by environmental domain:
+The carbon footprint is a subset of the ecological footprint and of the more comprehensive Life Cycle Assessment (LCA). An individual, nation, or organization's carbon footprint can be measured by undertaking a GHG emissions assessment or other calculative activities denoted as carbon accounting.
 
-- Energy products (including vehicle fuels);
-- Motor vehicles and transport services;
-- Measured or estimated emissions to air and water, ozone depleting substances, certain non-point sources of water pollution, waste management and noise, as well as management of water, land, soil, forests, biodiversity, wildlife and fish stocks.
-
-The data have been cross-validated and complemented with Revenue statistics from the OECD Tax statistics database and official national sources. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_environmental_tax).
-
-> **Greenhouse Gas Emissions**
-
-Greenhouse gases refer to the sum of seven gases that have direct effects on climate change:
-
-- Carbon Dioxide (CO2)
-- Methane (CH4)
-- Nitrous Oxide (N2O)
-- Chlorofluorocarbons (CFCs)
-- Hydrofluorocarbons (HFCs)
-- Perfluorocarbons (PFCs)
-- Sulphur Hexafluoride (SF6)
-- Nitrogen Trifluoride (NF3).
-
-The data are expressed in CO2 equivalents and refer to gross direct emissions from human activities. CO2 refers to gross direct emissions from fuel combustion only and data are provided by the International Energy Agency. Other air emissions include emissions of sulphur oxides (SOx) and nitrogen oxides (NOx) given as quantities of SO2 and NO2, emissions of carbon monoxide (CO), and emissions of volatile organic compounds (VOC), excluding methane.
-
-Air and greenhouse gas emissions are measured in tonnes per capita and kilogram per capita in which all metrics are converted to tonnes (1000kg) per capita. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_greenhouse_emissions).
-
-> **Crude Oil Production**
-
-Crude oil production is defined as the quantities of oil extracted from the ground after the removal of inert matter or impurities. It includes crude oil, natural gas liquids (NGLs) and additives. This indicator is measured in thousand tonne of oil equivalent (toe).
-
-Crude oil is a mineral oil consisting of a mixture of hydrocarbons of natural origin, yellow to black in colour, and of variable density and viscosity. NGLs are the liquid or liquefied hydrocarbons produced in the manufacture, purification and stabilisation of natural gas.
-
-Additives are non-hydrocarbon substances added to or blended with a product to modify its properties, for example, to improve its combustion characteristics (e.g. MTBE and tetraethyl lead). Refinery production refers to the output of secondary oil products from an oil refinery. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_crude_oil_production).
-
-> **Crude Oil Prices**
-
-Crude oil import prices come from the IEA’s Crude Oil Import Register and are influenced not only by traditional movements of supply and demand, but also by other factors such as geopolitics.
-
-Information is collected from national agencies according to the type of crude oil, by geographic origin and by quality of crude. Average prices are obtained by dividing value by volume as recorded by customs administrations for each tariff position.
-
-Values are recorded at the time of import and include cost, insurance and freight, but exclude import duties. The nominal crude oil spot price from 2003 to 2011 is for Dubai and from 1970 to 2002 for Arabian Light. This indicator is measured in USD per barrel of oil. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_crude_oil_prices).
+The data have been cross-validated and complemented with Revenue statistics from the OECD Tax statistics database and official national sources. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_carbon_footprint).
 
 </details>
 
 <details>
-    <summary><b>Government 🏛️</b></summary>
+    <summary><b>Jobs & Society 🗂️</b></summary>
 
-The government metrics revolve around the deficit, revenue, spending, debt, financial wealth and production costs of countries. This includes the deficit as a percentage of GDP, revenue as a percentage of GDP, spending as a percentage of GDP, debt as a percentage of GDP, financial wealth as a percentage of GDP and production costs as a percentage of GDP.
+The jobs metrics revolve around the unemployment rates, labour productivity and income inequality of countries. Society metrics include the population and poverty rates of countries. 
 
-All government metrics can be called by using `get_` to get a single metric. E.g. `get_government_statistics` or `get_trust_in_government`. As an example:
-
-```python
-from financetoolkit import Toolkit
-
-toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
-
-# Get Government Results
-toolkit.economics.get_government_statistics()
-```
-
-> **Deficit as % of GDP**
-
-General government deficit is defined as the balance of income and expenditure of government, including capital income and capital expenditures. “Net lending” means that government has a surplus, and is providing financial resources to other sectors, while “net borrowing” means that government has a deficit, and requires financial resources from other sectors. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_government_statistics).
-
-> **Revenue as % of GDP**
-
-General government revenue is defined as the revenue required to finance the goods and services they provide to citizens and businesses, and to fulfil their redistributive role. Comparing levels of government revenues across countries provides an indication of the importance of the government sector in the economy in terms of available financial resources. The total amount of revenues collected by governments is determined by past and current political decisions. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_government_statistics).
-
-> **Spending as % of GDP**
-
-General government spending is defined as an indicator of the size of government across countries. The large variation in this indicator highlights the variety of countries’ approaches to delivering public goods and services and providing social protection, not necessarily differences in resources spent. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_government_statistics).
-
-> **Debt as % of GDP**
-
-General government debt-to-GDP ratio measures the gross debt of the general government as a percentage of GDP. It is a key indicator for the sustainability of government finance. Debt is calculated as the sum of the following liability categories (as applicable): currency and deposits; debt securities, loans; insurance, pensions and standardised guarantee schemes, and other accounts payable. Changes in government debt over time primarily reflect the impact of past government deficits. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_government_statistics).
-
-> **Financial Wealth as % of GDP**
-
-The net financial worth of the general government sector is the total value of its financial assets minus the total value of its outstanding liabilities. The general government sector consists of central, state and local governments as well as social security funds. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_government_statistics).
-
-> **Production Costs as % of GDP**
-
-General government production costs are decisions about the amount and type of goods and services governments produce, as well as on how best to produce them. They are often political in nature and based on a country’s social and cultural context. Governments use a mix of their own employees, capital, and outside contractors (non-profit institutions or private sector entities) to produce goods and services. Government production costs include: compensation costs of general government employees; goods and services used and financed by general government (including intermediate consumption and social transfer in kind via market producers paid for by government); and other costs, including depreciation of capital and other taxes on production less other subsidies on production. The data include government employment and intermediate consumption for output produced by the government for its own use, such as roads and other capital investment projects built by government employees. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_government_statistics).
-
-> **Central Government Spending**
-
-Central government expenditure is defined as the central government budget expenditure as reported in the final central government accounts. Data are based on the System of National accounts (SNA), a set of internationally agreed concepts, definitions, classifications and rules for national accounting. Central government spending by function is the breakdown of expenditures on the basis of the activities governments support. The classification system used to provide this breakdown on an internationally comparable basis is known as Classification of Functions of Government (COFOG). Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_central_government_spending).
-
-> **Trust in Government**
-
-Trust in government refers to the share of people who report having confidence in the national government. The data shown reflect the share of respondents answering “yes” (the other response categories being “no”, and “dont know”) to the survey question: “In this country, do you have confidence in… national government? The sample is ex ante designed to be nationally representative of the population aged 15 and over. This indicator is measured as a percentage of all survey respondents. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_trust_in_government).
-
-</details>
-
-<details>
-    <summary><b>Jobs 🗂️</b></summary>
-
-The jobs metrics revolve around the unemployment rates, labour productivity and income inequality of countries.
-
-All jobs metrics can be called by using `get_` to get a single metric. E.g. `get_unemployment_rate` or `get_income_inequality`. As an example:
+All job and society metrics can be called by using `get_` to get a single metric. E.g. `get_unemployment_rate` or `get_income_inequality`. As an example:
 
 ```python
 from financetoolkit import Toolkit
@@ -3279,47 +3168,9 @@ The ratio between the output measure and the labour input depends to a large deg
 
 Income is defined as household disposable income in a particular year. It consists of earnings, self-employment and capital income and public cash transfers; income taxes and social security contributions paid by households are deducted. The income of the household is attributed to each of its members, with an adjustment to reflect differences in needs for households of different sizes. Income inequality among individuals is measured here by five indicators. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_income_inequality).
 
-</details>
-
-<details>
-    <summary><b>Society 👪</b></summary>
-
-The society metrics revolve around the population, young population, working age population, elderly population, fertility rates, old-age dependency ratio and poverty rate of countries.
-
-All society metrics can be called by using `get_` to get a single metric. E.g. `get_population_statistics` or `get_poverty_rate`. As an example:
-
-```python
-from financetoolkit import Toolkit
-
-toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
-
-# Get Society Results
-toolkit.economics.get_poverty_rate()
-```
-
 > **Population**
 
 Population is defined as all nationals present in, or temporarily absent from a country, and aliens permanently settled in a country. This indicator shows the number of people that usually live in an area. Growth rates are the annual changes in population resulting from births, deaths and net migration during the year. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_population_statistics).
-
-> **Young Population**
-
-The youth population is defined as those people aged less than 15 as a percentage of the total population. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_population_statistics).
-
-> **Working Age Population**
-
-The working age population is defined as those aged 15 to 64 as a percentage of the total population. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_population_statistics).
-
-> **Elderly Population**
-
-The elderly population is defined as those aged 65 and over as a percentage of the total population. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_population_statistics).
-
-> **Fertility Rates**
-
-The total fertility rate in a specific year is defined as the total number of children that would be born to each woman if she were to live to the end of her child-bearing years and give birth to children in alignment with the prevailing age-specific fertility rates. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_population_statistics).
-
-> **Old-Age Dependency Ratio**
-
-The old-age to working-age demographic ratio is defined as the number of individuals aged 65 and over per 100 people of working age defined as those at ages 20 to 64. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_population_statistics).
 
 > **Poverty Rate**
 

@@ -4910,7 +4910,7 @@ class Ratios:
                 .sum()
                 .T,
                 dividends,
-                average_shares.T.rolling(trailing).sum().T,
+                average_shares, # Shares of current period
             )
         else:
             dividends = (
@@ -4991,7 +4991,7 @@ class Ratios:
         if trailing:
             revenue_per_share = valuation_model.get_revenue_per_share(
                 self._income_statement.loc[:, "Revenue", :].T.rolling(trailing).sum().T,
-                average_shares.T.rolling(trailing).sum().T,
+                average_shares, # Shares of current period, alternatively average_shares.T.rolling(trailing).mean().T
             )
         else:
             revenue_per_share = valuation_model.get_revenue_per_share(
@@ -5373,7 +5373,7 @@ class Ratios:
                 .T.rolling(trailing)
                 .sum()
                 .T,
-                average_shares.T.rolling(trailing).sum().T,
+                average_shares, # Shares of current period, alternatively average_shares.T.rolling(trailing).mean().T
             )
         else:
             interest_debt_per_share = valuation_model.get_interest_debt_per_share(
@@ -5451,7 +5451,7 @@ class Ratios:
                 .T.rolling(trailing)
                 .sum()
                 .T,
-                average_shares.T.rolling(trailing).sum().T,
+                average_shares, # Shares of current period, alternatively average_shares.T.rolling(trailing).mean().T
             )
         else:
             capex_per_share = valuation_model.get_capex_per_share(
@@ -5598,7 +5598,7 @@ class Ratios:
                 .T.rolling(trailing)
                 .sum()
                 .T,
-                average_shares.T.rolling(trailing).sum().T,
+                average_shares, # Shares of current period, alternatively average_shares.T.rolling(trailing).mean().T
                 share_prices,
             )
         else:
@@ -5837,7 +5837,8 @@ class Ratios:
 
         if trailing:
             market_cap = valuation_model.get_market_cap(
-                share_prices, average_shares.T.rolling(trailing).sum().T
+                share_prices, 
+                average_shares, # Shares of current period, alternatively average_shares.T.rolling(trailing).mean().T
             )
         else:
             market_cap = valuation_model.get_market_cap(share_prices, average_shares)

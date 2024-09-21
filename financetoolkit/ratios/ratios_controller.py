@@ -1,4 +1,5 @@
 """Ratios Module"""
+
 __docformat__ = "google"
 
 
@@ -473,33 +474,33 @@ class Ratios:
 
         efficiency_ratios: dict = {}
 
-        efficiency_ratios[
-            "Days of Inventory Outstanding"
-        ] = self.get_days_of_inventory_outstanding(days=days, trailing=trailing)
-        efficiency_ratios[
-            "Days of Sales Outstanding"
-        ] = self.get_days_of_sales_outstanding(days=days, trailing=trailing)
+        efficiency_ratios["Days of Inventory Outstanding"] = (
+            self.get_days_of_inventory_outstanding(days=days, trailing=trailing)
+        )
+        efficiency_ratios["Days of Sales Outstanding"] = (
+            self.get_days_of_sales_outstanding(days=days, trailing=trailing)
+        )
         efficiency_ratios["Operating Cycle"] = self.get_operating_cycle(
             trailing=trailing
         )
-        efficiency_ratios[
-            "Days of Accounts Payable Outstanding"
-        ] = self.get_days_of_accounts_payable_outstanding(days=days, trailing=trailing)
+        efficiency_ratios["Days of Accounts Payable Outstanding"] = (
+            self.get_days_of_accounts_payable_outstanding(days=days, trailing=trailing)
+        )
         efficiency_ratios["Cash Conversion Cycle"] = self.get_cash_conversion_cycle(
             days=days, trailing=trailing
         )
-        efficiency_ratios[
-            "Cash Conversion Efficiency"
-        ] = self.get_cash_conversion_efficiency(trailing=trailing)
+        efficiency_ratios["Cash Conversion Efficiency"] = (
+            self.get_cash_conversion_efficiency(trailing=trailing)
+        )
         efficiency_ratios["Receivables Turnover"] = self.get_receivables_turnover(
             trailing=trailing
         )
-        efficiency_ratios[
-            "Inventory Turnover Ratio"
-        ] = self.get_inventory_turnover_ratio()
-        efficiency_ratios[
-            "Accounts Payable Turnover Ratio"
-        ] = self.get_accounts_payables_turnover_ratio()
+        efficiency_ratios["Inventory Turnover Ratio"] = (
+            self.get_inventory_turnover_ratio()
+        )
+        efficiency_ratios["Accounts Payable Turnover Ratio"] = (
+            self.get_accounts_payables_turnover_ratio()
+        )
         efficiency_ratios["SGA-to-Revenue Ratio"] = self.get_sga_to_revenue_ratio(
             trailing=trailing
         )
@@ -1745,15 +1746,15 @@ class Ratios:
         liquidity_ratios["Working Capital"] = self.get_working_capital(
             trailing=trailing
         )
-        liquidity_ratios[
-            "Operating Cash Flow Ratio"
-        ] = self.get_operating_cash_flow_ratio(trailing=trailing)
-        liquidity_ratios[
-            "Operating Cash Flow to Sales Ratio"
-        ] = self.get_operating_cash_flow_sales_ratio(trailing=trailing)
-        liquidity_ratios[
-            "Short Term Coverage Ratio"
-        ] = self.get_short_term_coverage_ratio(trailing=trailing)
+        liquidity_ratios["Operating Cash Flow Ratio"] = (
+            self.get_operating_cash_flow_ratio(trailing=trailing)
+        )
+        liquidity_ratios["Operating Cash Flow to Sales Ratio"] = (
+            self.get_operating_cash_flow_sales_ratio(trailing=trailing)
+        )
+        liquidity_ratios["Short Term Coverage Ratio"] = (
+            self.get_short_term_coverage_ratio(trailing=trailing)
+        )
 
         self._liquidity_ratios = (
             pd.concat(liquidity_ratios)
@@ -2361,12 +2362,12 @@ class Ratios:
         profitability_ratios["Net Profit Margin"] = self.get_net_profit_margin(
             trailing=trailing
         )
-        profitability_ratios[
-            "Interest Coverage Ratio"
-        ] = self.get_interest_coverage_ratio(trailing=trailing)
-        profitability_ratios[
-            "Income Before Tax Profit Margin"
-        ] = self.get_income_before_tax_profit_margin(trailing=trailing)
+        profitability_ratios["Interest Coverage Ratio"] = (
+            self.get_interest_coverage_ratio(trailing=trailing)
+        )
+        profitability_ratios["Income Before Tax Profit Margin"] = (
+            self.get_income_before_tax_profit_margin(trailing=trailing)
+        )
         profitability_ratios["Effective Tax Rate"] = self.get_effective_tax_rate(
             trailing=trailing
         )
@@ -2376,24 +2377,24 @@ class Ratios:
         profitability_ratios["Return on Equity"] = self.get_return_on_equity(
             trailing=trailing
         )
-        profitability_ratios[
-            "Return on Invested Capital"
-        ] = self.get_return_on_invested_capital(trailing=trailing)
-        profitability_ratios[
-            "Return on Capital Employed"
-        ] = self.get_return_on_capital_employed(trailing=trailing)
-        profitability_ratios[
-            "Return on Tangible Assets"
-        ] = self.get_return_on_tangible_assets(trailing=trailing)
+        profitability_ratios["Return on Invested Capital"] = (
+            self.get_return_on_invested_capital(trailing=trailing)
+        )
+        profitability_ratios["Return on Capital Employed"] = (
+            self.get_return_on_capital_employed(trailing=trailing)
+        )
+        profitability_ratios["Return on Tangible Assets"] = (
+            self.get_return_on_tangible_assets(trailing=trailing)
+        )
         profitability_ratios["Income Quality Ratio"] = self.get_income_quality_ratio(
             trailing=trailing
         )
         profitability_ratios["Net Income per EBT"] = self.get_net_income_per_ebt(
             trailing=trailing
         )
-        profitability_ratios[
-            "Free Cash Flow to Operating Cash Flow Ratio"
-        ] = self.get_free_cash_flow_operating_cash_flow_ratio()
+        profitability_ratios["Free Cash Flow to Operating Cash Flow Ratio"] = (
+            self.get_free_cash_flow_operating_cash_flow_ratio()
+        )
         profitability_ratios["EBT to EBIT Ratio"] = self.get_EBT_to_EBIT(
             trailing=trailing
         )
@@ -3085,12 +3086,14 @@ class Ratios:
                     .T.rolling(trailing)
                     .sum()
                     .T,
-                    self._cash_flow_statement.loc[:, "Dividends Paid", :]
-                    .T.rolling(trailing)
-                    .sum()
-                    .T
-                    if dividend_adjusted
-                    else 0,
+                    (
+                        self._cash_flow_statement.loc[:, "Dividends Paid", :]
+                        .T.rolling(trailing)
+                        .sum()
+                        .T
+                        if dividend_adjusted
+                        else 0
+                    ),
                     self._balance_sheet_statement.loc[:, "Total Equity", :]
                     .shift(axis=1)
                     .T.rolling(trailing)
@@ -3115,9 +3118,11 @@ class Ratios:
             return_on_invested_capital = (
                 profitability_model.get_return_on_invested_capital(
                     self._income_statement.loc[:, "Net Income", :],
-                    self._cash_flow_statement.loc[:, "Dividends Paid", :]
-                    if dividend_adjusted
-                    else 0,
+                    (
+                        self._cash_flow_statement.loc[:, "Dividends Paid", :]
+                        if dividend_adjusted
+                        else 0
+                    ),
                     self._balance_sheet_statement.loc[:, "Total Equity", :].shift(
                         axis=1
                     ),
@@ -3846,9 +3851,9 @@ class Ratios:
         solvency_ratios["Debt-to-Equity Ratio"] = self.get_debt_to_equity_ratio(
             trailing=trailing
         )
-        solvency_ratios[
-            "Debt Service Coverage Ratio"
-        ] = self.get_debt_service_coverage_ratio(trailing=trailing)
+        solvency_ratios["Debt Service Coverage Ratio"] = (
+            self.get_debt_service_coverage_ratio(trailing=trailing)
+        )
         solvency_ratios["Equity Multiplier"] = self.get_equity_multiplier(
             trailing=trailing
         )
@@ -3864,9 +3869,9 @@ class Ratios:
         solvency_ratios["CAPEX Coverage Ratio"] = self.get_capex_coverage_ratio(
             trailing=trailing
         )
-        solvency_ratios[
-            "Dividend CAPEX Coverage Ratio"
-        ] = self.get_capex_dividend_coverage_ratio(trailing=trailing)
+        solvency_ratios["Dividend CAPEX Coverage Ratio"] = (
+            self.get_capex_dividend_coverage_ratio(trailing=trailing)
+        )
 
         self._solvency_ratios = (
             pd.concat(solvency_ratios)
@@ -4352,7 +4357,7 @@ class Ratios:
         if trailing:
             market_cap = valuation_model.get_market_cap(
                 share_prices.T.rolling(trailing).sum().T,
-                average_shares.T.rolling(trailing).sum().T,
+                average_shares,
             )
 
             free_cash_flow_yield = solvency_model.get_free_cash_flow_yield(
@@ -4731,10 +4736,10 @@ class Ratios:
         valuation_ratios["Price-to-Earnings"] = self.get_price_earnings_ratio(
             include_dividends=include_dividends, diluted=diluted, trailing=trailing
         )
-        valuation_ratios[
-            "Price-to-Earnings-Growth"
-        ] = self.get_price_to_earnings_growth_ratio(
-            include_dividends=include_dividends, diluted=diluted, trailing=trailing
+        valuation_ratios["Price-to-Earnings-Growth"] = (
+            self.get_price_to_earnings_growth_ratio(
+                include_dividends=include_dividends, diluted=diluted, trailing=trailing
+            )
         )
         valuation_ratios["Book Value per Share"] = self.get_book_value_per_share(
             diluted=diluted, trailing=trailing
@@ -4771,9 +4776,9 @@ class Ratios:
         valuation_ratios["Price-to-Cash-Flow"] = self.get_price_to_cash_flow_ratio(
             diluted=diluted, trailing=trailing
         )
-        valuation_ratios[
-            "Price-to-Free-Cash-Flow"
-        ] = self.get_price_to_free_cash_flow_ratio(diluted=diluted, trailing=trailing)
+        valuation_ratios["Price-to-Free-Cash-Flow"] = (
+            self.get_price_to_free_cash_flow_ratio(diluted=diluted, trailing=trailing)
+        )
         valuation_ratios["Market Cap"] = self.get_market_cap(
             diluted=diluted, trailing=trailing
         )
@@ -4789,9 +4794,9 @@ class Ratios:
         valuation_ratios["EV-to-EBITDA"] = self.get_ev_to_ebitda_ratio(
             diluted=diluted, trailing=trailing
         )
-        valuation_ratios[
-            "EV-to-Operating-Cash-Flow"
-        ] = self.get_ev_to_operating_cashflow_ratio(diluted=diluted, trailing=trailing)
+        valuation_ratios["EV-to-Operating-Cash-Flow"] = (
+            self.get_ev_to_operating_cashflow_ratio(diluted=diluted, trailing=trailing)
+        )
         valuation_ratios["Tangible Asset Value"] = self.get_tangible_asset_value(
             trailing=trailing
         )
@@ -4910,7 +4915,7 @@ class Ratios:
                 .sum()
                 .T,
                 dividends,
-                average_shares, # Shares of current period
+                average_shares,
             )
         else:
             dividends = (
@@ -4991,7 +4996,7 @@ class Ratios:
         if trailing:
             revenue_per_share = valuation_model.get_revenue_per_share(
                 self._income_statement.loc[:, "Revenue", :].T.rolling(trailing).sum().T,
-                average_shares, # Shares of current period, alternatively average_shares.T.rolling(trailing).mean().T
+                average_shares,
             )
         else:
             revenue_per_share = valuation_model.get_revenue_per_share(
@@ -5219,7 +5224,7 @@ class Ratios:
                 .T.rolling(trailing)
                 .sum()
                 .T,
-                average_shares.T.rolling(trailing).sum().T,
+                average_shares,
             )
         else:
             book_value_per_share = valuation_model.get_book_value_per_share(
@@ -5373,7 +5378,7 @@ class Ratios:
                 .T.rolling(trailing)
                 .sum()
                 .T,
-                average_shares, # Shares of current period, alternatively average_shares.T.rolling(trailing).mean().T
+                average_shares,
             )
         else:
             interest_debt_per_share = valuation_model.get_interest_debt_per_share(
@@ -5451,7 +5456,7 @@ class Ratios:
                 .T.rolling(trailing)
                 .sum()
                 .T,
-                average_shares, # Shares of current period, alternatively average_shares.T.rolling(trailing).mean().T
+                average_shares,
             )
         else:
             capex_per_share = valuation_model.get_capex_per_share(
@@ -5598,7 +5603,7 @@ class Ratios:
                 .T.rolling(trailing)
                 .sum()
                 .T,
-                average_shares, # Shares of current period, alternatively average_shares.T.rolling(trailing).mean().T
+                average_shares,
                 share_prices,
             )
         else:
@@ -5837,8 +5842,8 @@ class Ratios:
 
         if trailing:
             market_cap = valuation_model.get_market_cap(
-                share_prices, 
-                average_shares, # Shares of current period, alternatively average_shares.T.rolling(trailing).mean().T
+                share_prices,
+                average_shares,
             )
         else:
             market_cap = valuation_model.get_market_cap(share_prices, average_shares)

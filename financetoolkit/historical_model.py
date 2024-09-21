@@ -1,4 +1,5 @@
 """Historical Module"""
+
 __docformat__ = "google"
 
 import contextlib
@@ -836,15 +837,13 @@ def convert_daily_to_other_period(
 
     if "Cumulative Return" in period_historical_data:
         if start:
-            start = pd.Period(start).asfreq(period_str)
-
-            if start < period_historical_data.index[0]:
-                start = period_historical_data.index[0]
+            start = max(
+                pd.Period(start).asfreq(period_str), period_historical_data.index[0]
+            )
         if end:
-            end = pd.Period(end).asfreq(period_str)
-
-            if end > period_historical_data.index[-1]:
-                end = period_historical_data.index[-1]
+            end = min(
+                pd.Period(end).asfreq(period_str), period_historical_data.index[-1]
+            )
 
         adjusted_return = period_historical_data.loc[start:end, "Return"].copy()
         adjusted_return.iloc[0] = 0

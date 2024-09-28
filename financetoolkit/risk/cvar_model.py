@@ -130,9 +130,7 @@ def get_cvar_studentt(
         scale = np.append(scale, col_scale)
     za = stats.t.ppf(1 - alpha, v, 1)
 
-    return (
-        -scale * (v + za**2) / (v - 1) * stats.t.pdf(za, v) / alpha + returns.mean()
-    )
+    return -scale * (v + za**2) / (v - 1) * stats.t.pdf(za, v) / alpha + returns.mean()
 
 
 def get_cvar_laplace(

@@ -1,4 +1,5 @@
 """Fundamentals Module"""
+
 __docformat__ = "google"
 
 

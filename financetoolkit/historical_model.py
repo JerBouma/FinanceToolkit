@@ -5,6 +5,7 @@ __docformat__ = "google"
 import contextlib
 import threading
 import time
+import warnings
 from datetime import datetime, timedelta
 from http.client import RemoteDisconnected
 from urllib.error import HTTPError, URLError
@@ -21,6 +22,13 @@ try:
     ENABLE_TQDM = True
 except ImportError:
     ENABLE_TQDM = False
+
+try:
+    import yfinance as yf
+
+    ENABLE_YFINANCE = True
+except ImportError:
+    ENABLE_YFINANCE = False
 
 # pylint: disable=too-many-locals,unsubscriptable-object,too-many-lines
 
@@ -156,16 +164,16 @@ def get_historical_data(
                     fmp_tickers.append(ticker)
 
             if source == "YahooFinance" or historical_data.empty:
-                historical_data = get_historical_data_from_yahoo_finance(
-                    ticker=ticker,
-                    start=start,
-                    end=end,
-                    interval=interval,
-                    return_column=return_column,
-                    risk_free_rate=risk_free_rate,
-                    include_dividends=include_dividends,
-                    divide_ohlc_by=divide_ohlc_by,
-                )
+                if ENABLE_YFINANCE:
+                    historical_data = get_historical_data_from_yahoo_finance(
+                        ticker=ticker,
+                        start=start,
+                        end=end,
+                        interval=interval,
+                        return_column=return_column,
+                        risk_free_rate=risk_free_rate,
+                        divide_ohlc_by=divide_ohlc_by,
+                    )
 
                 if not historical_data.empty:
                     yf_tickers.append(ticker)
@@ -224,7 +232,14 @@ def get_historical_data(
         )
 
     if no_data and show_errors:
-        print(f"No data found for the following tickers: {', '.join(no_data)}")
+        if not ENABLE_YFINANCE:
+            print(
+                "Due to a missing optional dependency (yfinance) and your current FinancialModelingPrep plan, "
+                f"data for the following tickers could not be acquired: {', '.join(no_data)}\n"
+                "Enable this functionality by using:\033[1m pip install 'financetoolkit[yfinance]' \033[0m"
+            )
+        else:
+            print(f"No data found for the following tickers: {', '.join(no_data)}")
 
     if len(historical_data_dict) == 0:
         # Fill the DataFrame with zeros to ensure the DataFrame is returned
@@ -422,7 +437,6 @@ def get_historical_data_from_yahoo_finance(
     interval: str = "1d",
     return_column: str = "Adj Close",
     risk_free_rate: pd.DataFrame = pd.DataFrame(),
-    include_dividends: bool = True,
     divide_ohlc_by: int | float | None = None,
 ):
     """
@@ -482,20 +496,12 @@ def get_historical_data_from_yahoo_finance(
     if interval in ["yearly", "quarterly"]:
         interval = "1d"
 
-    historical_data_url = (
-        f"https://query1.finance.yahoo.com/v7/finance/download/{ticker}?"
-        f"interval={interval}&period1={start_timestamp}&period2={end_timestamp}"
-        "&events=history&includeAdjustedClose=true"
-    )
-
-    dividend_url = (
-        f"https://query1.finance.yahoo.com/v7/finance/download/{ticker}?"
-        f"interval={interval}&period1={start_timestamp}&period2={end_timestamp}"
-        "&events=div&includeAdjustedClose=true"
-    )
-
     try:
-        historical_data = pd.read_csv(historical_data_url, index_col="Date")
+        historical_data = yf.Ticker(ticker).history(
+            start=start_timestamp,
+            end=end_timestamp,
+            interval=interval,
+        )
     except (HTTPError, URLError, RemoteDisconnected):
         return pd.DataFrame()
 
@@ -504,7 +510,10 @@ def get_historical_data_from_yahoo_finance(
         return pd.DataFrame()
 
     historical_data.index = pd.to_datetime(historical_data.index)
-    historical_data.index = historical_data.index.to_period(freq="D")
+
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", category=UserWarning)
+        historical_data.index = historical_data.index.to_period(freq="D")
 
     if divide_ohlc_by:
         # Set divide by zero and invalid value warnings to ignore as it is fine that
@@ -513,26 +522,20 @@ def get_historical_data_from_yahoo_finance(
         # In case tickers are presented in percentages or similar
         historical_data = historical_data.div(divide_ohlc_by)
 
-    if include_dividends:
-        try:
-            dividends = pd.read_csv(dividend_url, index_col="Date")["Dividends"]
-
-            dividends.index = pd.to_datetime(dividends.index)
-            dividends.index = dividends.index.to_period(freq="D")
-
-            historical_data["Dividends"] = dividends
-
-            historical_data["Dividends"] = historical_data["Dividends"].infer_objects(
-                copy=False
-            )
-
-            historical_data["Dividends"] = historical_data["Dividends"].fillna(0)
-        except (HTTPError, URLError, RemoteDisconnected):
-            historical_data["Dividends"] = 0
-
     historical_data = historical_data.loc[
         ~historical_data.index.duplicated(keep="first")
     ]
+
+    historical_data["Adj Close"] = historical_data["Close"]
+
+    if "Stock Splits" in historical_data and "Capital Gains" in historical_data:
+        historical_data = historical_data.drop(
+            columns=["Stock Splits", "Capital Gains"]
+        )
+    elif "Stock Splits" in historical_data:
+        historical_data = historical_data.drop(columns=["Stock Splits"])
+    else:
+        historical_data = historical_data.drop(columns=["Capital Gains"])
 
     historical_data = enrich_historical_data(
         historical_data=historical_data,

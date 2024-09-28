@@ -172,12 +172,16 @@ def create_configurations_section(session_state: st.session_state):
     with col1:
         session_state["start_date"] = st.date_input(
             "Start Date",
-            value=datetime.now() - timedelta(days=365 * 10)
-            if session_state["premium_plan"]
-            else datetime.now() - timedelta(days=365 * 5),
-            min_value=datetime(1980, 1, 1)
-            if session_state["premium_plan"]
-            else datetime.now() - timedelta(days=365 * 5),
+            value=(
+                datetime.now() - timedelta(days=365 * 10)
+                if session_state["premium_plan"]
+                else datetime.now() - timedelta(days=365 * 5)
+            ),
+            min_value=(
+                datetime(1980, 1, 1)
+                if session_state["premium_plan"]
+                else datetime.now() - timedelta(days=365 * 5)
+            ),
             max_value=datetime.now(),
         )
     with col2:
@@ -274,12 +278,16 @@ def initalize_financetoolkit(session_state: st.session_state):
             tickers=session_state["tickers"],
             api_key=session_state["api_key_value"],
             quarterly=session_state["quarterly_data"],
-            start_date=session_state["start_date"].strftime("%Y-%m-%d")
-            if session_state["start_date"]
-            else None,
-            end_date=session_state["end_date"].strftime("%Y-%m-%d")
-            if session_state["end_date"]
-            else None,
+            start_date=(
+                session_state["start_date"].strftime("%Y-%m-%d")
+                if session_state["start_date"]
+                else None
+            ),
+            end_date=(
+                session_state["end_date"].strftime("%Y-%m-%d")
+                if session_state["end_date"]
+                else None
+            ),
             progress_bar=False,
         )
 

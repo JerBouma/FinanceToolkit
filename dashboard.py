@@ -4,9 +4,7 @@ import streamlit as st
 
 from app import helpers, initalization_model, metrics_view, socials_model
 
-st.set_page_config(
-    page_title="Finance Toolkit Dashboard", page_icon="🛠️", layout="wide"
-)
+st.set_page_config(page_title="Finance Toolkit Dashboard", page_icon="🛠️", layout="wide")
 
 
 st.session_state = initalization_model.initalize_session_state(st.session_state)

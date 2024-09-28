@@ -1,4 +1,5 @@
 """ECB Model"""
+
 __docformat__ = "google"
 
 import pandas as pd

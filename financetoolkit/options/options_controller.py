@@ -1,4 +1,5 @@
 """Options Module"""
+
 __docformat__ = "google"
 
 from datetime import datetime
@@ -354,16 +355,16 @@ class Options:
                 black_scholes[ticker][strike_price] = {}
 
                 for time_to_expiration in time_to_expiration_list:
-                    black_scholes[ticker][strike_price][
-                        time_to_expiration
-                    ] = black_scholes_model.get_black_scholes(
-                        stock_price=stock_price.loc[ticker],
-                        strike_price=strike_price,
-                        risk_free_rate=risk_free_rate,
-                        volatility=volatility.loc[ticker],
-                        time_to_expiration=time_to_expiration,
-                        dividend_yield=dividend_yield_value[ticker],
-                        put_option=put_option,
+                    black_scholes[ticker][strike_price][time_to_expiration] = (
+                        black_scholes_model.get_black_scholes(
+                            stock_price=stock_price.loc[ticker],
+                            strike_price=strike_price,
+                            risk_free_rate=risk_free_rate,
+                            volatility=volatility.loc[ticker],
+                            time_to_expiration=time_to_expiration,
+                            dividend_yield=dividend_yield_value[ticker],
+                            put_option=put_option,
+                        )
                     )
 
         black_scholes_df = helpers.create_greek_dataframe(
@@ -740,18 +741,18 @@ class Options:
                         show_input_info=show_input_info,
                     )
 
-                binomial_trees[ticker][
-                    strike_price
-                ] = binomial_trees_model.get_option_payoffs(
-                    stock_price=stock_price.loc[ticker],
-                    strike_price=strike_price,
-                    years=time_to_expiration,
-                    timesteps=timesteps,
-                    risk_free_rate=risk_free_rate,
-                    volatility=volatility.loc[ticker],
-                    dividend_yield=dividend_yield_value[ticker],
-                    put_option=put_option,
-                    american_option=american_option,
+                binomial_trees[ticker][strike_price] = (
+                    binomial_trees_model.get_option_payoffs(
+                        stock_price=stock_price.loc[ticker],
+                        strike_price=strike_price,
+                        years=time_to_expiration,
+                        timesteps=timesteps,
+                        risk_free_rate=risk_free_rate,
+                        volatility=volatility.loc[ticker],
+                        dividend_yield=dividend_yield_value[ticker],
+                        put_option=put_option,
+                        american_option=american_option,
+                    )
                 )
 
         binomial_trees_df = helpers.create_binomial_tree_dataframe(
@@ -908,14 +909,14 @@ class Options:
                 time_delta=time_to_expiration / timesteps,
             )
 
-            stock_price_simulation[
-                ticker
-            ] = binomial_trees_model.calculate_stock_prices(
-                stock_price=stock_price.loc[ticker],
-                up_movement=up_movement,
-                down_movement=down_movement,
-                period_length=timesteps,
-                show_unique_combinations=show_unique_combinations,
+            stock_price_simulation[ticker] = (
+                binomial_trees_model.calculate_stock_prices(
+                    stock_price=stock_price.loc[ticker],
+                    up_movement=up_movement,
+                    down_movement=down_movement,
+                    period_length=timesteps,
+                    show_unique_combinations=show_unique_combinations,
+                )
             )
 
             stock_price_statistics["Up Movement"][ticker] = up_movement
@@ -1373,16 +1374,16 @@ class Options:
                 delta[ticker][strike_price] = {}
 
                 for time_to_expiration in time_to_expiration_list:
-                    delta[ticker][strike_price][
-                        time_to_expiration
-                    ] = greeks_model.get_delta(
-                        stock_price=stock_price.loc[ticker],
-                        strike_price=strike_price,
-                        time_to_expiration=time_to_expiration,
-                        risk_free_rate=risk_free_rate,
-                        volatility=volatility.loc[ticker],
-                        dividend_yield=dividend_yield_value[ticker],
-                        put_option=put_option,
+                    delta[ticker][strike_price][time_to_expiration] = (
+                        greeks_model.get_delta(
+                            stock_price=stock_price.loc[ticker],
+                            strike_price=strike_price,
+                            time_to_expiration=time_to_expiration,
+                            risk_free_rate=risk_free_rate,
+                            volatility=volatility.loc[ticker],
+                            dividend_yield=dividend_yield_value[ticker],
+                            put_option=put_option,
+                        )
                     )
 
         delta_df = helpers.create_greek_dataframe(
@@ -1511,16 +1512,16 @@ class Options:
                 dual_delta[ticker][strike_price] = {}
 
                 for time_to_expiration in time_to_expiration_list:
-                    dual_delta[ticker][strike_price][
-                        time_to_expiration
-                    ] = greeks_model.get_dual_delta(
-                        stock_price=stock_price.loc[ticker],
-                        strike_price=strike_price,
-                        time_to_expiration=time_to_expiration,
-                        risk_free_rate=risk_free_rate,
-                        volatility=volatility.loc[ticker],
-                        dividend_yield=dividend_yield_value[ticker],
-                        put_option=put_option,
+                    dual_delta[ticker][strike_price][time_to_expiration] = (
+                        greeks_model.get_dual_delta(
+                            stock_price=stock_price.loc[ticker],
+                            strike_price=strike_price,
+                            time_to_expiration=time_to_expiration,
+                            risk_free_rate=risk_free_rate,
+                            volatility=volatility.loc[ticker],
+                            dividend_yield=dividend_yield_value[ticker],
+                            put_option=put_option,
+                        )
                     )
 
         dual_delta_df = helpers.create_greek_dataframe(
@@ -1650,15 +1651,15 @@ class Options:
                 vega[ticker][strike_price] = {}
 
                 for time_to_expiration in time_to_expiration_list:
-                    vega[ticker][strike_price][
-                        time_to_expiration
-                    ] = greeks_model.get_vega(
-                        stock_price=stock_price.loc[ticker],
-                        strike_price=strike_price,
-                        time_to_expiration=time_to_expiration,
-                        risk_free_rate=risk_free_rate,
-                        volatility=volatility.loc[ticker],
-                        dividend_yield=dividend_yield_value[ticker],
+                    vega[ticker][strike_price][time_to_expiration] = (
+                        greeks_model.get_vega(
+                            stock_price=stock_price.loc[ticker],
+                            strike_price=strike_price,
+                            time_to_expiration=time_to_expiration,
+                            risk_free_rate=risk_free_rate,
+                            volatility=volatility.loc[ticker],
+                            dividend_yield=dividend_yield_value[ticker],
+                        )
                     )
 
         vega_df = helpers.create_greek_dataframe(
@@ -1793,16 +1794,16 @@ class Options:
                 theta[ticker][strike_price] = {}
 
                 for time_to_expiration in time_to_expiration_list:
-                    theta[ticker][strike_price][
-                        time_to_expiration
-                    ] = greeks_model.get_theta(
-                        stock_price=stock_price.loc[ticker],
-                        strike_price=strike_price,
-                        time_to_expiration=time_to_expiration,
-                        risk_free_rate=risk_free_rate,
-                        volatility=volatility.loc[ticker],
-                        dividend_yield=dividend_yield_value[ticker],
-                        put_option=put_option,
+                    theta[ticker][strike_price][time_to_expiration] = (
+                        greeks_model.get_theta(
+                            stock_price=stock_price.loc[ticker],
+                            strike_price=strike_price,
+                            time_to_expiration=time_to_expiration,
+                            risk_free_rate=risk_free_rate,
+                            volatility=volatility.loc[ticker],
+                            dividend_yield=dividend_yield_value[ticker],
+                            put_option=put_option,
+                        )
                     )
 
         theta_df = helpers.create_greek_dataframe(
@@ -1938,16 +1939,16 @@ class Options:
                 rho[ticker][strike_price] = {}
 
                 for time_to_expiration in time_to_expiration_list:
-                    rho[ticker][strike_price][
-                        time_to_expiration
-                    ] = greeks_model.get_rho(
-                        stock_price=stock_price.loc[ticker],
-                        strike_price=strike_price,
-                        time_to_expiration=time_to_expiration,
-                        risk_free_rate=risk_free_rate,
-                        volatility=volatility.loc[ticker],
-                        dividend_yield=dividend_yield_value[ticker],
-                        put_option=put_option,
+                    rho[ticker][strike_price][time_to_expiration] = (
+                        greeks_model.get_rho(
+                            stock_price=stock_price.loc[ticker],
+                            strike_price=strike_price,
+                            time_to_expiration=time_to_expiration,
+                            risk_free_rate=risk_free_rate,
+                            volatility=volatility.loc[ticker],
+                            dividend_yield=dividend_yield_value[ticker],
+                            put_option=put_option,
+                        )
                     )
 
         rho_df = helpers.create_greek_dataframe(
@@ -2079,16 +2080,16 @@ class Options:
                 epsilon[ticker][strike_price] = {}
 
                 for time_to_expiration in time_to_expiration_list:
-                    epsilon[ticker][strike_price][
-                        time_to_expiration
-                    ] = greeks_model.get_epsilon(
-                        stock_price=stock_price.loc[ticker],
-                        strike_price=strike_price,
-                        time_to_expiration=time_to_expiration,
-                        risk_free_rate=risk_free_rate,
-                        volatility=volatility.loc[ticker],
-                        dividend_yield=dividend_yield_value[ticker],
-                        put_option=put_option,
+                    epsilon[ticker][strike_price][time_to_expiration] = (
+                        greeks_model.get_epsilon(
+                            stock_price=stock_price.loc[ticker],
+                            strike_price=strike_price,
+                            time_to_expiration=time_to_expiration,
+                            risk_free_rate=risk_free_rate,
+                            volatility=volatility.loc[ticker],
+                            dividend_yield=dividend_yield_value[ticker],
+                            put_option=put_option,
+                        )
                     )
 
         epsilon_df = helpers.create_greek_dataframe(
@@ -2222,16 +2223,16 @@ class Options:
                 lambda_greek[ticker][strike_price] = {}
 
                 for time_to_expiration in time_to_expiration_list:
-                    lambda_greek[ticker][strike_price][
-                        time_to_expiration
-                    ] = greeks_model.get_lambda(
-                        stock_price=stock_price.loc[ticker],
-                        strike_price=strike_price,
-                        time_to_expiration=time_to_expiration,
-                        risk_free_rate=risk_free_rate,
-                        volatility=volatility.loc[ticker],
-                        dividend_yield=dividend_yield_value[ticker],
-                        put_option=put_option,
+                    lambda_greek[ticker][strike_price][time_to_expiration] = (
+                        greeks_model.get_lambda(
+                            stock_price=stock_price.loc[ticker],
+                            strike_price=strike_price,
+                            time_to_expiration=time_to_expiration,
+                            risk_free_rate=risk_free_rate,
+                            volatility=volatility.loc[ticker],
+                            dividend_yield=dividend_yield_value[ticker],
+                            put_option=put_option,
+                        )
                     )
 
         lambda_df = helpers.create_greek_dataframe(
@@ -2526,15 +2527,15 @@ class Options:
                 gamma[ticker][strike_price] = {}
 
                 for time_to_expiration in time_to_expiration_list:
-                    gamma[ticker][strike_price][
-                        time_to_expiration
-                    ] = greeks_model.get_gamma(
-                        stock_price=stock_price.loc[ticker],
-                        strike_price=strike_price,
-                        time_to_expiration=time_to_expiration,
-                        risk_free_rate=risk_free_rate,
-                        volatility=volatility.loc[ticker],
-                        dividend_yield=dividend_yield_value[ticker],
+                    gamma[ticker][strike_price][time_to_expiration] = (
+                        greeks_model.get_gamma(
+                            stock_price=stock_price.loc[ticker],
+                            strike_price=strike_price,
+                            time_to_expiration=time_to_expiration,
+                            risk_free_rate=risk_free_rate,
+                            volatility=volatility.loc[ticker],
+                            dividend_yield=dividend_yield_value[ticker],
+                        )
                     )
 
         gamma_df = helpers.create_greek_dataframe(
@@ -2658,15 +2659,15 @@ class Options:
                 dual_gamma[ticker][strike_price] = {}
 
                 for time_to_expiration in time_to_expiration_list:
-                    dual_gamma[ticker][strike_price][
-                        time_to_expiration
-                    ] = greeks_model.get_dual_gamma(
-                        stock_price=stock_price.loc[ticker],
-                        strike_price=strike_price,
-                        time_to_expiration=time_to_expiration,
-                        risk_free_rate=risk_free_rate,
-                        volatility=volatility.loc[ticker],
-                        dividend_yield=dividend_yield_value[ticker],
+                    dual_gamma[ticker][strike_price][time_to_expiration] = (
+                        greeks_model.get_dual_gamma(
+                            stock_price=stock_price.loc[ticker],
+                            strike_price=strike_price,
+                            time_to_expiration=time_to_expiration,
+                            risk_free_rate=risk_free_rate,
+                            volatility=volatility.loc[ticker],
+                            dividend_yield=dividend_yield_value[ticker],
+                        )
                     )
 
         dual_gamma_df = helpers.create_greek_dataframe(
@@ -2797,15 +2798,15 @@ class Options:
                 vanna[ticker][strike_price] = {}
 
                 for time_to_expiration in time_to_expiration_list:
-                    vanna[ticker][strike_price][
-                        time_to_expiration
-                    ] = greeks_model.get_vanna(
-                        stock_price=stock_price.loc[ticker],
-                        strike_price=strike_price,
-                        time_to_expiration=time_to_expiration,
-                        risk_free_rate=risk_free_rate,
-                        volatility=volatility.loc[ticker],
-                        dividend_yield=dividend_yield_value[ticker],
+                    vanna[ticker][strike_price][time_to_expiration] = (
+                        greeks_model.get_vanna(
+                            stock_price=stock_price.loc[ticker],
+                            strike_price=strike_price,
+                            time_to_expiration=time_to_expiration,
+                            risk_free_rate=risk_free_rate,
+                            volatility=volatility.loc[ticker],
+                            dividend_yield=dividend_yield_value[ticker],
+                        )
                     )
 
         vanna_df = helpers.create_greek_dataframe(
@@ -2938,16 +2939,16 @@ class Options:
                 charm[ticker][strike_price] = {}
 
                 for time_to_expiration in time_to_expiration_list:
-                    charm[ticker][strike_price][
-                        time_to_expiration
-                    ] = greeks_model.get_charm(
-                        stock_price=stock_price.loc[ticker],
-                        strike_price=strike_price,
-                        time_to_expiration=time_to_expiration,
-                        risk_free_rate=risk_free_rate,
-                        volatility=volatility.loc[ticker],
-                        dividend_yield=dividend_yield_value[ticker],
-                        put_option=put_option,
+                    charm[ticker][strike_price][time_to_expiration] = (
+                        greeks_model.get_charm(
+                            stock_price=stock_price.loc[ticker],
+                            strike_price=strike_price,
+                            time_to_expiration=time_to_expiration,
+                            risk_free_rate=risk_free_rate,
+                            volatility=volatility.loc[ticker],
+                            dividend_yield=dividend_yield_value[ticker],
+                            put_option=put_option,
+                        )
                     )
 
         charm_df = helpers.create_greek_dataframe(
@@ -3077,15 +3078,15 @@ class Options:
                 vomma[ticker][strike_price] = {}
 
                 for time_to_expiration in time_to_expiration_list:
-                    vomma[ticker][strike_price][
-                        time_to_expiration
-                    ] = greeks_model.get_vomma(
-                        stock_price=stock_price.loc[ticker],
-                        strike_price=strike_price,
-                        time_to_expiration=time_to_expiration,
-                        risk_free_rate=risk_free_rate,
-                        volatility=volatility.loc[ticker],
-                        dividend_yield=dividend_yield_value[ticker],
+                    vomma[ticker][strike_price][time_to_expiration] = (
+                        greeks_model.get_vomma(
+                            stock_price=stock_price.loc[ticker],
+                            strike_price=strike_price,
+                            time_to_expiration=time_to_expiration,
+                            risk_free_rate=risk_free_rate,
+                            volatility=volatility.loc[ticker],
+                            dividend_yield=dividend_yield_value[ticker],
+                        )
                     )
 
         vomma_df = helpers.create_greek_dataframe(
@@ -3216,15 +3217,15 @@ class Options:
                 vera[ticker][strike_price] = {}
 
                 for time_to_expiration in time_to_expiration_list:
-                    vera[ticker][strike_price][
-                        time_to_expiration
-                    ] = greeks_model.get_vera(
-                        stock_price=stock_price.loc[ticker],
-                        strike_price=strike_price,
-                        time_to_expiration=time_to_expiration,
-                        risk_free_rate=risk_free_rate,
-                        volatility=volatility.loc[ticker],
-                        dividend_yield=dividend_yield_value[ticker],
+                    vera[ticker][strike_price][time_to_expiration] = (
+                        greeks_model.get_vera(
+                            stock_price=stock_price.loc[ticker],
+                            strike_price=strike_price,
+                            time_to_expiration=time_to_expiration,
+                            risk_free_rate=risk_free_rate,
+                            volatility=volatility.loc[ticker],
+                            dividend_yield=dividend_yield_value[ticker],
+                        )
                     )
 
         vera_df = helpers.create_greek_dataframe(
@@ -3356,15 +3357,15 @@ class Options:
                 veta[ticker][strike_price] = {}
 
                 for time_to_expiration in time_to_expiration_list:
-                    veta[ticker][strike_price][
-                        time_to_expiration
-                    ] = greeks_model.get_veta(
-                        stock_price=stock_price.loc[ticker],
-                        strike_price=strike_price,
-                        time_to_expiration=time_to_expiration,
-                        risk_free_rate=risk_free_rate,
-                        volatility=volatility.loc[ticker],
-                        dividend_yield=dividend_yield_value[ticker],
+                    veta[ticker][strike_price][time_to_expiration] = (
+                        greeks_model.get_veta(
+                            stock_price=stock_price.loc[ticker],
+                            strike_price=strike_price,
+                            time_to_expiration=time_to_expiration,
+                            risk_free_rate=risk_free_rate,
+                            volatility=volatility.loc[ticker],
+                            dividend_yield=dividend_yield_value[ticker],
+                        )
                     )
 
         veta_df = helpers.create_greek_dataframe(
@@ -3487,15 +3488,15 @@ class Options:
                 partial_derivative[ticker][strike_price] = {}
 
                 for time_to_expiration in time_to_expiration_list:
-                    partial_derivative[ticker][strike_price][
-                        time_to_expiration
-                    ] = greeks_model.get_second_order_partial_derivative(
-                        stock_price=stock_price.loc[ticker],
-                        strike_price=strike_price,
-                        time_to_expiration=time_to_expiration,
-                        risk_free_rate=risk_free_rate,
-                        volatility=volatility.loc[ticker],
-                        dividend_yield=dividend_yield_value[ticker],
+                    partial_derivative[ticker][strike_price][time_to_expiration] = (
+                        greeks_model.get_second_order_partial_derivative(
+                            stock_price=stock_price.loc[ticker],
+                            strike_price=strike_price,
+                            time_to_expiration=time_to_expiration,
+                            risk_free_rate=risk_free_rate,
+                            volatility=volatility.loc[ticker],
+                            dividend_yield=dividend_yield_value[ticker],
+                        )
                     )
 
         partial_derivative_df = helpers.create_greek_dataframe(
@@ -3738,15 +3739,15 @@ class Options:
                 speed[ticker][strike_price] = {}
 
                 for time_to_expiration in time_to_expiration_list:
-                    speed[ticker][strike_price][
-                        time_to_expiration
-                    ] = greeks_model.get_speed(
-                        stock_price=stock_price.loc[ticker],
-                        strike_price=strike_price,
-                        time_to_expiration=time_to_expiration,
-                        risk_free_rate=risk_free_rate,
-                        volatility=volatility.loc[ticker],
-                        dividend_yield=dividend_yield_value[ticker],
+                    speed[ticker][strike_price][time_to_expiration] = (
+                        greeks_model.get_speed(
+                            stock_price=stock_price.loc[ticker],
+                            strike_price=strike_price,
+                            time_to_expiration=time_to_expiration,
+                            risk_free_rate=risk_free_rate,
+                            volatility=volatility.loc[ticker],
+                            dividend_yield=dividend_yield_value[ticker],
+                        )
                     )
 
         speed_df = helpers.create_greek_dataframe(
@@ -3877,15 +3878,15 @@ class Options:
                 zomma[ticker][strike_price] = {}
 
                 for time_to_expiration in time_to_expiration_list:
-                    zomma[ticker][strike_price][
-                        time_to_expiration
-                    ] = greeks_model.get_zomma(
-                        stock_price=stock_price.loc[ticker],
-                        strike_price=strike_price,
-                        time_to_expiration=time_to_expiration,
-                        risk_free_rate=risk_free_rate,
-                        volatility=volatility.loc[ticker],
-                        dividend_yield=dividend_yield_value[ticker],
+                    zomma[ticker][strike_price][time_to_expiration] = (
+                        greeks_model.get_zomma(
+                            stock_price=stock_price.loc[ticker],
+                            strike_price=strike_price,
+                            time_to_expiration=time_to_expiration,
+                            risk_free_rate=risk_free_rate,
+                            volatility=volatility.loc[ticker],
+                            dividend_yield=dividend_yield_value[ticker],
+                        )
                     )
 
         zomma_df = helpers.create_greek_dataframe(
@@ -4016,15 +4017,15 @@ class Options:
                 color[ticker][strike_price] = {}
 
                 for time_to_expiration in time_to_expiration_list:
-                    color[ticker][strike_price][
-                        time_to_expiration
-                    ] = greeks_model.get_color(
-                        stock_price=stock_price.loc[ticker],
-                        strike_price=strike_price,
-                        time_to_expiration=time_to_expiration,
-                        risk_free_rate=risk_free_rate,
-                        volatility=volatility.loc[ticker],
-                        dividend_yield=dividend_yield_value[ticker],
+                    color[ticker][strike_price][time_to_expiration] = (
+                        greeks_model.get_color(
+                            stock_price=stock_price.loc[ticker],
+                            strike_price=strike_price,
+                            time_to_expiration=time_to_expiration,
+                            risk_free_rate=risk_free_rate,
+                            volatility=volatility.loc[ticker],
+                            dividend_yield=dividend_yield_value[ticker],
+                        )
                     )
 
         color_df = helpers.create_greek_dataframe(
@@ -4155,15 +4156,15 @@ class Options:
                 ultima[ticker][strike_price] = {}
 
                 for time_to_expiration in time_to_expiration_list:
-                    ultima[ticker][strike_price][
-                        time_to_expiration
-                    ] = greeks_model.get_ultima(
-                        stock_price=stock_price.loc[ticker],
-                        strike_price=strike_price,
-                        time_to_expiration=time_to_expiration,
-                        risk_free_rate=risk_free_rate,
-                        volatility=volatility.loc[ticker],
-                        dividend_yield=dividend_yield_value[ticker],
+                    ultima[ticker][strike_price][time_to_expiration] = (
+                        greeks_model.get_ultima(
+                            stock_price=stock_price.loc[ticker],
+                            strike_price=strike_price,
+                            time_to_expiration=time_to_expiration,
+                            risk_free_rate=risk_free_rate,
+                            volatility=volatility.loc[ticker],
+                            dividend_yield=dividend_yield_value[ticker],
+                        )
                     )
 
         ultima_df = helpers.create_greek_dataframe(

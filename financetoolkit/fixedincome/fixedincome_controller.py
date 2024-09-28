@@ -1,4 +1,5 @@
 """Fixed Income Module"""
+
 __docformat__ = "google"
 
 
@@ -546,17 +547,17 @@ class FixedIncome:
         for price in bond_price:
             yield_to_maturities[price] = {}
             for maturity in years_to_maturity:
-                (
-                    yield_to_maturities[price][maturity]
-                ) = bond_model.get_yield_to_maturity(
-                    par_value=par_value,
-                    coupon_rate=coupon_rate,
-                    years_to_maturity=maturity,
-                    bond_price=price,
-                    frequency=frequency,
-                    guess=guess,
-                    tolerance=tolerance,
-                    max_iterations=max_iterations,
+                (yield_to_maturities[price][maturity]) = (
+                    bond_model.get_yield_to_maturity(
+                        par_value=par_value,
+                        coupon_rate=coupon_rate,
+                        years_to_maturity=maturity,
+                        bond_price=price,
+                        frequency=frequency,
+                        guess=guess,
+                        tolerance=tolerance,
+                        max_iterations=max_iterations,
+                    )
                 )
 
         yield_to_maturities_df = pd.DataFrame.from_dict(
@@ -672,9 +673,11 @@ class FixedIncome:
         strike_rate = (
             np.arange(
                 max(
-                    forward_rate - 0.005 * 20
-                    if not is_receiver
-                    else forward_rate - 0.005 * 5,
+                    (
+                        forward_rate - 0.005 * 20
+                        if not is_receiver
+                        else forward_rate - 0.005 * 5
+                    ),
                     0.005,
                 ),
                 forward_rate + 0.005 * 20 if is_receiver else forward_rate + 0.005 * 5,
@@ -837,9 +840,7 @@ class FixedIncome:
         period = (
             period
             if period is not None
-            else "quarterly"
-            if self._quarterly
-            else "yearly"
+            else "quarterly" if self._quarterly else "yearly"
         )
 
         if short_term:

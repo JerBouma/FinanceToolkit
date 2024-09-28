@@ -1,4 +1,5 @@
 """Performance Module"""
+
 __docformat__ = "google"
 
 import warnings
@@ -485,10 +486,10 @@ class Performance:
 
                 with warnings.catch_warnings():
                     warnings.simplefilter("ignore")
-                    factor_correlations[ticker][
-                        dataset_period
-                    ] = performance_model.get_factor_asset_correlations(
-                        factors=factor_data, excess_return=excess_returns
+                    factor_correlations[ticker][dataset_period] = (
+                        performance_model.get_factor_asset_correlations(
+                            factors=factor_data, excess_return=excess_returns
+                        )
                     )
 
         factor_asset_correlations = pd.DataFrame.from_dict(

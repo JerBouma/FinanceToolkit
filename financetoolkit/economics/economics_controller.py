@@ -1,4 +1,5 @@
 """Economics Module"""
+
 __docformat__ = "google"
 
 
@@ -651,9 +652,7 @@ class Economics:
         period = (
             period
             if period is not None
-            else "quarterly"
-            if self._quarterly
-            else "yearly"
+            else "quarterly" if self._quarterly else "yearly"
         )
 
         share_prices = oecd_model.get_share_prices(period=period)
@@ -728,9 +727,7 @@ class Economics:
         period = (
             period
             if period is not None
-            else "quarterly"
-            if self._quarterly
-            else "yearly"
+            else "quarterly" if self._quarterly else "yearly"
         )
 
         long_term_interest_rate = oecd_model.get_long_term_interest_rate(
@@ -809,9 +806,7 @@ class Economics:
         period = (
             period
             if period is not None
-            else "quarterly"
-            if self._quarterly
-            else "yearly"
+            else "quarterly" if self._quarterly else "yearly"
         )
 
         short_term_interest_rate = oecd_model.get_short_term_interest_rate(
@@ -884,9 +879,7 @@ class Economics:
         period = (
             period
             if period is not None
-            else "quarterly"
-            if self._quarterly
-            else "yearly"
+            else "quarterly" if self._quarterly else "yearly"
         )
 
         exchange_rates = oecd_model.get_exchange_rates(period=period)
@@ -1184,9 +1177,7 @@ class Economics:
         period = (
             period
             if period is not None
-            else "quarterly"
-            if self._quarterly
-            else "yearly"
+            else "quarterly" if self._quarterly else "yearly"
         )
 
         unemployment_rate = oecd_model.get_unemployment_rate(period=period)

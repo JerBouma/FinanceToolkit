@@ -8,6 +8,8 @@ import streamlit as st
 
 from financetoolkit import Toolkit
 
+# pylint: disable=R0914,W0212,R1735
+
 
 def plot_data(
     variables: list[str],
@@ -176,11 +178,11 @@ def plot_data(
             freq = (
                 "D"
                 if "MD" in variable
-                else "D"
-                if "TI" in variable
-                else "Q"
-                if finance_toolkit._quarterly
-                else "Y"
+                else (
+                    "D"
+                    if "TI" in variable
+                    else "Q" if finance_toolkit._quarterly else "Y"
+                )
             )
 
             if column_one:

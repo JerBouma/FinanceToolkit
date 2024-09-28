@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "financetoolkit"
-version = "1.9.7"
+version = "1.9.8"
 description = "Transparent and Efficient Financial Analysis"
 license = "MIT"
 authors = ["Jeroen Bouma"]
@@ -46,6 +46,7 @@ python = ">=3.10, <3.13"
 pandas = {version = "^2.2", extras = ["computation", "performance", "plot"]}
 requests = "^2.32.3"
 scikit-learn = "^1.5"
+yfinance = { version = "*", optional = true }
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.3.3"
@@ -64,14 +65,17 @@ ipykernel = "^6.29.5"
 plotly = "^5.22.0"
 streamlit = "^1.36.0"
 
+[tool.poetry.extras]
+yfinance = ["yfinance"]
+
 [build-system]
 requires = ["setuptools<65.5.0", "poetry-core>=1.0.0"]
 build-backend = "poetry.core.masonry.api"
 
 [tool.ruff]
 line-length = 122
-select = ["E", "W", "F", "Q", "W", "S", "UP", "I", "PD", "SIM", "PLC", "PLE", "PLR", "PLW"]
-ignore = ["S105", "S106", "S107", "PLR0913", "PLR0912", "PLR0911", "PLR0915", "PD010", "PD013", "S310", "S301"]
+lint.select = ["E", "W", "F", "Q", "W", "S", "UP", "I", "PD", "SIM", "PLC", "PLE", "PLR", "PLW"]
+lint.ignore = ["S105", "S106", "S107", "PLR0913", "PLR0912", "PLR0911", "PLR0915", "PD010", "PD013", "S310", "S301"]
 exclude = ["conftest.py"]
 
 [tool.pylint]
@@ -89,11 +93,11 @@ disable = [
     "R0917", # too-many-positional-arguments
     ]
 
-[tool.ruff.isort]
+[tool.ruff.lint.isort]
 combine-as-imports = true
 force-wrap-aliases = true
 
-[tool.isort]
+[tool.lint.isort]
 profile = "black"
 line_length = 122
 skip_gitignore = true

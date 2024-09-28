@@ -505,10 +505,8 @@ class Toolkit:
             or self._cash_flow_statement.empty
         ):
             raise ValueError(
-                "The ratios class requires manual addition of balance, income "
-                "and cash flow statements or an API key from FinancialModelPrep "
-                "within the Toolkit class. Get an API key here: "
-                "https://www.jeroenbouma.com/fmp"
+                "The ratios class requires an API key from FinancialModelPrep. "
+                "Get an API key here: https://www.jeroenbouma.com/fmp"
             )
 
         if self._balance_sheet_statement.empty:
@@ -615,10 +613,8 @@ class Toolkit:
             or self._cash_flow_statement.empty
         ):
             raise ValueError(
-                "The models class requires manual addition of balance, income "
-                "and cash flow statements or an API key from FinancialModelPrep "
-                "within the Toolkit class. Get an API key here: "
-                "https://www.jeroenbouma.com/fmp"
+                "The models class requires an API key from FinancialModelPrep. "
+                "Get an API key here: https://www.jeroenbouma.com/fmp"
             )
 
         if self._balance_sheet_statement.empty:
@@ -2459,13 +2455,6 @@ class Toolkit:
             self._daily_risk_free_rate = self._daily_treasury_data.xs(
                 risk_free_rate, level=1, axis=1
             )
-
-            if self._daily_risk_free_rate["Adj Close"].sum() == 0:
-                print(
-                    "No data could be retrieved for the risk free rate which "
-                    "results in calculations requiring an Excess Return to use "
-                    "a Risk Free Rate of 0."
-                )
 
         if period == "daily":
             return self._daily_treasury_data.loc[self._start_date : self._end_date, :]

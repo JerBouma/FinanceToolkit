@@ -1,4 +1,5 @@
 """Breadth Model Tests"""
+
 import pandas as pd
 
 from financetoolkit.technicals import breadth_model

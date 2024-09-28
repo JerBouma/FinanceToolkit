@@ -1,4 +1,5 @@
 """Technicals Module"""
+
 __docformat__ = "google"
 
 
@@ -251,10 +252,10 @@ class Technicals:
             period=period, close_column=close_column
         )
 
-        breadth_indicators[
-            "Accumulation/Distribution Line"
-        ] = self.get_accumulation_distribution_line(
-            period=period, close_column=close_column
+        breadth_indicators["Accumulation/Distribution Line"] = (
+            self.get_accumulation_distribution_line(
+                period=period, close_column=close_column
+            )
         )
 
         breadth_indicators["Chaikin Oscillator"] = self.get_chaikin_oscillator(
@@ -628,16 +629,14 @@ class Technicals:
             index=historical_data.loc[self._start_date : self._end_date].index
         )
         for ticker in historical_data[close_column].columns:
-            accumulation_distribution_line[
-                ticker
-            ] = breadth_model.get_accumulation_distribution_line(
-                historical_data["High"][ticker],
-                historical_data["Low"][ticker],
-                historical_data[close_column][ticker],
-                historical_data["Volume"][ticker],
-            ).loc[
-                self._start_date : self._end_date
-            ]
+            accumulation_distribution_line[ticker] = (
+                breadth_model.get_accumulation_distribution_line(
+                    historical_data["High"][ticker],
+                    historical_data["Low"][ticker],
+                    historical_data[close_column][ticker],
+                    historical_data["Volume"][ticker],
+                ).loc[self._start_date : self._end_date]
+            )
 
         if growth:
             return calculate_growth(
@@ -822,10 +821,10 @@ class Technicals:
         momentum_indicators["Aroon Indicator Up"] = aroon_indicator["Aroon Up"]
         momentum_indicators["Aroon Indicator Down"] = aroon_indicator["Aroon Down"]
 
-        momentum_indicators[
-            "Commodity Channel Index"
-        ] = self.get_commodity_channel_index(
-            period=period, close_column=close_column, window=window
+        momentum_indicators["Commodity Channel Index"] = (
+            self.get_commodity_channel_index(
+                period=period, close_column=close_column, window=window
+            )
         )
 
         momentum_indicators["Relative Vigor Index"] = self.get_relative_vigor_index(
@@ -838,25 +837,25 @@ class Technicals:
         momentum_indicators["Ultimate Oscillator"] = self.get_ultimate_oscillator(
             period=period, close_column=close_column
         )
-        momentum_indicators[
-            "Percentage Price Oscillator"
-        ] = self.get_percentage_price_oscillator(
-            period=period, close_column=close_column
+        momentum_indicators["Percentage Price Oscillator"] = (
+            self.get_percentage_price_oscillator(
+                period=period, close_column=close_column
+            )
         )
-        momentum_indicators[
-            "Detrended Price Oscillator"
-        ] = self.get_detrended_price_oscillator(
-            period=period, close_column=close_column, window=window
+        momentum_indicators["Detrended Price Oscillator"] = (
+            self.get_detrended_price_oscillator(
+                period=period, close_column=close_column, window=window
+            )
         )
-        momentum_indicators[
-            "Average Directional Index"
-        ] = self.get_average_directional_index(
-            period=period, close_column=close_column, window=window
+        momentum_indicators["Average Directional Index"] = (
+            self.get_average_directional_index(
+                period=period, close_column=close_column, window=window
+            )
         )
-        momentum_indicators[
-            "Chande Momentum Oscillator"
-        ] = self.get_chande_momentum_oscillator(
-            period=period, close_column=close_column, window=window
+        momentum_indicators["Chande Momentum Oscillator"] = (
+            self.get_chande_momentum_oscillator(
+                period=period, close_column=close_column, window=window
+            )
         )
 
         ichimoku_cloud = self.get_ichimoku_cloud(period=period)
@@ -886,10 +885,10 @@ class Technicals:
         momentum_indicators["MACD Line"] = macd["MACD Line"]
         momentum_indicators["MACD Signal Line"] = macd["Signal Line"]
 
-        momentum_indicators[
-            "Relative Strength Index"
-        ] = self.get_relative_strength_index(
-            period=period, close_column=close_column, window=window
+        momentum_indicators["Relative Strength Index"] = (
+            self.get_relative_strength_index(
+                period=period, close_column=close_column, window=window
+            )
         )
         momentum_indicators["Balance of Power"] = self.get_balance_of_power(
             period=period, close_column=close_column
@@ -1282,17 +1281,15 @@ class Technicals:
         )
 
         for ticker in historical_data[close_column].columns:
-            commodity_channel_index[
-                ticker
-            ] = momentum_model.get_commodity_channel_index(
-                historical_data["High"][ticker],
-                historical_data["Low"][ticker],
-                historical_data[close_column][ticker],
-                window,
-                constant,
-            ).loc[
-                self._start_date : self._end_date
-            ]
+            commodity_channel_index[ticker] = (
+                momentum_model.get_commodity_channel_index(
+                    historical_data["High"][ticker],
+                    historical_data["Low"][ticker],
+                    historical_data[close_column][ticker],
+                    window,
+                    constant,
+                ).loc[self._start_date : self._end_date]
+            )
 
         if growth:
             return calculate_growth(
@@ -1847,16 +1844,14 @@ class Technicals:
             index=historical_data.loc[self._start_date : self._end_date].index
         )
         for ticker in historical_data[close_column].columns:
-            average_directional_index[
-                ticker
-            ] = momentum_model.get_average_directional_index(
-                historical_data["High"][ticker],
-                historical_data["Low"][ticker],
-                historical_data[close_column][ticker],
-                window,
-            ).loc[
-                self._start_date : self._end_date
-            ]
+            average_directional_index[ticker] = (
+                momentum_model.get_average_directional_index(
+                    historical_data["High"][ticker],
+                    historical_data["Low"][ticker],
+                    historical_data[close_column][ticker],
+                    window,
+                ).loc[self._start_date : self._end_date]
+            )
 
         if growth:
             adx_growth = calculate_growth(
@@ -2151,17 +2146,15 @@ class Technicals:
         stochastic_oscillator_dict = {}
 
         for ticker in historical_data[close_column].columns:
-            stochastic_oscillator_dict[
-                ticker
-            ] = momentum_model.get_stochastic_oscillator(
-                historical_data["High"][ticker],
-                historical_data["Low"][ticker],
-                historical_data[close_column][ticker],
-                window,
-                smooth_widow,
-            ).loc[
-                self._start_date : self._end_date
-            ]
+            stochastic_oscillator_dict[ticker] = (
+                momentum_model.get_stochastic_oscillator(
+                    historical_data["High"][ticker],
+                    historical_data["Low"][ticker],
+                    historical_data[close_column][ticker],
+                    window,
+                    smooth_widow,
+                ).loc[self._start_date : self._end_date]
+            )
 
         stochastic_oscillator = (
             pd.concat(stochastic_oscillator_dict, axis=1)
@@ -2266,16 +2259,14 @@ class Technicals:
         macd_dict = {}
 
         for ticker in historical_data[close_column].columns:
-            macd_dict[
-                ticker
-            ] = momentum_model.get_moving_average_convergence_divergence(
-                historical_data[close_column][ticker],
-                short_window,
-                long_window,
-                signal_window,
-            ).loc[
-                self._start_date : self._end_date
-            ]
+            macd_dict[ticker] = (
+                momentum_model.get_moving_average_convergence_divergence(
+                    historical_data[close_column][ticker],
+                    short_window,
+                    long_window,
+                    signal_window,
+                ).loc[self._start_date : self._end_date]
+            )
 
         macd = pd.concat(macd_dict, axis=1).swaplevel(1, 0, axis=1).sort_index(axis=1)
 
@@ -2533,26 +2524,26 @@ class Technicals:
             period=period, close_column=close_column, window=window
         )
 
-        overlap_indicators[
-            "Exponential Moving Average (EMA)"
-        ] = self.get_exponential_moving_average(
-            period=period, close_column=close_column, window=window
+        overlap_indicators["Exponential Moving Average (EMA)"] = (
+            self.get_exponential_moving_average(
+                period=period, close_column=close_column, window=window
+            )
         )
 
-        overlap_indicators[
-            "Double Exponential Moving Average (DEMA)"
-        ] = self.get_double_exponential_moving_average(
-            period=period, close_column=close_column, window=window
+        overlap_indicators["Double Exponential Moving Average (DEMA)"] = (
+            self.get_double_exponential_moving_average(
+                period=period, close_column=close_column, window=window
+            )
         )
 
         overlap_indicators["TRIX"] = self.get_trix(
             period=period, close_column=close_column, window=window
         )
 
-        overlap_indicators[
-            "Triangular Moving Average"
-        ] = self.get_triangular_moving_average(
-            period=period, close_column=close_column, window=window
+        overlap_indicators["Triangular Moving Average"] = (
+            self.get_triangular_moving_average(
+                period=period, close_column=close_column, window=window
+            )
         )
 
         self._overlap_indicators = pd.concat(overlap_indicators, axis=1)
@@ -3220,12 +3211,12 @@ class Technicals:
         support_resistance_levels = {}
 
         for ticker in historical_data[close_column].columns:
-            support_resistance_levels[
-                ticker
-            ] = overlap_model.get_support_resistance_levels(
-                prices=historical_data[close_column][ticker],
-                window=window,
-                sensitivity=sensitivity,
+            support_resistance_levels[ticker] = (
+                overlap_model.get_support_resistance_levels(
+                    prices=historical_data[close_column][ticker],
+                    window=window,
+                    sensitivity=sensitivity,
+                )
             )
 
         support_resistance_levels_df = (

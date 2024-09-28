@@ -1,4 +1,5 @@
 """Weighted Average Cost of Capital Module"""
+
 __docformat__ = "google"
 
 import numpy as np

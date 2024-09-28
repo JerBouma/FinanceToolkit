@@ -1,4 +1,5 @@
 """Bond Model Module"""
+
 import numpy as np
 
 

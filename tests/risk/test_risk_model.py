@@ -1,4 +1,5 @@
 """Risk Model Tests"""
+
 import pandas as pd
 
 from financetoolkit.risk import risk_model

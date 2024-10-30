@@ -1,4 +1,5 @@
 """Models Module"""
+
 __docformat__ = "google"
 
 import pandas as pd
@@ -683,15 +684,17 @@ class Models:
                 cash_flow=self._cash_flow_statement.loc[ticker, cash_flow_type]
                 .dropna()
                 .iloc[-1],
-                growth_rate=growth_rate_dict[ticker]
-                if growth_rate_dict
-                else growth_rate,
-                perpetual_growth_rate=perpetual_growth_rate_dict[ticker]
-                if perpetual_growth_rate_dict
-                else perpetual_growth_rate,
-                weighted_average_cost_of_capital=wacc_dict[ticker]
-                if wacc_dict
-                else weighted_average_cost_of_capital,
+                growth_rate=(
+                    growth_rate_dict[ticker] if growth_rate_dict else growth_rate
+                ),
+                perpetual_growth_rate=(
+                    perpetual_growth_rate_dict[ticker]
+                    if perpetual_growth_rate_dict
+                    else perpetual_growth_rate
+                ),
+                weighted_average_cost_of_capital=(
+                    wacc_dict[ticker] if wacc_dict else weighted_average_cost_of_capital
+                ),
                 cash_and_cash_equivalents=self._balance_sheet_statement.loc[
                     ticker, "Cash and Cash Equivalents"
                 ]
@@ -803,12 +806,12 @@ class Models:
                     * (1 + growth_rate) ** distance
                 )
 
-                gorden_growth_model[ticker][
-                    period
-                ] = intrinsic_model.get_gorden_growth_model(
-                    dividends_per_share=dividends_per_share_value,
-                    rate_of_return=rate_of_return,
-                    growth_rate=growth_rate,
+                gorden_growth_model[ticker][period] = (
+                    intrinsic_model.get_gorden_growth_model(
+                        dividends_per_share=dividends_per_share_value,
+                        rate_of_return=rate_of_return,
+                        growth_rate=growth_rate,
+                    )
                 )
 
         gorden_growth_model_df = pd.DataFrame(gorden_growth_model)
@@ -885,31 +888,31 @@ class Models:
             self._balance_sheet_statement.loc[:, "Total Current Liabilities", :],
         )
 
-        altman_z_score[
-            "Working Capital to Total Assets"
-        ] = altman_model.get_working_capital_to_total_assets_ratio(
-            working_capital=working_capital,
-            total_assets=self._balance_sheet_statement.loc[:, "Total Assets", :],
+        altman_z_score["Working Capital to Total Assets"] = (
+            altman_model.get_working_capital_to_total_assets_ratio(
+                working_capital=working_capital,
+                total_assets=self._balance_sheet_statement.loc[:, "Total Assets", :],
+            )
         )
 
-        altman_z_score[
-            "Retained Earnings to Total Assets"
-        ] = altman_model.get_retained_earnings_to_total_assets_ratio(
-            retained_earnings=self._balance_sheet_statement.loc[
-                :, "Retained Earnings", :
-            ],
-            total_assets=self._balance_sheet_statement.loc[:, "Total Assets", :],
+        altman_z_score["Retained Earnings to Total Assets"] = (
+            altman_model.get_retained_earnings_to_total_assets_ratio(
+                retained_earnings=self._balance_sheet_statement.loc[
+                    :, "Retained Earnings", :
+                ],
+                total_assets=self._balance_sheet_statement.loc[:, "Total Assets", :],
+            )
         )
 
-        altman_z_score[
-            "EBIT to Total Assets"
-        ] = altman_model.get_earnings_before_interest_and_taxes_to_total_assets_ratio(
-            ebit=(
-                self._income_statement.loc[:, "Net Income", :]
-                + self._income_statement.loc[:, "Income Tax Expense", :]
-                + self._income_statement.loc[:, "Interest Expense", :]
-            ),
-            total_assets=self._balance_sheet_statement.loc[:, "Total Assets", :],
+        altman_z_score["EBIT to Total Assets"] = (
+            altman_model.get_earnings_before_interest_and_taxes_to_total_assets_ratio(
+                ebit=(
+                    self._income_statement.loc[:, "Net Income", :]
+                    + self._income_statement.loc[:, "Income Tax Expense", :]
+                    + self._income_statement.loc[:, "Interest Expense", :]
+                ),
+                total_assets=self._balance_sheet_statement.loc[:, "Total Assets", :],
+            )
         )
 
         years = self._balance_sheet_statement.columns
@@ -931,20 +934,20 @@ class Models:
             share_price=share_prices, total_shares_outstanding=average_shares
         )
 
-        altman_z_score[
-            "Market Value to Total Liabilities"
-        ] = altman_model.get_market_value_of_equity_to_book_value_of_total_liabilities_ratio(
-            market_value_of_equity=market_cap,
-            total_liabilities=self._balance_sheet_statement.loc[
-                :, "Total Liabilities", :
-            ],
+        altman_z_score["Market Value to Total Liabilities"] = (
+            altman_model.get_market_value_of_equity_to_book_value_of_total_liabilities_ratio(
+                market_value_of_equity=market_cap,
+                total_liabilities=self._balance_sheet_statement.loc[
+                    :, "Total Liabilities", :
+                ],
+            )
         )
 
-        altman_z_score[
-            "Sales to Total Assets"
-        ] = altman_model.get_sales_to_total_assets_ratio(
-            sales=self._income_statement.loc[:, "Revenue", :],
-            total_assets=self._balance_sheet_statement.loc[:, "Total Assets", :],
+        altman_z_score["Sales to Total Assets"] = (
+            altman_model.get_sales_to_total_assets_ratio(
+                sales=self._income_statement.loc[:, "Revenue", :],
+                total_assets=self._balance_sheet_statement.loc[:, "Total Assets", :],
+            )
         )
 
         altman_z_score["Altman Z-Score"] = altman_model.get_altman_z_score(
@@ -1032,32 +1035,36 @@ class Models:
         """
         piotroski_score = {}
 
-        piotroski_score[
-            "Return on Assets Criteria"
-        ] = piotroski_model.get_return_on_assets_criteria(
-            net_income=self._income_statement.loc[:, "Net Income", :],
-            total_assets_begin=self._balance_sheet_statement.loc[
-                :, "Total Assets", :
-            ].shift(axis=1),
-            total_assets_end=self._balance_sheet_statement.loc[:, "Total Assets", :],
+        piotroski_score["Return on Assets Criteria"] = (
+            piotroski_model.get_return_on_assets_criteria(
+                net_income=self._income_statement.loc[:, "Net Income", :],
+                total_assets_begin=self._balance_sheet_statement.loc[
+                    :, "Total Assets", :
+                ].shift(axis=1),
+                total_assets_end=self._balance_sheet_statement.loc[
+                    :, "Total Assets", :
+                ],
+            )
         )
 
-        piotroski_score[
-            "Operating Cashflow Criteria"
-        ] = piotroski_model.get_operating_cashflow_criteria(
-            operating_cashflow=self._cash_flow_statement.loc[
-                :, "Operating Cash Flow", :
-            ],
+        piotroski_score["Operating Cashflow Criteria"] = (
+            piotroski_model.get_operating_cashflow_criteria(
+                operating_cashflow=self._cash_flow_statement.loc[
+                    :, "Operating Cash Flow", :
+                ],
+            )
         )
 
-        piotroski_score[
-            "Change in Return on Assets Criteria"
-        ] = piotroski_model.get_change_in_return_on_asset_criteria(
-            net_income=self._income_statement.loc[:, "Net Income", :],
-            total_assets_begin=self._balance_sheet_statement.loc[
-                :, "Total Assets", :
-            ].shift(axis=1),
-            total_assets_end=self._balance_sheet_statement.loc[:, "Total Assets", :],
+        piotroski_score["Change in Return on Assets Criteria"] = (
+            piotroski_model.get_change_in_return_on_asset_criteria(
+                net_income=self._income_statement.loc[:, "Net Income", :],
+                total_assets_begin=self._balance_sheet_statement.loc[
+                    :, "Total Assets", :
+                ].shift(axis=1),
+                total_assets_end=self._balance_sheet_statement.loc[
+                    :, "Total Assets", :
+                ],
+            )
         )
 
         piotroski_score["Accruals Criteria"] = piotroski_model.get_accruals_criteria(
@@ -1072,47 +1079,51 @@ class Models:
             total_assets=self._balance_sheet_statement.loc[:, "Total Assets", :],
         )
 
-        piotroski_score[
-            "Change in Leverage Criteria"
-        ] = piotroski_model.get_change_in_leverage_criteria(
-            total_debt=self._balance_sheet_statement.loc[:, "Total Debt", :],
-            total_assets=self._balance_sheet_statement.loc[:, "Total Assets", :],
+        piotroski_score["Change in Leverage Criteria"] = (
+            piotroski_model.get_change_in_leverage_criteria(
+                total_debt=self._balance_sheet_statement.loc[:, "Total Debt", :],
+                total_assets=self._balance_sheet_statement.loc[:, "Total Assets", :],
+            )
         )
 
-        piotroski_score[
-            "Change in Current Ratio Criteria"
-        ] = piotroski_model.get_change_in_current_ratio_criteria(
-            current_assets=self._balance_sheet_statement.loc[
-                :, "Total Current Assets", :
-            ],
-            current_liabilities=self._balance_sheet_statement.loc[
-                :, "Total Current Liabilities", :
-            ],
+        piotroski_score["Change in Current Ratio Criteria"] = (
+            piotroski_model.get_change_in_current_ratio_criteria(
+                current_assets=self._balance_sheet_statement.loc[
+                    :, "Total Current Assets", :
+                ],
+                current_liabilities=self._balance_sheet_statement.loc[
+                    :, "Total Current Liabilities", :
+                ],
+            )
         )
 
-        piotroski_score[
-            "Number of Shares Criteria"
-        ] = piotroski_model.get_number_of_shares_criteria(
-            common_stock_issued=self._cash_flow_statement.loc[
-                :, "Common Stock Issued", :
-            ],
+        piotroski_score["Number of Shares Criteria"] = (
+            piotroski_model.get_number_of_shares_criteria(
+                common_stock_issued=self._cash_flow_statement.loc[
+                    :, "Common Stock Issued", :
+                ],
+            )
         )
 
-        piotroski_score[
-            "Gross Margin Criteria"
-        ] = piotroski_model.get_gross_margin_criteria(
-            revenue=self._income_statement.loc[:, "Revenue", :],
-            cost_of_goods_sold=self._income_statement.loc[:, "Cost of Goods Sold", :],
+        piotroski_score["Gross Margin Criteria"] = (
+            piotroski_model.get_gross_margin_criteria(
+                revenue=self._income_statement.loc[:, "Revenue", :],
+                cost_of_goods_sold=self._income_statement.loc[
+                    :, "Cost of Goods Sold", :
+                ],
+            )
         )
 
-        piotroski_score[
-            "Asset Turnover Criteria"
-        ] = piotroski_model.get_asset_turnover_ratio_criteria(
-            sales=self._income_statement.loc[:, "Revenue", :],
-            total_assets_begin=self._balance_sheet_statement.loc[
-                :, "Total Assets", :
-            ].shift(axis=1),
-            total_assets_end=self._balance_sheet_statement.loc[:, "Total Assets", :],
+        piotroski_score["Asset Turnover Criteria"] = (
+            piotroski_model.get_asset_turnover_ratio_criteria(
+                sales=self._income_statement.loc[:, "Revenue", :],
+                total_assets_begin=self._balance_sheet_statement.loc[
+                    :, "Total Assets", :
+                ].shift(axis=1),
+                total_assets_end=self._balance_sheet_statement.loc[
+                    :, "Total Assets", :
+                ],
+            )
         )
 
         piotroski_score["Piotroski Score"] = piotroski_model.get_piotroski_score(

@@ -1,4 +1,5 @@
 """Momentum Model Tests"""
+
 import pandas as pd
 
 from financetoolkit.technicals import momentum_model

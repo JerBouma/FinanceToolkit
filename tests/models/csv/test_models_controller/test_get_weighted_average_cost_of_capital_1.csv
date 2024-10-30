@@ -1,13 +1,13 @@
 ,,2020,2021,2022,2023
 AAPL,Market Value Equity,,0.3,-0.29,0.0
 AAPL,Market Value Debt,,0.11,-0.04,-0.16
-AAPL,Cost of Equity,,inf,-1.62,-427614226073.07
+AAPL,Cost of Equity,,-261.18,-1.66,-407414129117.82
 AAPL,Cost of Debt,,-0.17,0.15,-1.0
 AAPL,Corporate Tax Rate,,-0.08,0.22,-0.09
-AAPL,Weighted Average Cost of Capital,,356.37,-1.61,-1.66
+AAPL,Weighted Average Cost of Capital,,-1026.52,-1.65,-1.63
 MSFT,Market Value Equity,,0.51,-0.29,-1.0
 MSFT,Market Value Debt,,-0.05,-0.1,-0.02
-MSFT,Cost of Equity,,inf,-1.7,-257890246384.27
+MSFT,Cost of Equity,,-243.23,-1.73,-246418250303.84
 MSFT,Cost of Debt,,-0.05,-0.03,-0.03
 MSFT,Corporate Tax Rate,,-0.16,-0.05,0.45
-MSFT,Weighted Average Cost of Capital,,260.65,-1.69,-1.85
+MSFT,Weighted Average Cost of Capital,,-4843.05,-1.73,-1.81

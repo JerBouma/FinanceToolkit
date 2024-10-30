@@ -1,4 +1,5 @@
 """Risk Helpers Module"""
+
 __docformat__ = "google"
 
 import pandas as pd
@@ -62,9 +63,11 @@ def determine_within_historical_data(
         else:
             within_historical_data[period] = daily_historical_data.groupby(
                 pd.Grouper(
-                    freq=f"{period_symbol}E"
-                    if period_symbol in ["M", "Q", "Y"]
-                    else period_symbol
+                    freq=(
+                        f"{period_symbol}E"
+                        if period_symbol in ["M", "Q", "Y"]
+                        else period_symbol
+                    )
                 )
             ).apply(lambda x: x)
 

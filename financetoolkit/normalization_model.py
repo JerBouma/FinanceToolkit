@@ -1,4 +1,5 @@
 """Normalization Module"""
+
 __docformat__ = "google"
 
 import shutil

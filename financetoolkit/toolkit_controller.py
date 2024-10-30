@@ -1,4 +1,5 @@
 """Toolkit Module"""
+
 __docformat__ = "google"
 
 
@@ -504,10 +505,8 @@ class Toolkit:
             or self._cash_flow_statement.empty
         ):
             raise ValueError(
-                "The ratios class requires manual addition of balance, income "
-                "and cash flow statements or an API key from FinancialModelPrep "
-                "within the Toolkit class. Get an API key here: "
-                "https://www.jeroenbouma.com/fmp"
+                "The ratios class requires an API key from FinancialModelPrep. "
+                "Get an API key here: https://www.jeroenbouma.com/fmp"
             )
 
         if self._balance_sheet_statement.empty:
@@ -562,9 +561,11 @@ class Toolkit:
 
         return Ratios(
             tickers=tickers,
-            historical=self._quarterly_historical_data
-            if self._quarterly
-            else self._yearly_historical_data,
+            historical=(
+                self._quarterly_historical_data
+                if self._quarterly
+                else self._yearly_historical_data
+            ),
             balance=self._balance_sheet_statement,
             income=self._income_statement,
             cash=self._cash_flow_statement,
@@ -612,10 +613,8 @@ class Toolkit:
             or self._cash_flow_statement.empty
         ):
             raise ValueError(
-                "The models class requires manual addition of balance, income "
-                "and cash flow statements or an API key from FinancialModelPrep "
-                "within the Toolkit class. Get an API key here: "
-                "https://www.jeroenbouma.com/fmp"
+                "The models class requires an API key from FinancialModelPrep. "
+                "Get an API key here: https://www.jeroenbouma.com/fmp"
             )
 
         if self._balance_sheet_statement.empty:
@@ -1173,9 +1172,9 @@ class Toolkit:
             self._profile, self._invalid_tickers = _get_profile(
                 tickers=self._tickers,
                 api_key=self._api_key,
-                progress_bar=progress_bar
-                if progress_bar is not None
-                else self._progress_bar,
+                progress_bar=(
+                    progress_bar if progress_bar is not None else self._progress_bar
+                ),
             )
 
         if self._remove_invalid_tickers:
@@ -1250,9 +1249,9 @@ class Toolkit:
             self._quote, self._invalid_tickers = _get_quote(
                 tickers=self._tickers,
                 api_key=self._api_key,
-                progress_bar=progress_bar
-                if progress_bar is not None
-                else self._progress_bar,
+                progress_bar=(
+                    progress_bar if progress_bar is not None else self._progress_bar
+                ),
             )
 
         if self._remove_invalid_tickers:
@@ -1323,9 +1322,9 @@ class Toolkit:
             self._rating, self._invalid_tickers = _get_rating(
                 tickers=self._tickers,
                 api_key=self._api_key,
-                progress_bar=progress_bar
-                if progress_bar is not None
-                else self._progress_bar,
+                progress_bar=(
+                    progress_bar if progress_bar is not None else self._progress_bar
+                ),
             )
 
         if self._remove_invalid_tickers:
@@ -1419,9 +1418,9 @@ class Toolkit:
                 start_date=self._start_date,
                 rounding=rounding if rounding else self._rounding,
                 sleep_timer=self._sleep_timer,
-                progress_bar=progress_bar
-                if progress_bar is not None
-                else self._progress_bar,
+                progress_bar=(
+                    progress_bar if progress_bar is not None else self._progress_bar
+                ),
             )
 
         if self._remove_invalid_tickers:
@@ -1513,9 +1512,9 @@ class Toolkit:
                 end_date=self._end_date,
                 actual_dates=actual_dates,
                 sleep_timer=self._sleep_timer,
-                progress_bar=progress_bar
-                if progress_bar is not None
-                else self._progress_bar,
+                progress_bar=(
+                    progress_bar if progress_bar is not None else self._progress_bar
+                ),
             )
 
         earnings_calendar = self._earnings_calendar.round(
@@ -1594,9 +1593,9 @@ class Toolkit:
                 start_date=self._start_date,
                 end_date=self._end_date,
                 sleep_timer=self._sleep_timer,
-                progress_bar=progress_bar
-                if progress_bar is not None
-                else self._progress_bar,
+                progress_bar=(
+                    progress_bar if progress_bar is not None else self._progress_bar
+                ),
             )
 
         if self._remove_invalid_tickers:
@@ -1675,9 +1674,9 @@ class Toolkit:
                 start_date=self._start_date,
                 end_date=self._end_date,
                 sleep_timer=self._sleep_timer,
-                progress_bar=progress_bar
-                if progress_bar is not None
-                else self._progress_bar,
+                progress_bar=(
+                    progress_bar if progress_bar is not None else self._progress_bar
+                ),
             )
 
         if self._remove_invalid_tickers:
@@ -1791,9 +1790,11 @@ class Toolkit:
 
         if self._daily_historical_data.empty or overwrite:
             self._daily_historical_data, self._invalid_tickers = _get_historical_data(
-                tickers=self._tickers + [self._benchmark_ticker]
-                if self._benchmark_ticker
-                else self._tickers,
+                tickers=(
+                    self._tickers + [self._benchmark_ticker]
+                    if self._benchmark_ticker
+                    else self._tickers
+                ),
                 api_key=self._api_key,
                 source=self._historical_source,
                 start=self._start_date,
@@ -1802,9 +1803,9 @@ class Toolkit:
                 return_column=return_column,
                 risk_free_rate=self._daily_risk_free_rate,
                 include_dividends=include_dividends,
-                progress_bar=progress_bar
-                if progress_bar is not None
-                else self._progress_bar,
+                progress_bar=(
+                    progress_bar if progress_bar is not None else self._progress_bar
+                ),
                 fill_nan=fill_nan,
                 rounding=rounding if rounding else self._rounding,
                 sleep_timer=self._sleep_timer,
@@ -2032,9 +2033,11 @@ class Toolkit:
                 self._intraday_historical_data,
                 self._invalid_tickers,
             ) = _get_historical_data(
-                tickers=self._tickers + [self._benchmark_ticker]
-                if self._benchmark_ticker
-                else self._tickers,
+                tickers=(
+                    self._tickers + [self._benchmark_ticker]
+                    if self._benchmark_ticker
+                    else self._tickers
+                ),
                 api_key=self._api_key,
                 source=self._historical_source,
                 start=self._start_date,
@@ -2043,9 +2046,9 @@ class Toolkit:
                 return_column=return_column,
                 risk_free_rate=pd.DataFrame(),
                 include_dividends=False,
-                progress_bar=progress_bar
-                if progress_bar is not None
-                else self._progress_bar,
+                progress_bar=(
+                    progress_bar if progress_bar is not None else self._progress_bar
+                ),
                 fill_nan=fill_nan,
                 rounding=rounding if rounding else self._rounding,
                 sleep_timer=self._sleep_timer,
@@ -2147,9 +2150,9 @@ class Toolkit:
                 start_date=self._start_date,
                 end_date=self._end_date,
                 sleep_timer=self._sleep_timer,
-                progress_bar=progress_bar
-                if progress_bar is not None
-                else self._progress_bar,
+                progress_bar=(
+                    progress_bar if progress_bar is not None else self._progress_bar
+                ),
             )
 
         dividend_calendar = self._dividend_calendar.round(
@@ -2255,9 +2258,9 @@ class Toolkit:
                 start_date=self._start_date,
                 end_date=self._end_date,
                 sleep_timer=self._sleep_timer,
-                progress_bar=progress_bar
-                if progress_bar is not None
-                else self._progress_bar,
+                progress_bar=(
+                    progress_bar if progress_bar is not None else self._progress_bar
+                ),
             )
 
         esg_scores = self._esg_scores.round(rounding if rounding else self._rounding)
@@ -2325,9 +2328,9 @@ class Toolkit:
             self._historical_statistics, _ = _get_historical_statistics(
                 tickers=self._tickers,
                 api_key=self._api_key if self._api_key is not None else None,
-                progress_bar=progress_bar
-                if progress_bar is not None
-                else self._progress_bar,
+                progress_bar=(
+                    progress_bar if progress_bar is not None else self._progress_bar
+                ),
             )
 
         if len(self._tickers) == 1 and not self._historical_statistics.empty:
@@ -2414,12 +2417,15 @@ class Toolkit:
 
         risk_free_rate = risk_free_names[self._risk_free_rate]
 
-        if not self._daily_treasury_data.empty:
-            specific_rates = [
+        specific_rates = (
+            [
                 treasury_names[ticker]
                 in self._daily_treasury_data.columns.get_level_values(1)
                 for ticker in risk_free_rate_tickers
             ]
+            if not self._daily_treasury_data.empty
+            else []
+        )
 
         if self._daily_treasury_data.empty or False in specific_rates:
             # It collects data in the scenarios where the treasury data is empty or only contains one column which generally
@@ -2449,13 +2455,6 @@ class Toolkit:
             self._daily_risk_free_rate = self._daily_treasury_data.xs(
                 risk_free_rate, level=1, axis=1
             )
-
-            if self._daily_risk_free_rate["Adj Close"].sum() == 0:
-                print(
-                    "No data could be retrieved for the risk free rate which "
-                    "results in calculations requiring an Excess Return to use "
-                    "a Risk Free Rate of 0."
-                )
 
         if period == "daily":
             return self._daily_treasury_data.loc[self._start_date : self._end_date, :]
@@ -2599,15 +2598,15 @@ class Toolkit:
         if not self._currencies or overwrite:
             if self._historical_statistics.empty:
                 self.get_historical_statistics(
-                    progress_bar=progress_bar
-                    if progress_bar is not None
-                    else self._progress_bar
+                    progress_bar=(
+                        progress_bar if progress_bar is not None else self._progress_bar
+                    )
                 )
             if self._statistics_statement.empty:
                 self.get_statistics_statement(
-                    progress_bar=progress_bar
-                    if progress_bar is not None
-                    else self._progress_bar
+                    progress_bar=(
+                        progress_bar if progress_bar is not None else self._progress_bar
+                    )
                 )
 
             if not self._statistics_statement.empty:
@@ -2642,9 +2641,9 @@ class Toolkit:
                     return_column=return_column,
                     risk_free_rate=pd.DataFrame(),
                     include_dividends=False,
-                    progress_bar=progress_bar
-                    if progress_bar is not None
-                    else self._progress_bar,
+                    progress_bar=(
+                        progress_bar if progress_bar is not None else self._progress_bar
+                    ),
                     fill_nan=fill_nan,
                     rounding=rounding if rounding else self._rounding,
                     sleep_timer=self._sleep_timer,
@@ -2898,9 +2897,9 @@ class Toolkit:
                 statement_format=self._balance_sheet_statement_generic,
                 statistics_format=self._statistics_statement_generic,
                 sleep_timer=self._sleep_timer,
-                progress_bar=progress_bar
-                if progress_bar is not None
-                else self._progress_bar,
+                progress_bar=(
+                    progress_bar if progress_bar is not None else self._progress_bar
+                ),
             )
 
         if self._remove_invalid_tickers:
@@ -2928,17 +2927,19 @@ class Toolkit:
         if convert_currency:
             self.get_exchange_rates(
                 period="quarterly" if self._quarterly else "yearly",
-                progress_bar=progress_bar
-                if progress_bar is not None
-                else self._progress_bar,
+                progress_bar=(
+                    progress_bar if progress_bar is not None else self._progress_bar
+                ),
             )
 
             balance_sheet_statement = helpers.convert_currencies(
                 financial_statement_data=balance_sheet_statement,
                 financial_statement_currencies=self._statement_currencies,
-                exchange_rate_data=self._quarterly_exchange_rate_data["Adj Close"]
-                if self._quarterly
-                else self._yearly_exchange_rate_data["Adj Close"],
+                exchange_rate_data=(
+                    self._quarterly_exchange_rate_data["Adj Close"]
+                    if self._quarterly
+                    else self._yearly_exchange_rate_data["Adj Close"]
+                ),
                 financial_statement_name="balance sheet statement",
             )
 
@@ -3057,9 +3058,9 @@ class Toolkit:
                 statement_format=self._income_statement_generic,
                 statistics_format=self._statistics_statement_generic,
                 sleep_timer=self._sleep_timer,
-                progress_bar=progress_bar
-                if progress_bar is not None
-                else self._progress_bar,
+                progress_bar=(
+                    progress_bar if progress_bar is not None else self._progress_bar
+                ),
             )
 
         if self._remove_invalid_tickers:
@@ -3083,9 +3084,9 @@ class Toolkit:
 
             # The Weighted Average Shares and Weighted Average Shares Diluted should
             # not be summed up but rather kept equal to the current value.
-            income_statement.loc[
-                weighted_average_shares.index
-            ] = weighted_average_shares
+            income_statement.loc[weighted_average_shares.index] = (
+                weighted_average_shares
+            )
 
         if growth:
             self._income_statement_growth = _calculate_growth(
@@ -3098,17 +3099,19 @@ class Toolkit:
         if convert_currency:
             self.get_exchange_rates(
                 period="quarterly" if self._quarterly else "yearly",
-                progress_bar=progress_bar
-                if progress_bar is not None
-                else self._progress_bar,
+                progress_bar=(
+                    progress_bar if progress_bar is not None else self._progress_bar
+                ),
             )
 
             income_statement = helpers.convert_currencies(
                 financial_statement_data=income_statement,
                 financial_statement_currencies=self._statement_currencies,
-                exchange_rate_data=self._quarterly_exchange_rate_data["Adj Close"]
-                if self._quarterly
-                else self._yearly_exchange_rate_data["Adj Close"],
+                exchange_rate_data=(
+                    self._quarterly_exchange_rate_data["Adj Close"]
+                    if self._quarterly
+                    else self._yearly_exchange_rate_data["Adj Close"]
+                ),
                 items_not_to_adjust=[
                     "Gross Profit Ratio",
                     "EBITDA Ratio",
@@ -3238,9 +3241,9 @@ class Toolkit:
                 statement_format=self._cash_flow_statement_generic,
                 statistics_format=self._statistics_statement_generic,
                 sleep_timer=self._sleep_timer,
-                progress_bar=progress_bar
-                if progress_bar is not None
-                else self._progress_bar,
+                progress_bar=(
+                    progress_bar if progress_bar is not None else self._progress_bar
+                ),
             )
 
         if self._remove_invalid_tickers:
@@ -3266,17 +3269,19 @@ class Toolkit:
         if convert_currency:
             self.get_exchange_rates(
                 period="quarterly" if self._quarterly else "yearly",
-                progress_bar=progress_bar
-                if progress_bar is not None
-                else self._progress_bar,
+                progress_bar=(
+                    progress_bar if progress_bar is not None else self._progress_bar
+                ),
             )
 
             cash_flow_statement = helpers.convert_currencies(
                 financial_statement_data=cash_flow_statement,
                 financial_statement_currencies=self._statement_currencies,
-                exchange_rate_data=self._quarterly_exchange_rate_data["Adj Close"]
-                if self._quarterly
-                else self._yearly_exchange_rate_data["Adj Close"],
+                exchange_rate_data=(
+                    self._quarterly_exchange_rate_data["Adj Close"]
+                    if self._quarterly
+                    else self._yearly_exchange_rate_data["Adj Close"]
+                ),
                 financial_statement_name="cash flow statement",
             )
 
@@ -3359,9 +3364,9 @@ class Toolkit:
                 statement_format=self._balance_sheet_statement_generic,
                 statistics_format=self._statistics_statement_generic,
                 sleep_timer=self._sleep_timer,
-                progress_bar=progress_bar
-                if progress_bar is not None
-                else self._progress_bar,
+                progress_bar=(
+                    progress_bar if progress_bar is not None else self._progress_bar
+                ),
             )
 
         if self._remove_invalid_tickers:

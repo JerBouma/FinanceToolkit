@@ -1,4 +1,5 @@
 """Overlap Module"""
+
 __docformat__ = "google"
 
 import numpy as np

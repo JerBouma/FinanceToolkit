@@ -1,4 +1,5 @@
 """Altman Module"""
+
 __docformat__ = "google"
 
 import pandas as pd
@@ -140,12 +141,12 @@ def get_sales_to_total_assets_ratio(
 def get_altman_z_score(
     working_capital_to_total_assets_ratio: float | pd.Series | pd.DataFrame,
     retained_earnings_to_total_assets_ratio: float | pd.Series | pd.DataFrame,
-    earnings_before_interest_and_taxes_to_total_assets_ratio: float
-    | pd.Series
-    | pd.DataFrame,
-    market_value_of_equity_to_book_value_of_total_liabilities_ratio: float
-    | pd.Series
-    | pd.DataFrame,
+    earnings_before_interest_and_taxes_to_total_assets_ratio: (
+        float | pd.Series | pd.DataFrame
+    ),
+    market_value_of_equity_to_book_value_of_total_liabilities_ratio: (
+        float | pd.Series | pd.DataFrame
+    ),
     sales_to_total_assets_ratio: float | pd.Series | pd.DataFrame,
 ):
     """

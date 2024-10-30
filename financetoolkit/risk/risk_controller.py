@@ -1,4 +1,5 @@
 """Risk Module"""
+
 __docformat__ = "google"
 
 import pandas as pd
@@ -796,11 +797,9 @@ class Risk:
         period_symbol = (
             "W"
             if period == "weekly"
-            else "ME"
-            if period == "monthly"
-            else "QE"
-            if period == "quarterly"
-            else "YE"
+            else (
+                "ME" if period == "monthly" else "QE" if period == "quarterly" else "YE"
+            )
         )
         period_index = pd.PeriodIndex(
             pd.date_range(

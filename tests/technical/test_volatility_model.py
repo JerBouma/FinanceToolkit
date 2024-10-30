@@ -1,4 +1,5 @@
 """Volatility Model Tests"""
+
 import pandas as pd
 
 from financetoolkit.technicals import volatility_model

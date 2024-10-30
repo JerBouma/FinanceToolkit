@@ -1,4 +1,5 @@
 """Performance Model Tests"""
+
 import pandas as pd
 
 from financetoolkit.performance import performance_model
@@ -73,7 +74,7 @@ def test_get_fama_and_french_model_multi(recorder):
     )
 
     for result_values in regression_results:
-        regression_results[result_values] = regression_results[result_values].round(0)
+        regression_results[result_values] = round(regression_results[result_values], 2)
 
     residuals = residuals.round(0)
 

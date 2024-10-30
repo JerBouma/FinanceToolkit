@@ -1,4 +1,5 @@
 """Black Scholes Model"""
+
 __docformat__ = "google"
 
 import numpy as np

@@ -1,4 +1,5 @@
 """Entropic Value at Risk Model Tests"""
+
 import pandas as pd
 
 from financetoolkit.risk import evar_model

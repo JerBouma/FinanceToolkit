@@ -1,4 +1,5 @@
 """Performance Helpers Module"""
+
 __docformat__ = "google"
 
 import inspect
@@ -64,9 +65,11 @@ def determine_within_historical_data(
         else:
             within_historical_data[period] = daily_historical_data.groupby(
                 pd.Grouper(
-                    freq=f"{period_symbol}E"
-                    if period_symbol in ["M", "Q", "Y"]
-                    else period_symbol
+                    freq=(
+                        f"{period_symbol}E"
+                        if period_symbol in ["M", "Q", "Y"]
+                        else period_symbol
+                    )
                 )
             ).apply(lambda x: x)
 
@@ -112,9 +115,11 @@ def determine_within_dataset(
 
     within_historical_data = dataset_new.groupby(
         pd.Grouper(
-            freq=f"{period_symbol}E"
-            if period_symbol in ["M", "Q", "Y"]
-            else period_symbol
+            freq=(
+                f"{period_symbol}E"
+                if period_symbol in ["M", "Q", "Y"]
+                else period_symbol
+            )
         )
     ).apply(lambda x: x.corr() if correlation else x)
 
@@ -124,9 +129,11 @@ def determine_within_dataset(
                 within_historical_data.index.levels[0],
                 freq=period_symbol,
             ),
-            within_historical_data.index.levels[1]
-            if correlation
-            else pd.PeriodIndex(within_historical_data.index.levels[1], freq="D"),
+            (
+                within_historical_data.index.levels[1]
+                if correlation
+                else pd.PeriodIndex(within_historical_data.index.levels[1], freq="D")
+            ),
         ],
     )
 

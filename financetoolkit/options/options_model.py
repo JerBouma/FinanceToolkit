@@ -1,4 +1,5 @@
 """Options Model"""
+
 __doc__ = "google"
 
 import pandas as pd

@@ -2,7 +2,10 @@
 
 __docformat__ = "google"
 
+from io import StringIO
+
 import pandas as pd
+import requests
 
 # pylint: disable=too-many-lines
 
@@ -199,7 +202,18 @@ def collect_oecd_data(oecd_data_string: str, period_code: str) -> pd.DataFrame:
     Returns:
        pd.DataFrame: A DataFrame containing the data from the OECD API.
     """
-    oecd_data = pd.read_csv(f"{BASE_URL}{oecd_data_string}{EXTENSIONS}")
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/58.0.3029.110 Safari/537.3"
+    }
+    response = requests.get(
+        f"{BASE_URL}{oecd_data_string}{EXTENSIONS}", headers=headers, timeout=300
+    )
+
+    response.raise_for_status()
+
+    oecd_data = pd.read_csv(StringIO(response.text))
 
     oecd_data["REF_AREA"] = oecd_data["REF_AREA"].replace(CODE_TO_COUNTRY)
 

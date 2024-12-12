@@ -24,7 +24,11 @@ except ImportError:
     ENABLE_TQDM = False
 
 try:
+    import logging
+
     import yfinance as yf
+
+    logging.disable(logging.ERROR)
 
     ENABLE_YFINANCE = True
 except ImportError:
@@ -497,12 +501,15 @@ def get_historical_data_from_yahoo_finance(
         interval = "1d"
 
     try:
-        historical_data = yf.Ticker(ticker).history(
+        historical_data = yf.download(
+            tickers=ticker,
+            progress=False,
+            actions=True,
             start=start_timestamp,
             end=end_timestamp,
             interval=interval,
-        )
-    except (HTTPError, URLError, RemoteDisconnected):
+        ).droplevel(level=1, axis=1)
+    except (HTTPError, URLError, RemoteDisconnected, IndexError):
         return pd.DataFrame()
 
     if historical_data.loc[start:end].empty:
@@ -526,8 +533,6 @@ def get_historical_data_from_yahoo_finance(
         ~historical_data.index.duplicated(keep="first")
     ]
 
-    historical_data["Adj Close"] = historical_data["Close"]
-
     if "Stock Splits" in historical_data and "Capital Gains" in historical_data:
         historical_data = historical_data.drop(
             columns=["Stock Splits", "Capital Gains"]
@@ -536,6 +541,10 @@ def get_historical_data_from_yahoo_finance(
         historical_data = historical_data.drop(columns=["Stock Splits"])
     else:
         historical_data = historical_data.drop(columns=["Capital Gains"])
+
+    historical_data = historical_data[
+        ["Open", "High", "Low", "Close", "Adj Close", "Volume", "Dividends"]
+    ]
 
     historical_data = enrich_historical_data(
         historical_data=historical_data,

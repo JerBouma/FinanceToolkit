@@ -810,32 +810,24 @@ def convert_daily_to_other_period(
     volatility_window = volatility_window_translation[period]
 
     daily_historical_data.index.name = "Date"
-    dates = daily_historical_data.index.asfreq(period_str)
-    daily_historical_data = daily_historical_data.reset_index()
-    period_historical_data = daily_historical_data.groupby(dates).transform("last")
+    period_historical_data = daily_historical_data.resample(period_str).last()
 
     if "Dividends" in period_historical_data:
         period_historical_data["Dividends"] = (
-            daily_historical_data["Dividends"].groupby(dates).transform("sum")
+            daily_historical_data["Dividends"].resample(period_str).sum()
         )
-
-    period_historical_data["Date"] = period_historical_data["Date"]
-    period_historical_data = period_historical_data.drop_duplicates().set_index("Date")
-    period_historical_data.index = pd.PeriodIndex(
-        period_historical_data.index, freq=period_str
-    )
 
     if "Return" in period_historical_data:
         period_historical_data["Return"] = (
-            period_historical_data["Adj Close"]
-            / period_historical_data["Adj Close"].shift()
-            - 1
+                period_historical_data["Adj Close"]
+                / period_historical_data["Adj Close"].shift()
+                - 1
         )
 
         # Volatility is calculated as the daily volatility multiplied by the
         # square root of the number of trading days (252)
-        period_historical_data["Volatility"] = daily_historical_data["Return"].groupby(
-            dates
+        period_historical_data["Volatility"] = daily_historical_data["Return"].resample(
+            period_str
         ).std() * np.sqrt(volatility_window)
 
         if not risk_free_rate.empty:
@@ -845,7 +837,7 @@ def convert_daily_to_other_period(
 
             period_historical_data["Excess Volatility"] = daily_historical_data[
                 "Excess Return"
-            ].groupby(dates).std() * np.sqrt(volatility_window)
+            ].resample(period_str).std() * np.sqrt(volatility_window)
 
     if "Cumulative Return" in period_historical_data:
         if start:

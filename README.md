@@ -324,22 +324,22 @@ Through a custom XLSX, XLS or CSV file you are able to load in your own portfoli
 
 In which the weights and returns can be depicted as follows:
 
-PLACEHOLDER
+![Portfolio](https://github.com/user-attachments/assets/53a83360-ac9f-4e94-b6c4-fbacb036c563)
 
 # Core Functionality and Metrics
 
 The Finance Toolkit has the ability to collect 30+ years of financial statements and calculate 150+ financial metrics. The following list shows all of the available functionality and metrics.
+
+___ 
+
+<b><div align="center">Find a variety of How-To Guides including Code Documentation for the FinanceToolkit <a href="https://www.jeroenbouma.com/projects/financetoolkit">here</a>.</div></b>
+___
 
 Each ratio and indicator has a corresponding function that can be called directly for example `ratios.get_return_on_equity` or `technicals.get_relative_strength_index`. However, there are also functions that collect multiple ratios or indicators at once such as `ratios.collect_profitability_ratios`. These functions are useful when you want to collect a large amount of ratios or indicators at once.
 
 <p align="center">
     <img src="examples/Finance Toolkit - Video Demo.gif" alt="Finance Toolkit Illustration" width="100%" onerror="this.style.display = 'none'"/>
 </p>
-
-___ 
-
-<b><div align="center">Find a variety of How-To Guides including Code Documentation for the FinanceToolkit <a href="https://www.jeroenbouma.com/projects/financetoolkit">here</a>.</div></b>
-___
 
 ## Core Functionality
 

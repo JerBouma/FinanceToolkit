@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "financetoolkit"
-version = "1.9.9"
+version = "2.0.0"
 description = "Transparent and Efficient Financial Analysis"
 license = "MIT"
 authors = ["Jeroen Bouma"]
@@ -43,7 +43,7 @@ keywords = [
 
 [tool.poetry.dependencies]
 python = ">=3.10, <3.13"
-pandas = {version = "^2.2", extras = ["computation", "performance", "plot"]}
+pandas = {version = "^2.2", extras = ["computation", "performance", "plot", "excel"]}
 requests = "^2.32.3"
 scikit-learn = "^1.5"
 yfinance = { version = "*", optional = true }

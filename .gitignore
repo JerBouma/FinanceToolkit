@@ -7,6 +7,9 @@ __pycache__/
 *.ipynb
 !examples/*.ipynb
 .DS_Store
+*.csv
+*.xlsx
+*.xls
 
 # C extensions
 *.so

@@ -4,6 +4,7 @@ __docformat__ = "google"
 
 
 import re
+import warnings
 from datetime import datetime, timedelta
 
 import pandas as pd
@@ -41,6 +42,11 @@ from financetoolkit.performance.performance_controller import Performance
 from financetoolkit.ratios.ratios_controller import Ratios
 from financetoolkit.risk.risk_controller import Risk
 from financetoolkit.technicals.technicals_controller import Technicals
+
+# Runtime errors are ignored on purpose given the nature of the calculations
+# sometimes leading to division by zero or other mathematical errors. This is however
+# for financial analysis purposes not an issue and should not be considered as a bug.
+warnings.filterwarnings("ignore", category=RuntimeWarning)
 
 # pylint: disable=too-many-instance-attributes,too-many-lines,line-too-long,too-many-locals
 # pylint: disable=too-many-function-args,too-many-public-methods
@@ -89,6 +95,7 @@ class Toolkit:
         remove_invalid_tickers: bool = False,
         sleep_timer: bool | None = None,
         progress_bar: bool = True,
+        portfolio_weights: dict[str, pd.DataFrame] | None = None,
     ):
         """
         Initializes an Toolkit object with a ticker or a list of tickers. The way the Toolkit is initialized
@@ -185,7 +192,10 @@ class Toolkit:
         if isinstance(tickers, str):
             tickers = [tickers.upper()]
         elif isinstance(tickers, list):
-            tickers = [ticker.upper() for ticker in tickers]
+            tickers = [
+                ticker.upper() if ticker != "Portfolio" else ticker
+                for ticker in tickers
+            ]
         else:
             raise TypeError("Tickers must be a string or a list of strings.")
 
@@ -268,6 +278,7 @@ class Toolkit:
             else self._fmp_plan != "Free"
         )
         self._progress_bar = progress_bar
+        self._portfolio_weights = portfolio_weights
         self._historical = historical
         self._currencies: list = []
         self._statement_currencies: pd.Series = pd.Series()
@@ -538,7 +549,8 @@ class Toolkit:
         ):
             raise ValueError(
                 "The datasets could not be populated and therefore the Ratios class cannot be initialized. "
-                "This is usually because you have reached the API limit or entered an invalid API key."
+                "This is usually because no tickers are equities, you have reached the API limit or "
+                "entered an invalid API key."
             )
 
         if not self._start_date:
@@ -560,7 +572,9 @@ class Toolkit:
         )
 
         return Ratios(
-            tickers=tickers,
+            tickers=(
+                tickers + ["Portfolio"] if "Portfolio" in self._tickers else tickers
+            ),
             historical=(
                 self._quarterly_historical_data
                 if self._quarterly
@@ -571,6 +585,7 @@ class Toolkit:
             cash=self._cash_flow_statement,
             quarterly=self._quarterly,
             rounding=self._rounding,
+            portfolio_weights=self._portfolio_weights,
         )
 
     @property
@@ -646,7 +661,8 @@ class Toolkit:
         ):
             raise ValueError(
                 "The datasets could not be populated and therefore the Ratios class cannot be initialized. "
-                "This is usually because you have reached the API limit or entered an invalid API key."
+                "This is usually because no tickers are equities, you have reached the API limit or "
+                "entered an invalid API key."
             )
 
         if not self._start_date:
@@ -834,11 +850,14 @@ class Toolkit:
         }
 
         return Technicals(
-            tickers=tickers,
+            tickers=(
+                tickers + ["Portfolio"] if "Portfolio" in self._tickers else tickers
+            ),
             historical_data=historical_data,
             rounding=self._rounding,
             start_date=self._start_date,
             end_date=self._end_date,
+            portfolio_weights=self._portfolio_weights,
         )
 
     @property
@@ -917,7 +936,9 @@ class Toolkit:
             tickers.remove("Benchmark")
 
         return Performance(
-            tickers=tickers,
+            tickers=(
+                tickers + ["Portfolio"] if "Portfolio" in self._tickers else tickers
+            ),
             historical_data=historical_data,
             risk_free_rate_data=risk_free_rate_data,
             quarterly=self._quarterly,
@@ -926,6 +947,7 @@ class Toolkit:
             end_date=self._end_date,
             intraday_period=self._intraday_period,
             progress_bar=self._progress_bar,
+            portfolio_weights=self._portfolio_weights,
         )
 
     @property
@@ -999,11 +1021,14 @@ class Toolkit:
         }
 
         return Risk(
-            tickers=tickers,
+            tickers=(
+                tickers + ["Portfolio"] if "Portfolio" in self._tickers else tickers
+            ),
             historical_data=historical_data,
             intraday_period=self._intraday_period,
             quarterly=self._quarterly,
             rounding=self._rounding,
+            portfolio_weights=self._portfolio_weights,
         )
 
     @property
@@ -2881,13 +2906,16 @@ class Toolkit:
                 "above affiliate link which also supports the project."
             )
 
+        # Correct for the case where a Portfolio ticker exists
+        ticker_list = [ticker for ticker in self._tickers if ticker != "Portfolio"]
+
         if self._balance_sheet_statement.empty or overwrite:
             (
                 self._balance_sheet_statement,
                 self._statistics_statement,
                 self._invalid_tickers,
             ) = _get_financial_statements(
-                tickers=self._tickers,
+                tickers=ticker_list,
                 statement="balance",
                 api_key=self._api_key,
                 quarter=self._quarterly,
@@ -3042,13 +3070,16 @@ class Toolkit:
                 "above affiliate link which also supports the project."
             )
 
+        # Correct for the case where a Portfolio ticker exists
+        ticker_list = [ticker for ticker in self._tickers if ticker != "Portfolio"]
+
         if self._income_statement.empty or overwrite:
             (
                 self._income_statement,
                 self._statistics_statement,
                 self._invalid_tickers,
             ) = _get_financial_statements(
-                tickers=self._tickers,
+                tickers=ticker_list,
                 statement="income",
                 api_key=self._api_key,
                 quarter=self._quarterly,
@@ -3225,13 +3256,16 @@ class Toolkit:
                 "above affiliate link which also supports the project."
             )
 
+        # Correct for the case where a Portfolio ticker exists
+        ticker_list = [ticker for ticker in self._tickers if ticker != "Portfolio"]
+
         if self._cash_flow_statement.empty or overwrite:
             (
                 self._cash_flow_statement,
                 self._statistics_statement,
                 self._invalid_tickers,
             ) = _get_financial_statements(
-                tickers=self._tickers,
+                tickers=ticker_list,
                 statement="cashflow",
                 api_key=self._api_key,
                 quarter=self._quarterly,

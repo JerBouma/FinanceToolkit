@@ -348,7 +348,7 @@ class Options:
             dividend_yield_value[ticker] = (
                 dividend_yield
                 if dividend_yield is not None
-                else self._dividend_yield[ticker].loc[: str(start_date)].iloc[-1]
+                else self._dividend_yield[ticker].iloc[-1]
             )
 
             for strike_price in strike_prices:
@@ -513,7 +513,7 @@ class Options:
             dividend_yield_value[ticker] = (
                 dividend_yield
                 if dividend_yield is not None
-                else self._dividend_yield[ticker].loc[: str(current_period)].iloc[-1]
+                else self._dividend_yield[ticker].iloc[-1]
             )
 
             for strike_price, row in option_chain.iterrows():
@@ -719,7 +719,7 @@ class Options:
                 dividend_yield_value[ticker] = (
                     dividend_yield
                     if dividend_yield is not None
-                    else self._dividend_yield[ticker].loc[: str(start_date)].iloc[-1]
+                    else self._dividend_yield[ticker].iloc[-1]
                 )
 
                 if show_input_info:
@@ -1367,7 +1367,7 @@ class Options:
             dividend_yield_value[ticker] = (
                 dividend_yield
                 if dividend_yield is not None
-                else self._dividend_yield[ticker].loc[: str(start_date)].iloc[-1]
+                else self._dividend_yield[ticker].iloc[-1]
             )
 
             for strike_price in strike_prices:
@@ -1505,7 +1505,7 @@ class Options:
             dividend_yield_value[ticker] = (
                 dividend_yield
                 if dividend_yield is not None
-                else self._dividend_yield[ticker].loc[: str(start_date)].iloc[-1]
+                else self._dividend_yield[ticker].iloc[-1]
             )
 
             for strike_price in strike_prices:
@@ -1644,7 +1644,7 @@ class Options:
             dividend_yield_value[ticker] = (
                 dividend_yield
                 if dividend_yield is not None
-                else self._dividend_yield[ticker].loc[: str(start_date)].iloc[-1]
+                else self._dividend_yield[ticker].iloc[-1]
             )
 
             for strike_price in strike_prices:
@@ -1787,7 +1787,7 @@ class Options:
             dividend_yield_value[ticker] = (
                 dividend_yield
                 if dividend_yield is not None
-                else self._dividend_yield[ticker].loc[: str(start_date)].iloc[-1]
+                else self._dividend_yield[ticker].iloc[-1]
             )
 
             for strike_price in strike_prices:
@@ -1932,7 +1932,7 @@ class Options:
             dividend_yield_value[ticker] = (
                 dividend_yield
                 if dividend_yield is not None
-                else self._dividend_yield[ticker].loc[: str(start_date)].iloc[-1]
+                else self._dividend_yield[ticker].iloc[-1]
             )
 
             for strike_price in strike_prices:
@@ -2073,7 +2073,7 @@ class Options:
             dividend_yield_value[ticker] = (
                 dividend_yield
                 if dividend_yield is not None
-                else self._dividend_yield[ticker].loc[: str(start_date)].iloc[-1]
+                else self._dividend_yield[ticker].iloc[-1]
             )
 
             for strike_price in strike_prices:
@@ -2216,7 +2216,7 @@ class Options:
             dividend_yield_value[ticker] = (
                 dividend_yield
                 if dividend_yield is not None
-                else self._dividend_yield[ticker].loc[: str(start_date)].iloc[-1]
+                else self._dividend_yield[ticker].iloc[-1]
             )
 
             for strike_price in strike_prices:
@@ -2520,7 +2520,7 @@ class Options:
             dividend_yield_value[ticker] = (
                 dividend_yield
                 if dividend_yield is not None
-                else self._dividend_yield[ticker].loc[: str(start_date)].iloc[-1]
+                else self._dividend_yield[ticker].iloc[-1]
             )
 
             for strike_price in strike_prices:
@@ -2652,7 +2652,7 @@ class Options:
             dividend_yield_value[ticker] = (
                 dividend_yield
                 if dividend_yield is not None
-                else self._dividend_yield[ticker].loc[: str(start_date)].iloc[-1]
+                else self._dividend_yield[ticker].iloc[-1]
             )
 
             for strike_price in strike_prices:
@@ -2791,7 +2791,7 @@ class Options:
             dividend_yield_value[ticker] = (
                 dividend_yield
                 if dividend_yield is not None
-                else self._dividend_yield[ticker].loc[: str(start_date)].iloc[-1]
+                else self._dividend_yield[ticker].iloc[-1]
             )
 
             for strike_price in strike_prices:
@@ -2932,7 +2932,7 @@ class Options:
             dividend_yield_value[ticker] = (
                 dividend_yield
                 if dividend_yield is not None
-                else self._dividend_yield[ticker].loc[: str(start_date)].iloc[-1]
+                else self._dividend_yield[ticker].iloc[-1]
             )
 
             for strike_price in strike_prices:
@@ -3071,7 +3071,7 @@ class Options:
             dividend_yield_value[ticker] = (
                 dividend_yield
                 if dividend_yield is not None
-                else self._dividend_yield[ticker].loc[: str(start_date)].iloc[-1]
+                else self._dividend_yield[ticker].iloc[-1]
             )
 
             for strike_price in strike_prices:
@@ -3210,7 +3210,7 @@ class Options:
             dividend_yield_value[ticker] = (
                 dividend_yield
                 if dividend_yield is not None
-                else self._dividend_yield[ticker].loc[: str(start_date)].iloc[-1]
+                else self._dividend_yield[ticker].iloc[-1]
             )
 
             for strike_price in strike_prices:
@@ -3350,7 +3350,7 @@ class Options:
             dividend_yield_value[ticker] = (
                 dividend_yield
                 if dividend_yield is not None
-                else self._dividend_yield[ticker].loc[: str(start_date)].iloc[-1]
+                else self._dividend_yield[ticker].iloc[-1]
             )
 
             for strike_price in strike_prices:
@@ -3481,7 +3481,7 @@ class Options:
             dividend_yield_value[ticker] = (
                 dividend_yield
                 if dividend_yield is not None
-                else self._dividend_yield[ticker].loc[: str(start_date)].iloc[-1]
+                else self._dividend_yield[ticker].iloc[-1]
             )
 
             for strike_price in strike_prices:
@@ -3732,7 +3732,7 @@ class Options:
             dividend_yield_value[ticker] = (
                 dividend_yield
                 if dividend_yield is not None
-                else self._dividend_yield[ticker].loc[: str(start_date)].iloc[-1]
+                else self._dividend_yield[ticker].iloc[-1]
             )
 
             for strike_price in strike_prices:
@@ -3871,7 +3871,7 @@ class Options:
             dividend_yield_value[ticker] = (
                 dividend_yield
                 if dividend_yield is not None
-                else self._dividend_yield[ticker].loc[: str(start_date)].iloc[-1]
+                else self._dividend_yield[ticker].iloc[-1]
             )
 
             for strike_price in strike_prices:
@@ -4010,7 +4010,7 @@ class Options:
             dividend_yield_value[ticker] = (
                 dividend_yield
                 if dividend_yield is not None
-                else self._dividend_yield[ticker].loc[: str(start_date)].iloc[-1]
+                else self._dividend_yield[ticker].iloc[-1]
             )
 
             for strike_price in strike_prices:
@@ -4149,7 +4149,7 @@ class Options:
             dividend_yield_value[ticker] = (
                 dividend_yield
                 if dividend_yield is not None
-                else self._dividend_yield[ticker].loc[: str(start_date)].iloc[-1]
+                else self._dividend_yield[ticker].iloc[-1]
             )
 
             for strike_price in strike_prices:

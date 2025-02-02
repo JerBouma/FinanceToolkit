@@ -5,7 +5,7 @@ __docformat__ = "google"
 
 import pandas as pd
 
-from financetoolkit.helpers import calculate_growth
+from financetoolkit.helpers import calculate_growth, handle_portfolio
 from financetoolkit.technicals import (
     breadth_model,
     momentum_model,
@@ -33,6 +33,7 @@ class Technicals:
         rounding: int | None = 4,
         start_date: str | None = None,
         end_date: str | None = None,
+        portfolio_weights: dict[str, pd.DataFrame] | None = None,
     ):
         """
         Initializes the Technicals Controller Class.
@@ -83,6 +84,7 @@ class Technicals:
         self._rounding: int | None = rounding
         self._start_date: str | None = start_date
         self._end_date: str | None = end_date
+        self._portfolio_weights = portfolio_weights
 
         # Technical Indicators
         self._all_indicators: pd.DataFrame = pd.DataFrame()
@@ -289,6 +291,7 @@ class Technicals:
 
         return self._breadth_indicators_growth if growth else self._breadth_indicators
 
+    @handle_portfolio
     @handle_errors
     def get_mcclellan_oscillator(
         self,
@@ -384,6 +387,7 @@ class Technicals:
 
         return mcclellan_oscillator.round(rounding if rounding else self._rounding)
 
+    @handle_portfolio
     @handle_errors
     def get_advancers_decliners(
         self,
@@ -469,6 +473,7 @@ class Technicals:
 
         return advancers_decliners.round(rounding if rounding else self._rounding)
 
+    @handle_portfolio
     @handle_errors
     def get_on_balance_volume(
         self,
@@ -554,6 +559,7 @@ class Technicals:
 
         return on_balance_volume.round(rounding if rounding else self._rounding)
 
+    @handle_portfolio
     @handle_errors
     def get_accumulation_distribution_line(
         self,
@@ -650,6 +656,7 @@ class Technicals:
             rounding if rounding else self._rounding
         )
 
+    @handle_portfolio
     @handle_errors
     def get_chaikin_oscillator(
         self,
@@ -921,6 +928,7 @@ class Technicals:
 
         return self._momentum_indicators_growth if growth else self._momentum_indicators
 
+    @handle_portfolio
     @handle_errors
     def get_money_flow_index(
         self,
@@ -1013,6 +1021,7 @@ class Technicals:
 
         return money_flow_index.round(rounding if rounding else self._rounding)
 
+    @handle_portfolio
     @handle_errors
     def get_williams_percent_r(
         self,
@@ -1103,6 +1112,7 @@ class Technicals:
 
         return williams_percent_r.round(rounding if rounding else self._rounding)
 
+    @handle_portfolio
     @handle_errors
     def get_aroon_indicator(
         self,
@@ -1200,6 +1210,7 @@ class Technicals:
 
         return aroon_indicator.round(rounding if rounding else self._rounding)
 
+    @handle_portfolio
     @handle_errors
     def get_commodity_channel_index(
         self,
@@ -1301,6 +1312,7 @@ class Technicals:
 
         return commodity_channel_index.round(rounding if rounding else self._rounding)
 
+    @handle_portfolio
     @handle_errors
     def get_relative_vigor_index(
         self,
@@ -1391,6 +1403,7 @@ class Technicals:
 
         return relative_vigor_index.round(rounding if rounding else self._rounding)
 
+    @handle_portfolio
     @handle_errors
     def get_force_index(
         self,
@@ -1479,6 +1492,7 @@ class Technicals:
 
         return force_index.round(rounding if rounding else self._rounding)
 
+    @handle_portfolio
     @handle_errors
     def get_ultimate_oscillator(
         self,
@@ -1582,6 +1596,7 @@ class Technicals:
 
         return ultimate_oscillator.round(rounding if rounding else self._rounding)
 
+    @handle_portfolio
     @handle_errors
     def get_percentage_price_oscillator(
         self,
@@ -1677,6 +1692,7 @@ class Technicals:
             rounding if rounding else self._rounding
         )
 
+    @handle_portfolio
     @handle_errors
     def get_detrended_price_oscillator(
         self,
@@ -1767,6 +1783,7 @@ class Technicals:
             rounding if rounding else self._rounding
         )
 
+    @handle_portfolio
     @handle_errors
     def get_average_directional_index(
         self,
@@ -1864,6 +1881,7 @@ class Technicals:
 
         return average_directional_index.round(rounding if rounding else self._rounding)
 
+    @handle_portfolio
     @handle_errors
     def get_chande_momentum_oscillator(
         self,
@@ -1955,6 +1973,7 @@ class Technicals:
             rounding if rounding else self._rounding
         )
 
+    @handle_portfolio
     @handle_errors
     def get_ichimoku_cloud(
         self,
@@ -2064,6 +2083,7 @@ class Technicals:
 
         return ichimoku_cloud.round(rounding if rounding else self._rounding)
 
+    @handle_portfolio
     @handle_errors
     def get_stochastic_oscillator(
         self,
@@ -2174,6 +2194,7 @@ class Technicals:
 
         return stochastic_oscillator.round(rounding if rounding else self._rounding)
 
+    @handle_portfolio
     @handle_errors
     def get_moving_average_convergence_divergence(
         self,
@@ -2282,6 +2303,7 @@ class Technicals:
 
         return macd.round(rounding if rounding else self._rounding)
 
+    @handle_portfolio
     @handle_errors
     def get_relative_strength_index(
         self,
@@ -2370,6 +2392,7 @@ class Technicals:
 
         return relative_strength_index.round(rounding if rounding else self._rounding)
 
+    @handle_portfolio
     @handle_errors
     def get_balance_of_power(
         self,
@@ -2571,6 +2594,7 @@ class Technicals:
 
         return self._overlap_indicators_growth if growth else self._overlap_indicators
 
+    @handle_portfolio
     @handle_errors
     def get_moving_average(
         self,
@@ -2659,6 +2683,7 @@ class Technicals:
 
         return moving_average.round(rounding if rounding else self._rounding)
 
+    @handle_portfolio
     @handle_errors
     def get_exponential_moving_average(
         self,
@@ -2749,6 +2774,7 @@ class Technicals:
             rounding if rounding else self._rounding
         )
 
+    @handle_portfolio
     @handle_errors
     def get_double_exponential_moving_average(
         self,
@@ -2841,6 +2867,7 @@ class Technicals:
             rounding if rounding else self._rounding
         )
 
+    @handle_portfolio
     @handle_errors
     def get_trix(
         self,
@@ -2933,6 +2960,7 @@ class Technicals:
 
         return trix.round(rounding if rounding else self._rounding)
 
+    @handle_portfolio
     @handle_errors
     def get_bollinger_bands(
         self,
@@ -3039,6 +3067,7 @@ class Technicals:
 
         return bollinger_bands.round(rounding if rounding else self._rounding)
 
+    @handle_portfolio
     @handle_errors
     def get_triangular_moving_average(
         self,
@@ -3126,6 +3155,7 @@ class Technicals:
 
         return triangular_moving_average.round(rounding if rounding else self._rounding)
 
+    @handle_portfolio
     @handle_errors
     def get_support_resistance_levels(
         self,
@@ -3346,6 +3376,7 @@ class Technicals:
             else self._volatility_indicators
         )
 
+    @handle_portfolio
     @handle_errors
     def get_true_range(
         self,
@@ -3437,6 +3468,7 @@ class Technicals:
 
         return true_range.round(rounding if rounding else self._rounding)
 
+    @handle_portfolio
     @handle_errors
     def get_average_true_range(
         self,
@@ -3538,6 +3570,7 @@ class Technicals:
 
         return average_true_range.round(rounding if rounding else self._rounding)
 
+    @handle_portfolio
     @handle_errors
     def get_keltner_channels(
         self,

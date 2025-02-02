@@ -6,7 +6,7 @@ import warnings
 
 import pandas as pd
 
-from financetoolkit.helpers import calculate_growth
+from financetoolkit.helpers import calculate_growth, handle_portfolio
 from financetoolkit.performance import performance_model
 from financetoolkit.performance.helpers import (
     determine_within_dataset,
@@ -21,6 +21,11 @@ try:
     ENABLE_TQDM = True
 except ImportError:
     ENABLE_TQDM = False
+
+# Runtime errors are ignored on purpose given the nature of the calculations
+# sometimes leading to division by zero or other mathematical errors. This is however
+# for financial analysis purposes not an issue and should not be considered as a bug.
+warnings.filterwarnings("ignore", category=RuntimeWarning)
 
 # pylint: disable=too-many-instance-attributes,too-few-public-methods,too-many-lines,too-many-locals
 
@@ -43,6 +48,7 @@ class Performance:
         end_date: str | None = None,
         intraday_period: str | None = None,
         progress_bar: bool = True,
+        portfolio_weights: dict[str, pd.DataFrame] | None = None,
     ):
         """
         Initializes the Performance Controller Class.
@@ -77,12 +83,16 @@ class Performance:
         | 2023Q3 |  0.0052 | -0.0482 |
         """
         self._tickers = tickers
+        self._tickers_without_portfolio = [
+            ticker for ticker in tickers if ticker != "Portfolio"
+        ]
         self._benchmark_name = "Benchmark"
         self._quarterly: bool | None = quarterly
         self._rounding: int | None = rounding
         self._start_date: str | None = start_date
         self._end_date: str | None = end_date
         self._progress_bar: bool = progress_bar
+        self._portfolio_weights = portfolio_weights
 
         # Historical Data
         self._historical_data = historical_data
@@ -123,6 +133,7 @@ class Performance:
     @handle_errors
     def collect_all_metrics(
         self,
+        period: str | None = None,
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
@@ -155,33 +166,42 @@ class Performance:
         toolkit.performance.collect_all_metrics()
         ```
         """
+        period = period if period else "quarterly" if self._quarterly else "yearly"
+        rounding = rounding if rounding else self._rounding
+
         performance_metrics = {
-            "Alpha": self.get_alpha(rounding=rounding, growth=growth, lag=lag),
-            "Beta": self.get_beta(rounding=rounding, growth=growth, lag=lag),
+            "Alpha": self.get_alpha(
+                period=period, rounding=rounding, growth=growth, lag=lag
+            ),
+            "Beta": self.get_beta(
+                period=period, rounding=rounding, growth=growth, lag=lag
+            ),
             "CAPM": self.get_capital_asset_pricing_model(
-                rounding=rounding, growth=growth, lag=lag
+                period=period, rounding=rounding, growth=growth, lag=lag
             ),
             "Jensen's Alpha": self.get_jensens_alpha(
-                rounding=rounding, growth=growth, lag=lag
+                period=period, rounding=rounding, growth=growth, lag=lag
             ),
             "Treynor Ratio": self.get_treynor_ratio(
-                rounding=rounding, growth=growth, lag=lag
+                period=period, rounding=rounding, growth=growth, lag=lag
             ),
             "Sharpe Ratio": self.get_sharpe_ratio(
-                rounding=rounding, growth=growth, lag=lag
+                period=period, rounding=rounding, growth=growth, lag=lag
             ),
             "Sortino Ratio": self.get_sortino_ratio(
-                rounding=rounding, growth=growth, lag=lag
+                period=period, rounding=rounding, growth=growth, lag=lag
             ),
             "Ulcer Index": self.get_ulcer_performance_index(
-                rounding=rounding, growth=growth, lag=lag
+                period=period, rounding=rounding, growth=growth, lag=lag
             ),
-            "M2 Ratio": self.get_m2_ratio(rounding=rounding, growth=growth, lag=lag),
+            "M2 Ratio": self.get_m2_ratio(
+                period=period, rounding=rounding, growth=growth, lag=lag
+            ),
             "Tracking Error": self.get_tracking_error(
-                rounding=rounding, growth=growth, lag=lag
+                period=period, rounding=rounding, growth=growth, lag=lag
             ),
             "Information Ratio": self.get_information_ratio(
-                rounding=rounding, growth=growth, lag=lag
+                period=period, rounding=rounding, growth=growth, lag=lag
             ),
         }
 
@@ -189,6 +209,7 @@ class Performance:
 
         return performance_metrics
 
+    @handle_portfolio
     @handle_errors
     def get_beta(
         self,
@@ -255,7 +276,7 @@ class Performance:
             else self._historical_data[period]
         )
 
-        returns = historical_data.loc[:, "Return"][self._tickers]
+        returns = historical_data.loc[:, "Return"][self._tickers_without_portfolio]
         benchmark_returns = historical_data.loc[:, "Return"][self._benchmark_name]
 
         if rolling:
@@ -281,11 +302,11 @@ class Performance:
 
         return beta
 
+    @handle_portfolio
     @handle_errors
     def get_capital_asset_pricing_model(
         self,
         period: str | None = None,
-        show_full_results: bool = False,
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
@@ -322,7 +343,6 @@ class Performance:
         Args:
             period (str, optional): The period to use for the calculation. Defaults to None which
             results in basing it off the quarterly parameter as defined in the class instance.
-            show_full_results (bool, optional): Whether to show the full results. Defaults to False.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
@@ -350,7 +370,7 @@ class Performance:
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
         historical_data = self._within_historical_data[period]
-        returns = historical_data.loc[:, "Return"][self._tickers]
+        returns = historical_data.loc[:, "Return"][self._tickers_without_portfolio]
         benchmark_returns = historical_data.loc[:, "Return"][self._benchmark_name]
 
         beta = performance_model.get_beta(returns, benchmark_returns)
@@ -370,21 +390,6 @@ class Performance:
 
         capm = capm.dropna(how="all", axis=0)
 
-        if show_full_results:
-            full_results = pd.concat(
-                [risk_free_rate, beta, benchmark_returns, capm], axis=1
-            ).loc[self._start_date : self._end_date]
-            full_results.columns = (
-                ["Risk Free Rate"]
-                + [f"Beta {ticker}" for ticker in self._tickers]
-                + ["Benchmark Returns"]
-                + [f"CAPM {ticker}" for ticker in self._tickers]
-            )
-
-            full_results = full_results.round(rounding if rounding else self._rounding)
-
-            return full_results
-
         if growth:
             return calculate_growth(
                 capm,
@@ -395,6 +400,7 @@ class Performance:
 
         return capm
 
+    @handle_errors
     def get_factor_asset_correlations(
         self,
         period: str | None = None,
@@ -452,7 +458,9 @@ class Performance:
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
         historical_data_within = self._within_historical_data[period]
-        returns = historical_data_within.loc[:, "Return"][self._tickers]
+        returns = historical_data_within.loc[:, "Return"][
+            self._tickers_without_portfolio
+        ]
 
         if self._fama_and_french_dataset.empty:
             self._fama_and_french_dataset = (
@@ -470,9 +478,12 @@ class Performance:
         factor_correlations: dict = {}
 
         ticker_list_iterator = (
-            tqdm(self._tickers, desc="Calculating Factor Asset Correlations")
+            tqdm(
+                self._tickers_without_portfolio,
+                desc="Calculating Factor Asset Correlations",
+            )
             if ENABLE_TQDM & self._progress_bar
-            else self._tickers
+            else self._tickers_without_portfolio
         )
 
         for ticker in ticker_list_iterator:
@@ -506,7 +517,7 @@ class Performance:
             factor_asset_correlations.stack(level=1, future_stack=True)
             .unstack(level=0)
             .reindex(factor_order, level=1, axis=1)
-            .reindex(self._tickers, level=0, axis=1)
+            .reindex(self._tickers_without_portfolio, level=0, axis=1)
         )
 
         self._factor_asset_correlations = factor_asset_correlations.round(
@@ -515,6 +526,7 @@ class Performance:
 
         return self._factor_asset_correlations
 
+    @handle_errors
     def get_factor_correlations(
         self,
         period: str | None = None,
@@ -595,6 +607,7 @@ class Performance:
 
         return self._factor_correlations
 
+    @handle_errors
     def get_fama_and_french_model(
         self,
         period: str | None = None,
@@ -703,10 +716,14 @@ class Performance:
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
         historical_data_within = self._within_historical_data[period]
-        returns = historical_data_within.loc[:, "Return"][self._tickers]
+        returns = historical_data_within.loc[:, "Return"][
+            self._tickers_without_portfolio
+        ]
 
         historical_data = self._historical_data[period]
-        returns_total = historical_data.loc[:, "Return"][self._tickers]
+        returns_total = historical_data.loc[:, "Return"][
+            self._tickers_without_portfolio
+        ]
 
         self._fama_and_french_dataset = (
             performance_model.obtain_fama_and_french_dataset()
@@ -723,11 +740,11 @@ class Performance:
 
         ticker_list_iterator = (
             tqdm(
-                self._tickers,
+                self._tickers_without_portfolio,
                 desc=f"Calculating {'Multi' if method == 'multi' else 'Individual'} Factor Exposures",
             )
             if ENABLE_TQDM & self._progress_bar
-            else self._tickers
+            else self._tickers_without_portfolio
         )
 
         for ticker in ticker_list_iterator:
@@ -892,6 +909,7 @@ class Performance:
 
         return self._fama_and_french_model
 
+    @handle_portfolio
     @handle_errors
     def get_alpha(
         self,
@@ -939,7 +957,7 @@ class Performance:
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
         historical_data = self._historical_data[period]
-        returns = historical_data.loc[:, "Return"][self._tickers]
+        returns = historical_data.loc[:, "Return"][self._tickers_without_portfolio]
         benchmark_returns = historical_data.loc[:, "Return"][self._benchmark_name]
 
         alpha = performance_model.get_alpha(returns, benchmark_returns)
@@ -955,9 +973,12 @@ class Performance:
                 self._start_date : self._end_date
             ]
             full_results.columns = (
-                [f"Actual Return {ticker}" for ticker in self._tickers]
+                [
+                    f"Actual Return {ticker}"
+                    for ticker in self._tickers_without_portfolio
+                ]
                 + ["Benchmark Returns"]
-                + [f"Alpha {ticker}" for ticker in self._tickers]
+                + [f"Alpha {ticker}" for ticker in self._tickers_without_portfolio]
             )
 
             return full_results
@@ -972,6 +993,8 @@ class Performance:
 
         return alpha
 
+    @handle_portfolio
+    @handle_errors
     def get_jensens_alpha(
         self,
         period: str | None = None,
@@ -1022,7 +1045,9 @@ class Performance:
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
         historical_within_data = self._within_historical_data[period]
-        returns = historical_within_data.loc[:, "Return"][self._tickers]
+        returns = historical_within_data.loc[:, "Return"][
+            self._tickers_without_portfolio
+        ]
         benchmark_returns = historical_within_data.loc[:, "Return"][
             self._benchmark_name
         ]
@@ -1031,7 +1056,9 @@ class Performance:
 
         historical_data = self._historical_data[period]
 
-        period_returns = historical_data.loc[:, "Return"][self._tickers]
+        period_returns = historical_data.loc[:, "Return"][
+            self._tickers_without_portfolio
+        ]
 
         risk_free_rate = self._risk_free_rate_data[period]
         benchmark_returns = historical_data.loc[:, "Return"][self._benchmark_name]
@@ -1056,6 +1083,7 @@ class Performance:
 
         return jensens_alpha
 
+    @handle_portfolio
     @handle_errors
     def get_treynor_ratio(
         self,
@@ -1107,7 +1135,9 @@ class Performance:
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
         historical_within_data = self._within_historical_data[period]
-        returns = historical_within_data.loc[:, "Return"][self._tickers]
+        returns = historical_within_data.loc[:, "Return"][
+            self._tickers_without_portfolio
+        ]
         benchmark_returns = historical_within_data.loc[:, "Return"][
             self._benchmark_name
         ]
@@ -1116,7 +1146,9 @@ class Performance:
 
         historical_data = self._historical_data[period]
 
-        period_returns = historical_data.loc[:, "Return"][self._tickers]
+        period_returns = historical_data.loc[:, "Return"][
+            self._tickers_without_portfolio
+        ]
         risk_free_rate = self._risk_free_rate_data[period]
 
         treynor_ratio = performance_model.get_treynor_ratio(
@@ -1139,6 +1171,7 @@ class Performance:
 
         return treynor_ratio
 
+    @handle_portfolio
     @handle_errors
     def get_sharpe_ratio(
         self,
@@ -1209,7 +1242,9 @@ class Performance:
             if not rolling
             else self._historical_data[period]
         )
-        excess_return = historical_data.loc[:, "Excess Return"][self._tickers]
+        excess_return = historical_data.loc[:, "Excess Return"][
+            self._tickers_without_portfolio
+        ]
 
         if rolling:
             sharpe_ratio = performance_model.get_rolling_sharpe_ratio(
@@ -1234,6 +1269,7 @@ class Performance:
 
         return sharpe_ratio
 
+    @handle_portfolio
     @handle_errors
     def get_sortino_ratio(
         self,
@@ -1296,7 +1332,9 @@ class Performance:
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
         historical_data = self._within_historical_data[period]
-        excess_return = historical_data.loc[:, "Excess Return"][self._tickers]
+        excess_return = historical_data.loc[:, "Excess Return"][
+            self._tickers_without_portfolio
+        ]
 
         sortino_ratio = performance_model.get_sortino_ratio(excess_return)
 
@@ -1316,6 +1354,7 @@ class Performance:
 
         return sortino_ratio
 
+    @handle_portfolio
     @handle_errors
     def get_ulcer_performance_index(
         self,
@@ -1364,10 +1403,10 @@ class Performance:
         return_column = "Return" if period == "intraday" else "Excess Return"
 
         historical_data = self._within_historical_data[period]
-        returns = historical_data.loc[:, "Return"][self._tickers]
+        returns = historical_data.loc[:, "Return"][self._tickers_without_portfolio]
         historical_data_within_period = self._historical_data[period]
         excess_return = historical_data_within_period.loc[:, return_column][
-            self._tickers
+            self._tickers_without_portfolio
         ]
 
         ulcer_index = get_ui(returns, rolling)
@@ -1391,6 +1430,7 @@ class Performance:
 
         return ulcer_performance_index
 
+    @handle_portfolio
     @handle_errors
     def get_m2_ratio(
         self,
@@ -1443,9 +1483,11 @@ class Performance:
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
         historical_period_data = self._historical_data[period]
-        period_returns = historical_period_data.loc[:, "Return"][self._tickers]
+        period_returns = historical_period_data.loc[:, "Return"][
+            self._tickers_without_portfolio
+        ]
         period_standard_deviation = historical_period_data.loc[:, "Volatility"][
-            self._tickers
+            self._tickers_without_portfolio
         ]
         risk_free_rate = self._risk_free_rate_data[period]
 
@@ -1469,6 +1511,7 @@ class Performance:
 
         return m2_ratio
 
+    @handle_portfolio
     @handle_errors
     def get_tracking_error(
         self,
@@ -1521,7 +1564,7 @@ class Performance:
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
         historical_data = self._within_historical_data[period]
-        returns = historical_data.loc[:, "Return"][self._tickers]
+        returns = historical_data.loc[:, "Return"][self._tickers_without_portfolio]
         benchmark_returns = historical_data.loc[:, "Return"][self._benchmark_name]
 
         tracking_error = performance_model.get_tracking_error(
@@ -1544,6 +1587,7 @@ class Performance:
 
         return tracking_error
 
+    @handle_portfolio
     @handle_errors
     def get_information_ratio(
         self,
@@ -1605,7 +1649,7 @@ class Performance:
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
         historical_data = self._within_historical_data[period]
-        returns = historical_data.loc[:, "Return"][self._tickers]
+        returns = historical_data.loc[:, "Return"][self._tickers_without_portfolio]
         benchmark_returns = historical_data.loc[:, "Return"][self._benchmark_name]
 
         information_ratio = performance_model.get_information_ratio(
@@ -1626,6 +1670,7 @@ class Performance:
 
         return information_ratio
 
+    @handle_portfolio
     @handle_errors
     def get_compound_growth_rate(
         self,

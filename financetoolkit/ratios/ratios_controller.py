@@ -3,10 +3,12 @@
 __docformat__ = "google"
 
 
+import warnings
+
 import numpy as np
 import pandas as pd
 
-from financetoolkit.helpers import calculate_growth, handle_errors
+from financetoolkit.helpers import calculate_growth, handle_errors, handle_portfolio
 from financetoolkit.ratios import (
     efficiency_model,
     liquidity_model,
@@ -14,6 +16,11 @@ from financetoolkit.ratios import (
     solvency_model,
     valuation_model,
 )
+
+# Runtime errors are ignored on purpose given the nature of the calculations
+# sometimes leading to division by zero or other mathematical errors. This is however
+# for financial analysis purposes not an issue and should not be considered as a bug.
+warnings.filterwarnings("ignore", category=RuntimeWarning)
 
 # pylint: disable=too-many-lines,too-many-instance-attributes,too-many-public-methods,too-many-locals,eval-used
 
@@ -35,6 +42,7 @@ class Ratios:
         cash: pd.DataFrame,
         quarterly: bool = False,
         rounding: int | None = 4,
+        portfolio_weights: dict[str, pd.DataFrame] | None = None,
     ):
         """
         Initializes the Ratios Controller Class.
@@ -83,6 +91,9 @@ class Ratios:
         | EBIT to Revenue                             | 0.286688 | 0.26641  | 0.254864 | 0.305759 | 0.309473 |
         """
         self._tickers = tickers
+        self._tickers_without_portfolio = [
+            ticker for ticker in tickers if ticker != "Portfolio"
+        ]
         self._balance_sheet_statement: pd.DataFrame = balance
         self._income_statement: pd.DataFrame = income
         self._cash_flow_statement: pd.DataFrame = cash
@@ -91,6 +102,7 @@ class Ratios:
         self._custom_ratios_growth: pd.DataFrame = pd.DataFrame()
         self._rounding: int | None = rounding
         self._quarterly: bool = quarterly
+        self._portfolio_weights = portfolio_weights
 
         # Initialization of Historical Data
         self._historical_data: pd.DataFrame = historical
@@ -109,7 +121,6 @@ class Ratios:
         self._valuation_ratios: pd.DataFrame = pd.DataFrame()
         self._valuation_ratios_growth: pd.DataFrame = pd.DataFrame()
 
-    @handle_errors
     def collect_all_ratios(
         self,
         include_dividends: bool = False,
@@ -209,7 +220,6 @@ class Ratios:
 
         return self._all_ratios_growth if growth else self._all_ratios
 
-    @handle_errors
     def collect_custom_ratios(
         self,
         custom_ratios_dict: dict | None = None,
@@ -432,6 +442,7 @@ class Ratios:
 
         return self._custom_ratios_growth if growth else self._custom_ratios
 
+    @handle_errors
     def collect_efficiency_ratios(
         self,
         days: int | float | None = None,
@@ -521,6 +532,9 @@ class Ratios:
             .dropna(axis="columns", how="all")
         )
 
+        # Ensure the ticker order remains the same as in self._tickers
+        self._efficiency_ratios = self._efficiency_ratios.loc[self._tickers]
+
         self._efficiency_ratios = self._efficiency_ratios.round(
             rounding if rounding else self._rounding
         )
@@ -553,6 +567,7 @@ class Ratios:
 
         return self._efficiency_ratios_growth if growth else self._efficiency_ratios
 
+    @handle_portfolio
     @handle_errors
     def get_asset_turnover_ratio(
         self,
@@ -630,6 +645,7 @@ class Ratios:
 
         return asset_turnover_ratio.round(rounding if rounding else self._rounding)
 
+    @handle_portfolio
     @handle_errors
     def get_inventory_turnover_ratio(
         self,
@@ -710,6 +726,7 @@ class Ratios:
 
         return inventory_turnover_ratio.round(rounding if rounding else self._rounding)
 
+    @handle_portfolio
     @handle_errors
     def get_days_of_inventory_outstanding(
         self,
@@ -802,6 +819,7 @@ class Ratios:
             rounding if rounding else self._rounding
         )
 
+    @handle_portfolio
     @handle_errors
     def get_days_of_sales_outstanding(
         self,
@@ -888,6 +906,7 @@ class Ratios:
 
         return days_of_sales_outstanding.round(rounding if rounding else self._rounding)
 
+    @handle_portfolio
     @handle_errors
     def get_operating_cycle(
         self,
@@ -1000,6 +1019,7 @@ class Ratios:
 
         return operating_cycle.round(rounding if rounding else self._rounding)
 
+    @handle_portfolio
     @handle_errors
     def get_accounts_payables_turnover_ratio(
         self,
@@ -1087,6 +1107,7 @@ class Ratios:
             rounding if rounding else self._rounding
         )
 
+    @handle_portfolio
     @handle_errors
     def get_days_of_accounts_payable_outstanding(
         self,
@@ -1181,6 +1202,7 @@ class Ratios:
             rounding if rounding else self._rounding
         )
 
+    @handle_portfolio
     @handle_errors
     def get_cash_conversion_cycle(
         self,
@@ -1322,6 +1344,7 @@ class Ratios:
 
         return cash_conversion_cycle.round(rounding if rounding else self._rounding)
 
+    @handle_portfolio
     @handle_errors
     def get_cash_conversion_efficiency(
         self,
@@ -1402,6 +1425,7 @@ class Ratios:
             rounding if rounding else self._rounding
         )
 
+    @handle_portfolio
     @handle_errors
     def get_receivables_turnover(
         self,
@@ -1479,6 +1503,7 @@ class Ratios:
 
         return receivables_turnover.round(rounding if rounding else self._rounding)
 
+    @handle_portfolio
     @handle_errors
     def get_sga_to_revenue_ratio(
         self,
@@ -1553,6 +1578,7 @@ class Ratios:
 
         return sga_to_revenue_ratio.round(rounding if rounding else self._rounding)
 
+    @handle_portfolio
     @handle_errors
     def get_fixed_asset_turnover(
         self,
@@ -1629,6 +1655,7 @@ class Ratios:
 
         return fixed_asset_turnover.round(rounding if rounding else self._rounding)
 
+    @handle_portfolio
     @handle_errors
     def get_operating_ratio(
         self,
@@ -1763,6 +1790,8 @@ class Ratios:
             .dropna(axis="columns", how="all")
         )
 
+        self._liquidity_ratios = self._liquidity_ratios.loc[self._tickers]
+
         self._liquidity_ratios = self._liquidity_ratios.round(
             rounding if rounding else self._rounding
         )
@@ -1795,6 +1824,7 @@ class Ratios:
 
         return self._liquidity_ratios_growth if growth else self._liquidity_ratios
 
+    @handle_portfolio
     @handle_errors
     def get_current_ratio(
         self,
@@ -1867,6 +1897,7 @@ class Ratios:
 
         return current_ratio.round(rounding if rounding else self._rounding)
 
+    @handle_portfolio
     @handle_errors
     def get_quick_ratio(
         self,
@@ -1949,6 +1980,7 @@ class Ratios:
 
         return quick_ratio.round(rounding if rounding else self._rounding)
 
+    @handle_portfolio
     @handle_errors
     def get_cash_ratio(
         self,
@@ -2024,6 +2056,7 @@ class Ratios:
 
         return cash_ratio.round(rounding if rounding else self._rounding)
 
+    @handle_portfolio
     @handle_errors
     def get_working_capital(
         self,
@@ -2096,6 +2129,7 @@ class Ratios:
 
         return working_capital.round(rounding if rounding else self._rounding)
 
+    @handle_portfolio
     @handle_errors
     def get_operating_cash_flow_ratio(
         self,
@@ -2168,6 +2202,7 @@ class Ratios:
 
         return operating_cash_flow_ratio.round(rounding if rounding else self._rounding)
 
+    @handle_portfolio
     @handle_errors
     def get_operating_cash_flow_sales_ratio(
         self,
@@ -2246,6 +2281,7 @@ class Ratios:
             rounding if rounding else self._rounding
         )
 
+    @handle_portfolio
     @handle_errors
     def get_short_term_coverage_ratio(
         self,
@@ -2409,6 +2445,8 @@ class Ratios:
             .dropna(axis="columns", how="all")
         )
 
+        self._profitability_ratios = self._profitability_ratios.loc[self._tickers]
+
         self._profitability_ratios = self._profitability_ratios.round(
             rounding if rounding else self._rounding
         )
@@ -2443,6 +2481,7 @@ class Ratios:
             self._profitability_ratios_growth if growth else self._profitability_ratios
         )
 
+    @handle_portfolio
     @handle_errors
     def get_gross_margin(
         self,
@@ -2510,6 +2549,7 @@ class Ratios:
 
         return gross_margin.round(rounding if rounding else self._rounding)
 
+    @handle_portfolio
     @handle_errors
     def get_operating_margin(
         self,
@@ -2579,6 +2619,7 @@ class Ratios:
 
         return operating_margin.round(rounding if rounding else self._rounding)
 
+    @handle_portfolio
     @handle_errors
     def get_net_profit_margin(
         self,
@@ -2648,6 +2689,7 @@ class Ratios:
 
         return net_profit_margin.round(rounding if rounding else self._rounding)
 
+    @handle_portfolio
     @handle_errors
     def get_interest_burden_ratio(
         self,
@@ -2724,6 +2766,7 @@ class Ratios:
 
         return interest_burden_ratio.round(rounding if rounding else self._rounding)
 
+    @handle_portfolio
     @handle_errors
     def get_income_before_tax_profit_margin(
         self,
@@ -2801,6 +2844,7 @@ class Ratios:
             rounding if rounding else self._rounding
         )
 
+    @handle_portfolio
     @handle_errors
     def get_effective_tax_rate(
         self,
@@ -2872,6 +2916,7 @@ class Ratios:
 
         return effective_tax_rate.round(rounding if rounding else self._rounding)
 
+    @handle_portfolio
     @handle_errors
     def get_return_on_assets(
         self,
@@ -2950,6 +2995,7 @@ class Ratios:
 
         return return_on_assets.round(rounding if rounding else self._rounding)
 
+    @handle_portfolio
     @handle_errors
     def get_return_on_equity(
         self,
@@ -3032,6 +3078,7 @@ class Ratios:
 
         return return_on_equity.round(rounding if rounding else self._rounding)
 
+    @handle_portfolio
     @handle_errors
     def get_return_on_invested_capital(
         self,
@@ -3143,6 +3190,7 @@ class Ratios:
             rounding if rounding else self._rounding
         )
 
+    @handle_portfolio
     @handle_errors
     def get_income_quality_ratio(
         self,
@@ -3215,6 +3263,7 @@ class Ratios:
 
         return income_quality_ratio.round(rounding if rounding else self._rounding)
 
+    @handle_portfolio
     @handle_errors
     def get_return_on_tangible_assets(
         self,
@@ -3324,6 +3373,7 @@ class Ratios:
 
         return return_on_tangible_assets.round(rounding if rounding else self._rounding)
 
+    @handle_portfolio
     @handle_errors
     def get_return_on_capital_employed(
         self,
@@ -3417,6 +3467,7 @@ class Ratios:
             rounding if rounding else self._rounding
         )
 
+    @handle_portfolio
     @handle_errors
     def get_net_income_per_ebt(
         self,
@@ -3489,6 +3540,7 @@ class Ratios:
 
         return net_income_per_ebt.round(rounding if rounding else self._rounding)
 
+    @handle_portfolio
     @handle_errors
     def get_free_cash_flow_operating_cash_flow_ratio(
         self,
@@ -3566,6 +3618,7 @@ class Ratios:
             rounding if rounding else self._rounding
         )
 
+    @handle_portfolio
     @handle_errors
     def get_tax_burden_ratio(
         self,
@@ -3639,6 +3692,7 @@ class Ratios:
 
         return tax_burden_ratio.round(rounding if rounding else self._rounding)
 
+    @handle_portfolio
     @handle_errors
     def get_EBT_to_EBIT(
         self,
@@ -3725,6 +3779,7 @@ class Ratios:
 
         return EBT_to_EBIT.round(rounding if rounding else self._rounding)
 
+    @handle_portfolio
     @handle_errors
     def get_EBIT_to_revenue(
         self,
@@ -3863,8 +3918,8 @@ class Ratios:
         solvency_ratios["Net-Debt to EBITDA Ratio"] = self.get_net_debt_to_ebitda_ratio(
             trailing=trailing
         )
-        solvency_ratios["Cash Flow Coverage Ratio"] = self.get_free_cash_flow_yield(
-            diluted=diluted, trailing=trailing
+        solvency_ratios["Cash Flow Coverage Ratio"] = self.get_cash_flow_coverage_ratio(
+            trailing=trailing
         )
         solvency_ratios["CAPEX Coverage Ratio"] = self.get_capex_coverage_ratio(
             trailing=trailing
@@ -3879,6 +3934,8 @@ class Ratios:
             .sort_index(level=0, sort_remaining=False)
             .dropna(axis="columns", how="all")
         )
+
+        self._solvency_ratios = self._solvency_ratios.loc[self._tickers]
 
         self._solvency_ratios = self._solvency_ratios.round(
             rounding if rounding else self._rounding
@@ -3910,6 +3967,7 @@ class Ratios:
 
         return self._solvency_ratios_growth if growth else self._solvency_ratios
 
+    @handle_portfolio
     @handle_errors
     def get_debt_to_assets_ratio(
         self,
@@ -3982,6 +4040,7 @@ class Ratios:
 
         return debt_to_assets_ratio.round(rounding if rounding else self._rounding)
 
+    @handle_portfolio
     @handle_errors
     def get_debt_to_equity_ratio(
         self,
@@ -4055,6 +4114,7 @@ class Ratios:
 
         return debt_to_equity_ratio.round(rounding if rounding else self._rounding)
 
+    @handle_portfolio
     @handle_errors
     def get_interest_coverage_ratio(
         self,
@@ -4132,6 +4192,7 @@ class Ratios:
 
         return interest_coverage_ratio.round(rounding if rounding else self._rounding)
 
+    @handle_portfolio
     @handle_errors
     def get_equity_multiplier(
         self,
@@ -4216,6 +4277,7 @@ class Ratios:
 
         return equity_multiplier.round(rounding if rounding else self._rounding)
 
+    @handle_portfolio
     @handle_errors
     def get_debt_service_coverage_ratio(
         self,
@@ -4295,6 +4357,7 @@ class Ratios:
             rounding if rounding else self._rounding
         )
 
+    @handle_portfolio
     @handle_errors
     def get_free_cash_flow_yield(
         self,
@@ -4345,7 +4408,7 @@ class Ratios:
         begin, end = str(years[0]), str(years[-1])
 
         share_prices = self._historical_data.loc[begin:end, "Adj Close"][
-            self._tickers
+            self._tickers_without_portfolio
         ].T
 
         average_shares = (
@@ -4384,6 +4447,7 @@ class Ratios:
 
         return free_cash_flow_yield.round(rounding if rounding else self._rounding)
 
+    @handle_portfolio
     @handle_errors
     def get_net_debt_to_ebitda_ratio(
         self,
@@ -4459,6 +4523,7 @@ class Ratios:
 
         return net_debt_to_ebitda_ratio.round(rounding if rounding else self._rounding)
 
+    @handle_portfolio
     @handle_errors
     def get_cash_flow_coverage_ratio(
         self,
@@ -4529,6 +4594,7 @@ class Ratios:
 
         return cash_flow_coverage_ratio.round(rounding if rounding else self._rounding)
 
+    @handle_portfolio
     @handle_errors
     def get_capex_coverage_ratio(
         self,
@@ -4601,6 +4667,7 @@ class Ratios:
 
         return capex_coverage_ratio.round(rounding if rounding else self._rounding)
 
+    @handle_portfolio
     @handle_errors
     def get_capex_dividend_coverage_ratio(
         self,
@@ -4811,6 +4878,8 @@ class Ratios:
             .dropna(axis="columns", how="all")
         )
 
+        self._valuation_ratios = self._valuation_ratios.loc[self._tickers]
+
         self._valuation_ratios = self._valuation_ratios.round(
             rounding if rounding else self._rounding
         )
@@ -4843,6 +4912,7 @@ class Ratios:
 
         return self._valuation_ratios_growth if growth else self._valuation_ratios
 
+    @handle_portfolio
     @handle_errors
     def get_earnings_per_share(
         self,
@@ -4939,6 +5009,7 @@ class Ratios:
 
         return earnings_per_share.round(rounding if rounding else self._rounding)
 
+    @handle_portfolio
     @handle_errors
     def get_revenue_per_share(
         self,
@@ -5012,6 +5083,7 @@ class Ratios:
 
         return revenue_per_share.round(rounding if rounding else self._rounding)
 
+    @handle_portfolio
     @handle_errors
     def get_price_earnings_ratio(
         self,
@@ -5069,7 +5141,7 @@ class Ratios:
         begin, end = str(years[0]), str(years[-1])
 
         share_prices = self._historical_data.loc[begin:end, "Adj Close"][
-            self._tickers
+            self._tickers_without_portfolio
         ].T
 
         price_earnings_ratio = valuation_model.get_price_earnings_ratio(
@@ -5085,6 +5157,7 @@ class Ratios:
 
         return price_earnings_ratio.round(rounding if rounding else self._rounding)
 
+    @handle_portfolio
     @handle_errors
     def get_price_to_earnings_growth_ratio(
         self,
@@ -5161,6 +5234,7 @@ class Ratios:
             rounding if rounding else self._rounding
         )
 
+    @handle_portfolio
     @handle_errors
     def get_book_value_per_share(
         self,
@@ -5242,6 +5316,7 @@ class Ratios:
 
         return book_value_per_share.round(rounding if rounding else self._rounding)
 
+    @handle_portfolio
     @handle_errors
     def get_price_to_book_ratio(
         self,
@@ -5298,7 +5373,7 @@ class Ratios:
         begin, end = str(years[0]), str(years[-1])
 
         share_prices = self._historical_data.loc[begin:end, "Adj Close"][
-            self._tickers
+            self._tickers_without_portfolio
         ].T
 
         price_to_book_ratio = valuation_model.get_price_to_book_ratio(
@@ -5314,6 +5389,7 @@ class Ratios:
 
         return price_to_book_ratio.round(rounding if rounding else self._rounding)
 
+    @handle_portfolio
     @handle_errors
     def get_interest_debt_per_share(
         self,
@@ -5396,6 +5472,7 @@ class Ratios:
 
         return interest_debt_per_share.round(rounding if rounding else self._rounding)
 
+    @handle_portfolio
     @handle_errors
     def get_capex_per_share(
         self,
@@ -5473,6 +5550,7 @@ class Ratios:
 
         return capex_per_share.round(rounding if rounding else self._rounding)
 
+    @handle_portfolio
     @handle_errors
     def get_dividend_yield(
         self,
@@ -5519,8 +5597,12 @@ class Ratios:
         dividend_yield = toolkit.ratios.get_dividend_yield()
         ```
         """
-        share_prices = self._historical_data.loc[:, "Adj Close"][self._tickers].T
-        dividends = self._historical_data.loc[:, "Dividends"][self._tickers].T
+        share_prices = self._historical_data.loc[:, "Adj Close"][
+            self._tickers_without_portfolio
+        ].T
+        dividends = self._historical_data.loc[:, "Dividends"][
+            self._tickers_without_portfolio
+        ].T
 
         dividend_yield = valuation_model.get_dividend_yield(
             dividends.T.rolling(trailing).sum().T if trailing else dividends,
@@ -5536,6 +5618,7 @@ class Ratios:
 
         return dividend_yield.round(rounding if rounding else self._rounding)
 
+    @handle_portfolio
     @handle_errors
     def get_weighted_dividend_yield(
         self,
@@ -5594,7 +5677,7 @@ class Ratios:
         begin, end = str(years[0]), str(years[-1])
 
         share_prices = self._historical_data.loc[begin:end, "Adj Close"][
-            self._tickers
+            self._tickers_without_portfolio
         ].T
 
         if trailing:
@@ -5622,6 +5705,7 @@ class Ratios:
 
         return weighted_dividend_yield.round(rounding if rounding else self._rounding)
 
+    @handle_portfolio
     @handle_errors
     def get_price_to_cash_flow_ratio(
         self,
@@ -5680,7 +5764,7 @@ class Ratios:
         begin, end = str(years[0]), str(years[-1])
 
         share_prices = self._historical_data.loc[begin:end, "Adj Close"][
-            self._tickers
+            self._tickers_without_portfolio
         ].T
 
         market_cap = valuation_model.get_market_cap(share_prices, average_shares)
@@ -5708,6 +5792,7 @@ class Ratios:
 
         return price_to_cash_flow_ratio.round(rounding if rounding else self._rounding)
 
+    @handle_portfolio
     @handle_errors
     def get_price_to_free_cash_flow_ratio(
         self,
@@ -5786,6 +5871,7 @@ class Ratios:
             rounding if rounding else self._rounding
         )
 
+    @handle_portfolio
     @handle_errors
     def get_market_cap(
         self,
@@ -5837,7 +5923,7 @@ class Ratios:
         begin, end = str(years[0]), str(years[-1])
 
         share_prices = self._historical_data.loc[begin:end, "Adj Close"][
-            self._tickers
+            self._tickers_without_portfolio
         ].T
 
         if trailing:
@@ -5855,6 +5941,7 @@ class Ratios:
 
         return market_cap.round(rounding if rounding else self._rounding)
 
+    @handle_portfolio
     @handle_errors
     def get_enterprise_value(
         self,
@@ -5939,6 +6026,7 @@ class Ratios:
 
         return enterprise_value.round(rounding if rounding else self._rounding)
 
+    @handle_portfolio
     @handle_errors
     def get_ev_to_sales_ratio(
         self,
@@ -6004,6 +6092,7 @@ class Ratios:
 
         return ev_to_sales_ratio.round(rounding if rounding else self._rounding)
 
+    @handle_portfolio
     @handle_errors
     def get_ev_to_ebitda_ratio(
         self,
@@ -6077,6 +6166,7 @@ class Ratios:
 
         return ev_to_ebitda_ratio.round(rounding if rounding else self._rounding)
 
+    @handle_portfolio
     @handle_errors
     def get_ev_to_operating_cashflow_ratio(
         self,
@@ -6153,6 +6243,7 @@ class Ratios:
             rounding if rounding else self._rounding
         )
 
+    @handle_portfolio
     @handle_errors
     def get_earnings_yield(
         self,
@@ -6206,7 +6297,7 @@ class Ratios:
         begin, end = str(years[0]), str(years[-1])
 
         share_prices = self._historical_data.loc[begin:end, "Adj Close"][
-            self._tickers
+            self._tickers_without_portfolio
         ].T
 
         earnings_yield = valuation_model.get_earnings_yield(eps, share_prices)
@@ -6220,6 +6311,7 @@ class Ratios:
 
         return earnings_yield.round(rounding if rounding else self._rounding)
 
+    @handle_portfolio
     @handle_errors
     def get_dividend_payout_ratio(
         self,
@@ -6286,6 +6378,7 @@ class Ratios:
 
         return payout_ratio.round(rounding if rounding else self._rounding)
 
+    @handle_portfolio
     @handle_errors
     def get_reinvestment_rate(
         self,
@@ -6348,6 +6441,7 @@ class Ratios:
 
         return reinvestment_ratio.round(rounding if rounding else self._rounding)
 
+    @handle_portfolio
     @handle_errors
     def get_tangible_asset_value(
         self,
@@ -6416,6 +6510,7 @@ class Ratios:
 
         return tangible_asset_value.round(rounding if rounding else self._rounding)
 
+    @handle_portfolio
     @handle_errors
     def get_net_current_asset_value(
         self,
@@ -6479,6 +6574,7 @@ class Ratios:
 
         return net_current_asset_value.round(rounding if rounding else self._rounding)
 
+    @handle_portfolio
     @handle_errors
     def get_ev_to_ebit(
         self,

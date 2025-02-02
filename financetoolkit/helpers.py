@@ -5,6 +5,7 @@ __docformat__ = "google"
 import inspect
 import time
 import warnings
+from functools import wraps
 from io import StringIO
 
 import numpy as np
@@ -14,7 +15,7 @@ from urllib3.exceptions import MaxRetryError
 
 RETRY_LIMIT = 12
 
-# pylint: disable=comparison-with-itself,too-many-locals
+# pylint: disable=comparison-with-itself,too-many-locals,protected-access
 
 
 def get_financial_data(
@@ -491,3 +492,101 @@ def check_for_error_messages(
             del dataset_dictionary[ticker]
 
     return dataset_dictionary
+
+
+def handle_portfolio(func):
+    """
+    A decorator that processes the result of a function to handle portfolio data.
+    This decorator checks if "Portfolio" is in the `self._tickers` attribute and, if so,
+    calculates the weighted average of the result DataFrame using `self._portfolio_weights`
+    and appends it as a new row or column named "Portfolio".
+
+    Args:
+        func (function): The function to be decorated.
+
+    Returns:
+        function: The wrapped function with additional portfolio handling logic.
+
+    Notes:
+        - The decorated function should have a `self` parameter as the first argument.
+        - The decorated function should return a DataFrame.
+    """
+
+    @wraps(func)
+    def wrapper(self, *args, **kwargs):
+        # Call the original function
+        result = func(self, *args, **kwargs)
+
+        # Check if "Portfolio" is in self._tickers
+        if (
+            isinstance(self._tickers, (list, str))
+            and "Portfolio" in self._tickers
+            and isinstance(result, pd.DataFrame)
+        ):
+            sig = inspect.signature(func)
+            bound_args = sig.bind(self, *args, **kwargs)
+            bound_args.apply_defaults()
+
+            # Merge defaults with kwargs, without overriding explicitly passed values
+            for key, value in bound_args.arguments.items():
+                if key not in kwargs:
+                    kwargs[key] = value
+
+            # Get the rounding parameter from kwargs or use a default value
+            rounding = kwargs.get("rounding", self._rounding)
+            lag = kwargs.get("lag", 1)
+            growth = kwargs.get("growth", False)
+            period = kwargs.get("period")
+
+            if rounding is None:
+                rounding = self._rounding
+            if period is None:
+                period = "quarterly" if getattr(self, "_quarterly", False) else "yearly"
+
+            # Select the appropriate portfolio weights
+            weights = self._portfolio_weights.get(period, pd.DataFrame())
+
+            # Exclude "Benchmark" from the weighted average calculation
+            result_without_benchmark = (
+                result.drop(columns=["Benchmark"])
+                if "Benchmark" in result.columns
+                else result
+            )
+
+            # Calculate the weighted average for each column
+            if isinstance(result.columns, pd.PeriodIndex) and not isinstance(
+                result.columns, pd.MultiIndex
+            ):
+                weights = weights.loc[result_without_benchmark.columns, :].T
+
+                weighted_averages = round(
+                    (result_without_benchmark * weights).sum(axis=0)
+                    / weights.sum(axis=0),
+                    rounding,
+                )
+
+                # Append the weighted averages as a new row
+                result.loc["Portfolio"] = weighted_averages
+            elif isinstance(result.index, pd.PeriodIndex) and not isinstance(
+                result.columns, pd.MultiIndex
+            ):
+                weights = weights.loc[result.index, :]
+
+                weighted_averages = round(
+                    (result_without_benchmark * weights).sum(axis=1)
+                    / weights.sum(axis=1),
+                    rounding,
+                )
+
+                # Append the weighted averages as a new row
+                result["Portfolio"] = weighted_averages
+
+            if growth and isinstance(lag, list):
+                print(
+                    "Calculating multiple lags for the portfolio data is not currently available. \n"
+                    "If desired, please reach out via https://github.com/JerBouma/FinanceToolkit/issues"
+                )
+
+        return result
+
+    return wrapper

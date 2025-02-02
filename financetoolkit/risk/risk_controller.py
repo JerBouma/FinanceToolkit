@@ -2,12 +2,11 @@
 
 __docformat__ = "google"
 
+import warnings
+
 import pandas as pd
 
-from financetoolkit.helpers import (
-    calculate_growth,
-    handle_errors,
-)
+from financetoolkit.helpers import calculate_growth, handle_errors, handle_portfolio
 from financetoolkit.risk import (
     cvar_model,
     evar_model,
@@ -16,6 +15,11 @@ from financetoolkit.risk import (
     var_model,
 )
 from financetoolkit.risk.helpers import determine_within_historical_data
+
+# Runtime errors are ignored on purpose given the nature of the calculations
+# sometimes leading to division by zero or other mathematical errors. This is however
+# for financial analysis purposes not an issue and should not be considered as a bug.
+warnings.filterwarnings("ignore", category=RuntimeWarning)
 
 # pylint: disable=too-many-instance-attributes,too-few-public-methods,too-many-lines,too-many-locals
 # pylint: disable=too-many-boolean-expressions
@@ -35,6 +39,7 @@ class Risk:
         intraday_period: str | None = None,
         quarterly: bool = False,
         rounding: int | None = 4,
+        portfolio_weights: dict[str, pd.DataFrame] | None = None,
     ):
         """
         Initializes the Risk Controller Class.
@@ -85,6 +90,7 @@ class Risk:
         self._tickers = tickers
         self._quarterly = quarterly
         self._rounding: int | None = rounding
+        self._portfolio_weights = portfolio_weights
 
         # Within Return Calculations
         daily_historical_data = self._historical_data["daily"].copy().fillna(0)
@@ -105,9 +111,11 @@ class Risk:
             intraday_period=intraday_period,
         )
 
+    @handle_portfolio
     @handle_errors
     def collect_all_metrics(
         self,
+        period: str | None = None,
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
@@ -140,31 +148,49 @@ class Risk:
         toolkit.risk.collect_all_metrics()
         ```
         """
+        period = period if period else "quarterly" if self._quarterly else "yearly"
+
+        if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
+            raise ValueError(
+                "Period must be daily, weekly, monthly, quarterly, or yearly."
+            )
+        if period == "daily" and self._historical_data["intraday"].empty:
+            raise ValueError("Intraday data is required for daily calculations.")
+
+        rounding = rounding if rounding else self._rounding
+
         risk_metrics = {
             "Value at Risk": self.get_value_at_risk(
-                rounding=rounding, growth=growth, lag=lag
+                period=period, rounding=rounding, growth=growth, lag=lag
             ),
             "Conditional Value at Risk": self.get_conditional_value_at_risk(
-                rounding=rounding, growth=growth, lag=lag
+                period=period, rounding=rounding, growth=growth, lag=lag
             ),
             "Entropic Value at Risk": self.get_entropic_value_at_risk(
-                rounding=rounding, growth=growth, lag=lag
+                period=period, rounding=rounding, growth=growth, lag=lag
             ),
             "Maximum Drawdown": self.get_maximum_drawdown(
-                rounding=rounding, growth=growth, lag=lag
+                period=period, rounding=rounding, growth=growth, lag=lag
             ),
             "Ulcer Index": self.get_ulcer_index(
-                rounding=rounding, growth=growth, lag=lag
+                period=period, rounding=rounding, growth=growth, lag=lag
             ),
-            "GARCH": self.get_garch(rounding=rounding, growth=growth, lag=lag),
-            "Skewness": self.get_skewness(rounding=rounding, growth=growth, lag=lag),
-            "Kurtosis": self.get_kurtosis(rounding=rounding, growth=growth, lag=lag),
+            "GARCH": self.get_garch(
+                period=period, rounding=rounding, growth=growth, lag=lag
+            ),
+            "Skewness": self.get_skewness(
+                period=period, rounding=rounding, growth=growth, lag=lag
+            ),
+            "Kurtosis": self.get_kurtosis(
+                period=period, rounding=rounding, growth=growth, lag=lag
+            ),
         }
 
         risk_metrics = pd.concat(risk_metrics, axis=1)
 
         return risk_metrics
 
+    @handle_portfolio
     @handle_errors
     def get_value_at_risk(
         self,
@@ -237,6 +263,14 @@ class Risk:
         | 2023 | -0.0271 | -0.054  |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
+
+        if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
+            raise ValueError(
+                "Period must be daily, weekly, monthly, quarterly, or yearly."
+            )
+        if period == "daily" and self._historical_data["intraday"].empty:
+            raise ValueError("Intraday data is required for daily calculations.")
+
         returns = (
             self._within_historical_data[period]["Return"]
             if within_period
@@ -264,6 +298,7 @@ class Risk:
 
         return value_at_risk.round(rounding if rounding else self._rounding)
 
+    @handle_portfolio
     @handle_errors
     def get_conditional_value_at_risk(
         self,
@@ -336,6 +371,14 @@ class Risk:
         | 2023 | -0.0397 | -0.0747 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
+
+        if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
+            raise ValueError(
+                "Period must be daily, weekly, monthly, quarterly, or yearly."
+            )
+        if period == "daily" and self._historical_data["intraday"].empty:
+            raise ValueError("Intraday data is required for daily calculations.")
+
         returns = (
             self._within_historical_data[period]["Return"]
             if within_period
@@ -367,6 +410,7 @@ class Risk:
 
         return conditional_value_at_risk.round(rounding if rounding else self._rounding)
 
+    @handle_portfolio
     @handle_errors
     def get_entropic_value_at_risk(
         self,
@@ -436,6 +480,14 @@ class Risk:
         | 2023 | -0.0471 | -0.0793 | -0.0188 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
+
+        if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
+            raise ValueError(
+                "Period must be daily, weekly, monthly, quarterly, or yearly."
+            )
+        if period == "daily" and self._historical_data["intraday"].empty:
+            raise ValueError("Intraday data is required for daily calculations.")
+
         returns = (
             self._within_historical_data[period]["Return"]
             if within_period
@@ -454,6 +506,7 @@ class Risk:
 
         return entropic_value_at_risk.round(rounding if rounding else self._rounding)
 
+    @handle_portfolio
     @handle_errors
     def get_maximum_drawdown(
         self,
@@ -519,6 +572,14 @@ class Risk:
         | 2023 | -0.1964 | -0.2823 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
+
+        if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
+            raise ValueError(
+                "Period must be daily, weekly, monthly, quarterly, or yearly."
+            )
+        if period == "daily" and self._historical_data["intraday"].empty:
+            raise ValueError("Intraday data is required for daily calculations.")
+
         returns = (
             self._within_historical_data[period]["Return"]
             if within_period
@@ -537,6 +598,7 @@ class Risk:
 
         return maximum_drawdown.round(rounding if rounding else self._rounding)
 
+    @handle_portfolio
     @handle_errors
     def get_ulcer_index(
         self,
@@ -603,6 +665,14 @@ class Risk:
         | 2023 | 0.0475 | 0.0815 |      0.0186 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
+
+        if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
+            raise ValueError(
+                "Period must be daily, weekly, monthly, quarterly, or yearly."
+            )
+        if period == "daily" and self._historical_data["intraday"].empty:
+            raise ValueError("Intraday data is required for daily calculations.")
+
         returns = self._within_historical_data[period]["Return"]
 
         ulcer_index = risk_model.get_ui(returns, rolling)
@@ -617,6 +687,7 @@ class Risk:
 
         return ulcer_index.round(rounding if rounding else self._rounding)
 
+    @handle_portfolio
     @handle_errors
     def get_garch(
         self,
@@ -681,6 +752,14 @@ class Risk:
         | 2015Q1 | 0.0303 |  0.214 |      0.0048 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
+
+        if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
+            raise ValueError(
+                "Period must be daily, weekly, monthly, quarterly, or yearly."
+            )
+        if period == "daily" and self._historical_data["intraday"].empty:
+            raise ValueError("Intraday data is required for daily calculations.")
+
         returns = (
             (
                 self._within_historical_data[period]["Return"]
@@ -708,6 +787,7 @@ class Risk:
 
         return garch_sigma_2.round(rounding if rounding else self._rounding)  # type: ignore
 
+    @handle_portfolio
     @handle_errors
     def get_garch_forecast(
         self,
@@ -780,6 +860,14 @@ class Risk:
         | 2033 | 2.3671 | 1440.47  |      0.0329 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
+
+        if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
+            raise ValueError(
+                "Period must be daily, weekly, monthly, quarterly, or yearly."
+            )
+        if period == "daily" and self._historical_data["intraday"].empty:
+            raise ValueError("Intraday data is required for daily calculations.")
+
         returns = (
             (
                 self._within_historical_data[period]["Return"]
@@ -821,6 +909,7 @@ class Risk:
 
         return sigma_2_forecast.round(rounding if rounding else self._rounding)
 
+    @handle_portfolio
     @handle_errors
     def get_skewness(
         self,
@@ -882,6 +971,14 @@ class Risk:
         | 2023 |  0.5252 |  0.0318 | -0.0972 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
+
+        if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
+            raise ValueError(
+                "Period must be daily, weekly, monthly, quarterly, or yearly."
+            )
+        if period == "daily" and self._historical_data["intraday"].empty:
+            raise ValueError("Intraday data is required for daily calculations.")
+
         returns = (
             self._within_historical_data[period]["Return"]
             if within_period
@@ -900,6 +997,7 @@ class Risk:
 
         return skewness.round(rounding if rounding else self._rounding)
 
+    @handle_portfolio
     @handle_errors
     def get_kurtosis(
         self,
@@ -966,6 +1064,14 @@ class Risk:
         | 2023 | 4.2908 |  4.4568 | 4.07   |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
+
+        if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
+            raise ValueError(
+                "Period must be daily, weekly, monthly, quarterly, or yearly."
+            )
+        if period == "daily" and self._historical_data["intraday"].empty:
+            raise ValueError("Intraday data is required for daily calculations.")
+
         returns = (
             self._within_historical_data[period]["Return"]
             if within_period

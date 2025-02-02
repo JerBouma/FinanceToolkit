@@ -17,9 +17,9 @@ AAPL,Free Cash Flow Yield,Lag 3,,,,0.6449
 AAPL,Net-Debt to EBITDA Ratio,Lag 1,,-0.224,-0.0108,-0.1554
 AAPL,Net-Debt to EBITDA Ratio,Lag 2,,,-0.2324,-0.1646
 AAPL,Net-Debt to EBITDA Ratio,Lag 3,,,,-0.3517
-AAPL,Cash Flow Coverage Ratio,Lag 1,,-0.0218,0.6815,0.0
-AAPL,Cash Flow Coverage Ratio,Lag 2,,,0.6449,0.6815
-AAPL,Cash Flow Coverage Ratio,Lag 3,,,,0.6449
+AAPL,Cash Flow Coverage Ratio,Lag 1,,0.1626,0.2195,0.073
+AAPL,Cash Flow Coverage Ratio,Lag 2,,,0.4178,0.3086
+AAPL,Cash Flow Coverage Ratio,Lag 3,,,,0.5214
 AAPL,CAPEX Coverage Ratio,Lag 1,,-0.1497,0.2154,-inf
 AAPL,CAPEX Coverage Ratio,Lag 2,,,0.0335,-inf
 AAPL,CAPEX Coverage Ratio,Lag 3,,,,-inf
@@ -44,9 +44,9 @@ MSFT,Free Cash Flow Yield,Lag 3,,,,0.3395
 MSFT,Net-Debt to EBITDA Ratio,Lag 1,,-0.2486,-0.2627,-0.4901
 MSFT,Net-Debt to EBITDA Ratio,Lag 2,,,-0.446,-0.624
 MSFT,Net-Debt to EBITDA Ratio,Lag 3,,,,-0.7175
-MSFT,Cash Flow Coverage Ratio,Lag 1,,-0.1771,0.6278,0.0
-MSFT,Cash Flow Coverage Ratio,Lag 2,,,0.3395,0.6278
-MSFT,Cash Flow Coverage Ratio,Lag 3,,,,0.3395
+MSFT,Cash Flow Coverage Ratio,Lag 1,,0.3249,0.2834,0.0051
+MSFT,Cash Flow Coverage Ratio,Lag 2,,,0.7004,0.2899
+MSFT,Cash Flow Coverage Ratio,Lag 3,,,,0.7091
 MSFT,CAPEX Coverage Ratio,Lag 1,,-0.053,0.0017,-0.1641
 MSFT,CAPEX Coverage Ratio,Lag 2,,,-0.0514,-0.1627
 MSFT,CAPEX Coverage Ratio,Lag 3,,,,-0.207

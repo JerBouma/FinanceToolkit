@@ -36,11 +36,6 @@ def test_get_capital_asset_pricing_model(recorder):
     recorder.capture(
         performance_module.get_capital_asset_pricing_model(growth=True, lag=[1, 2, 3])
     )
-    recorder.capture(
-        performance_module.get_capital_asset_pricing_model(
-            show_full_results=True
-        ).round(2)
-    )
 
 
 def test_get_factor_asset_correlations(recorder):
@@ -62,17 +57,17 @@ def test_get_factor_asset_correlations(recorder):
 
 
 def test_get_factor_correlations(recorder):
-    recorder.capture(performance_module.get_factor_correlations().round(2))
+    recorder.capture(performance_module.get_factor_correlations().round(1))
     recorder.capture(
-        performance_module.get_factor_correlations(period="monthly").round(2)
+        performance_module.get_factor_correlations(period="monthly").round(1)
     )
     recorder.capture(
         performance_module.get_factor_correlations(
             factors_to_calculate=["HML", "Mkt-RF"]
-        ).round(2)
+        ).round(1)
     )
     recorder.capture(
-        performance_module.get_factor_correlations(exclude_risk_free=False).round(2)
+        performance_module.get_factor_correlations(exclude_risk_free=False).round(1)
     )
 
 

@@ -1,0 +1,104 @@
+# Portfolio Configuration for Finance Toolkit by Jeroen Bouma (JerBouma)
+# With this configuration, you are able to get a complete overview of 
+# your investment portfolio over time.
+---
+
+general:
+  # Whether to adjust for duplicates. This can be the case if you do the same trade multiple
+  # times on a day at the same price. These are then grouped together.
+  adjust_duplicates: true
+
+  # The columns that represent the date. Can be a list to allow for more robustness in case
+  # you wish to change the format.
+  date_columns:
+    - Date
+
+  # The format to use for the dates, needs to be specific to your transaction data and is
+  # highly relevant for grouping data together. See https://strftime.org/ for more information.
+  date_format:
+    - "%Y-%m-%d"
+    - "%Y-%d-%m"
+    - "%d-%m-%Y"
+    - "%m-%d-%Y"
+
+  # The columns that include the ticker of the transaction. This is an important column to be able
+  # to collect historical data
+  ticker_columns:
+    - Identifier
+    - ISIN
+  
+  # The columns that include the name of the transaction. This is an optional column and will use
+  # the ticker column instead if nothing can be found.
+  name_columns:
+    - Name
+    - Product
+
+  # This can be either a string (e.g. currency: EUR) or a list of strings which
+  # represents columns and is used to determine the currency of a transaction.
+  # This needs to be 3 letters, e.g. EUR, USD or JPY.
+  currency_columns:
+    - Currency
+  
+  # The price column is used to determine the price of the transaction. This is used to calculate
+  # the value of the transaction and the performance of the transaction.
+  price_columns:
+    - Price
+
+  # The volume column is used to determine the volume of the transaction. This is used to calculate
+  # the value of the transaction and the performance of the transaction.
+  volume_columns:
+    - Volume
+    - Quantity
+
+  # The costs column is used to deduct any costs from the transaction. This is used to calculate
+  # the value of the transaction and the performance of the transaction. This is an optional column
+  # and is set to 0 if nothing can be found.
+  costs_columns:
+    - Costs
+    - Transaction and/or third
+
+  # This is the value column that is used to determine the value of the transaction. This is used
+  # to calculate the performance of the transaction. This is an optional column and is only used
+  # if the price and volume columns can't be found and to compare with the calculated value.
+  value_columns:
+    - Value
+    - Total
+
+  # This defines how the columns should be mapped as described above. This is used to normalize
+  # the dataset in such a way that it can be used for further processing but also so that the
+  # model can take multiple (different) portfolio files. E.g. if you invest with different
+  # brokers, the model should be flexible enough to group these together.
+  column_mapping:
+    date: Date
+    identifier: Identifier
+    name: Name
+    price: Price
+    volume: Volume
+    costs: Costs
+    currency: Currency
+
+  # This is the overall benchmark used when there is no benchmark ticker specified
+  # for a specific ticker (see below). Defaults to ^GSPC (S&P 500 Index)
+  benchmark_ticker: ^GSPC
+
+adjustments:
+  # This parameter determines whether you'd like to see tickers that are entirely sold
+  # off in the portfolio. If you set this to true, you will not see the tickers that you
+  # have zero volume in the Portfolio Overview.
+  exclude_sold_tickers: false # CURRENTLY INACTIVE
+
+  # This reflects the currency of the portfolio. This is used to convert each transaction to
+  # the same currency if applicable. This must be 3 letters, e.g. EUR, USD or JPY. If you do
+  # not want to convert currencies, set this to False but do keep in mind that aggregations
+  # of a portfolio in multiple currencies are not entirely correct.
+  main_currency: EUR # CURRENTLY INACTIVE
+
+  # Columns to adjust based on differences in the obtained ISIN ticker and the currency
+  # the transaction is denoted in.
+  currency_adjustment_columns:
+    - Open
+    - High
+    - Low
+    - Close
+    - Adj Close
+    - Dividends

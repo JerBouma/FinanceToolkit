@@ -2,18 +2,17 @@
 
 import streamlit as st
 
-from app import helpers, initalization_model, metrics_view, socials_model
+from pages import helpers, initalization_model, metrics_view, socials_model
 
 st.set_page_config(page_title="Finance Toolkit Dashboard", page_icon="🛠️", layout="wide")
 
-
-st.session_state = initalization_model.initalize_session_state(st.session_state)
+initalization_model.initalize_session_state(st.session_state)
 
 if "is_expanded" not in st.session_state:
     st.session_state["is_expanded"] = True
 
 if st.session_state["invalid_api_key"]:
-    helpers.load_css("app/assets/style.css")
+    helpers.load_css("pages/assets/style.css")
 
     st.session_state["welcome_msg"].markdown(
         body="""
@@ -38,7 +37,7 @@ if st.session_state["invalid_api_key"]:
     )
 
     st.session_state["intro_video"].video(
-        "app/assets/financetoolkit-dashboard.mov",
+        "pages/assets/financetoolkit-dashboard.mov",
         autoplay=True,
         muted=True,
         start_time=3,
@@ -54,13 +53,25 @@ if st.session_state["invalid_api_key"]:
         unsafe_allow_html=True,
     )
 
-    st.session_state = initalization_model.create_api_key_sidebar(st.session_state)
+    initalization_model.create_api_key_sidebar(st.session_state)
 
 
 if "perform_initalization" not in st.session_state:
     st.session_state["perform_initalization"] = False
+    st.session_state["collect_data"] = False
 
 if not st.session_state["invalid_api_key"]:
+    st.markdown(
+        """
+        <style>
+            section[data-testid="stSidebar"][aria-expanded="true"]{
+                display: none;
+            }
+        </style>
+    """,
+        unsafe_allow_html=True,
+    )
+
     st.session_state["welcome_msg"].empty()
     st.session_state["intro_video"].empty()
     st.session_state["mobile_user"].empty()
@@ -142,11 +153,7 @@ if not st.session_state["invalid_api_key"]:
     if st.session_state["collect_data"]:
         # Collect all historical data required to perform all calculations within
         # the Finance Toolkit based on the input from the sidebar
-        st.session_state = initalization_model.initalize_financetoolkit(
-            st.session_state
-        )
-
-        st.header("Results", divider="green")
+        initalization_model.initalize_financetoolkit(st.session_state)
 
         if not st.session_state["tickers"]:
             st.toast("Please select at least one ticker to collect data.", icon="❗️")
@@ -162,17 +169,5 @@ if not st.session_state["invalid_api_key"]:
                     )
 
         st.session_state["perform_initalization"] = False
-
-    st.markdown(
-        """
-        <style>
-            section[data-testid="stSidebar"][aria-expanded="true"]{
-                display: none;
-            }
-        </style>
-    """,
-        unsafe_allow_html=True,
-    )
-
 
 socials_model.create_socials_sidebar()

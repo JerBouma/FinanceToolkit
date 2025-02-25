@@ -24,7 +24,11 @@ from financetoolkit.fundamentals_model import (
     get_rating as _get_rating,
     get_revenue_segmentation as _get_revenue_segmentation,
 )
-from financetoolkit.helpers import calculate_growth as _calculate_growth
+from financetoolkit.helpers import (
+    calculate_growth as _calculate_growth,
+    load_cached_data as _load_cached_data,
+    save_cached_data as _save_cached_data,
+)
 from financetoolkit.historical_model import (
     convert_daily_to_other_period as _convert_daily_to_other_period,
     get_historical_data as _get_historical_data,
@@ -75,11 +79,12 @@ class Toolkit:
 
     def __init__(
         self,
-        tickers: list | str,
+        tickers: list | str | None = None,
         api_key: str = "",
         start_date: str | None = None,
         end_date: str | None = None,
         quarterly: bool = False,
+        use_cached_data: bool | str = False,
         risk_free_rate: str = "10y",
         benchmark_ticker: str | None = "SPY",
         historical_source: str | None = None,
@@ -95,7 +100,6 @@ class Toolkit:
         remove_invalid_tickers: bool = False,
         sleep_timer: bool | None = None,
         progress_bar: bool = True,
-        portfolio_weights: dict[str, pd.DataFrame] | None = None,
     ):
         """
         Initializes an Toolkit object with a ticker or a list of tickers. The way the Toolkit is initialized
@@ -118,6 +122,9 @@ class Toolkit:
         quarterly (bool): A boolean indicating whether to collect quarterly data. This defaults to False and thus
         collects yearly financial statements. Note that historical data can still be collected for
         any period and interval.
+        use_cached_data (bool or str): A boolean indicating whether to use cached data. This is useful when you
+        have collected data before and want to use this data again. If you want to use a specific location to
+        store the cached data, you can define this as a string, e.g. "datasets". Defaults to False.
         risk_free_rate (str): A string containing the risk free rate. This can be 13w, 5y, 10y or 30y. This is
         based on the US Treasury Yields and is used to calculate various ratios and Excess Returns.
         benchmark_ticker (str): A string containing the benchmark ticker. Defaults to SPY (S&P 500). This is
@@ -138,8 +145,8 @@ class Toolkit:
         convert_currency (bool): A boolean indicating whether to convert the currency of the financial statements to
         match that of the related historical data. This is an important conversion when comparing the financial
         statements between each ticker as well as for calculations that are done with the historical data.
-        If you are using a Free plan from FinancialModelingPrep, this will be set to False.
-        If you are using a Premium plan from FinancialModelingPrep, this will be set to True. Defaults to None
+            If you are using a Free plan from FinancialModelingPrep, this will be set to False.
+            If you are using a Premium plan from FinancialModelingPrep, this will be set to True. Defaults to None
         and can thus be overridden.
         reverse_dates (bool): A boolean indicating whether to reverse the dates in the financial statements.
         intraday_period (str): A string containing the intraday period. This can be 1min, 5min, 15min, 30min or 1hour.
@@ -171,68 +178,13 @@ class Toolkit:
         toolkit = Toolkit("AMZN", benchmark_ticker="^DJI", risk_free_rate="30y", api_key="FINANCIAL_MODELING_PREP_KEY")
         ```
         """
-        if sleep_timer is None:
-            # This tests the API key to determine the subscription plan. This is relevant for the sleep timer
-            # but also for other components of the Toolkit. This prevents wait timers from occurring while
-            # it wouldn't result to any other answer than a rate limit error.
-            determine_plan = helpers.get_financial_data(
-                url=f"https://financialmodelingprep.com/api/v3/income-statement/AAPL?period=quarter&apikey={api_key}",
-                sleep_timer=False,
-            )
-
-            self._fmp_plan = "Premium"
-
-            for option in ["NOT AVAILABLE", "LIMIT REACH", "INVALID API KEY"]:
-                if option in determine_plan:
-                    self._fmp_plan = "Free"
-                    break
-        else:
-            self._fmp_plan = "Premium"
-
-        if isinstance(tickers, str):
-            tickers = [tickers.upper()]
-        elif isinstance(tickers, list):
-            tickers = [
-                ticker.upper() if ticker != "Portfolio" else ticker
-                for ticker in tickers
-            ]
-        else:
-            raise TypeError("Tickers must be a string or a list of strings.")
-
-        self._tickers: list[str] = []
-        for ticker in tickers:
-            if bool(re.match("^([A-Z]{2})([A-Z0-9]{9})([0-9])$", ticker)):
-                response = requests.get(
-                    f"https://query2.finance.yahoo.com/v1/finance/search?q={ticker}",
-                    timeout=60,
-                    headers={
-                        "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit"
-                        "/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36"
-                    },
-                )
-
-                if response.status_code == 200:  # noqa
-                    data = response.json()
-
-                    try:
-                        print(f"Converted {ticker} to {data['quotes'][0]['symbol']}")
-                        self._tickers.append(data["quotes"][0]["symbol"])
-                    except (KeyError, ValueError, IndexError):
-                        print(f"Could not convert {ticker}")
-                else:
-                    print(f"Could not convert {ticker}")
-            else:
-                self._tickers.append(ticker)
-
+        self._use_cached_data = (
+            not use_cached_data if isinstance(use_cached_data, bool) else True
+        )
+        self._cached_data_location = (
+            "cached" if isinstance(use_cached_data, bool) else use_cached_data
+        )
         self._benchmark_ticker = benchmark_ticker
-
-        if self._benchmark_ticker in self._tickers:
-            print(
-                f"Please note that the benchmark ticker ({self._benchmark_ticker}) is also "
-                "included in the tickers. Therefore, this ticker will be removed from the "
-                "tickers list."
-            )
-            self._tickers.remove(self._benchmark_ticker)
 
         if start_date and re.match(r"^\d{4}-\d{2}-\d{2}$", start_date) is None:
             raise ValueError(
@@ -266,6 +218,140 @@ class Toolkit:
         self._end_date = end_date if end_date else datetime.now().strftime("%Y-%m-%d")
         self._quarterly = quarterly
         self._risk_free_rate = risk_free_rate
+
+        if use_cached_data:
+            cached_configurations = _load_cached_data(
+                cached_data_location=self._cached_data_location,
+                file_name="configurations.pickle",
+                method="pickle",
+            )
+
+            if len(cached_configurations):
+                # Given that it can be an empty pd.DataFrame or a filled
+                # dictionary, testing for both.
+                cached_overwrites = []
+
+                if self._start_date != cached_configurations["start_date"]:
+                    self._start_date = cached_configurations["start_date"]
+                    cached_overwrites.append(
+                        f"start_date ({cached_configurations['start_date']})"
+                    )
+                if self._end_date != cached_configurations["end_date"]:
+                    self._end_date = cached_configurations["end_date"]
+                    cached_overwrites.append(
+                        f"end_date ({cached_configurations['end_date']})"
+                    )
+                if self._quarterly != cached_configurations["quarterly"]:
+                    self._quarterly = cached_configurations["quarterly"]
+                    cached_overwrites.append(
+                        f"quarterly {cached_configurations['quarterly']}"
+                    )
+                if self._benchmark_ticker != cached_configurations["benchmark_ticker"]:
+                    self._benchmark_ticker = cached_configurations["benchmark_ticker"]
+                    cached_overwrites.append(
+                        f"benchmark_ticker ({cached_configurations['benchmark_ticker']})"
+                    )
+                if self._risk_free_rate != cached_configurations["risk_free_rate"]:
+                    self._risk_free_rate = cached_configurations["risk_free_rate"]
+                    cached_overwrites.append(
+                        f"risk_free_rate ({cached_configurations['risk_free_rate']})"
+                    )
+                if tickers != cached_configurations["tickers"]:
+                    if tickers:
+                        # Only provide information if any tickers are provided
+                        cached_overwrites.append(
+                            f"tickers ({', '.join(cached_configurations['tickers'])})"
+                        )
+                    tickers = cached_configurations["tickers"]
+
+                if cached_overwrites:
+                    print(
+                        "The following variables are overwritten by the cached "
+                        f"configurations: {', '.join(cached_overwrites)}\n"
+                        "If this is undesirable, please set the use_cached_data variable "
+                        "to False or select a new location for the cached data by changing "
+                        "the use_cached_data variable to a string."
+                    )
+            else:
+                _save_cached_data(
+                    cached_data={
+                        "tickers": tickers,
+                        "start_date": self._start_date,
+                        "end_date": self._end_date,
+                        "quarterly": self._quarterly,
+                        "benchmark_ticker": self._benchmark_ticker,
+                        "risk_free_rate": risk_free_rate,
+                    },
+                    cached_data_location=self._cached_data_location,
+                    file_name="configurations.pickle",
+                    method="pickle",
+                    include_message=False,
+                )
+
+        if isinstance(tickers, str):
+            tickers = [tickers.upper()]
+        elif isinstance(tickers, list):
+            tickers = [
+                ticker.upper() if ticker != "Portfolio" else ticker
+                for ticker in tickers
+            ]
+        elif tickers is None:
+            raise ValueError("Please input a ticker or a list of tickers.")
+        else:
+            raise TypeError("Tickers must be a string or a list of strings.")
+
+        self._tickers: list[str] = []
+
+        for ticker in tickers:
+            if bool(re.match("^([A-Z]{2})([A-Z0-9]{9})([0-9])$", ticker)):
+                response = requests.get(
+                    f"https://query2.finance.yahoo.com/v1/finance/search?q={ticker}",
+                    timeout=60,
+                    headers={
+                        "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit"
+                        "/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36"
+                    },
+                )
+
+                if response.status_code == 200:  # noqa
+                    data = response.json()
+
+                    try:
+                        print(f"Converted {ticker} to {data['quotes'][0]['symbol']}")
+                        self._tickers.append(data["quotes"][0]["symbol"])
+                    except (KeyError, ValueError, IndexError):
+                        print(f"Could not convert {ticker}")
+                else:
+                    print(f"Could not convert {ticker}")
+            else:
+                self._tickers.append(ticker)
+
+        if self._benchmark_ticker in self._tickers:
+            print(
+                f"Please note that the benchmark ticker ({self._benchmark_ticker}) is also "
+                "included in the tickers. Therefore, this ticker will be removed from the "
+                "tickers list."
+            )
+            self._tickers.remove(self._benchmark_ticker)
+
+        if sleep_timer is None:
+            # This tests the API key to determine the subscription plan. This is relevant for the sleep timer
+            # but also for other components of the Toolkit. This prevents wait timers from occurring while
+            # it wouldn't result to any other answer than a rate limit error.
+            determine_plan = helpers.get_financial_data(
+                url=f"https://financialmodelingprep.com/api/v3/income-statement/AAPL?period=quarter&apikey={api_key}",
+                sleep_timer=False,
+            )
+
+            self._fmp_plan = "Premium"
+
+            for option in ["NOT AVAILABLE", "LIMIT REACH", "INVALID API KEY"]:
+                if option in determine_plan:
+                    self._fmp_plan = "Free"
+                    break
+        else:
+            self._fmp_plan = "Premium"
+
         self._rounding = rounding
         self._remove_invalid_tickers = remove_invalid_tickers
         self._invalid_tickers: list = []
@@ -278,7 +364,7 @@ class Toolkit:
             else self._fmp_plan != "Free"
         )
         self._progress_bar = progress_bar
-        self._portfolio_weights = portfolio_weights
+        self._portfolio_weights: dict | None = None
         self._historical = historical
         self._currencies: list = []
         self._statement_currencies: pd.Series = pd.Series()
@@ -296,20 +382,93 @@ class Toolkit:
 
         self._intraday_period = intraday_period
 
-        if self._api_key:
+        if self._api_key or self._use_cached_data:
             # Initialization of FinancialModelingPrep Variables
-            self._profile: pd.DataFrame = pd.DataFrame()
-            self._quote: pd.DataFrame = pd.DataFrame()
-            self._rating: pd.DataFrame = pd.DataFrame()
-            self._analyst_estimates: pd.DataFrame = pd.DataFrame()
-            self._analyst_estimates_growth: pd.DataFrame = pd.DataFrame()
-            self._dividend_calendar: pd.DataFrame = pd.DataFrame()
-            self._earnings_calendar: pd.DataFrame = pd.DataFrame()
-            self._esg_scores: pd.DataFrame = pd.DataFrame()
-            self._revenue_geographic_segmentation: pd.DataFrame = pd.DataFrame()
+            self._profile: pd.DataFrame = (
+                _load_cached_data(
+                    cached_data_location=self._cached_data_location,
+                    file_name="profile.pickle",
+                )
+                if self._use_cached_data
+                else pd.DataFrame()
+            )
+            self._quote: pd.DataFrame = (
+                _load_cached_data(
+                    cached_data_location=self._cached_data_location,
+                    file_name="quote.pickle",
+                )
+                if self._use_cached_data
+                else pd.DataFrame()
+            )
+            self._rating: pd.DataFrame = (
+                _load_cached_data(
+                    cached_data_location=self._cached_data_location,
+                    file_name="rating.pickle",
+                )
+                if self._use_cached_data
+                else pd.DataFrame()
+            )
+            self._analyst_estimates: pd.DataFrame = (
+                _load_cached_data(
+                    cached_data_location=self._cached_data_location,
+                    file_name="analyst_estimates.pickle",
+                )
+                if self._use_cached_data
+                else pd.DataFrame()
+            )
+            self._analyst_estimates_growth: pd.DataFrame = (
+                _load_cached_data(
+                    cached_data_location=self._cached_data_location,
+                    file_name="analyst_estimates_growth.pickle",
+                )
+                if self._use_cached_data
+                else pd.DataFrame()
+            )
+            self._dividend_calendar: pd.DataFrame = (
+                _load_cached_data(
+                    cached_data_location=self._cached_data_location,
+                    file_name="dividend_calendar.pickle",
+                )
+                if self._use_cached_data
+                else pd.DataFrame()
+            )
+            self._earnings_calendar: pd.DataFrame = (
+                _load_cached_data(
+                    cached_data_location=self._cached_data_location,
+                    file_name="earnings_calendar.pickle",
+                )
+                if self._use_cached_data
+                else pd.DataFrame()
+            )
+            self._esg_scores: pd.DataFrame = (
+                _load_cached_data(
+                    cached_data_location=self._cached_data_location,
+                    file_name="esg_scores.pickle",
+                )
+                if self._use_cached_data
+                else pd.DataFrame()
+            )
+            self._revenue_geographic_segmentation: pd.DataFrame = (
+                _load_cached_data(
+                    cached_data_location=self._cached_data_location,
+                    file_name="revenue_geographic_segmentation.pickle",
+                )
+                if self._use_cached_data
+                else pd.DataFrame()
+            )
             self._revenue_geographic_segmentation_growth: pd.DataFrame = pd.DataFrame()
-            self._revenue_product_segmentation: pd.DataFrame = pd.DataFrame()
+
+            self._revenue_product_segmentation: pd.DataFrame = (
+                _load_cached_data(
+                    cached_data_location=self._cached_data_location,
+                    file_name="revenue_product_segmentation.pickle",
+                )
+                if self._use_cached_data
+                else pd.DataFrame()
+            )
             self._revenue_product_segmentation_growth: pd.DataFrame = pd.DataFrame()
+
+        if self._api_key:
             self._historical_source = (
                 historical_source if historical_source else "FinancialModelingPrep"
             )
@@ -330,10 +489,28 @@ class Toolkit:
             )
 
         # Initialization of Historical Variables
-        self._intraday_historical_data: pd.DataFrame = pd.DataFrame()
-        self._daily_historical_data: pd.DataFrame = (
-            historical if not historical.empty else pd.DataFrame()
+
+        self._intraday_historical_data: pd.DataFrame = (
+            _load_cached_data(
+                cached_data_location=self._cached_data_location,
+                file_name="intraday_historical_data.pickle",
+            )
+            if self._use_cached_data
+            else pd.DataFrame()
         )
+
+        if not historical.empty:
+            self._daily_historical_data: pd.DataFrame = historical
+        else:
+            self._daily_historical_data = (
+                _load_cached_data(
+                    cached_data_location=self._cached_data_location,
+                    file_name="daily_historical_data.pickle",
+                )
+                if self._use_cached_data
+                else pd.DataFrame()
+            )
+
         self._weekly_historical_data: pd.DataFrame = (
             _convert_daily_to_other_period(
                 "weekly",
@@ -341,7 +518,7 @@ class Toolkit:
                 self._start_date,
                 self._end_date,
             )
-            if not historical.empty
+            if not self._daily_historical_data.empty
             else pd.DataFrame()
         )
         self._monthly_historical_data: pd.DataFrame = (
@@ -351,7 +528,7 @@ class Toolkit:
                 self._start_date,
                 self._end_date,
             )
-            if not historical.empty
+            if not self._daily_historical_data.empty
             else pd.DataFrame()
         )
         self._quarterly_historical_data: pd.DataFrame = (
@@ -361,14 +538,14 @@ class Toolkit:
                 self._start_date,
                 self._end_date,
             )
-            if not historical.empty
+            if not self._daily_historical_data.empty
             else pd.DataFrame()
         )
         self._yearly_historical_data: pd.DataFrame = (
             _convert_daily_to_other_period(
                 "yearly", self._daily_historical_data, self._start_date, self._end_date
             )
-            if not historical.empty
+            if not self._daily_historical_data.empty
             else pd.DataFrame()
         )
 
@@ -411,8 +588,8 @@ class Toolkit:
         )
 
         # Initialization of Financial Statements
-        self._balance_sheet_statement: pd.DataFrame = (
-            _convert_date_label(
+        if not balance.empty:
+            self._balance_sheet_statement: pd.DataFrame = _convert_date_label(
                 _convert_financial_statements(
                     balance, self._balance_sheet_statement_generic, reverse_dates
                 ),
@@ -420,13 +597,20 @@ class Toolkit:
                 self._end_date,
                 self._quarterly,
             )
-            if not balance.empty
-            else pd.DataFrame()
-        )
+        else:
+            self._balance_sheet_statement = (
+                _load_cached_data(
+                    cached_data_location=self._cached_data_location,
+                    file_name="balance_sheet_statement.pickle",
+                )
+                if self._use_cached_data
+                else pd.DataFrame()
+            )
+
         self._balance_sheet_statement_growth: pd.DataFrame = pd.DataFrame()
 
-        self._income_statement: pd.DataFrame = (
-            _convert_date_label(
+        if not income.empty:
+            self._income_statement: pd.DataFrame = _convert_date_label(
                 _convert_financial_statements(
                     income, self._income_statement_generic, reverse_dates
                 ),
@@ -434,13 +618,20 @@ class Toolkit:
                 self._end_date,
                 self._quarterly,
             )
-            if not income.empty
-            else pd.DataFrame()
-        )
+        else:
+            self._income_statement = (
+                _load_cached_data(
+                    cached_data_location=self._cached_data_location,
+                    file_name="income_statement.pickle",
+                )
+                if self._use_cached_data
+                else pd.DataFrame()
+            )
+
         self._income_statement_growth: pd.DataFrame = pd.DataFrame()
 
-        self._cash_flow_statement: pd.DataFrame = (
-            _convert_date_label(
+        if not cash.empty:
+            self._cash_flow_statement: pd.DataFrame = _convert_date_label(
                 _convert_financial_statements(
                     cash, self._cash_flow_statement_generic, reverse_dates
                 ),
@@ -448,12 +639,26 @@ class Toolkit:
                 self._end_date,
                 self._quarterly,
             )
-            if not cash.empty
-            else pd.DataFrame()
-        )
+        else:
+            self._cash_flow_statement = (
+                _load_cached_data(
+                    cached_data_location=self._cached_data_location,
+                    file_name="cash_flow_statement.pickle",
+                )
+                if self._use_cached_data
+                else pd.DataFrame()
+            )
+
         self._cash_flow_statement_growth: pd.DataFrame = pd.DataFrame()
 
-        self._statistics_statement: pd.DataFrame = pd.DataFrame()
+        self._statistics_statement: pd.DataFrame = (
+            _load_cached_data(
+                cached_data_location=self._cached_data_location,
+                file_name="statistics_statement.pickle",
+            )
+            if self._use_cached_data
+            else pd.DataFrame()
+        )
 
         pd.set_option("display.float_format", str)
 
@@ -571,7 +776,7 @@ class Toolkit:
             self._balance_sheet_statement.index.get_level_values(0).unique().tolist()
         )
 
-        return Ratios(
+        ratios = Ratios(
             tickers=(
                 tickers + ["Portfolio"] if "Portfolio" in self._tickers else tickers
             ),
@@ -585,8 +790,12 @@ class Toolkit:
             cash=self._cash_flow_statement,
             quarterly=self._quarterly,
             rounding=self._rounding,
-            portfolio_weights=self._portfolio_weights,
         )
+
+        if self._portfolio_weights:
+            ratios._portfolio_weights = self._portfolio_weights
+
+        return ratios
 
     @property
     def models(self) -> Models:
@@ -849,7 +1058,7 @@ class Toolkit:
             "yearly": self._yearly_historical_data,
         }
 
-        return Technicals(
+        technicals = Technicals(
             tickers=(
                 tickers + ["Portfolio"] if "Portfolio" in self._tickers else tickers
             ),
@@ -857,8 +1066,12 @@ class Toolkit:
             rounding=self._rounding,
             start_date=self._start_date,
             end_date=self._end_date,
-            portfolio_weights=self._portfolio_weights,
         )
+
+        if self._portfolio_weights:
+            technicals._portfolio_weights = self._portfolio_weights
+
+        return technicals
 
     @property
     def performance(self) -> Performance:
@@ -935,7 +1148,7 @@ class Toolkit:
         if "Benchmark" in tickers:
             tickers.remove("Benchmark")
 
-        return Performance(
+        performance = Performance(
             tickers=(
                 tickers + ["Portfolio"] if "Portfolio" in self._tickers else tickers
             ),
@@ -947,8 +1160,12 @@ class Toolkit:
             end_date=self._end_date,
             intraday_period=self._intraday_period,
             progress_bar=self._progress_bar,
-            portfolio_weights=self._portfolio_weights,
         )
+
+        if self._portfolio_weights:
+            performance._portfolio_weights = self._portfolio_weights
+
+        return performance
 
     @property
     def risk(self) -> Risk:
@@ -1020,7 +1237,7 @@ class Toolkit:
             "yearly": self._yearly_historical_data,
         }
 
-        return Risk(
+        risk = Risk(
             tickers=(
                 tickers + ["Portfolio"] if "Portfolio" in self._tickers else tickers
             ),
@@ -1028,8 +1245,12 @@ class Toolkit:
             intraday_period=self._intraday_period,
             quarterly=self._quarterly,
             rounding=self._rounding,
-            portfolio_weights=self._portfolio_weights,
         )
+
+        if self._portfolio_weights:
+            risk._portfolio_weights = self._portfolio_weights
+
+        return risk
 
     @property
     def fixedincome(self) -> FixedIncome:
@@ -1200,7 +1421,15 @@ class Toolkit:
                 progress_bar=(
                     progress_bar if progress_bar is not None else self._progress_bar
                 ),
+                user_subsription=self._fmp_plan,
             )
+
+            if self._use_cached_data:
+                _save_cached_data(
+                    cached_data=self._profile,
+                    cached_data_location=self._cached_data_location,
+                    file_name="profile.pickle",
+                )
 
         if self._remove_invalid_tickers:
             self._tickers = [
@@ -1277,7 +1506,15 @@ class Toolkit:
                 progress_bar=(
                     progress_bar if progress_bar is not None else self._progress_bar
                 ),
+                user_subsription=self._fmp_plan,
             )
+
+            if self._use_cached_data:
+                _save_cached_data(
+                    cached_data=self._quote,
+                    cached_data_location=self._cached_data_location,
+                    file_name="quote.pickle",
+                )
 
         if self._remove_invalid_tickers:
             self._tickers = [
@@ -1350,7 +1587,15 @@ class Toolkit:
                 progress_bar=(
                     progress_bar if progress_bar is not None else self._progress_bar
                 ),
+                user_subsription=self._fmp_plan,
             )
+
+            if self._use_cached_data:
+                _save_cached_data(
+                    cached_data=self._rating,
+                    cached_data_location=self._cached_data_location,
+                    file_name="rating.pickle",
+                )
 
         if self._remove_invalid_tickers:
             self._tickers = [
@@ -1446,7 +1691,15 @@ class Toolkit:
                 progress_bar=(
                     progress_bar if progress_bar is not None else self._progress_bar
                 ),
+                user_subsription=self._fmp_plan,
             )
+
+            if self._use_cached_data:
+                _save_cached_data(
+                    cached_data=self._analyst_estimates,
+                    cached_data_location=self._cached_data_location,
+                    file_name="analyst_estimates.pickle",
+                )
 
         if self._remove_invalid_tickers:
             self._tickers = [
@@ -1540,7 +1793,15 @@ class Toolkit:
                 progress_bar=(
                     progress_bar if progress_bar is not None else self._progress_bar
                 ),
+                user_subsription=self._fmp_plan,
             )
+
+            if self._use_cached_data:
+                _save_cached_data(
+                    cached_data=self._earnings_calendar,
+                    cached_data_location=self._cached_data_location,
+                    file_name="earnings_calendar.pickle",
+                )
 
         earnings_calendar = self._earnings_calendar.round(
             rounding if rounding else self._rounding
@@ -1621,7 +1882,15 @@ class Toolkit:
                 progress_bar=(
                     progress_bar if progress_bar is not None else self._progress_bar
                 ),
+                user_subsription=self._fmp_plan,
             )
+
+            if self._use_cached_data:
+                _save_cached_data(
+                    cached_data=self._revenue_geographic_segmentation,
+                    cached_data_location=self._cached_data_location,
+                    file_name="revenue_geographic_segmentation.pickle",
+                )
 
         if self._remove_invalid_tickers:
             self._tickers = [
@@ -1702,7 +1971,15 @@ class Toolkit:
                 progress_bar=(
                     progress_bar if progress_bar is not None else self._progress_bar
                 ),
+                user_subsription=self._fmp_plan,
             )
+
+            if self._use_cached_data:
+                _save_cached_data(
+                    cached_data=self._revenue_product_segmentation,
+                    cached_data_location=self._cached_data_location,
+                    file_name="revenue_product_segmentation.pickle",
+                )
 
         if self._remove_invalid_tickers:
             self._tickers = [
@@ -1842,6 +2119,13 @@ class Toolkit:
             self._daily_historical_data = self._daily_historical_data.rename(
                 columns={self._benchmark_ticker: "Benchmark"}, level=1
             )
+
+            if self._use_cached_data:
+                _save_cached_data(
+                    cached_data=self._daily_historical_data,
+                    cached_data_location=self._cached_data_location,
+                    file_name="daily_historical_data.pickle",
+                )
 
         if self._remove_invalid_tickers:
             self._tickers = [
@@ -2081,6 +2365,13 @@ class Toolkit:
                 tqdm_message="Obtaining intraday data",
             )
 
+            if self._use_cached_data:
+                _save_cached_data(
+                    cached_data=self._intraday_historical_data,
+                    cached_data_location=self._cached_data_location,
+                    file_name="intraday_historical_data.pickle",
+                )
+
         # Save the period to prevent having to reacquire the data
         self._intraday_period = period
 
@@ -2178,7 +2469,15 @@ class Toolkit:
                 progress_bar=(
                     progress_bar if progress_bar is not None else self._progress_bar
                 ),
+                user_subsription=self._fmp_plan,
             )
+
+            if self._use_cached_data:
+                _save_cached_data(
+                    cached_data=self._dividend_calendar,
+                    cached_data_location=self._cached_data_location,
+                    file_name="dividend_calendar.pickle",
+                )
 
         dividend_calendar = self._dividend_calendar.round(
             rounding if rounding else self._rounding
@@ -2286,6 +2585,7 @@ class Toolkit:
                 progress_bar=(
                     progress_bar if progress_bar is not None else self._progress_bar
                 ),
+                user_subsription=self._fmp_plan,
             )
 
         esg_scores = self._esg_scores.round(rounding if rounding else self._rounding)
@@ -2928,7 +3228,34 @@ class Toolkit:
                 progress_bar=(
                     progress_bar if progress_bar is not None else self._progress_bar
                 ),
+                user_subsription=self._fmp_plan,
             )
+
+            if convert_currency:
+                self.get_exchange_rates(
+                    period="quarterly" if self._quarterly else "yearly",
+                    progress_bar=(
+                        progress_bar if progress_bar is not None else self._progress_bar
+                    ),
+                )
+
+                self._balance_sheet_statement = helpers.convert_currencies(
+                    financial_statement_data=self._balance_sheet_statement,
+                    financial_statement_currencies=self._statement_currencies,
+                    exchange_rate_data=(
+                        self._quarterly_exchange_rate_data["Adj Close"]
+                        if self._quarterly
+                        else self._yearly_exchange_rate_data["Adj Close"]
+                    ),
+                    financial_statement_name="balance sheet statement",
+                )
+
+            if self._use_cached_data:
+                _save_cached_data(
+                    cached_data=self._balance_sheet_statement,
+                    cached_data_location=self._cached_data_location,
+                    file_name="balance_sheet_statement.pickle",
+                )
 
         if self._remove_invalid_tickers:
             self._tickers = [
@@ -2950,25 +3277,6 @@ class Toolkit:
                 lag=lag,
                 rounding=rounding if rounding else self._rounding,
                 axis="columns",
-            )
-
-        if convert_currency:
-            self.get_exchange_rates(
-                period="quarterly" if self._quarterly else "yearly",
-                progress_bar=(
-                    progress_bar if progress_bar is not None else self._progress_bar
-                ),
-            )
-
-            balance_sheet_statement = helpers.convert_currencies(
-                financial_statement_data=balance_sheet_statement,
-                financial_statement_currencies=self._statement_currencies,
-                exchange_rate_data=(
-                    self._quarterly_exchange_rate_data["Adj Close"]
-                    if self._quarterly
-                    else self._yearly_exchange_rate_data["Adj Close"]
-                ),
-                financial_statement_name="balance sheet statement",
             )
 
         balance_sheet_statement = balance_sheet_statement.round(
@@ -3092,7 +3400,45 @@ class Toolkit:
                 progress_bar=(
                     progress_bar if progress_bar is not None else self._progress_bar
                 ),
+                user_subsription=self._fmp_plan,
             )
+
+            if convert_currency:
+                self.get_exchange_rates(
+                    period="quarterly" if self._quarterly else "yearly",
+                    progress_bar=(
+                        progress_bar if progress_bar is not None else self._progress_bar
+                    ),
+                )
+
+                self._income_statement = helpers.convert_currencies(
+                    financial_statement_data=self._income_statement,
+                    financial_statement_currencies=self._statement_currencies,
+                    exchange_rate_data=(
+                        self._quarterly_exchange_rate_data["Adj Close"]
+                        if self._quarterly
+                        else self._yearly_exchange_rate_data["Adj Close"]
+                    ),
+                    items_not_to_adjust=[
+                        "Gross Profit Ratio",
+                        "EBITDA Ratio",
+                        "Operating Income Ratio",
+                        "Income Before Tax Ratio",
+                        "Net Income Ratio",
+                        "EPS",
+                        "EPS Diluted",
+                        "Weighted Average Shares",
+                        "Weighted Average Shares Diluted",
+                    ],
+                    financial_statement_name="income statement",
+                )
+
+            if self._use_cached_data:
+                _save_cached_data(
+                    cached_data=self._income_statement,
+                    cached_data_location=self._cached_data_location,
+                    file_name="income_statement.pickle",
+                )
 
         if self._remove_invalid_tickers:
             self._tickers = [
@@ -3125,36 +3471,6 @@ class Toolkit:
                 lag=lag,
                 rounding=rounding if rounding else self._rounding,
                 axis="columns",
-            )
-
-        if convert_currency:
-            self.get_exchange_rates(
-                period="quarterly" if self._quarterly else "yearly",
-                progress_bar=(
-                    progress_bar if progress_bar is not None else self._progress_bar
-                ),
-            )
-
-            income_statement = helpers.convert_currencies(
-                financial_statement_data=income_statement,
-                financial_statement_currencies=self._statement_currencies,
-                exchange_rate_data=(
-                    self._quarterly_exchange_rate_data["Adj Close"]
-                    if self._quarterly
-                    else self._yearly_exchange_rate_data["Adj Close"]
-                ),
-                items_not_to_adjust=[
-                    "Gross Profit Ratio",
-                    "EBITDA Ratio",
-                    "Operating Income Ratio",
-                    "Income Before Tax Ratio",
-                    "Net Income Ratio",
-                    "EPS",
-                    "EPS Diluted",
-                    "Weighted Average Shares",
-                    "Weighted Average Shares Diluted",
-                ],
-                financial_statement_name="income statement",
             )
 
         income_statement = income_statement.round(
@@ -3278,7 +3594,34 @@ class Toolkit:
                 progress_bar=(
                     progress_bar if progress_bar is not None else self._progress_bar
                 ),
+                user_subsription=self._fmp_plan,
             )
+
+            if convert_currency:
+                self.get_exchange_rates(
+                    period="quarterly" if self._quarterly else "yearly",
+                    progress_bar=(
+                        progress_bar if progress_bar is not None else self._progress_bar
+                    ),
+                )
+
+                self._cash_flow_statement = helpers.convert_currencies(
+                    financial_statement_data=self._cash_flow_statement,
+                    financial_statement_currencies=self._statement_currencies,
+                    exchange_rate_data=(
+                        self._quarterly_exchange_rate_data["Adj Close"]
+                        if self._quarterly
+                        else self._yearly_exchange_rate_data["Adj Close"]
+                    ),
+                    financial_statement_name="cash flow statement",
+                )
+
+            if self._use_cached_data:
+                _save_cached_data(
+                    cached_data=self._cash_flow_statement,
+                    cached_data_location=self._cached_data_location,
+                    file_name="cash_flow_statement.pickle",
+                )
 
         if self._remove_invalid_tickers:
             self._tickers = [
@@ -3298,25 +3641,6 @@ class Toolkit:
                 lag=lag,
                 rounding=rounding if rounding else self._rounding,
                 axis="columns",
-            )
-
-        if convert_currency:
-            self.get_exchange_rates(
-                period="quarterly" if self._quarterly else "yearly",
-                progress_bar=(
-                    progress_bar if progress_bar is not None else self._progress_bar
-                ),
-            )
-
-            cash_flow_statement = helpers.convert_currencies(
-                financial_statement_data=cash_flow_statement,
-                financial_statement_currencies=self._statement_currencies,
-                exchange_rate_data=(
-                    self._quarterly_exchange_rate_data["Adj Close"]
-                    if self._quarterly
-                    else self._yearly_exchange_rate_data["Adj Close"]
-                ),
-                financial_statement_name="cash flow statement",
             )
 
         cash_flow_statement = cash_flow_statement.round(
@@ -3401,7 +3725,15 @@ class Toolkit:
                 progress_bar=(
                     progress_bar if progress_bar is not None else self._progress_bar
                 ),
+                user_subsription=self._fmp_plan,
             )
+
+            if self._use_cached_data:
+                _save_cached_data(
+                    cached_data=self._statistics_statement,
+                    cached_data_location=self._cached_data_location,
+                    file_name="statistics_statement.pickle",
+                )
 
         if self._remove_invalid_tickers:
             self._tickers = [

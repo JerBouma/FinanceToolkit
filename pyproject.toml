@@ -81,16 +81,17 @@ exclude = ["conftest.py"]
 [tool.pylint]
 max-line-length = 122
 disable = [
-    "R0913",
-    "W1514",
-    "R0911",
-    "R0912",
-    "R0915",
-    "R0801",
-    "W0221",
-    "C0103",
-    "E1131",
+    "R0913", # too-many-arguments
+    "W1514", # using-import-outside-toplevel
+    "R0911", # too-many-return-statements
+    "R0912", # too-many-branches
+    "R0915", # too-many-statements
+    "R0801", # duplicate-code
+    "W0221", # arguments-differ
+    "C0103", # invalid-name
+    "E1131", # unsupported-binary-operation
     "R0917", # too-many-positional-arguments
+    "W0212", # protected-access
     ]
 
 [tool.ruff.lint.isort]

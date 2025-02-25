@@ -83,7 +83,7 @@ class Technicals:
         self._rounding: int | None = rounding
         self._start_date: str | None = start_date
         self._end_date: str | None = end_date
-        self._portfolio_weights = None
+        self._portfolio_weights: dict | None = None
 
         # Technical Indicators
         self._all_indicators: pd.DataFrame = pd.DataFrame()

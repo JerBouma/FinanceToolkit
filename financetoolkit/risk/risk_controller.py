@@ -89,7 +89,7 @@ class Risk:
         self._tickers = tickers
         self._quarterly = quarterly
         self._rounding: int | None = rounding
-        self._portfolio_weights = None
+        self._portfolio_weights: dict | None = None
 
         # Within Return Calculations
         daily_historical_data = self._historical_data["daily"].copy().fillna(0)

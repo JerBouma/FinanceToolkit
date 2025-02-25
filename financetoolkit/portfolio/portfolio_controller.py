@@ -221,7 +221,7 @@ class Portfolio:
         ).unique()
 
         benchmark_data = self._daily_benchmark_data
-        portfolio_weights = {}
+        portfolio_weights: dict | None = {}
 
         for period in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
             self.get_portfolio_performance(period=period)

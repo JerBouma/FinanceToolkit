@@ -101,7 +101,7 @@ class Ratios:
         self._custom_ratios_growth: pd.DataFrame = pd.DataFrame()
         self._rounding: int | None = rounding
         self._quarterly: bool = quarterly
-        self._portfolio_weights = None
+        self._portfolio_weights: dict | None = None
 
         # Initialization of Historical Data
         self._historical_data: pd.DataFrame = historical

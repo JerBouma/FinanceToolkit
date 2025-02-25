@@ -91,7 +91,7 @@ class Performance:
         self._start_date: str | None = start_date
         self._end_date: str | None = end_date
         self._progress_bar: bool = progress_bar
-        self._portfolio_weights = None
+        self._portfolio_weights: dict | None = None
 
         # Historical Data
         self._historical_data = historical_data

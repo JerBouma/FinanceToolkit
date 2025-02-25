@@ -7,8 +7,8 @@ import shutil
 
 import pandas as pd
 
-from financetoolkit import Toolkit
 from financetoolkit.portfolio import helpers, overview_model, portfolio_model
+from financetoolkit.toolkit_controller import Toolkit
 
 
 class Portfolio:
@@ -174,7 +174,9 @@ class Portfolio:
             portfolio_dataset if isinstance(portfolio_dataset, str) else []
         )
         self._raw_portfolio_dataset: pd.DataFrame = (
-            pd.DataFrame() if isinstance(portfolio_dataset, str) else portfolio_dataset
+            portfolio_dataset
+            if isinstance(portfolio_dataset, pd.DataFrame)
+            else pd.DataFrame()
         )
 
         self.read_portfolio_dataset()
@@ -245,8 +247,9 @@ class Portfolio:
             quarterly=self._quarterly,
             benchmark_ticker=self._benchmark_ticker,
             rounding=self._rounding,
-            portfolio_weights=portfolio_weights,
         )
+
+        toolkit._portfolio_weights = portfolio_weights
 
         return toolkit
 

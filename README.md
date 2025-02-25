@@ -3043,7 +3043,6 @@ The goal of the Finance Toolkit is to make any type of financial calculation as 
 If you have any questions about the FinanceToolkit or would like to share with me what you have been working on, feel free to reach out to me via:
 
 - **Website**: https://jeroenbouma.com/
-- **Twitter**: https://twitter.com/JerBouma
 - **LinkedIn:** https://www.linkedin.com/in/boumajeroen/
 - **Email:** jer.bouma@gmail.com
 - **Discord:** add me on Discord **`JerBouma`**

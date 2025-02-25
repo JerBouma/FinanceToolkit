@@ -179,7 +179,7 @@ class Toolkit:
         ```
         """
         self._use_cached_data = (
-            not use_cached_data if isinstance(use_cached_data, bool) else True
+            use_cached_data if isinstance(use_cached_data, bool) else True
         )
         self._cached_data_location = (
             "cached" if isinstance(use_cached_data, bool) else use_cached_data

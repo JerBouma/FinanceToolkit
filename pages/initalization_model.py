@@ -5,8 +5,8 @@ from datetime import datetime, timedelta
 import pandas as pd
 import streamlit as st
 
-from app import helpers
 from financetoolkit import Toolkit
+from pages import helpers
 
 # pylint: disable=protected-access
 
@@ -51,6 +51,9 @@ def initalize_session_state(session_state: st.session_state):
         session_state["api_key_value"] = None
         session_state["invalid_api_key"] = True
 
+    if "portfolio_button" not in session_state:
+        session_state["portfolio_button"] = st.sidebar.empty()
+
     if "tickers" not in session_state:
         session_state["tickers"] = []
 
@@ -88,11 +91,22 @@ def create_api_key_sidebar(session_state: st.session_state):
         "Enter your API key", type="password"
     )
 
+    st.sidebar.markdown(
+        """
+        ----
+        If you are interested in using your own portfolio with the Finance Toolkit, you can find
+        the Portfolio Dashboard below.
+        """
+    )
+
+    if st.sidebar.button("Go to the Portfolio Dashboard"):
+        st.switch_page("./pages/portfolio.py")
+
     session_state["api_key_explanation"].markdown(
         """
-        Access all **200+ metrics** from the Finance Toolkit right in your browser! Once you've entered your API key,
-        you will automatically be able to access a rich history of financial data from any stock you choose.\n\n
-        **To obtain an API key (with a 15% discount), please visit [this page](https://www.jeroenbouma.com/fmp).**
+        Access all **200+ metrics** from the Finance Toolkit right in your browser! Once you've entered your API key
+        and pressed ENTER, you will automatically be able to access a rich history of financial data from any stock
+        you choose.\n\n**To obtain an API key (with a 15% discount), please visit [this page](https://www.jeroenbouma.com/fmp).**
         """
     )
 

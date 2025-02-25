@@ -39,7 +39,6 @@ class Risk:
         intraday_period: str | None = None,
         quarterly: bool = False,
         rounding: int | None = 4,
-        portfolio_weights: dict[str, pd.DataFrame] | None = None,
     ):
         """
         Initializes the Risk Controller Class.
@@ -90,7 +89,7 @@ class Risk:
         self._tickers = tickers
         self._quarterly = quarterly
         self._rounding: int | None = rounding
-        self._portfolio_weights = portfolio_weights
+        self._portfolio_weights = None
 
         # Within Return Calculations
         daily_historical_data = self._historical_data["daily"].copy().fillna(0)

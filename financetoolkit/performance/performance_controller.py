@@ -48,7 +48,6 @@ class Performance:
         end_date: str | None = None,
         intraday_period: str | None = None,
         progress_bar: bool = True,
-        portfolio_weights: dict[str, pd.DataFrame] | None = None,
     ):
         """
         Initializes the Performance Controller Class.
@@ -92,7 +91,7 @@ class Performance:
         self._start_date: str | None = start_date
         self._end_date: str | None = end_date
         self._progress_bar: bool = progress_bar
-        self._portfolio_weights = portfolio_weights
+        self._portfolio_weights = None
 
         # Historical Data
         self._historical_data = historical_data

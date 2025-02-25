@@ -3045,7 +3045,6 @@ If you have any questions about the FinanceToolkit or would like to share with m
 - **Website**: https://jeroenbouma.com/
 - **LinkedIn:** https://www.linkedin.com/in/boumajeroen/
 - **Email:** jer.bouma@gmail.com
-- **Discord:** add me on Discord **`JerBouma`**
 
 If you'd like to support my efforts, either help me out by contributing to the package or [Sponsor Me](https://github.com/sponsors/JerBouma).
 

@@ -24,7 +24,7 @@ The Finance Toolkit is complimented very well with the [Finance Database 🌎](h
 
 <p align="center">
     <a href="https://www.jeroenbouma.com/projects/financetoolkit/interactive-dashboard" target="_blank">
-        <img src="app/assets/financetoolkit-dashboard.gif" alt="Finance Toolkit Illustration" width="100%" onerror="this.style.display = 'none'"/>
+        <img src="pages/assets/financetoolkit-dashboard.gif" alt="Finance Toolkit Illustration" width="100%" onerror="this.style.display = 'none'"/>
     </a>
 </p>
 

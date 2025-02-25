@@ -21,7 +21,14 @@ def get_fred_data(fred_series_id: str | list):
         f"https://fred.stlouisfed.org/graph/fredgraph.csv?id={fred_series_id}"
     )
 
-    fred_data = fred_data.set_index("DATE")
+    # Fall back system in case the column name changes, the first column is assumed
+    # to be the date column
+    fred_data = (
+        fred_data.set_index(fred_data.columns[0])
+        if "observation_date" not in fred_data.columns
+        else fred_data.set_index("observation_date")
+    )
+
     fred_data.index = pd.PeriodIndex(fred_data.index, freq="D")
     fred_data.index.name = "Date"
 

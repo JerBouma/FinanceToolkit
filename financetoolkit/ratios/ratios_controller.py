@@ -42,7 +42,6 @@ class Ratios:
         cash: pd.DataFrame,
         quarterly: bool = False,
         rounding: int | None = 4,
-        portfolio_weights: dict[str, pd.DataFrame] | None = None,
     ):
         """
         Initializes the Ratios Controller Class.
@@ -102,7 +101,7 @@ class Ratios:
         self._custom_ratios_growth: pd.DataFrame = pd.DataFrame()
         self._rounding: int | None = rounding
         self._quarterly: bool = quarterly
-        self._portfolio_weights = portfolio_weights
+        self._portfolio_weights = None
 
         # Initialization of Historical Data
         self._historical_data: pd.DataFrame = historical

@@ -3,7 +3,7 @@
 import numpy as np
 import pandas as pd
 
-from financetoolkit.risk import cvar_model
+from financetoolkit.risk.cvar_model import get_cvar_laplace
 
 ALPHA_CONSTRAINT = 0.5
 
@@ -37,7 +37,7 @@ def get_evar_gaussian(
         period_data_list = []
 
         for sub_period in periods:
-            period_data = cvar_model.get_cvar_laplace(returns.loc[sub_period], alpha)
+            period_data = get_cvar_laplace(returns.loc[sub_period], alpha)
             period_data.name = sub_period
 
             if not period_data.empty:

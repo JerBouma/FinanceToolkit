@@ -33,7 +33,6 @@ class Technicals:
         rounding: int | None = 4,
         start_date: str | None = None,
         end_date: str | None = None,
-        portfolio_weights: dict[str, pd.DataFrame] | None = None,
     ):
         """
         Initializes the Technicals Controller Class.
@@ -84,7 +83,7 @@ class Technicals:
         self._rounding: int | None = rounding
         self._start_date: str | None = start_date
         self._end_date: str | None = end_date
-        self._portfolio_weights = portfolio_weights
+        self._portfolio_weights = None
 
         # Technical Indicators
         self._all_indicators: pd.DataFrame = pd.DataFrame()

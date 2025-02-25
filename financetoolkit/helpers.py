@@ -3,6 +3,8 @@
 __docformat__ = "google"
 
 import inspect
+import os
+import pickle
 import time
 import warnings
 from functools import wraps
@@ -62,11 +64,12 @@ def get_financial_data(
                 return pd.DataFrame(columns=["NOT AVAILABLE"])
 
             if "Limit Reach" in response.json()["Error Message"]:
+                print(sleep_timer, url)
                 if sleep_timer and limit_retry_counter < RETRY_LIMIT:
                     time.sleep(5.01)
                     limit_retry_counter += 1
                 else:
-                    return pd.DataFrame(columns=["LIMIT REACH"])
+                    return pd.DataFrame(columns=["NO DATA"])
             if (
                 "Free plan is limited to US stocks only"
                 in response.json()["Error Message"]
@@ -417,7 +420,8 @@ def handle_errors(func):
 
 def check_for_error_messages(
     dataset_dictionary: dict[str, pd.DataFrame],
-    subscription_type: str = "Premium",
+    user_subscription: str,
+    required_subscription: str = "Premium",
     delete_tickers: bool = True,
 ):
     """
@@ -428,13 +432,14 @@ def check_for_error_messages(
     Args:
         dataset_dictionary (dict[str, pd.DataFrame]): a dictionary with the ticker
         as key and the dataframe as value.
+        user_subscription (str): the subscription type of the user.
         subscription_type (str): the subscription type of the user. Defaults to "Premium".
         delete_tickers (bool): whether to delete the tickers that have an error from the
         dataset dictionary. Defaults to True.
     """
 
     not_available = []
-    limit_reach = []
+    no_data = []
     us_stocks_only = []
     invalid_api_key = []
     no_errors = []
@@ -442,8 +447,8 @@ def check_for_error_messages(
     for ticker, dataframe in dataset_dictionary.items():
         if "NOT AVAILABLE" in dataframe.columns:
             not_available.append(ticker)
-        if "LIMIT REACH" in dataframe.columns:
-            limit_reach.append(ticker)
+        if "NO DATA" in dataframe.columns:
+            no_data.append(ticker)
         if "US STOCKS ONLY" in dataframe.columns:
             us_stocks_only.append(ticker)
         if "INVALID API KEY" in dataframe.columns:
@@ -453,20 +458,26 @@ def check_for_error_messages(
 
     if not_available:
         print(
-            f"The requested data for is part of the {subscription_type} Subscription from "
+            f"The requested data is part of the {required_subscription} Subscription from "
             f"FinancialModelingPrep: {', '.join(not_available)}.\nIf you wish to access "
             "this data, consider upgrading your plan. You can get 15% off by using the "
             "following affiliate link which also supports the project: "
             "https://www.jeroenbouma.com/fmp"
         )
 
-    if limit_reach:
+    if no_data:
         print(
-            "You have reached the rate limit of your subscription. This resulted in no "
-            f"data for {', '.join(limit_reach)}\nIf you use the Free plan, consider "
-            "upgrading your plan. You can get 15% off by using the following affiliate "
-            "link which also supports the project: https://www.jeroenbouma.com/fmp"
+            f"No data found for {', '.join(no_data)}\nVerify if the ticker has any data to begin with. "
+            "If it does, please open an issue here: https://github.com/JerBouma/FinanceToolkit/issues"
         )
+
+        if user_subscription:
+            print(
+                "Given that you are using the Free plan, it could be due to reaching the API "
+                "limit of the day, consider upgrading your plan. You can get 15% off by "
+                "using the following affiliate link which also supports the project: "
+                "https://www.jeroenbouma.com/fmp"
+            )
 
     if us_stocks_only:
         print(
@@ -485,7 +496,7 @@ def check_for_error_messages(
 
     if delete_tickers:
         removed_tickers = set(
-            not_available + limit_reach + us_stocks_only + invalid_api_key + no_errors
+            not_available + no_data + us_stocks_only + invalid_api_key + no_errors
         )
 
         for ticker in removed_tickers:
@@ -590,3 +601,62 @@ def handle_portfolio(func):
         return result
 
     return wrapper
+
+
+def load_cached_data(cached_data_location: str, file_name: str, method: str = "pandas"):
+    """
+    Load the cached data from the specified location and file name.
+
+    Args:
+        cached_data_location (str): The location of the cached data.
+        file_name (str): The name of the file to load.
+
+    Returns:
+        pd.DataFrame: The loaded DataFrame.
+    """
+    try:
+        if method == "pandas":
+            cached_data = pd.read_pickle(f"{cached_data_location}/{file_name}")
+        elif method == "pickle":
+            with open(f"{cached_data_location}/{file_name}", "rb") as file:
+                cached_data = pickle.load(file)
+        else:
+            raise ValueError("The method should be either 'pandas' or 'pickle'.")
+
+        return cached_data
+
+    except FileNotFoundError:
+        return pd.DataFrame()
+
+
+def save_cached_data(
+    cached_data: pd.DataFrame,
+    cached_data_location: str,
+    file_name: str,
+    method: str = "pandas",
+    include_message: bool = True,
+):
+    """
+    Save the cached data to the specified location and file name.
+
+    Args:
+        cached_data_location (str): The location to save the cached data.
+        file_name (str): The name of the file to save.
+    """
+    os.makedirs(cached_data_location, exist_ok=True)
+
+    if file_name in os.listdir(cached_data_location):
+        # When the file already exists do nothing.
+        pass
+    else:
+        try:
+            if method == "pandas":
+                cached_data.to_pickle(f"{cached_data_location}/{file_name}")
+            elif method == "pickle":
+                with open(f"{cached_data_location}/{file_name}", "wb") as file:
+                    pickle.dump(cached_data, file, protocol=pickle.HIGHEST_PROTOCOL)
+
+            if include_message:
+                print(f"The data has been saved to {cached_data_location}/{file_name}")
+        except Exception as error:  # pylint: disable=broad-except
+            print(f"An error occurred while saving the data: {error}")

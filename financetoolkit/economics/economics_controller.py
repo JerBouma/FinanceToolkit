@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 
 import pandas as pd
 
-from financetoolkit.economics import oecd_model
+from financetoolkit.economics import gmdb_model, oecd_model
 from financetoolkit.helpers import calculate_growth, handle_errors
 
 # pylint: disable=too-many-instance-attributes,too-few-public-methods,too-many-lines,
@@ -27,6 +27,7 @@ class Economics:
         self,
         start_date: str | None = None,
         end_date: str | None = None,
+        gmdb_source: bool = False,
         quarterly: bool | None = None,
         rounding: int | None = 4,
     ):
@@ -34,10 +35,11 @@ class Economics:
         Initializes the Economics Controller Class.
 
         Args:
-            quarterly (bool | None, optional): Parameter that defines if the default data returned is quarterly
-            or yearly. Defaults to None.
             start_date (str | None, optional): The start date to retrieve data from. Defaults to None.
             end_date (str | None, optional): The end date to retrieve data from. Defaults to None.
+            gmdb_source (bool, optional): If True, retrieves data from the GMDB source. Defaults to False.
+            quarterly (bool | None, optional): If True, returns quarterly data; otherwise, returns yearly data.
+                Defaults to None. This only works for data retrieved from the OECD source.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
 
         As an example:
@@ -45,25 +47,28 @@ class Economics:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AMZN", "ASML"])
+        toolkit = Toolkit(["AMZN", "ASML"], start_date="2010-01-01", end_date="2020-01-01")
 
-        cpi = toolkit.economics.get_consumer_price_index(period='yearly')
+        cpi = toolkit.economics.get_consumer_price_index()
 
-        cpi.loc['2015':, ['United States', 'Netherlands', 'Japan']]
+        cpi.loc['2010':, ['United States', 'Netherlands', 'Japan']]
         ```
 
         Which returns:
 
         |      |   United States |   Netherlands |    Japan |
         |:-----|----------------:|--------------:|---------:|
-        | 2015 |         100     |       100     | 100      |
-        | 2016 |         101.262 |       100.317 |  99.8727 |
-        | 2017 |         103.419 |       101.703 | 100.356  |
-        | 2018 |         105.945 |       103.435 | 101.349  |
-        | 2019 |         107.865 |       106.159 | 101.824  |
-        | 2020 |         109.195 |       107.51  | 101.799  |
-        | 2021 |         114.325 |       110.387 | 101.561  |
-        | 2022 |         123.474 |       121.427 | 104.098  |
+        | 2010 |         100     |       100     | 100      |
+        | 2011 |         103.14  |       102.472 |  99.7226 |
+        | 2012 |         105.278 |       105.359 |  99.6741 |
+        | 2013 |         106.822 |       108.052 | 100.004  |
+        | 2014 |         108.547 |       108.397 | 102.762  |
+        | 2015 |         108.679 |       108.635 | 103.583  |
+        | 2016 |         110.056 |       108.759 | 103.455  |
+        | 2017 |         112.402 |       110.165 | 103.958  |
+        | 2018 |         115.143 |       111.927 | 104.986  |
+        | 2019 |         117.231 |       114.913 | 105.477  |
+        | 2020 |         118.695 |       116.185 | 105.449  |
         """
         if start_date and re.match(r"^\d{4}-\d{2}-\d{2}$", start_date) is None:
             raise ValueError(
@@ -85,12 +90,22 @@ class Economics:
         )
         self._end_date = end_date if end_date else datetime.now().strftime("%Y-%m-%d")
 
+        self._gmdb_source: bool = gmdb_source
+        self._gmbd_dataset: pd.DataFrame = (
+            gmdb_model.collect_global_macro_database_dataset()
+            if self._gmdb_source
+            else pd.DataFrame()
+        )
         self._quarterly: bool | None = quarterly
         self._rounding: int | None = rounding
 
     @handle_errors
     def get_gross_domestic_product(
         self,
+        inflation_adjusted: bool = False,
+        gmdb_source: bool | None = None,
+        growth: bool = False,
+        lag: int = 1,
         rounding: int | None = None,
     ):
         """
@@ -105,7 +120,15 @@ class Economics:
 
         See definition: https://data.oecd.org/gdp/gross-domestic-product-gdp.htm
 
+        It is also possible to acquire the data from the Global Macro Database (GMDB) source which
+        also provides inflation adjusted data. For more information see:
+        https://www.globalmacrodata.com/files/documentations/Variables/nGDP.pdf
+
         Args:
+            inflation_adjusted (bool, optional): Whether to return the inflation adjusted data. Defaults to False.
+            gmdb_source (bool | None, optional): If True, retrieves data from the GMDB source. Defaults to None.
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
 
         Returns:
@@ -135,7 +158,35 @@ class Economics:
         | 2020 |        897261 | 3.94717e+06 | 2.35091e+07 |
         | 2021 |        921282 | 4.07756e+06 | 2.55147e+07 |
         """
-        gross_domestic_product = oecd_model.get_annual_gross_domestic_product()
+        gmdb_source = gmdb_source if gmdb_source is not None else self._gmdb_source
+
+        if gmdb_source or inflation_adjusted:
+            if self._gmbd_dataset.empty:
+                self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
+
+            if inflation_adjusted:
+                if not gmdb_source:
+                    print(
+                        "OECD does not provide inflation adjusted GDP data, using GMDB source instead."
+                    )
+
+                gross_domestic_product = gmdb_model.get_real_gross_domestic_product(
+                    gmd_dataset=self._gmbd_dataset
+                )
+            else:
+                gross_domestic_product = gmdb_model.get_nominal_gross_domestic_product(
+                    gmd_dataset=self._gmbd_dataset
+                )
+        else:
+            gross_domestic_product = oecd_model.get_annual_gross_domestic_product()
+
+        if growth:
+            gross_domestic_product = calculate_growth(
+                gross_domestic_product,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
+                axis="rows",
+            )
 
         gross_domestic_product = gross_domestic_product.loc[
             self._start_date : self._end_date
@@ -143,120 +194,1231 @@ class Economics:
 
         return gross_domestic_product.round(rounding if rounding else self._rounding)
 
-    def get_gross_domestic_product_growth(
-        self, quarterly: bool | None = None, rounding: int | None = None
-    ):
-        """
-        Get the Gross Domestic Product growth rate for a variety of countries over
-        time from the OECD. The Gross Domestic Product is the total value
-        of goods produced and services provided in a country during one year.
-
-        It is possible to view the growth rate on a quarterly or annual basis, the
-        default is dependent on the quarterly parameter. The growth rate is the
-        percentage change in the GDP compared to the previous period.
-
-        See definition: https://data.oecd.org/gdp/quarterly-gdp.htm
-
-        Args:
-            quarterly (bool, optional): Whether to return the quarterly data or the annual data.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
-
-        Returns:
-            pd.DataFrame: A DataFrame containing the Gross Domestic Product growth rates.
-
-        As an example:
-
-        ```python
-        from financetoolkit import Economics
-
-        economics = Economics(start_date='2021-01-01', end_date='2022-01-01')
-
-        gdp_growth = economics.get_gross_domestic_product_growth(quarterly=True)
-
-        gdp_growth.loc[:, ['United Kingdom', 'United States', 'Belgium']]
-        ```
-
-        Which returns:
-
-        |        |   United Kingdom |   United States |   Belgium |
-        |:-------|-----------------:|----------------:|----------:|
-        | 2021Q1 |          -0.0102 |          0.0129 |    0.0181 |
-        | 2021Q2 |           0.0733 |          0.0152 |    0.0193 |
-        | 2021Q3 |           0.0172 |          0.0081 |    0.0219 |
-        | 2021Q4 |           0.0152 |          0.017  |    0.0076 |
-        | 2022Q1 |           0.0053 |         -0.005  |    0.0012 |
-        """
-        quarterly = quarterly if quarterly is not None else self._quarterly
-
-        if quarterly:
-            growth_gdp = oecd_model.get_quarterly_gross_domestic_product(
-                year_on_year=False
-            )
-        else:
-            growth_gdp = calculate_growth(
-                oecd_model.get_annual_gross_domestic_product(),
-                axis="rows",
-            )
-
-        growth_gdp = growth_gdp.loc[self._start_date : self._end_date]
-
-        return growth_gdp.round(rounding if rounding else self._rounding)
-
-    def get_gross_domestic_product_forecast(
+    @handle_errors
+    def get_gross_domestic_product_deflator(
         self,
-        quarterly: bool | None = None,
+        growth: bool = False,
+        lag: int = 1,
         rounding: int | None = None,
     ):
         """
-        Get the Gross Domestic Product growth rate for a variety of countries over
-        time from the OECD. The Gross Domestic Product is the total value
-        of goods produced and services provided in a country during one year.
+        Get the Gross Domestic Product Deflator for a variety of countries over
+        time from the Global Macro Database (GMDB). The GDP deflator is a measure of
+        the price of all domestically produced final goods and services in an economy
+        relative to the price level in a base year which can vary per country.
 
-        It is possible to view the growth rate on a quarterly or annual basis, the
-        default is dependent on the quarterly parameter. The growth rate is the
-        percentage change in the GDP compared to the previous period.
-
-        See definition: https://data.oecd.org/gdp/real-gdp-long-term-forecast.htm
+        Data comes from the Global Macro Database (GMDB), further information about the
+        variable can be found within https://www.globalmacrodata.com/files/GMD_TA.pdf
 
         Args:
-            quarterly (bool, optional): Whether to return the quarterly data or the annual data.
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
 
         Returns:
-            pd.DataFrame: A DataFrame containing the Gross Domestic Product forecast growth rates.
+            pd.DataFrame: A DataFrame containing the Gross Domestic Product Deflator
+        """
+        if self._gmbd_dataset.empty:
+            self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
+
+        gross_domestic_product_deflator = (
+            gmdb_model.get_gross_domestic_product_deflator(
+                gmd_dataset=self._gmbd_dataset
+            )
+        )
+
+        if growth:
+            gross_domestic_product_deflator = calculate_growth(
+                gross_domestic_product_deflator,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
+                axis="rows",
+            )
+
+        gross_domestic_product_deflator = gross_domestic_product_deflator.loc[
+            self._start_date : self._end_date
+        ]
+
+        return gross_domestic_product_deflator.round(
+            rounding if rounding else self._rounding
+        )
+
+    @handle_errors
+    def get_total_consumption(
+        self,
+        inflation_adjusted: bool = False,
+        growth: bool = False,
+        lag: int = 1,
+        rounding: int | None = None,
+    ):
+        """
+        Get the Total Consumption for a variety of countries over time from the
+        Global Macro Database (GMDB). Total Consumption is the total amount of money
+        spent by households on consumer goods and services.
+
+        Data comes from the Global Macro Database (GMDB), further information about the
+        variable can be found within https://www.globalmacrodata.com/files/GMD_TA.pdf
+
+        Args:
+            inflation_adjusted (bool, optional): Whether to return the inflation adjusted data. Defaults to False.
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+
+        Returns:
+            pd.DataFrame: A DataFrame containing the Total Consumption
+        """
+        if self._gmbd_dataset.empty:
+            self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
+
+        if inflation_adjusted:
+            total_consumption = gmdb_model.get_real_total_consumption(
+                gmd_dataset=self._gmbd_dataset
+            )
+        else:
+            total_consumption = gmdb_model.get_total_consumption(
+                gmd_dataset=self._gmbd_dataset
+            )
+
+        if growth:
+            total_consumption = calculate_growth(
+                total_consumption,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
+                axis="rows",
+            )
+
+        total_consumption = total_consumption.loc[self._start_date : self._end_date]
+
+        return total_consumption.round(rounding if rounding else self._rounding)
+
+    @handle_errors
+    def get_total_consumption_to_gdp_ratio(
+        self,
+        growth: bool = False,
+        lag: int = 1,
+        rounding: int | None = None,
+    ):
+        """
+        Get the Total Consumption to GDP Ratio for a variety of countries over time from the
+        Global Macro Database (GMDB). The Total Consumption to GDP Ratio is the ratio of the
+        total amount of money spent by households on consumer goods and services to the Gross
+        Domestic Product (GDP).
+
+        Data comes from the Global Macro Database (GMDB), further information about the
+        variable can be found within https://www.globalmacrodata.com/files/GMD_TA.pdf
+
+        Args:
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+
+        Returns:
+            pd.DataFrame: A DataFrame containing the Total Consumption to GDP Ratio
+        """
+        if self._gmbd_dataset.empty:
+            self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
+
+        total_consumption_to_gdp_ratio = gmdb_model.get_total_consumption_to_gdp_ratio(
+            gmd_dataset=self._gmbd_dataset
+        )
+
+        if growth:
+            total_consumption_to_gdp_ratio = calculate_growth(
+                total_consumption_to_gdp_ratio,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
+                axis="rows",
+            )
+
+        total_consumption_to_gdp_ratio = total_consumption_to_gdp_ratio.loc[
+            self._start_date : self._end_date
+        ]
+
+        return total_consumption_to_gdp_ratio.round(
+            rounding if rounding else self._rounding
+        )
+
+    @handle_errors
+    def get_investment(
+        self,
+        growth: bool = False,
+        lag: int = 1,
+        rounding: int | None = None,
+    ):
+        """
+        Get the Investment for a variety of countries over time from the Global Macro Database (GMDB).
+        Investment is the total amount of money spent by businesses on capital goods, such as machinery,
+        equipment, and buildings.
+
+        Data comes from the Global Macro Database (GMDB), further information about the
+        variable can be found within https://www.globalmacrodata.com/files/GMD_TA.pdf
+
+        Args:
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+
+        Returns:
+            pd.DataFrame: A DataFrame containing the Investment
+        """
+        if self._gmbd_dataset.empty:
+            self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
+
+        investment = gmdb_model.get_investment(gmd_dataset=self._gmbd_dataset)
+
+        if growth:
+            investment = calculate_growth(
+                investment,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
+                axis="rows",
+            )
+
+        investment = investment.loc[self._start_date : self._end_date]
+
+        return investment.round(rounding if rounding else self._rounding)
+
+    @handle_errors
+    def get_investment_to_gdp_ratio(
+        self,
+        growth: bool = False,
+        lag: int = 1,
+        rounding: int | None = None,
+    ):
+        """
+        Get the Investment to GDP Ratio for a variety of countries over time from the Global Macro Database (GMDB).
+        The Investment to GDP Ratio is the ratio of the total amount of money spent by businesses on capital goods,
+        such as machinery, equipment, and buildings to the Gross Domestic Product (GDP).
+
+        Data comes from the Global Macro Database (GMDB), further information about the
+        variable can be found within https://www.globalmacrodata.com/files/GMD_TA.pdf
+
+        Args:
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+
+        Returns:
+            pd.DataFrame: A DataFrame containing the Investment to GDP Ratio
+        """
+        if self._gmbd_dataset.empty:
+            self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
+
+        investment_to_gdp_ratio = gmdb_model.get_investment_to_gdp_ratio(
+            gmd_dataset=self._gmbd_dataset
+        )
+
+        if growth:
+            investment_to_gdp_ratio = calculate_growth(
+                investment_to_gdp_ratio,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
+                axis="rows",
+            )
+
+        investment_to_gdp_ratio = investment_to_gdp_ratio.loc[
+            self._start_date : self._end_date
+        ]
+
+        return investment_to_gdp_ratio.round(rounding if rounding else self._rounding)
+
+    @handle_errors
+    def get_fixed_investment(
+        self,
+        growth: bool = False,
+        lag: int = 1,
+        rounding: int | None = None,
+    ):
+        """
+        Get the Fixed Investment for a variety of countries over time from the Global Macro Database (GMDB).
+        Fixed Investment is the total amount of money spent by businesses on capital goods, such as machinery,
+        equipment, and buildings that are expected to last for more than one year.
+
+        Data comes from the Global Macro Database (GMDB), further information about the
+        variable can be found within https://www.globalmacrodata.com/files/GMD_TA.pdf
+
+        Args:
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+
+        Returns:
+            pd.DataFrame: A DataFrame containing the Fixed Investment
+        """
+        if self._gmbd_dataset.empty:
+            self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
+
+        fixed_investment = gmdb_model.get_fixed_investment(
+            gmd_dataset=self._gmbd_dataset
+        )
+
+        if growth:
+            fixed_investment = calculate_growth(
+                fixed_investment,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
+                axis="rows",
+            )
+
+        fixed_investment = fixed_investment.loc[self._start_date : self._end_date]
+
+        return fixed_investment.round(rounding if rounding else self._rounding)
+
+    @handle_errors
+    def get_fixed_investment_to_gdp_ratio(
+        self,
+        growth: bool = False,
+        lag: int = 1,
+        rounding: int | None = None,
+    ):
+        """
+        Get the Fixed Investment to GDP Ratio for a variety of countries over time from the Global Macro Database (GMDB).
+        The Fixed Investment to GDP Ratio is the ratio of the total amount of money spent by businesses on capital goods,
+        such as machinery, equipment, and buildings that are expected to last for more than one year to the Gross Domestic
+        Product (GDP).
+
+        Data comes from the Global Macro Database (GMDB), further information about the
+        variable can be found within https://www.globalmacrodata.com/files/GMD_TA.pdf
+
+        Args:
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+
+        Returns:
+            pd.DataFrame: A DataFrame containing the Fixed Investment to GDP Ratio
+        """
+        if self._gmbd_dataset.empty:
+            self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
+
+        fixed_investment_to_gdp_ratio = gmdb_model.get_fixed_investment_to_gdp_ratio(
+            gmd_dataset=self._gmbd_dataset
+        )
+
+        if growth:
+            fixed_investment_to_gdp_ratio = calculate_growth(
+                fixed_investment_to_gdp_ratio,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
+                axis="rows",
+            )
+
+        fixed_investment_to_gdp_ratio = fixed_investment_to_gdp_ratio.loc[
+            self._start_date : self._end_date
+        ]
+
+        return fixed_investment_to_gdp_ratio.round(
+            rounding if rounding else self._rounding
+        )
+
+    @handle_errors
+    def get_exports(
+        self,
+        growth: bool = False,
+        lag: int = 1,
+        rounding: int | None = None,
+    ):
+        """
+        Get the Exports for a variety of countries over time from the Global Macro Database (GMDB).
+        Exports are the total amount of goods and services produced in a country that are sold to
+        other countries.
+
+        Data comes from the Global Macro Database (GMDB), further information about the
+        variable can be found within https://www.globalmacrodata.com/files/GMD_TA.pdf
+
+        Args:
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+
+        Returns:
+            pd.DataFrame: A DataFrame containing the Exports
+        """
+        if self._gmbd_dataset.empty:
+            self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
+
+        exports = gmdb_model.get_exports(gmd_dataset=self._gmbd_dataset)
+
+        if growth:
+            exports = calculate_growth(
+                exports,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
+                axis="rows",
+            )
+
+        exports = exports.loc[self._start_date : self._end_date]
+
+        return exports.round(rounding if rounding else self._rounding)
+
+    @handle_errors
+    def get_exports_to_gdp_ratio(
+        self,
+        growth: bool = False,
+        lag: int = 1,
+        rounding: int | None = None,
+    ):
+        """
+        Get the Exports to GDP Ratio for a variety of countries over time from the Global Macro Database (GMDB).
+        The Exports to GDP Ratio is the ratio of the total amount of goods and services produced in a country
+        that are sold to other countries to the Gross Domestic Product (GDP).
+
+        Data comes from the Global Macro Database (GMDB), further information about the
+        variable can be found within https://www.globalmacrodata.com/files/GMD_TA.pdf
+
+        Args:
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+
+        Returns:
+            pd.DataFrame: A DataFrame containing the Exports to GDP Ratio
+        """
+        if self._gmbd_dataset.empty:
+            self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
+
+        exports_to_gdp_ratio = gmdb_model.get_exports_to_gdp_ratio(
+            gmd_dataset=self._gmbd_dataset
+        )
+
+        if growth:
+            exports_to_gdp_ratio = calculate_growth(
+                exports_to_gdp_ratio,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
+                axis="rows",
+            )
+
+        exports_to_gdp_ratio = exports_to_gdp_ratio.loc[
+            self._start_date : self._end_date
+        ]
+
+        return exports_to_gdp_ratio.round(rounding if rounding else self._rounding)
+
+    @handle_errors
+    def get_imports(
+        self,
+        growth: bool = False,
+        lag: int = 1,
+        rounding: int | None = None,
+    ):
+        """
+        Get the Imports for a variety of countries over time from the Global Macro Database (GMDB).
+        Imports are the total amount of goods and services produced in other countries that are
+        bought by a country.
+
+        Data comes from the Global Macro Database (GMDB), further information about the
+        variable can be found within https://www.globalmacrodata.com/files/GMD_TA.pdf
+
+        Args:
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+
+        Returns:
+            pd.DataFrame: A DataFrame containing the Imports
+        """
+        if self._gmbd_dataset.empty:
+            self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
+
+        imports = gmdb_model.get_imports(gmd_dataset=self._gmbd_dataset)
+
+        if growth:
+            imports = calculate_growth(
+                imports,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
+                axis="rows",
+            )
+
+        imports = imports.loc[self._start_date : self._end_date]
+
+        return imports.round(rounding if rounding else self._rounding)
+
+    @handle_errors
+    def get_imports_to_gdp_ratio(
+        self,
+        growth: bool = False,
+        lag: int = 1,
+        rounding: int | None = None,
+    ):
+        """
+        Get the Imports to GDP Ratio for a variety of countries over time from the Global Macro Database (GMDB).
+        The Imports to GDP Ratio is the ratio of the total amount of goods and services produced in other countries
+        that are bought by a country to the Gross Domestic Product (GDP).
+
+        Data comes from the Global Macro Database (GMDB), further information about the
+        variable can be found within https://www.globalmacrodata.com/files/GMD_TA.pdf
+
+        Args:
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+
+        Returns:
+            pd.DataFrame: A DataFrame containing the Imports to GDP Ratio
+        """
+        if self._gmbd_dataset.empty:
+            self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
+
+        imports_to_gdp_ratio = gmdb_model.get_imports_to_gdp_ratio(
+            gmd_dataset=self._gmbd_dataset
+        )
+
+        if growth:
+            imports_to_gdp_ratio = calculate_growth(
+                imports_to_gdp_ratio,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
+                axis="rows",
+            )
+
+        imports_to_gdp_ratio = imports_to_gdp_ratio.loc[
+            self._start_date : self._end_date
+        ]
+
+        return imports_to_gdp_ratio.round(rounding if rounding else self._rounding)
+
+    @handle_errors
+    def get_current_account_balance(
+        self,
+        growth: bool = False,
+        lag: int = 1,
+        rounding: int | None = None,
+    ):
+        """
+        Get the Current Account Balance for a variety of countries over time from the Global Macro Database (GMDB).
+        The Current Account Balance is the sum of the balance of trade (exports minus imports of goods and services),
+        net factor income (such as interest and dividends) and net transfer payments (such as foreign aid).
+
+        Data comes from the Global Macro Database (GMDB), further information about the
+        variable can be found within https://www.globalmacrodata.com/files/GMD_TA.pdf
+
+        Args:
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+
+        Returns:
+            pd.DataFrame: A DataFrame containing the Current Account Balance
+        """
+        if self._gmbd_dataset.empty:
+            self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
+
+        current_account_balance = gmdb_model.get_current_account_balance(
+            gmd_dataset=self._gmbd_dataset
+        )
+
+        if growth:
+            current_account_balance = calculate_growth(
+                current_account_balance,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
+                axis="rows",
+            )
+
+        current_account_balance = current_account_balance.loc[
+            self._start_date : self._end_date
+        ]
+
+        return current_account_balance.round(rounding if rounding else self._rounding)
+
+    @handle_errors
+    def get_current_account_balance_to_gdp_ratio(
+        self,
+        growth: bool = False,
+        lag: int = 1,
+        rounding: int | None = None,
+    ):
+        """
+        Get the Current Account Balance to GDP Ratio for a variety of countries over time from the Global Macro Database (GMDB).
+        The Current Account Balance to GDP Ratio is the ratio of the sum of the balance of trade (exports minus imports of goods
+        and services), net factor income (such as interest and dividends) and net transfer payments (such as foreign aid) to the
+        Gross Domestic Product (GDP).
+
+        Data comes from the Global Macro Database (GMDB), further information about the
+        variable can be found within https://www.globalmacrodata.com/files/GMD_TA.pdf
+
+        Args:
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+
+        Returns:
+            pd.DataFrame: A DataFrame containing the Current Account Balance to GDP Ratio
+        """
+        if self._gmbd_dataset.empty:
+            self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
+
+        current_account_balance_to_gdp_ratio = (
+            gmdb_model.get_current_account_balance_to_gdp(
+                gmd_dataset=self._gmbd_dataset
+            )
+        )
+
+        if growth:
+            current_account_balance_to_gdp_ratio = calculate_growth(
+                current_account_balance_to_gdp_ratio,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
+                axis="rows",
+            )
+
+        current_account_balance_to_gdp_ratio = current_account_balance_to_gdp_ratio.loc[
+            self._start_date : self._end_date
+        ]
+
+        return current_account_balance_to_gdp_ratio.round(
+            rounding if rounding else self._rounding
+        )
+
+    @handle_errors
+    def get_government_debt(
+        self,
+        growth: bool = False,
+        lag: int = 1,
+        rounding: int | None = None,
+    ):
+        """
+        Get the Government Debt for a variety of countries over time from the Global Macro Database (GMDB).
+        Government Debt is the total amount of money that a government owes to creditors.
+
+        Data comes from the Global Macro Database (GMDB), further information about the
+        variable can be found within https://www.globalmacrodata.com/files/GMD_TA.pdf
+
+        Args:
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+
+        Returns:
+            pd.DataFrame: A DataFrame containing the Government Debt
+        """
+        if self._gmbd_dataset.empty:
+            self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
+
+        government_debt = gmdb_model.get_government_debt(gmd_dataset=self._gmbd_dataset)
+
+        if growth:
+            government_debt = calculate_growth(
+                government_debt,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
+                axis="rows",
+            )
+
+        government_debt = government_debt.loc[self._start_date : self._end_date]
+
+        return government_debt.round(rounding if rounding else self._rounding)
+
+    @handle_errors
+    def get_government_debt_to_gdp_ratio(
+        self,
+        growth: bool = False,
+        lag: int = 1,
+        rounding: int | None = None,
+    ):
+        """
+        Get the Government Debt to GDP Ratio for a variety of countries over time from the Global Macro Database (GMDB).
+        The Government Debt to GDP Ratio is the ratio of the total amount of money that a government owes to creditors
+        to the Gross Domestic Product (GDP).
+
+        Data comes from the Global Macro Database (GMDB), further information about the
+        variable can be found within https://www.globalmacrodata.com/files/GMD_TA.pdf
+
+        Args:
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+
+        Returns:
+            pd.DataFrame: A DataFrame containing the Government Debt to GDP Ratio
+        """
+        if self._gmbd_dataset.empty:
+            self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
+
+        government_debt_to_gdp_ratio = gmdb_model.get_government_debt_to_gdp_ratio(
+            gmd_dataset=self._gmbd_dataset
+        )
+
+        if growth:
+            government_debt_to_gdp_ratio = calculate_growth(
+                government_debt_to_gdp_ratio,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
+                axis="rows",
+            )
+
+        government_debt_to_gdp_ratio = government_debt_to_gdp_ratio.loc[
+            self._start_date : self._end_date
+        ]
+
+        return government_debt_to_gdp_ratio.round(
+            rounding if rounding else self._rounding
+        )
+
+    @handle_errors
+    def get_government_revenue(
+        self,
+        growth: bool = False,
+        lag: int = 1,
+        rounding: int | None = None,
+    ):
+        """
+        Get the Government Revenue for a variety of countries over time from the Global Macro Database (GMDB).
+        Government Revenue is the total amount of money that a government collects from taxes and other sources.
+
+        Data comes from the Global Macro Database (GMDB), further information about the
+        variable can be found within https://www.globalmacrodata.com/files/GMD_TA.pdf
+
+        Args:
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+
+        Returns:
+            pd.DataFrame: A DataFrame containing the Government Revenue
+        """
+        if self._gmbd_dataset.empty:
+            self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
+
+        government_revenue = gmdb_model.get_government_revenue(
+            gmd_dataset=self._gmbd_dataset
+        )
+
+        if growth:
+            government_revenue = calculate_growth(
+                government_revenue,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
+                axis="rows",
+            )
+
+        government_revenue = government_revenue.loc[self._start_date : self._end_date]
+
+        return government_revenue.round(rounding if rounding else self._rounding)
+
+    @handle_errors
+    def get_government_revenue_to_gdp_ratio(
+        self,
+        growth: bool = False,
+        lag: int = 1,
+        rounding: int | None = None,
+    ):
+        """
+        Get the Government Revenue to GDP Ratio for a variety of countries over time from the Global Macro Database (GMDB).
+        The Government Revenue to GDP Ratio is the ratio of the total amount of money that a government collects from taxes
+        and other sources to the Gross Domestic Product (GDP).
+
+        Data comes from the Global Macro Database (GMDB), further information about the
+        variable can be found within https://www.globalmacrodata.com/files/GMD_TA.pdf
+
+        Args:
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+
+        Returns:
+            pd.DataFrame: A DataFrame containing the Government Revenue to GDP Ratio
+        """
+        if self._gmbd_dataset.empty:
+            self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
+
+        government_revenue_to_gdp_ratio = (
+            gmdb_model.get_government_revenue_to_gdp_ratio(
+                gmd_dataset=self._gmbd_dataset
+            )
+        )
+
+        if growth:
+            government_revenue_to_gdp_ratio = calculate_growth(
+                government_revenue_to_gdp_ratio,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
+                axis="rows",
+            )
+
+        government_revenue_to_gdp_ratio = government_revenue_to_gdp_ratio.loc[
+            self._start_date : self._end_date
+        ]
+
+        return government_revenue_to_gdp_ratio.round(
+            rounding if rounding else self._rounding
+        )
+
+    @handle_errors
+    def get_government_tax_revenue(
+        self,
+        growth: bool = False,
+        lag: int = 1,
+        rounding: int | None = None,
+    ):
+        """
+        Get the Government Tax Revenue for a variety of countries over time from the Global Macro Database (GMDB).
+        Government Tax Revenue is the total amount of money that a government collects from taxes.
+
+        Data comes from the Global Macro Database (GMDB), further information about the
+        variable can be found within https://www.globalmacrodata.com/files/GMD_TA.pdf
+
+        Args:
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+
+        Returns:
+            pd.DataFrame: A DataFrame containing the Government Tax Revenue
+        """
+        if self._gmbd_dataset.empty:
+            self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
+
+        government_tax_revenue = gmdb_model.get_government_tax_revenue(
+            gmd_dataset=self._gmbd_dataset
+        )
+
+        if growth:
+            government_tax_revenue = calculate_growth(
+                government_tax_revenue,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
+                axis="rows",
+            )
+
+        government_tax_revenue = government_tax_revenue.loc[
+            self._start_date : self._end_date
+        ]
+
+        return government_tax_revenue.round(rounding if rounding else self._rounding)
+
+    @handle_errors
+    def get_government_tax_revenue_to_gdp_ratio(
+        self,
+        growth: bool = False,
+        lag: int = 1,
+        rounding: int | None = None,
+    ):
+        """
+        Get the Government Tax Revenue to GDP Ratio for a variety of countries over time from the Global Macro Database (GMDB).
+        The Government Tax Revenue to GDP Ratio is the ratio of the total amount of money that a government collects from taxes
+        to the Gross Domestic Product (GDP).
+
+        Data comes from the Global Macro Database (GMDB), further information about the
+        variable can be found within https://www.globalmacrodata.com/files/GMD_TA.pdf
+
+        Args:
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+
+        Returns:
+            pd.DataFrame: A DataFrame containing the Government Tax Revenue to GDP Ratio
+        """
+        if self._gmbd_dataset.empty:
+            self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
+
+        government_tax_revenue_to_gdp_ratio = (
+            gmdb_model.get_government_tax_revenue_to_gdp_ratio(
+                gmd_dataset=self._gmbd_dataset
+            )
+        )
+
+        if growth:
+            government_tax_revenue_to_gdp_ratio = calculate_growth(
+                government_tax_revenue_to_gdp_ratio,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
+                axis="rows",
+            )
+
+        government_tax_revenue_to_gdp_ratio = government_tax_revenue_to_gdp_ratio.loc[
+            self._start_date : self._end_date
+        ]
+
+        return government_tax_revenue_to_gdp_ratio.round(
+            rounding if rounding else self._rounding
+        )
+
+    @handle_errors
+    def get_government_expenditure(
+        self,
+        growth: bool = False,
+        lag: int = 1,
+        rounding: int | None = None,
+    ):
+        """
+        Get the Government Expenditure for a variety of countries over time from the Global Macro Database (GMDB).
+        Government Expenditure is the total amount of money that a government spends on goods and services.
+
+        Data comes from the Global Macro Database (GMDB), further information about the
+        variable can be found within https://www.globalmacrodata.com/files/GMD_TA.pdf
+
+        Args:
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+
+        Returns:
+            pd.DataFrame: A DataFrame containing the Government Expenditure
+        """
+        if self._gmbd_dataset.empty:
+            self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
+
+        government_expenditure = gmdb_model.get_government_expenditure(
+            gmd_dataset=self._gmbd_dataset
+        )
+
+        if growth:
+            government_expenditure = calculate_growth(
+                government_expenditure,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
+                axis="rows",
+            )
+
+        government_expenditure = government_expenditure.loc[
+            self._start_date : self._end_date
+        ]
+
+        return government_expenditure.round(rounding if rounding else self._rounding)
+
+    @handle_errors
+    def get_government_expenditure_to_gdp_ratio(
+        self,
+        growth: bool = False,
+        lag: int = 1,
+        rounding: int | None = None,
+    ):
+        """
+        Get the Government Expenditure to GDP Ratio for a variety of countries over time from the Global Macro Database (GMDB).
+        The Government Expenditure to GDP Ratio is the ratio of the total amount of money that a government spends on goods
+        and services to the Gross Domestic Product (GDP).
+
+        Data comes from the Global Macro Database (GMDB), further information about the
+        variable can be found within https://www.globalmacrodata.com/files/GMD_TA.pdf
+
+        Args:
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+
+        Returns:
+            pd.DataFrame: A DataFrame containing the Government Expenditure to GDP Ratio
+        """
+        if self._gmbd_dataset.empty:
+            self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
+
+        government_expenditure_to_gdp_ratio = (
+            gmdb_model.get_government_expenditure_to_gdp_ratio(
+                gmd_dataset=self._gmbd_dataset
+            )
+        )
+
+        if growth:
+            government_expenditure_to_gdp_ratio = calculate_growth(
+                government_expenditure_to_gdp_ratio,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
+                axis="rows",
+            )
+
+        government_expenditure_to_gdp_ratio = government_expenditure_to_gdp_ratio.loc[
+            self._start_date : self._end_date
+        ]
+
+        return government_expenditure_to_gdp_ratio.round(
+            rounding if rounding else self._rounding
+        )
+
+    @handle_errors
+    def get_government_deficit(
+        self,
+        growth: bool = False,
+        lag: int = 1,
+        rounding: int | None = None,
+    ):
+        """
+        Get the Government Deficit for a variety of countries over time from the Global Macro Database (GMDB).
+        Government Deficit is the total amount of money that a government spends more than it collects from taxes
+        and other sources. A government deficit is usually financed by borrowing money.
+
+        Data comes from the Global Macro Database (GMDB), further information about the
+        variable can be found within https://www.globalmacrodata.com/files/GMD_TA.pdf
+
+        Args:
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+
+        Returns:
+            pd.DataFrame: A DataFrame containing the Government Deficit
+        """
+        if self._gmbd_dataset.empty:
+            self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
+
+        government_deficit = gmdb_model.get_government_deficit(
+            gmd_dataset=self._gmbd_dataset
+        )
+
+        if growth:
+            government_deficit = calculate_growth(
+                government_deficit,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
+                axis="rows",
+            )
+
+        government_deficit = government_deficit.loc[self._start_date : self._end_date]
+
+        return government_deficit.round(rounding if rounding else self._rounding)
+
+    @handle_errors
+    def get_government_deficit_to_gdp_ratio(
+        self,
+        growth: bool = False,
+        lag: int = 1,
+        rounding: int | None = None,
+    ):
+        """
+        Get the Government Deficit to GDP Ratio for a variety of countries over time from the Global Macro Database (GMDB).
+        The Government Deficit to GDP Ratio is the ratio of the total amount of money that a government spends more than it
+        collects from taxes and other sources to the Gross Domestic Product (GDP). A government deficit is usually financed
+        by borrowing money.
+
+        Data comes from the Global Macro Database (GMDB), further information about the
+        variable can be found within https://www.globalmacrodata.com/files/GMD_TA.pdf
+
+        Args:
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+
+        Returns:
+            pd.DataFrame: A DataFrame containing the Government Deficit to GDP Ratio
+        """
+        if self._gmbd_dataset.empty:
+            self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
+
+        government_deficit_to_gdp_ratio = (
+            gmdb_model.get_government_deficit_to_gdp_ratio(
+                gmd_dataset=self._gmbd_dataset
+            )
+        )
+
+        if growth:
+            government_deficit_to_gdp_ratio = calculate_growth(
+                government_deficit_to_gdp_ratio,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
+                axis="rows",
+            )
+
+        government_deficit_to_gdp_ratio = government_deficit_to_gdp_ratio.loc[
+            self._start_date : self._end_date
+        ]
+
+        return government_deficit_to_gdp_ratio.round(
+            rounding if rounding else self._rounding
+        )
+
+    @handle_errors
+    def get_money_supply(
+        self,
+        growth: bool = False,
+        lag: int = 1,
+        rounding: int | None = None,
+    ):
+        """
+        Money Supply is the total amount of money that is in circulation in a country.
+        It includes currency, demand deposits, and other liquid assets that can be easily
+        converted into cash. Money supply is an important economic indicator that the
+        Federal Reserve uses to implement its monetary policy.
+
+        Money supply can be divided into four categories: M0, M1, M2, M3 and M4.
+            - M0: The total of all physical currency, plus accounts at the central bank that can be exchanged for physical currency.
+            - M1: The total of all physical currency part of bank reserves + the amount in demand accounts ("checking" or "current" accounts).
+            - M2: M1 + most savings accounts, money market accounts, retail money market mutual funds, and small denomination time deposits.
+            - M3: M2 + large time deposits, institutional money market funds, short-term repurchase agreements, and other larger liquid assets.
+            - M4: M3 + all other financial assets.
+
+        Data comes from the Global Macro Database (GMDB), further information about the
+        variable can be found within https://www.globalmacrodata.com/files/GMD_TA.pdf
+
+        Args:
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+
+        Returns:
+            pd.DataFrame: A DataFrame containing the Money Supply
+        """
+        if self._gmbd_dataset.empty:
+            self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
+
+        money_supply = gmdb_model.get_money_supply(gmd_dataset=self._gmbd_dataset)
+
+        if growth:
+            money_supply = calculate_growth(
+                money_supply,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
+                axis="rows",
+            )
+
+        money_supply = money_supply.loc[self._start_date : self._end_date]
+
+        return money_supply.round(rounding if rounding else self._rounding)
+
+    @handle_errors
+    def get_central_bank_policy_rate(
+        self,
+        growth: bool = False,
+        lag: int = 1,
+        rounding: int | None = None,
+    ):
+        """
+        The Central Bank Policy Rate is the interest rate that a central bank sets on its
+        loans and advances to a commercial bank. This interest rate is used by the monetary
+        authorities to control inflation and stabilize the country's currency.
+
+        Data comes from the Global Macro Database (GMDB), further information about the
+        variable can be found within https://www.globalmacrodata.com/files/GMD_TA.pdf
+
+        Args:
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+
+        Returns:
+            pd.DataFrame: A DataFrame containing the Central Bank Policy Rate
+        """
+        if self._gmbd_dataset.empty:
+            self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
+
+        central_bank_policy_rate = gmdb_model.get_central_bank_policy_rate(
+            gmd_dataset=self._gmbd_dataset
+        )
+
+        if growth:
+            central_bank_policy_rate = calculate_growth(
+                central_bank_policy_rate,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
+                axis="rows",
+            )
+
+        central_bank_policy_rate = central_bank_policy_rate.loc[
+            self._start_date : self._end_date
+        ]
+
+        return central_bank_policy_rate.round(rounding if rounding else self._rounding)
+
+    @handle_errors
+    def get_consumer_price_index(
+        self,
+        growth: bool = False,
+        lag: int = 1,
+        rounding: int | None = None,
+    ):
+        """
+        Consumer Price Index (CPI) is a measure that examines the average change in prices
+        paid by consumers for goods and services over time. It is a measure of inflation.
+        The base year (2010) is the year against which the index is set to 100.
+
+        Data comes from the Global Macro Database (GMDB), further information about the
+        variable can be found within https://www.globalmacrodata.com/files/GMD_TA.pdf
+
+        Args:
+            growth (bool, optional): Whether to return the growth data or the actual data.
+            lag (int, optional): The number of periods to lag the data by.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+
+        Returns:
+            pd.DataFrame: A DataFrame containing the Consumer Price Index.
+        """
+        if self._gmbd_dataset.empty:
+            self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
+
+        consumer_price_index = gmdb_model.get_consumer_price_index(
+            gmd_dataset=self._gmbd_dataset
+        )
+
+        if growth:
+            consumer_price_index = calculate_growth(
+                consumer_price_index,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
+                axis="rows",
+            )
+
+        consumer_price_index = consumer_price_index.loc[
+            self._start_date : self._end_date
+        ]
+
+        return consumer_price_index.round(rounding if rounding else self._rounding)
+
+    @handle_errors
+    def get_inflation_rate(
+        self,
+        growth: bool = False,
+        lag: int = 1,
+        rounding: int | None = None,
+    ):
+        """
+        Inflation Rate is the percentage change in the Consumer Price Index (CPI) from one
+        period to another. It is a measure of the rate of price increases in the economy.
+
+        Data comes from the Global Macro Database (GMDB), further information about the
+        variable can be found within https://www.globalmacrodata.com/files/GMD_TA.pdf
+
+        Args:
+            growth (bool, optional): Whether to return the growth data or the actual data.
+            lag (int, optional): The number of periods to lag the data by.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+
+        Returns:
+            pd.DataFrame: A DataFrame containing the Inflation Rate.
 
         As an example:
 
         ```python
         from financetoolkit import Economics
 
-        economics = Economics(start_date='2021-01-01')
+        economics = Economics(start_date='2008-09-01', end_date='2009-03-01')
 
-        gdp_growth_forecast = economics.get_gross_domestic_product_forecast()
+        inflation_rate = economics.get_inflation_rate()
 
-        gdp_growth_forecast.loc[:, ['Indonesia', 'China', 'India']]
-        ```
+        inflation_rate.loc[:, ['Germany', 'France', 'Portugal']]
 
         Which returns:
 
-        |      |   Indonesia |   China |   India |
-        |:-----|------------:|--------:|--------:|
-        | 2021 |      0.037  |  0.0845 |  0.0905 |
-        | 2022 |      0.0531 |  0.0299 |  0.0724 |
-        | 2023 |      0.0488 |  0.0516 |  0.0626 |
-        | 2024 |      0.0519 |  0.047  |  0.0606 |
-        | 2025 |      0.0519 |  0.0424 |  0.0648 |
+        |      |   Germany |   France |   Portugal |
+        |:-----|----------:|---------:|-----------:|
+        | 2003 |    1.0342 |   2.0985 |     3.219  |
+        | 2004 |    1.6657 |   2.1421 |     2.3654 |
+        | 2005 |    1.5469 |   1.7459 |     2.2772 |
+        | 2006 |    1.5774 |   1.6751 |     3.1077 |
+        | 2007 |    2.2983 |   1.488  |     2.454  |
+        | 2008 |    2.6284 |   2.8129 |     2.5885 |
+        | 2009 |    0.3127 |   0.0876 |    -0.8355 |
         """
-        quarterly = quarterly if quarterly is not None else self._quarterly
+        if self._gmbd_dataset.empty:
+            self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
 
-        forecast_gdp_growth = oecd_model.get_gross_domestic_product_forecast_short_term(
-            quarterly=quarterly
-        )
+        inflation_rate = gmdb_model.get_inflation_rate(gmd_dataset=self._gmbd_dataset)
 
-        forecast_gdp_growth = forecast_gdp_growth.loc[self._start_date :]
+        if growth:
+            inflation_rate = calculate_growth(
+                inflation_rate,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
+                axis="rows",
+            )
 
-        return forecast_gdp_growth.round(rounding if rounding else self._rounding)
+        inflation_rate = inflation_rate.loc[self._start_date : self._end_date]
 
+        return inflation_rate.round(rounding if rounding else self._rounding)
+
+    @handle_errors
     def get_consumer_confidence_index(
         self, growth: bool = False, lag: int = 1, rounding: int | None = None
     ):
@@ -323,6 +1485,7 @@ class Economics:
 
         return consumer_confidence_index.round(rounding if rounding else self._rounding)
 
+    @handle_errors
     def get_business_confidence_index(
         self, growth: bool = False, lag: int = 1, rounding: int | None = None
     ):
@@ -385,6 +1548,7 @@ class Economics:
 
         return business_confidence_index.round(rounding if rounding else self._rounding)
 
+    @handle_errors
     def get_composite_leading_indicator(
         self, growth: bool = False, lag: int = 1, rounding: int | None = None
     ):
@@ -445,10 +1609,12 @@ class Economics:
             rounding if rounding else self._rounding
         )
 
+    @handle_errors
     def get_house_prices(
         self,
         quarterly: bool | None = None,
         inflation_adjusted: bool = False,
+        gmdb_source: bool | None = None,
         growth: bool = False,
         lag: int = 1,
         rounding: int | None = None,
@@ -466,9 +1632,13 @@ class Economics:
 
         See definition: https://data.oecd.org/price/housing-prices.htm
 
+        It is also possible to get the data from the Global Macro Database (GMDB) by setting
+        the gmdb_source to True.
+
         Args:
             quarterly (bool | None, optional): Whether to return the quarterly data or the annual data.
             inflation_adjusted (bool, optional): Whether to return the inflation adjusted data or the nominal data.
+            gmdb_source (bool | None, optional): Whether to get the data from the Global Macro Database (GMDB).
             growth (bool, optional): Whether to return the growth data or the actual data.
             lag (int, optional): The number of periods to lag the data by.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
@@ -502,10 +1672,19 @@ class Economics:
         | 2022 | 118.827 |       156.422 |   138.298 |
         """
         quarterly = quarterly if quarterly is not None else self._quarterly
+        gmdb_source = gmdb_source if gmdb_source is not None else self._gmdb_source
 
-        house_prices = oecd_model.get_house_prices(
-            quarterly=quarterly, inflation_adjusted=inflation_adjusted
-        )
+        if gmdb_source:
+            if self._gmbd_dataset.empty:
+                self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
+
+            house_prices = gmdb_model.get_house_price_index(
+                gmd_dataset=self._gmbd_dataset
+            )
+        else:
+            house_prices = oecd_model.get_house_prices(
+                quarterly=quarterly, inflation_adjusted=inflation_adjusted
+            )
 
         if growth:
             house_prices = calculate_growth(
@@ -519,6 +1698,7 @@ class Economics:
 
         return house_prices.round(rounding if rounding else self._rounding)
 
+    @handle_errors
     def get_rent_prices(
         self,
         quarterly: bool | None = None,
@@ -587,6 +1767,7 @@ class Economics:
 
         return rent_prices.round(rounding if rounding else self._rounding)
 
+    @handle_errors
     def get_share_prices(
         self,
         period: str | None = None,
@@ -669,9 +1850,11 @@ class Economics:
 
         return share_prices.round(rounding if rounding else self._rounding)
 
+    @handle_errors
     def get_long_term_interest_rate(
         self,
         period: str | None = None,
+        gmdb_source: bool | None = None,
         growth: bool = False,
         lag: int = 1,
         rounding: int | None = None,
@@ -691,8 +1874,12 @@ class Economics:
 
         See definition: https://data.oecd.org/interest/long-term-interest-rates.htm
 
+        It is also possible to get the data from the Global Macro Database (GMDB) by setting
+        the gmdb_source to True.
+
         Args:
             period (str | None, optional): Whether to return the monthly, quarterly or the annual data.
+            gmdb_source (bool | None, optional): Whether to get the data from the Global Macro Database (GMDB).
             growth (bool, optional): Whether to return the growth data or the actual data.
             lag (int, optional): The number of periods to lag the data by.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
@@ -730,9 +1917,19 @@ class Economics:
             else "quarterly" if self._quarterly else "yearly"
         )
 
-        long_term_interest_rate = oecd_model.get_long_term_interest_rate(
-            period=period,
-        )
+        gmdb_source = gmdb_source if gmdb_source is not None else self._gmdb_source
+
+        if gmdb_source:
+            if self._gmbd_dataset.empty:
+                self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
+
+            long_term_interest_rate = gmdb_model.get_long_term_interest_rate(
+                gmd_dataset=self._gmbd_dataset
+            )
+        else:
+            long_term_interest_rate = oecd_model.get_long_term_interest_rate(
+                period=period,
+            )
 
         if growth:
             long_term_interest_rate = calculate_growth(
@@ -748,9 +1945,11 @@ class Economics:
 
         return long_term_interest_rate.round(rounding if rounding else self._rounding)
 
+    @handle_errors
     def get_short_term_interest_rate(
         self,
         period: str | None = None,
+        gmdb_source: bool | None = None,
         growth: bool = False,
         lag: int = 1,
         rounding: int | None = None,
@@ -766,8 +1965,12 @@ class Economics:
 
         See definition: https://data.oecd.org/interest/short-term-interest-rates.htm
 
+        It is also possible to get the data from the Global Macro Database (GMDB) by setting
+        the gmdb_source to True.
+
         Args:
             period (str | None, optional): Whether to return the monthly, quarterly or the annual data.
+            gmdb_source (bool | None, optional): Whether to get the data from the Global Macro Database (GMDB).
             growth (bool, optional): Whether to return the growth data or the actual data.
             lag (int, optional): The number of periods to lag the data by.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
@@ -809,9 +2012,17 @@ class Economics:
             else "quarterly" if self._quarterly else "yearly"
         )
 
-        short_term_interest_rate = oecd_model.get_short_term_interest_rate(
-            period=period,
-        )
+        if gmdb_source:
+            if self._gmbd_dataset.empty:
+                self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
+
+            short_term_interest_rate = gmdb_model.get_short_term_interest_rate(
+                gmd_dataset=self._gmbd_dataset
+            )
+        else:
+            short_term_interest_rate = oecd_model.get_short_term_interest_rate(
+                period=period,
+            )
 
         if growth:
             short_term_interest_rate = calculate_growth(
@@ -827,10 +2038,12 @@ class Economics:
 
         return short_term_interest_rate.round(rounding if rounding else self._rounding)
 
+    @handle_errors
     def get_exchange_rates(
         self,
-        growth: bool = False,
         period: str | None = None,
+        gmdb_source: bool | None = None,
+        growth: bool = False,
         lag: int = 1,
         rounding: int | None = None,
     ):
@@ -841,7 +2054,12 @@ class Economics:
 
         See definition: https://data.oecd.org/conversion/exchange-rates.htm
 
+        It is also possible to get the data from the Global Macro Database (GMDB) by setting
+        the gmdb_source to True.
+
         Args:
+            period (str | None, optional): Whether to return the monthly, quarterly or the annual data.
+            gmdb_source (bool | None, optional): Whether to get the data from the Global Macro Database (GMDB).
             growth (bool, optional): Whether to return the growth data or the actual data.
             lag (int, optional): The number of periods to lag the data by.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
@@ -881,8 +2099,17 @@ class Economics:
             if period is not None
             else "quarterly" if self._quarterly else "yearly"
         )
+        gmdb_source = gmdb_source if gmdb_source is not None else self._gmdb_source
 
-        exchange_rates = oecd_model.get_exchange_rates(period=period)
+        if gmdb_source:
+            if self._gmbd_dataset.empty:
+                self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
+
+            exchange_rates = gmdb_model.get_usd_exchange_rate(
+                gmd_dataset=self._gmbd_dataset
+            )
+        else:
+            exchange_rates = oecd_model.get_exchange_rates(period=period)
 
         if growth:
             exchange_rates = calculate_growth(
@@ -896,6 +2123,7 @@ class Economics:
 
         return exchange_rates.round(rounding if rounding else self._rounding)
 
+    @handle_errors
     def get_renewable_energy(
         self,
         growth: bool = False,
@@ -970,6 +2198,7 @@ class Economics:
 
         return renewable_energy.round(rounding if rounding else self._rounding)
 
+    @handle_errors
     def get_carbon_footprint(
         self,
         growth: bool = False,
@@ -1038,6 +2267,7 @@ class Economics:
 
         return carbon_footprint_df.round(rounding if rounding else self._rounding)
 
+    @handle_errors
     def get_trust_in_government(
         self,
         growth: bool = False,
@@ -1115,9 +2345,11 @@ class Economics:
 
         return trust_in_government.round(rounding if rounding else self._rounding)
 
+    @handle_errors
     def get_unemployment_rate(
         self,
         period: str | None = None,
+        gmdb_source: bool | None = None,
         growth: bool = False,
         lag: int = 1,
         rounding: int | None = None,
@@ -1139,8 +2371,12 @@ class Economics:
 
         See definition: https://data.oecd.org/unemp/unemployment-rate.htm
 
+        It is also possible to get the data from the Global Macro Database (GMDB) by setting
+        the gmdb_source to True.
+
         Args:
             period (str | None, optional): Whether to return the monthly, quarterly or the annual data.
+            gmdb_source (bool | None, optional): Whether to get the data from the Global Macro Database (GMDB).
             growth (bool, optional): Whether to return the growth data or the actual data.
             lag (int, optional): The number of periods to lag the data by.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
@@ -1179,8 +2415,17 @@ class Economics:
             if period is not None
             else "quarterly" if self._quarterly else "yearly"
         )
+        gmdb_source = gmdb_source if gmdb_source is not None else self._gmdb_source
 
-        unemployment_rate = oecd_model.get_unemployment_rate(period=period)
+        if gmdb_source:
+            if self._gmbd_dataset.empty:
+                self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
+
+            unemployment_rate = gmdb_model.get_unemployment_rate(
+                gmd_dataset=self._gmbd_dataset
+            )
+        else:
+            unemployment_rate = oecd_model.get_unemployment_rate(period=period)
 
         if growth:
             unemployment_rate = calculate_growth(
@@ -1194,6 +2439,7 @@ class Economics:
 
         return unemployment_rate.round(rounding if rounding else self._rounding)
 
+    @handle_errors
     def get_labour_productivity(
         self,
         growth: bool = False,
@@ -1265,6 +2511,7 @@ class Economics:
 
         return labour_productivity.round(rounding if rounding else self._rounding)
 
+    @handle_errors
     def get_income_inequality(
         self,
         growth: bool = False,
@@ -1332,8 +2579,10 @@ class Economics:
 
         return income_inequality.round(rounding if rounding else self._rounding)
 
+    @handle_errors
     def get_population_statistics(
         self,
+        gmdb_source: bool | None = None,
         growth: bool = False,
         lag: int = 1,
         rounding: int | None = None,
@@ -1372,7 +2621,11 @@ class Economics:
 
         See definition: https://data.oecd.org/pop/population.htm
 
+        It is also possible to get the data from the Global Macro Database (GMDB) by setting
+        the gmdb_source to True.
+
         Args:
+            gmdb_source (bool | None, optional): Whether to get the data from the Global Macro Database (GMDB).
             growth (bool, optional): Whether to return the growth data or the actual data.
             lag (int, optional): The number of periods to lag the data by.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
@@ -1407,16 +2660,25 @@ class Economics:
         | 2018 |      126.749 |             0.1221 |                   0.598  |               0.2799 |
         | 2019 |      126.555 |             0.1206 |                   0.5969 |               0.2825 |
         """
+        gmdb_source = gmdb_source if gmdb_source is not None else self._gmdb_source
 
-        population_statistics = {}
+        if gmdb_source:
+            if self._gmbd_dataset.empty:
+                self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset
 
-        population_statistics["Population"] = oecd_model.get_population()
-        population_statistics["Men"] = oecd_model.get_population(gender="men")
-        population_statistics["Women"] = oecd_model.get_population(gender="women")
+            population_statistics = gmdb_model.get_population(
+                gmd_dataset=self._gmbd_dataset
+            )
+        else:
+            population_statistics = {}
 
-        population_statistics_df = pd.concat(population_statistics, axis=0).unstack(
-            level=0
-        )
+            population_statistics["Population"] = oecd_model.get_population()
+            population_statistics["Men"] = oecd_model.get_population(gender="men")
+            population_statistics["Women"] = oecd_model.get_population(gender="women")
+
+            population_statistics_df = pd.concat(population_statistics, axis=0).unstack(
+                level=0
+            )
 
         if growth:
             population_statistics_df = calculate_growth(
@@ -1432,6 +2694,7 @@ class Economics:
 
         return population_statistics_df.round(rounding if rounding else self._rounding)
 
+    @handle_errors
     def get_poverty_rate(
         self,
         growth: bool = False,

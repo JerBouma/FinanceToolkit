@@ -10,6 +10,7 @@ __pycache__/
 *.csv
 *.xlsx
 *.xls
+cached/
 
 # C extensions
 *.so

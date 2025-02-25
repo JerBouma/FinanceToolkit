@@ -57,6 +57,7 @@ def get_historical_data(
     show_ticker_seperation: bool = True,
     show_errors: bool = False,
     tqdm_message: str = "Obtaining historical data",
+    user_subscription: str = "Free",
 ):
     """
     Retrieves historical stock data for the given ticker(s) from Financial Modeling Prep or/and Yahoo Finance
@@ -222,7 +223,9 @@ def get_historical_data(
         thread.join()
 
     historical_data_dict = (
-        helpers.check_for_error_messages(historical_data_dict)
+        helpers.check_for_error_messages(
+            dataset_dictionary=historical_data_dict, user_subscription=user_subscription
+        )
         if show_errors
         else historical_data_dict
     )
@@ -508,7 +511,12 @@ def get_historical_data_from_yahoo_finance(
             start=start_timestamp,
             end=end_timestamp,
             interval=interval,
+            auto_adjust=True,
         ).droplevel(level=1, axis=1)
+
+        if "Adj Close" not in historical_data and historical_data.columns.nlevels == 1:
+            historical_data["Adj Close"] = historical_data["Close"]
+
     except (HTTPError, URLError, RemoteDisconnected, IndexError):
         return pd.DataFrame()
 
@@ -879,6 +887,7 @@ def get_historical_statistics(
     progress_bar: bool = True,
     show_errors: bool = False,
     tqdm_message: str = "Obtaining historical statistics",
+    user_subscription: str = "Free",
 ):
     """
     Retrieves statistics about each ticker's historical data. This is useful to understand why certain
@@ -965,7 +974,10 @@ def get_historical_statistics(
         thread.join()
 
     historical_statistics_dict = (
-        helpers.check_for_error_messages(historical_statistics_dict)
+        helpers.check_for_error_messages(
+            dataset_dictionary=historical_statistics_dict,
+            user_subscription=user_subscription,
+        )
         if show_errors
         else historical_statistics_dict
     )

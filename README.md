@@ -292,7 +292,7 @@ And below these Unemployment Rates are plotted over time:
 Through a custom XLSX, XLS or CSV file you are able to load in your own portfolio directly into the Finance Toolkit. This allows you to view your positions and performance (over time) versus a benchmark and other positions as well as your PnL development over time. Furthermore, the portfolio can be directly loaded in the core functionality of the Finance Toolkit as well making it possible to calculate all metrics and ratios for your portfolio (which is a time-weighted sum of all positions). The portfolio module is a standalone module and can be used as such by using `from financetoolkit import Portfolio`.
 
 ___
-<b><div align="center">It is important to note that it requires a specific Excel template to work, see for further instructions the following notebook <a href="https://www.jeroenbouma.com/projects/financetoolkit/portfolio">here</a>.</div></b>
+<b><div align="center">It is important to note that it requires a specific Excel template to work, see for further instructions the following notebook <a href="https://www.jeroenbouma.com/projects/financetoolkit/portfolio" target="_blank">here</a>.</div></b>
 ___
 
 The table below shows one of the functionalities of the Portfolio module but is purposely shrunken down given the >30 assets.

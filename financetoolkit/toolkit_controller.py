@@ -105,8 +105,10 @@ class Toolkit:
         Initializes an Toolkit object with a ticker or a list of tickers. The way the Toolkit is initialized
         will define how the data is collected. For example, if you enable the quarterly flag, you will
         be able to collect quarterly data. Next to that, you can define the start and end date to specify
-        a specific range. Another option is to define the custom ratios you want to calculate.
-        This can be done by passing a dictionary.
+        a specific range. Another option is to work with cached data. This is useful when you have collected
+        data before and want to use this data again. This can be done by setting the use_cached_data variable
+        to True. If you want to use a specific location to store the cached data, you can define this as a string,
+        e.g. "datasets".
 
         See for more information on all of this, the following link: https://www.jeroenbouma.com/projects/financetoolkit
 
@@ -166,16 +168,37 @@ class Toolkit:
         from financetoolkit import Toolkit
 
         # Simple example
-        toolkit = Toolkit(["TSLA", "ASML"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            tickers=["TSLA", "ASML"],
+            api_key="FINANCIAL_MODELING_PREP_KEY")
 
         # Obtaining quarterly data
-        toolkit = Toolkit(["AAPL", "GOOGL"], quarterly=True, api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            tickers=["AAPL", "GOOGL"],
+            quarterly=True,
+            api_key="FINANCIAL_MODELING_PREP_KEY")
 
         # Including a start and end date
-        toolkit = Toolkit(["MSFT", "MU"], start_date="2020-01-01", end_date="2023-01-01", quarterly=True, api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            tickers=["MSFT", "MU"],
+            start_date="2020-01-01",
+            end_date="2023-01-01"
+            quarterly=True,
+            api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        # Working with cached data
+        toolkit = Toolkit(
+            tickers=["WMT", "AAPL"],
+            quarterly=True,
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            use_cached_data=True)
 
         # Changing the benchmark and risk free rate
-        toolkit = Toolkit("AMZN", benchmark_ticker="^DJI", risk_free_rate="30y", api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            tickers="AMZN",
+            benchmark_ticker="^DJI",
+            risk_free_rate="30y",
+            api_key="FINANCIAL_MODELING_PREP_KEY")
         ```
         """
         self._use_cached_data = (

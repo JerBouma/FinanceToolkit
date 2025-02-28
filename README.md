@@ -289,7 +289,7 @@ And below these Unemployment Rates are plotted over time:
 
 ### Explore your own Portfolio
 
-Through a custom XLSX, XLS or CSV file you are able to load in your own portfolio directly into the Finance Toolkit. This allows you to view your positions and performance (over time) versus a benchmark and other positions as well as your PnL development over time. Furthermore, the portfolio can be directly loaded in the core functionality of the Finance Toolkit as well making it possible to calculate all metrics and ratios for your portfolio (which is a time-weighted sum of all positions). The portfolio module is a standalone module and can be used as such by using `from financetoolkit import Portfolio`. See for further instructions the following notebook [here](https://www.jeroenbouma.com/projects/financetoolkit/portfolio).
+Through a custom XLSX, XLS or CSV file you are able to load in your own portfolio directly into the Finance Toolkit. This allows you to view your positions and performance (over time) versus a benchmark and other positions as well as your PnL development over time. Furthermore, the portfolio can be directly loaded in the core functionality of the Finance Toolkit as well making it possible to calculate all metrics and ratios for your portfolio (which is a time-weighted sum of all positions). The portfolio module is a standalone module and can be used as such by using `from financetoolkit import Portfolio`. See for further instructions the following notebook [here](https://www.jeroenbouma.com/projects/financetoolkit/portfolio). The table below is purposely shrunken down given the >30 assets.
 
 | Identifier   |   Volume |   Costs |    Price |   Invested |   Latest Price |   Latest Value |   Return |   Return Value |   Benchmark Return |    Alpha |   Weight |
 |:-------------|---------:|--------:|---------:|-----------:|---------------:|---------------:|---------:|---------------:|-------------------:|---------:|---------:|
@@ -298,12 +298,6 @@ Through a custom XLSX, XLS or CSV file you are able to load in your own portfoli
 | AMD          |       78 |     -30 |  11.9075 |    898.784 |         115.95 |        9044.1  |   9.0626 |      8145.32   |             3.8637 |   5.1989 |   0.0107 |
 | AMZN         |      116 |     -28 |  41.5471 |   4791.46  |         237.68 |       27570.9  |   4.7542 |     22779.4    |             1.8683 |   2.8859 |   0.0326 |
 | ASML         |      129 |     -25 |  33.3184 |   4273.07  |         739.31 |       95371    |  21.3191 |     91097.9    |             3.8699 |  17.4492 |   0.1127 |
-| AVGO         |       66 |     -24 |  21.2611 |   1379.23  |         221.27 |       14603.8  |   9.5884 |     13224.6    |             1.4203 |   8.1681 |   0.0173 |
-| BAC          |       80 |     -30 |  20.0851 |   1576.81  |          46.3  |        3704    |   1.3491 |      2127.19   |             1.9082 |  -0.5592 |   0.0044 |
-| BLDR         |       48 |     -18 |  32.1805 |   1526.67  |         167.28 |        8029.44 |   4.2595 |      6502.77   |             1.396  |   2.8635 |   0.0095 |
-| CAMT         |       42 |     -19 |  10.0213 |    401.896 |          94.54 |        3970.68 |   8.8799 |      3568.78   |             2.135  |   6.7448 |   0.0047 |
-| NVDA         |       64 |     -27 |  -6.5155 |   -443.99  |         120.07 |        7684.48 | -18.3078 |      8128.47   |             3.9074 | -22.2152 |   0.0091 |
-| OXY          |       27 |     -15 |  39.7355 |   1057.86  |          46.65 |        1259.55 |   0.1907 |       201.692  |             3.2797 |  -3.089  |   0.0015 |
 | SKY          |      126 |     -23 |  18.0884 |   2256.14  |          92.33 |       11633.6  |   4.1564 |      9377.44   |             3.5636 |   0.5928 |   0.0138 |
 | VOO          |       77 |     -12 | 238.499  |  18352.5   |         553.33 |       42606.4  |   1.3216 |     24254      |             1.1485 |   0.1731 |   0.0504 |
 | VSS          |       98 |     -21 |  77.7056 |   7594.14  |         115.11 |       11280.8  |   0.4855 |      3686.64   |             1.3411 |  -0.8557 |   0.0133 |

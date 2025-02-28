@@ -3101,6 +3101,16 @@ The `Portfolio` class can be called by using `from financetoolkit import Portfol
 <details>
     <summary><b>Portfolio Evaluation</b></summary>
 
+The portfolio evaluation methods provides an overview of the current portfolio and the portfolio for each period let it be weekly, monthly, quarterly or yearly. As an example:
+
+```python
+from financetoolkit import Portfolio
+
+portfolio = Portfolio(example=True, api_key=FINANCIAL_MODELING_PREP_KEY)
+
+portfolio.get_portfolio_overview()
+```
+
 > **Portfolio Overview**
 
 The portfolio overview method provides an overview of the portfolio, including the volume, costs, invested amount, current value and the current weight of each position. It also calculates the return of each position and compares this to a benchmark return. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/portfolio#get_portfolio_overview).
@@ -3154,34 +3164,27 @@ As an example (by selecting only one specific period, in this case "2025Q1"):
 | BAC          |       94 |     -25 |           1794.25 |         4147.28 |            0.0129 |           0.0047 |   1.3114 |
 | BLDR         |       61 |     -12 |           1661.06 |         8488.15 |            0.012  |           0.0096 |   4.1101 |
 | CAMT         |       59 |     -12 |            516.11 |         4413.2  |            0.0037 |           0.005  |   7.5509 |
-| CWST         |       65 |      -7 |           1354.73 |         7014.8  |            0.0098 |           0.0079 |   4.178  |
-| EMXC         |       24 |      -7 |           1256    |         1321.68 |            0.0091 |           0.0015 |   0.0523 |
-| FICO         |      132 |     -17 |           4799.33 |       242376    |            0.0346 |           0.2742 |  49.502  |
-| FIX          |      131 |     -16 |           1724.57 |        46718.5  |            0.0124 |           0.0529 |  26.09   |
-| GOOGL        |      148 |     -29 |           4590.02 |        24938    |            0.0331 |           0.0282 |   4.4331 |
-| KHC          |       16 |      -6 |            560.97 |          490.4  |            0.004  |           0.0006 |  -0.1258 |
-| MCHI         |       57 |     -10 |           2661.91 |         3129.87 |            0.0192 |           0.0035 |   0.1758 |
-| META         |       15 |      -1 |           4794.75 |         9873.6  |            0.0346 |           0.0112 |   1.0593 |
-| MPWR         |      122 |     -24 |          30077.9  |        74344.4  |            0.217  |           0.0841 |   1.4717 |
-| MSFT         |      110 |     -11 |           4362.18 |        43178.3  |            0.0315 |           0.0488 |   8.8983 |
-| NFLX         |      125 |     -27 |          16387.9  |       120384    |            0.1183 |           0.1362 |   6.3459 |
-| NVDA         |       81 |     -23 |            149.66 |         9732.15 |            0.0011 |           0.011  |  64.0283 |
-| OXY          |       38 |      -4 |           1424.45 |         1848.7  |            0.0103 |           0.0021 |   0.2978 |
-| SKY          |      136 |     -19 |           2455.75 |        13718.3  |            0.0177 |           0.0155 |   4.5862 |
-| VOO          |       79 |     -12 |          18660.8  |        42499.6  |            0.1347 |           0.0481 |   1.2775 |
-| VSS          |      109 |     -19 |           8393.99 |        12624.4  |            0.0606 |           0.0143 |   0.504  |
-| WMT          |      101 |     -14 |           1747.63 |         9775.79 |            0.0126 |           0.0111 |   4.5937 |
 
 </details>
 
 <details>
     <summary><b>Transactions Evaluation</b></summary>
 
+The transactions evaluation methods provides an overview of all performed transactions, including the volume, costs, invested amount, current value, return and (cumulative) PnL as well as an overview of the transactions performed in different periods. As an example:
+
+```python
+from financetoolkit import Portfolio
+
+portfolio = Portfolio(example=True, api_key=FINANCIAL_MODELING_PREP_KEY)
+
+portfolio.get_transactions_overview()
+```
+
 > **Transactions Overview**
 
 The transactions overview method provides an overview of all performed transactions, including the volume, costs, invested amount, current value, return and (cumulative) PnL. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/portfolio#get_transactions_overview).
 
-As an example, showing the most recent 30 transactions:
+As an example, showing the most recent 10 transactions:
 
 | Date       | Identifier   |    Price |   Volume |   Costs | Currency   |   Invested Amount |   Current Value |   % Return |     Return |   PnL |   Cumulative PnL |
 |:-----------|:-------------|---------:|---------:|--------:|:-----------|------------------:|----------------:|-----------:|-----------:|------:|-----------------:|
@@ -3195,26 +3198,6 @@ As an example, showing the most recent 30 transactions:
 | 2022-09-02 | ASML         | 457.855  |        4 |      -3 | USD        |         1828.42   |         2790.8  |     0.5263 |   962.38   |     0 |          4401.16 |
 | 2022-09-30 | OXY          |  59.3658 |        9 |      -2 | USD        |          532.293  |          437.85 |    -0.1774 |   -94.4426 |     0 |          4401.16 |
 | 2022-10-12 | BAC          |  28.178  |        1 |      -1 | USD        |           27.178  |           44.12 |     0.6234 |    16.942  |     0 |          4401.16 |
-| 2022-11-07 | MPWR         | 350.209  |       14 |      -2 | USD        |         4900.93   |         8531.32 |     0.7408 |  3630.39   |     0 |          4401.16 |
-| 2022-11-09 | CAMT         |  22.0629 |        1 |       0 | USD        |           22.0629 |           74.8  |     2.3903 |    52.7371 |     0 |          4401.16 |
-| 2022-12-06 | VOO          | 349.553  |       11 |       0 | USD        |         3845.09   |         5917.67 |     0.539  |  2072.58   |     0 |          4401.16 |
-| 2023-01-23 | NFLX         | 357.475  |        3 |      -3 | USD        |         1069.43   |         2889.21 |     1.7016 |  1819.78   |     0 |          4401.16 |
-| 2023-02-14 | VSS          | 103.266  |        6 |      -1 | USD        |          618.595  |          694.92 |     0.1234 |    76.3246 |     0 |          4401.16 |
-| 2023-03-20 | BLDR         |  81.8293 |       12 |      -2 | USD        |          979.951  |         1669.8  |     0.704  |   689.849  |     0 |          4401.16 |
-| 2023-04-28 | KHC          |  36.1041 |        3 |      -2 | USD        |          106.312  |           91.95 |    -0.1351 |   -14.3623 |     0 |          4724.68 |
-| 2023-06-14 | AAPL         | 181.34   |       13 |      -1 | USD        |         2356.42   |         3084.9  |     0.3091 |   728.482  |     0 |          4724.68 |
-| 2023-09-26 | VSS          | 100.398  |       12 |      -1 | USD        |         1203.78   |         1389.84 |     0.1546 |   186.065  |     0 |          4724.68 |
-| 2023-10-16 | MCHI         |  41.0726 |       15 |      -3 | USD        |          613.088  |          823.65 |     0.3434 |   210.562  |     0 |          4724.68 |
-| 2024-02-01 | GOOGL        | 140.041  |       14 |       0 | USD        |         1960.57   |         2359    |     0.2032 |   398.431  |     0 |          4724.68 |
-| 2024-02-12 | BAC          |  33.0126 |        5 |      -3 | USD        |          162.063  |          220.6  |     0.3612 |    58.5368 |     0 |          4724.68 |
-| 2024-02-22 | MCHI         |  38.4963 |        7 |      -1 | USD        |          268.474  |          384.37 |     0.4317 |   115.896  |     0 |          4724.68 |
-| 2024-03-12 | MPWR         | 727.32   |       11 |       0 | USD        |         8000.52   |         6703.18 |    -0.1622 | -1297.34   |     0 |          4737.7  |
-| 2024-05-14 | CAMT         |  94.4243 |        4 |       0 | USD        |          377.697  |          299.2  |    -0.2078 |   -78.497  |     0 |          4737.7  |
-| 2024-06-11 | META         | 505.574  |        8 |       0 | USD        |         4044.59   |         5265.92 |     0.302  |  1221.33   |     0 |          4737.7  |
-| 2024-06-18 | MPWR         | 847.6    |       14 |      -1 | USD        |        11865.4    |         8531.32 |    -0.281  | -3334.08   |     0 |          4737.7  |
-| 2024-07-30 | AMD          | 139.57   |        3 |       0 | USD        |          418.711  |          298.53 |    -0.287  |  -120.18   |     0 |          5092.28 |
-| 2024-10-25 | MCHI         |  48.8436 |        6 |       0 | USD        |          293.062  |          329.46 |     0.1242 |    36.3983 |     0 |          5703.28 |
-| 2024-11-13 | VOO          | 552.136  |       11 |       0 | USD        |         6073.5    |         5917.67 |    -0.0257 |  -155.83   |     0 |          5745.3  |
 
 > **Transactions Performance**
 
@@ -3234,34 +3217,22 @@ As an example (by selecting only one specific period, in this case "2025Q1"):
 <details>
     <summary><b>Positions Overview</b></summary>
 
-> **Positions Overview**
-
 The positions overview method creates a daily overview of all your positions and stores the daily volume, costs, invested amount, current value, cumulative return, invested weight and current weight of each individual position. Therefore, it allows you to see how your portfolio has transformed over time. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/portfolio#get_positions_overview).
 
-As an example, this shows the current value for each day over the last 30 days of the first 5 assets in the portfolio:
+As an example:
+
+```python
+from financetoolkit import Portfolio
+
+portfolio = Portfolio(example=True, api_key=FINANCIAL_MODELING_PREP_KEY)
+
+portfolio.get_positions_overview()
+```
+
+This returns a rather large DataFrame so to keep it concise, only the first 5 tickers and 10 days of data for the current value are shown below:
 
 | date       |     ASML |     SKY |    AMZN |     FIX |    MSFT |
 |:-----------|---------:|--------:|--------:|--------:|--------:|
-| 2025-01-15 |  99325   | 12623.5 | 30152.2 | 64700.9 | 46800.6 |
-| 2025-01-16 | 102603   | 12539.2 | 29789.1 | 66174.6 | 46610.3 |
-| 2025-01-17 | 103431   | 12323   | 30501.9 | 65995.2 | 47098.7 |
-| 2025-01-21 | 104343   | 12363.8 | 31145.8 | 69327.8 | 47040.4 |
-| 2025-01-22 | 104850   | 12196.5 | 31726.3 | 72085.4 | 48984.1 |
-| 2025-01-23 | 102051   | 12263.1 | 31781.7 | 71697.6 | 49040.2 |
-| 2025-01-24 | 100139   | 12091.8 | 31704.8 | 71285   | 48748.7 |
-| 2025-01-27 |  94380.7 | 12419.5 | 31781.7 | 52955.4 | 47705.9 |
-| 2025-01-28 |  93450.4 | 12298.5 | 32150.2 | 54519.6 | 49094.1 |
-| 2025-01-29 |  97457.7 | 12097.2 | 32004.5 | 55858.4 | 48558.4 |
-| 2025-01-30 | 100787   | 12457.6 | 31676.4 | 56835.7 | 45557.6 |
-| 2025-01-31 | 101103   | 12556.9 | 32086.8 | 57214.2 | 45565.3 |
-| 2025-02-03 |  99974.4 | 12471.2 | 32051.7 | 55943.6 | 45111   |
-| 2025-02-04 | 100024   | 12614   | 32678.1 | 55682.9 | 45269.4 |
-| 2025-02-05 | 101553   | 14316.7 | 31883   | 58333   | 45370.6 |
-| 2025-02-06 | 101079   | 14392.9 | 32242   | 61537.2 | 45648.9 |
-| 2025-02-07 |  99515.4 | 14127.7 | 30935.2 | 60267.9 | 44982.3 |
-| 2025-02-10 | 101757   | 14339.8 | 31473.9 | 60904.5 | 45254   |
-| 2025-02-11 | 103158   | 14371.1 | 31422.6 | 56936.5 | 45168.2 |
-| 2025-02-12 | 103595   | 14284.1 | 30905.5 | 52179.9 | 44904.2 |
 | 2025-02-13 | 106448   | 14707   | 31100   | 51751.6 | 45069.2 |
 | 2025-02-14 | 102962   | 14609.1 | 30871.8 | 51249.8 | 44837.1 |
 | 2025-02-18 | 101958   | 14267.8 | 30597.8 | 51691.3 | 44970.2 |

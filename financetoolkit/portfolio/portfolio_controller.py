@@ -102,12 +102,12 @@ class Portfolio:
         self._configuration_file = (
             configuration_file
             if configuration_file
-            else resources.files(__package__).joinpath("config.yaml")
+            else str(resources.files(__package__).joinpath("config.yaml"))
         )
 
         if self._configuration_file.endswith(".yaml"):
             self._cfg: dict[str, dict] = helpers.read_yaml_file(
-                location=str(self._configuration_file)
+                location=self._configuration_file
             )
         else:
             raise ValueError("File type not supported. Please use .yaml")
@@ -180,8 +180,6 @@ class Portfolio:
             portfolio_dataset if isinstance(portfolio_dataset, str) else []
         )
 
-        print(self._portfolio_dataset_path)
-        print(type(portfolio_dataset))
         self._raw_portfolio_dataset: pd.DataFrame = (
             portfolio_dataset
             if isinstance(portfolio_dataset, pd.DataFrame)

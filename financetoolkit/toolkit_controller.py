@@ -244,7 +244,7 @@ class Toolkit:
                 if self._quarterly != cached_configurations["quarterly"]:
                     self._quarterly = cached_configurations["quarterly"]
                     cached_overwrites.append(
-                        f"quarterly {cached_configurations['quarterly']}"
+                        f"quarterly ({cached_configurations['quarterly']})"
                     )
                 if self._benchmark_ticker != cached_configurations["benchmark_ticker"]:
                     self._benchmark_ticker = cached_configurations["benchmark_ticker"]
@@ -259,9 +259,7 @@ class Toolkit:
                 if tickers != cached_configurations["tickers"]:
                     if tickers:
                         # Only provide information if any tickers are provided
-                        cached_overwrites.append(
-                            f"tickers ({', '.join(cached_configurations['tickers'])})"
-                        )
+                        cached_overwrites.append("tickers")
                     tickers = cached_configurations["tickers"]
 
                 if cached_overwrites:

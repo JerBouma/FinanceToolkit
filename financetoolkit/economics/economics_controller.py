@@ -1221,96 +1221,82 @@ class Economics:
         )
 
     @handle_errors
-    def get_money_supply(
+    def get_trust_in_government(
         self,
         growth: bool = False,
         lag: int = 1,
         rounding: int | None = None,
     ):
         """
-        Money Supply is the total amount of money that is in circulation in a country.
-        It includes currency, demand deposits, and other liquid assets that can be easily
-        converted into cash. Money supply is an important economic indicator that the
-        Federal Reserve uses to implement its monetary policy.
+        Trust in government refers to the share of people who report having confidence
+        in the national government. The data shown reflect the share of respondents
+        answering “yes” (the other response categories being “no”, and “dont know”)
+        to the survey question: “In this country, do you have confidence in… national government?
 
-        Money supply can be divided into four categories: M0, M1, M2, M3 and M4.
-            - M0: The total of all physical currency, plus accounts at the central bank that can be exchanged for physical currency.
-            - M1: The total of all physical currency part of bank reserves + the amount in demand accounts ("checking" or "current" accounts).
-            - M2: M1 + most savings accounts, money market accounts, retail money market mutual funds, and small denomination time deposits.
-            - M3: M2 + large time deposits, institutional money market funds, short-term repurchase agreements, and other larger liquid assets.
-            - M4: M3 + all other financial assets.
+        Due to small sample sizes, country averages for horizontal inequalities (by age,
+        gender and education) are pooled between 2010-18 to improve the accuracy of the
+        estimates.
 
-        Data comes from the Global Macro Database (GMDB), further information about the
-        variable can be found within https://www.globalmacrodata.com/files/GMD_TA.pdf
+        The sample is ex ante designed to be nationally representative of the population
+        aged 15 and over. This indicator is measured as a percentage of all survey respondents.
+
+        See definition: https://data.oecd.org/gga/trust-in-government.htm
 
         Args:
-            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
-            lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
+            growth (bool, optional): Whether to return the growth data or the actual data.
+            lag (int, optional): The number of periods to lag the data by.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
 
         Returns:
-            pd.DataFrame: A DataFrame containing the Money Supply
-        """
-        if self._gmbd_dataset.empty:
-            self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
+            pd.DataFrame: A DataFrame containing the Trust in Government.
 
-        money_supply = gmdb_model.get_money_supply(gmd_dataset=self._gmbd_dataset)
+        As an example:
+
+        ```python
+        from financetoolkit import Economics
+
+        economics = Economics()
+
+        trust_in_government = economics.get_trust_in_government()
+
+        trust_in_government.loc[:, ['United States', 'Greece', 'Japan']]
+        ```
+
+        Which returns:
+
+        |      |   United States |   Greece |   Japan |
+        |:-----|----------------:|---------:|--------:|
+        | 2006 |          0.558  |   0.4875 |  0.3503 |
+        | 2007 |          0.3932 |   0.3814 |  0.24   |
+        | 2008 |          0.3792 | nan      |  0.2212 |
+        | 2009 |          0.503  |   0.3162 |  0.2518 |
+        | 2010 |          0.4183 |   0.2365 |  0.2703 |
+        | 2011 |          0.3825 |   0.1752 |  0.2311 |
+        | 2012 |          0.3489 |   0.1262 |  0.1692 |
+        | 2013 |          0.2886 |   0.1436 |  0.3581 |
+        | 2014 |          0.3487 |   0.1883 |  0.3795 |
+        | 2015 |          0.3469 |   0.4373 |  0.3529 |
+        | 2016 |          0.2972 |   0.1325 |  0.3622 |
+        | 2017 |          0.3865 |   0.1399 |  0.4125 |
+        | 2018 |          0.3138 |   0.157  |  0.3849 |
+        | 2019 |          0.3628 |   0.3964 |  0.4112 |
+        | 2020 |          0.4649 |   0.3975 |  0.4234 |
+        | 2021 |          0.4046 |   0.4017 |  0.2908 |
+        | 2022 |          0.3102 |   0.2563 |  0.4315 |
+        """
+        trust_in_government = oecd_model.get_trust_in_goverment()
 
         if growth:
-            money_supply = calculate_growth(
-                money_supply,
+            trust_in_government = calculate_growth(
+                trust_in_government,
                 lag=lag,
                 rounding=rounding if rounding else self._rounding,
                 axis="rows",
             )
 
-        money_supply = money_supply.loc[self._start_date : self._end_date]
+        trust_in_government = trust_in_government.loc[self._start_date : self._end_date]
 
-        return money_supply.round(rounding if rounding else self._rounding)
-
-    @handle_errors
-    def get_central_bank_policy_rate(
-        self,
-        growth: bool = False,
-        lag: int = 1,
-        rounding: int | None = None,
-    ):
-        """
-        The Central Bank Policy Rate is the interest rate that a central bank sets on its
-        loans and advances to a commercial bank. This interest rate is used by the monetary
-        authorities to control inflation and stabilize the country's currency.
-
-        Data comes from the Global Macro Database (GMDB), further information about the
-        variable can be found within https://www.globalmacrodata.com/files/GMD_TA.pdf
-
-        Args:
-            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
-            lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
-
-        Returns:
-            pd.DataFrame: A DataFrame containing the Central Bank Policy Rate
-        """
-        if self._gmbd_dataset.empty:
-            self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
-
-        central_bank_policy_rate = gmdb_model.get_central_bank_policy_rate(
-            gmd_dataset=self._gmbd_dataset
-        )
-
-        if growth:
-            central_bank_policy_rate = calculate_growth(
-                central_bank_policy_rate,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-                axis="rows",
-            )
-
-        central_bank_policy_rate = central_bank_policy_rate.loc[
-            self._start_date : self._end_date
-        ]
-
-        return central_bank_policy_rate.round(rounding if rounding else self._rounding)
+        return trust_in_government.round(rounding if rounding else self._rounding)
 
     @handle_errors
     def get_consumer_price_index(
@@ -1851,7 +1837,7 @@ class Economics:
         return share_prices.round(rounding if rounding else self._rounding)
 
     @handle_errors
-    def get_long_term_interest_rate(
+    def get_exchange_rates(
         self,
         period: str | None = None,
         gmdb_source: bool | None = None,
@@ -1860,19 +1846,11 @@ class Economics:
         rounding: int | None = None,
     ):
         """
-        Long-term interest rates refer to government bonds maturing in ten years.
-        Rates are mainly determined by the price charged by the lender, the risk
-        from the borrower and the fall in the capital value. Long-term interest rates
-        are generally averages of daily rates, measured as a percentage. These interest
-        rates are implied by the prices at which the government bonds are traded on
-        financial markets, not the interest rates at which the loans were issued.
+        Exchange rates are defined as the price of one country's' currency in relation
+        to another country's currency. This indicator is measured in terms of
+        national currency per US dollar.
 
-        In all cases, they refer to bonds whose capital repayment is guaranteed by governments.
-        Long-term interest rates are one of the determinants of business investment. Low long
-        term interest rates encourage investment in new equipment and high interest rates
-        discourage it. Investment is, in turn, a major source of economic growth
-
-        See definition: https://data.oecd.org/interest/long-term-interest-rates.htm
+        See definition: https://data.oecd.org/conversion/exchange-rates.htm
 
         It is also possible to get the data from the Global Macro Database (GMDB) by setting
         the gmdb_source to True.
@@ -1885,65 +1863,155 @@ class Economics:
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
 
         Returns:
-            pd.DataFrame: A DataFrame containing the Long Term Interest Rate.
+            pd.DataFrame: A DataFrame containing the Exchange Rates.
 
         As an example:
 
         ```python
         from financetoolkit import Economics
 
-        economics = Economics(start_date='2023-05-01', end_date='2023-12-31')
+        economics = Economics()
 
-        long_term_interest_rate = economics.get_long_term_interest_rate(period='monthly')
+        exchange_rates = economics.get_exchange_rates()
 
-        long_term_interest_rate.loc[:, ['Japan', 'United States', 'Brazil']]
+        exchange_rates.loc[:, ['Netherlands', 'Japan', 'Indonesia']]
         ```
 
         Which returns:
 
-        |         |   Japan |   United States |   Brazil |
-        |:--------|--------:|----------------:|---------:|
-        | 2023-05 |  0.0043 |          0.0357 |   0.0728 |
-        | 2023-06 |  0.004  |          0.0375 |   0.0728 |
-        | 2023-07 |  0.0059 |          0.039  |   0.07   |
-        | 2023-08 |  0.0064 |          0.0417 |   0.07   |
-        | 2023-09 |  0.0076 |          0.0438 |   0.07   |
-        | 2023-10 |  0.0095 |          0.048  |   0.0655 |
-        | 2023-11 |  0.0066 |          0.045  |   0.0655 |
+        |      |   Netherlands |    Japan |   Indonesia |
+        |:-----|--------------:|---------:|------------:|
+        | 2013 |        0.7529 |  97.5957 |     10461.2 |
+        | 2014 |        0.7527 | 105.945  |     11865.2 |
+        | 2015 |        0.9013 | 121.044  |     13389.4 |
+        | 2016 |        0.9034 | 108.793  |     13308.3 |
+        | 2017 |        0.8852 | 112.166  |     13380.8 |
+        | 2018 |        0.8468 | 110.423  |     14236.9 |
+        | 2019 |        0.8933 | 109.01   |     14147.7 |
+        | 2020 |        0.8755 | 106.775  |     14582.2 |
+        | 2021 |        0.8455 | 109.754  |     14308.1 |
+        | 2022 |        0.9496 | 131.498  |     14849.9 |
         """
         period = (
             period
             if period is not None
             else "quarterly" if self._quarterly else "yearly"
         )
-
         gmdb_source = gmdb_source if gmdb_source is not None else self._gmdb_source
 
         if gmdb_source:
             if self._gmbd_dataset.empty:
                 self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
 
-            long_term_interest_rate = gmdb_model.get_long_term_interest_rate(
+            exchange_rates = gmdb_model.get_usd_exchange_rate(
                 gmd_dataset=self._gmbd_dataset
             )
         else:
-            long_term_interest_rate = oecd_model.get_long_term_interest_rate(
-                period=period,
-            )
+            exchange_rates = oecd_model.get_exchange_rates(period=period)
 
         if growth:
-            long_term_interest_rate = calculate_growth(
-                long_term_interest_rate,
+            exchange_rates = calculate_growth(
+                exchange_rates,
                 lag=lag,
                 rounding=rounding if rounding else self._rounding,
                 axis="rows",
             )
 
-        long_term_interest_rate = long_term_interest_rate.loc[
+        exchange_rates = exchange_rates.loc[self._start_date : self._end_date]
+
+        return exchange_rates.round(rounding if rounding else self._rounding)
+
+    @handle_errors
+    def get_money_supply(
+        self,
+        growth: bool = False,
+        lag: int = 1,
+        rounding: int | None = None,
+    ):
+        """
+        Money Supply is the total amount of money that is in circulation in a country.
+        It includes currency, demand deposits, and other liquid assets that can be easily
+        converted into cash. Money supply is an important economic indicator that the
+        Federal Reserve uses to implement its monetary policy.
+
+        Money supply can be divided into four categories: M0, M1, M2, M3 and M4.
+            - M0: The total of all physical currency, plus accounts at the central bank that can be exchanged for physical currency.
+            - M1: The total of all physical currency part of bank reserves + the amount in demand accounts ("checking" or "current" accounts).
+            - M2: M1 + most savings accounts, money market accounts, retail money market mutual funds, and small denomination time deposits.
+            - M3: M2 + large time deposits, institutional money market funds, short-term repurchase agreements, and other larger liquid assets.
+            - M4: M3 + all other financial assets.
+
+        Data comes from the Global Macro Database (GMDB), further information about the
+        variable can be found within https://www.globalmacrodata.com/files/GMD_TA.pdf
+
+        Args:
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+
+        Returns:
+            pd.DataFrame: A DataFrame containing the Money Supply
+        """
+        if self._gmbd_dataset.empty:
+            self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
+
+        money_supply = gmdb_model.get_money_supply(gmd_dataset=self._gmbd_dataset)
+
+        if growth:
+            money_supply = calculate_growth(
+                money_supply,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
+                axis="rows",
+            )
+
+        money_supply = money_supply.loc[self._start_date : self._end_date]
+
+        return money_supply.round(rounding if rounding else self._rounding)
+
+    @handle_errors
+    def get_central_bank_policy_rate(
+        self,
+        growth: bool = False,
+        lag: int = 1,
+        rounding: int | None = None,
+    ):
+        """
+        The Central Bank Policy Rate is the interest rate that a central bank sets on its
+        loans and advances to a commercial bank. This interest rate is used by the monetary
+        authorities to control inflation and stabilize the country's currency.
+
+        Data comes from the Global Macro Database (GMDB), further information about the
+        variable can be found within https://www.globalmacrodata.com/files/GMD_TA.pdf
+
+        Args:
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+
+        Returns:
+            pd.DataFrame: A DataFrame containing the Central Bank Policy Rate
+        """
+        if self._gmbd_dataset.empty:
+            self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
+
+        central_bank_policy_rate = gmdb_model.get_central_bank_policy_rate(
+            gmd_dataset=self._gmbd_dataset
+        )
+
+        if growth:
+            central_bank_policy_rate = calculate_growth(
+                central_bank_policy_rate,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
+                axis="rows",
+            )
+
+        central_bank_policy_rate = central_bank_policy_rate.loc[
             self._start_date : self._end_date
         ]
 
-        return long_term_interest_rate.round(rounding if rounding else self._rounding)
+        return central_bank_policy_rate.round(rounding if rounding else self._rounding)
 
     @handle_errors
     def get_short_term_interest_rate(
@@ -2039,7 +2107,7 @@ class Economics:
         return short_term_interest_rate.round(rounding if rounding else self._rounding)
 
     @handle_errors
-    def get_exchange_rates(
+    def get_long_term_interest_rate(
         self,
         period: str | None = None,
         gmdb_source: bool | None = None,
@@ -2048,11 +2116,19 @@ class Economics:
         rounding: int | None = None,
     ):
         """
-        Exchange rates are defined as the price of one country's' currency in relation
-        to another country's currency. This indicator is measured in terms of
-        national currency per US dollar.
+        Long-term interest rates refer to government bonds maturing in ten years.
+        Rates are mainly determined by the price charged by the lender, the risk
+        from the borrower and the fall in the capital value. Long-term interest rates
+        are generally averages of daily rates, measured as a percentage. These interest
+        rates are implied by the prices at which the government bonds are traded on
+        financial markets, not the interest rates at which the loans were issued.
 
-        See definition: https://data.oecd.org/conversion/exchange-rates.htm
+        In all cases, they refer to bonds whose capital repayment is guaranteed by governments.
+        Long-term interest rates are one of the determinants of business investment. Low long
+        term interest rates encourage investment in new equipment and high interest rates
+        discourage it. Investment is, in turn, a major source of economic growth
+
+        See definition: https://data.oecd.org/interest/long-term-interest-rates.htm
 
         It is also possible to get the data from the Global Macro Database (GMDB) by setting
         the gmdb_source to True.
@@ -2065,63 +2141,65 @@ class Economics:
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
 
         Returns:
-            pd.DataFrame: A DataFrame containing the Exchange Rates.
+            pd.DataFrame: A DataFrame containing the Long Term Interest Rate.
 
         As an example:
 
         ```python
         from financetoolkit import Economics
 
-        economics = Economics()
+        economics = Economics(start_date='2023-05-01', end_date='2023-12-31')
 
-        exchange_rates = economics.get_exchange_rates()
+        long_term_interest_rate = economics.get_long_term_interest_rate(period='monthly')
 
-        exchange_rates.loc[:, ['Netherlands', 'Japan', 'Indonesia']]
+        long_term_interest_rate.loc[:, ['Japan', 'United States', 'Brazil']]
         ```
 
         Which returns:
 
-        |      |   Netherlands |    Japan |   Indonesia |
-        |:-----|--------------:|---------:|------------:|
-        | 2013 |        0.7529 |  97.5957 |     10461.2 |
-        | 2014 |        0.7527 | 105.945  |     11865.2 |
-        | 2015 |        0.9013 | 121.044  |     13389.4 |
-        | 2016 |        0.9034 | 108.793  |     13308.3 |
-        | 2017 |        0.8852 | 112.166  |     13380.8 |
-        | 2018 |        0.8468 | 110.423  |     14236.9 |
-        | 2019 |        0.8933 | 109.01   |     14147.7 |
-        | 2020 |        0.8755 | 106.775  |     14582.2 |
-        | 2021 |        0.8455 | 109.754  |     14308.1 |
-        | 2022 |        0.9496 | 131.498  |     14849.9 |
+        |         |   Japan |   United States |   Brazil |
+        |:--------|--------:|----------------:|---------:|
+        | 2023-05 |  0.0043 |          0.0357 |   0.0728 |
+        | 2023-06 |  0.004  |          0.0375 |   0.0728 |
+        | 2023-07 |  0.0059 |          0.039  |   0.07   |
+        | 2023-08 |  0.0064 |          0.0417 |   0.07   |
+        | 2023-09 |  0.0076 |          0.0438 |   0.07   |
+        | 2023-10 |  0.0095 |          0.048  |   0.0655 |
+        | 2023-11 |  0.0066 |          0.045  |   0.0655 |
         """
         period = (
             period
             if period is not None
             else "quarterly" if self._quarterly else "yearly"
         )
+
         gmdb_source = gmdb_source if gmdb_source is not None else self._gmdb_source
 
         if gmdb_source:
             if self._gmbd_dataset.empty:
                 self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
 
-            exchange_rates = gmdb_model.get_usd_exchange_rate(
+            long_term_interest_rate = gmdb_model.get_long_term_interest_rate(
                 gmd_dataset=self._gmbd_dataset
             )
         else:
-            exchange_rates = oecd_model.get_exchange_rates(period=period)
+            long_term_interest_rate = oecd_model.get_long_term_interest_rate(
+                period=period,
+            )
 
         if growth:
-            exchange_rates = calculate_growth(
-                exchange_rates,
+            long_term_interest_rate = calculate_growth(
+                long_term_interest_rate,
                 lag=lag,
                 rounding=rounding if rounding else self._rounding,
                 axis="rows",
             )
 
-        exchange_rates = exchange_rates.loc[self._start_date : self._end_date]
+        long_term_interest_rate = long_term_interest_rate.loc[
+            self._start_date : self._end_date
+        ]
 
-        return exchange_rates.round(rounding if rounding else self._rounding)
+        return long_term_interest_rate.round(rounding if rounding else self._rounding)
 
     @handle_errors
     def get_renewable_energy(
@@ -2266,84 +2344,6 @@ class Economics:
         carbon_footprint_df = carbon_footprint_df.loc[self._start_date : self._end_date]
 
         return carbon_footprint_df.round(rounding if rounding else self._rounding)
-
-    @handle_errors
-    def get_trust_in_government(
-        self,
-        growth: bool = False,
-        lag: int = 1,
-        rounding: int | None = None,
-    ):
-        """
-        Trust in government refers to the share of people who report having confidence
-        in the national government. The data shown reflect the share of respondents
-        answering “yes” (the other response categories being “no”, and “dont know”)
-        to the survey question: “In this country, do you have confidence in… national government?
-
-        Due to small sample sizes, country averages for horizontal inequalities (by age,
-        gender and education) are pooled between 2010-18 to improve the accuracy of the
-        estimates.
-
-        The sample is ex ante designed to be nationally representative of the population
-        aged 15 and over. This indicator is measured as a percentage of all survey respondents.
-
-        See definition: https://data.oecd.org/gga/trust-in-government.htm
-
-        Args:
-            growth (bool, optional): Whether to return the growth data or the actual data.
-            lag (int, optional): The number of periods to lag the data by.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
-
-        Returns:
-            pd.DataFrame: A DataFrame containing the Trust in Government.
-
-        As an example:
-
-        ```python
-        from financetoolkit import Economics
-
-        economics = Economics()
-
-        trust_in_government = economics.get_trust_in_government()
-
-        trust_in_government.loc[:, ['United States', 'Greece', 'Japan']]
-        ```
-
-        Which returns:
-
-        |      |   United States |   Greece |   Japan |
-        |:-----|----------------:|---------:|--------:|
-        | 2006 |          0.558  |   0.4875 |  0.3503 |
-        | 2007 |          0.3932 |   0.3814 |  0.24   |
-        | 2008 |          0.3792 | nan      |  0.2212 |
-        | 2009 |          0.503  |   0.3162 |  0.2518 |
-        | 2010 |          0.4183 |   0.2365 |  0.2703 |
-        | 2011 |          0.3825 |   0.1752 |  0.2311 |
-        | 2012 |          0.3489 |   0.1262 |  0.1692 |
-        | 2013 |          0.2886 |   0.1436 |  0.3581 |
-        | 2014 |          0.3487 |   0.1883 |  0.3795 |
-        | 2015 |          0.3469 |   0.4373 |  0.3529 |
-        | 2016 |          0.2972 |   0.1325 |  0.3622 |
-        | 2017 |          0.3865 |   0.1399 |  0.4125 |
-        | 2018 |          0.3138 |   0.157  |  0.3849 |
-        | 2019 |          0.3628 |   0.3964 |  0.4112 |
-        | 2020 |          0.4649 |   0.3975 |  0.4234 |
-        | 2021 |          0.4046 |   0.4017 |  0.2908 |
-        | 2022 |          0.3102 |   0.2563 |  0.4315 |
-        """
-        trust_in_government = oecd_model.get_trust_in_goverment()
-
-        if growth:
-            trust_in_government = calculate_growth(
-                trust_in_government,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-                axis="rows",
-            )
-
-        trust_in_government = trust_in_government.loc[self._start_date : self._end_date]
-
-        return trust_in_government.round(rounding if rounding else self._rounding)
 
     @handle_errors
     def get_unemployment_rate(

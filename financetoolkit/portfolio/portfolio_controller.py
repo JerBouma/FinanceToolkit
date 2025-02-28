@@ -4,6 +4,7 @@
 # pylint: disable=too-few-public-methods,protected-access,too-many-lines
 import os
 import shutil
+from importlib import resources
 
 import pandas as pd
 
@@ -67,6 +68,17 @@ class Portfolio:
             ValueError: If the provided configuration file is not in YAML format.
             ValueError: If no portfolio dataset is provided and `example` is set to False.
         """
+        example_xlsx_path = str(
+            resources.files(__package__).joinpath(
+                "example_datasets/example_portfolio.xlsx"
+            )
+        )
+        example_csv_path = str(
+            resources.files(__package__).joinpath(
+                "example_datasets/example_portfolio.csv"
+            )
+        )
+
         if not portfolio_dataset and not example:
             example = True
             print(
@@ -77,31 +89,25 @@ class Portfolio:
             )
 
             if "portfolio_template.xlsx" not in os.listdir():
-                shutil.copy(
-                    "financetoolkit/portfolio/example_datasets/example_portfolio.xlsx",
-                    "portfolio_template.xlsx",
-                )
+                shutil.copy(example_xlsx_path, "portfolio_template.xlsx")
             if "portfolio_template.csv" not in os.listdir():
-                shutil.copy(
-                    "financetoolkit/portfolio/example_datasets/example_portfolio.csv",
-                    "portfolio_template.csv",
-                )
+                shutil.copy(example_csv_path, "portfolio_template.csv")
 
         portfolio_dataset = (
-            "financetoolkit/portfolio/example_datasets/example_portfolio.xlsx"
-            if example
+            example_xlsx_path
+            if example or portfolio_dataset is None
             else portfolio_dataset
         )
 
         self._configuration_file = (
             configuration_file
             if configuration_file
-            else "financetoolkit/portfolio/config.yaml"
+            else resources.files(__package__).joinpath("config.yaml")
         )
 
         if self._configuration_file.endswith(".yaml"):
             self._cfg: dict[str, dict] = helpers.read_yaml_file(
-                location=self._configuration_file
+                location=str(self._configuration_file)
             )
         else:
             raise ValueError("File type not supported. Please use .yaml")
@@ -173,6 +179,9 @@ class Portfolio:
         self._portfolio_dataset_path: str | list = (
             portfolio_dataset if isinstance(portfolio_dataset, str) else []
         )
+
+        print(self._portfolio_dataset_path)
+        print(type(portfolio_dataset))
         self._raw_portfolio_dataset: pd.DataFrame = (
             portfolio_dataset
             if isinstance(portfolio_dataset, pd.DataFrame)

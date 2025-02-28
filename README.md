@@ -2820,28 +2820,122 @@ Yield to worst is the lowest potential yield that a bond can generate without th
 The Economics Module contains a variety of Key Economic Indicators that help in understanding the health and performance of more than 60 different countries. This module can be called directly via the Toolkit but also separately if desired through `from financetoolkit import Economics`. **Find the Notebook [here](https://www.jeroenbouma.com/projects/financetoolkit/economics-module) and the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics) which includes an explanation about each indicator, the parameters and an example.**
 
 <details>
-    <summary><b>Economy 💵</b></summary>
+    <summary><b>Government 💵</b></summary>
 
-The economy section contains key economic indicators that help in understanding the health and performance of more than 60 different countries. This includes the Gross Domestic Product (GDP), Consumer Confidence Index (CCI), Business Confidence Index (BCI), Composite Leading Indicator (CLI), Consumer Price Index (CPI), Producer Price Index (PPI), House and Rent Prices, Share Prices and more.
+The government metrics revolve around the government debt, the government budget, the government revenue, the government spending and the government surplus or deficit. These metrics are important to understand the financial health of a country and its ability to meet its financial obligations.
 
-All economy metrics can be called by using `get_` to get a single metric. E.g. `get_gross_domestic_product` or `get_consumer_price_index`. As an example:
+All economy metrics can be called by using `get_` to get a single metric. E.g. `get_gross_domestic_product` or `get_fixed_investment_to_gdp_ratio`. As an example:
 
 ```python
-from financetoolkit import Toolkit
+from financetoolkit import Economics
 
-toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+economics = Economics()
 
-# Get Economy Results
-toolkit.economics.get_consumer_confidence_index()
+economics.get_gross_domestic_product()
 ```
 
 > **Gross Domestic Product (GDP)**
 
 The Gross Domestic Product is the total value of goods produced and services provided in a country during one year. The data is available in two forms: compared to the previous year’s value or compared to the previous period. The year on year data is the GDP compared to the same quarter in the previous year. The quarter on quarter data is the GDP compared to the previous quarter. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_gross_domestic_product).
 
-It is possible to view the growth rate on a quarterly or annual basis, the default is dependent on the quarterly parameter. The growth rate is the percentage change in the GDP compared to the previous period. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_gross_domestic_product_growth).
+Next to the OECD source for GDP, it is also possible to collect data from GMDB, the Global Macro Database, by setting `gmdb_source` to `True`. For more information please have a look here: https://github.com/KMueller-Lab/Global-Macro-Database
 
-Lastly, it is possible to view the growth rate on a quarterly or annual basis, the default is dependent on the quarterly parameter. The growth rate is the percentage change in the GDP compared to the previous period. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_gross_domestic_product_forecast).
+The Gross Domestic Deflator is a measure of the price of all new, domestically produced, final goods and services in an economy. It is calculated by dividing the nominal GDP by the real GDP and multiplying by 100. The GDP deflator is a measure of the level of prices of all new, domestically produced, final goods and services in an economy. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_gross_domestic_product_deflator).
+
+> **Total Consumption**
+
+The total consumption is the sum of all consumption expenditures in an economy. It is calculated by adding up the consumption expenditures of households, businesses, and the government. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_total_consumption).
+
+It is also possible to retrieve the total consumption to GDP ratio which is the total consumption divided by the GDP. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_total_consumption_to_gdp_ratio).
+
+> **Investment**
+
+The investment is the sum of all expenditures on capital goods in an economy. It is calculated by adding up the expenditures on fixed assets, such as machinery, equipment, and buildings. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_investment).
+
+It is also possible to retrieve the investment to GDP ratio which is the investment divided by the GDP. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_investment_to_gdp_ratio).
+
+> **Fixed Investment**
+
+The fixed investment is the sum of all expenditures on fixed assets in an economy. It is calculated by adding up the expenditures on machinery, equipment, and buildings. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_fixed_investment).
+
+It is also possible to retrieve the fixed investment to GDP ratio which is the fixed investment divided by the GDP. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_fixed_investment_to_gdp_ratio).
+
+> **Exports**
+
+The exports are the total value of goods and services produced in an economy and sold to other countries. It is calculated by adding up the value of all goods and services exported by a country. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_exports).
+
+It is also possible to retrieve the exports to GDP ratio which is the exports divided by the GDP. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_exports_to_gdp_ratio).
+
+> **Imports**
+
+The imports are the total value of goods and services produced in other countries and sold in an economy. It is calculated by adding up the value of all goods and services imported by a country. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_imports).
+
+It is also possible to retrieve the imports to GDP ratio which is the imports divided by the GDP. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_imports_to_gdp_ratio).
+
+> **Current Account Balance**
+
+The current account balance is the sum of the balance of trade (exports minus imports of goods and services), net factor income (such as interest and dividends) and net transfer payments (such as foreign aid). Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_current_account_balance).
+
+It is also possible to retrieve the current account balance to GDP ratio which is the current account balance divided by the GDP. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_current_account_balance_to_gdp_ratio).
+
+> **Government Debt**
+
+The government debt is the total amount of money that a government owes to its creditors. It is calculated by adding up the value of all outstanding government bonds and other debt instruments. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_government_debt).
+
+It is also possible to retrieve the government debt to GDP ratio which is the government debt divided by the GDP. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_government_debt_to_gdp_ratio).
+
+> **Government Revenue**
+
+The government revenue is the total amount of money that a government collects from taxes and other sources. It is calculated by adding up the value of all tax revenues and other sources of income. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_government_revenue).
+
+It is also possible to retrieve the government revenue to GDP ratio which is the government revenue divided by the GDP. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_government_revenue_to_gdp_ratio).
+
+> **Government Tax Revenue**
+
+The government tax revenue is the total amount of money that a government collects from taxes. It is calculated by adding up the value of all tax revenues. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_government_tax_revenue).
+
+It is also possible to retrieve the government tax revenue to GDP ratio which is the government tax revenue divided by the GDP. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_government_tax_revenue_to_gdp_ratio).
+
+> **Government Expenditure**
+
+The government expenditure is the total amount of money that a government spends on goods and services. It is calculated by adding up the value of all government expenditures. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_government_expenditure).
+
+It is also possible to retrieve the government expenditure to GDP ratio which is the government expenditure divided by the GDP. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_government_expenditure_to_gdp_ratio).
+
+> **Government Deficit**
+
+The government deficit is the difference between government revenue and government expenditure. It is calculated by subtracting government expenditure from government revenue. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_government_deficit).
+
+It is also possible to retrieve the government deficit to GDP ratio which is the government deficit divided by the GDP. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_government_deficit_to_gdp_ratio).
+
+> **Trust in Government**
+
+Trust in government refers to the share of people who report having confidence in the national government. The data shown reflect the share of respondents answering “yes” (the other response categories being “no”, and “dont know”) to the survey question: “In this country, do you have confidence in… national government? The sample is ex ante designed to be nationally representative of the population aged 15 and over. This indicator is measured as a percentage of all survey respondents. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_trust_in_government).
+
+</details>
+
+<details>
+    <summary><b>Economy 🌎</b></summary>
+
+The economy metrics revolve around the consumer confidence index, the business confidence index, the composite leading indicator, the house prices, the rent prices and the share prices. These metrics are important to understand the overall economic performance of a country.
+
+All economy metrics can be called by using `get_` to get a single metric. E.g. `get_consumer_confidence_index` or `get_share_prices`. As an example:
+
+```python
+from financetoolkit import Economics
+
+economics = Economics()
+
+economics.get_gross_domestic_product()
+```
+
+> **Consumer Price Index (CPI)**
+
+The Consumer Price Index (CPI) is a measure of the average change over time in the prices paid by urban consumers for a market basket of consumer goods and services. The CPI is calculated by taking price changes for each item in the predetermined basket of goods and averaging them. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_consumer_price_index).
+
+> **Inflation Rate**
+
+The inflation rate is the percentage change in the price level of goods and services over a period of time. It is calculated by taking the percentage change in the Consumer Price Index (CPI) over a period of time. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_inflation_rate).
 
 > **Consumer Confidence Index (CCI)**
 
@@ -2877,23 +2971,34 @@ A share price index measures how the value of the stocks in the index is changin
 
 A price index measures changes in the market capitalisation of the basket of shares in the index whereas a return index adds on to the price index the value of dividend payments, assuming they are re-invested in the same stocks. Occasionally agencies such as central banks will compile share indices. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_share_prices).
 
+> **Exchange Rates**
+
+Exchange rates are defined as the price of one country’s’ currency in relation to another country’s currency. This indicator is measured in terms of national currency per US dollar. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_exchange_rates).
+
 </details>
 
 <details>
     <summary><b>Finance 💹</b></summary>
 
-The finance metrics are used to assess the financial health of a country. This includes the long term interest rates, short term interest rates, narrow money, broad money, purchasing power parity and exchange rates.
+The finance metrics are related to the financial health of a country and include the long-term interest rate, the narrow and broad money supply, the central bank policy rate, the short-term interest rate and the long-term interest rate.
 
-All finance metrics can be called by using `get_` to get a single metric. E.g. `get_long_term_interest_rate` or `get_narrow_and_broad_money`. As an example:
+All finance metrics can be called by using `get_` to get a single metric. E.g. `get_money_supply` or `get_central_bank_policy_rate`. As an example:
 
 ```python
-from financetoolkit import Toolkit
+from financetoolkit import Economics
 
-toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+economics = Economics()
 
-# Get Finance Results
-toolkit.economics.get_long_term_interest_rate()
+economics.get_money_supply()
 ```
+
+> **Money Supply**
+
+The money supply is the total amount of money in circulation in an economy. It is calculated by adding up the value of all currency in circulation, demand deposits, and other liquid assets. The money supply is an important indicator of the health of an economy, as it affects inflation, interest rates, and economic growth. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_money_supply).
+
+> **Central Bank Policy Rate**
+
+The central bank policy rate is the interest rate set by a country's central bank. It is used to control inflation and stabilize the economy. The central bank policy rate is the rate at which the central bank lends money to other banks. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_central_bank_policy_rate).
 
 > **Long Term Interest Rates (10 year)**
 
@@ -2907,14 +3012,6 @@ Short-term interest rates are the rates at which short-term borrowings are effec
 
 Short-term interest rates are based on three-month money market rates where available. Typical standardised names are “money market rate” and “treasury bill rate”. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_short_term_interest_rate).
 
-> **Exchange Rates**
-
-Exchange rates are defined as the price of one country’s’ currency in relation to another country’s currency. This indicator is measured in terms of national currency per US dollar. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_exchange_rates).
-
-> **Trust in Government**
-
-Trust in government refers to the share of people who report having confidence in the national government. The data shown reflect the share of respondents answering “yes” (the other response categories being “no”, and “dont know”) to the survey question: “In this country, do you have confidence in… national government? The sample is ex ante designed to be nationally representative of the population aged 15 and over. This indicator is measured as a percentage of all survey respondents. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#get_trust_in_government).
-
 </details>
 
 <details>
@@ -2922,15 +3019,14 @@ Trust in government refers to the share of people who report having confidence i
 
 The environment metrics revolve around renewable energy, environmental tax, greenhouse gas emissions, crude oil production and crude oil prices of countries. This includes the renewable energy as a percentage of total energy, environmental tax as a percentage of GDP, greenhouse gas emissions, crude oil production and crude oil prices.
 
-All environment metrics can be called by using `get_` to get a single metric. E.g. `get_renewable_energy` or `get_crude_oil_prices`. As an example:
+All environment metrics can be called by using `get_` to get a single metric. E.g. `get_renewable_energy` or `get_carbon_footprint`. As an example:
 
 ```python
-from financetoolkit import Toolkit
+from financetoolkit import Economics
 
-toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+economics = Economics()
 
-# Get Environment Results
-toolkit.economics.get_crude_oil_prices()
+economics.get_renewable_energy()
 ```
 
 > **Renewable Energy as % of Total Energy**
@@ -2959,12 +3055,11 @@ The jobs metrics revolve around the unemployment rates, labour productivity and 
 All job and society metrics can be called by using `get_` to get a single metric. E.g. `get_unemployment_rate` or `get_income_inequality`. As an example:
 
 ```python
-from financetoolkit import Toolkit
+from financetoolkit import Economics
 
-toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+economics = Economics()
 
-# Get Jobs Results
-toolkit.economics.get_income_inequality()
+economics.get_unemployment_rate()
 ```
 
 > **Unemployment Rate**
@@ -2997,6 +3092,189 @@ However, two countries with the same poverty rates may differ in terms of the re
 
 </details>
 
+## Portfolio Evaluation
+
+Through the `Portfolio` class, you are able to load in your own portfolio and perform various calculations to evaluate your portfolio's performance compared to some benchmark. Furthermore, it allows you to pull your portfolio directly into the `Toolkit` including a special "Portfolio" ticker which is constructed as the weighted average of your portfolio at a given point in time. 
+
+The `Portfolio` class can be called by using `from financetoolkit import Portfolio`. **Find the Notebook [here](https://www.jeroenbouma.com/projects/financetoolkit/portfolio-evaluation) and the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/portfolio) which includes an explanation about each function, the parameters and an example.**
+
+<details>
+    <summary><b>Portfolio Evaluation</b></summary>
+
+> **Portfolio Overview**
+
+The portfolio overview method provides an overview of the portfolio, including the volume, costs, invested amount, current value and the current weight of each position. It also calculates the return of each position and compares this to a benchmark return. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/portfolio#get_portfolio_overview).
+
+As an example see below:
+
+| Identifier   |   Volume |   Costs |    Price |   Invested |   Latest Price |   Latest Value |   Return |   Return Value |   Benchmark Return |   Alpha |   Weight |
+|:-------------|---------:|--------:|---------:|-----------:|---------------:|---------------:|---------:|---------------:|-------------------:|--------:|---------:|
+| AAPL         |      137 |     -28 |  38.9692 |   5310.78  |         237.3  |       32510.1  |   5.1215 |     27199.3    |             2.1754 |  2.9461 |   0.0405 |
+| ALGN         |       81 |     -34 | 117.365  |   9472.53  |         185.77 |       15047.4  |   0.5885 |      5574.84   |             2.0922 | -1.5037 |   0.0187 |
+| AMD          |       78 |     -30 |  11.9075 |    898.784 |          99.51 |        7761.78 |   7.6359 |      6863      |             3.7196 |  3.9163 |   0.0097 |
+| AMZN         |      116 |     -28 |  41.5471 |   4791.46  |         208.74 |       24213.8  |   4.0535 |     19422.4    |             1.7833 |  2.2703 |   0.0301 |
+| ASML         |      129 |     -25 |  33.3184 |   4273.07  |         697.7  |       90003.3  |  20.0629 |     85730.2    |             3.7256 | 16.3373 |   0.112  |
+| AVGO         |       66 |     -24 |  21.2611 |   1379.23  |         197.8  |       13054.8  |   8.4653 |     11675.6    |             1.3486 |  7.1167 |   0.0162 |
+| BAC          |       80 |     -30 |  20.0851 |   1576.81  |          44.12 |        3529.6  |   1.2384 |      1952.79   |             1.8221 | -0.5836 |   0.0044 |
+| BLDR         |       48 |     -18 |  32.1805 |   1526.67  |         139.15 |        6679.2  |   3.375  |      5152.53   |             1.325  |  2.05   |   0.0083 |
+| CAMT         |       42 |     -19 |  10.0213 |    401.896 |          74.8  |        3141.6  |   6.8169 |      2739.7    |             2.0422 |  4.7748 |   0.0039 |
+| CWST         |       63 |      -8 |  20.1348 |   1260.49  |         107.92 |        6798.96 |   4.3939 |      5538.47   |             1.9161 |  2.4777 |   0.0085 |
+| EMXC         |       16 |     -11 |  50.3017 |    793.827 |          55.07 |         881.12 |   0.11   |        87.2927 |             0.7986 | -0.6886 |   0.0011 |
+| FICO         |      116 |     -21 |  36.5914 |   4223.6   |        1836.18 |      212997    |  49.4302 |    208773      |             3.3011 | 46.1291 |   0.2651 |
+| FIX          |      122 |     -20 |  14.12   |   1702.63  |         356.63 |       43508.9  |  24.5538 |     41806.2    |             2.7489 | 21.805  |   0.0541 |
+| GOOGL        |      146 |     -29 |  29.1726 |   4230.2   |         168.5  |       24601    |   4.8156 |     20370.8    |             2.1989 |  2.6167 |   0.0306 |
+| KHC          |        9 |      -8 |  39.6994 |    349.295 |          30.65 |         275.85 |  -0.2103 |       -73.4448 |             1.1451 | -1.3553 |   0.0003 |
+| MCHI         |       54 |     -12 |  47.3192 |   2543.23  |          54.91 |        2965.14 |   0.1659 |       421.906  |             0.5477 | -0.3818 |   0.0037 |
+| META         |       15 |      -1 | 319.716  |   4794.75  |         658.24 |        9873.6  |   1.0593 |      5078.85   |             0.4848 |  0.5744 |   0.0123 |
+| MPWR         |      116 |     -27 | 255.881  |  29655.2   |         609.38 |       70688.1  |   1.3837 |     41032.9    |             1.0868 |  0.2969 |   0.088  |
+| MSFT         |      105 |     -11 |  40.6437 |   4256.59  |         392.53 |       41215.7  |   8.6828 |     36959.1    |             2.9042 |  5.7786 |   0.0513 |
+| NFLX         |      114 |     -32 | 125.444  |  14268.6   |         963.07 |      109790    |   6.6945 |     95521.4    |             2.3493 |  4.3452 |   0.1366 |
+| NVDA         |       69 |     -27 |   2.0551 |    114.8   |         120.15 |        8290.35 |  71.2154 |      8175.55   |             2.8121 | 68.4033 |   0.0103 |
+| OXY          |       27 |     -15 |  39.7355 |   1057.86  |          48.65 |        1313.55 |   0.2417 |       255.692  |             3.1529 | -2.9112 |   0.0016 |
+| SKY          |      126 |     -23 |  18.0884 |   2256.14  |         100.87 |       12709.6  |   4.6333 |     10453.5    |             3.4284 |  1.205  |   0.0158 |
+| VOO          |       77 |     -12 | 238.499  |  18352.5   |         537.97 |       41423.7  |   1.2571 |     23071.2    |             1.0848 |  0.1723 |   0.0516 |
+| VSS          |       98 |     -21 |  77.7056 |   7594.14  |         115.82 |       11350.4  |   0.4946 |      3756.22   |             1.2718 | -0.7772 |   0.0141 |
+| WMT          |       92 |     -18 |  17.8645 |   1625.53  |          96.79 |        8904.68 |   4.478  |      7279.15   |             2.4244 |  2.0537 |   0.0111 |
+| Portfolio    |     2142 |    -532 |  59.8406 | 128710     |         375.13 |      803529    |   5.2429 |    674818      |             2.5545 | 17.3469 |   1      |
+
+> **Portfolio Performance**
+
+Calculate portfolio performance metrics for a specified period. This method calculates key performance metrics, such as returns, for the portfolio over a specified period. The available periods are 'yearly', 'quarterly', 'monthly', 'weekly', and 'daily'. It uses the positions overview dataset for these calculations. If the necessary data has not been collected, it triggers the collection of historical and benchmark data. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/portfolio#get_portfolio_performance).
+
+As an example (by selecting only one specific period, in this case "2025Q1"):
+
+| Identifier   |   Volume |   Costs |   Invested Amount |   Current Value |   Invested Weight |   Current Weight |   Return |
+|:-------------|---------:|--------:|------------------:|----------------:|------------------:|-----------------:|---------:|
+| AAPL         |      147 |     -24 |           5575.11 |        34883.1  |            0.0402 |           0.0395 |   5.2569 |
+| ALGN         |      102 |     -23 |           9817.99 |        18948.5  |            0.0708 |           0.0214 |   0.93   |
+| AMD          |      105 |     -17 |           2361.23 |        10448.5  |            0.017  |           0.0118 |   3.425  |
+| AMZN         |      135 |     -24 |           4992.91 |        28179.9  |            0.036  |           0.0319 |   4.644  |
+| ASML         |      137 |     -23 |           4932.04 |        95584.9  |            0.0356 |           0.1081 |  18.3804 |
+| AVGO         |       75 |     -15 |           1532.27 |        14835    |            0.0111 |           0.0168 |   8.6817 |
+| BAC          |       94 |     -25 |           1794.25 |         4147.28 |            0.0129 |           0.0047 |   1.3114 |
+| BLDR         |       61 |     -12 |           1661.06 |         8488.15 |            0.012  |           0.0096 |   4.1101 |
+| CAMT         |       59 |     -12 |            516.11 |         4413.2  |            0.0037 |           0.005  |   7.5509 |
+| CWST         |       65 |      -7 |           1354.73 |         7014.8  |            0.0098 |           0.0079 |   4.178  |
+| EMXC         |       24 |      -7 |           1256    |         1321.68 |            0.0091 |           0.0015 |   0.0523 |
+| FICO         |      132 |     -17 |           4799.33 |       242376    |            0.0346 |           0.2742 |  49.502  |
+| FIX          |      131 |     -16 |           1724.57 |        46718.5  |            0.0124 |           0.0529 |  26.09   |
+| GOOGL        |      148 |     -29 |           4590.02 |        24938    |            0.0331 |           0.0282 |   4.4331 |
+| KHC          |       16 |      -6 |            560.97 |          490.4  |            0.004  |           0.0006 |  -0.1258 |
+| MCHI         |       57 |     -10 |           2661.91 |         3129.87 |            0.0192 |           0.0035 |   0.1758 |
+| META         |       15 |      -1 |           4794.75 |         9873.6  |            0.0346 |           0.0112 |   1.0593 |
+| MPWR         |      122 |     -24 |          30077.9  |        74344.4  |            0.217  |           0.0841 |   1.4717 |
+| MSFT         |      110 |     -11 |           4362.18 |        43178.3  |            0.0315 |           0.0488 |   8.8983 |
+| NFLX         |      125 |     -27 |          16387.9  |       120384    |            0.1183 |           0.1362 |   6.3459 |
+| NVDA         |       81 |     -23 |            149.66 |         9732.15 |            0.0011 |           0.011  |  64.0283 |
+| OXY          |       38 |      -4 |           1424.45 |         1848.7  |            0.0103 |           0.0021 |   0.2978 |
+| SKY          |      136 |     -19 |           2455.75 |        13718.3  |            0.0177 |           0.0155 |   4.5862 |
+| VOO          |       79 |     -12 |          18660.8  |        42499.6  |            0.1347 |           0.0481 |   1.2775 |
+| VSS          |      109 |     -19 |           8393.99 |        12624.4  |            0.0606 |           0.0143 |   0.504  |
+| WMT          |      101 |     -14 |           1747.63 |         9775.79 |            0.0126 |           0.0111 |   4.5937 |
+
+</details>
+
+<details>
+    <summary><b>Transactions Evaluation</b></summary>
+
+> **Transactions Overview**
+
+The transactions overview method provides an overview of all performed transactions, including the volume, costs, invested amount, current value, return and (cumulative) PnL. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/portfolio#get_transactions_overview).
+
+As an example, showing the most recent 30 transactions:
+
+| Date       | Identifier   |    Price |   Volume |   Costs | Currency   |   Invested Amount |   Current Value |   % Return |     Return |   PnL |   Cumulative PnL |
+|:-----------|:-------------|---------:|---------:|--------:|:-----------|------------------:|----------------:|-----------:|-----------:|------:|-----------------:|
+| 2021-10-13 | EMXC         |  56.1205 |        7 |      -1 | USD        |          391.843  |          385.49 |    -0.0162 |    -6.3532 |     0 |          4138.45 |
+| 2021-10-19 | AVGO         |  50.5656 |       13 |      -2 | USD        |          655.352  |         2571.4  |     2.9237 |  1916.05   |     0 |          4138.45 |
+| 2021-11-30 | AVGO         |  55.2396 |        2 |       0 | USD        |          110.479  |          395.6  |     2.5808 |   285.121  |     0 |          4138.45 |
+| 2021-12-01 | FIX          |  92.6047 |        8 |       0 | USD        |          740.838  |         2853.04 |     2.8511 |  2112.2    |     0 |          4138.45 |
+| 2022-05-24 | VSS          | 102.223  |       10 |      -1 | USD        |         1021.23   |         1158.2  |     0.1341 |   136.973  |     0 |          4138.45 |
+| 2022-06-15 | MPWR         | 408.22   |        7 |      -3 | USD        |         2854.54   |         4265.66 |     0.4943 |  1411.12   |     0 |          4138.45 |
+| 2022-08-23 | AAPL         | 166.157  |       14 |      -2 | USD        |         2324.19   |         3322.2  |     0.4294 |   998.008  |     0 |          4330.85 |
+| 2022-09-02 | ASML         | 457.855  |        4 |      -3 | USD        |         1828.42   |         2790.8  |     0.5263 |   962.38   |     0 |          4401.16 |
+| 2022-09-30 | OXY          |  59.3658 |        9 |      -2 | USD        |          532.293  |          437.85 |    -0.1774 |   -94.4426 |     0 |          4401.16 |
+| 2022-10-12 | BAC          |  28.178  |        1 |      -1 | USD        |           27.178  |           44.12 |     0.6234 |    16.942  |     0 |          4401.16 |
+| 2022-11-07 | MPWR         | 350.209  |       14 |      -2 | USD        |         4900.93   |         8531.32 |     0.7408 |  3630.39   |     0 |          4401.16 |
+| 2022-11-09 | CAMT         |  22.0629 |        1 |       0 | USD        |           22.0629 |           74.8  |     2.3903 |    52.7371 |     0 |          4401.16 |
+| 2022-12-06 | VOO          | 349.553  |       11 |       0 | USD        |         3845.09   |         5917.67 |     0.539  |  2072.58   |     0 |          4401.16 |
+| 2023-01-23 | NFLX         | 357.475  |        3 |      -3 | USD        |         1069.43   |         2889.21 |     1.7016 |  1819.78   |     0 |          4401.16 |
+| 2023-02-14 | VSS          | 103.266  |        6 |      -1 | USD        |          618.595  |          694.92 |     0.1234 |    76.3246 |     0 |          4401.16 |
+| 2023-03-20 | BLDR         |  81.8293 |       12 |      -2 | USD        |          979.951  |         1669.8  |     0.704  |   689.849  |     0 |          4401.16 |
+| 2023-04-28 | KHC          |  36.1041 |        3 |      -2 | USD        |          106.312  |           91.95 |    -0.1351 |   -14.3623 |     0 |          4724.68 |
+| 2023-06-14 | AAPL         | 181.34   |       13 |      -1 | USD        |         2356.42   |         3084.9  |     0.3091 |   728.482  |     0 |          4724.68 |
+| 2023-09-26 | VSS          | 100.398  |       12 |      -1 | USD        |         1203.78   |         1389.84 |     0.1546 |   186.065  |     0 |          4724.68 |
+| 2023-10-16 | MCHI         |  41.0726 |       15 |      -3 | USD        |          613.088  |          823.65 |     0.3434 |   210.562  |     0 |          4724.68 |
+| 2024-02-01 | GOOGL        | 140.041  |       14 |       0 | USD        |         1960.57   |         2359    |     0.2032 |   398.431  |     0 |          4724.68 |
+| 2024-02-12 | BAC          |  33.0126 |        5 |      -3 | USD        |          162.063  |          220.6  |     0.3612 |    58.5368 |     0 |          4724.68 |
+| 2024-02-22 | MCHI         |  38.4963 |        7 |      -1 | USD        |          268.474  |          384.37 |     0.4317 |   115.896  |     0 |          4724.68 |
+| 2024-03-12 | MPWR         | 727.32   |       11 |       0 | USD        |         8000.52   |         6703.18 |    -0.1622 | -1297.34   |     0 |          4737.7  |
+| 2024-05-14 | CAMT         |  94.4243 |        4 |       0 | USD        |          377.697  |          299.2  |    -0.2078 |   -78.497  |     0 |          4737.7  |
+| 2024-06-11 | META         | 505.574  |        8 |       0 | USD        |         4044.59   |         5265.92 |     0.302  |  1221.33   |     0 |          4737.7  |
+| 2024-06-18 | MPWR         | 847.6    |       14 |      -1 | USD        |        11865.4    |         8531.32 |    -0.281  | -3334.08   |     0 |          4737.7  |
+| 2024-07-30 | AMD          | 139.57   |        3 |       0 | USD        |          418.711  |          298.53 |    -0.287  |  -120.18   |     0 |          5092.28 |
+| 2024-10-25 | MCHI         |  48.8436 |        6 |       0 | USD        |          293.062  |          329.46 |     0.1242 |    36.3983 |     0 |          5703.28 |
+| 2024-11-13 | VOO          | 552.136  |       11 |       0 | USD        |         6073.5    |         5917.67 |    -0.0257 |  -155.83   |     0 |          5745.3  |
+
+> **Transactions Performance**
+
+The transactions performance method calculates the performance of all transactions over a specified period. With it, you can see how your transactions that occurred in a specific period have performed as opposed to the end of that period's value. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/portfolio#get_transactions_performance).
+
+As an example (by selecting only one specific period, in this case "2025Q1"):
+
+| Identifier   |   Volume |    Price |   Costs |   Invested Amount |   Current Value |   Return |   Benchmark Return |   Alpha |
+|:-------------|---------:|---------:|--------:|------------------:|----------------:|---------:|-------------------:|--------:|
+| BAC          |        5 |  33.0126 |      -3 |           168.063 |          186.2  |   0.1079 |             0.0463 |  0.0616 |
+| GOOGL        |       14 | 140.041  |       0 |          1960.57  |         2105.32 |   0.0738 |             0.071  |  0.0029 |
+| MCHI         |        7 |  38.4963 |      -1 |           270.474 |          271.74 |   0.0047 |             0.0329 | -0.0282 |
+| MPWR         |       11 | 727.32   |       0 |          8000.52  |         7414.66 |  -0.0732 |             0.0153 | -0.0885 |
+
+</details>
+
+<details>
+    <summary><b>Positions Overview</b></summary>
+
+> **Positions Overview**
+
+The positions overview method creates a daily overview of all your positions and stores the daily volume, costs, invested amount, current value, cumulative return, invested weight and current weight of each individual position. Therefore, it allows you to see how your portfolio has transformed over time. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/portfolio#get_positions_overview).
+
+As an example, this shows the current value for each day over the last 30 days of the first 5 assets in the portfolio:
+
+| date       |     ASML |     SKY |    AMZN |     FIX |    MSFT |
+|:-----------|---------:|--------:|--------:|--------:|--------:|
+| 2025-01-15 |  99325   | 12623.5 | 30152.2 | 64700.9 | 46800.6 |
+| 2025-01-16 | 102603   | 12539.2 | 29789.1 | 66174.6 | 46610.3 |
+| 2025-01-17 | 103431   | 12323   | 30501.9 | 65995.2 | 47098.7 |
+| 2025-01-21 | 104343   | 12363.8 | 31145.8 | 69327.8 | 47040.4 |
+| 2025-01-22 | 104850   | 12196.5 | 31726.3 | 72085.4 | 48984.1 |
+| 2025-01-23 | 102051   | 12263.1 | 31781.7 | 71697.6 | 49040.2 |
+| 2025-01-24 | 100139   | 12091.8 | 31704.8 | 71285   | 48748.7 |
+| 2025-01-27 |  94380.7 | 12419.5 | 31781.7 | 52955.4 | 47705.9 |
+| 2025-01-28 |  93450.4 | 12298.5 | 32150.2 | 54519.6 | 49094.1 |
+| 2025-01-29 |  97457.7 | 12097.2 | 32004.5 | 55858.4 | 48558.4 |
+| 2025-01-30 | 100787   | 12457.6 | 31676.4 | 56835.7 | 45557.6 |
+| 2025-01-31 | 101103   | 12556.9 | 32086.8 | 57214.2 | 45565.3 |
+| 2025-02-03 |  99974.4 | 12471.2 | 32051.7 | 55943.6 | 45111   |
+| 2025-02-04 | 100024   | 12614   | 32678.1 | 55682.9 | 45269.4 |
+| 2025-02-05 | 101553   | 14316.7 | 31883   | 58333   | 45370.6 |
+| 2025-02-06 | 101079   | 14392.9 | 32242   | 61537.2 | 45648.9 |
+| 2025-02-07 |  99515.4 | 14127.7 | 30935.2 | 60267.9 | 44982.3 |
+| 2025-02-10 | 101757   | 14339.8 | 31473.9 | 60904.5 | 45254   |
+| 2025-02-11 | 103158   | 14371.1 | 31422.6 | 56936.5 | 45168.2 |
+| 2025-02-12 | 103595   | 14284.1 | 30905.5 | 52179.9 | 44904.2 |
+| 2025-02-13 | 106448   | 14707   | 31100   | 51751.6 | 45069.2 |
+| 2025-02-14 | 102962   | 14609.1 | 30871.8 | 51249.8 | 44837.1 |
+| 2025-02-18 | 101958   | 14267.8 | 30597.8 | 51691.3 | 44970.2 |
+| 2025-02-19 | 102038   | 14099.1 | 30595   | 51857.7 | 45533.4 |
+| 2025-02-20 | 101803   | 14076   | 30088.8 | 50059   | 45774.3 |
+| 2025-02-21 | 100998   | 13608.2 | 29238.3 | 47684   | 44903.1 |
+| 2025-02-24 | 100827   | 13627.2 | 28715.8 | 46968.7 | 44440   |
+| 2025-02-25 | 100036   | 14054.2 | 28728   | 48154.3 | 43769   |
+| 2025-02-26 | 102329   | 14009.4 | 28937.2 | 49098.8 | 43970.3 |
+| 2025-02-27 |  95584.9 | 13718.3 | 28179.9 | 46718.5 | 43178.3 |
+
+</details>
+
 # Questions & Answers
 
 This section includes frequently asked questions and is meant to clear up confusion about certain results and/or deviations from other sources. If you have any questions that are not answered here, feel free to reach out to me via the contact details below.
@@ -3015,7 +3293,7 @@ Most functions will have the option to define the `trailing` parameter. This let
 
 > **How can I save the data periodically so that I don't have to retrieve it every single time again?**
 
-The Toolkit initialization has the ability to add custom datasets which can serve as input for external datasets from different providers but also to prevent downloading all of the same data again. Have a look at [this comment](https://github.com/JerBouma/FinanceToolkit/issues/68#issuecomment-1748684501) that explains this further.
+The Toolkit has the option to work with cached data through `use_cached_data=True` when initializing the Toolkit class. If you then use any of the functionalities of the Toolkit itself (e.g. `get_balance_sheet_statement`) it will store the data in a pickle file. When initializing the Toolkit class again with `use_cached_data=True`, it will load the data from the pickle file including all other previously set parameters (e.g. start_date and quarterly). You are also able to select a specific location to store the cached data by providing a string to the `use_cached_data` parameter. This will store the data in the provided location (with the assumption the folder exists).
 
 > **What is the "Benchmark" that is automatically obtained when acquiring historical data?**
 

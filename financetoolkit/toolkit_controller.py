@@ -286,12 +286,18 @@ class Toolkit:
                     tickers = cached_configurations["tickers"]
 
                 if cached_overwrites:
+                    folder = (
+                        "cached"
+                        if isinstance(use_cached_data, bool)
+                        else use_cached_data
+                    )
                     print(
                         "The following variables are overwritten by the cached "
                         f"configurations: {', '.join(cached_overwrites)}\n"
                         "If this is undesirable, please set the use_cached_data variable "
-                        "to False or select a new location for the cached data by changing "
-                        "the use_cached_data variable to a string."
+                        f"to False, delete the directory {folder} or select a new "
+                        "location for the cached data by changing the use_cached_data "
+                        "variable to a string."
                     )
             else:
                 _save_cached_data(

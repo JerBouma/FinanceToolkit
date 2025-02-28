@@ -7,7 +7,7 @@ authors = ["Jeroen Bouma"]
 packages = [
     { include = "financetoolkit" },
 ]
-include = ['normalization/*.csv']
+include = ["normalization/*.csv", "financetoolkit/portfolio/example_datasets/*"]
 readme = "README.md"
 homepage = "https://www.jeroenbouma.com/projects/financetoolkit"
 repository = "https://github.com/JerBouma/FinanceToolkit"

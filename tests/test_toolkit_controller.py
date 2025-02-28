@@ -17,6 +17,8 @@ def test_toolkit_balance(recorder):
     )
 
     recorder.capture(toolkit.get_balance_sheet_statement())
+    recorder.capture(toolkit.get_balance_sheet_statement(growth=True))
+    recorder.capture(toolkit.get_balance_sheet_statement(growth=True, lag=[1, 2, 3]))
 
 
 def test_toolkit_income(recorder):

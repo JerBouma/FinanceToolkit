@@ -3112,11 +3112,24 @@ class Toolkit:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
-        trailing: int | None = None,
         progress_bar: bool | None = None,
     ):
         """
-        Retrieves the balance sheet statement financial data for the company(s) from the specified source.
+        Retrieves the balance sheet statement data for the specified tickers. The balance sheet statement
+        is a financial statement that provides a snapshot of a company's financial position at a specific
+        point in time. It shows the company's assets, liabilities, and shareholders' equity. The balance sheet
+        statement is divided into three main sections:
+
+        - Assets: Assets are resources owned by the company that have economic value and can be used to
+        generate revenue. Assets are typically divided into current assets and non-current assets.
+        - Liabilities: Liabilities are obligations that the company owes to external parties. Liabilities
+        are also divided into current liabilities and non-current liabilities.
+        - Shareholders' Equity: Shareholders' equity represents the company's net worth or book value. It
+        is calculated as the difference between the company's assets and liabilities.
+
+        Note that the balance sheet statement is a financial statement that provides a snapshot of a
+        company's financial position at a specific point in time. Therefore, trailing results are not
+        available for this statement.
 
         Args:
             limit (int): Defines the maximum years or quarters to obtain.
@@ -3124,7 +3137,6 @@ class Toolkit:
             rounding (int): Defines the number of decimal places to round the data to.
             growth (bool): Defines whether to return the growth of the data.
             lag (int | str): Defines the number of periods to lag the growth data by.
-            trailing (int): Defines whether to select a trailing period.
             E.g. when selecting 4 with quarterly data, the TTM is calculated.
             progress_bar (bool): Defines whether to show a progress bar.
 
@@ -3266,11 +3278,6 @@ class Toolkit:
 
         balance_sheet_statement = self._balance_sheet_statement
 
-        if trailing:
-            balance_sheet_statement = (
-                self._balance_sheet_statement.T.rolling(trailing).sum().T
-            )
-
         if growth:
             self._balance_sheet_statement_growth = _calculate_growth(
                 balance_sheet_statement,
@@ -3304,7 +3311,12 @@ class Toolkit:
         progress_bar: bool | None = None,
     ):
         """
-        Retrieves the income statement financial data for the company(s) from the specified source.
+        Retrieves the income statement data for the specified tickers. The income statement is a financial
+        statement that shows a company's revenues and expenses over a specific period. It is used to calculate
+        a company's net income.
+
+        The income statement is a financial statement that shows a company's revenues and expenses over a specific
+        period. Therefore, trailing results are available for this statement.
 
         Args:
             limit (int): Defines the maximum years or quarters to obtain.
@@ -3496,7 +3508,12 @@ class Toolkit:
         progress_bar: bool | None = None,
     ):
         """
-        Retrieves the cash flow statement financial data for the company(s) from the specified source.
+        Retrieves the cash flow statement data for the specified tickers. The cash flow statement is a financial
+        statement that shows how changes in balance sheet accounts and income affect cash and cash equivalents.
+        It breaks the analysis down to operating, investing and financing activities.
+
+        The cash flow statement is a financial statement that shows how changes in balance sheet accounts and income
+        affect cash and cash equivalents. Therefore, trailing results are available for this statement.
 
         Args:
             limit (int): Defines the maximum years or quarters to obtain.

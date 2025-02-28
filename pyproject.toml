@@ -60,6 +60,7 @@ ruff = "^0.6.7"
 pytest-timeout = "^2.3.1"
 pytest-recorder = "^0.3.0"
 ipykernel = "^6.29.5"
+tqdm = "^4.67.1"
 
 [tool.poetry.group.dashboard.dependencies]
 plotly = "^5.22.0"

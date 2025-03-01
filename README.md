@@ -310,7 +310,7 @@ The table below shows one of the functionalities of the Portfolio module but is 
 
 In which the weights and returns can be depicted as follows:
 
-![Portfolio](https://github.com/user-attachments/assets/53a83360-ac9f-4e94-b6c4-fbacb036c563)
+![Portfolio](https://github.com/user-attachments/assets/a5e05df5-a76a-42fa-bb30-f640cd48da62)
 
 # Core Functionality and Metrics
 

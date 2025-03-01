@@ -1,7 +1,5 @@
 """Portfolio Module"""
 
-# pylint: disable=too-many-instance-attributes,abstract-class-instantiated,
-# pylint: disable=too-few-public-methods,protected-access,too-many-lines
 import os
 import shutil
 from importlib import resources
@@ -10,6 +8,9 @@ import pandas as pd
 
 from financetoolkit.portfolio import helpers, overview_model, portfolio_model
 from financetoolkit.toolkit_controller import Toolkit
+
+# pylint: disable=too-many-instance-attributes,abstract-class-instantiated,
+# pylint: disable=too-few-public-methods,protected-access,too-many-lines
 
 
 class Portfolio:
@@ -149,6 +150,8 @@ class Portfolio:
         self._benchmark_specific_prices: pd.Series = pd.Series()
         self._benchmark_prices_per_ticker: pd.DataFrame = pd.DataFrame()
         self._latest_benchmark_price: pd.Series = pd.Series()
+        self._portfolio_volatilities: pd.Series = pd.Series()
+        self._portfolio_beta: pd.Series = pd.Series()
 
         # Portfolio Overveiw
         self._portfolio_overview: pd.DataFrame = pd.DataFrame()
@@ -162,6 +165,7 @@ class Portfolio:
         self._api_key: str = api_key
         self._tickers: list = []
         self._toolkit: Toolkit | None = None
+        self._toolkit_instance: Toolkit | None = None
         self._benchmark_toolkit: Toolkit | None = None
         self._currency_toolkit: Toolkit | None = None
         self._latest_price: pd.Series = pd.Series()
@@ -193,14 +197,14 @@ class Portfolio:
         """
         Converts the Portfolio to a Finance Toolkit object.
 
-        This method allows you to convert your Portfolio to a Finance Toolkit object,
-        giving access to 30+ years of fundamental and historical data, 130+ financial
-        metrics and much more. It intentilligently understands the assets you have
-        purchased and generated a "Portfolio" column automatically which is based off
-        your portfolio weights and the assets you have purchased. This allows you to
-        easily calculate portfolio metrics such as the Sharpe Ratio, Sortino Ratio,
-        Treynor Ratio, Value at Risk and many more that would fit precisely to your
-        portfolio.
+        This method converts the Portfolio object to a Finance Toolkit object, enabling the
+        use of the Toolkit's 150+ financial metrics and indicators for the portfolio's assets.
+
+        Next to the historical data, the portfolio weights are also
+        loaded in the Toolkit class. This, together with the "Portfolio" ticker, enables
+        the possibility to calculate any Toolkit metric for all assets in the portfolio
+        in combination with the Portfolio itself which is a weighted average of other
+        results based on the portfolio weights over time.
 
         Returns:
             Toolkit:
@@ -246,19 +250,20 @@ class Portfolio:
             .reindex(list(self._tickers) + ["Benchmark"], axis=1, level=1)  # type: ignore
         )
 
-        toolkit = Toolkit(
-            tickers=symbols,
-            api_key=self._api_key,
-            historical=historical,
-            start_date=self._start_date,
-            quarterly=self._quarterly,
-            benchmark_ticker=self._benchmark_ticker,
-            rounding=self._rounding,
-        )
+        if not self._toolkit_instance:
+            self._toolkit_instance = Toolkit(
+                tickers=symbols,
+                api_key=self._api_key,
+                historical=historical,
+                start_date=self._start_date,
+                quarterly=self._quarterly,
+                benchmark_ticker=self._benchmark_ticker,
+                rounding=self._rounding,
+            )
 
-        toolkit._portfolio_weights = portfolio_weights
+            self._toolkit_instance._portfolio_weights = portfolio_weights
 
-        return toolkit
+        return self._toolkit_instance
 
     def read_portfolio_dataset(
         self,
@@ -445,6 +450,21 @@ class Portfolio:
         """
         Collect and align historical benchmark data with the portfolio's data.
 
+        The following columns are included:
+
+        - Open: the opening price for the benchmark over time.
+        - High: the highest price for the benchmark over time.
+        - Low: the lowest price for the benchmark over time.
+        - Close: the closing price for the benchmark over time.
+        - Adj Close: the adjusted closing price for the benchmark over time.
+        - Volume: the volume of the benchmark over time.
+        - Dividends: the dividends of the benchmark over time.
+        - Returns: the returns of the benchmark over time.
+        - Volatility: the volatility of the benchmark over the whole period.
+        - Excess Return: the excess return (return minus risk free rate) of the benchmark over time.
+        - Excess Volatility: the excess volatility (return minus risk free rate) of the benchmark over time.
+        - Cumulative Return: the cumulative return of the benchmark over time.
+
         This method retrieves historical benchmark data (daily, weekly, monthly, quarterly, and yearly)
         for the portfolio, based on a specified benchmark ticker or a mapping of portfolio tickers to
         their corresponding benchmark tickers. The retrieved benchmark data is then aligned with the
@@ -571,6 +591,21 @@ class Portfolio:
     ):
         """
         Collect and adjust historical price data for the portfolio's tickers.
+
+        The following columns are included:
+
+        - Open: the opening price of each asset over time.
+        - High: the highest price of each asset over time.
+        - Low: the lowest price of each asset over time.
+        - Close: the closing price of each asset over time.
+        - Adj Close: the adjusted closing price of each asset over time.
+        - Volume: the volume of each asset over time.
+        - Dividends: the dividends of each asset over time.
+        - Returns: the returns of each asset over time.
+        - Volatility: the volatility of each asset over the whole period.
+        - Excess Return: the excess return (return minus risk free rate) of each asset over time.
+        - Excess Volatility: the excess volatility (return minus risk free rate) of each asset over time.
+        - Cumulative Return: the cumulative return of each asset over time.
 
         This method retrieves historical price data (daily, weekly, monthly, quarterly, and yearly)
         for the portfolio's tickers and adjusts for any currency mismatches if necessary. It fetches
@@ -715,6 +750,16 @@ class Portfolio:
         """
         Calculate and provide an overview of the portfolio's positions, including key statistics and performance metrics.
 
+        The following columns are included:
+
+        - Volume: the volume of each asset over time.
+        - Costs: the costs of each asset over time.
+        - Invested Amount: the invested amount over time.
+        - Current Value: the current value of the asset based on the market value on that specific day over time.
+        - Cumulative Return: the cumulative return of the asset over time.
+        - Invested Weight: the weight of the asset in the portfolio based on the invested amount over time.
+        - Current Weight: the weight of the asset in the portfolio based on the current value over time.
+
         This method computes an overview of the portfolio's positions by calculating important statistics and performance
         metrics based on the historical data and transactions. If necessary data has not been collected, it will trigger
         the collection of historical and benchmark data using the `collect_historical_data` and
@@ -796,6 +841,31 @@ class Portfolio:
         Calculate and provide an overview of the portfolio's key statistics, including performance metrics and
         cost-related information.
 
+        The following columns are included:
+
+        - Identifier: The name of the asset, specifically the ticker (e.g. AAPL)
+        - Volume: The total volume of the asset representing all transactions.
+        - Costs: The total costs associated with the asset transactions.
+        - Price: The mean price of the asset based on the transactions.
+        - Invested: The total amount invested in the asset, this is the Price times the Volume minus Costs.
+        - Latest Price: The latest available price of the asset obtained from historical data.
+        - Latest Value: The total value of the asset based on the latest price and the total volume minus costs.
+        - Return: The return of the asset based on the latest value and invested amount.
+        - Return Value: The absolute return value of the asset based on the latest value and invested amount.
+        - Benchmark Return: The return of the asset's benchmark based on the latest value and invested amount.
+        - Volatility: The yearly volatility of the asset based on the historical data, this computes the volatility
+        over the entire period and multiplies this number by SQRT(252).
+        - Benchmark Volatility: The yearly volatility of the asset's benchmark based on the historical data, this computes
+        the volatility over the entire period and multiplies this number by SQRT(252).
+        - Alpha: The alpha is based on the difference between the asset's return and the benchmark return.
+        - Beta: The beta is based on the asset's return and the benchmark return. It measures the asset's volatility
+        compared to the benchmark. A beta >1 indicates that the asset is more volatile than the benchmark and a beta <1
+        indicates that the asset is less volatile than the benchmark.
+        - Weight: The weight of the asset in the portfolio based on the latest value and the total value of the portfolio.
+
+        When recalculating these numbers, it is important to note that results are calculated before the
+        rounding parameter is applied which can lead to some discrepancies in the results.
+
         This method computes a detailed overview of the portfolio, calculating various key statistics such as performance,
         costs, and returns. If necessary data has not been collected, it will automatically trigger data collection using
         the `collect_historical_data` and `collect_benchmark_historical_data` methods. The portfolio overview is
@@ -840,6 +910,41 @@ class Portfolio:
                     f"Failed to collect benchmark historical data: {error}"
                 ) from error
 
+        if self._portfolio_volatilities.empty:
+            self._portfolio_volatilities = pd.concat(
+                [
+                    self._daily_historical_data["Volatility"].iloc[-1],
+                    pd.Series(
+                        [self._daily_benchmark_data["Volatility"].iloc[-1]],
+                        index=["Benchmark"],
+                    ),
+                ]
+            )
+
+        if self._portfolio_beta.empty:
+            # Calculate daily returns for portfolio tickers and benchmark
+            portfolio_returns = (
+                self._daily_historical_data["Adj Close"].pct_change().dropna()
+            )
+            benchmark_returns = (
+                self._daily_benchmark_data["Adj Close"].pct_change().dropna()
+            )
+
+            # Align dates between portfolio and benchmark returns
+            common_dates = portfolio_returns.index.intersection(benchmark_returns.index)
+            portfolio_returns = portfolio_returns.loc[common_dates]
+            benchmark_returns = benchmark_returns.loc[common_dates]
+
+            # Compute beta for each portfolio ticker against the benchmark
+            betas = {}
+            for ticker in portfolio_returns.columns:
+                cov = portfolio_returns[ticker].cov(benchmark_returns)
+                var = benchmark_returns.var()
+                beta = cov / var if var != 0 else float("nan")
+                betas[ticker] = beta
+
+            self._portfolio_beta = pd.Series(betas)
+
         try:
             self._portfolio_overview = overview_model.create_portfolio_overview(
                 portfolio_name=self._portfolio_dataset[self._name_column],
@@ -849,6 +954,8 @@ class Portfolio:
                 latest_returns=self._latest_price,
                 benchmark_prices=self._benchmark_specific_prices,
                 benchmark_latest_prices=self._latest_benchmark_price,
+                volatilities=self._portfolio_volatilities,
+                betas=self._portfolio_beta,
                 include_portfolio=include_portfolio,
             )
         except ValueError as error:

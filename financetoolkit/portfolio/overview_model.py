@@ -81,6 +81,8 @@ def create_portfolio_overview(
     latest_returns: pd.Series,
     benchmark_prices: pd.Series,
     benchmark_latest_prices: pd.Series,
+    volatilities: pd.Series,
+    betas: pd.Series,
     include_portfolio: bool = True,
 ):
     """
@@ -125,6 +127,7 @@ def create_portfolio_overview(
         - All financial values are aggregated or weighted appropriately for the portfolio row.
     """
     portfolio_overview = pd.DataFrame(index=portfolio_name.index)
+
     portfolio_overview["Name"] = portfolio_name
     portfolio_overview["Volume"] = portfolio_volume
     portfolio_overview["Costs"] = portfolio_costs
@@ -145,6 +148,11 @@ def create_portfolio_overview(
             "Benchmark Invested": "sum",
         }
     )
+
+    benchmark_volatility = volatilities.loc["Benchmark"] * np.sqrt(252)
+    asset_volatilities = volatilities.drop("Benchmark") * np.sqrt(252)
+    asset_volatilities = asset_volatilities.reindex(portfolio_overview_grouped.index)
+    betas = betas.reindex(portfolio_overview_grouped.index)
 
     latest_price_values = []
     for ticker in portfolio_overview_grouped.index:
@@ -182,59 +190,78 @@ def create_portfolio_overview(
     portfolio_overview_grouped["Benchmark Return"] = (
         benchmark_latest_value / portfolio_overview_grouped["Benchmark Invested"] - 1
     )
+
+    portfolio_overview_grouped["Volatility"] = asset_volatilities
+    portfolio_overview_grouped["Benchmark Volatility"] = benchmark_volatility
+
     portfolio_overview_grouped["Alpha"] = (
         portfolio_overview_grouped["Return"]
         - portfolio_overview_grouped["Benchmark Return"]
     )
+
+    portfolio_overview_grouped["Beta"] = betas
     portfolio_overview_grouped["Weight"] = (
         portfolio_overview_grouped["Latest Value"]
         / portfolio_overview_grouped["Latest Value"].sum()
     )
 
+    if include_portfolio:
+        # Compute aggregated totals for numeric columns
+        totals = portfolio_overview_grouped.sum(numeric_only=True)
+        vol = totals["Volume"]
+        costs = totals["Costs"]
+        invested = totals["Invested"]
+        latest_value = totals["Latest Value"]
+        benchmark_invested = totals["Benchmark Invested"]
+        benchmark_latest_value_sum = benchmark_latest_value.sum()
+
+        portfolio_volatility = sum(
+            portfolio_overview_grouped["Volatility"]
+            * portfolio_overview_grouped["Weight"]
+        )
+        portfolio_beta = sum(
+            portfolio_overview_grouped["Beta"] * portfolio_overview_grouped["Weight"]
+        )
+
+        portfolio_summary = {
+            "Volume": vol,
+            "Costs": costs,
+            "Price": np.nan,
+            "Invested": invested,
+            "Latest Price": np.nan,
+            "Latest Value": latest_value,
+            "Return": np.nan,
+            "Return Value": np.nan,
+            "Benchmark Return": np.nan,
+            "Volatility": portfolio_volatility,
+            "Benchmark Volatility": benchmark_volatility,
+            "Alpha": np.nan,
+            "Beta": portfolio_beta,
+            "Weight": portfolio_overview_grouped["Weight"].sum(),
+        }
+
+        # Calculate derived metrics only if volume and invested are non-zero
+        portfolio_summary["Price"] = (invested - abs(costs)) / vol if vol else np.nan
+        portfolio_summary["Latest Price"] = latest_value / vol if vol else np.nan
+        portfolio_summary["Return"] = (
+            (latest_value / invested - 1) if invested else np.nan
+        )
+        portfolio_summary["Return Value"] = latest_value - invested
+        portfolio_summary["Benchmark Return"] = (
+            (benchmark_latest_value_sum / benchmark_invested - 1)
+            if benchmark_invested
+            else np.nan
+        )
+        portfolio_summary["Alpha"] = (
+            portfolio_summary["Return"] - portfolio_summary["Benchmark Return"]
+        )
+
+        # Insert the portfolio summary row into the DataFrame
+        portfolio_overview_grouped.loc["Portfolio"] = pd.Series(portfolio_summary)
+
     portfolio_overview_grouped = portfolio_overview_grouped.drop(
         columns=["Benchmark Invested"]
     )
-
-    if include_portfolio:
-        portfolio_overview_grouped.loc["Portfolio"] = [
-            portfolio_overview_grouped["Volume"].sum(),
-            portfolio_overview_grouped["Costs"].sum(),
-            np.nan,
-            portfolio_overview_grouped["Invested"].sum(),
-            np.nan,
-            portfolio_overview_grouped["Latest Value"].sum(),
-            (
-                portfolio_overview_grouped["Return"]
-                * portfolio_overview_grouped["Weight"]
-            ).sum(),
-            np.nan,
-            (
-                portfolio_overview_grouped["Benchmark Return"]
-                * portfolio_overview_grouped["Weight"]
-            ).sum(),
-            (
-                portfolio_overview_grouped["Alpha"]
-                * portfolio_overview_grouped["Weight"]
-            ).sum(),
-            portfolio_overview_grouped["Weight"].sum(),
-        ]
-
-        portfolio_overview_grouped.loc["Portfolio", "Price"] = (
-            portfolio_overview_grouped.loc["Portfolio", "Invested"]
-            - abs(portfolio_overview_grouped.loc["Portfolio", "Costs"])
-        ) / portfolio_overview_grouped.loc["Portfolio", "Volume"]
-        portfolio_overview_grouped.loc["Portfolio", "Latest Price"] = (
-            portfolio_overview_grouped.loc["Portfolio", "Latest Value"]
-            / portfolio_overview_grouped.loc["Portfolio", "Volume"]
-        )
-        portfolio_overview_grouped.loc["Portfolio", "Return"] = (
-            portfolio_overview_grouped.loc["Portfolio", "Latest Value"]
-            / portfolio_overview_grouped.loc["Portfolio", "Invested"]
-        ) - 1
-        portfolio_overview_grouped.loc["Portfolio", "Return Value"] = (
-            portfolio_overview_grouped.loc["Portfolio", "Latest Value"]
-            - portfolio_overview_grouped.loc["Portfolio", "Invested"]
-        )
 
     return portfolio_overview_grouped
 

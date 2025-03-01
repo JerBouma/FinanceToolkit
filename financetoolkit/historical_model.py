@@ -238,6 +238,18 @@ def get_historical_data(
             f"The following tickers acquired historical data from YahooFinance: {', '.join(yf_tickers)}"
         )
 
+    if (
+        yf_tickers
+        and not fmp_tickers
+        and source == "FinancialModelingPrep"
+        and show_errors
+    ):
+        print(
+            "No data found using FinancialModelingPrep, this is usually due to Bandwidth "
+            "API limits or usage of the Free plan. Therefore data was retrieved from YahooFinance instead: "
+            f"{', '.join(yf_tickers)}"
+        )
+
     if no_data and show_errors:
         if not ENABLE_YFINANCE:
             print(
@@ -289,6 +301,7 @@ def get_historical_data_from_financial_modeling_prep(
     include_dividends: bool = True,
     divide_ohlc_by: int | float | None = None,
     sleep_timer: bool = True,
+    user_subscription: str = "Free",
 ):
     """
     Retrieves historical stock data for the given ticker from Financial Modeling Prep for a specified period.
@@ -363,7 +376,10 @@ def get_historical_data_from_financial_modeling_prep(
 
     try:
         historical_data = helpers.get_financial_data(
-            url=historical_data_url, sleep_timer=sleep_timer, raw=True
+            url=historical_data_url,
+            sleep_timer=sleep_timer,
+            raw=True,
+            user_subscription=user_subscription,
         )
 
         historical_data = pd.DataFrame(historical_data["historical"]).set_index("date")
@@ -404,7 +420,10 @@ def get_historical_data_from_financial_modeling_prep(
     if include_dividends:
         try:
             dividends = helpers.get_financial_data(
-                url=dividend_url, sleep_timer=sleep_timer, raw=True
+                url=dividend_url,
+                sleep_timer=sleep_timer,
+                raw=True,
+                user_subscription=user_subscription,
             )
 
             try:
@@ -512,10 +531,17 @@ def get_historical_data_from_yahoo_finance(
             end=end_timestamp,
             interval=interval,
             auto_adjust=True,
-        ).droplevel(level=1, axis=1)
+            multi_level_index=False,
+        )
+
+        # Due to an odd error, it can sometimes occur that the columns are duplicated
+        # which is why a check is performed here to ensure these don't stay in the DataFrame
+        historical_data = historical_data.loc[:, ~historical_data.columns.duplicated()]
 
         if "Adj Close" not in historical_data and historical_data.columns.nlevels == 1:
-            historical_data["Adj Close"] = historical_data["Close"]
+            historical_data.loc[:, "Adj Close"] = historical_data.loc[
+                :, "Close"
+            ].to_numpy()
 
     except (HTTPError, URLError, RemoteDisconnected, IndexError):
         return pd.DataFrame()
@@ -573,6 +599,7 @@ def get_intraday_data_from_financial_modeling_prep(
     interval: str = "1hour",
     return_column: str = "Close",
     sleep_timer: bool = True,
+    user_subscription: str = "Free",
 ):
     """
     Retrieves intraday stock data for the given ticker from Financial Modeling Prep for a specified period.
@@ -635,7 +662,10 @@ def get_intraday_data_from_financial_modeling_prep(
 
     try:
         historical_data = helpers.get_financial_data(
-            url=historical_data_url, sleep_timer=sleep_timer, raw=True
+            url=historical_data_url,
+            sleep_timer=sleep_timer,
+            raw=True,
+            user_subscription=user_subscription,
         )
 
         historical_data = pd.DataFrame(historical_data).set_index("date")

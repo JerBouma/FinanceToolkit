@@ -5,6 +5,7 @@ __docformat__ = "google"
 
 import re
 import warnings
+from collections import Counter
 from datetime import datetime, timedelta
 
 import pandas as pd
@@ -357,15 +358,9 @@ class Toolkit:
         deduplicated_tickers = list(set(self._tickers))
 
         if deduplicated_tickers != self._tickers:
-            duplicate_tickers = list(
-                set(
-                    [
-                        ticker
-                        for ticker in self._tickers
-                        if self._tickers.count(ticker) > 1
-                    ]
-                )
-            )
+            duplicate_tickers = [
+                ticker for ticker, count in Counter(self._tickers).items() if count > 1
+            ]
             print(
                 f"Found duplicate tickers, duplicate entries of the following tickers are removed: {', '.join(duplicate_tickers)}"
             )
@@ -1472,7 +1467,7 @@ class Toolkit:
                 progress_bar=(
                     progress_bar if progress_bar is not None else self._progress_bar
                 ),
-                user_subsription=self._fmp_plan,
+                user_subscription=self._fmp_plan,
             )
 
             if self._use_cached_data:
@@ -1557,7 +1552,7 @@ class Toolkit:
                 progress_bar=(
                     progress_bar if progress_bar is not None else self._progress_bar
                 ),
-                user_subsription=self._fmp_plan,
+                user_subscription=self._fmp_plan,
             )
 
             if self._use_cached_data:
@@ -1638,7 +1633,7 @@ class Toolkit:
                 progress_bar=(
                     progress_bar if progress_bar is not None else self._progress_bar
                 ),
-                user_subsription=self._fmp_plan,
+                user_subscription=self._fmp_plan,
             )
 
             if self._use_cached_data:
@@ -1742,7 +1737,7 @@ class Toolkit:
                 progress_bar=(
                     progress_bar if progress_bar is not None else self._progress_bar
                 ),
-                user_subsription=self._fmp_plan,
+                user_subscription=self._fmp_plan,
             )
 
             if self._use_cached_data:
@@ -1844,7 +1839,7 @@ class Toolkit:
                 progress_bar=(
                     progress_bar if progress_bar is not None else self._progress_bar
                 ),
-                user_subsription=self._fmp_plan,
+                user_subscription=self._fmp_plan,
             )
 
             if self._use_cached_data:
@@ -1933,7 +1928,7 @@ class Toolkit:
                 progress_bar=(
                     progress_bar if progress_bar is not None else self._progress_bar
                 ),
-                user_subsription=self._fmp_plan,
+                user_subscription=self._fmp_plan,
             )
 
             if self._use_cached_data:
@@ -2022,7 +2017,7 @@ class Toolkit:
                 progress_bar=(
                     progress_bar if progress_bar is not None else self._progress_bar
                 ),
-                user_subsription=self._fmp_plan,
+                user_subscription=self._fmp_plan,
             )
 
             if self._use_cached_data:
@@ -2520,7 +2515,7 @@ class Toolkit:
                 progress_bar=(
                     progress_bar if progress_bar is not None else self._progress_bar
                 ),
-                user_subsription=self._fmp_plan,
+                user_subscription=self._fmp_plan,
             )
 
             if self._use_cached_data:
@@ -2636,7 +2631,7 @@ class Toolkit:
                 progress_bar=(
                     progress_bar if progress_bar is not None else self._progress_bar
                 ),
-                user_subsription=self._fmp_plan,
+                user_subscription=self._fmp_plan,
             )
 
         esg_scores = self._esg_scores.round(rounding if rounding else self._rounding)
@@ -3291,7 +3286,7 @@ class Toolkit:
                 progress_bar=(
                     progress_bar if progress_bar is not None else self._progress_bar
                 ),
-                user_subsription=self._fmp_plan,
+                user_subscription=self._fmp_plan,
             )
 
             if convert_currency:
@@ -3463,7 +3458,7 @@ class Toolkit:
                 progress_bar=(
                     progress_bar if progress_bar is not None else self._progress_bar
                 ),
-                user_subsription=self._fmp_plan,
+                user_subscription=self._fmp_plan,
             )
 
             if convert_currency:
@@ -3684,7 +3679,7 @@ class Toolkit:
                 progress_bar=(
                     progress_bar if progress_bar is not None else self._progress_bar
                 ),
-                user_subsription=self._fmp_plan,
+                user_subscription=self._fmp_plan,
             )
 
             if convert_currency:
@@ -3815,7 +3810,7 @@ class Toolkit:
                 progress_bar=(
                     progress_bar if progress_bar is not None else self._progress_bar
                 ),
-                user_subsription=self._fmp_plan,
+                user_subscription=self._fmp_plan,
             )
 
             if self._use_cached_data:

@@ -36,7 +36,7 @@ def get_financial_statements(
     statistics_format: pd.DataFrame = pd.DataFrame(),
     sleep_timer: bool = True,
     progress_bar: bool = True,
-    user_subsription: str = "Free",
+    user_subscription: str = "Free",
 ) -> pd.DataFrame:
     """
     Retrieves financial statements (balance, income, or cash flow statements) for one or multiple companies,
@@ -70,8 +70,7 @@ def get_financial_statements(
             f"{ticker}?period={period}&apikey={api_key}"
         )
         financial_statement = helpers.get_financial_data(
-            url=url,
-            sleep_timer=sleep_timer,
+            url=url, sleep_timer=sleep_timer, user_subscription=user_subscription
         )
 
         try:
@@ -164,7 +163,7 @@ def get_financial_statements(
 
     # Checks if any errors are in the dataset and if this is the case, reports them
     financial_statement_dict = helpers.check_for_error_messages(
-        dataset_dictionary=financial_statement_dict, user_subscription=user_subsription
+        dataset_dictionary=financial_statement_dict, user_subscription=user_subscription
     )
 
     if no_data:
@@ -237,7 +236,7 @@ def get_revenue_segmentation(
     end_date: str | None = None,
     sleep_timer: bool = False,
     progress_bar: bool = True,
-    user_subsription: str = "Free",
+    user_subscription: str = "Free",
 ) -> pd.DataFrame:
     """
     Retrieves financial statements (balance, income, or cash flow statements) for one or multiple companies,
@@ -256,7 +255,7 @@ def get_revenue_segmentation(
         sleep_timer (bool): Whether to set a sleep timer when the rate limit is reached. Note that this only works
         if you have a Premium subscription (Starter or higher) from FinancialModelingPrep. Defaults to False.
         progress_bar (bool): Whether to show a progress bar when retrieving data over 10 tickers. Defaults to True.
-        user_subsription (str): The subscription type of the user. Defaults to "Free".
+        user_subscription (str): The subscription type of the user. Defaults to "Free".
 
     Returns:
         pd.DataFrame: A DataFrame containing the financial statement data. If only one ticker is provided, the
@@ -274,6 +273,7 @@ def get_revenue_segmentation(
             url=url,
             sleep_timer=sleep_timer,
             raw=True,
+            user_subscription=user_subscription,
         )
 
         try:
@@ -386,7 +386,7 @@ def get_revenue_segmentation(
     revenue_segmentation_dict = helpers.check_for_error_messages(
         dataset_dictionary=revenue_segmentation_dict,
         required_subscription="Professional or Enterprise",
-        user_subscription=user_subsription,
+        user_subscription=user_subscription,
     )
 
     if no_data:
@@ -439,7 +439,7 @@ def get_analyst_estimates(
     rounding: int | None = 4,
     sleep_timer: bool = False,
     progress_bar: bool = True,
-    user_subsription: str = "Free",
+    user_subscription: str = "Free",
 ) -> pd.DataFrame:
     """
     Retrieves analyst estimates for one or multiple companies, and returns a DataFrame containing the data.
@@ -473,7 +473,7 @@ def get_analyst_estimates(
         sleep_timer (bool): Whether to set a sleep timer when the rate limit is reached. Note that this only works
         if you have a Premium subscription (Starter or higher) from FinancialModelingPrep. Defaults to False.
         progress_bar (bool): Whether to show a progress bar when retrieving data over 10 tickers. Defaults to True.
-        user_subsription (str): The subscription type of the user. Defaults to "Free".
+        user_subscription (str): The subscription type of the user. Defaults to "Free".
 
     Returns:
         pd.DataFrame: A DataFrame containing the analyst estimates for all provided tickers.
@@ -484,7 +484,9 @@ def get_analyst_estimates(
             "https://financialmodelingprep.com/api/v3/analyst-estimates/"
             f"{ticker}?period={period}&apikey={api_key}"
         )
-        analyst_estimates = helpers.get_financial_data(url=url, sleep_timer=sleep_timer)
+        analyst_estimates = helpers.get_financial_data(
+            url=url, sleep_timer=sleep_timer, user_subscription=user_subscription
+        )
 
         try:
             analyst_estimates = analyst_estimates.drop("symbol", axis=1)
@@ -593,7 +595,7 @@ def get_analyst_estimates(
 
     # Checks if any errors are in the dataset and if this is the case, reports them
     analyst_estimates_dict = helpers.check_for_error_messages(
-        dataset_dictionary=analyst_estimates_dict, user_subscription=user_subsription
+        dataset_dictionary=analyst_estimates_dict, user_subscription=user_subscription
     )
 
     if no_data:
@@ -645,7 +647,7 @@ def get_profile(
     api_key: str,
     progress_bar: bool = True,
     report_missing: bool = True,
-    user_subsription: str = "Free",
+    user_subscription: str = "Free",
 ) -> pd.DataFrame:
     """
     Gives information about the profile of a company which includes i.a. beta, company description, industry and sector.
@@ -655,7 +657,7 @@ def get_profile(
         api_key (string): the API Key obtained from
         https://www.jeroenbouma.com/fmp
         progress_bar (bool): Whether to show a progress bar. Defaults to True.
-        user_subsription (str): The subscription type of the user. Defaults to "Free".
+        user_subscription (str): The subscription type of the user. Defaults to "Free".
 
     Returns:
         pd.DataFrame: the profile data.
@@ -663,7 +665,9 @@ def get_profile(
 
     def worker(ticker, profile_dict):
         url = f"https://financialmodelingprep.com/api/v3/profile/{ticker}?apikey={api_key}"
-        profile_data = helpers.get_financial_data(url=url)
+        profile_data = helpers.get_financial_data(
+            url=url, user_subscription=user_subscription
+        )
 
         if profile_data.empty:
             no_data.append(ticker)
@@ -737,7 +741,7 @@ def get_profile(
 
     # Checks if any errors are in the dataset and if this is the case, reports them
     profile_dict = helpers.check_for_error_messages(
-        dataset_dictionary=profile_dict, user_subscription=user_subsription
+        dataset_dictionary=profile_dict, user_subscription=user_subscription
     )
 
     if no_data and report_missing:
@@ -770,7 +774,7 @@ def get_quote(
     tickers: list[str] | str,
     api_key: str,
     progress_bar: bool = True,
-    user_subsription: str = "Free",
+    user_subscription: str = "Free",
 ) -> pd.DataFrame:
     """
     Gives information about the quote of a company which includes i.a. high/low close prices,
@@ -781,7 +785,7 @@ def get_quote(
         api_key (string): the API Key obtained from
         https://www.jeroenbouma.com/fmp
         progress_bar (bool): Whether to show a progress bar. Defaults to True.
-        user_subsription (str): The subscription type of the user. Defaults to "Free".
+        user_subscription (str): The subscription type of the user. Defaults to "Free".
 
     Returns:
         pd.DataFrame: the quote data.
@@ -791,7 +795,9 @@ def get_quote(
         url = (
             f"https://financialmodelingprep.com/api/v3/quote/{ticker}?apikey={api_key}"
         )
-        quote_data = helpers.get_financial_data(url=url)
+        quote_data = helpers.get_financial_data(
+            url=url, user_subscription=user_subscription
+        )
 
         if quote_data.empty:
             no_data.append(ticker)
@@ -857,7 +863,7 @@ def get_quote(
 
     # Checks if any errors are in the dataset and if this is the case, reports them
     quote_dict = helpers.check_for_error_messages(
-        dataset_dictionary=quote_dict, user_subscription=user_subsription
+        dataset_dictionary=quote_dict, user_subscription=user_subscription
     )
 
     if no_data:
@@ -874,7 +880,7 @@ def get_rating(
     tickers: list[str] | str,
     api_key: str,
     progress_bar: bool = True,
-    user_subsription: str = "Free",
+    user_subscription: str = "Free",
 ) -> pd.DataFrame:
     """
     Gives information about the rating of a company which includes i.a. the company rating and
@@ -885,7 +891,7 @@ def get_rating(
         api_key (string): the API Key obtained from
         https://www.jeroenbouma.com/fmp
         progress_bar (bool): Whether to show a progress bar. Defaults to True.
-        user_subsription (str): The subscription type of the user. Defaults to "Free".
+        user_subscription (str): The subscription type of the user. Defaults to "Free".
 
     Returns:
         pd.DataFrame: the rating data.
@@ -893,7 +899,9 @@ def get_rating(
 
     def worker(ticker, ratings_dict):
         url = f"https://financialmodelingprep.com/api/v3/historical-rating/{ticker}?l&apikey={api_key}"
-        ratings = helpers.get_financial_data(url=url)
+        ratings = helpers.get_financial_data(
+            url=url, user_subscription=user_subscription
+        )
 
         try:
             ratings = ratings.drop("symbol", axis=1).sort_values(
@@ -960,7 +968,7 @@ def get_rating(
 
     # Checks if any errors are in the dataset and if this is the case, reports them
     ratings_dict = helpers.check_for_error_messages(
-        dataset_dictionary=ratings_dict, user_subscription=user_subsription
+        dataset_dictionary=ratings_dict, user_subscription=user_subscription
     )
 
     if no_data:
@@ -985,7 +993,7 @@ def get_earnings_calendar(
     actual_dates: bool = True,
     sleep_timer: bool = False,
     progress_bar: bool = True,
-    user_subsription: str = "Free",
+    user_subscription: str = "Free",
 ) -> pd.DataFrame:
     """
     Obtains Earnings Calendar which shows the expected earnings and EPS for a company.
@@ -1001,7 +1009,7 @@ def get_earnings_calendar(
         sleep_timer (bool): Whether to set a sleep timer when the rate limit is reached. Note that this only works
         if you have a Premium subscription (Starter or higher) from FinancialModelingPrep. Defaults to False.
         progress_bar (bool): Whether to show a progress bar when retrieving data over 10 tickers. Defaults to True.
-        user_subsription (str): The subscription type of the user. Defaults to "Free".
+        user_subscription (str): The subscription type of the user. Defaults to "Free".
 
     Returns:
         pd.DataFrame: the earnings calendar data.
@@ -1012,7 +1020,9 @@ def get_earnings_calendar(
             "https://financialmodelingprep.com/api/v3/historical/earning_calendar/"
             f"{ticker}?apikey={api_key}"
         )
-        earnings_calendar = helpers.get_financial_data(url=url, sleep_timer=sleep_timer)
+        earnings_calendar = helpers.get_financial_data(
+            url=url, sleep_timer=sleep_timer, user_subscription=user_subscription
+        )
 
         try:
             earnings_calendar["date"] = (
@@ -1091,7 +1101,7 @@ def get_earnings_calendar(
 
     # Checks if any errors are in the dataset and if this is the case, reports them
     earnings_calendar_dict = helpers.check_for_error_messages(
-        dataset_dictionary=earnings_calendar_dict, user_subscription=user_subsription
+        dataset_dictionary=earnings_calendar_dict, user_subscription=user_subscription
     )
 
     if no_data:
@@ -1115,7 +1125,7 @@ def get_dividend_calendar(
     end_date: str | None = None,
     sleep_timer: bool = False,
     progress_bar: bool = True,
-    user_subsription: str = "Free",
+    user_subscription: str = "Free",
 ) -> pd.DataFrame:
     """
     Obtains Dividend Calendar which shows the dividends and related dates.
@@ -1129,7 +1139,7 @@ def get_dividend_calendar(
         sleep_timer (bool): Whether to set a sleep timer when the rate limit is reached. Note that this only works
         if you have a Premium subscription (Starter or higher) from FinancialModelingPrep. Defaults to False.
         progress_bar (bool): Whether to show a progress bar when retrieving data over 10 tickers. Defaults to True.
-        user_subsription (str): The subscription type of the user. Defaults to "Free".
+        user_subscription (str): The subscription type of the user. Defaults to "Free".
 
     Returns:
         pd.DataFrame: the earnings calendar data.
@@ -1141,7 +1151,10 @@ def get_dividend_calendar(
             f"{ticker}?apikey={api_key}&from={start_date}&to={end_date}"
         )
         dividend_calendar = helpers.get_financial_data(
-            url=url, sleep_timer=sleep_timer, raw=True
+            url=url,
+            sleep_timer=sleep_timer,
+            raw=True,
+            user_subscription=user_subscription,
         )
 
         try:
@@ -1216,7 +1229,7 @@ def get_dividend_calendar(
 
     # Checks if any errors are in the dataset and if this is the case, reports them
     dividend_calendar_dict = helpers.check_for_error_messages(
-        dataset_dictionary=dividend_calendar_dict, user_subscription=user_subsription
+        dataset_dictionary=dividend_calendar_dict, user_subscription=user_subscription
     )
 
     if no_data:
@@ -1241,7 +1254,7 @@ def get_esg_scores(
     end_date: str | None = None,
     sleep_timer: bool = False,
     progress_bar: bool = True,
-    user_subsription: str = "Free",
+    user_subscription: str = "Free",
 ):
     """
     Obtains the ESG Scores for a selection of companies.
@@ -1255,7 +1268,7 @@ def get_esg_scores(
         sleep_timer (bool): Whether to set a sleep timer when the rate limit is reached. Note that this only works
         if you have a Premium subscription (Starter or higher) from FinancialModelingPrep. Defaults to False.
         progress_bar (bool): Whether to show a progress bar when retrieving data over 10 tickers. Defaults to True.
-        user_subsription (str): The subscription type of the user. Defaults to "Free".
+        user_subscription (str): The subscription type of the user. Defaults to "Free".
 
     Returns:
         pd.DataFrame: the earnings calendar data.
@@ -1266,7 +1279,9 @@ def get_esg_scores(
             "https://financialmodelingprep.com/api/v4/esg-environmental-social-governance-data?"
             f"symbol={ticker}&apikey={api_key}"
         )
-        esg_scores = helpers.get_financial_data(url=url, sleep_timer=sleep_timer)
+        esg_scores = helpers.get_financial_data(
+            url=url, sleep_timer=sleep_timer, user_subscription=user_subscription
+        )
 
         try:
             if "date" not in esg_scores.columns:
@@ -1347,7 +1362,7 @@ def get_esg_scores(
 
     # Checks if any errors are in the dataset and if this is the case, reports them
     esg_scores_dict = helpers.check_for_error_messages(
-        dataset_dictionary=esg_scores_dict, user_subscription=user_subsription
+        dataset_dictionary=esg_scores_dict, user_subscription=user_subscription
     )
 
     if no_data:

@@ -24,6 +24,7 @@ def get_financial_data(
     url: str,
     sleep_timer: bool = True,
     raw: bool = False,
+    user_subscription: str = "Free",
 ) -> pd.DataFrame:
     """
     Collects the financial data from the FinancialModelingPrep API. This is a
@@ -63,9 +64,14 @@ def get_financial_data(
             ):
                 return pd.DataFrame(columns=["NOT AVAILABLE"])
 
+            if "Bandwidth Limit Reach" in response.json()["Error Message"]:
+                return pd.DataFrame(columns=["BANDWIDTH LIMIT REACH"])
             if "Limit Reach" in response.json()["Error Message"]:
-                print(sleep_timer, url)
-                if sleep_timer and limit_retry_counter < RETRY_LIMIT:
+                if (
+                    sleep_timer
+                    and limit_retry_counter < RETRY_LIMIT
+                    and user_subscription != "Free"
+                ):
                     time.sleep(5.01)
                     limit_retry_counter += 1
                 else:
@@ -439,6 +445,7 @@ def check_for_error_messages(
     """
 
     not_available = []
+    bandwidth_limit_reach = []
     no_data = []
     us_stocks_only = []
     invalid_api_key = []
@@ -447,6 +454,8 @@ def check_for_error_messages(
     for ticker, dataframe in dataset_dictionary.items():
         if "NOT AVAILABLE" in dataframe.columns:
             not_available.append(ticker)
+        if "BANDWIDTH LIMIT REACH" in dataframe.columns:
+            bandwidth_limit_reach.append(ticker)
         if "NO DATA" in dataframe.columns:
             no_data.append(ticker)
         if "US STOCKS ONLY" in dataframe.columns:
@@ -465,13 +474,21 @@ def check_for_error_messages(
             "https://www.jeroenbouma.com/fmp"
         )
 
+    if bandwidth_limit_reach:
+        print(
+            f"The bandwidth limit has been reached for the following tickers: {', '.join(bandwidth_limit_reach)}.\n"
+            "Consider upgrading your plan to a higher plan to increase your bandwidth limit. You can get 15% "
+            "off by using the following affiliate link which also supports the project: "
+            "https://www.jeroenbouma.com/fmp"
+        )
+
     if no_data:
         print(
             f"No data found for {', '.join(no_data)}\nVerify if the ticker has any data to begin with. "
             "If it does, please open an issue here: https://github.com/JerBouma/FinanceToolkit/issues"
         )
 
-        if user_subscription:
+        if user_subscription == "Free":
             print(
                 "Given that you are using the Free plan, it could be due to reaching the API "
                 "limit of the day, consider upgrading your plan. You can get 15% off by "

@@ -30,7 +30,16 @@ if not st.session_state.get("portfolio"):
         - Compare returns between different assets using interactive bar charts.
         - Evaluate transactions performance to highlight top and worst trades.
         - Inspect comprehensive transaction details including cumulative PnL and trade statistics.
+
+        Find below a video showcasing the capabilities of this dashboard once a portfolio file is uploaded
+        and the API key is entered.
         """
+    )
+
+    st.session_state["intro_video"] = st.video(
+        "pages/assets/portfolio-dashboard.mov",
+        autoplay=True,
+        muted=True,
     )
 
 # Sidebar details
@@ -85,6 +94,7 @@ if (
     and st.session_state["api_key"]
 ):
     st.session_state["instructions"].empty()
+    st.session_state["intro_video"].empty()
 
     with tempfile.NamedTemporaryFile(
         delete=False, suffix=st.session_state["portfolio_file"].name
@@ -114,7 +124,6 @@ if st.session_state.get("portfolio"):
 
     # Portfolio Overview
     try:
-        st.subheader("Detailed Portfolio Overview")
         portfolio_overview = st.session_state["portfolio"].get_portfolio_overview()
         portfolio_overview = portfolio_overview.reset_index()
 
@@ -255,9 +264,67 @@ if st.session_state.get("portfolio"):
     except Exception as e:
         st.error(f"Error fetching portfolio overview data: {e}")
 
+    try:
+        positions_overview = st.session_state["portfolio"].get_positions_overview()
+        st.markdown(
+            "Explore the evolution of various portfolio metrics over time using the interactive graphs below."
+        )
+        tab_columns = positions_overview.columns.get_level_values(0).unique()
+
+        # Create a tab for each column in the positions overview and display a graph for numeric columns
+        tabs = st.tabs(list(tab_columns))
+
+        for col, tab in zip(tab_columns, tabs):
+            with tab:
+                # Write commentary based on what the graph depicts
+                if col in ["Current Weight", "Invested Weight"]:
+                    commentary = (
+                        f"The graph above shows the evolution of {col} as a stacked area chart, "
+                        "allowing you to observe how each company's allocation contributes to the "
+                        "overall portfolio over time."
+                    )
+                elif col in ["Return", "Benchmark Return", "Alpha"]:
+                    commentary = (
+                        f"This line chart displays trends of {col} for each company. "
+                        "Notice how peaks and troughs can indicate periods of strong or weak performance, "
+                        "potentially influenced by market events or company-specific factors."
+                    )
+                else:
+                    commentary = (
+                        f"The graph illustrates the trend of {col} over time for all companies. "
+                        "This visualization helps in identifying long-term trends, seasonal patterns, "
+                        "or anomalies in the data."
+                    )
+                st.markdown(commentary)
+
+                fig = go.Figure()
+
+                for company in positions_overview.columns.get_level_values(1).unique():
+                    if positions_overview[col, company].dtype in [int, float]:
+                        trace_kwargs = dict(
+                            x=positions_overview.index.to_timestamp(),
+                            y=positions_overview[col, company],
+                            name=company,
+                            mode="lines",
+                        )
+                    if col in ["Current Weight", "Invested Weight"]:
+                        trace_kwargs["stackgroup"] = "one"
+                    else:
+                        trace_kwargs["fill"] = "tozeroy"
+                    fig.add_trace(go.Scatter(**trace_kwargs))
+
+                fig.update_layout(
+                    xaxis_title="Date",
+                    yaxis_title=col,
+                    height=600,
+                    showlegend=True,
+                )
+                st.plotly_chart(fig, use_container_width=True)
+    except Exception as e:
+        st.error(f"Error fetching positions overview data: {e}")
+
     # Portfolio & Transactions Performance
     try:
-        st.subheader("Portfolio & Transactions Performance")
         portfolio_performance = st.session_state["portfolio"].get_portfolio_performance(
             period=frequency
         )
@@ -307,8 +374,8 @@ if st.session_state.get("portfolio"):
         )
 
         st.markdown(
-            f"On {best_date}, the portfolio performed best, driven by {best_str}, "
-            f"while on {worst_date} it performed worst, driven by {worst_str}."
+            f"In {best_date}, the portfolio performed best, driven by {best_str}, "
+            f"while in {worst_date} it performed worst, driven by {worst_str}."
         )
 
         portfolio_performance["Date"] = (
@@ -372,7 +439,7 @@ if st.session_state.get("portfolio"):
             best_sentences = (
                 "The best 3 transactions are "
                 + ", ".join(
-                    f"{row['Identifier']} on {row['Date']} (Return: {row['Return']:.2%})"
+                    f"{row['Identifier']} in {row['Date']} (Return: {row['Return']:.2%})"
                     for _, row in best_transactions.iterrows()
                 )
                 + "."
@@ -380,7 +447,7 @@ if st.session_state.get("portfolio"):
             worst_sentences = (
                 "The worst 3 transactions are "
                 + ", ".join(
-                    f"{row['Identifier']} on {row['Date']} (Return: {row['Return']:.2%})"
+                    f"{row['Identifier']} in {row['Date']} (Return: {row['Return']:.2%})"
                     for _, row in worst_transactions.iterrows()
                 )
                 + "."
@@ -426,7 +493,6 @@ if st.session_state.get("portfolio"):
         transactions_overview = st.session_state[
             "portfolio"
         ].get_transactions_overview()
-        st.subheader("Transactions Overview")
         if not transactions_overview.empty:
             current_pnl = transactions_overview["Cumulative PnL"].iloc[-1]
             current_pnl = f"{current_pnl:.2f}"
@@ -441,10 +507,16 @@ if st.session_state.get("portfolio"):
                 for index, row in bottom_transactions.iterrows()
             )
             sentence = (
-                f"Cumulative PnL: **{current_pnl}**. Top 3 transactions: "
-                f"{top_str}. Bottom 3 transactions: {bottom_str}."
+                f"The Cumulative PnL was **{current_pnl}** where the top 3 transactions were "
+                f"{top_str} and the bottom 3 transactions were {bottom_str}."
             )
             st.markdown(sentence)
+
+        transactions_overview = (
+            transactions_overview.drop("Identifier", axis=1)
+            if "Identifier" in transactions_overview.columns
+            else transactions_overview
+        )
 
         styled_transactions_overview = transactions_overview.style.map(
             lambda x: (

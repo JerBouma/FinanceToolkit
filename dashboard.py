@@ -40,7 +40,7 @@ if st.session_state["invalid_api_key"]:
         "pages/assets/financetoolkit-dashboard.mov",
         autoplay=True,
         muted=True,
-        start_time=3,
+        start_time=15,
         end_time=66,
     )
 

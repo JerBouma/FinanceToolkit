@@ -56,9 +56,12 @@ def plot_data(
 
         if "BS" in variable:
             # Balance Sheet Statement
-            dataset = finance_toolkit.get_balance_sheet_statement(
-                growth=growth, trailing=trailing_value
-            )
+            if trailing_value:
+                st.toast(
+                    f"No trailing data available for {variable}, showing regular chart.",
+                    icon="❗️",
+                )
+            dataset = finance_toolkit.get_balance_sheet_statement(growth=growth)
         elif "IS" in variable:
             # Income Statement
             dataset = finance_toolkit.get_income_statement(

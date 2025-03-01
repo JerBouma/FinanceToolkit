@@ -10,11 +10,11 @@ repos:
       - id: check-merge-conflict
       - id: detect-private-key
   - repo: https://github.com/psf/black
-    rev: 24.8.0
+    rev: 25.1.0
     hooks:
       - id: black
   - repo: https://github.com/charliermarsh/ruff-pre-commit
-    rev: "v0.6.7"
+    rev: "v0.9.9"
     hooks:
       - id: ruff
         entry: ruff check --ignore PLR0915,S301

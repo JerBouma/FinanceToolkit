@@ -292,7 +292,7 @@ And below these Unemployment Rates are plotted over time:
 Through a custom XLSX, XLS or CSV file you are able to load in your own portfolio directly into the Finance Toolkit. This allows you to view your positions and performance (over time) versus a benchmark and other positions as well as your PnL development over time. Furthermore, the portfolio can be directly loaded in the core functionality of the Finance Toolkit as well making it possible to calculate all metrics and ratios for your portfolio (which is a time-weighted sum of all positions). The portfolio module is a standalone module and can be used as such by using `from financetoolkit import Portfolio`.
 
 ___
-<b><div align="center">It is important to note that it requires a specific Excel template to work, see for further instructions the following notebook <a href="https://www.jeroenbouma.com/projects/financetoolkit/portfolio" target="_blank">here</a>.</div></b>
+<b><div align="center">It is important to note that it requires a specific Excel template to work, see for further instructions the following notebook <a href="https://www.jeroenbouma.com/projects/financetoolkit/portfolio-module" target="_blank">here</a>.</div></b>
 ___
 
 The table below shows one of the functionalities of the Portfolio module but is purposely shrunken down given the >30 assets.
@@ -3083,7 +3083,7 @@ However, two countries with the same poverty rates may differ in terms of the re
 
 Through the `Portfolio` class, you are able to load in your own portfolio and perform various calculations to evaluate your portfolio's performance compared to some benchmark. Furthermore, it allows you to pull your portfolio directly into the `Toolkit` including a special "Portfolio" ticker which is constructed as the weighted average of your portfolio at a given point in time. 
 
-The `Portfolio` class can be called by using `from financetoolkit import Portfolio`. **Find the Notebook [here](https://www.jeroenbouma.com/projects/financetoolkit/portfolio-evaluation) and the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/portfolio) which includes an explanation about each function, the parameters and an example.**
+The `Portfolio` class can be called by using `from financetoolkit import Portfolio`. **Find the Notebook [here](https://www.jeroenbouma.com/projects/financetoolkit/portfolio-module) and the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/portfolio) which includes an explanation about each function, the parameters and an example.**
 
 <details>
     <summary><b>Portfolio Evaluation</b></summary>

@@ -4,6 +4,7 @@ import tempfile
 
 import pandas as pd
 import plotly.graph_objects as go
+import requests
 import streamlit as st
 
 from financetoolkit import Portfolio
@@ -54,14 +55,19 @@ with st.sidebar:
         "and enter your API key, then click the 'Load Portfolio' button to begin."
     )
 
-    with open(
-        "financetoolkit/portfolio/example_datasets/example_portfolio.xlsx", "rb"
-    ) as file:
+    try:
+        url = "https://raw.githubusercontent.com/JerBouma/FinanceToolkit/main/financetoolkit/portfolio/example_datasets/example_portfolio.xlsx"
+        response = requests.get(url, timeout=200)
         st.session_state["download button"] = st.download_button(
             label="Download Portfolio Template",
-            data=file,
+            data=response.content,
             file_name="example_portfolio.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+    except Exception:
+        st.markdown(
+            "Please download the following file: https://github.com/JerBouma/FinanceToolkit/raw/refs/heads/main/"
+            "financetoolkit/portfolio/example_datasets/example_portfolio.xlsx"
         )
 
     file_uploader_placeholder = st.sidebar.empty()

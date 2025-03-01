@@ -9,8 +9,9 @@ import pandas as pd
 from financetoolkit.portfolio import helpers, overview_model, portfolio_model
 from financetoolkit.toolkit_controller import Toolkit
 
-# pylint: disable=too-many-instance-attributes,abstract-class-instantiated,
-# pylint: disable=too-few-public-methods,protected-access,too-many-lines
+# pylint: disable=too-many-instance-attributes,too-many-lines,line-too-long,too-many-locals
+# pylint: disable=too-many-function-args,too-many-public-methods
+# ruff: noqa: E501
 
 
 class Portfolio:
@@ -68,6 +69,25 @@ class Portfolio:
         Raises:
             ValueError: If the provided configuration file is not in YAML format.
             ValueError: If no portfolio dataset is provided and `example` is set to False.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Portfolio
+
+        # Download porfolio files
+        portfolio = Portfolio()
+
+        # Load the portfolio dataset
+        portfolio = Portfolio(portfolio_dataset="portfolio_template.xlsx")
+
+        # Load an example portfolio instead
+        portfolio = Portfolio(example=True)
+
+        # Use an API key to access all features
+        portfolio = Portfolio(
+            portfolio_dataset="portfolio_template.xlsx",
+            api_key="FINANCIAL_MODELING_PREP_KEY")
         """
         example_xlsx_path = str(
             resources.files(__package__).joinpath(
@@ -205,6 +225,46 @@ class Portfolio:
         the possibility to calculate any Toolkit metric for all assets in the portfolio
         in combination with the Portfolio itself which is a weighted average of other
         results based on the portfolio weights over time.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Portfolio
+
+        portfolio = Portfolio(example=True, api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit = portfolio.toolkit
+
+        toolkit.ratios.get_net_profit_margin()
+        ```
+
+        Which returns:
+
+        |           |    2020 |   2021 |    2022 |   2023 |     2024 |
+        |:----------|--------:|-------:|--------:|-------:|---------:|
+        | AAPL      |  0.2091 | 0.2588 |  0.2531 | 0.2531 |   0.2397 |
+        | ALGN      |  0.7184 | 0.1953 |  0.0968 | 0.1152 |   0.1054 |
+        | AMD       |  0.255  | 0.1924 |  0.0559 | 0.0377 |   0.0636 |
+        | AMZN      |  0.0553 | 0.071  | -0.0053 | 0.0529 |   0.0929 |
+        | ASML      |  0.2542 | 0.3161 |  0.2656 | 0.2844 |   0.2679 |
+        | AVGO      |  0.1239 | 0.2454 |  0.3462 | 0.3931 |   0.1143 |
+        | BAC       |  0.2092 | 0.3588 |  0.2899 | 0.269  |   0.2663 |
+        | BLDR      |  0.0366 | 0.0867 |  0.121  | 0.0901 |   0.0657 |
+        | CAMT      |  0.1397 | 0.2235 |  0.2491 | 0.2493 | nan      |
+        | CWST      |  0.1176 | 0.0462 |  0.0489 | 0.0201 |   0.0087 |
+        | FICO      |  0.1826 | 0.2978 |  0.2712 | 0.2837 |   0.2986 |
+        | FIX       |  0.0526 | 0.0466 |  0.0594 | 0.0621 |   0.0743 |
+        | GOOGL     |  0.2206 | 0.2951 |  0.212  | 0.2401 |   0.286  |
+        | KHC       |  0.0136 | 0.0389 |  0.0892 | 0.1072 |   0.1062 |
+        | META      |  0.339  | 0.3338 |  0.199  | 0.2898 |   0.3791 |
+        | MPWR      |  0.1947 | 0.2004 |  0.2439 | 0.2347 | nan      |
+        | MSFT      |  0.3096 | 0.3645 |  0.3669 | 0.3415 |   0.3596 |
+        | NFLX      |  0.1105 | 0.1723 |  0.1421 | 0.1604 |   0.2234 |
+        | NVDA      |  0.2561 | 0.2598 |  0.3623 | 0.1619 |   0.4885 |
+        | OXY       | -0.7599 | 0.0895 |  0.3632 | 0.1662 |   0.0889 |
+        | SKY       |  0.0598 | 0.1124 |  0.1542 | 0.0724 | nan      |
+        | WMT       |  0.0284 | 0.0242 |  0.0239 | 0.0191 |   0.0239 |
+        | Portfolio |  0.2373 | 0.2183 |  0.2001 | 0.2098 |   0.202  |
         """
         if self._api_key is None:
             print(
@@ -326,6 +386,31 @@ class Portfolio:
             - Cost or income columns are processed as categorical data, with optional customization.
             - The dataset is sorted by the date column in ascending order, and the index is set to both
             the date and ticker columns.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Portfolio
+
+        portfolio = Portfolio(example=True, api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        portfolio.read_portfolio_dataset()
+        ```
+
+        Which returns:
+
+        | Date       | Name   |    Price |   Volume |   Costs | Currency   |
+        |:-----------|:-------|---------:|---------:|--------:|:-----------|
+        | 2024-05-14 | CAMT   |  94.4243 |        4 |       0 | USD        |
+        | 2024-06-11 | META   | 505.574  |        8 |       0 | USD        |
+        | 2024-06-18 | MPWR   | 847.6    |       14 |      -1 | USD        |
+        | 2024-06-21 | GOOGL  | 179.908  |       -2 |       0 | USD        |
+        | 2024-07-30 | AMD    | 139.57   |        3 |       0 | USD        |
+        | 2024-08-29 | AMD    | 146.358  |       -5 |      -2 | USD        |
+        | 2024-10-25 | MCHI   |  48.8436 |        6 |       0 | USD        |
+        | 2024-11-05 | EMXC   |  58.2921 |       -5 |      -1 | USD        |
+        | 2024-11-13 | VOO    | 552.136  |       11 |       0 | USD        |
+        | 2024-12-05 | OXY    |  48.2517 |       -2 |       0 | USD        |
         """
         date_column = (
             date_column if date_column else self._cfg["general"]["date_columns"]
@@ -491,6 +576,31 @@ class Portfolio:
                 - `self._benchmark_prices_per_ticker`: Benchmark prices for each ticker.
                 - `self._latest_benchmark_price`: The latest available benchmark price.
                 - `self._benchmark_specific_prices`: The specific benchmark price for each portfolio transaction.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Portfolio
+
+        portfolio = Portfolio(example=True, api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        portfolio.collect_benchmark_historical_data()
+        ```
+
+        Which returns:
+
+        | Date       |    Open |    High |     Low |   Close |   Adj Close |      Volume |   Dividends |   Return |   Volatility |   Excess Return |   Excess Volatility |   Cumulative Return |
+        |:-----------|--------:|--------:|--------:|--------:|------------:|------------:|------------:|---------:|-------------:|----------------:|--------------------:|--------------------:|
+        | 2025-02-14 | 6115.52 | 6127.47 | 6107.62 | 6114.63 |     6114.63 | 4.33519e+09 |           0 |  -0.0001 |       0.0122 |         -0.0448 |               0.018 |              4.2419 |
+        | 2025-02-18 | 6121.6  | 6129.63 | 6099.51 | 6129.58 |     6129.58 | 4.68498e+09 |           0 |   0.0024 |       0.0122 |         -0.043  |               0.018 |              4.2523 |
+        | 2025-02-19 | 6117.76 | 6147.43 | 6111.15 | 6144.15 |     6144.15 | 4.56233e+09 |           0 |   0.0024 |       0.0122 |         -0.0429 |               0.018 |              4.2624 |
+        | 2025-02-20 | 6134.5  | 6134.5  | 6084.59 | 6117.52 |     6117.52 | 4.81369e+09 |           0 |  -0.0043 |       0.0122 |         -0.0493 |               0.018 |              4.2439 |
+        | 2025-02-21 | 6114.1  | 6114.82 | 6008.56 | 6013.13 |     6013.13 | 5.43456e+09 |           0 |  -0.0171 |       0.0122 |         -0.0613 |               0.018 |              4.1715 |
+        | 2025-02-24 | 6026.69 | 6043.65 | 5977.83 | 5983.25 |     5983.25 | 4.99012e+09 |           0 |  -0.005  |       0.0122 |         -0.0489 |               0.018 |              4.1508 |
+        | 2025-02-25 | 5982.73 | 5992.65 | 5908.49 | 5955.25 |     5955.25 | 5.37469e+09 |           0 |  -0.0047 |       0.0122 |         -0.0477 |               0.018 |              4.1314 |
+        | 2025-02-26 | 5970.87 | 6009.82 | 5932.69 | 5956.06 |     5956.06 | 4.86958e+09 |           0 |   0.0001 |       0.0122 |         -0.0424 |               0.018 |              4.1319 |
+        | 2025-02-27 | 5981.88 | 5993.69 | 5858.78 | 5861.57 |     5861.57 | 5.05768e+09 |           0 |  -0.0159 |       0.0122 |         -0.0587 |               0.018 |              4.0664 |
+        | 2025-02-28 | 5856.74 | 5959.4  | 5837.66 | 5954.5  |     5954.5  | 6.44114e+09 |           0 |   0.0159 |       0.0122 |         -0.0264 |               0.018 |              4.1309 |
         """
         if self._weekly_historical_data.empty:
             self.collect_historical_data()
@@ -632,6 +742,32 @@ class Portfolio:
             - The latest adjusted price is also captured and available in the `self._latest_price` attribute.
             - If currency conversions are applied, a warning is displayed when mismatches between transaction and
               historical data currencies are found (e.g., for ISIN codes).
+
+        As an example:
+
+        ```python
+        from financetoolkit import Portfolio
+
+        portfolio = Portfolio(example=True, api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        portfolio.collect_historical_data()
+        ```
+
+        Which returns:
+
+
+        | Date       |   Open |   High |   Low |   Close |   Adj Close |      Volume |   Dividends |   Return |   Volatility |   Excess Return |   Excess Volatility |   Cumulative Return |
+        |:-----------|-------:|-------:|------:|--------:|------------:|------------:|------------:|---------:|-------------:|----------------:|--------------------:|--------------------:|
+        | 2025-02-14 |  48.23 |  49.09 | 48.01 |   48.06 |       48.06 | 1.04361e+07 |           0 |   0.0038 |       0.0253 |         -0.0409 |              0.0284 |              9.2171 |
+        | 2025-02-18 |  48.86 |  49.14 | 47.91 |   48.84 |       48.84 | 1.53775e+07 |           0 |   0.0162 |       0.0253 |         -0.0292 |              0.0284 |              9.3667 |
+        | 2025-02-19 |  49.5  |  52.17 | 49.3  |   50.99 |       50.99 | 2.72406e+07 |           0 |   0.044  |       0.0253 |         -0.0013 |              0.0284 |              9.7791 |
+        | 2025-02-20 |  51.17 |  52.58 | 50.49 |   52.09 |       52.09 | 1.41794e+07 |           0 |   0.0216 |       0.0253 |         -0.0234 |              0.0284 |              9.99   |
+        | 2025-02-21 |  51.8  |  51.99 | 50.39 |   50.42 |       50.42 | 1.38929e+07 |           0 |  -0.0321 |       0.0253 |         -0.0763 |              0.0284 |              9.6698 |
+        | 2025-02-24 |  50.07 |  50.4  | 49.5  |   49.86 |       49.86 | 1.11417e+07 |           0 |  -0.0111 |       0.0253 |         -0.055  |              0.0284 |              9.5624 |
+        | 2025-02-25 |  49.81 |  49.96 | 48.57 |   48.89 |       48.89 | 1.11453e+07 |           0 |  -0.0195 |       0.0253 |         -0.0625 |              0.0284 |              9.3763 |
+        | 2025-02-26 |  49.02 |  49.2  | 48.26 |   48.55 |       48.55 | 7.2188e+06  |           0 |  -0.007  |       0.0253 |         -0.0495 |              0.0284 |              9.3111 |
+        | 2025-02-27 |  48.9  |  49.43 | 48.34 |   48.65 |       48.65 | 1.04084e+07 |           0 |   0.0021 |       0.0253 |         -0.0407 |              0.0284 |              9.3303 |
+        | 2025-02-28 |  48.48 |  48.93 | 47.75 |   48.84 |       48.84 | 1.26817e+07 |           0 |   0.0039 |       0.0253 |         -0.0384 |              0.0284 |              9.3667 |
         """
         if not self._toolkit:
             self._toolkit = Toolkit(
@@ -781,6 +917,31 @@ class Portfolio:
             - The positions overview is calculated based on portfolio tickers, transaction data,
             and historical price data.
             - The resulting overview DataFrame is rounded to the specified or default precision.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Portfolio
+
+        portfolio = Portfolio(example=True, api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        portfolio.get_positions_overview()
+        ```
+
+        Which returns:
+
+        | Date       |   Volume |   Costs |   Invested Amount |   Current Value |   Cumulative Return |   Invested Weight |   Current Weight |
+        |:-----------|---------:|--------:|------------------:|----------------:|--------------------:|------------------:|-----------------:|
+        | 2025-02-14 |      101 |     -14 |           1747.63 |         4854.06 |              2.7775 |            0.0126 |           0.0052 |
+        | 2025-02-18 |      101 |     -14 |           1747.63 |         4932.84 |              2.8226 |            0.0126 |           0.0053 |
+        | 2025-02-19 |      101 |     -14 |           1747.63 |         5149.99 |              2.9468 |            0.0126 |           0.0056 |
+        | 2025-02-20 |      101 |     -14 |           1747.63 |         5261.09 |              3.0104 |            0.0126 |           0.0058 |
+        | 2025-02-21 |      101 |     -14 |           1747.63 |         5092.42 |              2.9139 |            0.0126 |           0.0057 |
+        | 2025-02-24 |      101 |     -14 |           1747.63 |         5035.86 |              2.8815 |            0.0126 |           0.0056 |
+        | 2025-02-25 |      101 |     -14 |           1747.63 |         4937.89 |              2.8255 |            0.0126 |           0.0054 |
+        | 2025-02-26 |      101 |     -14 |           1747.63 |         4903.55 |              2.8058 |            0.0126 |           0.0053 |
+        | 2025-02-27 |      101 |     -14 |           1747.63 |         4913.65 |              2.8116 |            0.0126 |           0.0055 |
+        | 2025-02-28 |      101 |     -14 |           1747.63 |         4932.84 |              2.8226 |            0.0126 |           0.0054 |
         """
         if self._weekly_historical_data.empty:
             try:
@@ -887,6 +1048,31 @@ class Portfolio:
             - The portfolio overview includes important metrics such as returns, costs, and volume, and
             is based on both the portfolio's dataset and benchmark data.
             - The resulting DataFrame is rounded to the specified or default precision.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Portfolio
+
+        portfolio = Portfolio(example=True, api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        portfolio.get_portfolio_overview()
+        ```
+
+        Which returns:
+
+        | Identifier   |   Volume |   Costs |    Price |   Invested |   Latest Price |   Latest Value |   Return |   Return Value |   Benchmark Return |   Volatility |   Benchmark Volatility |   Alpha |   Beta |   Weight |
+        |:-------------|---------:|--------:|---------:|-----------:|---------------:|---------------:|---------:|---------------:|-------------------:|-------------:|-----------------------:|--------:|-------:|---------:|
+        | MPWR         |      116 |     -27 | 255.881  |   29655.2  |        170.28  |       19752.5  |  -0.3339 |     -9902.68   |             1.1199 |       0.3064 |                 0.1937 | -1.4538 | 1.1553 |   0.025  |
+        | MSFT         |      105 |     -11 |  40.6437 |    4256.59 |        102.5   |       10762.5  |   1.5284 |      6505.91   |             2.9661 |       0.5366 |                 0.1937 | -1.4377 | 1.3618 |   0.0136 |
+        | NFLX         |      114 |     -32 | 125.444  |   14268.6  |        124.92  |       14240.9  |  -0.0019 |       -27.6764 |             2.4024 |       0.5953 |                 0.1937 | -2.4044 | 1.7687 |   0.018  |
+        | NVDA         |       69 |     -27 |   2.0551 |     114.8  |         74.52  |        5141.88 |  43.7898 |      5027.08   |             2.8726 |       0.6826 |                 0.1937 | 40.9172 | 1.2835 |   0.0065 |
+        | OXY          |       27 |     -15 |  39.7355 |    1057.86 |         46.1   |        1244.7  |   0.1766 |       186.842  |             3.2188 |       0.4365 |                 0.1937 | -3.0421 | 1.2279 |   0.0016 |
+        | SKY          |      126 |     -23 |  18.0884 |    2256.14 |        709.08  |       89344.1  |  38.6004 |     87087.9    |             3.4986 |       0.4572 |                 0.1937 | 35.1018 | 1.4054 |   0.1132 |
+        | VOO          |       77 |     -12 | 238.499  |   18352.5  |         53.58  |        4125.66 |  -0.7752 |    -14226.8    |             1.1179 |       0.2683 |                 0.1937 | -1.8931 | 0.8366 |   0.0052 |
+        | VSS          |       98 |     -21 |  77.7056 |    7594.14 |        611.01  |       59879    |   6.8849 |     52284.8    |             1.3078 |       0.4667 |                 0.1937 |  5.5771 | 1.6799 |   0.0759 |
+        | WMT          |       92 |     -18 |  17.8645 |    1625.53 |         48.84  |        4493.28 |   1.7642 |      2867.75   |             2.4786 |       0.4016 |                 0.1937 | -0.7145 | 1.246  |   0.0057 |
+        | Portfolio    |     2142 |    -532 |  59.8406 |  128710    |        368.549 |      789432    |   5.1334 |    660721      |             2.0773 |       0.4187 |                 0.1937 |  3.0561 | 1.3272 |   1      |
         """
         if self._weekly_historical_data.empty:
             try:
@@ -1003,6 +1189,31 @@ class Portfolio:
             - The method uses the `overview_model.create_portfolio_performance` function to compute performance metrics.
             - The resulting DataFrame will be rounded to the specified number of decimal places
             (or the default configuration).
+
+        As an example:
+
+        ```python
+        from financetoolkit import Portfolio
+
+        portfolio = Portfolio(example=True, api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        portfolio.get_portfolio_performance(period='weekly')
+        ```
+
+        Which returns:
+
+        | Date                  | Identifier   |   Volume |   Costs |   Invested Amount |   Current Value |   Invested Weight |   Current Weight |   Return |
+        |:----------------------|:-------------|---------:|--------:|------------------:|----------------:|------------------:|-----------------:|---------:|
+        | 2025-02-24/2025-03-02 | META         |       15 |      -1 |           4794.75 |          803.7  |            0.0346 |           0.0009 |  -0.8324 |
+        | 2025-02-24/2025-03-02 | MPWR         |      122 |     -24 |          30077.9  |        20774.2  |            0.217  |           0.0228 |  -0.3093 |
+        | 2025-02-24/2025-03-02 | MSFT         |      110 |     -11 |           4362.18 |        11275    |            0.0315 |           0.0124 |   1.5847 |
+        | 2025-02-24/2025-03-02 | NFLX         |      125 |     -27 |          16387.9  |        15615    |            0.1183 |           0.0172 |  -0.0472 |
+        | 2025-02-24/2025-03-02 | NVDA         |       81 |     -23 |            149.66 |         6036.12 |            0.0011 |           0.0066 |  39.3322 |
+        | 2025-02-24/2025-03-02 | OXY          |       38 |      -4 |           1424.45 |         1751.8  |            0.0103 |           0.0019 |   0.2298 |
+        | 2025-02-24/2025-03-02 | SKY          |      136 |     -19 |           2455.75 |        96434.9  |            0.0177 |           0.1059 |  38.269  |
+        | 2025-02-24/2025-03-02 | VOO          |       79 |     -12 |          18660.8  |         4232.82 |            0.1347 |           0.0046 |  -0.7732 |
+        | 2025-02-24/2025-03-02 | VSS          |      109 |     -19 |           8393.99 |        66600.1  |            0.0606 |           0.0732 |   6.9343 |
+        | 2025-02-24/2025-03-02 | WMT          |      101 |     -14 |           1747.63 |         4932.84 |            0.0126 |           0.0054 |   1.8226 |
         """
         if not period:
             period = "quarterly" if self._quarterly else "yearly"
@@ -1114,6 +1325,31 @@ class Portfolio:
               and profit & loss.
             - The transaction ratios and PnL are added to the original portfolio dataset as new columns.
             - If no rounding is provided, the rounding precision specified in the configuration is used.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Portfolio
+
+        portfolio = Portfolio(example=True, api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        portfolio.get_transactions_overview()
+        ```
+
+        Which returns:
+
+        | Date       | Name   |    Price |   Volume |   Costs | Currency   |   Invested Amount |   Current Value |   % Return |     Return |   PnL |   Cumulative PnL |
+        |:-----------|:-------|---------:|---------:|--------:|:-----------|------------------:|----------------:|-----------:|-----------:|------:|-----------------:|
+        | 2024-02-01 | GOOGL  | 140.041  |       14 |       0 | USD        |          1960.57  |         2383.92 |     0.2159 |   423.351  |     0 |          4724.68 |
+        | 2024-02-12 | BAC    |  33.0126 |        5 |      -3 | USD        |           162.063 |         9431.75 |    57.198  |  9269.69   |     0 |          4724.68 |
+        | 2024-02-22 | MCHI   |  38.4963 |        7 |      -1 | USD        |           268.474 |          375.06 |     0.397  |   106.586  |     0 |          4724.68 |
+        | 2024-03-12 | MPWR   | 727.32   |       11 |       0 | USD        |          8000.52  |         1873.08 |    -0.7659 | -6127.44   |     0 |          4737.7  |
+        | 2024-05-14 | CAMT   |  94.4243 |        4 |       0 | USD        |           377.697 |          195.36 |    -0.4828 |  -182.337  |     0 |          4737.7  |
+        | 2024-06-11 | META   | 505.574  |        8 |       0 | USD        |          4044.59  |          428.64 |    -0.894  | -3615.95   |     0 |          4737.7  |
+        | 2024-06-18 | MPWR   | 847.6    |       14 |      -1 | USD        |         11865.4   |         2383.92 |    -0.7991 | -9481.48   |     0 |          4737.7  |
+        | 2024-07-30 | AMD    | 139.57   |        3 |       0 | USD        |           418.711 |         1089.99 |     1.6032 |   671.279  |     0 |          5092.28 |
+        | 2024-10-25 | MCHI   |  48.8436 |        6 |       0 | USD        |           293.062 |          321.48 |     0.097  |    28.4183 |     0 |          5703.28 |
+        | 2024-11-13 | VOO    | 552.136  |       11 |       0 | USD        |          6073.5   |          589.38 |    -0.903  | -5484.12   |     0 |          5745.3  |
         """
         pnl_method = pnl_method.upper()
 
@@ -1235,6 +1471,31 @@ class Portfolio:
             - The method uses historical price data from the specified period and benchmarks
               to calculate the metrics.
             - If no rounding is specified, the rounding precision from the configuration is used.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Portfolio
+
+        portfolio = Portfolio(example=True, api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        portfolio.get_transactions_performance(period='quarterly')
+        ```
+
+        Which returns:
+
+        | Date   |   Volume |    Price |   Costs |   Invested Amount |   Current Value |   Return |   Benchmark Return |   Alpha |
+        |:-------|---------:|---------:|--------:|------------------:|----------------:|---------:|-------------------:|--------:|
+        | 2023Q4 |       15 |  41.0726 |      -3 |           619.088 |         597.029 |  -0.0356 |             0.0906 | -0.1262 |
+        | 2024Q1 |        5 |  33.0126 |      -3 |           168.063 |        6248.05  |  36.1768 |             0.0463 | 36.1305 |
+        | 2024Q1 |       14 | 140.041  |       0 |          1960.57  |        2105.39  |   0.0739 |             0.071  |  0.0029 |
+        | 2024Q1 |        7 |  38.4963 |      -1 |           270.474 |         271.706 |   0.0046 |             0.0329 | -0.0283 |
+        | 2024Q1 |       11 | 727.32   |       0 |          8000.52  |        1654.23  |  -0.7932 |             0.0153 | -0.8085 |
+        | 2024Q2 |        4 |  94.4243 |       0 |           377.697 |         249.923 |  -0.3383 |             0.0407 | -0.379  |
+        | 2024Q2 |        8 | 505.574  |       0 |          4044.59  |         331.03  |  -0.9182 |             0.0158 | -0.934  |
+        | 2024Q2 |       14 | 847.6    |      -1 |         11867.4   |        2543.81  |  -0.7856 |            -0.0048 | -0.7808 |
+        | 2024Q4 |        6 |  48.8436 |       0 |           293.062 |         281.16  |  -0.0406 |             0.0127 | -0.0533 |
+        | 2024Q4 |       11 | 552.136  |       0 |          6073.5   |         515.46  |  -0.9151 |            -0.0173 | -0.8978 |
         """
         if not period:
             period = "quarterly" if self._quarterly else "yearly"

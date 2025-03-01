@@ -205,10 +205,6 @@ class Portfolio:
         the possibility to calculate any Toolkit metric for all assets in the portfolio
         in combination with the Portfolio itself which is a weighted average of other
         results based on the portfolio weights over time.
-
-        Returns:
-            Toolkit:
-                A Finance Toolkit object.
         """
         if self._api_key is None:
             print(
@@ -290,7 +286,7 @@ class Portfolio:
         for transaction dates, asset tickers, prices, volumes, and costs/incomes. If necessary, adjustments
         can be made to handle duplicated entries in the dataset based on configuration settings.
 
-        Parameters:
+        Args:
             adjust_duplicates (bool | None): Flag to indicate whether to adjust duplicate rows in the dataset.
                 If None, defaults to the configuration setting.
             date_column (list[str] | None): List of column names for date information.
@@ -634,8 +630,6 @@ class Portfolio:
               a warning message is displayed.
             - The method rounds the data according to the specified or default rounding precision.
             - The latest adjusted price is also captured and available in the `self._latest_price` attribute.
-
-        Note:
             - If currency conversions are applied, a warning is displayed when mismatches between transaction and
               historical data currencies are found (e.g., for ISIN codes).
         """

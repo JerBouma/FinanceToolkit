@@ -88,6 +88,7 @@ class Portfolio:
         portfolio = Portfolio(
             portfolio_dataset="portfolio_template.xlsx",
             api_key="FINANCIAL_MODELING_PREP_KEY")
+        ```
         """
         example_xlsx_path = str(
             resources.files(__package__).joinpath(

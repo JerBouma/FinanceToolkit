@@ -357,7 +357,7 @@ class Toolkit:
         # Take out duplicate tickers if applicable
         deduplicated_tickers = list(set(self._tickers))
 
-        if deduplicated_tickers != self._tickers:
+        if len(deduplicated_tickers) != len(self._tickers):
             duplicate_tickers = [
                 ticker for ticker, count in Counter(self._tickers).items() if count > 1
             ]

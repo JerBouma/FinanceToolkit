@@ -484,8 +484,9 @@ def check_for_error_messages(
 
     if no_data:
         print(
-            f"No data found for {', '.join(no_data)}\nVerify if the ticker has any data to begin with. "
-            "If it does, please open an issue here: https://github.com/JerBouma/FinanceToolkit/issues"
+            "Some tickers have no data, verify if the ticker has any data to begin with. "
+            "If it does, please open an issue here: https://github.com/JerBouma/FinanceToolkit/issues. "
+            f"These tickers are: {', '.join(no_data)}"
         )
 
         if user_subscription == "Free":

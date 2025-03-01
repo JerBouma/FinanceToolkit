@@ -246,7 +246,7 @@ def get_historical_data(
     ):
         print(
             "No data found using FinancialModelingPrep, this is usually due to Bandwidth "
-            "API limits or usage of the Free plan. Therefore data was retrieved from YahooFinance instead: "
+            "API limits or usage of the Free plan. Therefore data was retrieved from YahooFinance instead for: "
             f"{', '.join(yf_tickers)}"
         )
 

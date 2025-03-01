@@ -2913,7 +2913,7 @@ from financetoolkit import Economics
 
 economics = Economics()
 
-economics.get_gross_domestic_product()
+economics.get_consumer_confidence_index()
 ```
 
 > **Consumer Price Index (CPI)**

@@ -12,6 +12,8 @@ __pycache__/
 *.xls
 cached/
 !tests/datasets/*.xlsx
+!financetoolkit/portfolio/example_datasets/*.xlsx
+!financetoolkit/portfolio/example_datasets/*.csv
 
 # C extensions
 *.so

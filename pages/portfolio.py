@@ -57,6 +57,12 @@ with st.sidebar:
 
     file_uploader_placeholder = st.sidebar.empty()
 
+    st.sidebar.markdown(
+        """
+        **To obtain an API key (with a 15% discount), please visit [this page](https://www.jeroenbouma.com/fmp).**
+        """
+    )
+
     st.session_state["api_key"] = st.text_input(
         "API Key", key="api_key_sidebar", type="password"
     )

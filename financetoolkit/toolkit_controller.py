@@ -353,6 +353,24 @@ class Toolkit:
             else:
                 self._tickers.append(ticker)
 
+        # Take out duplicate tickers if applicable
+        deduplicated_tickers = list(set(self._tickers))
+
+        if deduplicated_tickers != self._tickers:
+            duplicate_tickers = list(
+                set(
+                    [
+                        ticker
+                        for ticker in self._tickers
+                        if self._tickers.count(ticker) > 1
+                    ]
+                )
+            )
+            print(
+                f"Found duplicate tickers, duplicate entries of the following tickers are removed: {', '.join(duplicate_tickers)}"
+            )
+            self._tickers = deduplicated_tickers
+
         if self._benchmark_ticker in self._tickers:
             print(
                 f"Please note that the benchmark ticker ({self._benchmark_ticker}) is also "
@@ -368,11 +386,17 @@ class Toolkit:
             determine_plan = helpers.get_financial_data(
                 url=f"https://financialmodelingprep.com/api/v3/income-statement/AAPL?period=quarter&apikey={api_key}",
                 sleep_timer=False,
+                user_subscription="Free",
             )
 
             self._fmp_plan = "Premium"
 
-            for option in ["NOT AVAILABLE", "LIMIT REACH", "INVALID API KEY"]:
+            for option in [
+                "NOT AVAILABLE",
+                "NO DATA",
+                "BANDWIDTH LIMIT REACH",
+                "INVALID API KEY",
+            ]:
                 if option in determine_plan:
                     self._fmp_plan = "Free"
                     break

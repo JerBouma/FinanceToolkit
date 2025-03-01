@@ -4,6 +4,7 @@ __docformat__ = "google"
 
 import pandas as pd
 
+from financetoolkit import helpers
 from financetoolkit.discovery import discovery_model
 
 # pylint: disable=too-many-instance-attributes,too-few-public-methods,too-many-lines,
@@ -65,6 +66,27 @@ class Discovery:
 
         self._api_key = api_key
 
+        # This tests the API key to determine the subscription plan. This is relevant for the sleep timer
+        # but also for other components of the Toolkit. This prevents wait timers from occurring while
+        # it wouldn't result to any other answer than a rate limit error.
+        determine_plan = helpers.get_financial_data(
+            url=f"https://financialmodelingprep.com/api/v3/income-statement/AAPL?period=quarter&apikey={api_key}",
+            sleep_timer=False,
+            user_subscription="Free",
+        )
+
+        self._fmp_plan = "Premium"
+
+        for option in [
+            "NOT AVAILABLE",
+            "NO DATA",
+            "BANDWIDTH LIMIT REACH",
+            "INVALID API KEY",
+        ]:
+            if option in determine_plan:
+                self._fmp_plan = "Free"
+                break
+
     def search_instruments(self, query: str | None = None) -> pd.DataFrame:
         """
         The search instruments function allows you to search for a company or financial instrument
@@ -103,7 +125,7 @@ class Discovery:
             )
 
         symbol_list = discovery_model.get_instruments(
-            api_key=self._api_key, query=query
+            api_key=self._api_key, query=query, user_subscription=self._fmp_plan
         )
 
         return symbol_list
@@ -197,6 +219,7 @@ class Discovery:
             dividend_higher=dividend_higher,
             dividend_lower=dividend_lower,
             is_etf=is_etf,
+            user_subscription=self._fmp_plan,
         )
 
         return stock_screener
@@ -238,7 +261,9 @@ class Discovery:
         | LESL        | Leslie's, Inc.               |   6.91  | NASDAQ Global Select            | NASDAQ          |
         """
 
-        stock_list = discovery_model.get_stock_list(api_key=self._api_key)
+        stock_list = discovery_model.get_stock_list(
+            api_key=self._api_key, user_subscription=self._fmp_plan
+        )
 
         return stock_list
 
@@ -278,7 +303,9 @@ class Discovery:
         | EL       |         1 |      143.9  |      0           |          1 |      142.5  |          143      |              100 |      1.7042e+12  |
         """
 
-        stock_quotes = discovery_model.get_stock_quotes(api_key=self._api_key)
+        stock_quotes = discovery_model.get_stock_quotes(
+            api_key=self._api_key, user_subscription=self._fmp_plan
+        )
 
         return stock_quotes
 
@@ -321,7 +348,7 @@ class Discovery:
         """
 
         stock_shares_float = discovery_model.get_stock_shares_float(
-            api_key=self._api_key
+            api_key=self._api_key, user_subscription=self._fmp_plan
         )
 
         return stock_shares_float
@@ -357,7 +384,7 @@ class Discovery:
         | 2024-01-02 |    -0.01347 |          -0.14536 |                 -0.15074 |            -0.58877 |              0.18141 | -0.41917 |             -0.34779 |     -0.08193 |      -0.21823 |      -0.52281 |     -0.57073 |
         """
         sectors_performance = discovery_model.get_sectors_performance(
-            api_key=self._api_key
+            api_key=self._api_key, user_subscription=self._fmp_plan
         )
 
         return sectors_performance
@@ -397,7 +424,9 @@ class Discovery:
         | BHG      | Bright Health Group, Inc.                              |   2.37   |  7.63   |    45.057  |
         | BROG     | Brooge Energy Limited                                  |   0.73   |  3.68   |    24.7458 |
         """
-        biggest_gainers = discovery_model.get_biggest_gainers(api_key=self._api_key)
+        biggest_gainers = discovery_model.get_biggest_gainers(
+            api_key=self._api_key, user_subscription=self._fmp_plan
+        )
 
         return biggest_gainers
 
@@ -437,7 +466,9 @@ class Discovery:
         | BYN      | Banyan Acquisition Corporation             |  -2.035  | 10.9    |   -15.7325 |
         """
 
-        biggest_losers = discovery_model.get_biggest_losers(api_key=self._api_key)
+        biggest_losers = discovery_model.get_biggest_losers(
+            api_key=self._api_key, user_subscription=self._fmp_plan
+        )
 
         return biggest_losers
 
@@ -478,7 +509,7 @@ class Discovery:
         """
 
         most_active_stocks = discovery_model.get_most_active_stocks(
-            api_key=self._api_key
+            api_key=self._api_key, user_subscription=self._fmp_plan
         )
 
         return most_active_stocks
@@ -518,7 +549,9 @@ class Discovery:
         | ASPAU    | Abri SPAC I, Inc.                            | NASDAQ     | 2021-08-10 | 2023-11-02      |
         | AVID     | Avid Technology, Inc.                        | NASDAQ     | 1993-03-12 | 2023-11-07      |
         """
-        delisted_stocks = discovery_model.get_delisted_stocks(api_key=self._api_key)
+        delisted_stocks = discovery_model.get_delisted_stocks(
+            api_key=self._api_key, user_subscription=self._fmp_plan
+        )
 
         return delisted_stocks
 
@@ -557,7 +590,9 @@ class Discovery:
         | 0XGASUSD     | 0xGasless USD                        | USD        | CCC        |
         | 0XMRUSD      | 0xMonero USD                         | USD        | CCC        |
         """
-        crypto_list = discovery_model.get_crypto_list(api_key=self._api_key)
+        crypto_list = discovery_model.get_crypto_list(
+            api_key=self._api_key, user_subscription=self._fmp_plan
+        )
 
         return crypto_list
 
@@ -599,7 +634,9 @@ class Discovery:
         | 0XGASUSD     | 0xGasless USD                        |  0.11228     |   12.1894  |  0.0121997   |  0.10008     |  0.11228    |    0.19216  |  3.7e-05     |      0           |  0.038569    |   0.0143848   |   8700      |   9628           |  0.10008    |       0.10008    |   nan |  nan |                     nan |          0           | 2024-01-02 14:06:00 |
         | 0XMRUSD      | 0xMonero USD                         |  0.0497938   |  -38.9213  | -0.0317302   |  0.0496646   |  2.79013    |    0.18734  |  0.0418889   |      0           |  0.13616     |   0.11633     |    347.276  |     11           |  0.081524   |       0.081524   |   nan |  nan |                     nan |        nan           | 2024-01-02 14:05:07 |
         """
-        crypto_quotes = discovery_model.get_crypto_quotes(api_key=self._api_key)
+        crypto_quotes = discovery_model.get_crypto_quotes(
+            api_key=self._api_key, user_subscription=self._fmp_plan
+        )
 
         return crypto_quotes
 
@@ -638,7 +675,9 @@ class Discovery:
         | AEDINR   | AED/INR | INR        | CCY        |
         | AEDJOD   | AED/JOD | JOD        | CCY        |
         """
-        forex_list = discovery_model.get_forex_list(api_key=self._api_key)
+        forex_list = discovery_model.get_forex_list(
+            api_key=self._api_key, user_subscription=self._fmp_plan
+        )
 
         return forex_list
 
@@ -681,7 +720,9 @@ class Discovery:
         | AEDJOD   | AED/JOD |  0.19335 |   -3.32563   |  -0.00665126 |   0.19315 |    0.19364 |     0.19412 |  0.19185   |      0.19314 |       0.19315 |       38 |      18.8451 |  0.19331 |          0.2     | 2024-01-02 13:51:18 |
 
         """
-        forex_quotes = discovery_model.get_forex_quotes(api_key=self._api_key)
+        forex_quotes = discovery_model.get_forex_quotes(
+            api_key=self._api_key, user_subscription=self._fmp_plan
+        )
 
         return forex_quotes
 
@@ -720,7 +761,9 @@ class Discovery:
         | GCUSD    | Gold Futures           | USD        | CME        |
         | GFUSX    | Feeder Cattle Futures  | USX        | CME        |
         """
-        commodity_list = discovery_model.get_commodity_list(api_key=self._api_key)
+        commodity_list = discovery_model.get_commodity_list(
+            api_key=self._api_key, user_subscription=self._fmp_plan
+        )
 
         return commodity_list
 
@@ -762,7 +805,9 @@ class Discovery:
         | GCUSD    | Gold Futures           | 2075     |  0.15446   |    3.2   |  2071.4   |    2094.7  |     2130.2  |    1808.1  |    2003.86   |     1960.64   |    38456 |   3511           | 2072.7   |         2071.8   | 2024-01-02 14:00:13 |
         | GFUSX    | Feeder Cattle Futures  |  223.125 |  0.0112057 |    0.025 |   222.725 |     224.45 |      257.5  |     177.55 |     226.9    |      230.114  |     4395 |   3915           |  224.4   |          223.1   | 2023-12-29 19:04:57 |
         """
-        commodity_quotes = discovery_model.get_commodity_quotes(api_key=self._api_key)
+        commodity_quotes = discovery_model.get_commodity_quotes(
+            api_key=self._api_key, user_subscription=self._fmp_plan
+        )
 
         return commodity_quotes
 
@@ -802,7 +847,9 @@ class Discovery:
         | 098560.KS | Mirae Asset TIGER Media & Telecom ETF                                                           |  7335      | KSE                   | KSC             |
         """
 
-        etf_list = discovery_model.get_etf_list(api_key=self._api_key)
+        etf_list = discovery_model.get_etf_list(
+            api_key=self._api_key, user_subscription=self._fmp_plan
+        )
 
         return etf_list
 
@@ -841,7 +888,9 @@ class Discovery:
         | ITLMS.MI    | FTSE Italia All-Share Index   | EUR        | Milan                  |
         | KOSPI200.KS | KOSPI 200 Index               | KRW        | KSE                    |
         """
-        index_list = discovery_model.get_index_list(api_key=self._api_key)
+        index_list = discovery_model.get_index_list(
+            api_key=self._api_key, user_subscription=self._fmp_plan
+        )
 
         return index_list
 
@@ -883,6 +932,8 @@ class Discovery:
         | ITLMS.MI    | FTSE Italia All-Share Index   | 32507     |     0.0859 |    27.9004 | 32434.3   |  32999.1   |   32999.1   |  23017.3   |    22902.7   |     23017.3   |          0 |            0 | 32651.2   |        32479.1   |  1704203955 |
         | KOSPI200.KS | KOSPI 200 Index               |   360.55  |     0.7151 |     2.56   |   355.96  |    361.53  |     361.53  |    355.96  |        0     |         0     |     106709 |            0 |   356.43  |          357.99  |  1704186335 |
         """
-        index_quotes = discovery_model.get_index_quotes(api_key=self._api_key)
+        index_quotes = discovery_model.get_index_quotes(
+            api_key=self._api_key, user_subscription=self._fmp_plan
+        )
 
         return index_quotes

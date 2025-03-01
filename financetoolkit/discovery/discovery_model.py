@@ -7,20 +7,23 @@ import pandas as pd
 from financetoolkit.helpers import get_financial_data
 
 
-def get_instruments(api_key: str, query: str) -> pd.DataFrame:
+def get_instruments(
+    api_key: str, query: str, user_subscription: str = "Free"
+) -> pd.DataFrame:
     """
     Get a list of instruments based on a query.
 
     Args:
         api_key (str): the API key from Financial Modeling Prep.
         query (str): The query to search for.
+        user_subscription (str, optional): The user subscription level. Defaults to "Free".
 
     Returns:
         pd.DataFrame: DataFrame of instruments.
     """
     url = f"https://financialmodelingprep.com/api/v3/search?query={query}&apikey={api_key}"
 
-    instruments_query = get_financial_data(url=url)
+    instruments_query = get_financial_data(url=url, user_subscription=user_subscription)
 
     instruments_query = instruments_query.rename(
         columns={
@@ -50,6 +53,7 @@ def get_stock_screener(
     dividend_higher: int | None = None,
     dividend_lower: int | None = None,
     is_etf: bool | None = None,
+    user_subscription: str = "Free",
 ) -> pd.DataFrame:
     """
     Get a list of instruments based on the screening criteria provided. It defaults
@@ -68,6 +72,7 @@ def get_stock_screener(
         dividend_higher (int, optional): The dividend higher than. Defaults to None.
         dividend_lower (int, optional): The dividend lower than. Defaults to None.
         is_etf (bool, optional): Whether the instrument is an ETF. Defaults to None.
+        user_subscription (str, optional): The user subscription level. Defaults to "Free".
 
     Returns:
         pd.DataFrame: DataFrame of instruments matching the query.
@@ -97,7 +102,7 @@ def get_stock_screener(
     if is_etf is not None:
         url += f"&isEtf={str(is_etf)}"
 
-    stock_screener = get_financial_data(url=url)
+    stock_screener = get_financial_data(url=url, user_subscription=user_subscription)
 
     stock_screener = stock_screener.rename(
         columns={
@@ -127,19 +132,20 @@ def get_stock_screener(
     return stock_screener
 
 
-def get_stock_list(api_key: str) -> pd.DataFrame:
+def get_stock_list(api_key: str, user_subscription: str = "Free") -> pd.DataFrame:
     """
     Get a list of stocks.
 
     Args:
         api_key (str): the API key from Financial Modeling Prep.
+        user_subscription (str, optional): The user subscription level. Defaults to "Free".
 
     Returns:
         pd.DataFrame: DataFrame of stocks.
     """
     url = f"https://financialmodelingprep.com/api/v3/stock/list?apikey={api_key}"
 
-    stock_list = get_financial_data(url=url)
+    stock_list = get_financial_data(url=url, user_subscription=user_subscription)
 
     stock_list = stock_list.rename(
         columns={
@@ -161,19 +167,20 @@ def get_stock_list(api_key: str) -> pd.DataFrame:
     return stock_list
 
 
-def get_stock_quotes(api_key: str) -> pd.DataFrame:
+def get_stock_quotes(api_key: str, user_subscription: str = "Free") -> pd.DataFrame:
     """
     Get the quotes for all stocks.
 
     Args:
         api_key (str): the API key from Financial Modeling Prep.
+        user_subscription (str, optional): The user subscription level. Defaults to "Free".
 
     Returns:
         pd.DataFrame: DataFrame of stock quotes.
     """
     url = f"https://financialmodelingprep.com/api/v3/stock/full/real-time-price?apikey={api_key}"
 
-    stock_quotes = get_financial_data(url=url)
+    stock_quotes = get_financial_data(url=url, user_subscription=user_subscription)
 
     stock_quotes = stock_quotes.rename(
         columns={
@@ -195,19 +202,24 @@ def get_stock_quotes(api_key: str) -> pd.DataFrame:
     return stock_quotes
 
 
-def get_stock_shares_float(api_key: str) -> pd.DataFrame:
+def get_stock_shares_float(
+    api_key: str, user_subscription: str = "Free"
+) -> pd.DataFrame:
     """
     Get the shares float for all stocks.
 
     Args:
         api_key (str): the API key from Financial Modeling Prep.
+        user_subscription (str, optional): The user subscription level. Defaults to "Free".
 
     Returns:
         pd.DataFrame: DataFrame of shares float.
     """
     url = f"https://financialmodelingprep.com/api/v4/shares_float/all?apikey={api_key}"
 
-    stock_shares_float = get_financial_data(url=url)
+    stock_shares_float = get_financial_data(
+        url=url, user_subscription=user_subscription
+    )
 
     stock_shares_float = stock_shares_float.rename(
         columns={
@@ -224,19 +236,24 @@ def get_stock_shares_float(api_key: str) -> pd.DataFrame:
     return stock_shares_float
 
 
-def get_sectors_performance(api_key: str) -> pd.DataFrame:
+def get_sectors_performance(
+    api_key: str, user_subscription: str = "Free"
+) -> pd.DataFrame:
     """
     Get the sectors performance.
 
     Args:
         api_key (str): the API key from Financial Modeling Prep.
+        user_subscription (str, optional): The user subscription level. Defaults to "Free".
 
     Returns:
         pd.DataFrame: DataFrame of sectors performance.
     """
     url = f"https://financialmodelingprep.com/api/v3/historical-sectors-performance?apikey={api_key}"
 
-    sectors_performance = get_financial_data(url=url)
+    sectors_performance = get_financial_data(
+        url=url, user_subscription=user_subscription
+    )
 
     sectors_performance = sectors_performance.rename(
         columns={
@@ -269,19 +286,20 @@ def get_sectors_performance(api_key: str) -> pd.DataFrame:
     return sectors_performance
 
 
-def get_biggest_gainers(api_key: str) -> pd.DataFrame:
+def get_biggest_gainers(api_key: str, user_subscription: str = "Free") -> pd.DataFrame:
     """
     Get the biggest gainers.
 
     Args:
         api_key (str): the API key from Financial Modeling Prep.
+        user_subscription (str, optional): The user subscription level. Defaults to "Free".
 
     Returns:
         pd.DataFrame: DataFrame of biggest gainers.
     """
     url = f"https://financialmodelingprep.com/api/v3/stock_market/gainers?apikey={api_key}"
 
-    biggest_gainers = get_financial_data(url=url)
+    biggest_gainers = get_financial_data(url=url, user_subscription=user_subscription)
 
     biggest_gainers = biggest_gainers.rename(
         columns={
@@ -298,12 +316,13 @@ def get_biggest_gainers(api_key: str) -> pd.DataFrame:
     return biggest_gainers
 
 
-def get_biggest_losers(api_key: str) -> pd.DataFrame:
+def get_biggest_losers(api_key: str, user_subscription: str = "Free") -> pd.DataFrame:
     """
     Get the biggest losers.
 
     Args:
         api_key (str): the API key from Financial Modeling Prep.
+        user_subscription (str, optional): The user subscription level. Defaults to "Free".
 
     Returns:
         pd.DataFrame: DataFrame of biggest losers.
@@ -312,7 +331,7 @@ def get_biggest_losers(api_key: str) -> pd.DataFrame:
         f"https://financialmodelingprep.com/api/v3/stock_market/losers?apikey={api_key}"
     )
 
-    biggest_losers = get_financial_data(url=url)
+    biggest_losers = get_financial_data(url=url, user_subscription=user_subscription)
 
     biggest_losers = biggest_losers.rename(
         columns={
@@ -329,19 +348,22 @@ def get_biggest_losers(api_key: str) -> pd.DataFrame:
     return biggest_losers
 
 
-def get_most_active_stocks(api_key: str) -> pd.DataFrame:
+def get_most_active_stocks(
+    api_key: str, user_subscription: str = "Free"
+) -> pd.DataFrame:
     """
     Get the most active stocks.
 
     Args:
         api_key (str): the API key from Financial Modeling Prep.
+        user_subscription (str, optional): The user subscription level. Defaults to "Free".
 
     Returns:
         pd.DataFrame: DataFrame of most active stocks.
     """
     url = f"https://financialmodelingprep.com/api/v3/stock_market/actives?apikey={api_key}"
 
-    most_active = get_financial_data(url=url)
+    most_active = get_financial_data(url=url, user_subscription=user_subscription)
 
     most_active = most_active.rename(
         columns={
@@ -358,19 +380,20 @@ def get_most_active_stocks(api_key: str) -> pd.DataFrame:
     return most_active
 
 
-def get_crypto_list(api_key: str) -> pd.DataFrame:
+def get_crypto_list(api_key: str, user_subscription: str = "Free") -> pd.DataFrame:
     """
     Get a list of cryptocurrencies.
 
     Args:
         api_key (str): the API key from Financial Modeling Prep.
+        user_subscription (str, optional): The user subscription level. Defaults to "Free".
 
     Returns:
         pd.DataFrame: DataFrame of cryptocurrencies.
     """
     url = f"https://financialmodelingprep.com/api/v3/symbol/available-cryptocurrencies?apikey={api_key}"
 
-    crypto_list = get_financial_data(url=url)
+    crypto_list = get_financial_data(url=url, user_subscription=user_subscription)
 
     crypto_list = crypto_list.rename(
         columns={
@@ -389,12 +412,13 @@ def get_crypto_list(api_key: str) -> pd.DataFrame:
     return crypto_list
 
 
-def get_delisted_stocks(api_key: str) -> pd.DataFrame:
+def get_delisted_stocks(api_key: str, user_subscription: str = "Free") -> pd.DataFrame:
     """
     Get a list of delisted companies.
 
     Args:
         api_key (str): the API key from Financial Modeling Prep.
+        user_subscription (str, optional): The user subscription level. Defaults to "Free".
 
     Returns:
         pd.DataFrame: DataFrame of delisted companies.
@@ -403,7 +427,9 @@ def get_delisted_stocks(api_key: str) -> pd.DataFrame:
         f"https://financialmodelingprep.com/api/v3/delisted-companies?apikey={api_key}"
     )
 
-    delisted_companies = get_financial_data(url=url)
+    delisted_companies = get_financial_data(
+        url=url, user_subscription=user_subscription
+    )
 
     delisted_companies = delisted_companies.rename(
         columns={
@@ -420,19 +446,20 @@ def get_delisted_stocks(api_key: str) -> pd.DataFrame:
     return delisted_companies
 
 
-def get_crypto_quotes(api_key: str) -> pd.DataFrame:
+def get_crypto_quotes(api_key: str, user_subscription: str = "Free") -> pd.DataFrame:
     """
     Get the quotes for all cryptocurrencies.
 
     Args:
         api_key (str): the API key from Financial Modeling Prep.
+        user_subscription (str, optional): The user subscription level. Defaults to "Free".
 
     Returns:
         pd.DataFrame: DataFrame of crypto quotes.
     """
     url = f"https://financialmodelingprep.com/api/v3/quotes/crypto?apikey={api_key}"
 
-    crypto_quotes = get_financial_data(url=url)
+    crypto_quotes = get_financial_data(url=url, user_subscription=user_subscription)
 
     crypto_quotes = crypto_quotes.rename(
         columns={
@@ -470,19 +497,20 @@ def get_crypto_quotes(api_key: str) -> pd.DataFrame:
     return crypto_quotes
 
 
-def get_forex_list(api_key: str) -> pd.DataFrame:
+def get_forex_list(api_key: str, user_subscription: str = "Free") -> pd.DataFrame:
     """
     Get a list of forex pairs.
 
     Args:
         api_key (str): the API key from Financial Modeling Prep.
+        user_subscription (str, optional): The user subscription level. Defaults to "Free".
 
     Returns:
         pd.DataFrame: DataFrame of forex pairs.
     """
     url = f"https://financialmodelingprep.com/api/v3/symbol/available-forex-currency-pairs?apikey={api_key}"
 
-    forex_list = get_financial_data(url=url)
+    forex_list = get_financial_data(url=url, user_subscription=user_subscription)
 
     forex_list = forex_list.rename(
         columns={
@@ -501,19 +529,20 @@ def get_forex_list(api_key: str) -> pd.DataFrame:
     return forex_list
 
 
-def get_forex_quotes(api_key: str) -> pd.DataFrame:
+def get_forex_quotes(api_key: str, user_subscription: str = "Free") -> pd.DataFrame:
     """
     Get the quotes for all forex pairs.
 
     Args:
         api_key (str): the API key from Financial Modeling Prep.
+        user_subscription (str, optional): The user subscription level. Defaults to "Free".
 
     Returns:
         pd.DataFrame: DataFrame of forex quotes.
     """
     url = f"https://financialmodelingprep.com/api/v3/quotes/forex?apikey={api_key}"
 
-    forex_quotes = get_financial_data(url=url)
+    forex_quotes = get_financial_data(url=url, user_subscription=user_subscription)
 
     forex_quotes = forex_quotes.rename(
         columns={
@@ -551,19 +580,20 @@ def get_forex_quotes(api_key: str) -> pd.DataFrame:
     return forex_quotes
 
 
-def get_commodity_list(api_key: str) -> pd.DataFrame:
+def get_commodity_list(api_key: str, user_subscription: str = "Free") -> pd.DataFrame:
     """
     Get a list of commodities.
 
     Args:
         api_key (str): the API key from Financial Modeling Prep.
+        user_subscription (str, optional): The user subscription level. Defaults to "Free".
 
     Returns:
         pd.DataFrame: DataFrame of commodities.
     """
     url = f"https://financialmodelingprep.com/api/v3/symbol/available-commodities?apikey={api_key}"
 
-    commody_list = get_financial_data(url=url)
+    commody_list = get_financial_data(url=url, user_subscription=user_subscription)
 
     commody_list = commody_list.rename(
         columns={
@@ -582,19 +612,20 @@ def get_commodity_list(api_key: str) -> pd.DataFrame:
     return commody_list
 
 
-def get_commodity_quotes(api_key: str) -> pd.DataFrame:
+def get_commodity_quotes(api_key: str, user_subscription: str = "Free") -> pd.DataFrame:
     """
     Get the quotes for all commodities.
 
     Args:
         api_key (str): the API key from Financial Modeling Prep.
+        user_subscription (str, optional): The user subscription level. Defaults to "Free".
 
     Returns:
         pd.DataFrame: DataFrame of commodity quotes.
     """
     url = f"https://financialmodelingprep.com/api/v3/quotes/commodity?apikey={api_key}"
 
-    commodity_quotes = get_financial_data(url=url)
+    commodity_quotes = get_financial_data(url=url, user_subscription=user_subscription)
 
     commodity_quotes = commodity_quotes.rename(
         columns={
@@ -632,19 +663,20 @@ def get_commodity_quotes(api_key: str) -> pd.DataFrame:
     return commodity_quotes
 
 
-def get_etf_list(api_key: str) -> pd.DataFrame:
+def get_etf_list(api_key: str, user_subscription: str = "Free") -> pd.DataFrame:
     """
     Get a list of ETFs.
 
     Args:
         api_key (str): the API key from Financial Modeling Prep.
+        user_subscription (str, optional): The user subscription level. Defaults to "Free".
 
     Returns:
         pd.DataFrame: DataFrame of ETFs.
     """
     url = f"https://financialmodelingprep.com/api/v3/etf/list?apikey={api_key}"
 
-    etf_list = get_financial_data(url=url)
+    etf_list = get_financial_data(url=url, user_subscription=user_subscription)
 
     etf_list = etf_list.rename(
         columns={
@@ -664,19 +696,20 @@ def get_etf_list(api_key: str) -> pd.DataFrame:
     return etf_list
 
 
-def get_index_list(api_key: str) -> pd.DataFrame:
+def get_index_list(api_key: str, user_subscription: str = "Free") -> pd.DataFrame:
     """
     Get a list of indexes.
 
     Args:
         api_key (str): the API key from Financial Modeling Prep.
+        user_subscription (str, optional): The user subscription level. Defaults to "Free".
 
     Returns:
         pd.DataFrame: DataFrame of indexes.
     """
     url = f"https://financialmodelingprep.com/api/v3/symbol/available-indexes?apikey={api_key}"
 
-    index_list = get_financial_data(url=url)
+    index_list = get_financial_data(url=url, user_subscription=user_subscription)
 
     index_list = index_list.rename(
         columns={
@@ -695,19 +728,20 @@ def get_index_list(api_key: str) -> pd.DataFrame:
     return index_list
 
 
-def get_index_quotes(api_key: str) -> pd.DataFrame:
+def get_index_quotes(api_key: str, user_subscription: str = "Free") -> pd.DataFrame:
     """
     Get the quotes for all indexes.
 
     Args:
         api_key (str): the API key from Financial Modeling Prep.
+        user_subscription (str, optional): The user subscription level. Defaults to "Free".
 
     Returns:
         pd.DataFrame: DataFrame of index quotes.
     """
     url = f"https://financialmodelingprep.com/api/v3/quotes/index?apikey={api_key}"
 
-    index_quotes = get_financial_data(url=url)
+    index_quotes = get_financial_data(url=url, user_subscription=user_subscription)
 
     index_quotes = index_quotes.rename(
         columns={

@@ -3253,6 +3253,22 @@ Most functions will have the option to define the `trailing` parameter. This let
 
 The Toolkit has the option to work with cached data through `use_cached_data=True` when initializing the Toolkit class. If you then use any of the functionalities of the Toolkit itself (e.g. `get_balance_sheet_statement`) it will store the data in a pickle file. When initializing the Toolkit class again with `use_cached_data=True`, it will load the data from the pickle file including all other previously set parameters (e.g. start_date and quarterly). You are also able to select a specific location to store the cached data by providing a string to the `use_cached_data` parameter. This will store the data in the provided location (with the assumption the folder exists).
 
+As an example:
+
+<img width="1000" alt="image" src="https://github.com/user-attachments/assets/943a1cfb-95ad-4455-90f0-0b33dcd7b0df" />
+
+If I wish to receive this data again, I no longer need an API key or set the tickers and can simply keep `use_cached_data=True`.
+
+<img width="1000" alt="image" src="https://github.com/user-attachments/assets/29ef58ca-e208-4c9a-b663-f66b299d3188" />
+
+Please note that it will force the settings as found in the pickle files so if you wish to use a different time period, you will have to recollect.
+
+<img width="1000" alt="image" src="https://github.com/user-attachments/assets/40229dcb-18f0-4e73-8a43-017b1b25d33f" />
+
+You can also change the folder by entering a string instead of a boolean for the `use_cached_data` parameter.
+
+<img width="1000" alt="image" src="https://github.com/user-attachments/assets/a6710d20-55b9-48f1-812e-4ff4fbe06a15" />
+
 > **What is the "Benchmark" that is automatically obtained when acquiring historical data?**
 
 This is related to the `benchmark_ticker` parameter which is set to "SPY" (S&P 500) by default. This is important when calculating performance metrics such as the Sharpe Ratio or Treynor Ratio that require a market return. This can be disabled by setting `benchmark_ticker=None` in the Toolkit initialization.

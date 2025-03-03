@@ -1470,7 +1470,7 @@ class Economics:
         government_tax_revenue.loc[:, ['Kenya', 'Nigeria', 'South Africa']]
         ```
 
-        Wjich returns:
+        Which returns:
 
         |      |         Kenya |   Nigeria |   South Africa |
         |:-----|--------------:|----------:|---------------:|

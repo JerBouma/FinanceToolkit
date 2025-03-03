@@ -45,11 +45,11 @@ class Economics:
         As an example:
 
         ```python
-        from financetoolkit import Toolkit
+        from financetoolkit import Economics
 
-        toolkit = Toolkit(["AMZN", "ASML"], start_date="2010-01-01", end_date="2020-01-01")
+        economics = Economics(start_date="2010-01-01")
 
-        cpi = toolkit.economics.get_consumer_price_index()
+        cpi = economics.get_consumer_price_index()
 
         cpi.loc['2010':, ['United States', 'Netherlands', 'Japan']]
         ```
@@ -69,6 +69,11 @@ class Economics:
         | 2018 |         115.143 |       111.927 | 104.986  |
         | 2019 |         117.231 |       114.913 | 105.477  |
         | 2020 |         118.695 |       116.185 | 105.449  |
+        | 2021 |         124.253 |       119.459 | 105.202  |
+        | 2022 |         134.183 |       133.336 | 107.828  |
+        | 2023 |         139.722 |       138.827 | 111.353  |
+        | 2024 |         143.896 |       143.228 | 113.839  |
+        | 2025 |         146.562 |       146.58  | 116.102  |
         """
         if start_date and re.match(r"^\d{4}-\d{2}-\d{2}$", start_date) is None:
             raise ValueError(
@@ -139,7 +144,7 @@ class Economics:
         ```python
         from financetoolkit import Economics
 
-        economics = Economics(start_date='2015-01-01', end_date='2021-01-01')
+        economics = Economics(start_date='2015-01-01')
 
         real_gdp = economics.get_gross_domestic_product(inflation_adjusted=True)
 
@@ -150,13 +155,17 @@ class Economics:
 
         |      |   Netherlands |     Germany |       China |
         |:-----|--------------:|------------:|------------:|
-        | 2015 |        851994 | 3.88475e+06 | 1.77968e+07 |
-        | 2016 |        870238 | 3.96797e+06 | 1.9007e+07  |
-        | 2017 |        896473 | 4.08338e+06 | 2.03184e+07 |
-        | 2018 |        917246 | 4.13627e+06 | 2.16798e+07 |
-        | 2019 |        932198 | 4.16067e+06 | 2.29806e+07 |
-        | 2020 |        897261 | 3.94717e+06 | 2.35091e+07 |
-        | 2021 |        921282 | 4.07756e+06 | 2.55147e+07 |
+        | 2015 |        792438 | 3.35252e+06 | 6.92094e+07 |
+        | 2016 |        811653 | 3.42927e+06 | 7.39494e+07 |
+        | 2017 |        834241 | 3.52232e+06 | 7.90868e+07 |
+        | 2018 |        853097 | 3.56164e+06 | 8.44244e+07 |
+        | 2019 |        872718 | 3.597e+06   | 8.94487e+07 |
+        | 2020 |        838886 | 3.44953e+06 | 9.14542e+07 |
+        | 2021 |        891550 | 3.57614e+06 | 9.91816e+07 |
+        | 2022 |        936192 | 3.62504e+06 | 1.02108e+08 |
+        | 2023 |        936871 | 3.61547e+06 | 1.07468e+08 |
+        | 2024 |        942765 | 3.61572e+06 | 1.12652e+08 |
+        | 2025 |        958100 | 3.64414e+06 | 1.17704e+08 |
         """
         gmdb_source = gmdb_source if gmdb_source is not None else self._gmdb_source
 
@@ -217,6 +226,35 @@ class Economics:
 
         Returns:
             pd.DataFrame: A DataFrame containing the Gross Domestic Product Deflator
+
+        As an example:
+
+        ```python
+        from financetoolkit import Economics
+
+        economics = Economics(start_date='2015-01-01')
+
+        gdp_deflator = economics.get_gross_domestic_product_deflator()
+
+        gdp_deflator.loc[:, ['United States', 'Canada', 'Russian Federation']]
+        ```
+
+        Which returns:
+
+        |      |   United States |   Canada |   Russian Federation |
+        |:-----|----------------:|---------:|---------------------:|
+        | 2015 |         97.3159 |  96.7993 |              67.6025 |
+        | 2016 |         98.2406 |  97.4935 |              69.5253 |
+        | 2017 |        100      | 100      |              73.2441 |
+        | 2018 |        102.291  | 101.651  |              80.5677 |
+        | 2019 |        103.979  | 103.223  |              83.1968 |
+        | 2020 |        105.361  | 104.328  |              83.9441 |
+        | 2021 |        110.172  | 112.325  |             100      |
+        | 2022 |        118.026  | 120.922  |             115.743  |
+        | 2023 |        122.273  | 122.778  |             123.871  |
+        | 2024 |        125.195  | 126.443  |             136.148  |
+        | 2025 |        127.469  | 129.463  |             142.557  |
+
         """
         if self._gmbd_dataset.empty:
             self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
@@ -267,6 +305,31 @@ class Economics:
 
         Returns:
             pd.DataFrame: A DataFrame containing the Total Consumption
+
+        As an example:
+
+        ```python
+        from financetoolkit import Economics
+
+        economics = Economics(start_date='2018-01-01')
+
+        total_consumption = economics.get_total_consumption()
+
+        total_consumption.loc[:, ['Netherlands', 'France', 'Poland']]
+        ```
+
+        Which returns:
+
+        |      |   Netherlands |      France |      Poland |
+        |:-----|--------------:|------------:|------------:|
+        | 2018 |        542949 | 1.84554e+06 | 1.64362e+06 |
+        | 2019 |        566538 | 1.888e+06   | 1.75043e+06 |
+        | 2020 |        558446 | 1.82958e+06 | 1.78522e+06 |
+        | 2021 |        606798 | 1.95042e+06 | 1.99581e+06 |
+        | 2022 |        679345 | 2.087e+06   | 2.36461e+06 |
+        | 2023 |        735272 | 2.2254e+06  | 2.60968e+06 |
+        | 2024 |        776464 | 2.29617e+06 | 2.80908e+06 |
+        | 2025 |        804450 | 2.3712e+06  | 3.03317e+06 |
         """
         if self._gmbd_dataset.empty:
             self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
@@ -315,6 +378,31 @@ class Economics:
 
         Returns:
             pd.DataFrame: A DataFrame containing the Total Consumption to GDP Ratio
+
+        As an example:
+
+        ```python
+        from financetoolkit import Economics
+
+        economics = Economics(start_date='2018-01-01')
+
+        total_consumption_to_gdp_ratio = economics.get_total_consumption_to_gdp_ratio()
+
+        total_consumption_to_gdp_ratio.loc[:, ['Netherlands', 'France', 'Poland']]
+        ```
+
+        Which returns:
+
+        |      |   Netherlands |   France |   Poland |
+        |:-----|--------------:|---------:|---------:|
+        | 2018 |       68.9658 |  78.3547 |  76.5334 |
+        | 2019 |       68.2768 |  77.6248 |  75.6476 |
+        | 2020 |       68.3982 |  78.92   |  75.5519 |
+        | 2021 |       68.061  |  77.7649 |  74.9877 |
+        | 2022 |       68.357  |  78.5937 |  76.2568 |
+        | 2023 |       68.8716 |  78.8461 |  76.7188 |
+        | 2024 |       69.8097 |  78.906  |  76.7534 |
+        | 2025 |       70.0162 |  78.995  |  77.1961 |
         """
         if self._gmbd_dataset.empty:
             self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
@@ -361,6 +449,35 @@ class Economics:
 
         Returns:
             pd.DataFrame: A DataFrame containing the Investment
+
+        As an example:
+
+        ```python
+        from financetoolkit import Economics
+
+        economics = Economics(start_date='2014-01-01')
+
+        investment = economics.get_investment()
+
+        investment.loc[:, ['United States', 'Portugal', 'China']]
+        ```
+
+        Which returns:
+
+        |      |   United States |   Portugal |       China |
+        |:-----|----------------:|-----------:|------------:|
+        | 2014 |     3.68027e+06 |    26506.7 | 2.94903e+07 |
+        | 2015 |     3.91787e+06 |    28493.5 | 2.97829e+07 |
+        | 2016 |     3.92797e+06 |    29527   | 3.18198e+07 |
+        | 2017 |     4.14914e+06 |    33755.8 | 3.57888e+07 |
+        | 2018 |     4.45541e+06 |    37528.2 | 4.02584e+07 |
+        | 2019 |     4.66771e+06 |    39644.4 | 4.26678e+07 |
+        | 2020 |     4.57384e+06 |    38333.2 | 4.39554e+07 |
+        | 2021 |     5.0519e+06  |    44565.3 | 4.95782e+07 |
+        | 2022 |     5.70851e+06 |    50045.8 | 5.19792e+07 |
+        | 2023 |     5.97132e+06 |    52005.7 | 5.22754e+07 |
+        | 2024 |     6.36237e+06 |    54339.8 | 5.5217e+07  |
+        | 2025 |     6.66113e+06 |    57349.5 | 5.84789e+07 |
         """
         if self._gmbd_dataset.empty:
             self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
@@ -401,6 +518,31 @@ class Economics:
 
         Returns:
             pd.DataFrame: A DataFrame containing the Investment to GDP Ratio
+
+        As an example:
+
+        ```python
+        from financetoolkit import Economics
+
+        economics = Economics(start_date='2019-01-01')
+
+        investment_to_gdp_ratio = economics.get_investment_to_gdp_ratio()
+
+        investment_to_gdp_ratio.loc[:, ['Australia', 'Japan', 'Turkey']]
+        ```
+
+        Which returns:
+
+        |      |   Australia |   Japan |   Turkey |
+        |:-----|------------:|--------:|---------:|
+        | 2019 |      22.55  |  25.79  |   24.878 |
+        | 2020 |      22.3   |  25.224 |   31.341 |
+        | 2021 |      23.313 |  25.797 |   31.404 |
+        | 2022 |      23.722 |  26.811 |   35.04  |
+        | 2023 |      23.981 |  26.397 |   29.964 |
+        | 2024 |      24.149 |  26.572 |   25.574 |
+        | 2025 |      23.928 |  26.639 |   24.649 |
+
         """
         if self._gmbd_dataset.empty:
             self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
@@ -445,6 +587,29 @@ class Economics:
 
         Returns:
             pd.DataFrame: A DataFrame containing the Fixed Investment
+
+        As an example:
+
+        ```python
+        from financetoolkit import Economics
+
+        economics = Economics(start_date='2020-01-01')
+
+        fixed_investment = economics.get_fixed_investment()
+
+        fixed_investment.loc[:, ['United Kingdom', 'Germany', 'France']]
+        ```
+
+        Which returns:
+
+        |      |   United Kingdom |   Germany |   France |
+        |:-----|-----------------:|----------:|---------:|
+        | 2020 |           362076 |    736476 |   520134 |
+        | 2021 |           398052 |    779205 |   588983 |
+        | 2022 |           443416 |    858253 |   628022 |
+        | 2023 |           469685 |    899880 |   651792 |
+        | 2024 |           473070 |    897275 |   657075 |
+        | 2025 |           482008 |    925002 |   674350 |
         """
         if self._gmbd_dataset.empty:
             self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
@@ -488,6 +653,49 @@ class Economics:
 
         Returns:
             pd.DataFrame: A DataFrame containing the Fixed Investment to GDP Ratio
+
+        As an example:
+
+        ```python
+        from financetoolkit import Economics
+
+        economics = Economics(start_date='2000-01-01')
+
+        fixed_investment_to_gdp_ratio = economics.get_fixed_investment_to_gdp_ratio()
+
+        fixed_investment_to_gdp_ratio.loc[:, ['Austria', 'Germany', 'Switzerland']]
+        ```
+
+        Which returns:
+
+        |      |   Austria |   Germany |   Switzerland |
+        |:-----|----------:|----------:|--------------:|
+        | 2000 |   25.7061 |   22.8829 |       27.512  |
+        | 2001 |   24.9279 |   21.5434 |       26.8656 |
+        | 2002 |   23.6231 |   19.8867 |       27.0789 |
+        | 2003 |   24.1941 |   19.2639 |       26.5301 |
+        | 2004 |   23.7683 |   18.8315 |       27.3119 |
+        | 2005 |   23.2346 |   18.7644 |       27.263  |
+        | 2006 |   22.8307 |   19.4624 |       27.0603 |
+        | 2007 |   23.1394 |   19.7152 |       27.2073 |
+        | 2008 |   23.5338 |   19.96   |       26.7343 |
+        | 2009 |   22.6637 |   18.8314 |       25.2148 |
+        | 2010 |   21.8612 |   19.1803 |       25.1886 |
+        | 2011 |   22.7074 |   20.0016 |       25.5188 |
+        | 2012 |   22.9528 |   19.9585 |       26.2689 |
+        | 2013 |   23.3121 |   19.5717 |       26.2276 |
+        | 2014 |   22.9672 |   19.7779 |       26.4182 |
+        | 2015 |   22.896  |   19.7566 |       26.4112 |
+        | 2016 |   23.3219 |   20.0382 |       26.4998 |
+        | 2017 |   23.8459 |   20.146  |       27.1489 |
+        | 2018 |   24.3136 |   20.8351 |       26.6027 |
+        | 2019 |   25.0801 |   21.1667 |       26.6222 |
+        | 2020 |   25.1343 |   21.3495 |       26.9939 |
+        | 2021 |   25.8758 |   21.1944 |       26.3366 |
+        | 2022 |   25.4742 |   21.7068 |       26.2505 |
+        | 2023 |   24.9012 |   21.4997 |       25.9307 |
+        | 2024 |   25.1474 |   20.6719 |       24.9148 |
+        | 2025 |   25.2518 |   20.7174 |       24.8035 |
         """
         if self._gmbd_dataset.empty:
             self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
@@ -534,6 +742,34 @@ class Economics:
 
         Returns:
             pd.DataFrame: A DataFrame containing the Exports
+
+        As an example:
+
+        ```python
+        from financetoolkit import Economics
+
+        economics = Economics(start_date='1980-01-01', end_date='1990-01-01')
+
+        exports = economics.get_exports()
+
+        exports.loc[:, ['Netherlands', 'Germany', 'China']]
+        ```
+
+        Which returns:
+
+        |      |   Netherlands |   Germany |    China |
+        |:-----|--------------:|----------:|---------:|
+        | 1980 |       89636.1 |    164376 |  46573.7 |
+        | 1981 |      103010   |    186137 |  61412.3 |
+        | 1982 |      106456   |    200976 |  59212.3 |
+        | 1983 |      109543   |    204049 |  57306   |
+        | 1984 |      123555   |    229107 |  69340.1 |
+        | 1985 |      131138   |    252794 |  75856.1 |
+        | 1986 |      114516   |    247153 |  90398.9 |
+        | 1987 |      112468   |    246623 | 151965   |
+        | 1988 |      122716   |    265208 | 218329   |
+        | 1989 |      138137   |    299732 | 203483   |
+        | 1990 |      144521   |    334043 | 256949   |
         """
         if self._gmbd_dataset.empty:
             self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
@@ -574,6 +810,34 @@ class Economics:
 
         Returns:
             pd.DataFrame: A DataFrame containing the Exports to GDP Ratio
+
+        As an example:
+
+        ```python
+        from financetoolkit import Economics
+
+        economics = Economics(start_date='2015-01-01')
+
+        exports_to_gdp_ratio = economics.get_exports_to_gdp_ratio()
+
+        exports_to_gdp_ratio.loc[:, ['United States', 'Canada', 'Russian Federation']]
+        ```
+
+        Which returns:
+
+        |      |   United States |   Canada |   Russian Federation |
+        |:-----|----------------:|---------:|---------------------:|
+        | 2015 |         12.4112 |  31.85   |              28.7034 |
+        | 2016 |         11.8882 |  31.5025 |              25.8545 |
+        | 2017 |         12.1775 |  31.4544 |              26.0909 |
+        | 2018 |         12.2871 |  32.3254 |              30.7933 |
+        | 2019 |         11.7892 |  32.3527 |              28.4334 |
+        | 2020 |         10.0736 |  29.4736 |              25.5222 |
+        | 2021 |         10.791  |  31.2164 |              29.7712 |
+        | 2022 |         11.6022 |  33.845  |              28.0257 |
+        | 2023 |         11.0115 |  33.3693 |              23.083  |
+        | 2024 |         10.7508 |  32.3514 |              21.242  |
+        | 2025 |         10.5946 |  31.6492 |              21.2205 |
         """
         if self._gmbd_dataset.empty:
             self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
@@ -618,6 +882,40 @@ class Economics:
 
         Returns:
             pd.DataFrame: A DataFrame containing the Imports
+
+        As an example:
+
+        ```python
+        from financetoolkit import Economics
+
+        economics = Economics(start_date='2010-01-01')
+
+        imports = economics.get_imports()
+
+        imports.loc[:, ['United States', 'Canada', 'Mexico']]
+        ```
+
+        Which returns:
+
+        |      |   United States |           Canada |      Mexico |
+        |:-----|----------------:|-----------------:|------------:|
+        | 2010 |     2.38956e+06 | 517153           | 4.22619e+06 |
+        | 2011 |     2.69548e+06 | 564513           | 4.84306e+06 |
+        | 2012 |     2.76932e+06 | 589137           | 5.40808e+06 |
+        | 2013 |     2.76638e+06 | 606801           | 5.41441e+06 |
+        | 2014 |     2.88744e+06 | 651176           | 5.9193e+06  |
+        | 2015 |     2.79494e+06 | 683019           | 6.97041e+06 |
+        | 2016 |     2.73883e+06 | 685868           | 8.0699e+06  |
+        | 2017 |     2.93159e+06 | 720254           | 8.88784e+06 |
+        | 2018 |     3.13117e+06 | 766265           | 9.95323e+06 |
+        | 2019 |     3.11668e+06 | 782419           | 9.78051e+06 |
+        | 2020 |     2.77734e+06 | 703532           | 9.06124e+06 |
+        | 2021 |     3.41546e+06 | 785539           | 1.13433e+07 |
+        | 2022 |     3.97631e+06 | 948468           | 1.34558e+07 |
+        | 2023 |     3.84981e+06 | 978214           | 1.18117e+07 |
+        | 2024 |     4.03094e+06 | 990187           | 1.19409e+07 |
+        | 2025 |     4.1031e+06  |      1.02675e+06 | 1.22266e+07 |
+
         """
         if self._gmbd_dataset.empty:
             self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
@@ -658,6 +956,34 @@ class Economics:
 
         Returns:
             pd.DataFrame: A DataFrame containing the Imports to GDP Ratio
+
+        As an example:
+
+        ```python
+        from financetoolkit import Economics
+
+        economics = Economics(start_date='2015-01-01')
+
+        imports_to_gdp_ratio = economics.get_imports_to_gdp_ratio()
+
+        imports_to_gdp_ratio.loc[:, ['United States', 'Canada', 'Mexico']]
+        ```
+
+        Which returns:
+
+        |      |   United States |   Canada |   Mexico |
+        |:-----|----------------:|---------:|---------:|
+        | 2010 |         15.8785 |  31.0407 |  30.2559 |
+        | 2011 |         17.279  |  31.8203 |  31.7194 |
+        | 2012 |         17.0378 |  32.2425 |  32.7185 |
+        | 2013 |         16.3878 |  31.8991 |  31.9359 |
+        | 2014 |         16.3984 |  32.6421 |  32.6354 |
+        | 2015 |         15.2771 |  34.3149 |  36.2502 |
+        | 2016 |         14.5644 |  33.8611 |  38.8746 |
+        | 2017 |         14.9479 |  33.6467 |  39.438  |
+        | 2018 |         15.1582 |  34.2745 |  41.1687 |
+        | 2019 |         14.4693 |  33.8188 |  38.9323 |
+        | 2020 |         13.0061 |  31.6831 |  37.6192 |
         """
         if self._gmbd_dataset.empty:
             self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
@@ -702,6 +1028,34 @@ class Economics:
 
         Returns:
             pd.DataFrame: A DataFrame containing the Current Account Balance
+
+        As an example:
+
+        ```python
+        from financetoolkit import Economics
+
+        economics = Economics(start_date='2015-01-01')
+
+        current_account_balance = economics.get_current_account_balance()
+
+        current_account_balance.loc[:, ['France', 'Germany', 'Italy']]
+        ```
+
+        Which returns:
+
+        |      |    France |   Germany |     Italy |
+        |:-----|----------:|----------:|----------:|
+        | 2015 |  -7154.56 |    259781 |  20674.6  |
+        | 2016 | -11784    |    270199 |  41956.5  |
+        | 2017 | -12535.5  |    255962 |  42548.2  |
+        | 2018 | -16440.4  |    267594 |  44461.4  |
+        | 2019 |  14520.3  |    283851 |  56954.4  |
+        | 2020 | -47594.2  |    222500 |  62809.1  |
+        | 2021 |   6947.44 |    263455 |  38674.2  |
+        | 2022 | -31095.1  |    164638 | -34928.5  |
+        | 2023 | -28111.7  |    257704 |   -297.92 |
+        | 2024 |   2650.74 |    286059 |  23619.7  |
+        | 2025 |  -3590.1  |    285609 |  31890.9  |
         """
         if self._gmbd_dataset.empty:
             self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
@@ -747,6 +1101,34 @@ class Economics:
 
         Returns:
             pd.DataFrame: A DataFrame containing the Current Account Balance to GDP Ratio
+
+        As an example:
+
+        ```python
+        from financetoolkit import Economics
+
+        economics = Economics(start_date='2015-01-01')
+
+        current_account_balance_to_gdp_ratio = economics.get_current_account_balance_to_gdp_ratio()
+
+        current_account_balance_to_gdp_ratio.loc[:, ['Poland', 'Turkey', 'United Kingdom']]
+        ```
+
+        Which returns:
+
+        |      |   Poland |   Turkey |   United Kingdom |
+        |:-----|---------:|---------:|-----------------:|
+        | 2015 |   -1.292 |   -2.463 |           -4.948 |
+        | 2016 |   -1.025 |   -2.55  |           -5.448 |
+        | 2017 |   -1.156 |   -4.091 |           -3.493 |
+        | 2018 |   -1.926 |   -1.831 |           -3.927 |
+        | 2019 |   -0.246 |    1.974 |           -2.688 |
+        | 2020 |    2.483 |   -4.335 |           -2.934 |
+        | 2021 |   -1.245 |   -0.796 |           -0.437 |
+        | 2022 |   -2.438 |   -5.056 |           -2.102 |
+        | 2023 |    1.548 |   -3.983 |           -1.961 |
+        | 2024 |    0.848 |   -2.161 |           -2.787 |
+        | 2025 |   -0.024 |   -2.072 |           -2.829 |
         """
         if self._gmbd_dataset.empty:
             self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
@@ -794,6 +1176,34 @@ class Economics:
 
         Returns:
             pd.DataFrame: A DataFrame containing the Government Debt
+
+        As an example:
+
+        ```python
+        from financetoolkit import Economics
+
+        economics = Economics(start_date='2015-01-01')
+
+        government_debt = economics.get_government_debt()
+
+        government_debt.loc[:, ['United States', 'Canada', 'Mexico']]
+        ```
+
+        Which returns:
+
+        |      |   United States |      Canada |      Mexico |
+        |:-----|----------------:|------------:|------------:|
+        | 2015 |     1.91477e+07 | 1.83178e+06 | 9.8014e+06  |
+        | 2016 |     2.00426e+07 | 1.87153e+06 | 1.1418e+07  |
+        | 2017 |     2.06965e+07 | 1.94674e+06 | 1.18362e+07 |
+        | 2018 |     2.20709e+07 | 2.02946e+06 | 1.26207e+07 |
+        | 2019 |     2.3264e+07  | 2.08707e+06 | 1.30389e+07 |
+        | 2020 |     2.81514e+07 | 2.62466e+06 | 1.4089e+07  |
+        | 2021 |     2.94887e+07 | 2.85651e+06 | 1.51449e+07 |
+        | 2022 |     3.08486e+07 | 3.02057e+06 | 1.59543e+07 |
+        | 2023 |     3.29114e+07 | 3.10891e+06 | 1.68674e+07 |
+        | 2024 |     3.52945e+07 | 3.20199e+06 | 1.97489e+07 |
+        | 2025 |     3.76545e+07 | 3.26736e+06 | 2.12283e+07 |
         """
         if self._gmbd_dataset.empty:
             self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
@@ -834,6 +1244,34 @@ class Economics:
 
         Returns:
             pd.DataFrame: A DataFrame containing the Government Debt to GDP Ratio
+
+        As an example:
+
+        ```python
+        from financetoolkit import Economics
+
+        economics = Economics(start_date='2015-01-01')
+
+        government_debt_to_gdp_ratio = economics.get_government_debt_to_gdp_ratio()
+
+        government_debt_to_gdp_ratio.loc[:, ['Netherlands', 'Germany', 'China']]
+        ```
+
+        Which returns:
+
+        |      |   Netherlands |   Germany |   China |
+        |:-----|--------------:|----------:|--------:|
+        | 2015 |        63.799 |    70.56  |  41.489 |
+        | 2016 |        60.883 |    67.631 |  50.701 |
+        | 2017 |        55.986 |    63.952 |  54.951 |
+        | 2018 |        51.558 |    60.729 |  56.659 |
+        | 2019 |        47.583 |    58.556 |  60.404 |
+        | 2020 |        53.337 |    67.858 |  70.155 |
+        | 2021 |        50.436 |    67.879 |  71.852 |
+        | 2022 |        48.354 |    64.789 |  77.393 |
+        | 2023 |        45.024 |    62.66  |  84.381 |
+        | 2024 |        44.264 |    62.679 |  90.119 |
+        | 2025 |        45.11  |    62.098 |  93.845 |
         """
         if self._gmbd_dataset.empty:
             self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
@@ -879,6 +1317,29 @@ class Economics:
 
         Returns:
             pd.DataFrame: A DataFrame containing the Government Revenue
+
+        As an example:
+
+        ```python
+        from financetoolkit import Economics
+
+        economics = Economics(start_date='2019-01-01')
+
+        government_revenue = economics.get_government_revenue()
+
+        government_revenue.loc[:, ['United Kingdom', 'Canada', 'Japan']]
+
+        Which returns:
+
+        |      |   United Kingdom |           Canada |       Japan |
+        |:-----|-----------------:|-----------------:|------------:|
+        | 2019 | 809863           | 938659           | 1.91079e+08 |
+        | 2020 | 774335           | 919587           | 1.91365e+08 |
+        | 2021 | 868383           |      1.07026e+06 | 2.01026e+08 |
+        | 2022 | 994377           |      1.15747e+06 | 2.10432e+08 |
+        | 2023 |      1.03927e+06 |      1.21236e+06 | 2.19057e+08 |
+        | 2024 |      1.0989e+06  |      1.24586e+06 | 2.20353e+08 |
+        | 2025 |      1.14061e+06 |      1.30501e+06 | 2.31967e+08 |
         """
         if self._gmbd_dataset.empty:
             self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
@@ -921,6 +1382,34 @@ class Economics:
 
         Returns:
             pd.DataFrame: A DataFrame containing the Government Revenue to GDP Ratio
+
+        As an example:
+
+        ```python
+        from financetoolkit import Economics
+
+        economics = Economics(start_date='2015-01-01')
+
+        government_revenue_to_gdp_ratio = economics.get_government_revenue_to_gdp_ratio()
+
+        government_revenue_to_gdp_ratio.loc[:, ['United States', 'Canada', 'Russian Federation']]
+        ```
+
+        Which returns:
+
+        |      |   United States |   Canada |   Russian Federation |
+        |:-----|----------------:|---------:|---------------------:|
+        | 2015 |          31.501 |   39.957 |               31.887 |
+        | 2016 |          30.977 |   40.3   |               32.916 |
+        | 2017 |          30.4   |   40.343 |               33.361 |
+        | 2018 |          30.014 |   41.022 |               35.544 |
+        | 2019 |          30.011 |   40.572 |               35.682 |
+        | 2020 |          30.646 |   41.413 |               35.164 |
+        | 2021 |          31.576 |   42.519 |               35.44  |
+        | 2022 |          32.385 |   41.143 |               34.2   |
+        | 2023 |          29.211 |   41.919 |               34.257 |
+        | 2024 |          29.897 |   41.274 |               35.446 |
+        | 2025 |          30.06  |   41.238 |               36.466 |
         """
         if self._gmbd_dataset.empty:
             self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
@@ -968,6 +1457,33 @@ class Economics:
 
         Returns:
             pd.DataFrame: A DataFrame containing the Government Tax Revenue
+
+        As an example:
+
+        ```python
+        from financetoolkit import Economics
+
+        economics = Economics(start_date='2015-01-01')
+
+        government_tax_revenue = economics.get_government_tax_revenue()
+
+        government_tax_revenue.loc[:, ['Kenya', 'Nigeria', 'South Africa']]
+        ```
+
+        Wjich returns:
+
+        |      |         Kenya |   Nigeria |   South Africa |
+        |:-----|--------------:|----------:|---------------:|
+        | 2015 |   1.0216e+06  |    815000 |    1.10735e+06 |
+        | 2016 |   1.13656e+06 |       nan |    1.18172e+06 |
+        | 2017 |   1.27696e+06 |       nan |    1.25783e+06 |
+        | 2018 |   1.34139e+06 |       nan |    1.33516e+06 |
+        | 2019 |   1.54591e+06 |       nan |    1.39884e+06 |
+        | 2020 |   1.53224e+06 |       nan |    1.29417e+06 |
+        | 2021 |   1.63031e+06 |       nan |    1.61069e+06 |
+        | 2022 |   1.9694e+06  |       nan |    1.7308e+06  |
+        | 2023 |   2.11419e+06 |       nan |  nan           |
+        | 2024 | nan           |       nan |  nan           |
         """
         if self._gmbd_dataset.empty:
             self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
@@ -1012,6 +1528,32 @@ class Economics:
 
         Returns:
             pd.DataFrame: A DataFrame containing the Government Tax Revenue to GDP Ratio
+
+        As an example:
+
+        ```python
+        from financetoolkit import Economics
+
+        economics = Economics(start_date='2015-01-01')
+
+        government_tax_revenue_to_gdp_ratio = economics.get_government_tax_revenue_to_gdp_ratio()
+
+        government_tax_revenue_to_gdp_ratio.loc[:, ['United States', 'Canada', 'Mexico']]
+        ```
+
+        Which returns:
+
+        |      |   United States |   Canada |   Mexico |
+        |:-----|----------------:|---------:|---------:|
+        | 2015 |         19.9356 |  12.3898 |  13.1765 |
+        | 2016 |         19.5813 |  12.4966 |  13.8639 |
+        | 2017 |         20.3141 |  12.612  |  13.4013 |
+        | 2018 |         18.7359 |  13.0577 |  13.3632 |
+        | 2019 |         18.8848 |  12.7417 |  13.4765 |
+        | 2020 |         19.3433 |  13.5033 |  14.5167 |
+        | 2021 |         20.6471 |  13.2199 |  14.1389 |
+        | 2022 |         21.5601 |  12.826  |  13.6774 |
+        | 2023 |         10.2238 |  14.0076 |  14.2666 |
         """
         if self._gmbd_dataset.empty:
             self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
@@ -1059,6 +1601,34 @@ class Economics:
 
         Returns:
             pd.DataFrame: A DataFrame containing the Government Expenditure
+
+        As an example:
+
+        ```python
+        from financetoolkit import Economics
+
+        economics = Economics(start_date='2015-01-01')
+
+        government_expenditure = economics.get_government_expenditure()
+
+        government_expenditure.loc[:, ['Japan', 'China', 'India']]
+        ```
+
+        Which returns:
+
+        |      |       Japan |       China |       India |
+        |:-----|------------:|------------:|------------:|
+        | 2015 | 2.00659e+08 | 2.18369e+07 | 3.72653e+07 |
+        | 2016 | 2.02662e+08 | 2.41071e+07 | 4.19161e+07 |
+        | 2017 | 2.029e+08   | 2.70539e+07 | 4.48306e+07 |
+        | 2018 | 2.045e+08   | 3.04742e+07 | 4.97591e+07 |
+        | 2019 | 2.08067e+08 | 3.38357e+07 | 5.39701e+07 |
+        | 2020 | 2.40235e+08 | 3.63103e+07 | 6.15854e+07 |
+        | 2021 | 2.34757e+08 | 3.74347e+07 | 7.00984e+07 |
+        | 2022 | 2.35009e+08 | 4.02599e+07 | 7.85448e+07 |
+        | 2023 | 2.44046e+08 | 4.17285e+07 | 8.59931e+07 |
+        | 2024 | 2.57546e+08 | 4.45191e+07 | 9.43978e+07 |
+        | 2025 | 2.50987e+08 | 4.77611e+07 | 1.02862e+08 |
         """
         if self._gmbd_dataset.empty:
             self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
@@ -1103,6 +1673,34 @@ class Economics:
 
         Returns:
             pd.DataFrame: A DataFrame containing the Government Expenditure to GDP Ratio
+
+        As an example:
+
+        ```python
+        from financetoolkit import Economics
+
+        economics = Economics(start_date='2015-01-01')
+
+        government_expenditure_to_gdp_ratio = economics.get_government_expenditure_to_gdp_ratio()
+
+        government_expenditure_to_gdp_ratio.loc[:, ['United States', 'Japan', 'Netherlands']]
+        ```
+
+        Which returns:
+
+        |      |   United States |   Japan |   Netherlands |
+        |:-----|----------------:|--------:|--------------:|
+        | 2015 |          35.031 |  37.295 |        45.252 |
+        | 2016 |          35.333 |  37.229 |        43.917 |
+        | 2017 |          35.194 |  36.686 |        42.759 |
+        | 2018 |          35.349 |  36.739 |        42.443 |
+        | 2019 |          35.811 |  37.294 |        42.098 |
+        | 2020 |          44.568 |  44.517 |        47.813 |
+        | 2021 |          42.599 |  42.44  |        45.894 |
+        | 2022 |          36.308 |  41.835 |        43.266 |
+        | 2023 |          36.279 |  41.165 |        43.201 |
+        | 2024 |          37.526 |  42.198 |        44.158 |
+        | 2025 |          37.384 |  39.825 |        44.798 |
         """
         if self._gmbd_dataset.empty:
             self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
@@ -1151,6 +1749,34 @@ class Economics:
 
         Returns:
             pd.DataFrame: A DataFrame containing the Government Deficit
+
+        As an example:
+
+        ```python
+        from financetoolkit import Economics
+
+        economics = Economics(start_date='2015-01-01')
+
+        government_deficit = economics.get_government_deficit()
+
+        government_deficit.loc[:, ['United States', 'Canada', 'Mexico']]
+        ```
+
+        Which returns:
+
+        |      |     United States |      Canada |            Mexico |
+        |:-----|------------------:|------------:|------------------:|
+        | 2015 | -645814           |   -1234.07  | -742032           |
+        | 2016 | -819141           |   -9175.67  | -556543           |
+        | 2017 | -940204           |   -2397.52  | -233024           |
+        | 2018 |      -1.10203e+06 |    8048.43  | -517139           |
+        | 2019 |      -1.24932e+06 |    -393.306 | -569235           |
+        | 2020 |      -2.97292e+06 | -243126     |      -1.03335e+06 |
+        | 2021 |      -2.61038e+06 |  -73474.8   |      -1.00008e+06 |
+        | 2022 |      -1.02051e+06 |    3066.48  |      -1.25793e+06 |
+        | 2023 |      -1.9593e+06  |  -16572     |      -1.36948e+06 |
+        | 2024 |      -2.22521e+06 |  -59827.1   |      -2.01778e+06 |
+        | 2025 |      -2.22159e+06 |  -32373.6   |      -1.28252e+06 |
         """
         if self._gmbd_dataset.empty:
             self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
@@ -1194,6 +1820,34 @@ class Economics:
 
         Returns:
             pd.DataFrame: A DataFrame containing the Government Deficit to GDP Ratio
+
+        As an example:
+
+        ```python
+        from financetoolkit import Economics
+
+        economics = Economics(start_date='2015-01-01')
+
+        government_deficit_to_gdp_ratio = economics.get_government_deficit_to_gdp_ratio()
+
+        government_deficit_to_gdp_ratio.loc[:, ['New Zealand', 'Australia', 'United Kingdom']]
+        ```
+
+        Which returns:
+
+        |      |   New Zealand |   Australia |   United Kingdom |
+        |:-----|--------------:|------------:|-----------------:|
+        | 2015 |         0.365 |      -2.785 |           -4.622 |
+        | 2016 |         0.978 |      -2.422 |           -3.338 |
+        | 2017 |         1.358 |      -1.716 |           -2.505 |
+        | 2018 |         1.271 |      -1.257 |           -2.273 |
+        | 2019 |        -2.499 |      -4.404 |           -2.481 |
+        | 2020 |        -4.328 |      -8.719 |          -13.145 |
+        | 2021 |        -3.237 |      -6.353 |           -7.86  |
+        | 2022 |        -3.511 |      -2.187 |           -4.703 |
+        | 2023 |        -3.333 |      -0.857 |           -5.964 |
+        | 2024 |        -3.845 |      -1.661 |           -4.25  |
+        | 2025 |        -3.493 |      -2.043 |           -3.741 |
         """
         if self._gmbd_dataset.empty:
             self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
@@ -1266,23 +1920,24 @@ class Economics:
 
         |      |   United States |   Greece |   Japan |
         |:-----|----------------:|---------:|--------:|
-        | 2006 |          0.558  |   0.4875 |  0.3503 |
-        | 2007 |          0.3932 |   0.3814 |  0.24   |
-        | 2008 |          0.3792 | nan      |  0.2212 |
-        | 2009 |          0.503  |   0.3162 |  0.2518 |
-        | 2010 |          0.4183 |   0.2365 |  0.2703 |
-        | 2011 |          0.3825 |   0.1752 |  0.2311 |
-        | 2012 |          0.3489 |   0.1262 |  0.1692 |
-        | 2013 |          0.2886 |   0.1436 |  0.3581 |
-        | 2014 |          0.3487 |   0.1883 |  0.3795 |
-        | 2015 |          0.3469 |   0.4373 |  0.3529 |
-        | 2016 |          0.2972 |   0.1325 |  0.3622 |
-        | 2017 |          0.3865 |   0.1399 |  0.4125 |
-        | 2018 |          0.3138 |   0.157  |  0.3849 |
-        | 2019 |          0.3628 |   0.3964 |  0.4112 |
-        | 2020 |          0.4649 |   0.3975 |  0.4234 |
-        | 2021 |          0.4046 |   0.4017 |  0.2908 |
-        | 2022 |          0.3102 |   0.2563 |  0.4315 |
+        | 2006 |          0.4959 |   0.4821 |  0.3248 |
+        | 2007 |          0.4039 |   0.4821 |  0.3248 |
+        | 2008 |          0.4065 | nan      |  0.238  |
+        | 2009 |          0.3927 |   0.3153 |  0.238  |
+        | 2010 |          0.3927 |   0.3153 |  0.238  |
+        | 2011 |          0.3927 |   0.1556 |  0.2564 |
+        | 2012 |          0.3927 |   0.1556 |  0.2564 |
+        | 2013 |          0.3927 |   0.1556 |  0.2564 |
+        | 2014 |          0.3463 |   0.2738 |  0.4084 |
+        | 2015 |          0.3463 |   0.2738 |  0.3283 |
+        | 2016 |          0.3463 |   0.2738 |  0.3283 |
+        | 2017 |          0.3463 |   0.2415 |  0.387  |
+        | 2018 |          0.3463 |   0.2415 |  0.387  |
+        | 2019 |          0.3654 |   0.2415 |  0.387  |
+        | 2020 |          0.3654 |   0.3695 |  0.3443 |
+        | 2021 |          0.3654 |   0.3695 |  0.3443 |
+        | 2022 |          0.3654 |   0.3086 |  0.3798 |
+        | 2023 |          0.3654 |   0.3217 |  0.3798 |
         """
         trust_in_government = oecd_model.get_trust_in_goverment()
 
@@ -1320,6 +1975,36 @@ class Economics:
 
         Returns:
             pd.DataFrame: A DataFrame containing the Consumer Price Index.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Economics
+
+        economics = Economics(start_date='2008-09-01', end_date='2020-03-01')
+
+        consumer_price_index = economics.get_consumer_price_index()
+
+        consumer_price_index.loc[:, ['Germany', 'France', 'Portugal']]
+        ```
+
+        Which returns:
+
+        |      |   Germany |   France |   Portugal |
+        |:-----|----------:|---------:|-----------:|
+        | 2008 |   98.6508 |  98.1924 |     99.527 |
+        | 2009 |   98.8937 |  98.2913 |     98.628 |
+        | 2010 |  100      | 100      |    100     |
+        | 2011 |  102.482  | 102.287  |    103.555 |
+        | 2012 |  104.695  | 104.553  |    106.43  |
+        | 2013 |  106.377  | 105.589  |    106.897 |
+        | 2014 |  107.196  | 106.236  |    106.727 |
+        | 2015 |  107.924  | 106.328  |    107.269 |
+        | 2016 |  108.32   | 106.653  |    107.951 |
+        | 2017 |  110.164  | 107.896  |    109.631 |
+        | 2018 |  112.296  | 110.162  |    110.91  |
+        | 2019 |  113.815  | 111.591  |    111.243 |
+        | 2020 |  114.239  | 112.18   |    111.108 |
         """
         if self._gmbd_dataset.empty:
             self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
@@ -1369,11 +2054,12 @@ class Economics:
         ```python
         from financetoolkit import Economics
 
-        economics = Economics(start_date='2008-09-01', end_date='2009-03-01')
+        economics = Economics(start_date='2003-01-01', end_date='2009-03-01')
 
         inflation_rate = economics.get_inflation_rate()
 
         inflation_rate.loc[:, ['Germany', 'France', 'Portugal']]
+        ```
 
         Which returns:
 
@@ -1649,13 +2335,14 @@ class Economics:
         |      |   Japan |   Netherlands |   Ireland |
         |:-----|--------:|--------------:|----------:|
         | 2015 | 100     |       100     |   100     |
-        | 2016 | 102.559 |       104.447 |   106.77  |
-        | 2017 | 104.762 |       110.795 |   116.608 |
-        | 2018 | 106.054 |       118.658 |   126.275 |
-        | 2019 | 107.256 |       124.074 |   126.897 |
-        | 2020 | 106.991 |       131.814 |   126.311 |
-        | 2021 | 112.714 |       147.149 |   131.669 |
-        | 2022 | 118.827 |       156.422 |   138.298 |
+        | 2016 | 102.559 |       104.557 |   106.626 |
+        | 2017 | 104.76  |       110.834 |   116.945 |
+        | 2018 | 106.053 |       118.68  |   127.047 |
+        | 2019 | 107.254 |       124.372 |   127.837 |
+        | 2020 | 106.994 |       131.653 |   128.345 |
+        | 2021 | 112.714 |       144.382 |   135.141 |
+        | 2022 | 118.739 |       152.287 |   141.162 |
+        | 2023 | 118.74  |       139.601 |   134.022 |
         """
         quarterly = quarterly if quarterly is not None else self._quarterly
         gmdb_source = gmdb_source if gmdb_source is not None else self._gmdb_source
@@ -1794,7 +2481,7 @@ class Economics:
         ```python
         from financetoolkit import Economics
 
-        economics = Economics()
+        economics = Economics(start_date="2013-01-01")
 
         share_prices = economics.get_share_prices()
 
@@ -1803,18 +2490,20 @@ class Economics:
 
         Which returns:
 
-        |      |   Turkey |   Belgium |   Australia |
-        |:-----|---------:|----------:|------------:|
-        | 2013 |  96.6029 |   74.3936 |     92.3054 |
-        | 2014 |  93.2354 |   87.8382 |     98.611  |
-        | 2015 | 100      |  100      |    100      |
-        | 2016 |  95.6644 |   95.2324 |     96.0699 |
-        | 2017 | 122.746  |  101.514  |    105.648  |
-        | 2018 | 126.263  |   96.5515 |    109.205  |
-        | 2019 | 123.056  |   92.6847 |    117.326  |
-        | 2020 | 140.511  |   77.8758 |    111.188  |
-        | 2021 | 187.146  |   91.6789 |    130.475  |
-        | 2022 | 369.298  |   93.0484 |    128.367  |
+        |      |    Turkey |   Belgium |   Australia |
+        |:-----|----------:|----------:|------------:|
+        | 2013 |   96.6029 |   74.3936 |     92.3054 |
+        | 2014 |   93.2354 |   87.8382 |     98.611  |
+        | 2015 |  100      |  100      |    100      |
+        | 2016 |   95.6644 |   95.2324 |     96.0699 |
+        | 2017 |  122.746  |  101.514  |    105.648  |
+        | 2018 |  126.263  |   96.5515 |    109.205  |
+        | 2019 |  123.056  |   92.6847 |    117.326  |
+        | 2020 |  140.511  |   77.8758 |    111.188  |
+        | 2021 |  187.146  |   91.6789 |    130.475  |
+        | 2022 |  369.298  |   93.0484 |    128.367  |
+        | 2023 |  785.903  |   97.9468 |    131.286  |
+        | 2024 | 1190.71   |  106.289  |    143.996  |
         """
         period = (
             period
@@ -1870,27 +2559,28 @@ class Economics:
         ```python
         from financetoolkit import Economics
 
-        economics = Economics()
+        economics = Economics(start_date='2000-01-01', end_date='2010-12-31')
 
         exchange_rates = economics.get_exchange_rates()
 
-        exchange_rates.loc[:, ['Netherlands', 'Japan', 'Indonesia']]
+        exchange_rates.loc[:, ['Japan', 'Indonesia', "China"]]
         ```
 
         Which returns:
 
-        |      |   Netherlands |    Japan |   Indonesia |
-        |:-----|--------------:|---------:|------------:|
-        | 2013 |        0.7529 |  97.5957 |     10461.2 |
-        | 2014 |        0.7527 | 105.945  |     11865.2 |
-        | 2015 |        0.9013 | 121.044  |     13389.4 |
-        | 2016 |        0.9034 | 108.793  |     13308.3 |
-        | 2017 |        0.8852 | 112.166  |     13380.8 |
-        | 2018 |        0.8468 | 110.423  |     14236.9 |
-        | 2019 |        0.8933 | 109.01   |     14147.7 |
-        | 2020 |        0.8755 | 106.775  |     14582.2 |
-        | 2021 |        0.8455 | 109.754  |     14308.1 |
-        | 2022 |        0.9496 | 131.498  |     14849.9 |
+        |      |    Japan |   Indonesia |   China |
+        |:-----|---------:|------------:|--------:|
+        | 2000 | 107.835  |     8394.53 |  8.2784 |
+        | 2001 | 121.484  |    10253    |  8.2777 |
+        | 2002 | 125.255  |     9318.73 |  8.2771 |
+        | 2003 | 115.936  |     8573.73 |  8.278  |
+        | 2004 | 108.147  |     8931.52 |  8.2782 |
+        | 2005 | 110.133  |     9701.29 |  8.1942 |
+        | 2006 | 116.354  |     9164.03 |  7.9724 |
+        | 2007 | 117.755  |     9139.41 |  7.6074 |
+        | 2008 | 103.388  |     9663.87 |  6.9502 |
+        | 2009 |  93.5716 |    10376.8  |  6.8308 |
+        | 2010 |  87.7606 |     9078.03 |  6.769  |
         """
         period = (
             period
@@ -1951,6 +2641,34 @@ class Economics:
 
         Returns:
             pd.DataFrame: A DataFrame containing the Money Supply
+
+        As an example:
+
+        ```python
+        from financetoolkit import Economics
+
+        economics = Economics(start_date='2010-01-01', end_date='2020-12-31')
+
+        money_supply = economics.get_money_supply()
+
+        money_supply["M2"][["Netherlands", "Germany", "United States"]]
+        ```
+
+        Which returns:
+
+        |      |   Netherlands |    Germany |   United States |
+        |:-----|--------------:|-----------:|----------------:|
+        | 2010 |        701718 | 1.9878e+06 |     8.478e+06   |
+        | 2011 |        727265 | 2.1053e+06 |     8.8452e+06  |
+        | 2012 |        746482 | 2.2556e+06 |     9.7505e+06  |
+        | 2013 |        741372 | 2.3144e+06 |     1.04976e+07 |
+        | 2014 |        743043 | 2.4272e+06 |     1.11176e+07 |
+        | 2015 |        822382 | 2.6518e+06 |     1.17742e+07 |
+        | 2016 |        841302 | 2.8022e+06 |     1.24908e+07 |
+        | 2017 |        851237 | 2.9236e+06 |     1.32864e+07 |
+        | 2018 |        846513 | 3.0562e+06 |     1.38692e+07 |
+        | 2019 |        889033 | 3.1968e+06 |     1.44327e+07 |
+        | 2020 |        974276 | 3.4582e+06 |     1.54013e+07 |
         """
         if self._gmbd_dataset.empty:
             self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
@@ -1991,6 +2709,28 @@ class Economics:
 
         Returns:
             pd.DataFrame: A DataFrame containing the Central Bank Policy Rate
+
+        As an example:
+
+        ```python
+        from financetoolkit import Economics
+
+        economics = Economics(start_date='2021-01-01', end_date='2025-12-31')
+
+        central_bank_policy_rate = economics.get_central_bank_policy_rate()
+
+        central_bank_policy_rate[["Netherlands", "Germany", "United States"]]
+        ```
+
+        Which returns:
+
+        |      |   Netherlands |   Germany |   United States |
+        |:-----|--------------:|----------:|----------------:|
+        | 2021 |       -0.5    |   -0.5    |           0.125 |
+        | 2022 |        0.4375 |    0.4375 |           4.375 |
+        | 2023 |        3.625  |    3.625  |           5.375 |
+        | 2024 |        3.8125 |    3.8125 |           4.375 |
+        | 2025 |        2.875  |    2.875  |           4.255 |
         """
         if self._gmbd_dataset.empty:
             self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
@@ -2053,7 +2793,7 @@ class Economics:
 
         economics = Economics(start_date='2023-05-01')
 
-        short_term_interest_rate = economics.get_short_term_interest_rate(period='quarterly', forecast=True)
+        short_term_interest_rate = economics.get_short_term_interest_rate(period='quarterly')
 
         short_term_interest_rate.loc[:, ['Japan', 'United States', 'China']]
         ```
@@ -2062,17 +2802,13 @@ class Economics:
 
         |        |   Japan |   United States |   China |
         |:-------|--------:|----------------:|--------:|
-        | 2023Q2 | -0.0003 |          0.0513 |  0.0435 |
-        | 2023Q3 | -0.0003 |          0.0543 |  0.0435 |
-        | 2023Q4 | -0.0003 |          0.0543 |  0.0435 |
-        | 2024Q1 |  0.0007 |          0.0536 |  0.0435 |
-        | 2024Q2 |  0.0017 |          0.0513 |  0.043  |
-        | 2024Q3 |  0.0027 |          0.0488 |  0.043  |
-        | 2024Q4 |  0.0037 |          0.0468 |  0.0425 |
-        | 2025Q1 |  0.0047 |          0.0448 |  0.0425 |
-        | 2025Q2 |  0.0057 |          0.0423 |  0.0425 |
-        | 2025Q3 |  0.0067 |          0.0408 |  0.0425 |
-        | 2025Q4 |  0.0077 |          0.0398 |  0.0425 |
+        | 2023Q2 | -0.0001 |          0.0513 |  0.0289 |
+        | 2023Q3 |  0.0001 |          0.0543 |  0.0261 |
+        | 2023Q4 |  0.0002 |          0.054  |  0.0288 |
+        | 2024Q1 |  0.0005 |          0.0526 |  0.0267 |
+        | 2024Q2 |  0.0013 |          0.0531 |  0.0235 |
+        | 2024Q3 |  0.0023 |          0.051  |  0.021  |
+        | 2024Q4 |  0.0033 |          0.0454 |  0.0205 |
         """
         period = (
             period
@@ -2243,24 +2979,24 @@ class Economics:
 
         renewable_energy = economics.get_renewable_energy()
 
-        renewable_energy.loc[:, ['Zambia', 'Albania', 'Austria']]
+        renewable_energy.loc[:, ['Austria', 'Germany', 'United States']]
         ```
 
         Which returns:
 
-        |      |   Zambia |   Albania |   Austria |
-        |:-----|---------:|----------:|----------:|
-        | 2010 |   0.9038 |    0.4049 |    0.2742 |
-        | 2011 |   0.8882 |    0.2581 |    0.2696 |
-        | 2012 |   0.8726 |    0.3121 |    0.307  |
-        | 2013 |   0.874  |    0.3489 |    0.3011 |
-        | 2014 |   0.8627 |    0.2722 |    0.3068 |
-        | 2015 |   0.8486 |    0.3433 |    0.2985 |
-        | 2016 |   0.8241 |    0.4209 |    0.3034 |
-        | 2017 |   0.8097 |    0.273  |    0.2984 |
-        | 2018 |   0.8081 |    0.4322 |    0.2943 |
-        | 2019 |   0.8089 |    0.3172 |    0.3006 |
-        | 2020 |   0.818  |    0.3388 |    0.3202 |
+        |      |   Austria |   Germany |   United States |
+        |:-----|----------:|----------:|----------------:|
+        | 2010 |    0.2742 |    0.0933 |          0.0568 |
+        | 2011 |    0.2696 |    0.102  |          0.0619 |
+        | 2012 |    0.307  |    0.1137 |          0.0631 |
+        | 2013 |    0.3011 |    0.1147 |          0.0665 |
+        | 2014 |    0.3068 |    0.1192 |          0.0677 |
+        | 2015 |    0.2985 |    0.1264 |          0.0675 |
+        | 2016 |    0.3034 |    0.1253 |          0.0707 |
+        | 2017 |    0.2984 |    0.1332 |          0.074  |
+        | 2018 |    0.2944 |    0.1396 |          0.0764 |
+        | 2019 |    0.3006 |    0.1485 |          0.0776 |
+        | 2020 |    0.3191 |    0.1637 |          0.083  |
         """
         renewable_energy = oecd_model.get_renewable_energy()
 
@@ -2310,26 +3046,24 @@ class Economics:
 
         economics = Economics(start_date="2010-01-01", end_date="2020-01-01")
 
-        environmental_tax = economics.get_environmental_tax()
+        carbon_footprint = economics.get_carbon_footprint()
 
-        environmental_tax.loc[:, 'Netherlands']
+        carbon_footprint.loc[:, ["Germany", "United States", "Poland"]]
         ```
 
         Which returns:
 
-        |      |   Total |   Energy |   Transport |   Resource |   Pollution |
-        |:-----|--------:|---------:|------------:|-----------:|------------:|
-        | 2010 |    3.63 |     1.88 |        1.14 |       0.37 |        0.24 |
-        | 2011 |    3.45 |     1.85 |        1.1  |       0.27 |        0.23 |
-        | 2012 |    3.28 |     1.78 |        1.02 |       0.25 |        0.23 |
-        | 2013 |    3.29 |     1.9  |        0.95 |       0.26 |        0.19 |
-        | 2014 |    3.35 |     1.88 |        1    |       0.28 |        0.19 |
-        | 2015 |    3.36 |     1.86 |        1.04 |       0.27 |        0.19 |
-        | 2016 |    3.39 |     1.89 |        1.03 |       0.28 |        0.19 |
-        | 2017 |    3.37 |     1.86 |        1.06 |       0.27 |        0.18 |
-        | 2018 |    3.37 |     1.87 |        1.07 |       0.26 |        0.18 |
-        | 2019 |    3.42 |     1.94 |        1.04 |       0.25 |        0.19 |
-        | 2020 |    3.21 |     1.8  |        0.96 |       0.26 |        0.2  |
+        |      |   Germany |   United States |   Poland |
+        |:-----|----------:|----------------:|---------:|
+        | 2010 |    11.893 |          19.644 |    7.967 |
+        | 2011 |    11.702 |          18.733 |    7.818 |
+        | 2012 |    11.405 |          17.921 |    7.611 |
+        | 2013 |    11.599 |          18.119 |    7.283 |
+        | 2014 |    11.021 |          18.072 |    7.106 |
+        | 2015 |    10.6   |          17.885 |    7.043 |
+        | 2016 |    10.662 |          17.447 |    7.21  |
+        | 2017 |    10.661 |          17.211 |    7.497 |
+        | 2018 |    10.437 |          17.551 |    7.539 |
         """
         carbon_footprint_df = oecd_model.get_carbon_footprint()
 

@@ -42,7 +42,7 @@ keywords = [
 ]
 
 [tool.poetry.dependencies]
-python = ">=3.10, <3.13"
+python = ">=3.10, <3.14"
 pandas = {version = "^2.2", extras = ["computation", "performance", "plot", "excel"]}
 requests = "^2.32.3"
 scikit-learn = "^1.5"

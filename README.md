@@ -117,7 +117,7 @@ value_at_risk = companies.risk.get_value_at_risk(period="weekly")
 ichimoku_cloud = companies.technicals.get_ichimoku_cloud()
 
 # a Fixed Income example
-corporate_bond_yields = companies.fixed_income.get_ice_bofa_effective_yield()
+corporate_bond_yields = companies.fixedincome.get_ice_bofa_effective_yield()
 
 # an Economics example
 unemployment_rates = companies.economics.get_unemployment_rate()

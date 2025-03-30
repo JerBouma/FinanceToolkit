@@ -5,33 +5,33 @@ AAPL,Market Value Equity,Lag 3,,,,-0.077
 AAPL,Market Value Debt,Lag 1,,0.1092,-0.0373,-0.1566
 AAPL,Market Value Debt,Lag 2,,,0.0679,-0.188
 AAPL,Market Value Debt,Lag 3,,,,-0.0993
-AAPL,Cost of Equity,Lag 1,,-261.1799,-1.6617,0.0
-AAPL,Cost of Equity,Lag 2,,,171.1513,-1.6617
-AAPL,Cost of Equity,Lag 3,,,,171.1513
+AAPL,Cost of Equity,Lag 1,,inf,-1.6223,0.0
+AAPL,Cost of Equity,Lag 2,,,-inf,-1.6223
+AAPL,Cost of Equity,Lag 3,,,,-inf
 AAPL,Cost of Debt,Lag 1,,-0.17,0.151,-1.0
 AAPL,Cost of Debt,Lag 2,,,-0.0447,-1.0
 AAPL,Cost of Debt,Lag 3,,,,-1.0
 AAPL,Corporate Tax Rate,Lag 1,,-0.078,0.2182,-0.0917
 AAPL,Corporate Tax Rate,Lag 2,,,0.1231,0.1065
 AAPL,Corporate Tax Rate,Lag 3,,,,0.0202
-AAPL,Weighted Average Cost of Capital,Lag 1,,-1026.5214,-1.648,0.0
-AAPL,Weighted Average Cost of Capital,Lag 2,,,663.5625,-1.648
-AAPL,Weighted Average Cost of Capital,Lag 3,,,,663.5625
+AAPL,Weighted Average Cost of Capital,Lag 1,,356.3704,-1.6093,0.0
+AAPL,Weighted Average Cost of Capital,Lag 2,,,-218.7579,-1.6093
+AAPL,Weighted Average Cost of Capital,Lag 3,,,,-218.7579
 MSFT,Market Value Equity,Lag 1,,0.5099,-0.2867,0.0
 MSFT,Market Value Equity,Lag 2,,,0.077,-0.2867
 MSFT,Market Value Equity,Lag 3,,,,0.077
 MSFT,Market Value Debt,Lag 1,,-0.0454,-0.096,-0.0213
 MSFT,Market Value Debt,Lag 2,,,-0.137,-0.1152
 MSFT,Market Value Debt,Lag 3,,,,-0.1554
-MSFT,Cost of Equity,Lag 1,,-243.2339,-1.7349,0.0
-MSFT,Cost of Equity,Lag 2,,,177.0277,-1.7349
-MSFT,Cost of Equity,Lag 3,,,,177.0277
+MSFT,Cost of Equity,Lag 1,,inf,-1.6971,0.0
+MSFT,Cost of Equity,Lag 2,,,-inf,-1.6971
+MSFT,Cost of Equity,Lag 3,,,,-inf
 MSFT,Cost of Debt,Lag 1,,-0.0515,-0.0273,-0.0253
 MSFT,Cost of Debt,Lag 2,,,-0.0774,-0.0519
 MSFT,Cost of Debt,Lag 3,,,,-0.1007
 MSFT,Corporate Tax Rate,Lag 1,,-0.1624,-0.0516,0.4473
 MSFT,Corporate Tax Rate,Lag 2,,,-0.2056,0.3726
 MSFT,Corporate Tax Rate,Lag 3,,,,0.1497
-MSFT,Weighted Average Cost of Capital,Lag 1,,-4843.0494,-1.7251,0.0
-MSFT,Weighted Average Cost of Capital,Lag 2,,,3509.847,-1.7251
-MSFT,Weighted Average Cost of Capital,Lag 3,,,,3509.847
+MSFT,Weighted Average Cost of Capital,Lag 1,,260.6504,-1.6877,0.0
+MSFT,Weighted Average Cost of Capital,Lag 2,,,-180.9245,-1.6877
+MSFT,Weighted Average Cost of Capital,Lag 3,,,,-180.9245

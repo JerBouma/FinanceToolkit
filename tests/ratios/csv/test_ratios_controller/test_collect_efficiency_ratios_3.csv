@@ -1,27 +1,27 @@
 ,,2021,2022,2023
-AAPL,Days of Inventory Outstanding,,9.2674,9.5081
-AAPL,Days of Sales Outstanding,,48.3506,47.614
-AAPL,Operating Cycle,,57.6181,57.1221
-AAPL,Days of Accounts Payable Outstanding,,90.2774,102.4091
-AAPL,Cash Conversion Cycle,,-32.6593,-45.287
+AAPL,Days of Inventory Outstanding,5.0765,4.8187,4.7022
+AAPL,Days of Sales Outstanding,25.3518,26.9948,21.2256
+AAPL,Operating Cycle,,26.1746,31.0905
+AAPL,Days of Accounts Payable Outstanding,46.3044,49.6996,52.8407
+AAPL,Cash Conversion Cycle,-15.876,-17.8862,-26.913
 AAPL,Cash Conversion Efficiency,0.2885,0.2976,0.2992
-AAPL,Receivables Turnover,,0.1325,0.1304
+AAPL,Receivables Turnover,0.0695,0.074,0.0582
 AAPL,Inventory Turnover Ratio,40.0303,38.7899,37.9777
 AAPL,Accounts Payable Turnover Ratio,4.3887,3.7609,3.3795
 AAPL,SGA-to-Revenue Ratio,0.0654,0.0619,0.0643
-AAPL,Fixed Asset Turnover,,1.832,1.8086
-AAPL,Asset Turnover Ratio,,1.1027,1.1037
+AAPL,Fixed Asset Turnover,3.2312,3.5069,3.6476
+AAPL,Asset Turnover Ratio,1.8976,2.1602,2.2049
 AAPL,Operating Ratio,0.7263,0.6995,0.6994
-MSFT,Days of Inventory Outstanding,,17.3299,17.9215
-MSFT,Days of Sales Outstanding,,75.8966,77.9738
-MSFT,Operating Cycle,,93.2265,95.8953
-MSFT,Days of Accounts Payable Outstanding,,98.2636,101.1928
-MSFT,Cash Conversion Cycle,,-5.0371,-5.2975
+MSFT,Days of Inventory Outstanding,8.4112,10.132,8.8642
+MSFT,Days of Sales Outstanding,41.0952,40.9995,41.355
+MSFT,Operating Cycle,,45.0292,45.483
+MSFT,Days of Accounts Payable Outstanding,51.4085,54.2709,52.6782
+MSFT,Cash Conversion Cycle,-1.9021,-3.1394,-2.4591
 MSFT,Cash Conversion Efficiency,0.4417,0.4525,0.4306
-MSFT,Receivables Turnover,,0.2079,0.2136
+MSFT,Receivables Turnover,0.1126,0.1123,0.1133
 MSFT,Inventory Turnover Ratio,23.0554,19.6457,21.1032
 MSFT,Accounts Payable Turnover Ratio,3.7722,3.6677,3.551
 MSFT,SGA-to-Revenue Ratio,0.1605,0.1445,0.1415
-MSFT,Fixed Asset Turnover,,1.1947,1.069
-MSFT,Asset Turnover Ratio,,0.5494,0.556
+MSFT,Fixed Asset Turnover,2.315,2.1267,1.94
+MSFT,Asset Turnover Ratio,0.9797,1.0488,1.0561
 MSFT,Operating Ratio,0.605,0.5816,0.5809

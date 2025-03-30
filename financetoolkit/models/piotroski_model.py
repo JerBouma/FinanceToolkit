@@ -15,8 +15,7 @@ from financetoolkit.ratios import (
 
 def get_return_on_assets_criteria(
     net_income: float | pd.Series | pd.DataFrame,
-    total_assets_begin: float | pd.Series | pd.DataFrame,
-    total_assets_end: float | pd.Series | pd.DataFrame,
+    average_total_assets: float | pd.Series | pd.DataFrame,
 ) -> float | pd.Series | pd.DataFrame:
     """
     Calculates the Return on Assets (ROA) criteria for the Piotroski F-Score model.
@@ -33,9 +32,7 @@ def get_return_on_assets_criteria(
 
     Args:
         net_income (float | pd.Series | pd.DataFrame): The net income of the company.
-        total_assets_begin (float | pd.Series | pd.DataFrame): The total assets of the company at the beginning
-        of the period.
-        total_assets_end (float | pd.Series | pd.DataFrame): The total assets of the company at the end of the period.
+        average_total_assets (float | pd.Series | pd.DataFrame): The average total assets of the company.
 
     Returns:
         float | pd.Series | pd.DataFrame: A boolean value indicating whether the company meets the
@@ -47,8 +44,7 @@ def get_return_on_assets_criteria(
 
     return_on_assets = profitability_model.get_return_on_assets(
         net_income=net_income,
-        total_assets_begin=total_assets_begin,
-        total_assets_end=total_assets_end,
+        average_total_assets=average_total_assets,
     )
 
     return_on_assets_criteria = return_on_assets > 0
@@ -84,8 +80,7 @@ def get_operating_cashflow_criteria(
 
 def get_change_in_return_on_asset_criteria(
     net_income: float | pd.Series | pd.DataFrame,
-    total_assets_begin: float | pd.Series | pd.DataFrame,
-    total_assets_end: float | pd.Series | pd.DataFrame,
+    average_total_assets: float | pd.Series | pd.DataFrame,
 ) -> float | pd.Series | pd.DataFrame:
     """
     Calculates the change in the return on assets criteria for a company based o
@@ -105,10 +100,8 @@ def get_change_in_return_on_asset_criteria(
 
     Args:
         net_income (float | pd.Series | pd.DataFrame): The net income of the company for the period.
-        total_assets_begin (float | pd.Series | pd.DataFrame): The total assets of the company at the
-        beginning of the period.
-        total_assets_end (float | pd.Series | pd.DataFrame): The total assets of the company at the
-        end of the period.
+        average_total_assets (float | pd.Series | pd.DataFrame): The average total assets of the company
+        for the period.
 
     Returns:
         float | pd.Series | pd.DataFrame: A boolean value indicating whether the growth rate of the ROA has increased
@@ -116,9 +109,7 @@ def get_change_in_return_on_asset_criteria(
 
     """
     return_on_assets = profitability_model.get_return_on_assets(
-        net_income=net_income,
-        total_assets_begin=total_assets_begin,
-        total_assets_end=total_assets_end,
+        net_income=net_income, average_total_assets=average_total_assets
     )
 
     return_on_assets_growth = helpers.calculate_growth(return_on_assets)
@@ -132,8 +123,7 @@ def get_change_in_return_on_asset_criteria(
 
 def get_accruals_criteria(
     net_income: float | pd.Series | pd.DataFrame,
-    total_assets_begin: float | pd.Series | pd.DataFrame,
-    total_assets_end: float | pd.Series | pd.DataFrame,
+    average_total_assets: float | pd.Series | pd.DataFrame,
     operating_cashflow: float | pd.Series | pd.DataFrame,
     total_assets: float | pd.Series | pd.DataFrame,
 ) -> float | pd.Series | pd.DataFrame:
@@ -151,10 +141,7 @@ def get_accruals_criteria(
 
     Args:
         net_income (float | pd.Series | pd.DataFrame): The net income of the company.
-        total_assets_begin (float | pd.Series | pd.DataFrame): The total assets of the company
-        at the beginning of the period.
-        total_assets_end (float | pd.Series | pd.DataFrame): The total assets of the company
-        at the end of the period.
+        average_total_assets (float | pd.Series | pd.DataFrame): The average total assets of the company.
         operating_cashflow (float | pd.Series | pd.DataFrame): The operating cashflow of the company.
         total_assets (float | pd.Series | pd.DataFrame): The total assets of the company.
 
@@ -163,9 +150,7 @@ def get_accruals_criteria(
     """
 
     return_on_assets = profitability_model.get_return_on_assets(
-        net_income=net_income,
-        total_assets_begin=total_assets_begin,
-        total_assets_end=total_assets_end,
+        net_income=net_income, average_total_assets=average_total_assets
     )
 
     operating_cf_to_total_assets = operating_cashflow / total_assets
@@ -315,8 +300,7 @@ def get_gross_margin_criteria(
 
 def get_asset_turnover_ratio_criteria(
     sales: pd.Series | pd.DataFrame,
-    total_assets_begin: pd.Series | pd.DataFrame,
-    total_assets_end: pd.Series | pd.DataFrame,
+    average_total_assets: pd.Series | pd.DataFrame,
 ) -> pd.Series | pd.DataFrame:
     """
     Calculate criteria for evaluating changes in the Asset Turnover Ratio over time.
@@ -327,10 +311,8 @@ def get_asset_turnover_ratio_criteria(
     Args:
         sales (pd.Series | pd.DataFrame): The sales or revenue generated by a company, which can
         be a time-series or DataFrame.
-        total_assets_begin (pd.Series | pd.DataFrame): The total assets of the company at the beginning of a
-        specified period, which can be a time-series or DataFrame.
-        total_assets_end (pd.Series | pd.DataFrame): The total assets of the company at the end of the same period,
-        which can be a time-series or DataFrame.
+        average_total_assets (pd.Series | pd.DataFrame): The average total assets of a company, which can
+        be a time-series or DataFrame.
 
     Returns:
         pd.Series | pd.DataFrame: A boolean criteria indicating whether the Asset Turnover Ratio increased compared to the
@@ -342,9 +324,7 @@ def get_asset_turnover_ratio_criteria(
     - This function can be used to monitor changes in a company's ability to generate revenue from its assets over time.
     """
     asset_turnover_ratio = efficiency_model.get_asset_turnover_ratio(
-        sales=sales,
-        total_assets_begin=total_assets_begin,
-        total_assets_end=total_assets_end,
+        sales=sales, average_total_assets=average_total_assets
     )
 
     asset_turnover_ratio_criteria = asset_turnover_ratio > asset_turnover_ratio.shift(

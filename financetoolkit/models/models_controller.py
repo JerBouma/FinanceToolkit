@@ -1092,12 +1092,12 @@ class Models:
         piotroski_score["Return on Assets Criteria"] = (
             piotroski_model.get_return_on_assets_criteria(
                 net_income=self._income_statement.loc[:, "Net Income", :],
-                total_assets_begin=self._balance_sheet_statement.loc[
+                average_total_assets=self._balance_sheet_statement.loc[
                     :, "Total Assets", :
-                ].shift(axis=1),
-                total_assets_end=self._balance_sheet_statement.loc[
-                    :, "Total Assets", :
-                ],
+                ]
+                .T.rolling(2)
+                .mean()
+                .T,
             )
         )
 
@@ -1112,21 +1112,21 @@ class Models:
         piotroski_score["Change in Return on Assets Criteria"] = (
             piotroski_model.get_change_in_return_on_asset_criteria(
                 net_income=self._income_statement.loc[:, "Net Income", :],
-                total_assets_begin=self._balance_sheet_statement.loc[
+                average_total_assets=self._balance_sheet_statement.loc[
                     :, "Total Assets", :
-                ].shift(axis=1),
-                total_assets_end=self._balance_sheet_statement.loc[
-                    :, "Total Assets", :
-                ],
+                ]
+                .T.rolling(2)
+                .mean()
+                .T,
             )
         )
 
         piotroski_score["Accruals Criteria"] = piotroski_model.get_accruals_criteria(
             net_income=self._income_statement.loc[:, "Net Income", :],
-            total_assets_begin=self._balance_sheet_statement.loc[
-                :, "Total Assets", :
-            ].shift(axis=1),
-            total_assets_end=self._balance_sheet_statement.loc[:, "Total Assets", :],
+            average_total_assets=self._balance_sheet_statement.loc[:, "Total Assets", :]
+            .T.rolling(2)
+            .mean()
+            .T,
             operating_cashflow=self._cash_flow_statement.loc[
                 :, "Operating Cash Flow", :
             ],
@@ -1171,12 +1171,12 @@ class Models:
         piotroski_score["Asset Turnover Criteria"] = (
             piotroski_model.get_asset_turnover_ratio_criteria(
                 sales=self._income_statement.loc[:, "Revenue", :],
-                total_assets_begin=self._balance_sheet_statement.loc[
+                average_total_assets=self._balance_sheet_statement.loc[
                     :, "Total Assets", :
-                ].shift(axis=1),
-                total_assets_end=self._balance_sheet_statement.loc[
-                    :, "Total Assets", :
-                ],
+                ]
+                .T.rolling(2)
+                .mean()
+                .T,
             )
         )
 

@@ -7,6 +7,7 @@ balance_dataset = pd.read_pickle("tests/datasets/balance_dataset.pickle")
 income_dataset = pd.read_pickle("tests/datasets/income_dataset.pickle")
 cash_dataset = pd.read_pickle("tests/datasets/cash_dataset.pickle")
 historical = pd.read_pickle("tests/datasets/historical_dataset.pickle")
+risk_free_rate = pd.read_pickle("tests/datasets/risk_free_rate.pickle")
 
 toolkit = Toolkit(
     tickers=["AAPL", "MSFT"],
@@ -18,6 +19,8 @@ toolkit = Toolkit(
     cash=cash_dataset,
     convert_currency=False,
 )
+
+toolkit._daily_risk_free_rate = risk_free_rate
 
 ratios_module = toolkit.ratios
 

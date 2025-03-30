@@ -220,8 +220,8 @@ def obtain_fama_and_french_dataset(fama_and_french_url: str | None = None):
         response = requests.get(fama_and_french_url, timeout=10, headers=headers)
         response.raise_for_status()  # Raise exception for HTTP errors
         zip_data = response.content
-    except Exception:  # noqa
-        # Fallback to urllib if requests is not available
+    except requests.exceptions.RequestException:
+        # Fallback to urllib if requests encounters an error
         with urllib.request.urlopen(fama_and_french_url) as response:
             zip_data = response.read()
 

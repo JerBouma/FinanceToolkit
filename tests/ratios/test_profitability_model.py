@@ -63,8 +63,7 @@ def test_get_return_on_assets(recorder):
     recorder.capture(
         profitability_model.get_return_on_assets(
             net_income=pd.Series([80, 40, 40, 30, 20]),
-            total_assets_begin=pd.Series([200, 300, 400, 500, 450]),
-            total_assets_end=pd.Series([300, 400, 500, 450, 600]),
+            average_total_assets=pd.Series([200, 300, 400, 500, 450]),
         )
     )
 
@@ -73,8 +72,7 @@ def test_get_return_on_equity(recorder):
     recorder.capture(
         profitability_model.get_return_on_equity(
             net_income=pd.Series([80, 40, 40, 30, 20]),
-            total_equity_begin=pd.Series([130, 200, 210, 200, 150]),
-            total_equity_end=pd.Series([250, 400, 410, 400, 350]),
+            average_total_equity=pd.Series([130, 200, 210, 200, 150]),
         )
     )
 
@@ -84,10 +82,8 @@ def test_get_return_on_invested_capital(recorder):
         profitability_model.get_return_on_invested_capital(
             net_income=pd.Series([80, 40, 40, 30, 20]),
             dividends=pd.Series([4, 3, 2, 1, 10]),
-            total_equity_begin=pd.Series([130, 200, 210, 200, 150]),
-            total_equity_end=pd.Series([130, 200, 210, 200, 150]),
-            total_debt_begin=pd.Series([130, 200, 210, 200, 150]),
-            total_debt_end=pd.Series([130, 200, 210, 200, 150]),
+            average_total_equity=pd.Series([130, 200, 210, 200, 150]),
+            average_total_debt=pd.Series([130, 200, 210, 200, 150]),
         )
     )
 
@@ -105,12 +101,9 @@ def test_get_return_on_tangible_assets(recorder):
     recorder.capture(
         profitability_model.get_return_on_tangible_assets(
             net_income=pd.Series([80, 40, 40, 30, 20]),
-            total_assets_begin=pd.Series([200, 300, 400, 500, 450]),
-            total_assets_end=pd.Series([200, 300, 400, 500, 450]),
-            intangible_assets_begin=pd.Series([20, 20, 21, 20, 15]),
-            intangible_assets_end=pd.Series([20, 20, 21, 20, 15]),
-            total_liabilities_begin=pd.Series([130, 200, 210, 200, 150]),
-            total_liabilities_end=pd.Series([130, 200, 210, 200, 150]),
+            average_total_assets=pd.Series([200, 300, 400, 500, 450]),
+            average_intangible_assets=pd.Series([20, 20, 21, 20, 15]),
+            average_total_liabilities=pd.Series([130, 200, 210, 200, 150]),
         )
     )
 

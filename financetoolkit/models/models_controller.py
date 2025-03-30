@@ -118,6 +118,7 @@ class Models:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        trailing: int | None = None,
     ) -> pd.DataFrame:
         """
         Perform a Dupont analysis to breakdown the return on equity (ROE) into its components.
@@ -137,6 +138,7 @@ class Models:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the values. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            trailing (int | None, optional): The trailing period to use for the calculation. Defaults to None.
 
         Returns:
             pd.DataFrame: DataFrame containing Dupont analysis results, including Profit Margin, Asset
@@ -160,14 +162,35 @@ class Models:
         dupont_analysis = toolkit.models.get_dupont_analysis()
         ```
         """
-        self._dupont_analysis = dupont_model.get_dupont_analysis(
-            self._income_statement.loc[:, "Net Income", :],
-            self._income_statement.loc[:, "Revenue", :],
-            self._balance_sheet_statement.loc[:, "Total Assets", :].shift(axis=1),
-            self._balance_sheet_statement.loc[:, "Total Assets", :],
-            self._balance_sheet_statement.loc[:, "Total Equity", :].shift(axis=1),
-            self._balance_sheet_statement.loc[:, "Total Equity", :],
-        )
+        if trailing:
+            self._dupont_analysis = dupont_model.get_dupont_analysis(
+                self._income_statement.loc[:, "Net Income", :]
+                .T.rolling(trailing)
+                .sum()
+                .T,
+                self._income_statement.loc[:, "Revenue", :].T.rolling(trailing).sum().T,
+                self._balance_sheet_statement.loc[:, "Total Assets", :]
+                .T.rolling(trailing)
+                .mean()
+                .T,
+                self._balance_sheet_statement.loc[:, "Total Equity", :]
+                .T.rolling(trailing)
+                .mean()
+                .T,
+            )
+        else:
+            self._dupont_analysis = dupont_model.get_dupont_analysis(
+                self._income_statement.loc[:, "Net Income", :],
+                self._income_statement.loc[:, "Revenue", :],
+                self._balance_sheet_statement.loc[:, "Total Assets", :]
+                .T.rolling(2)
+                .mean()
+                .T,
+                self._balance_sheet_statement.loc[:, "Total Equity", :]
+                .T.rolling(2)
+                .mean()
+                .T,
+            )
 
         if growth:
             self._dupont_analysis_growth = calculate_growth(
@@ -196,6 +219,7 @@ class Models:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        trailing: int | None = None,
     ) -> pd.DataFrame:
         """
         Perform an Extended Dupont analysis to breakdown the return on equity (ROE) into its components,
@@ -219,6 +243,7 @@ class Models:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the values. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            trailing (int | None, optional): The trailing period to use for the calculation. Defaults to None.
 
         Returns:
             pd.DataFrame: DataFrame containing Extended Dupont analysis results, including Profit Margin, Asset Turnover,
@@ -245,16 +270,45 @@ class Models:
         extended_dupont_analysis = toolkit.models.get_extended_dupont_analysis()
         ```
         """
-        self._extended_dupont_analysis = dupont_model.get_extended_dupont_analysis(
-            self._income_statement.loc[:, "Income Before Tax", :],
-            self._income_statement.loc[:, "Operating Income", :],
-            self._income_statement.loc[:, "Net Income", :],
-            self._income_statement.loc[:, "Revenue", :],
-            self._balance_sheet_statement.loc[:, "Total Assets", :].shift(axis=1),
-            self._balance_sheet_statement.loc[:, "Total Assets", :],
-            self._balance_sheet_statement.loc[:, "Total Equity", :].shift(axis=1),
-            self._balance_sheet_statement.loc[:, "Total Equity", :],
-        )
+        if trailing:
+            self._extended_dupont_analysis = dupont_model.get_extended_dupont_analysis(
+                self._income_statement.loc[:, "Income Before Tax", :]
+                .T.rolling(trailing)
+                .sum()
+                .T,
+                self._income_statement.loc[:, "Operating Income", :]
+                .T.rolling(trailing)
+                .sum()
+                .T,
+                self._income_statement.loc[:, "Net Income", :]
+                .T.rolling(trailing)
+                .sum()
+                .T,
+                self._income_statement.loc[:, "Revenue", :].T.rolling(trailing).sum().T,
+                self._balance_sheet_statement.loc[:, "Total Assets", :]
+                .T.rolling(trailing)
+                .mean()
+                .T,
+                self._balance_sheet_statement.loc[:, "Total Equity", :]
+                .T.rolling(trailing)
+                .mean()
+                .T,
+            )
+        else:
+            self._extended_dupont_analysis = dupont_model.get_extended_dupont_analysis(
+                self._income_statement.loc[:, "Income Before Tax", :],
+                self._income_statement.loc[:, "Operating Income", :],
+                self._income_statement.loc[:, "Net Income", :],
+                self._income_statement.loc[:, "Revenue", :],
+                self._balance_sheet_statement.loc[:, "Total Assets", :]
+                .T.rolling(2)
+                .mean()
+                .T,
+                self._balance_sheet_statement.loc[:, "Total Equity", :]
+                .T.rolling(2)
+                .mean()
+                .T,
+            )
 
         if growth:
             self._extended_dupont_analysis_growth = calculate_growth(

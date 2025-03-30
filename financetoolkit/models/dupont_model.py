@@ -10,10 +10,8 @@ from financetoolkit.ratios import efficiency_model, profitability_model, solvenc
 def get_dupont_analysis(
     net_income: pd.Series,
     total_revenue: pd.Series,
-    total_assets_begin: pd.Series,
-    total_assets_end: pd.Series,
-    total_equity_begin: pd.Series,
-    total_equity_end: pd.Series,
+    average_total_assets: pd.Series,
+    average_total_equity: pd.Series,
 ) -> pd.DataFrame:
     """
     Perform a Dupont analysis to breakdown the return on equity (ROE) into its components.
@@ -34,12 +32,12 @@ def get_dupont_analysis(
 
     # Calculate the asset turnover
     asset_turnover = efficiency_model.get_asset_turnover_ratio(
-        total_revenue, total_assets_begin, total_assets_end
+        total_revenue, average_total_assets
     )
 
     # Calculate the equity multiplier
     equity_multiplier = solvency_model.get_equity_multiplier(
-        total_assets_begin, total_assets_end, total_equity_begin, total_equity_end
+        average_total_assets, average_total_equity
     )
 
     # Calculate the return on equity
@@ -68,10 +66,8 @@ def get_extended_dupont_analysis(
     income_before_tax: pd.Series,
     net_income: pd.Series,
     total_revenue: pd.Series,
-    total_assets_begin: pd.Series,
-    total_assets_end: pd.Series,
-    total_equity_begin: pd.Series,
-    total_equity_end: pd.Series,
+    average_total_assets: pd.Series,
+    average_total_equity: pd.Series,
 ) -> pd.DataFrame:
     """
     Perform am Extended Dupont analysis to breakdown the return on equity (ROE) into its components.
@@ -107,12 +103,12 @@ def get_extended_dupont_analysis(
 
     # Calculate the asset turnover
     asset_turnover = efficiency_model.get_asset_turnover_ratio(
-        total_revenue, total_assets_begin, total_assets_end
+        total_revenue, average_total_assets
     )
 
     # Calculate the equity multiplier
     equity_multiplier = solvency_model.get_equity_multiplier(
-        total_assets_begin, total_assets_end, total_equity_begin, total_equity_end
+        average_total_assets, average_total_equity
     )
 
     # Calculate the return on equity

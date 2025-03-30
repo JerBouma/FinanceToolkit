@@ -7,6 +7,7 @@ import zipfile
 
 import numpy as np
 import pandas as pd
+import requests
 from scipy.stats import linregress
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import mean_squared_error
@@ -208,8 +209,21 @@ def obtain_fama_and_french_dataset(fama_and_french_url: str | None = None):
         else "https://mba.tuck.dartmouth.edu/pages/faculty/ken.french/ftp/F-F_Research_Data_5_Factors_2x3_daily_CSV.zip"
     )
 
-    with urllib.request.urlopen(fama_and_french_url) as response:
-        zip_data = response.read()
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/58.0.3029.110 Safari/537.3"
+    }
+
+    try:
+        # Use requests library for better error handling and timeout capabilities
+        response = requests.get(fama_and_french_url, timeout=10, headers=headers)
+        response.raise_for_status()  # Raise exception for HTTP errors
+        zip_data = response.content
+    except Exception:  # noqa
+        # Fallback to urllib if requests is not available
+        with urllib.request.urlopen(fama_and_french_url) as response:
+            zip_data = response.read()
 
     with zipfile.ZipFile(io.BytesIO(zip_data)) as zip_file:
         # The dataset is packaged in a ZIP file, so it needs to be extracted first

@@ -79,10 +79,8 @@ def get_debt_service_coverage_ratio(
 
 
 def get_equity_multiplier(
-    total_assets_begin: float | pd.Series,
-    total_assets_end: float | pd.Series,
-    total_equity_begin: float | pd.Series,
-    total_equity_end: float | pd.Series,
+    average_total_assets: float | pd.Series,
+    average_total_equity: float | pd.Series,
 ) -> pd.Series:
     """
     Calculate the equity multiplier, a solvency ratio that measures the degree to which a company
@@ -99,9 +97,7 @@ def get_equity_multiplier(
     Returns:
         float | pd.Series: The equity multiplier.
     """
-    return ((total_assets_begin + total_assets_end) / 2) / (
-        (total_equity_begin + total_equity_end) / 2
-    )
+    return average_total_assets / average_total_equity
 
 
 def get_free_cash_flow_yield(

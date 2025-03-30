@@ -619,20 +619,17 @@ class Ratios:
             asset_turnover_ratio = efficiency_model.get_asset_turnover_ratio(
                 self._income_statement.loc[:, "Revenue", :].T.rolling(trailing).sum().T,
                 self._balance_sheet_statement.loc[:, "Total Assets", :]
-                .shift(axis=1)
                 .T.rolling(trailing)
-                .sum()
-                .T,
-                self._balance_sheet_statement.loc[:, "Total Assets", :]
-                .T.rolling(trailing)
-                .sum()
+                .mean()
                 .T,
             )
         else:
             asset_turnover_ratio = efficiency_model.get_asset_turnover_ratio(
                 self._income_statement.loc[:, "Revenue", :],
-                self._balance_sheet_statement.loc[:, "Total Assets", :].shift(axis=1),
-                self._balance_sheet_statement.loc[:, "Total Assets", :],
+                self._balance_sheet_statement.loc[:, "Total Assets", :]
+                .T.rolling(2)
+                .mean()
+                .T,
             )
 
         if growth:
@@ -700,20 +697,17 @@ class Ratios:
                 .sum()
                 .T,
                 self._balance_sheet_statement.loc[:, "Inventory", :]
-                .shift(axis=1)
                 .T.rolling(trailing)
-                .sum()
-                .T,
-                self._balance_sheet_statement.loc[:, "Inventory", :]
-                .T.rolling(trailing)
-                .sum()
+                .mean()
                 .T,
             )
         else:
             inventory_turnover_ratio = efficiency_model.get_inventory_turnover_ratio(
                 self._income_statement.loc[:, "Cost of Goods Sold", :],
-                self._balance_sheet_statement.loc[:, "Inventory", :].shift(axis=1),
-                self._balance_sheet_statement.loc[:, "Inventory", :],
+                self._balance_sheet_statement.loc[:, "Inventory", :]
+                .T.rolling(2)
+                .mean()
+                .T,
             )
 
         if growth:
@@ -783,13 +777,8 @@ class Ratios:
             days_of_inventory_outstanding = (
                 efficiency_model.get_days_of_inventory_outstanding(
                     self._balance_sheet_statement.loc[:, "Inventory", :]
-                    .shift(axis=1)
                     .T.rolling(trailing)
-                    .sum()
-                    .T,
-                    self._balance_sheet_statement.loc[:, "Inventory", :]
-                    .T.rolling(trailing)
-                    .sum()
+                    .mean()
                     .T,
                     self._income_statement.loc[:, "Cost of Goods Sold", :]
                     .T.rolling(trailing)
@@ -800,8 +789,10 @@ class Ratios:
         else:
             days_of_inventory_outstanding = (
                 efficiency_model.get_days_of_inventory_outstanding(
-                    self._balance_sheet_statement.loc[:, "Inventory", :].shift(axis=1),
-                    self._balance_sheet_statement.loc[:, "Inventory", :],
+                    self._balance_sheet_statement.loc[:, "Inventory", :]
+                    .T.rolling(2)
+                    .mean()
+                    .T,
                     self._income_statement.loc[:, "Cost of Goods Sold", :],
                     days,
                 )
@@ -876,22 +867,17 @@ class Ratios:
         if trailing:
             days_of_sales_outstanding = efficiency_model.get_days_of_sales_outstanding(
                 self._balance_sheet_statement.loc[:, "Accounts Receivable", :]
-                .shift(axis=1)
                 .T.rolling(trailing)
-                .sum()
-                .T,
-                self._balance_sheet_statement.loc[:, "Accounts Receivable", :]
-                .T.rolling(trailing)
-                .sum()
+                .mean()
                 .T,
                 self._income_statement.loc[:, "Revenue", :].T.rolling(trailing).sum().T,
             )
         else:
             days_of_sales_outstanding = efficiency_model.get_days_of_sales_outstanding(
-                self._balance_sheet_statement.loc[:, "Accounts Receivable", :].shift(
-                    axis=1
-                ),
-                self._balance_sheet_statement.loc[:, "Accounts Receivable", :],
+                self._balance_sheet_statement.loc[:, "Accounts Receivable", :]
+                .T.rolling(2)
+                .mean()
+                .T,
                 self._income_statement.loc[:, "Revenue", :],
                 days,
             )
@@ -961,13 +947,8 @@ class Ratios:
         if trailing:
             days_of_inventory = efficiency_model.get_days_of_inventory_outstanding(
                 self._balance_sheet_statement.loc[:, "Inventory", :]
-                .shift(axis=1)
                 .T.rolling(trailing)
-                .sum()
-                .T,
-                self._balance_sheet_statement.loc[:, "Inventory", :]
-                .T.rolling(trailing)
-                .sum()
+                .mean()
                 .T,
                 self._income_statement.loc[:, "Cost of Goods Sold", :]
                 .T.rolling(trailing)
@@ -980,27 +961,25 @@ class Ratios:
                 self._balance_sheet_statement.loc[:, "Accounts Receivable", :]
                 .shift(axis=1)
                 .T.rolling(trailing)
-                .sum()
-                .T,
-                self._balance_sheet_statement.loc[:, "Accounts Receivable", :]
-                .T.rolling(trailing)
-                .sum()
+                .mean()
                 .T,
                 self._income_statement.loc[:, "Revenue", :].T.rolling(trailing).sum().T,
                 days,
             )
         else:
             days_of_inventory = efficiency_model.get_days_of_inventory_outstanding(
-                self._balance_sheet_statement.loc[:, "Inventory", :].shift(axis=1),
-                self._balance_sheet_statement.loc[:, "Inventory", :],
+                self._balance_sheet_statement.loc[:, "Inventory", :]
+                .T.rolling(2)
+                .mean()
+                .T,
                 self._income_statement.loc[:, "Cost of Goods Sold", :],
                 days,
             )
             days_of_sales = efficiency_model.get_days_of_sales_outstanding(
-                self._balance_sheet_statement.loc[:, "Accounts Receivable", :].shift(
-                    axis=1
-                ),
-                self._balance_sheet_statement.loc[:, "Accounts Receivable", :],
+                self._balance_sheet_statement.loc[:, "Accounts Receivable", :]
+                .T.rolling(2)
+                .mean()
+                .T,
                 self._income_statement.loc[:, "Revenue", :],
                 days,
             )
@@ -1074,13 +1053,8 @@ class Ratios:
                     .sum()
                     .T,
                     self._balance_sheet_statement.loc[:, "Accounts Payable", :]
-                    .shift(axis=1)
                     .T.rolling(trailing)
-                    .sum()
-                    .T,
-                    self._balance_sheet_statement.loc[:, "Accounts Payable", :]
-                    .T.rolling(trailing)
-                    .sum()
+                    .mean()
                     .T,
                 )
             )
@@ -1088,10 +1062,10 @@ class Ratios:
             accounts_payables_turnover_ratio = (
                 efficiency_model.get_accounts_payables_turnover_ratio(
                     self._income_statement.loc[:, "Cost of Goods Sold", :],
-                    self._balance_sheet_statement.loc[:, "Accounts Payable", :].shift(
-                        axis=1
-                    ),
-                    self._balance_sheet_statement.loc[:, "Accounts Payable", :],
+                    self._balance_sheet_statement.loc[:, "Accounts Payable", :]
+                    .T.rolling(2)
+                    .mean()
+                    .T,
                 )
             )
 
@@ -1168,13 +1142,8 @@ class Ratios:
                     .sum()
                     .T,
                     self._balance_sheet_statement.loc[:, "Accounts Payable", :]
-                    .shift(axis=1)
                     .T.rolling(trailing)
-                    .sum()
-                    .T,
-                    self._balance_sheet_statement.loc[:, "Accounts Payable", :]
-                    .T.rolling(trailing)
-                    .sum()
+                    .mean()
                     .T,
                 )
             )
@@ -1182,10 +1151,10 @@ class Ratios:
             days_of_accounts_payable_outstanding = (
                 efficiency_model.get_days_of_accounts_payable_outstanding(
                     self._income_statement.loc[:, "Cost of Goods Sold", :],
-                    self._balance_sheet_statement.loc[:, "Accounts Payable", :].shift(
-                        axis=1
-                    ),
-                    self._balance_sheet_statement.loc[:, "Accounts Payable", :],
+                    self._balance_sheet_statement.loc[:, "Accounts Payable", :]
+                    .T.rolling(2)
+                    .mean()
+                    .T,
                     days,
                 )
             )
@@ -1257,13 +1226,8 @@ class Ratios:
         if trailing:
             days_of_inventory = efficiency_model.get_days_of_inventory_outstanding(
                 self._balance_sheet_statement.loc[:, "Inventory", :]
-                .shift(axis=1)
                 .T.rolling(trailing)
-                .sum()
-                .T,
-                self._balance_sheet_statement.loc[:, "Inventory", :]
-                .T.rolling(trailing)
-                .sum()
+                .mean()
                 .T,
                 self._income_statement.loc[:, "Cost of Goods Sold", :]
                 .T.rolling(trailing)
@@ -1274,13 +1238,8 @@ class Ratios:
 
             days_of_sales = efficiency_model.get_days_of_sales_outstanding(
                 self._balance_sheet_statement.loc[:, "Accounts Receivable", :]
-                .shift(axis=1)
                 .T.rolling(trailing)
-                .sum()
-                .T,
-                self._balance_sheet_statement.loc[:, "Accounts Receivable", :]
-                .T.rolling(trailing)
-                .sum()
+                .mean()
                 .T,
                 self._income_statement.loc[:, "Revenue", :].T.rolling(trailing).sum().T,
                 days,
@@ -1293,28 +1252,26 @@ class Ratios:
                     .sum()
                     .T,
                     self._balance_sheet_statement.loc[:, "Accounts Payable", :]
-                    .shift(axis=1)
                     .T.rolling(trailing)
-                    .sum()
+                    .mean()
                     .T,
-                    self._balance_sheet_statement.loc[:, "Accounts Payable", :]
-                    .T.rolling(trailing)
-                    .sum()
-                    .T,
+                    days,
                 )
             )
         else:
             days_of_inventory = efficiency_model.get_days_of_inventory_outstanding(
-                self._balance_sheet_statement.loc[:, "Inventory", :].shift(axis=1),
-                self._balance_sheet_statement.loc[:, "Inventory", :],
+                self._balance_sheet_statement.loc[:, "Inventory", :]
+                .T.rolling(2)
+                .mean()
+                .T,
                 self._income_statement.loc[:, "Cost of Goods Sold", :],
                 days,
             )
             days_of_sales = efficiency_model.get_days_of_sales_outstanding(
-                self._balance_sheet_statement.loc[:, "Accounts Receivable", :].shift(
-                    axis=1
-                ),
-                self._balance_sheet_statement.loc[:, "Accounts Receivable", :],
+                self._balance_sheet_statement.loc[:, "Accounts Receivable", :]
+                .T.rolling(2)
+                .mean()
+                .T,
                 self._income_statement.loc[:, "Revenue", :],
                 days,
             )
@@ -1322,10 +1279,10 @@ class Ratios:
             days_of_payables = (
                 efficiency_model.get_days_of_accounts_payable_outstanding(
                     self._income_statement.loc[:, "Cost of Goods Sold", :],
-                    self._balance_sheet_statement.loc[:, "Accounts Payable", :].shift(
-                        axis=1
-                    ),
-                    self._balance_sheet_statement.loc[:, "Accounts Payable", :],
+                    self._balance_sheet_statement.loc[:, "Accounts Payable", :]
+                    .T.rolling(2)
+                    .mean()
+                    .T,
                     days,
                 )
             )
@@ -1474,22 +1431,17 @@ class Ratios:
         if trailing:
             receivables_turnover = efficiency_model.get_receivables_turnover(
                 self._balance_sheet_statement.loc[:, "Accounts Receivable", :]
-                .shift(axis=1)
                 .T.rolling(trailing)
-                .sum()
-                .T,
-                self._balance_sheet_statement.loc[:, "Accounts Receivable", :]
-                .T.rolling(trailing)
-                .sum()
+                .mean()
                 .T,
                 self._income_statement.loc[:, "Revenue", :].T.rolling(trailing).sum().T,
             )
         else:
             receivables_turnover = efficiency_model.get_receivables_turnover(
-                self._balance_sheet_statement.loc[:, "Accounts Receivable", :].shift(
-                    axis=1
-                ),
-                self._balance_sheet_statement.loc[:, "Accounts Receivable", :],
+                self._balance_sheet_statement.loc[:, "Accounts Receivable", :]
+                .T.rolling(2)
+                .mean()
+                .T,
                 self._income_statement.loc[:, "Revenue", :],
             )
 
@@ -1629,20 +1581,17 @@ class Ratios:
             fixed_asset_turnover = efficiency_model.get_fixed_asset_turnover(
                 self._income_statement.loc[:, "Revenue", :].T.rolling(trailing).sum().T,
                 self._balance_sheet_statement.loc[:, "Fixed Assets", :]
-                .shift(axis=1)
                 .T.rolling(trailing)
-                .sum()
-                .T,
-                self._balance_sheet_statement.loc[:, "Fixed Assets", :]
-                .T.rolling(trailing)
-                .sum()
+                .mean()
                 .T,
             )
         else:
             fixed_asset_turnover = efficiency_model.get_fixed_asset_turnover(
                 self._income_statement.loc[:, "Revenue", :],
-                self._balance_sheet_statement.loc[:, "Fixed Assets", :].shift(axis=1),
-                self._balance_sheet_statement.loc[:, "Fixed Assets", :],
+                self._balance_sheet_statement.loc[:, "Fixed Assets", :]
+                .T.rolling(2)
+                .mean()
+                .T,
             )
 
         if growth:
@@ -1874,11 +1823,11 @@ class Ratios:
             current_ratio = liquidity_model.get_current_ratio(
                 self._balance_sheet_statement.loc[:, "Total Current Assets", :]
                 .T.rolling(trailing)
-                .sum()
+                .mean()
                 .T,
                 self._balance_sheet_statement.loc[:, "Total Current Liabilities", :]
                 .T.rolling(trailing)
-                .sum()
+                .mean()
                 .T,
             )
         else:
@@ -1949,19 +1898,19 @@ class Ratios:
             quick_ratio = liquidity_model.get_quick_ratio(
                 self._balance_sheet_statement.loc[:, "Cash and Cash Equivalents", :]
                 .T.rolling(trailing)
-                .sum()
+                .mean()
                 .T,
                 self._balance_sheet_statement.loc[:, "Short Term Investments", :]
                 .T.rolling(trailing)
-                .sum()
+                .mean()
                 .T,
                 self._balance_sheet_statement.loc[:, "Accounts Receivable", :]
                 .T.rolling(trailing)
-                .sum()
+                .mean()
                 .T,
                 self._balance_sheet_statement.loc[:, "Total Current Liabilities", :]
                 .T.rolling(trailing)
-                .sum()
+                .mean()
                 .T,
             )
         else:
@@ -2030,15 +1979,15 @@ class Ratios:
             cash_ratio = liquidity_model.get_cash_ratio(
                 self._balance_sheet_statement.loc[:, "Cash and Cash Equivalents", :]
                 .T.rolling(trailing)
-                .sum()
+                .mean()
                 .T,
                 self._balance_sheet_statement.loc[:, "Short Term Investments", :]
                 .T.rolling(trailing)
-                .sum()
+                .mean()
                 .T,
                 self._balance_sheet_statement.loc[:, "Total Current Liabilities", :]
                 .T.rolling(trailing)
-                .sum()
+                .mean()
                 .T,
             )
         else:
@@ -2106,11 +2055,11 @@ class Ratios:
             working_capital = liquidity_model.get_working_capital(
                 self._balance_sheet_statement.loc[:, "Total Current Assets", :]
                 .T.rolling(trailing)
-                .sum()
+                .mean()
                 .T,
                 self._balance_sheet_statement.loc[:, "Total Current Liabilities", :]
                 .T.rolling(trailing)
-                .sum()
+                .mean()
                 .T,
             )
         else:
@@ -2183,7 +2132,7 @@ class Ratios:
                 .T,
                 self._balance_sheet_statement.loc[:, "Total Current Liabilities", :]
                 .T.rolling(trailing)
-                .sum()
+                .mean()
                 .T,
             )
         else:
@@ -2325,15 +2274,15 @@ class Ratios:
                 .T,
                 self._balance_sheet_statement.loc[:, "Accounts Receivable", :]
                 .T.rolling(trailing)
-                .sum()
+                .mean()
                 .T,
                 self._balance_sheet_statement.loc[:, "Inventory", :]
                 .T.rolling(trailing)
-                .sum()
+                .mean()
                 .T,
                 self._balance_sheet_statement.loc[:, "Accounts Payable", :]
                 .T.rolling(trailing)
-                .sum()
+                .mean()
                 .T,
             )
         else:
@@ -2969,20 +2918,17 @@ class Ratios:
                 .sum()
                 .T,
                 self._balance_sheet_statement.loc[:, "Total Assets", :]
-                .shift(axis=1)
                 .T.rolling(trailing)
-                .sum()
-                .T,
-                self._balance_sheet_statement.loc[:, "Total Assets", :]
-                .T.rolling(trailing)
-                .sum()
+                .mean()
                 .T,
             )
         else:
             return_on_assets = profitability_model.get_return_on_assets(
                 self._income_statement.loc[:, "Net Income", :],
-                self._balance_sheet_statement.loc[:, "Total Assets", :].shift(axis=1),
-                self._balance_sheet_statement.loc[:, "Total Assets", :],
+                self._balance_sheet_statement.loc[:, "Total Assets", :]
+                .T.rolling(2)
+                .mean()
+                .T,
             )
 
         if growth:
@@ -3051,21 +2997,18 @@ class Ratios:
                 .sum()
                 .T,
                 self._balance_sheet_statement.loc[:, "Total Equity", :]
-                .shift(axis=1)
-                .T.rolling(trailing)
-                .sum()
-                .T,
-                self._balance_sheet_statement.loc[:, "Total Equity", :]
-                .T.rolling(trailing)
-                .sum()
+                .T.rolling(window=trailing)
+                .mean()
                 .T,
             )
 
         else:
             return_on_equity = profitability_model.get_return_on_equity(
                 self._income_statement.loc[:, "Net Income", :],
-                self._balance_sheet_statement.loc[:, "Total Equity", :].shift(axis=1),
-                self._balance_sheet_statement.loc[:, "Total Equity", :],
+                self._balance_sheet_statement.loc[:, "Total Equity", :]
+                .T.rolling(window=2)
+                .mean()
+                .T,
             )
 
         if growth:
@@ -3141,22 +3084,12 @@ class Ratios:
                         else 0
                     ),
                     self._balance_sheet_statement.loc[:, "Total Equity", :]
-                    .shift(axis=1)
                     .T.rolling(trailing)
-                    .sum()
-                    .T,
-                    self._balance_sheet_statement.loc[:, "Total Equity", :]
-                    .T.rolling(trailing)
-                    .sum()
-                    .T,
-                    self._balance_sheet_statement.loc[:, "Total Debt", :]
-                    .shift(axis=1)
-                    .T.rolling(trailing)
-                    .sum()
+                    .mean()
                     .T,
                     self._balance_sheet_statement.loc[:, "Total Debt", :]
                     .T.rolling(trailing)
-                    .sum()
+                    .mean()
                     .T,
                 )
             )
@@ -3169,12 +3102,14 @@ class Ratios:
                         if dividend_adjusted
                         else 0
                     ),
-                    self._balance_sheet_statement.loc[:, "Total Equity", :].shift(
-                        axis=1
-                    ),
-                    self._balance_sheet_statement.loc[:, "Total Equity", :],
-                    self._balance_sheet_statement.loc[:, "Total Debt", :].shift(axis=1),
-                    self._balance_sheet_statement.loc[:, "Total Debt", :],
+                    self._balance_sheet_statement.loc[:, "Total Equity", :]
+                    .T.rolling(2)
+                    .mean()
+                    .T,
+                    self._balance_sheet_statement.loc[:, "Total Debt", :]
+                    .T.rolling(2)
+                    .mean()
+                    .T,
                 )
             )
 
@@ -3316,31 +3251,16 @@ class Ratios:
                     .sum()
                     .T,
                     self._balance_sheet_statement.loc[:, "Total Assets", :]
-                    .shift(axis=1)
                     .T.rolling(trailing)
-                    .sum()
-                    .T,
-                    self._balance_sheet_statement.loc[:, "Total Assets", :]
-                    .T.rolling(trailing)
-                    .sum()
-                    .T,
-                    self._balance_sheet_statement.loc[:, "Intangible Assets", :]
-                    .shift(axis=1)
-                    .T.rolling(trailing)
-                    .sum()
+                    .mean()
                     .T,
                     self._balance_sheet_statement.loc[:, "Intangible Assets", :]
                     .T.rolling(trailing)
-                    .sum()
-                    .T,
-                    self._balance_sheet_statement.loc[:, "Total Liabilities", :]
-                    .shift(axis=1)
-                    .T.rolling(trailing)
-                    .sum()
+                    .mean()
                     .T,
                     self._balance_sheet_statement.loc[:, "Total Liabilities", :]
                     .T.rolling(trailing)
-                    .sum()
+                    .mean()
                     .T,
                 )
             )
@@ -3348,18 +3268,18 @@ class Ratios:
             return_on_tangible_assets = (
                 profitability_model.get_return_on_tangible_assets(
                     self._income_statement.loc[:, "Net Income", :],
-                    self._balance_sheet_statement.loc[:, "Total Assets", :].shift(
-                        axis=1
-                    ),
-                    self._balance_sheet_statement.loc[:, "Total Assets", :],
-                    self._balance_sheet_statement.loc[:, "Intangible Assets", :].shift(
-                        axis=1
-                    ),
-                    self._balance_sheet_statement.loc[:, "Intangible Assets", :],
-                    self._balance_sheet_statement.loc[:, "Total Liabilities", :].shift(
-                        axis=1
-                    ),
-                    self._balance_sheet_statement.loc[:, "Total Liabilities", :],
+                    self._balance_sheet_statement.loc[:, "Total Assets", :]
+                    .T.rolling(2)
+                    .mean()
+                    .T,
+                    self._balance_sheet_statement.loc[:, "Intangible Assets", :]
+                    .T.rolling(2)
+                    .mean()
+                    .T,
+                    self._balance_sheet_statement.loc[:, "Total Liabilities", :]
+                    .T.rolling(2)
+                    .mean()
+                    .T,
                 )
             )
 
@@ -3434,11 +3354,11 @@ class Ratios:
                     .T,
                     self._balance_sheet_statement.loc[:, "Total Assets", :]
                     .T.rolling(trailing)
-                    .sum()
+                    .mean()
                     .T,
                     self._balance_sheet_statement.loc[:, "Total Current Liabilities", :]
                     .T.rolling(trailing)
-                    .sum()
+                    .mean()
                     .T,
                 )
             )
@@ -4017,11 +3937,11 @@ class Ratios:
             debt_to_assets_ratio = solvency_model.get_debt_to_assets_ratio(
                 self._balance_sheet_statement.loc[:, "Total Debt", :]
                 .T.rolling(trailing)
-                .sum()
+                .mean()
                 .T,
                 self._balance_sheet_statement.loc[:, "Total Assets", :]
                 .T.rolling(trailing)
-                .sum()
+                .mean()
                 .T,
             )
         else:
@@ -4091,11 +4011,11 @@ class Ratios:
             debt_to_equity_ratio = solvency_model.get_debt_to_equity_ratio(
                 self._balance_sheet_statement.loc[:, "Total Debt", :]
                 .T.rolling(trailing)
-                .sum()
+                .mean()
                 .T,
                 self._balance_sheet_statement.loc[:, "Total Equity", :]
                 .T.rolling(trailing)
-                .sum()
+                .mean()
                 .T,
             )
         else:
@@ -4241,30 +4161,24 @@ class Ratios:
         if trailing:
             equity_multiplier = solvency_model.get_equity_multiplier(
                 self._balance_sheet_statement.loc[:, "Total Assets", :]
-                .shift(axis=1)
                 .T.rolling(trailing)
-                .sum()
-                .T,
-                self._balance_sheet_statement.loc[:, "Total Assets", :]
-                .T.rolling(trailing)
-                .sum()
-                .T,
-                self._balance_sheet_statement.loc[:, "Total Equity", :]
-                .shift(axis=1)
-                .T.rolling(trailing)
-                .sum()
+                .mean()
                 .T,
                 self._balance_sheet_statement.loc[:, "Total Equity", :]
                 .T.rolling(trailing)
-                .sum()
+                .mean()
                 .T,
             )
         else:
             equity_multiplier = solvency_model.get_equity_multiplier(
-                self._balance_sheet_statement.loc[:, "Total Assets", :].shift(axis=1),
-                self._balance_sheet_statement.loc[:, "Total Assets", :],
-                self._balance_sheet_statement.loc[:, "Total Equity", :].shift(axis=1),
-                self._balance_sheet_statement.loc[:, "Total Equity", :],
+                self._balance_sheet_statement.loc[:, "Total Assets", :]
+                .T.rolling(2)
+                .mean()
+                .T,
+                self._balance_sheet_statement.loc[:, "Total Equity", :]
+                .T.rolling(2)
+                .mean()
+                .T,
             )
 
         if growth:
@@ -4331,7 +4245,7 @@ class Ratios:
                     .T,
                     self._balance_sheet_statement.loc[:, "Total Current Liabilities", :]
                     .T.rolling(trailing)
-                    .sum()
+                    .mean()
                     .T,
                 )
             )
@@ -4503,7 +4417,7 @@ class Ratios:
                 .T,
                 self._balance_sheet_statement.loc[:, "Net Debt", :]
                 .T.rolling(trailing)
-                .sum()
+                .mean()
                 .T,
             )
         else:
@@ -4575,7 +4489,7 @@ class Ratios:
                 .T,
                 self._balance_sheet_statement.loc[:, "Total Debt", :]
                 .T.rolling(trailing)
-                .sum()
+                .mean()
                 .T,
             )
         else:
@@ -5291,13 +5205,13 @@ class Ratios:
             book_value_per_share = valuation_model.get_book_value_per_share(
                 self._balance_sheet_statement.loc[:, "Total Shareholder Equity", :]
                 .T.rolling(trailing)
-                .sum()
+                .mean()
                 .T,
                 self._balance_sheet_statement.loc[:, "Preferred Stock", :]
                 .T.rolling(trailing)
-                .sum()
+                .mean()
                 .T,
-                average_shares,
+                average_shares.T.rolling(trailing).mean().T,
             )
         else:
             book_value_per_share = valuation_model.get_book_value_per_share(
@@ -5451,9 +5365,9 @@ class Ratios:
                 .T,
                 self._balance_sheet_statement.loc[:, "Total Debt", :]
                 .T.rolling(trailing)
-                .sum()
+                .mean()
                 .T,
-                average_shares,
+                average_shares.T.rolling(trailing).mean().T,
             )
         else:
             interest_debt_per_share = valuation_model.get_interest_debt_per_share(
@@ -5992,19 +5906,19 @@ class Ratios:
                 market_cap,
                 self._balance_sheet_statement.loc[:, "Total Debt", :]
                 .T.rolling(trailing)
-                .sum()
+                .mean()
                 .T,
                 self._balance_sheet_statement.loc[:, "Minority Interest", :]
                 .T.rolling(trailing)
-                .sum()
+                .mean()
                 .T,
                 self._balance_sheet_statement.loc[:, "Preferred Stock", :]
                 .T.rolling(trailing)
-                .sum()
+                .mean()
                 .T,
                 self._balance_sheet_statement.loc[:, "Cash and Cash Equivalents", :]
                 .T.rolling(trailing)
-                .sum()
+                .mean()
                 .T,
             )
         else:
@@ -6482,15 +6396,15 @@ class Ratios:
             tangible_asset_value = valuation_model.get_tangible_asset_value(
                 self._balance_sheet_statement.loc[:, "Total Assets", :]
                 .T.rolling(trailing)
-                .sum()
+                .mean()
                 .T,
                 self._balance_sheet_statement.loc[:, "Total Liabilities", :]
                 .T.rolling(trailing)
-                .sum()
+                .mean()
                 .T,
                 self._balance_sheet_statement.loc[:, "Goodwill", :]
                 .T.rolling(trailing)
-                .sum()
+                .mean()
                 .T,
             )
         else:
@@ -6551,11 +6465,11 @@ class Ratios:
             net_current_asset_value = valuation_model.get_net_current_asset_value(
                 self._balance_sheet_statement.loc[:, "Total Current Assets", :]
                 .T.rolling(trailing)
-                .sum()
+                .mean()
                 .T,
                 self._balance_sheet_statement.loc[:, "Total Current Liabilities", :]
                 .T.rolling(trailing)
-                .sum()
+                .mean()
                 .T,
             )
         else:

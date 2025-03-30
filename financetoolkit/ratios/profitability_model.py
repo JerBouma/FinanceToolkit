@@ -125,7 +125,7 @@ def get_effective_tax_rate(
 
 
 def get_return_on_assets(
-    net_income: pd.Series, total_assets_begin: pd.Series, total_assets_end: pd.Series
+    net_income: pd.Series, average_total_assets: pd.Series
 ) -> pd.Series:
     """
     Calculate the return on assets (ROA), a profitability ratio that measures how
@@ -139,13 +139,12 @@ def get_return_on_assets(
     Returns:
         float | pd.Series: The ROA percentage value.
     """
-    return net_income / ((total_assets_begin + total_assets_end) / 2)
+    return net_income / average_total_assets
 
 
 def get_return_on_equity(
     net_income: pd.Series,
-    total_equity_begin: pd.Series,
-    total_equity_end: pd.Series,
+    average_total_equity: pd.Series,
 ) -> pd.Series:
     """
     Calculate the return on equity (ROE), a profitability ratio that measures how
@@ -159,16 +158,14 @@ def get_return_on_equity(
     Returns:
         float | pd.Series: The ROE percentage value.
     """
-    return net_income / ((total_equity_begin + total_equity_end) / 2)
+    return net_income / average_total_equity
 
 
 def get_return_on_invested_capital(
     net_income: pd.Series,
     dividends: pd.Series,
-    total_equity_begin: pd.Series,
-    total_equity_end: pd.Series,
-    total_debt_begin: pd.Series,
-    total_debt_end: pd.Series,
+    average_total_equity: pd.Series,
+    average_total_debt: pd.Series,
 ) -> pd.Series:
     """
     Calculate the return on invested capital, a financial ratio that measures the company's return on
@@ -186,9 +183,7 @@ def get_return_on_invested_capital(
     Returns:
         float | pd.Series: The return on invested capital value.
     """
-    return (net_income - dividends) / (
-        (total_equity_begin + total_equity_end + total_debt_begin + total_debt_end) / 2
-    )
+    return (net_income - dividends) / (average_total_equity + average_total_debt)
 
 
 def get_income_quality_ratio(
@@ -212,12 +207,9 @@ def get_income_quality_ratio(
 
 def get_return_on_tangible_assets(
     net_income: pd.Series,
-    total_assets_begin: pd.Series,
-    total_assets_end: pd.Series,
-    intangible_assets_begin: pd.Series,
-    intangible_assets_end: pd.Series,
-    total_liabilities_begin: pd.Series,
-    total_liabilities_end: pd.Series,
+    average_total_assets: pd.Series,
+    average_intangible_assets: pd.Series,
+    average_total_liabilities: pd.Series,
 ) -> pd.Series:
     """
     Calculate the return on tangible assets, which measures the amount of profit
@@ -233,13 +225,8 @@ def get_return_on_tangible_assets(
         float | pd.Series: The return on tangible assets value.
     """
     average_tangible_assets = (
-        total_assets_begin
-        + total_assets_end
-        + intangible_assets_begin
-        + intangible_assets_end
-        + total_liabilities_begin
-        + total_liabilities_end
-    ) / 2
+        average_total_assets + average_intangible_assets + average_total_liabilities
+    )
 
     return net_income / average_tangible_assets
 

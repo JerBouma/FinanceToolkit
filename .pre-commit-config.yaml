@@ -9,41 +9,44 @@ repos:
         exclude_types: [html, markdown, text]
       - id: check-merge-conflict
       - id: detect-private-key
+      - id: check-added-large-files
+      - id: check-toml
+      - id: check-json
+
   - repo: https://github.com/psf/black
     rev: 25.1.0
     hooks:
       - id: black
-  - repo: https://github.com/charliermarsh/ruff-pre-commit
-    rev: "v0.9.9"
+        language_version: python3
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.11.4
     hooks:
       - id: ruff
-        entry: ruff check --ignore PLR0915,S301
+        args: [--ignore=PLR0915,S301, --fix]
+      - id: ruff-format
+
   - repo: https://github.com/codespell-project/codespell
-    rev: v2.3.0
+    rev: v2.4.1
     hooks:
       - id: codespell
-        entry: codespell
         args:
           [
             "--ignore-words-list=plaform,VAI,nam,tha,MIS,shs,amplitud,gard,te,commun,ro,zar,vie,hel,jewl,zlot,ba,buil,coo,ether,hist,hsi,mape,navagation,operatio,pres,ser,yeld,shold,ist,varian,datas,ake,creat,statics,ket,toke,certi,buidl,ot",
             "--quiet-level=2",
             "--skip=./tests,.git,*.css,*.csv,*.html,*.ini,*.ipynb,*.js,*.json,*.lock,*.scss,*.txt,*.yaml,build/pyinstaller/*,pyproject.toml",
-            "-x=.github/workflows/linting.yml"
           ]
-  - repo: local
+
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.15.0
     hooks:
       - id: mypy
-        name: mypy
-        description: ""
-        entry: mypy
-        language: python
-        "types_or": [python, pyi]
+        additional_dependencies: [types-requests, types-PyYAML]
         args: ["--ignore-missing-imports", "--scripts-are-modules"]
-        require_serial: true
-  - repo: local
+
+  - repo: https://github.com/pycqa/pylint
+    rev: v3.3.6
     hooks:
       - id: pylint
-        name: pylint
-        entry: pylint financetoolkit
-        language: system
-        types: [python]
+        args: [financetoolkit]
+        additional_dependencies: [pytest]

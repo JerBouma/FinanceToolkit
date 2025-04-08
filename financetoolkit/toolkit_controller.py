@@ -387,10 +387,11 @@ class Toolkit:
             self._fmp_plan = "Premium"
 
             for option in [
-                "NOT AVAILABLE",
+                "EXCLUSIVE ENDPOINT",
                 "NO DATA",
                 "BANDWIDTH LIMIT REACH",
                 "INVALID API KEY",
+                "LIMIT REACH",
             ]:
                 if option in determine_plan:
                     self._fmp_plan = "Free"
@@ -1921,7 +1922,7 @@ class Toolkit:
                 tickers=self._tickers,
                 method="geographic",
                 api_key=self._api_key,
-                quarter=self._quarterly,
+                quarter=self._quarterly if self._fmp_plan == "Premium" else False,
                 start_date=self._start_date,
                 end_date=self._end_date,
                 sleep_timer=self._sleep_timer,
@@ -2010,7 +2011,7 @@ class Toolkit:
                 tickers=self._tickers,
                 method="product",
                 api_key=self._api_key,
-                quarter=self._quarterly,
+                quarter=self._quarterly if self._fmp_plan == "Premium" else False,
                 start_date=self._start_date,
                 end_date=self._end_date,
                 sleep_timer=self._sleep_timer,

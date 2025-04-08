@@ -44,34 +44,35 @@ keywords = [
 
 [tool.poetry.dependencies]
 python = ">=3.10, <3.14"
-pandas = {version = "^2.2", extras = ["computation", "performance", "plot", "excel"]}
-requests = "^2.32.3"
-scikit-learn = "^1.5"
+pandas = "^2.2"
+scikit-learn = "^1.6"
+requests = "^2.32"
 yfinance = { version = "*", optional = true }
+openpyxl = "^3.1"
 
 [tool.poetry.group.dev.dependencies]
-pytest = "^8.3.3"
-pylint = "^3.3.0"
-codespell = "^2.3.0"
-black = "^25.1.0"
-pytest-mock = "^3.14.0"
-pytest-recording = "^0.13.2"
-pytest-cov = "^5.0.0"
-ruff = "^0.9.9"
-pytest-timeout = "^2.3.1"
-pytest-recorder = "^0.3.0"
+pytest = "^8.3.5"
 ipykernel = "^6.29.5"
 tqdm = "^4.67.1"
+pylint = "^3.3.6"
+codespell = "^2.4.1"
+black = {extras = ["jupyter"], version = "^25.1.0"}
+pytest-mock = "^3.14.0"
+pytest-recording = "^0.13.2"
+pytest-cov = "^6.1.1"
+pytest-timeout = "^2.3.1"
+ruff = "^0.11.4"
+mypy = "^1.15.0"
 
 [tool.poetry.group.dashboard.dependencies]
-plotly = "^5.22.0"
-streamlit = "^1.36.0"
+plotly = "^6.0.1"
+streamlit = "^1.44.1"
 
 [tool.poetry.extras]
 yfinance = ["yfinance"]
 
 [build-system]
-requires = ["setuptools<65.5.0", "poetry-core>=1.0.0"]
+requires = ["poetry-core>=1.0.0"]
 build-backend = "poetry.core.masonry.api"
 
 [tool.ruff]

@@ -58,15 +58,15 @@ def get_financial_data(
             return financial_data
 
         except (requests.exceptions.HTTPError, ValueError):
-            if (
-                "not available under your current subscription"
-                in response.json()["Error Message"]
-            ):
-                return pd.DataFrame(columns=["NOT AVAILABLE"])
+            error_message = response.text
 
-            if "Bandwidth Limit Reach" in response.json()["Error Message"]:
+            if "Exclusive Endpoint" in error_message:
+                return pd.DataFrame(columns=["EXCLUSIVE ENDPOINT"])
+            if "Special Endpoint" in error_message:
+                return pd.DataFrame(columns=["SPECIAL ENDPOINT"])
+            if "Bandwidth Limit Reach" in error_message:
                 return pd.DataFrame(columns=["BANDWIDTH LIMIT REACH"])
-            if "Limit Reach" in response.json()["Error Message"]:
+            if "Limit Reach" in error_message:
                 if (
                     sleep_timer
                     and limit_retry_counter < RETRY_LIMIT
@@ -75,14 +75,11 @@ def get_financial_data(
                     time.sleep(5.01)
                     limit_retry_counter += 1
                 else:
-                    return pd.DataFrame(columns=["NO DATA"])
-            if (
-                "Free plan is limited to US stocks only"
-                in response.json()["Error Message"]
-            ):
+                    return pd.DataFrame(columns=["LIMIT REACH"])
+            if "US stocks only" in error_message:
                 return pd.DataFrame(columns=["US STOCKS ONLY"])
 
-            if "Invalid API KEY." in response.json()["Error Message"]:
+            if "Invalid API KEY." in error_message:
                 return pd.DataFrame(columns=["INVALID API KEY"])
 
         except (
@@ -445,26 +442,49 @@ def check_for_error_messages(
     """
 
     not_available = []
+    exclusive_endpoint = []
+    special_endpoint = []
     bandwidth_limit_reach = []
+    limit_reach = []
     no_data = []
     us_stocks_only = []
     invalid_api_key = []
     no_errors = []
 
     for ticker, dataframe in dataset_dictionary.items():
-        if "NOT AVAILABLE" in dataframe.columns:
+        if "EXCLUSIVE ENDPOINT" in dataframe.columns:
+            exclusive_endpoint.append(ticker)
+        elif "SPECIAL ENDPOINT" in dataframe.columns:
+            special_endpoint.append(ticker)
+        elif "NOT AVAILABLE" in dataframe.columns:
             not_available.append(ticker)
-        if "BANDWIDTH LIMIT REACH" in dataframe.columns:
+        elif "BANDWIDTH LIMIT REACH" in dataframe.columns:
             bandwidth_limit_reach.append(ticker)
-        if "NO DATA" in dataframe.columns:
+        elif "LIMIT REACH" in dataframe.columns:
+            limit_reach.append(ticker)
+        elif "NO DATA" in dataframe.columns:
             no_data.append(ticker)
-        if "US STOCKS ONLY" in dataframe.columns:
+        elif "US STOCKS ONLY" in dataframe.columns:
             us_stocks_only.append(ticker)
-        if "INVALID API KEY" in dataframe.columns:
+        elif "INVALID API KEY" in dataframe.columns:
             invalid_api_key.append(ticker)
-        if "NO ERRORS" in dataframe.columns:
+        elif "NO ERRORS" in dataframe.columns:
             no_errors.append(ticker)
 
+    if exclusive_endpoint:
+        print(
+            f"The following tickers are using an exclusive endpoint: {', '.join(exclusive_endpoint)}.\n"
+            "This is not available in the Free plan. Consider upgrading your plan to a higher plan. "
+            "You can get 15% off by using the following affiliate link which also supports the project: "
+            "https://www.jeroenbouma.com/fmp"
+        )
+    if special_endpoint:
+        print(
+            f"The following tickers are using a special endpoint: {', '.join(special_endpoint)}.\n"
+            "This is not available in the Free plan. Consider upgrading your plan to a higher plan. "
+            "You can get 15% off by using the following affiliate link which also supports the project: "
+            "https://www.jeroenbouma.com/fmp"
+        )
     if not_available:
         print(
             f"The requested data is part of the {required_subscription} Subscription from "
@@ -478,6 +498,14 @@ def check_for_error_messages(
         print(
             f"The bandwidth limit has been reached for the following tickers: {', '.join(bandwidth_limit_reach)}.\n"
             "Consider upgrading your plan to a higher plan to increase your bandwidth limit. You can get 15% "
+            "off by using the following affiliate link which also supports the project: "
+            "https://www.jeroenbouma.com/fmp"
+        )
+
+    if limit_reach:
+        print(
+            f"The limit has been reached for the following tickers: {', '.join(limit_reach)}.\n"
+            "Consider upgrading your plan to a higher plan to increase your limit. You can get 15% "
             "off by using the following affiliate link which also supports the project: "
             "https://www.jeroenbouma.com/fmp"
         )

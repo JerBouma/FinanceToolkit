@@ -187,6 +187,9 @@ class Risk:
 
         risk_metrics = pd.concat(risk_metrics, axis=1)
 
+        if len(self._tickers) == 1:
+            risk_metrics = risk_metrics.xs(self._tickers[0], level=1, axis=1)
+
         return risk_metrics
 
     @handle_portfolio

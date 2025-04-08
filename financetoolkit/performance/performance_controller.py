@@ -206,6 +206,11 @@ class Performance:
 
         performance_metrics = pd.concat(performance_metrics, axis=1)
 
+        if len(self._tickers) == 1:
+            performance_metrics = performance_metrics.xs(
+                self._tickers[0], level=1, axis=1
+            )
+
         return performance_metrics
 
     @handle_portfolio

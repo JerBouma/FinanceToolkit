@@ -121,7 +121,7 @@ def get_historical_data(
         ],
     )
 
-    def worker(ticker, historical_data_dict):
+    def worker(ticker, historical_data_dict, historical_data_error_dict):
         historical_data = pd.DataFrame()
 
         if api_key and interval in ["1min", "5min", "15min", "30min", "1hour", "4hour"]:
@@ -185,6 +185,7 @@ def get_historical_data(
 
         if historical_data.empty:
             no_data.append(ticker)
+            historical_data_error_dict[ticker] = historical_data
             historical_data_dict[ticker] = empty_historical_data
         if not historical_data.empty:
             historical_data_dict[ticker] = historical_data
@@ -203,6 +204,7 @@ def get_historical_data(
     )
 
     historical_data_dict: dict[str, pd.DataFrame] = {}
+    historical_data_error_dict: dict[str, pd.DataFrame] = {}
     fmp_tickers: list[str] = []
     yf_tickers: list[str] = []
     no_data: list[str] = []
@@ -214,7 +216,7 @@ def get_historical_data(
 
         thread = threading.Thread(
             target=worker,
-            args=(ticker, historical_data_dict),
+            args=(ticker, historical_data_dict, historical_data_error_dict),
         )
         thread.start()
         threads.append(thread)

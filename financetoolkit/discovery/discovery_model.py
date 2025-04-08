@@ -185,6 +185,7 @@ def get_stock_quotes(api_key: str, user_subscription: str = "Free") -> pd.DataFr
     stock_quotes = stock_quotes.rename(
         columns={
             "symbol": "Symbol",
+            "bidSize": "Bid Size",
             "askPrice": "Ask Price",
             "volume": "Volume",
             "askSize": "Ask Size",

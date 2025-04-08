@@ -4,10 +4,13 @@ import pandas as pd
 from financetoolkit import Toolkit
 
 historical = pd.read_pickle("tests/datasets/historical_dataset.pickle")
+risk_free_rate = pd.read_pickle("tests/datasets/risk_free_rate.pickle")
 
 toolkit = Toolkit(
     tickers=["AAPL", "MSFT"], historical=historical, convert_currency=False
 )
+
+toolkit._daily_risk_free_rate = risk_free_rate
 
 options_module = toolkit.options
 

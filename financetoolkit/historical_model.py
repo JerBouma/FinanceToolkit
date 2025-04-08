@@ -1048,7 +1048,7 @@ def get_historical_statistics_from_financial_modeling_prep(
         pd.Series: A Sries containing the statistics for the given ticker.
     """
     profile, _ = fundamentals_model.get_profile(
-        tickers=ticker, api_key=api_key, progress_bar=False, report_missing=False
+        tickers=ticker, api_key=api_key, progress_bar=False
     )
 
     profile_df = pd.Series(

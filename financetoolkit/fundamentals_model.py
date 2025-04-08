@@ -166,8 +166,10 @@ def get_financial_statements(
         dataset_dictionary=financial_statement_dict, user_subscription=user_subscription
     )
 
-    if no_data:
-        print(f"No data found for the following tickers: {', '.join(no_data)}")
+    # Check if there are any financial statements in the dataset
+    financial_statement_dict = {
+        ticker: df for ticker, df in financial_statement_dict.items() if not df.empty
+    }
 
     if financial_statement_dict:
         financial_statement_total = pd.concat(financial_statement_dict, axis=0)
@@ -239,7 +241,7 @@ def get_revenue_segmentation(
     user_subscription: str = "Free",
 ) -> pd.DataFrame:
     """
-    Retrieves financial statements (balance, income, or cash flow statements) for one or multiple companies,
+    Retrieves revenue segmentation data (geographic or product) for one or multiple companies,
     and returns a DataFrame containing the data.
 
     Args:
@@ -266,7 +268,7 @@ def get_revenue_segmentation(
 
     def worker(ticker, revenue_segmentation_dict):
         url = (
-            f"https://financialmodelingprep.com/api/v4/{location}"
+            f"https://financialmodelingprep.com/stable/{location}"
             f"?symbol={ticker}&period={period}&structure=flat&apikey={api_key}"
         )
         revenue_segmentation_json = helpers.get_financial_data(
@@ -276,43 +278,48 @@ def get_revenue_segmentation(
             user_subscription=user_subscription,
         )
 
-        try:
-            revenue_segmentation = pd.DataFrame()
+        revenue_segmentation = pd.DataFrame()
 
-            for period_data in revenue_segmentation_json:
-                revenue_segmentation = pd.concat(
-                    [revenue_segmentation, pd.DataFrame(period_data)], axis=1
-                )
+        if not isinstance(revenue_segmentation_json, pd.DataFrame):
+            try:
+                for period_data in revenue_segmentation_json:
+                    period_data_dict = {period_data["date"]: period_data["data"]}
+                    revenue_segmentation = pd.concat(
+                        [revenue_segmentation, pd.DataFrame(period_data_dict)], axis=1
+                    )
 
-            if quarter:
-                revenue_segmentation.columns = pd.PeriodIndex(
-                    revenue_segmentation.columns, freq="Q"
-                )
-            else:
-                revenue_segmentation.columns = pd.PeriodIndex(
-                    revenue_segmentation.columns, freq="Y"
-                )
+                if quarter:
+                    revenue_segmentation.columns = pd.PeriodIndex(
+                        revenue_segmentation.columns, freq="Q"
+                    )
+                else:
+                    revenue_segmentation.columns = pd.PeriodIndex(
+                        revenue_segmentation.columns, freq="Y"
+                    )
 
-            if revenue_segmentation.columns.duplicated().any():
-                # This happens in the rare case that a company has two financial statements for the same period.
-                # Browsing through the data has shown that these financial statements are equal therefore
-                # one of the columns can be dropped.
-                revenue_segmentation = revenue_segmentation.loc[
-                    :, ~revenue_segmentation.columns.duplicated()
+                if revenue_segmentation.columns.duplicated().any():
+                    # This happens in the rare case that a company has two financial statements for the same period.
+                    # Browsing through the data has shown that these financial statements are equal therefore
+                    # one of the columns can be dropped.
+                    revenue_segmentation = revenue_segmentation.loc[
+                        :, ~revenue_segmentation.columns.duplicated()
+                    ]
+
+                revenue_segmentation = revenue_segmentation.rename(index=naming)
+                revenue_segmentation.index = [
+                    index.lower().title() for index in revenue_segmentation.index
                 ]
 
-            revenue_segmentation = revenue_segmentation.rename(index=naming)
-            revenue_segmentation.index = [
-                index.lower().title() for index in revenue_segmentation.index
-            ]
+                # This groups items that have the same naming convention
+                revenue_segmentation = revenue_segmentation.groupby(level=0).sum()
 
-            # This groups items that have the same naming convention
-            revenue_segmentation = revenue_segmentation.groupby(level=0).sum()
-
-            revenue_segmentation_dict[ticker] = revenue_segmentation
-        except (KeyError, ValueError):
+                revenue_segmentation_dict[ticker] = revenue_segmentation
+            except (KeyError, ValueError):
+                no_data.append(ticker)
+                revenue_segmentation_dict[ticker] = revenue_segmentation
+        else:
             no_data.append(ticker)
-            revenue_segmentation_dict[ticker] = revenue_segmentation
+            revenue_segmentation_dict[ticker] = revenue_segmentation_json
 
     if isinstance(tickers, str):
         ticker_list = [tickers]
@@ -388,9 +395,6 @@ def get_revenue_segmentation(
         required_subscription="Professional or Enterprise",
         user_subscription=user_subscription,
     )
-
-    if no_data:
-        print(f"No data found for the following tickers: {', '.join(no_data)}")
 
     if revenue_segmentation_dict:
         revenue_segmentation_total = pd.concat(revenue_segmentation_dict, axis=0)
@@ -598,9 +602,6 @@ def get_analyst_estimates(
         dataset_dictionary=analyst_estimates_dict, user_subscription=user_subscription
     )
 
-    if no_data:
-        print(f"No data found for the following tickers: {', '.join(no_data)}")
-
     if analyst_estimates_dict:
         analyst_estimates_total = pd.concat(analyst_estimates_dict, axis=0)
 
@@ -646,7 +647,6 @@ def get_profile(
     tickers: list[str] | str,
     api_key: str,
     progress_bar: bool = True,
-    report_missing: bool = True,
     user_subscription: str = "Free",
 ) -> pd.DataFrame:
     """
@@ -743,9 +743,6 @@ def get_profile(
     profile_dict = helpers.check_for_error_messages(
         dataset_dictionary=profile_dict, user_subscription=user_subscription
     )
-
-    if no_data and report_missing:
-        print(f"No data found for the following tickers: {', '.join(no_data)}")
 
     if profile_dict:
         try:
@@ -866,9 +863,6 @@ def get_quote(
         dataset_dictionary=quote_dict, user_subscription=user_subscription
     )
 
-    if no_data:
-        print(f"No data found for the following tickers: {', '.join(no_data)}")
-
     if quote_dict:
         quote_dataframe = pd.concat(quote_dict)[0].unstack(level=0)
         quote_dataframe = quote_dataframe.rename(index=naming)
@@ -970,9 +964,6 @@ def get_rating(
     ratings_dict = helpers.check_for_error_messages(
         dataset_dictionary=ratings_dict, user_subscription=user_subscription
     )
-
-    if no_data:
-        print(f"No data found for the following tickers: {', '.join(no_data)}")
 
     if ratings_dict:
         ratings_dataframe = pd.concat(ratings_dict, axis=0).dropna()
@@ -1104,9 +1095,6 @@ def get_earnings_calendar(
         dataset_dictionary=earnings_calendar_dict, user_subscription=user_subscription
     )
 
-    if no_data:
-        print(f"No data found for the following tickers: {', '.join(no_data)}")
-
     if earnings_calendar_dict:
         earnings_calendar_total = pd.concat(earnings_calendar_dict, axis=0)
 
@@ -1232,9 +1220,6 @@ def get_dividend_calendar(
         dataset_dictionary=dividend_calendar_dict, user_subscription=user_subscription
     )
 
-    if no_data:
-        print(f"No data found for the following tickers: {', '.join(no_data)}")
-
     if dividend_calendar_dict:
         dividend_calendar_total = pd.concat(dividend_calendar_dict, axis=0)
 
@@ -1286,6 +1271,7 @@ def get_esg_scores(
         try:
             if "date" not in esg_scores.columns:
                 no_data.append(ticker)
+                esg_scores_dict[ticker] = esg_scores
             else:
                 # One day is deducted from the date because it could be that
                 # the date is reported as 2023-07-01 while the data is about the
@@ -1364,9 +1350,6 @@ def get_esg_scores(
     esg_scores_dict = helpers.check_for_error_messages(
         dataset_dictionary=esg_scores_dict, user_subscription=user_subscription
     )
-
-    if no_data:
-        print(f"No data found for the following tickers: {', '.join(no_data)}")
 
     if esg_scores_dict:
         esg_scores_total = pd.concat(esg_scores_dict, axis=0).unstack(level=0)

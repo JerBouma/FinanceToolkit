@@ -33,7 +33,7 @@ def check_api_key_status(api_key: str):
         invalid_api_key = True
         reason = "Invalid API Key."
 
-    if "NOT AVAILABLE" in determine_plan:
+    if "EXCLUSIVE ENDPOINT" in determine_plan:
         invalid_api_key = False
         premium_plan = False
 

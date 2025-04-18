@@ -819,6 +819,15 @@ class Toolkit:
         else:
             self.get_historical_data(period="yearly")
 
+        historical = {
+            "period": (
+                self._quarterly_historical_data
+                if self._quarterly
+                else self._yearly_historical_data
+            ),
+            "daily": self._daily_historical_data,
+        }
+
         tickers = (
             self._balance_sheet_statement.index.get_level_values(0).unique().tolist()
         )
@@ -827,11 +836,7 @@ class Toolkit:
             tickers=(
                 tickers + ["Portfolio"] if "Portfolio" in self._tickers else tickers
             ),
-            historical=(
-                self._quarterly_historical_data
-                if self._quarterly
-                else self._yearly_historical_data
-            ),
+            historical=historical,
             balance=self._balance_sheet_statement,
             income=self._income_statement,
             cash=self._cash_flow_statement,

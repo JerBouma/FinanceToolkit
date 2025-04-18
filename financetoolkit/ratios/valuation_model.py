@@ -42,7 +42,7 @@ def get_revenue_per_share(
     return total_revenue / shares_outstanding
 
 
-def get_price_earnings_ratio(
+def get_price_to_earnings_ratio(
     stock_price: pd.Series, earnings_per_share: pd.Series
 ) -> pd.Series:
     """
@@ -60,20 +60,24 @@ def get_price_earnings_ratio(
 
 
 def get_price_to_earnings_growth_ratio(
-    price_earnings: pd.Series, earnings_per_share_growth: pd.Series
+    price_earnings: pd.Series, growth_rate: pd.Series
 ) -> pd.Series:
     """
     Calculate the price earnings to growth (PEG) ratio, a valuation metric that measures the ratio
-    of the price-to-earnings ratio to earnings growth rate.
+    of the price-to-earnings ratio to a company specific growth rate.
+
+    The company specific growth rate is typically the expected growth rate of the company's earnings
+    over a specific period of time, usually 5 to 10 years. This can be defined by it's EBITDA,
+    EPS, or other growth metrics.
 
     Args:
         price_earnings (float or pd.Series): The company's price-to-earnings ratio.
-        earnings_growth (float or pd.Series): The earnings per share growth rate of the company.
+        growth_rate (float or pd.Series): The growth rate of the company.
 
     Returns:
         float | pd.Series: The PEG ratio value.
     """
-    return price_earnings / earnings_per_share_growth
+    return price_earnings / growth_rate
 
 
 def get_book_value_per_share(

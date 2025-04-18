@@ -16,6 +16,7 @@ from financetoolkit.ratios import (
     solvency_model,
     valuation_model,
 )
+from financetoolkit.ratios.helpers import map_period_data_to_daily_data
 
 # Runtime errors are ignored on purpose given the nature of the calculations
 # sometimes leading to division by zero or other mathematical errors. This is however
@@ -36,7 +37,7 @@ class Ratios:
     def __init__(
         self,
         tickers: str | list[str],
-        historical: pd.DataFrame,
+        historical: dict[str, pd.DataFrame],
         balance: pd.DataFrame,
         income: pd.DataFrame,
         cash: pd.DataFrame,
@@ -48,7 +49,8 @@ class Ratios:
 
         Args:
             tickers (str | list[str]): The tickers to use for the calculations.
-            historical (pd.DataFrame): The historical data to use for the calculations.
+            historical (dict[str, pd.DataFrame]): The historical data to use for the calculations.
+                Typically includes a "period" and "daily" key to access the respective data.
             balance (pd.DataFrame): The balance sheet data to use for the calculations.
             income (pd.DataFrame): The income statement data to use for the calculations.
             cash (pd.DataFrame): The cash flow statement data to use for the calculations.
@@ -104,7 +106,8 @@ class Ratios:
         self._portfolio_weights: dict | None = None
 
         # Initialization of Historical Data
-        self._historical_data: pd.DataFrame = historical
+        self._historical_data: pd.DataFrame = historical["period"]
+        self._daily_historical_data: pd.DataFrame = historical["daily"]
 
         # Initialization of Fundamentals Variables
         self._all_ratios: pd.DataFrame = pd.DataFrame()
@@ -4274,6 +4277,7 @@ class Ratios:
     @handle_errors
     def get_free_cash_flow_yield(
         self,
+        show_daily: bool = False,
         diluted: bool = True,
         rounding: int | None = None,
         growth: bool = False,
@@ -4293,6 +4297,7 @@ class Ratios:
         - Free Cash Flow Yield Ratio = Free Cash Flow / Market Capitalization
 
         Args:
+            show_daily (bool, optional): Whether to use daily data for the calculation. Defaults to False.
             diluted (bool, optional): Whether to use diluted shares for market capitalization. Defaults to True.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
@@ -4317,18 +4322,37 @@ class Ratios:
         free_cash_flow_yield_ratios = toolkit.ratios.get_free_cash_flow_yield()
         ```
         """
-        years = self._balance_sheet_statement.columns
-        begin, end = str(years[0]), str(years[-1])
-
-        share_prices = self._historical_data.loc[begin:end, "Adj Close"][
-            self._tickers_without_portfolio
-        ].T
-
         average_shares = (
             self._income_statement.loc[:, "Weighted Average Shares Diluted", :]
             if diluted
             else self._income_statement.loc[:, "Weighted Average Shares", :]
         )
+
+        free_cash_flow = self._cash_flow_statement.loc[:, "Free Cash Flow", :]
+
+        years = self._balance_sheet_statement.columns
+        begin, end = str(years[0]), str(years[-1])
+
+        if show_daily:
+            share_prices = self._daily_historical_data.loc[begin:, "Adj Close"][
+                self._tickers_without_portfolio
+            ]
+
+            average_shares = map_period_data_to_daily_data(
+                period_data=average_shares,
+                daily_dates=share_prices.index,
+                quarterly=self._quarterly,
+            )
+
+            free_cash_flow = map_period_data_to_daily_data(
+                period_data=free_cash_flow,
+                daily_dates=share_prices.index,
+                quarterly=self._quarterly,
+            )
+        else:
+            share_prices = self._historical_data.loc[begin:end, "Adj Close"][
+                self._tickers_without_portfolio
+            ].T
 
         if trailing:
             market_cap = valuation_model.get_market_cap(
@@ -4337,17 +4361,14 @@ class Ratios:
             )
 
             free_cash_flow_yield = solvency_model.get_free_cash_flow_yield(
-                self._cash_flow_statement.loc[:, "Free Cash Flow", :]
-                .T.rolling(trailing)
-                .sum()
-                .T,
+                free_cash_flow.T.rolling(trailing).sum().T,
                 market_cap,
             )
         else:
             market_cap = valuation_model.get_market_cap(share_prices, average_shares)
 
             free_cash_flow_yield = solvency_model.get_free_cash_flow_yield(
-                self._cash_flow_statement.loc[:, "Free Cash Flow", :],
+                free_cash_flow,
                 market_cap,
             )
 
@@ -4713,12 +4734,12 @@ class Ratios:
         valuation_ratios["Revenue per Share"] = self.get_revenue_per_share(
             diluted=diluted, trailing=trailing
         )
-        valuation_ratios["Price-to-Earnings"] = self.get_price_earnings_ratio(
-            include_dividends=include_dividends, diluted=diluted, trailing=trailing
+        valuation_ratios["Price-to-Earnings"] = self.get_price_to_earnings_ratio(
+            include_dividends=include_dividends, diluted=diluted
         )
         valuation_ratios["Price-to-Earnings-Growth"] = (
             self.get_price_to_earnings_growth_ratio(
-                include_dividends=include_dividends, diluted=diluted, trailing=trailing
+                include_dividends=include_dividends, diluted=diluted
             )
         )
         valuation_ratios["Book Value per Share"] = self.get_book_value_per_share(
@@ -4998,14 +5019,14 @@ class Ratios:
 
     @handle_portfolio
     @handle_errors
-    def get_price_earnings_ratio(
+    def get_price_to_earnings_ratio(
         self,
+        show_daily: bool = False,
         include_dividends: bool = False,
         diluted: bool = True,
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
-        trailing: int | None = None,
     ):
         """
         Calculate the price earnings ratio (P/E), a valuation ratio that compares a
@@ -5018,7 +5039,7 @@ class Ratios:
 
         The formula is as follows:
 
-        - Price Earnings Ratio (P/E) = Share Price / Earnings per Share (EPS)
+        - Price to Earnings Ratio (P/E) = Share Price / Earnings per Share (EPS)
 
         Args:
             include_dividends (bool, optional): Whether to include dividends in the calculation. Defaults to False.
@@ -5026,8 +5047,6 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
-            trailing (int): Defines whether to select a trailing period.
-            E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
         Returns:
             pd.DataFrame: Price earnings ratio (P/E) values.
@@ -5043,43 +5062,54 @@ class Ratios:
 
         toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
-        pe_ratio = toolkit.ratios.get_price_earnings_ratio()
+        pe_ratio = toolkit.ratios.get_price_to_earnings_ratio()
         ```
         """
         eps = self.get_earnings_per_share(
-            include_dividends, diluted, trailing=trailing if trailing else None
+            include_dividends, diluted, trailing=4 if self._quarterly else None
         )
 
         years = eps.columns
         begin, end = str(years[0]), str(years[-1])
 
-        share_prices = self._historical_data.loc[begin:end, "Adj Close"][
-            self._tickers_without_portfolio
-        ].T
+        if show_daily:
+            share_prices = self._daily_historical_data.loc[begin:, "Adj Close"][
+                self._tickers_without_portfolio
+            ]
 
-        price_earnings_ratio = valuation_model.get_price_earnings_ratio(
+            eps = map_period_data_to_daily_data(
+                period_data=eps,
+                daily_dates=share_prices.index,
+                quarterly=self._quarterly,
+            )
+        else:
+            share_prices = self._historical_data.loc[begin:end, "Adj Close"][
+                self._tickers_without_portfolio
+            ].T
+
+        price_to_earnings_ratio = valuation_model.get_price_to_earnings_ratio(
             share_prices, eps
         )
 
         if growth:
             return calculate_growth(
-                price_earnings_ratio,
+                price_to_earnings_ratio,
                 lag=lag,
                 rounding=rounding if rounding else self._rounding,
             )
 
-        return price_earnings_ratio.round(rounding if rounding else self._rounding)
+        return price_to_earnings_ratio.round(rounding if rounding else self._rounding)
 
     @handle_portfolio
     @handle_errors
     def get_price_to_earnings_growth_ratio(
         self,
+        use_ebitda_growth_rate: bool = False,
         include_dividends: bool = False,
         diluted: bool = True,
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
-        trailing: int | None = None,
     ):
         """
         Calculate the price earnings to growth (PEG) ratio, a valuation metric that
@@ -5092,9 +5122,11 @@ class Ratios:
 
         The formula is as follows:
 
-        - Price Earnings to Growth Ratio (PEG) = Price Earnings Ratio (P/E) / Earnings per Share Growth
+        - Price Earnings to Growth Ratio (PEG) = Price Earnings Ratio (P/E) / Growth Rate
 
         Args:
+            use_ebitda_growth_rate (bool, optional): Whether to use EBITDA growth rate for the calculation.
+                Defaults to False.
             include_dividends (bool, optional): Whether to include dividends in the calculation. Defaults to False.
             diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
@@ -5120,19 +5152,32 @@ class Ratios:
         peg_ratio = toolkit.ratios.get_price_to_earnings_growth_ratio()
         ```
         """
-        eps_growth = self.get_earnings_per_share(
-            include_dividends,
-            diluted=diluted,
-            growth=True,
-            trailing=trailing if trailing else None,
-        )
-        price_earnings = self.get_price_earnings_ratio(
-            include_dividends, diluted=diluted, trailing=trailing if trailing else None
+        trailing_metric = 5 * 4 if self._quarterly else 5
+
+        if use_ebitda_growth_rate:
+            growth_rate = (
+                self._income_statement.loc[:, "EBITDA", :]
+                .T.rolling(trailing_metric)
+                .sum()
+                .T
+            )
+
+            growth_rate = calculate_growth(growth_rate)
+        else:
+            growth_rate = self.get_earnings_per_share(
+                include_dividends,
+                diluted=diluted,
+                growth=True,
+                trailing=trailing_metric,
+            )
+
+        price_earnings = self.get_price_to_earnings_ratio(
+            include_dividends, diluted=diluted
         )
 
         price_to_earnings_growth_ratio = (
             valuation_model.get_price_to_earnings_growth_ratio(
-                price_earnings, eps_growth
+                price_earnings, growth_rate * 100
             )
         )
 
@@ -5233,6 +5278,7 @@ class Ratios:
     @handle_errors
     def get_price_to_book_ratio(
         self,
+        show_daily: bool = False,
         diluted: bool = True,
         rounding: int | None = None,
         growth: bool = False,
@@ -5285,9 +5331,20 @@ class Ratios:
         years = book_value_per_share.columns
         begin, end = str(years[0]), str(years[-1])
 
-        share_prices = self._historical_data.loc[begin:end, "Adj Close"][
-            self._tickers_without_portfolio
-        ].T
+        if show_daily:
+            share_prices = self._daily_historical_data.loc[begin:, "Adj Close"][
+                self._tickers_without_portfolio
+            ]
+
+            book_value_per_share = map_period_data_to_daily_data(
+                period_data=book_value_per_share,
+                daily_dates=share_prices.index,
+                quarterly=self._quarterly,
+            )
+        else:
+            share_prices = self._historical_data.loc[begin:end, "Adj Close"][
+                self._tickers_without_portfolio
+            ].T
 
         price_to_book_ratio = valuation_model.get_price_to_book_ratio(
             share_prices, book_value_per_share
@@ -5467,6 +5524,7 @@ class Ratios:
     @handle_errors
     def get_dividend_yield(
         self,
+        show_daily: bool = False,
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
@@ -5485,6 +5543,7 @@ class Ratios:
         - Dividend Yield = Dividends per Share / Share Price
 
         Args:
+            show_daily (bool, optional): Whether to show daily data. Defaults to False.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
@@ -5510,12 +5569,20 @@ class Ratios:
         dividend_yield = toolkit.ratios.get_dividend_yield()
         ```
         """
-        share_prices = self._historical_data.loc[:, "Adj Close"][
-            self._tickers_without_portfolio
-        ].T
-        dividends = self._historical_data.loc[:, "Dividends"][
-            self._tickers_without_portfolio
-        ].T
+        if show_daily:
+            share_prices = self._daily_historical_data.loc[:, "Adj Close"][
+                self._tickers_without_portfolio
+            ]
+            dividends = self._daily_historical_data.loc[:, "Dividends"][
+                self._tickers_without_portfolio
+            ]
+        else:
+            share_prices = self._historical_data.loc[:, "Adj Close"][
+                self._tickers_without_portfolio
+            ].T
+            dividends = self._historical_data.loc[:, "Dividends"][
+                self._tickers_without_portfolio
+            ].T
 
         dividend_yield = valuation_model.get_dividend_yield(
             dividends.T.rolling(trailing).sum().T if trailing else dividends,
@@ -5535,6 +5602,7 @@ class Ratios:
     @handle_errors
     def get_weighted_dividend_yield(
         self,
+        show_daily: bool = False,
         diluted: bool = True,
         rounding: int | None = None,
         growth: bool = False,
@@ -5554,6 +5622,7 @@ class Ratios:
         - Weighted Dividend Yield = Dividends Paid / Weighted Average (Diluted) Shares * Share Price
 
         Args:
+            show_daily (bool, optional): Whether to show daily data. Defaults to False.
             diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
@@ -5586,25 +5655,41 @@ class Ratios:
             else self._income_statement.loc[:, "Weighted Average Shares", :]
         )
 
+        dividends_paid = abs(self._cash_flow_statement.loc[:, "Dividends Paid", :])
+
         years = self._cash_flow_statement.columns
         begin, end = str(years[0]), str(years[-1])
 
-        share_prices = self._historical_data.loc[begin:end, "Adj Close"][
-            self._tickers_without_portfolio
-        ].T
+        if show_daily:
+            share_prices = self._daily_historical_data.loc[begin:, "Adj Close"][
+                self._tickers_without_portfolio
+            ]
+
+            average_shares = map_period_data_to_daily_data(
+                period_data=average_shares,
+                daily_dates=share_prices.index,
+                quarterly=self._quarterly,
+            )
+
+            dividends_paid = map_period_data_to_daily_data(
+                period_data=dividends_paid,
+                daily_dates=share_prices.index,
+                quarterly=self._quarterly,
+            )
+        else:
+            share_prices = self._historical_data.loc[begin:end, "Adj Close"][
+                self._tickers_without_portfolio
+            ].T
 
         if trailing:
             weighted_dividend_yield = valuation_model.get_weighted_dividend_yield(
-                abs(self._cash_flow_statement.loc[:, "Dividends Paid", :])
-                .T.rolling(trailing)
-                .sum()
-                .T,
+                dividends_paid.T.rolling(trailing).sum().T,
                 average_shares,
                 share_prices,
             )
         else:
             weighted_dividend_yield = valuation_model.get_weighted_dividend_yield(
-                abs(self._cash_flow_statement.loc[:, "Dividends Paid", :]),
+                dividends_paid,
                 average_shares,
                 share_prices,
             )
@@ -5622,6 +5707,7 @@ class Ratios:
     @handle_errors
     def get_price_to_cash_flow_ratio(
         self,
+        show_daily: bool = False,
         diluted: bool = True,
         rounding: int | None = None,
         growth: bool = False,
@@ -5641,6 +5727,7 @@ class Ratios:
         - Price to Cash Flow Ratio = Share Price / Cash Flow from Operations per Share
 
         Args:
+            show_daily (bool, optional): Whether to show daily data. Defaults to False.
             diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
@@ -5673,27 +5760,44 @@ class Ratios:
             else self._income_statement.loc[:, "Weighted Average Shares", :]
         )
 
+        cash_flow_from_operations = self._cash_flow_statement.loc[
+            :, "Cash Flow from Operations", :
+        ]
+
         years = self._cash_flow_statement.columns
         begin, end = str(years[0]), str(years[-1])
 
-        share_prices = self._historical_data.loc[begin:end, "Adj Close"][
-            self._tickers_without_portfolio
-        ].T
+        if show_daily:
+            share_prices = self._daily_historical_data.loc[begin:, "Adj Close"][
+                self._tickers_without_portfolio
+            ]
+
+            average_shares = map_period_data_to_daily_data(
+                period_data=average_shares,
+                daily_dates=share_prices.index,
+                quarterly=self._quarterly,
+            )
+
+            cash_flow_from_operations = map_period_data_to_daily_data(
+                period_data=cash_flow_from_operations,
+                daily_dates=share_prices.index,
+                quarterly=self._quarterly,
+            )
+        else:
+            share_prices = self._historical_data.loc[begin:end, "Adj Close"][
+                self._tickers_without_portfolio
+            ].T
 
         market_cap = valuation_model.get_market_cap(share_prices, average_shares)
 
         if trailing:
             price_to_cash_flow_ratio = valuation_model.get_price_to_cash_flow_ratio(
                 market_cap,
-                self._cash_flow_statement.loc[:, "Cash Flow from Operations", :]
-                .T.rolling(trailing)
-                .sum()
-                .T,
+                cash_flow_from_operations.T.rolling(trailing).sum().T,
             )
         else:
             price_to_cash_flow_ratio = valuation_model.get_price_to_cash_flow_ratio(
-                market_cap,
-                self._cash_flow_statement.loc[:, "Cash Flow from Operations", :],
+                market_cap, cash_flow_from_operations
             )
 
         if growth:
@@ -5709,6 +5813,7 @@ class Ratios:
     @handle_errors
     def get_price_to_free_cash_flow_ratio(
         self,
+        show_daily: bool = False,
         diluted: bool = True,
         rounding: int | None = None,
         growth: bool = False,
@@ -5726,6 +5831,7 @@ class Ratios:
         - Price to Free Cash Flow Ratio = Market Cap / Free Cash Flow
 
         Args:
+            show_daily (bool, optional): Whether to show daily data. Defaults to False.
             diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
@@ -5753,23 +5859,31 @@ class Ratios:
         ```
         """
         market_cap = self.get_market_cap(
-            diluted=diluted, trailing=trailing if trailing else None
+            diluted=diluted,
+            trailing=trailing if trailing else None,
+            show_daily=show_daily,
         )
+
+        free_cash_flow = self._cash_flow_statement.loc[:, "Free Cash Flow", :]
+
+        if show_daily:
+            free_cash_flow = map_period_data_to_daily_data(
+                period_data=free_cash_flow,
+                daily_dates=market_cap.index,
+                quarterly=self._quarterly,
+            )
 
         if trailing:
             price_to_free_cash_flow_ratio = (
                 valuation_model.get_price_to_free_cash_flow_ratio(
                     market_cap,
-                    self._cash_flow_statement.loc[:, "Free Cash Flow", :]
-                    .T.rolling(trailing)
-                    .sum()
-                    .T,
+                    free_cash_flow.T.rolling(trailing).sum().T,
                 )
             )
         else:
             price_to_free_cash_flow_ratio = (
                 valuation_model.get_price_to_free_cash_flow_ratio(
-                    market_cap, self._cash_flow_statement.loc[:, "Free Cash Flow", :]
+                    market_cap, free_cash_flow
                 )
             )
 
@@ -5788,6 +5902,7 @@ class Ratios:
     @handle_errors
     def get_market_cap(
         self,
+        show_daily: bool = False,
         diluted: bool = True,
         rounding: int | None = None,
         growth: bool = False,
@@ -5806,6 +5921,7 @@ class Ratios:
         - Market Capitalization = Share Price * Weighted Average (Diluted) Shares
 
         Args:
+            show_daily (bool, optional): Whether to show daily data. Defaults to False.
             diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
@@ -5835,9 +5951,20 @@ class Ratios:
         years = self._cash_flow_statement.columns
         begin, end = str(years[0]), str(years[-1])
 
-        share_prices = self._historical_data.loc[begin:end, "Adj Close"][
-            self._tickers_without_portfolio
-        ].T
+        if show_daily:
+            share_prices = self._daily_historical_data.loc[begin:, "Adj Close"][
+                self._tickers_without_portfolio
+            ]
+
+            average_shares = map_period_data_to_daily_data(
+                period_data=average_shares,
+                daily_dates=share_prices.index,
+                quarterly=self._quarterly,
+            )
+        else:
+            share_prices = self._historical_data.loc[begin:end, "Adj Close"][
+                self._tickers_without_portfolio
+            ].T
 
         if trailing:
             market_cap = valuation_model.get_market_cap(
@@ -5858,6 +5985,7 @@ class Ratios:
     @handle_errors
     def get_enterprise_value(
         self,
+        show_daily: bool = False,
         diluted: bool = True,
         rounding: int | None = None,
         growth: bool = False,
@@ -5877,6 +6005,7 @@ class Ratios:
             — Cash and Cash Equivalents
 
         Args:
+            show_daily (bool, optional): Whether to show daily data. Defaults to False.
             diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
@@ -5897,37 +6026,59 @@ class Ratios:
         enterprise_value = toolkit.ratios.get_enterprise_value()
         ```
         """
+        total_debt = self._balance_sheet_statement.loc[:, "Total Debt", :]
+        minority_interest = self._balance_sheet_statement.loc[:, "Minority Interest", :]
+        preferred_stock = self._balance_sheet_statement.loc[:, "Preferred Stock", :]
+        cash_and_cash_equivalents = self._balance_sheet_statement.loc[
+            :, "Cash and Cash Equivalents", :
+        ]
+
         market_cap = self.get_market_cap(
-            diluted=diluted, trailing=trailing if trailing else None
+            diluted=diluted,
+            trailing=trailing if trailing else None,
+            show_daily=show_daily,
         )
+
+        if show_daily:
+            total_debt = map_period_data_to_daily_data(
+                period_data=total_debt,
+                daily_dates=market_cap.index,
+                quarterly=self._quarterly,
+            )
+
+            minority_interest = map_period_data_to_daily_data(
+                period_data=minority_interest,
+                daily_dates=market_cap.index,
+                quarterly=self._quarterly,
+            )
+
+            preferred_stock = map_period_data_to_daily_data(
+                period_data=preferred_stock,
+                daily_dates=market_cap.index,
+                quarterly=self._quarterly,
+            )
+
+            cash_and_cash_equivalents = map_period_data_to_daily_data(
+                period_data=cash_and_cash_equivalents,
+                daily_dates=market_cap.index,
+                quarterly=self._quarterly,
+            )
 
         if trailing:
             enterprise_value = valuation_model.get_enterprise_value(
                 market_cap,
-                self._balance_sheet_statement.loc[:, "Total Debt", :]
-                .T.rolling(trailing)
-                .mean()
-                .T,
-                self._balance_sheet_statement.loc[:, "Minority Interest", :]
-                .T.rolling(trailing)
-                .mean()
-                .T,
-                self._balance_sheet_statement.loc[:, "Preferred Stock", :]
-                .T.rolling(trailing)
-                .mean()
-                .T,
-                self._balance_sheet_statement.loc[:, "Cash and Cash Equivalents", :]
-                .T.rolling(trailing)
-                .mean()
-                .T,
+                total_debt.T.rolling(trailing).mean().T,
+                minority_interest.T.rolling(trailing).mean().T,
+                preferred_stock.T.rolling(trailing).mean().T,
+                cash_and_cash_equivalents.T.rolling(trailing).mean().T,
             )
         else:
             enterprise_value = valuation_model.get_enterprise_value(
                 market_cap,
-                self._balance_sheet_statement.loc[:, "Total Debt", :],
-                self._balance_sheet_statement.loc[:, "Minority Interest", :],
-                self._balance_sheet_statement.loc[:, "Preferred Stock", :],
-                self._balance_sheet_statement.loc[:, "Cash and Cash Equivalents", :],
+                total_debt,
+                minority_interest,
+                preferred_stock,
+                cash_and_cash_equivalents,
             )
 
         if growth:
@@ -5943,6 +6094,7 @@ class Ratios:
     @handle_errors
     def get_ev_to_sales_ratio(
         self,
+        show_daily: bool = False,
         diluted: bool = True,
         rounding: int | None = None,
         growth: bool = False,
@@ -5962,6 +6114,7 @@ class Ratios:
         - Enterprise Value to Sales Ratio = Enterprise Value / Total Revenue
 
         Args:
+            show_daily (bool, optional): Whether to show daily data. Defaults to False.
             diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
@@ -5983,17 +6136,28 @@ class Ratios:
         ```
         """
         enterprise_value = self.get_enterprise_value(
-            diluted=diluted, trailing=trailing if trailing else None
+            diluted=diluted,
+            trailing=trailing if trailing else None,
+            show_daily=show_daily,
         )
+
+        revenue = self._income_statement.loc[:, "Revenue", :]
+
+        if show_daily:
+            revenue = map_period_data_to_daily_data(
+                period_data=revenue,
+                daily_dates=enterprise_value.index,
+                quarterly=self._quarterly,
+            )
 
         if trailing:
             ev_to_sales_ratio = valuation_model.get_ev_to_sales_ratio(
                 enterprise_value,
-                self._income_statement.loc[:, "Revenue", :].T.rolling(trailing).sum().T,
+                revenue.T.rolling(trailing).sum().T,
             )
         else:
             ev_to_sales_ratio = valuation_model.get_ev_to_sales_ratio(
-                enterprise_value, self._income_statement.loc[:, "Revenue", :]
+                enterprise_value, revenue
             )
 
         if growth:
@@ -6009,6 +6173,7 @@ class Ratios:
     @handle_errors
     def get_ev_to_ebitda_ratio(
         self,
+        show_daily: bool = False,
         diluted: bool = True,
         rounding: int | None = None,
         growth: bool = False,
@@ -6048,26 +6213,38 @@ class Ratios:
         ```
         """
         enterprise_value = self.get_enterprise_value(
-            diluted=diluted, trailing=trailing if trailing else None
+            diluted=diluted,
+            trailing=trailing if trailing else None,
+            show_daily=show_daily,
         )
+
+        operating_income = self._income_statement.loc[:, "Operating Income", :]
+        depreciation_and_amortization = self._income_statement.loc[
+            :, "Depreciation and Amortization", :
+        ]
+
+        if show_daily:
+            operating_income = map_period_data_to_daily_data(
+                period_data=operating_income,
+                daily_dates=enterprise_value.index,
+                quarterly=self._quarterly,
+            )
+
+            depreciation_and_amortization = map_period_data_to_daily_data(
+                period_data=depreciation_and_amortization,
+                daily_dates=enterprise_value.index,
+                quarterly=self._quarterly,
+            )
 
         if trailing:
             ev_to_ebitda_ratio = valuation_model.get_ev_to_ebitda_ratio(
                 enterprise_value,
-                self._income_statement.loc[:, "Operating Income", :]
-                .T.rolling(trailing)
-                .sum()
-                .T,
-                self._income_statement.loc[:, "Depreciation and Amortization", :]
-                .T.rolling(trailing)
-                .sum()
-                .T,
+                operating_income.T.rolling(trailing).sum().T,
+                depreciation_and_amortization.T.rolling(trailing).sum().T,
             )
         else:
             ev_to_ebitda_ratio = valuation_model.get_ev_to_ebitda_ratio(
-                enterprise_value,
-                self._income_statement.loc[:, "Operating Income", :],
-                self._income_statement.loc[:, "Depreciation and Amortization", :],
+                enterprise_value, operating_income, depreciation_and_amortization
             )
 
         if growth:
@@ -6083,6 +6260,7 @@ class Ratios:
     @handle_errors
     def get_ev_to_operating_cashflow_ratio(
         self,
+        show_daily: bool = False,
         diluted: bool = True,
         rounding: int | None = None,
         growth: bool = False,
@@ -6103,6 +6281,7 @@ class Ratios:
         - Enterprise Value to Operating Cash Flow Ratio = Enterprise Value / Operating Cash Flow
 
         Args:
+            show_daily (bool, optional): Whether to show daily data. Defaults to False.
             diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
@@ -6124,24 +6303,33 @@ class Ratios:
         ```
         """
         enterprise_value = self.get_enterprise_value(
-            diluted=diluted, trailing=trailing if trailing else None
+            diluted=diluted,
+            trailing=trailing if trailing else None,
+            show_daily=show_daily,
         )
+
+        cash_flow_from_operations = self._cash_flow_statement.loc[
+            :, "Cash Flow from Operations", :
+        ]
+
+        if show_daily:
+            cash_flow_from_operations = map_period_data_to_daily_data(
+                period_data=cash_flow_from_operations,
+                daily_dates=enterprise_value.index,
+                quarterly=self._quarterly,
+            )
 
         if trailing:
             ev_to_operating_cashflow_ratio = (
                 valuation_model.get_ev_to_operating_cashflow_ratio(
                     enterprise_value,
-                    self._cash_flow_statement.loc[:, "Cash Flow from Operations", :]
-                    .T.rolling(trailing)
-                    .sum()
-                    .T,
+                    cash_flow_from_operations.T.rolling(trailing).sum().T,
                 )
             )
         else:
             ev_to_operating_cashflow_ratio = (
                 valuation_model.get_ev_to_operating_cashflow_ratio(
-                    enterprise_value,
-                    self._cash_flow_statement.loc[:, "Cash Flow from Operations", :],
+                    enterprise_value, cash_flow_from_operations
                 )
             )
 
@@ -6160,6 +6348,7 @@ class Ratios:
     @handle_errors
     def get_earnings_yield(
         self,
+        show_daily: bool = False,
         include_dividends: bool = False,
         diluted: bool = True,
         rounding: int | None = None,
@@ -6181,6 +6370,7 @@ class Ratios:
         - Earnings Yield Ratio = Earnings per Share / Share Price
 
         Args:
+            show_daily (bool, optional): Whether to show daily data. Defaults to False.
             include_dividends (bool, optional): Whether to include dividends in the calculation. Defaults to False.
             diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
@@ -6209,9 +6399,20 @@ class Ratios:
         years = eps.columns
         begin, end = str(years[0]), str(years[-1])
 
-        share_prices = self._historical_data.loc[begin:end, "Adj Close"][
-            self._tickers_without_portfolio
-        ].T
+        if show_daily:
+            share_prices = self._daily_historical_data.loc[begin:, "Adj Close"][
+                self._tickers_without_portfolio
+            ]
+
+            eps = map_period_data_to_daily_data(
+                period_data=eps,
+                daily_dates=share_prices.index,
+                quarterly=self._quarterly,
+            )
+        else:
+            share_prices = self._historical_data.loc[begin:end, "Adj Close"][
+                self._tickers_without_portfolio
+            ].T
 
         earnings_yield = valuation_model.get_earnings_yield(eps, share_prices)
 
@@ -6491,6 +6692,7 @@ class Ratios:
     @handle_errors
     def get_ev_to_ebit(
         self,
+        show_daily: bool = False,
         diluted: bool = True,
         rounding: int | None = None,
         growth: bool = False,
@@ -6507,6 +6709,7 @@ class Ratios:
         - Enterprise Value to EBIT Ratio = Enterprise Value / EBIT
 
         Args:
+            show_daily (bool, optional): Whether to show daily data. Defaults to False.
             diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
@@ -6528,28 +6731,31 @@ class Ratios:
         ```
         """
         enterprise_value = self.get_enterprise_value(
-            diluted=diluted, trailing=trailing if trailing else None
+            diluted=diluted,
+            trailing=trailing if trailing else None,
+            show_daily=show_daily,
         )
+
+        ebit = (
+            self._income_statement.loc[:, "Net Income", :]
+            + self._income_statement.loc[:, "Income Tax Expense", :]
+            + self._income_statement.loc[:, "Interest Expense", :]
+        )
+
+        if show_daily:
+            ebit = map_period_data_to_daily_data(
+                period_data=ebit,
+                daily_dates=enterprise_value.index,
+                quarterly=self._quarterly,
+            )
 
         if trailing:
             ev_to_ebit = valuation_model.get_ev_to_ebit(
                 enterprise_value,
-                (
-                    self._income_statement.loc[:, "Net Income", :]
-                    + self._income_statement.loc[:, "Income Tax Expense", :]
-                    + self._income_statement.loc[:, "Interest Expense", :]
-                )
-                .T.rolling(trailing)
-                .sum()
-                .T,
+                ebit.T.rolling(trailing).sum().T,
             )
         else:
-            ev_to_ebit = valuation_model.get_ev_to_ebit(
-                enterprise_value,
-                self._income_statement.loc[:, "Net Income", :]
-                + self._income_statement.loc[:, "Income Tax Expense", :]
-                + self._income_statement.loc[:, "Interest Expense", :],
-            )
+            ev_to_ebit = valuation_model.get_ev_to_ebit(enterprise_value, ebit)
 
         if growth:
             return calculate_growth(

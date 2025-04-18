@@ -278,8 +278,8 @@ AAPL,Revenue per Share,Lag 3,,,,0.5477
 AAPL,Price-to-Earnings,Lag 1,,-0.2144,-0.3241,0.0
 AAPL,Price-to-Earnings,Lag 2,,,-0.4691,-0.3241
 AAPL,Price-to-Earnings,Lag 3,,,,-0.4691
-AAPL,Price-to-Earnings-Growth,Lag 1,,,4.4281,0.0
-AAPL,Price-to-Earnings-Growth,Lag 2,,,,4.4281
+AAPL,Price-to-Earnings-Growth,Lag 1,,,,
+AAPL,Price-to-Earnings-Growth,Lag 2,,,,
 AAPL,Price-to-Earnings-Growth,Lag 3,,,,
 AAPL,Book Value per Share,Lag 1,,0.0036,-0.1703,0.2663
 AAPL,Book Value per Share,Lag 2,,,-0.1673,0.0506
@@ -344,8 +344,8 @@ MSFT,Revenue per Share,Lag 3,,,,0.5236
 MSFT,Price-to-Earnings,Lag 1,,0.0912,-0.3991,0.0
 MSFT,Price-to-Earnings,Lag 2,,,-0.3443,-0.3991
 MSFT,Price-to-Earnings,Lag 3,,,,-0.3443
-MSFT,Price-to-Earnings-Growth,Lag 1,,,0.2063,0.0
-MSFT,Price-to-Earnings-Growth,Lag 2,,,,0.2063
+MSFT,Price-to-Earnings-Growth,Lag 1,,,,
+MSFT,Price-to-Earnings-Growth,Lag 2,,,,
 MSFT,Price-to-Earnings-Growth,Lag 3,,,,
 MSFT,Book Value per Share,Lag 1,,0.212,0.1835,0.2495
 MSFT,Book Value per Share,Lag 2,,,0.4344,0.4788

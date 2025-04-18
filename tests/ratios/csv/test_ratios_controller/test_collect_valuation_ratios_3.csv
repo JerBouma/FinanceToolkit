@@ -1,8 +1,8 @@
 ,,2020,2021,2022,2023
 AAPL,Earnings per Share,,9.0182,11.9126,12.4457
 AAPL,Revenue per Share,,37.9683,46.5609,49.177
-AAPL,Price-to-Earnings,,19.4939,10.8608,
-AAPL,Price-to-Earnings-Growth,,,33.8343,
+AAPL,Price-to-Earnings,39.862,31.3146,21.164,
+AAPL,Price-to-Earnings-Growth,,,,
 AAPL,Book Value per Share,,3.7341,3.4275,3.5104
 AAPL,Price-to-Book,,47.0796,37.7476,
 AAPL,Interest Debt per Share,,800241647.4205,756048315.6364,425588139.002
@@ -23,8 +23,8 @@ AAPL,Tangible Asset Value,,64214500000.0,56881000000.0,56409000000.0
 AAPL,Net Current Asset Value,,23838000000.0,-4611000000.0,-10159500000.0
 MSFT,Earnings per Share,,13.8738,17.7731,19.419
 MSFT,Revenue per Share,,40.8916,48.5886,54.8963
-MSFT,Price-to-Earnings,,23.8536,13.4017,
-MSFT,Price-to-Earnings-Growth,,,47.6759,
+MSFT,Price-to-Earnings,37.6577,41.0927,24.6908,
+MSFT,Price-to-Earnings-Growth,,,,
 MSFT,Book Value per Share,,17.0226,20.3677,24.8311
 MSFT,Price-to-Book,,19.4412,11.6945,
 MSFT,Interest Debt per Share,,543993910.9193,517552264.7139,499141106.1162

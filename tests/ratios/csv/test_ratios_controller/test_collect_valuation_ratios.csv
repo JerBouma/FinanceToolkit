@@ -2,7 +2,7 @@
 AAPL,Earnings per Share,3.2753,5.614,6.1132,6.1341
 AAPL,Revenue per Share,15.6613,21.691,24.1536,24.2393
 AAPL,Price-to-Earnings,39.862,31.3146,21.164,
-AAPL,Price-to-Earnings-Growth,,43.858,238.0652,
+AAPL,Price-to-Earnings-Growth,,,,
 AAPL,Book Value per Share,3.7276,3.7409,3.1038,3.9302
 AAPL,Price-to-Book,35.0252,46.994,41.6844,
 AAPL,Interest Debt per Share,447886431.5877,357665718.5754,398528974.9144,0.0
@@ -24,7 +24,7 @@ AAPL,Net Current Asset Value,38321000000.0,9355000000.0,-18577000000.0,-17420000
 MSFT,Earnings per Share,5.7635,8.0535,9.6469,9.6843
 MSFT,Revenue per Share,18.6145,22.0936,26.2958,28.3612
 MSFT,Price-to-Earnings,37.6577,41.0927,24.6908,
-MSFT,Price-to-Earnings-Growth,,103.4299,124.764,
+MSFT,Price-to-Earnings-Growth,,,,
 MSFT,Book Value per Share,15.3982,18.663,22.0878,27.5994
 MSFT,Price-to-Book,14.0952,17.7324,10.7838,
 MSFT,Interest Debt per Share,280383292.4871,263347369.9742,253876611.7186,245224647.7112

@@ -25,9 +25,9 @@ def test_get_revenue_per_share(recorder):
     )
 
 
-def test_get_price_earnings_ratio(recorder):
+def test_get_price_to_earnings_ratio(recorder):
     recorder.capture(
-        valuation_model.get_price_earnings_ratio(
+        valuation_model.get_price_to_earnings_ratio(
             stock_price=pd.Series([30, 11, 12, 10, 30]),
             earnings_per_share=pd.Series([0.5, 0.4, 0.1, 1.1, 1.2]),
         )
@@ -38,7 +38,7 @@ def test_get_price_to_earnings_growth_ratio(recorder):
     recorder.capture(
         valuation_model.get_price_to_earnings_growth_ratio(
             price_earnings=pd.Series([30, 11, 12, 10, 30]),
-            earnings_per_share_growth=pd.Series([0.2, 0.1, 0.1, 0.05, 0.01]),
+            growth_rate=pd.Series([0.2, 0.1, 0.1, 0.05, 0.01]),
         )
     )
 

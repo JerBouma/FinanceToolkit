@@ -8,7 +8,9 @@ import warnings
 import numpy as np
 import pandas as pd
 
-from financetoolkit.helpers import calculate_growth, handle_errors, handle_portfolio
+from financetoolkit import logger_model
+from financetoolkit.error_model import handle_errors
+from financetoolkit.helpers import calculate_growth, handle_portfolio
 from financetoolkit.ratios import (
     efficiency_model,
     liquidity_model,
@@ -17,6 +19,8 @@ from financetoolkit.ratios import (
     valuation_model,
 )
 from financetoolkit.ratios.helpers import map_period_data_to_daily_data
+
+logger = logger_model.get_logger()
 
 # Runtime errors are ignored on purpose given the nature of the calculations
 # sometimes leading to division by zero or other mathematical errors. This is however
@@ -298,15 +302,15 @@ class Ratios:
             self.collect_all_ratios()
 
         if not custom_ratios_dict and not options:
-            print(
+            logger.error(
                 "Please define custom ratios dictionary to the custom_ratios_dict parameter. See "
                 "https://www.jeroenbouma.com/projects/financetoolkit/custom-ratios how to do this."
             )
             return None
 
         if options:
-            print(
-                "The following names are available to be used in the Custom Ratios calculations.\n"
+            logger.info(
+                "The following names are available to be used in the Custom Ratios calculations."
             )
 
             self._available_custom_ratios_options = list(
@@ -402,10 +406,12 @@ class Ratios:
                         float(formula_section_stripped)
                     except ValueError:
                         formula_adjusted = None
-                        print(
-                            f"Column {formula_section_stripped} not found in total_financials and is not a number. "
-                            f"Therefore the formula {formula} is invalid. Use collect_custom_ratios(options=True) "
-                            "to see the available columns."
+                        logger.error(
+                            "Column %s not found in total_financials and is not a number. "
+                            "Therefore the formula %s is invalid. Use collect_custom_ratios(options=True) "
+                            "to see the available columns.",
+                            formula_section_stripped,
+                            formula,
                         )
                         break
 

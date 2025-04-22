@@ -6,6 +6,10 @@ import inspect
 
 import pandas as pd
 
+from financetoolkit import logger_model
+
+logger = logger_model.get_logger()
+
 
 def handle_errors(func):
     """
@@ -27,30 +31,34 @@ def handle_errors(func):
             return func(*args, **kwargs)
         except KeyError as e:
             function_name = func.__name__
-            print(
+            logger.error(
                 "There is an index name missing in the provided historical dataset. "
-                f"{e}"
+                "%s",
+                e,
             )
             return pd.Series(dtype="object")
         except ValueError as e:
             function_name = func.__name__
-            print(
-                f"An error occurred while trying to run the function "
-                f"{function_name}. {e}"
+            logger.error(
+                "An error occurred while trying to run the function %s. %s",
+                function_name,
+                e,
             )
             return pd.Series(dtype="object")
         except AttributeError as e:
             function_name = func.__name__
-            print(
-                f"An error occurred while trying to run the function "
-                f"{function_name}. {e}"
+            logger.error(
+                "An error occurred while trying to run the function %s. %s",
+                function_name,
+                e,
             )
             return pd.Series(dtype="object")
         except ZeroDivisionError as e:
             function_name = func.__name__
-            print(
-                f"An error occurred while trying to run the function "
-                f"{function_name}. {e}"
+            logger.error(
+                "An error occurred while trying to run the function %s. %s",
+                function_name,
+                e,
             )
             return pd.Series(dtype="object")
 

@@ -11,7 +11,7 @@ from datetime import datetime, timedelta
 import pandas as pd
 import requests
 
-from financetoolkit import helpers
+from financetoolkit import cache_model, currencies_model, helpers, logger_model
 from financetoolkit.economics.economics_controller import Economics
 from financetoolkit.fixedincome.fixedincome_controller import FixedIncome
 from financetoolkit.fundamentals_model import (
@@ -24,11 +24,6 @@ from financetoolkit.fundamentals_model import (
     get_quote as _get_quote,
     get_rating as _get_rating,
     get_revenue_segmentation as _get_revenue_segmentation,
-)
-from financetoolkit.helpers import (
-    calculate_growth as _calculate_growth,
-    load_cached_data as _load_cached_data,
-    save_cached_data as _save_cached_data,
 )
 from financetoolkit.historical_model import (
     convert_daily_to_other_period as _convert_daily_to_other_period,
@@ -47,6 +42,12 @@ from financetoolkit.performance.performance_controller import Performance
 from financetoolkit.ratios.ratios_controller import Ratios
 from financetoolkit.risk.risk_controller import Risk
 from financetoolkit.technicals.technicals_controller import Technicals
+
+# Set up logger, this is meant to display useful messages, warnings or errors when
+# the Finance Toolkit runs into issues or does something that might not be entirely
+# logical at first
+logger_model.setup_logger()
+logger = logger_model.get_logger()
 
 # Runtime errors are ignored on purpose given the nature of the calculations
 # sometimes leading to division by zero or other mathematical errors. This is however
@@ -244,7 +245,7 @@ class Toolkit:
         self._risk_free_rate = risk_free_rate
 
         if use_cached_data:
-            cached_configurations = _load_cached_data(
+            cached_configurations = cache_model.load_cached_data(
                 cached_data_location=self._cached_data_location,
                 file_name="configurations.pickle",
                 method="pickle",
@@ -292,16 +293,18 @@ class Toolkit:
                         if isinstance(use_cached_data, bool)
                         else use_cached_data
                     )
-                    print(
+                    logger.info(
                         "The following variables are overwritten by the cached "
-                        f"configurations: {', '.join(cached_overwrites)}\n"
+                        "configurations: %s\n"
                         "If this is undesirable, please set the use_cached_data variable "
-                        f"to False, delete the directory {folder} or select a new "
+                        "to False, delete the directory %s or select a new "
                         "location for the cached data by changing the use_cached_data "
-                        "variable to a string."
+                        "variable to a string.",
+                        ", ".join(cached_overwrites),
+                        folder,
                     )
             else:
-                _save_cached_data(
+                cache_model.save_cached_data(
                     cached_data={
                         "tickers": tickers,
                         "start_date": self._start_date,
@@ -345,12 +348,14 @@ class Toolkit:
                     data = response.json()
 
                     try:
-                        print(f"Converted {ticker} to {data['quotes'][0]['symbol']}")
+                        logger.info(
+                            "Converted %s to %s", ticker, data["quotes"][0]["symbol"]
+                        )
                         self._tickers.append(data["quotes"][0]["symbol"])
                     except (KeyError, ValueError, IndexError):
-                        print(f"Could not convert {ticker}")
+                        logger.warning("Could not convert %s", ticker)
                 else:
-                    print(f"Could not convert {ticker}")
+                    logger.warning("Could not convert %s", ticker)
             else:
                 self._tickers.append(ticker)
 
@@ -361,16 +366,18 @@ class Toolkit:
             duplicate_tickers = [
                 ticker for ticker, count in Counter(self._tickers).items() if count > 1
             ]
-            print(
-                f"Found duplicate tickers, duplicate entries of the following tickers are removed: {', '.join(duplicate_tickers)}"
+            logger.warning(
+                "Found duplicate tickers, duplicate entries of the following tickers are removed: %s",
+                ", ".join(duplicate_tickers),
             )
             self._tickers = deduplicated_tickers
 
         if self._benchmark_ticker in self._tickers:
-            print(
-                f"Please note that the benchmark ticker ({self._benchmark_ticker}) is also "
+            logger.warning(
+                "Please note that the benchmark ticker (%s) is also "
                 "included in the tickers. Therefore, this ticker will be removed from the "
-                "tickers list."
+                "tickers list.",
+                self._benchmark_ticker,
             )
             self._tickers.remove(self._benchmark_ticker)
 
@@ -432,7 +439,7 @@ class Toolkit:
         if self._api_key or self._use_cached_data:
             # Initialization of FinancialModelingPrep Variables
             self._profile: pd.DataFrame = (
-                _load_cached_data(
+                cache_model.load_cached_data(
                     cached_data_location=self._cached_data_location,
                     file_name="profile.pickle",
                 )
@@ -440,7 +447,7 @@ class Toolkit:
                 else pd.DataFrame()
             )
             self._quote: pd.DataFrame = (
-                _load_cached_data(
+                cache_model.load_cached_data(
                     cached_data_location=self._cached_data_location,
                     file_name="quote.pickle",
                 )
@@ -448,7 +455,7 @@ class Toolkit:
                 else pd.DataFrame()
             )
             self._rating: pd.DataFrame = (
-                _load_cached_data(
+                cache_model.load_cached_data(
                     cached_data_location=self._cached_data_location,
                     file_name="rating.pickle",
                 )
@@ -456,7 +463,7 @@ class Toolkit:
                 else pd.DataFrame()
             )
             self._analyst_estimates: pd.DataFrame = (
-                _load_cached_data(
+                cache_model.load_cached_data(
                     cached_data_location=self._cached_data_location,
                     file_name="analyst_estimates.pickle",
                 )
@@ -464,7 +471,7 @@ class Toolkit:
                 else pd.DataFrame()
             )
             self._analyst_estimates_growth: pd.DataFrame = (
-                _load_cached_data(
+                cache_model.load_cached_data(
                     cached_data_location=self._cached_data_location,
                     file_name="analyst_estimates_growth.pickle",
                 )
@@ -472,7 +479,7 @@ class Toolkit:
                 else pd.DataFrame()
             )
             self._dividend_calendar: pd.DataFrame = (
-                _load_cached_data(
+                cache_model.load_cached_data(
                     cached_data_location=self._cached_data_location,
                     file_name="dividend_calendar.pickle",
                 )
@@ -480,7 +487,7 @@ class Toolkit:
                 else pd.DataFrame()
             )
             self._earnings_calendar: pd.DataFrame = (
-                _load_cached_data(
+                cache_model.load_cached_data(
                     cached_data_location=self._cached_data_location,
                     file_name="earnings_calendar.pickle",
                 )
@@ -488,7 +495,7 @@ class Toolkit:
                 else pd.DataFrame()
             )
             self._esg_scores: pd.DataFrame = (
-                _load_cached_data(
+                cache_model.load_cached_data(
                     cached_data_location=self._cached_data_location,
                     file_name="esg_scores.pickle",
                 )
@@ -496,7 +503,7 @@ class Toolkit:
                 else pd.DataFrame()
             )
             self._revenue_geographic_segmentation: pd.DataFrame = (
-                _load_cached_data(
+                cache_model.load_cached_data(
                     cached_data_location=self._cached_data_location,
                     file_name="revenue_geographic_segmentation.pickle",
                 )
@@ -506,7 +513,7 @@ class Toolkit:
             self._revenue_geographic_segmentation_growth: pd.DataFrame = pd.DataFrame()
 
             self._revenue_product_segmentation: pd.DataFrame = (
-                _load_cached_data(
+                cache_model.load_cached_data(
                     cached_data_location=self._cached_data_location,
                     file_name="revenue_product_segmentation.pickle",
                 )
@@ -538,7 +545,7 @@ class Toolkit:
         # Initialization of Historical Variables
 
         self._intraday_historical_data: pd.DataFrame = (
-            _load_cached_data(
+            cache_model.load_cached_data(
                 cached_data_location=self._cached_data_location,
                 file_name="intraday_historical_data.pickle",
             )
@@ -550,7 +557,7 @@ class Toolkit:
             self._daily_historical_data: pd.DataFrame = historical
         else:
             self._daily_historical_data = (
-                _load_cached_data(
+                cache_model.load_cached_data(
                     cached_data_location=self._cached_data_location,
                     file_name="daily_historical_data.pickle",
                 )
@@ -646,7 +653,7 @@ class Toolkit:
             )
         else:
             self._balance_sheet_statement = (
-                _load_cached_data(
+                cache_model.load_cached_data(
                     cached_data_location=self._cached_data_location,
                     file_name="balance_sheet_statement.pickle",
                 )
@@ -667,7 +674,7 @@ class Toolkit:
             )
         else:
             self._income_statement = (
-                _load_cached_data(
+                cache_model.load_cached_data(
                     cached_data_location=self._cached_data_location,
                     file_name="income_statement.pickle",
                 )
@@ -688,7 +695,7 @@ class Toolkit:
             )
         else:
             self._cash_flow_statement = (
-                _load_cached_data(
+                cache_model.load_cached_data(
                     cached_data_location=self._cached_data_location,
                     file_name="cash_flow_statement.pickle",
                 )
@@ -699,7 +706,7 @@ class Toolkit:
         self._cash_flow_statement_growth: pd.DataFrame = pd.DataFrame()
 
         self._statistics_statement: pd.DataFrame = (
-            _load_cached_data(
+            cache_model.load_cached_data(
                 cached_data_location=self._cached_data_location,
                 file_name="statistics_statement.pickle",
             )
@@ -1457,7 +1464,7 @@ class Toolkit:
         | IPO Date              | 1986-03-13                | 1980-12-12            |
         """
         if not self._api_key:
-            return print(
+            logger.error(
                 "The requested data requires the api_key parameter to be set, consider "
                 "obtaining a key with the following link: "
                 "https://www.jeroenbouma.com/fmp"
@@ -1465,6 +1472,7 @@ class Toolkit:
                 "quarterly data. Consider upgrading your plan. You can get 15% off by using the "
                 "above affiliate link which also supports the project."
             )
+            return None
 
         if self._profile.empty:
             self._profile, self._invalid_tickers = _get_profile(
@@ -1477,7 +1485,7 @@ class Toolkit:
             )
 
             if self._use_cached_data:
-                _save_cached_data(
+                cache_model.save_cached_data(
                     cached_data=self._profile,
                     cached_data_location=self._cached_data_location,
                     file_name="profile.pickle",
@@ -1542,7 +1550,7 @@ class Toolkit:
         | Timestamp              | 2023-08-18 20:00:00          | 2023-08-18 20:00:01          |
         """
         if not self._api_key:
-            return print(
+            logger.error(
                 "The requested data requires the api_key parameter to be set, consider "
                 "obtaining a key with the following link: "
                 "https://www.jeroenbouma.com/fmp"
@@ -1550,6 +1558,7 @@ class Toolkit:
                 "quarterly data. Consider upgrading your plan. You can get 15% off by using the "
                 "above affiliate link which also supports the project."
             )
+            return None
 
         if self._quote.empty:
             self._quote, self._invalid_tickers = _get_quote(
@@ -1562,7 +1571,7 @@ class Toolkit:
             )
 
             if self._use_cached_data:
-                _save_cached_data(
+                cache_model.save_cached_data(
                     cached_data=self._quote,
                     cached_data_location=self._cached_data_location,
                     file_name="quote.pickle",
@@ -1623,7 +1632,7 @@ class Toolkit:
 
         """
         if not self._api_key:
-            return print(
+            logger.error(
                 "The requested data requires the api_key parameter to be set, consider "
                 "obtaining a key with the following link: "
                 "https://www.jeroenbouma.com/fmp"
@@ -1631,6 +1640,7 @@ class Toolkit:
                 "quarterly data. Consider upgrading your plan. You can get 15% off by using the "
                 "above affiliate link which also supports the project."
             )
+            return None
 
         if self._rating.empty:
             self._rating, self._invalid_tickers = _get_rating(
@@ -1643,7 +1653,7 @@ class Toolkit:
             )
 
             if self._use_cached_data:
-                _save_cached_data(
+                cache_model.save_cached_data(
                     cached_data=self._rating,
                     cached_data_location=self._cached_data_location,
                     file_name="rating.pickle",
@@ -1722,12 +1732,13 @@ class Toolkit:
         | Number of Analysts            | 14           | 16           | 12           | 10           |
         """
         if not self._api_key:
-            return print(
+            logger.error(
                 "The requested data requires the api_key parameter to be set, consider obtaining "
                 "a key with the following link: https://www.jeroenbouma.com/fmp"
                 "\nThis functionality also requires a Premium subscription. You can get 15% off by "
                 "using the above affiliate link which also supports the project."
             )
+            return None
 
         if self._analyst_estimates.empty or overwrite:
             (
@@ -1747,7 +1758,7 @@ class Toolkit:
             )
 
             if self._use_cached_data:
-                _save_cached_data(
+                cache_model.save_cached_data(
                     cached_data=self._analyst_estimates,
                     cached_data_location=self._cached_data_location,
                     file_name="analyst_estimates.pickle",
@@ -1761,7 +1772,7 @@ class Toolkit:
             ]
 
         if growth:
-            self._analyst_estimates_growth = _calculate_growth(
+            self._analyst_estimates_growth = helpers.calculate_growth(
                 self._analyst_estimates,
                 lag=lag,
                 rounding=rounding if rounding else self._rounding,
@@ -1824,12 +1835,13 @@ class Toolkit:
         | 2024-08-01  | nan    |          nan    | nan           |       nan           | 2024-06-30           | amc    |
         """
         if not self._api_key:
-            return print(
+            logger.error(
                 "The requested data requires the api_key parameter to be set, consider obtaining a key with the "
                 "following link: https://www.jeroenbouma.com/fmp"
                 "\nThis functionality also requires a Premium subscription. You can get 15% off by using "
                 "the above affiliate link which also supports the project."
             )
+            return None
 
         if self._earnings_calendar.empty or overwrite:
             (
@@ -1849,7 +1861,7 @@ class Toolkit:
             )
 
             if self._use_cached_data:
-                _save_cached_data(
+                cache_model.save_cached_data(
                     cached_data=self._earnings_calendar,
                     cached_data_location=self._cached_data_location,
                     file_name="earnings_calendar.pickle",
@@ -1912,12 +1924,13 @@ class Toolkit:
 
         """
         if not self._api_key:
-            return print(
+            logger.error(
                 "The requested data requires the api_key parameter to be set, consider obtaining a key with the "
                 "following link: https://www.jeroenbouma.com/fmp"
                 "\nThis functionality also requires a Professional or Enterprise subscription. "
                 "You can get 15% off by using the above affiliate link which also supports the project."
             )
+            return None
 
         if self._revenue_geographic_segmentation.empty or overwrite:
             (
@@ -1938,7 +1951,7 @@ class Toolkit:
             )
 
             if self._use_cached_data:
-                _save_cached_data(
+                cache_model.save_cached_data(
                     cached_data=self._revenue_geographic_segmentation,
                     cached_data_location=self._cached_data_location,
                     file_name="revenue_geographic_segmentation.pickle",
@@ -2001,12 +2014,13 @@ class Toolkit:
 
         """
         if not self._api_key:
-            return print(
+            logger.error(
                 "The requested data requires the api_key parameter to be set, consider obtaining a key with the "
                 "following link: https://www.jeroenbouma.com/fmp"
                 "\nThis functionality also requires a Professional or Enterprise subscription. You can get 15% off by using "
                 "the above affiliate link which also supports the project."
             )
+            return None
 
         if self._revenue_product_segmentation.empty or overwrite:
             (
@@ -2027,7 +2041,7 @@ class Toolkit:
             )
 
             if self._use_cached_data:
-                _save_cached_data(
+                cache_model.save_cached_data(
                     cached_data=self._revenue_product_segmentation,
                     cached_data_location=self._cached_data_location,
                     file_name="revenue_product_segmentation.pickle",
@@ -2173,7 +2187,7 @@ class Toolkit:
             )
 
             if self._use_cached_data:
-                _save_cached_data(
+                cache_model.save_cached_data(
                     cached_data=self._daily_historical_data,
                     cached_data_location=self._cached_data_location,
                     file_name="daily_historical_data.pickle",
@@ -2377,12 +2391,13 @@ class Toolkit:
         | 2024-01-19 15:59 | 398.35 | 398.66 | 398.22  | 398.66  |   586344 |   0.0008 |       0.0005 |              1.0286 |
         """
         if not self._api_key:
-            return print(
+            logger.error(
                 "The requested data requires the api_key parameter to be set, consider obtaining a key with the "
                 "following link: https://www.jeroenbouma.com/fmp"
                 "\nThis functionality also requires a Professional or Enterprise subscription. You can get 15% off by using "
                 "the above affiliate link which also supports the project."
             )
+            return None
 
         if period not in ["1min", "5min", "15min", "30min", "1hour"]:
             raise ValueError(
@@ -2418,7 +2433,7 @@ class Toolkit:
             )
 
             if self._use_cached_data:
-                _save_cached_data(
+                cache_model.save_cached_data(
                     cached_data=self._intraday_historical_data,
                     cached_data_location=self._cached_data_location,
                     file_name="intraday_historical_data.pickle",
@@ -2501,12 +2516,13 @@ class Toolkit:
         | 2023-08-11 |           0.24 |       0.24 | 2023-08-14    | 2023-08-17     | 2023-08-03         |
         """
         if not self._api_key:
-            return print(
+            logger.error(
                 "The requested data requires the api_key parameter to be set, consider obtaining a key with the "
                 "following link: https://www.jeroenbouma.com/fmp"
                 "\nThis functionality also requires a Premium subscription. You can get 15% off by using "
                 "the above affiliate link which also supports the project."
             )
+            return None
 
         if self._dividend_calendar.empty or overwrite:
             (
@@ -2525,7 +2541,7 @@ class Toolkit:
             )
 
             if self._use_cached_data:
-                _save_cached_data(
+                cache_model.save_cached_data(
                     cached_data=self._dividend_calendar,
                     cached_data_location=self._cached_data_location,
                     file_name="dividend_calendar.pickle",
@@ -2616,12 +2632,13 @@ class Toolkit:
         | 2023Q2 |                 73.54 |          60.73 |              63.44 |       65.9  |
         """
         if not self._api_key:
-            return print(
+            logger.error(
                 "The requested data requires the api_key parameter to be set, consider obtaining a key with the "
                 "following link: https://www.jeroenbouma.com/fmp"
                 "\nThis functionality also requires a Premium subscription. You can get 15% off by using "
                 "the above affiliate link which also supports the project."
             )
+            return None
 
         if self._esg_scores.empty or overwrite:
             (
@@ -2990,7 +3007,7 @@ class Toolkit:
                 (
                     self._statement_currencies,
                     self._currencies,
-                ) = helpers.determine_currencies(
+                ) = currencies_model.determine_currencies(
                     statement_currencies=self._statistics_statement.xs(
                         "Reported Currency", axis=0, level=1
                     ),
@@ -3261,7 +3278,7 @@ class Toolkit:
         )
 
         if not self._api_key and self._balance_sheet_statement.empty:
-            return print(
+            logger.error(
                 "The requested data requires the api_key parameter to be set, consider "
                 "obtaining a key with the following link: "
                 "https://www.jeroenbouma.com/fmp"
@@ -3269,6 +3286,7 @@ class Toolkit:
                 "quarterly data. Consider upgrading your plan. You can get 15% off by using the "
                 "above affiliate link which also supports the project."
             )
+            return None
 
         # Correct for the case where a Portfolio ticker exists
         ticker_list = [ticker for ticker in self._tickers if ticker != "Portfolio"]
@@ -3303,7 +3321,7 @@ class Toolkit:
                     ),
                 )
 
-                self._balance_sheet_statement = helpers.convert_currencies(
+                self._balance_sheet_statement = currencies_model.convert_currencies(
                     financial_statement_data=self._balance_sheet_statement,
                     financial_statement_currencies=self._statement_currencies,
                     exchange_rate_data=(
@@ -3315,7 +3333,7 @@ class Toolkit:
                 )
 
             if self._use_cached_data:
-                _save_cached_data(
+                cache_model.save_cached_data(
                     cached_data=self._balance_sheet_statement,
                     cached_data_location=self._cached_data_location,
                     file_name="balance_sheet_statement.pickle",
@@ -3331,7 +3349,7 @@ class Toolkit:
         balance_sheet_statement = self._balance_sheet_statement
 
         if growth:
-            self._balance_sheet_statement_growth = _calculate_growth(
+            self._balance_sheet_statement_growth = helpers.calculate_growth(
                 balance_sheet_statement,
                 lag=lag,
                 rounding=rounding if rounding else self._rounding,
@@ -3433,7 +3451,7 @@ class Toolkit:
         )
 
         if not self._api_key and self._income_statement.empty:
-            return print(
+            logger.error(
                 "The requested data requires the api_key parameter to be set, consider "
                 "obtaining a key with the following link: "
                 "https://www.jeroenbouma.com/fmp"
@@ -3441,6 +3459,7 @@ class Toolkit:
                 "quarterly data. Consider upgrading your plan. You can get 15% off by using the "
                 "above affiliate link which also supports the project."
             )
+            return None
 
         # Correct for the case where a Portfolio ticker exists
         ticker_list = [ticker for ticker in self._tickers if ticker != "Portfolio"]
@@ -3475,7 +3494,7 @@ class Toolkit:
                     ),
                 )
 
-                self._income_statement = helpers.convert_currencies(
+                self._income_statement = currencies_model.convert_currencies(
                     financial_statement_data=self._income_statement,
                     financial_statement_currencies=self._statement_currencies,
                     exchange_rate_data=(
@@ -3498,7 +3517,7 @@ class Toolkit:
                 )
 
             if self._use_cached_data:
-                _save_cached_data(
+                cache_model.save_cached_data(
                     cached_data=self._income_statement,
                     cached_data_location=self._cached_data_location,
                     file_name="income_statement.pickle",
@@ -3552,7 +3571,7 @@ class Toolkit:
             )
 
         if growth:
-            self._income_statement_growth = _calculate_growth(
+            self._income_statement_growth = helpers.calculate_growth(
                 income_statement,
                 lag=lag,
                 rounding=rounding if rounding else self._rounding,
@@ -3654,7 +3673,7 @@ class Toolkit:
         )
 
         if not self._api_key and self._cash_flow_statement.empty:
-            return print(
+            logger.error(
                 "The requested data requires the api_key parameter to be set, consider "
                 "obtaining a key with the following link: "
                 "https://www.jeroenbouma.com/fmp"
@@ -3662,6 +3681,7 @@ class Toolkit:
                 "quarterly data. Consider upgrading your plan. You can get 15% off by using the "
                 "above affiliate link which also supports the project."
             )
+            return None
 
         # Correct for the case where a Portfolio ticker exists
         ticker_list = [ticker for ticker in self._tickers if ticker != "Portfolio"]
@@ -3696,7 +3716,7 @@ class Toolkit:
                     ),
                 )
 
-                self._cash_flow_statement = helpers.convert_currencies(
+                self._cash_flow_statement = currencies_model.convert_currencies(
                     financial_statement_data=self._cash_flow_statement,
                     financial_statement_currencies=self._statement_currencies,
                     exchange_rate_data=(
@@ -3708,7 +3728,7 @@ class Toolkit:
                 )
 
             if self._use_cached_data:
-                _save_cached_data(
+                cache_model.save_cached_data(
                     cached_data=self._cash_flow_statement,
                     cached_data_location=self._cached_data_location,
                     file_name="cash_flow_statement.pickle",
@@ -3727,7 +3747,7 @@ class Toolkit:
             cash_flow_statement = self._cash_flow_statement.T.rolling(trailing).sum().T
 
         if growth:
-            self._cash_flow_statement_growth = _calculate_growth(
+            self._cash_flow_statement_growth = helpers.calculate_growth(
                 cash_flow_statement,
                 lag=lag,
                 rounding=rounding if rounding else self._rounding,
@@ -3790,13 +3810,14 @@ class Toolkit:
 
         """
         if not self._api_key and self._statistics_statement.empty:
-            return print(
+            logger.error(
                 "The requested data requires the api_key parameter to be set, consider "
                 "obtaining a key with the following link: https://www.jeroenbouma.com/fmp"
                 "\nThe free plan allows for 250 requests per day, a limit of 5 years and has no "
                 "quarterly data. Consider upgrading your plan. You can get 15% off by using the "
                 "above affiliate link which also supports the project."
             )
+            return None
 
         if self._statistics_statement.empty or overwrite:
             (
@@ -3820,7 +3841,7 @@ class Toolkit:
             )
 
             if self._use_cached_data:
-                _save_cached_data(
+                cache_model.save_cached_data(
                     cached_data=self._statistics_statement,
                     cached_data_location=self._cached_data_location,
                     file_name="statistics_statement.pickle",

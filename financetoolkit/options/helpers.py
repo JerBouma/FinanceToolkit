@@ -4,6 +4,12 @@ __docformat__ = "google"
 
 import pandas as pd
 
+from financetoolkit import logger_model
+
+logger = logger_model.get_logger()
+
+# pylint: disable=too-many-locals
+
 
 def define_strike_prices(
     tickers: list[str],
@@ -223,11 +229,17 @@ def show_input_info(
         for ticker, volatility_value in volatility.items()
     ]
 
-    print(
-        f"Based on the period {start_date} to {end_date} "
-        "the following parameters were used:\n"
-        f"Stock Price: {', '.join(stock_price_list)}\n"
-        f"Volatility: {', '.join(volatility_list)}"
+    stock_price_str = ", ".join(stock_price_list)
+    volatility_str = ", ".join(volatility_list)
+
+    logger.info(
+        "Based on the period %s to %s the following parameters were used:\n"
+        "Stock Price: %s\n"
+        "Volatility: %s",
+        start_date,
+        end_date,
+        stock_price_str,
+        volatility_str,
     )
 
     if dividend_yield is not None:
@@ -235,27 +247,29 @@ def show_input_info(
             (f"{ticker} ({round(dividend_yield_value * 100, 2)}%)")
             for ticker, dividend_yield_value in dividend_yield.items()
         ]
-        print(f"Dividend Yield: {', '.join(dividend_yield_list)}")
+        logger.info("Dividend Yield: %s", ", ".join(dividend_yield_list))
 
     if up_movement_dict is not None:
         up_movement_list = [
             (f"{ticker} ({round(up_movement * 100, 2)}%)")
             for ticker, up_movement in up_movement_dict.items()
         ]
-        print(f"Up Movement: {', '.join(up_movement_list)}")
+        logger.info("Up Movement: %s", ", ".join(up_movement_list))
 
     if down_movement_dict is not None:
         down_movement_list = [
             (f"{ticker} ({round(down_movement * 100, 2)}%)")
             for ticker, down_movement in down_movement_dict.items()
         ]
-        print(f"Down Movement: {', '.join(down_movement_list)}")
+        logger.info("Down Movement: %s", ", ".join(down_movement_list))
 
     if risk_neutral_probability_dict is not None:
         risk_neutral_probability_list = [
             (f"{ticker} ({round(risk_neutral_probability * 100, 2)}%)")
             for ticker, risk_neutral_probability in risk_neutral_probability_dict.items()
         ]
-        print(f"Risk Neutral Probability: {', '.join(risk_neutral_probability_list)}")
+        logger.info(
+            "Risk Neutral Probability: %s", ", ".join(risk_neutral_probability_list)
+        )
 
-    print(f"Risk Free Rate: {round(risk_free_rate * 100, 2)}%")
+    logger.info("Risk Free Rate: %s%%", round(risk_free_rate * 100, 2))

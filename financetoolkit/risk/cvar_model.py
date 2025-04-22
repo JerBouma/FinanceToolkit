@@ -175,6 +175,7 @@ def get_cvar_laplace(
         return -b * (1 - np.log(2 * alpha)) + returns.mean()
 
     print("Laplace Conditional VaR is not available for a level over 50%.")
+
     return 0
 
 

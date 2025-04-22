@@ -9,10 +9,12 @@ import time
 import numpy as np
 import pandas as pd
 
-from financetoolkit import helpers
+from financetoolkit import error_model, helpers, logger_model
 from financetoolkit.normalization_model import (
     convert_financial_statements,
 )
+
+logger = logger_model.get_logger()
 
 # pylint: disable=no-member,too-many-locals,too-many-lines
 
@@ -162,7 +164,7 @@ def get_financial_statements(
         thread.join()
 
     # Checks if any errors are in the dataset and if this is the case, reports them
-    financial_statement_dict = helpers.check_for_error_messages(
+    financial_statement_dict = error_model.check_for_error_messages(
         dataset_dictionary=financial_statement_dict, user_subscription=user_subscription
     )
 
@@ -185,10 +187,11 @@ def get_financial_statements(
         try:
             financial_statement_total = financial_statement_total.astype(np.float64)
         except ValueError as error:
-            print(
-                f"Not able to convert DataFrame to float64 due to {error}. This could result in"
+            logger.error(
+                "Not able to convert DataFrame to float64 due to %s. This could result in"
                 "issues when values are zero and is predominantly relevant for "
-                "ratio calculations."
+                "ratio calculations.",
+                error,
             )
 
         if quarter:
@@ -390,7 +393,7 @@ def get_revenue_segmentation(
         thread.join()
 
     # Checks if any errors are in the dataset and if this is the case, reports them
-    revenue_segmentation_dict = helpers.check_for_error_messages(
+    revenue_segmentation_dict = error_model.check_for_error_messages(
         dataset_dictionary=revenue_segmentation_dict,
         required_subscription="Professional or Enterprise",
         user_subscription=user_subscription,
@@ -402,10 +405,11 @@ def get_revenue_segmentation(
         try:
             revenue_segmentation_total = revenue_segmentation_total.astype(np.float64)
         except ValueError as error:
-            print(
-                f"Not able to convert DataFrame to float64 due to {error}. This could result in"
+            logger.error(
+                "Not able to convert DataFrame to float64 due to %s. This could result in"
                 "issues when values are zero and is predominantly relevant for "
-                "ratio calculations."
+                "ratio calculations.",
+                error,
             )
 
         revenue_segmentation_total = revenue_segmentation_total.sort_index(
@@ -598,7 +602,7 @@ def get_analyst_estimates(
         thread.join()
 
     # Checks if any errors are in the dataset and if this is the case, reports them
-    analyst_estimates_dict = helpers.check_for_error_messages(
+    analyst_estimates_dict = error_model.check_for_error_messages(
         dataset_dictionary=analyst_estimates_dict, user_subscription=user_subscription
     )
 
@@ -611,10 +615,11 @@ def get_analyst_estimates(
                 int
             )
         except ValueError as error:
-            print(
-                f"Not able to convert DataFrame to float64 and int due to {error}. This could result in"
+            logger.error(
+                "Not able to convert DataFrame to float64 and int due to %s. This could result in"
                 "issues when values are zero and is predominantly relevant for "
-                "ratio calculations."
+                "ratio calculations.",
+                error,
             )
         analyst_estimates_total.columns = pd.PeriodIndex(
             analyst_estimates_total.columns, freq="Q" if quarter else "Y"
@@ -740,7 +745,7 @@ def get_profile(
         thread.join()
 
     # Checks if any errors are in the dataset and if this is the case, reports them
-    profile_dict = helpers.check_for_error_messages(
+    profile_dict = error_model.check_for_error_messages(
         dataset_dictionary=profile_dict, user_subscription=user_subscription
     )
 
@@ -859,7 +864,7 @@ def get_quote(
         thread.join()
 
     # Checks if any errors are in the dataset and if this is the case, reports them
-    quote_dict = helpers.check_for_error_messages(
+    quote_dict = error_model.check_for_error_messages(
         dataset_dictionary=quote_dict, user_subscription=user_subscription
     )
 
@@ -961,7 +966,7 @@ def get_rating(
         thread.join()
 
     # Checks if any errors are in the dataset and if this is the case, reports them
-    ratings_dict = helpers.check_for_error_messages(
+    ratings_dict = error_model.check_for_error_messages(
         dataset_dictionary=ratings_dict, user_subscription=user_subscription
     )
 
@@ -1091,7 +1096,7 @@ def get_earnings_calendar(
         thread.join()
 
     # Checks if any errors are in the dataset and if this is the case, reports them
-    earnings_calendar_dict = helpers.check_for_error_messages(
+    earnings_calendar_dict = error_model.check_for_error_messages(
         dataset_dictionary=earnings_calendar_dict, user_subscription=user_subscription
     )
 
@@ -1216,7 +1221,7 @@ def get_dividend_calendar(
         thread.join()
 
     # Checks if any errors are in the dataset and if this is the case, reports them
-    dividend_calendar_dict = helpers.check_for_error_messages(
+    dividend_calendar_dict = error_model.check_for_error_messages(
         dataset_dictionary=dividend_calendar_dict, user_subscription=user_subscription
     )
 
@@ -1347,7 +1352,7 @@ def get_esg_scores(
         thread.join()
 
     # Checks if any errors are in the dataset and if this is the case, reports them
-    esg_scores_dict = helpers.check_for_error_messages(
+    esg_scores_dict = error_model.check_for_error_messages(
         dataset_dictionary=esg_scores_dict, user_subscription=user_subscription
     )
 

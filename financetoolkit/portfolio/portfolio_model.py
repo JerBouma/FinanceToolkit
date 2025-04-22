@@ -6,7 +6,10 @@ import numpy as np
 import pandas as pd
 from tqdm import tqdm
 
+from financetoolkit import logger_model
 from financetoolkit.portfolio import helpers
+
+logger = logger_model.get_logger()
 
 # pylint: disable=too-many-locals
 
@@ -112,9 +115,10 @@ def read_portfolio_dataset(
         )
 
         if portfolio_dataset.duplicated().any() and adjust_duplicates:
-            print(
-                f"The same transaction was bought and/or sold on the same day in {file}. "
-                "These entries will be merged together."
+            logger.info(
+                "The same transaction was bought and/or sold on the same day in %s. "
+                "These entries will be merged together.",
+                file,
             )
             duplicates = portfolio_dataset[portfolio_dataset.duplicated()]
             originals = portfolio_dataset[portfolio_dataset.duplicated(keep="first")]
@@ -142,7 +146,7 @@ def read_portfolio_dataset(
         )
 
     if combined_portfolio_dataset.duplicated().any() and adjust_duplicates:
-        print(
+        logger.warning(
             "Found duplicates in the combination of datasets. This is usually due to overlapping periods. "
             "The duplicates will be removed from the datasets to prevent counting the same transaction twice."
         )
@@ -322,10 +326,11 @@ def format_portfolio_dataset(
         ]
 
         if not costs_columns_match:
-            print(
+            logger.warning(
                 "No costs columns found in the portfolio dataset. Please ensure in your dataset "
-                f"there is a column named one of the following: {costs_columns}. "
-                "Setting the costs to zero for now."
+                "there is a column named one of the following: %s. "
+                "Setting the costs to zero for now.",
+                costs_columns,
             )
             costs_column_first = "TEMP Costs"
             dataset[costs_column_first] = 0.0
@@ -345,10 +350,11 @@ def format_portfolio_dataset(
         ]
 
         if not currency_columns_match:
-            print(
+            logger.warning(
                 "No currency columns found in the portfolio dataset. Please ensure in your dataset "
-                f"there is a column named one of the following: {currency_columns}. "
-                "Setting the currency to EUR for now."
+                "there is a column named one of the following: %s. "
+                "Setting the currency to EUR for now.",
+                currency_columns,
             )
             currency_column_first = "TEMP Currency"
             dataset[currency_column_first] = "EUR"

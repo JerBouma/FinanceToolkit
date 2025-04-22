@@ -7,6 +7,7 @@ import warnings
 import pandas as pd
 
 from financetoolkit.helpers import calculate_growth, handle_portfolio
+from financetoolkit.logger_model import get_logger
 from financetoolkit.performance import performance_model
 from financetoolkit.performance.helpers import (
     determine_within_dataset,
@@ -28,6 +29,8 @@ except ImportError:
 warnings.filterwarnings("ignore", category=RuntimeWarning)
 
 # pylint: disable=too-many-instance-attributes,too-few-public-methods,too-many-lines,too-many-locals
+
+logger = get_logger()
 
 
 class Performance:

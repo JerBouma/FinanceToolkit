@@ -9,6 +9,10 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from financetoolkit import logger_model
+
+logger = logger_model.get_logger()
+
 
 def read_normalization_file(statement: str, format_location: str = ""):
     """
@@ -118,10 +122,11 @@ def convert_date_label(
     try:
         financial_statement = financial_statement.astype(np.float64)
     except ValueError as error:
-        print(
-            f"Not able to convert DataFrame to float64 due to {error}. This could result in"
+        logger.error(
+            "Not able to convert DataFrame to float64 due to %s. This could result in"
             "issues when values are zero and is predominantly relevant for "
-            "ratio calculations."
+            "ratio calculations.",
+            error,
         )
 
     if quarter:
@@ -151,11 +156,12 @@ def copy_normalization_files(
     Returns:
         Three csv files saved to the desired location.
     """
-    print(
-        f"Files are being saved to {save_location}. Please see the following: "
+    logger.info(
+        "Files are being saved to %s. Please see the following: "
         "https://www.jeroenbouma.com/projects/financetoolkit/external-datasets "
         "to understand how to work with these files. In essence, all it requires is "
-        "to match up the rows in your dataframe with the normalization format."
+        "to match up the rows in your dataframe with the normalization format.",
+        save_location,
     )
     for statement in ["balance", "income", "cash", "statistics"]:
         if format_location:

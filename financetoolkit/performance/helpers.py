@@ -6,6 +6,10 @@ import inspect
 
 import pandas as pd
 
+from financetoolkit import logger_model
+
+logger = logger_model.get_logger()
+
 # pylint: disable=protected-access
 
 PERIOD_TRANSLATION: dict[str, str | dict[str, str]] = {
@@ -161,48 +165,56 @@ def handle_errors(func):
         except KeyError as e:
             function_name = func.__name__
             if "Benchmark" in str(e):
-                print(
-                    f"Please set a benchmark_ticker in the Toolkit class to calculate {function_name}. "
-                    "For example: toolkit = Toolkit(['TSLA', 'AAPL', 'MSFT'], benchmark_ticker='SPY')"
+                logger.error(
+                    "Please set a benchmark_ticker in the Toolkit class to calculate %s. "
+                    "For example: toolkit = Toolkit(['TSLA', 'AAPL', 'MSFT'], benchmark_ticker='SPY')",
+                    function_name,
                 )
             else:
-                print(
+                logger.error(
                     "There is an index name missing in the provided historical dataset. "
-                    f"This is {e}. This is required for the function ({function_name}) "
-                    "to run. Please fill this column to be able to calculate the metrics."
+                    "This is %s. This is required for the function (%s) "
+                    "to run. Please fill this column to be able to calculate the metrics.",
+                    e,
+                    function_name,
                 )
             return pd.Series(dtype="object")
         except ValueError as e:
             function_name = func.__name__
             if "Benchmark" in str(e):
-                print(
-                    f"Please set a benchmark_ticker in the Toolkit class to calculate {function_name}. "
-                    "For example: toolkit = Toolkit(['TSLA', 'AAPL', 'MSFT'], benchmark_ticker='SPY')"
+                logger.error(
+                    "Please set a benchmark_ticker in the Toolkit class to calculate %s. "
+                    "For example: toolkit = Toolkit(['TSLA', 'AAPL', 'MSFT'], benchmark_ticker='SPY')",
+                    function_name,
                 )
             else:
-                print(
-                    f"An error occurred while trying to run the function "
-                    f"{function_name}. {e}"
+                logger.error(
+                    "An error occurred while trying to run the function " + "%s. %s",
+                    function_name,
+                    e,
                 )
             return pd.Series(dtype="object")
         except AttributeError as e:
             function_name = func.__name__
             if "Benchmark" in str(e):
-                print(
-                    f"Please set a benchmark_ticker in the Toolkit class to calculate {function_name}. "
-                    "For example: toolkit = Toolkit(['TSLA', 'AAPL', 'MSFT'], benchmark_ticker='SPY')"
+                logger.error(
+                    "Please set a benchmark_ticker in the Toolkit class to calculate %s. "
+                    + "For example: toolkit = Toolkit(['TSLA', 'AAPL', 'MSFT'], benchmark_ticker='SPY')",
+                    function_name,
                 )
             else:
-                print(
-                    f"An error occurred while trying to run the function "
-                    f"{function_name}. {e}"
+                logger.error(
+                    "An error occurred while trying to run the function " + "%s. %s",
+                    function_name,
+                    e,
                 )
             return pd.Series(dtype="object")
         except ZeroDivisionError as e:
             function_name = func.__name__
-            print(
-                f"An error occurred while trying to run the function "
-                f"{function_name}. {e}"
+            logger.error(
+                "An error occurred while trying to run the function " + "%s. %s",
+                function_name,
+                e,
             )
             return pd.Series(dtype="object")
 

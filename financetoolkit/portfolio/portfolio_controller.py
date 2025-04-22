@@ -6,8 +6,11 @@ from importlib import resources
 
 import pandas as pd
 
+from financetoolkit import logger_model
 from financetoolkit.portfolio import helpers, overview_model, portfolio_model
 from financetoolkit.toolkit_controller import Toolkit
+
+logger = logger_model.get_logger()
 
 # pylint: disable=too-many-instance-attributes,too-many-lines,line-too-long,too-many-locals
 # pylint: disable=too-many-function-args,too-many-public-methods
@@ -103,7 +106,7 @@ class Portfolio:
 
         if not portfolio_dataset and not example:
             example = True
-            print(
+            logger.info(
                 "No portfolio dataset provided thus loading the example portfolio for demonstration purposes.\n"
                 "Please find the templates in your current directory under the names 'portfolio_template.xlsx' "
                 "and 'portfolio_template.csv'.\nChoose your preferred format and provide the path within the "
@@ -268,7 +271,7 @@ class Portfolio:
         | Portfolio |  0.2373 | 0.2183 |  0.2001 | 0.2098 |   0.202  |
         """
         if self._api_key is None:
-            print(
+            logger.error(
                 "The parameter api_key is not set. Therefore, only historical data and "
                 "indicators are available. Consider obtaining a key with the following link: "
                 "https://www.jeroenbouma.com/fmp"
@@ -868,7 +871,7 @@ class Portfolio:
         self._latest_price = self._daily_historical_data["Adj Close"].iloc[-1]
 
         if currency_conversions:
-            print(
+            logger.warning(
                 "Found a mismatch between the currency of the transaction and the currency of the historical data. "
                 "This is usually due to working with ISIN codes.\nCorrect this by finding the correct ticker "
                 "on for example Yahoo Finance (e.g. S&P 500 ETF can be VUSA.AS). The currencies are "
@@ -1419,7 +1422,7 @@ class Portfolio:
 
             self._transactions_overview.index = original_index
         except (ValueError, IndexError, KeyError) as error:
-            print(f"Failed to create PnL overview: {error}")
+            logger.error("Failed to create PnL overview: %s", error)
 
         if exclude_sold_positions:
             self._transactions_overview = self._transactions_overview[

@@ -4,7 +4,8 @@ __docformat__ = "google"
 
 import pandas as pd
 
-from financetoolkit.helpers import calculate_growth, handle_errors
+from financetoolkit.error_model import handle_errors
+from financetoolkit.helpers import calculate_growth
 from financetoolkit.models import (
     altman_model,
     dupont_model,

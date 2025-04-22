@@ -3,8 +3,6 @@
 __docformat__ = "google"
 
 import inspect
-import os
-import pickle
 import time
 import warnings
 from functools import wraps
@@ -14,6 +12,10 @@ import numpy as np
 import pandas as pd
 import requests
 from urllib3.exceptions import MaxRetryError
+
+from financetoolkit import logger_model
+
+logger = logger_model.get_logger()
 
 RETRY_LIMIT = 12
 
@@ -94,186 +96,6 @@ def get_financial_data(
 
             error_retry_counter += 1
             time.sleep(5)
-
-
-def determine_currencies(
-    statement_currencies: pd.DataFrame, historical_currencies: pd.DataFrame
-):
-    """
-    Based on the statement currencies and the historical currencies, determine the
-    currencies that are used in the financial statements and the historical datasets.
-
-    This is relevant to prevent mismatches between the perceived price of the instrument
-    and the numbers as found in the financial statements. If there is a mismatch, then
-    the currency conversion needs to be applied.
-
-    Args:
-        statement_currencies (pd.DataFrame): A DataFrame containing the statement currencies.
-        historical_currencies (pd.DataFrame): A DataFrame containing the historical currencies.
-
-    Returns:
-        pd.Series, list: a Series containing the currency symbols per ticker
-        and a list containing the currencies.
-    """
-    currencies = []
-
-    for period in statement_currencies.columns:
-        statement_currencies.loc[:, period] = (
-            statement_currencies[period] + historical_currencies + "=X"
-        )
-
-        for currency in statement_currencies[period].unique():
-            # Identify the currencies that are not in the list yet
-            # and that are not NaN (the currency == currency check)
-            if currency not in currencies and currency == currency:  # noqa
-                currencies.append(currency)
-
-    statement_currencies = statement_currencies.bfill(axis=1).ffill(axis=1)
-
-    statement_currencies = statement_currencies[statement_currencies.columns[-1]]
-
-    return statement_currencies, currencies
-
-
-def convert_currencies(
-    financial_statement_data: pd.DataFrame,
-    financial_statement_currencies: pd.Series,
-    exchange_rate_data: pd.DataFrame,
-    items_not_to_adjust: list[str] | None = None,
-    financial_statement_name: str | None = None,
-):
-    """
-    Based on the retrieved currency definitions (e.g. EURUSD=X) for each ticker, obtained
-    through using the determine_currencies function, convert the financial statement data
-    to the historical currency.
-
-    The function reports the tickers that are converted and the currencies that they are
-    converted from and to. If the currency is the same, then no conversion is applied.
-
-    The function will also report the tickers that could not be converted. This is usually
-    due to the fact that the currency is not available in the historical data.
-
-    Args:
-        financial_statement_data (pd.DataFrame): A DataFrame containing the financial statement data.
-        financial_statement_currencies (pd.Series): A Series containing the currency symbols per ticker.
-        exchange_rate_data (pd.DataFrame): A DataFrame containing the exchange rate data.
-        items_not_to_adjust (list[str]): A list containing the items that should not be adjusted. Defaults to None.
-
-    Returns:
-        pd.DataFrame: A DataFrame containing the converted financial statement data.
-    """
-    no_data = []
-
-    periods = financial_statement_data.columns
-    tickers = financial_statement_data.index.get_level_values(0).unique()
-    currencies: dict[str, list[str]] = {}
-
-    for ticker in tickers:
-        try:
-            currency = financial_statement_currencies.loc[ticker]
-
-            # Only proceed if the currency is not NaN
-            if currency == currency:  # noqa
-                base_currency, quote_currency = currency[:3], currency[3:6]
-
-                if base_currency != quote_currency:
-                    if currency not in currencies:
-                        currencies[currency] = []
-
-                    if items_not_to_adjust is not None:
-                        items_to_adjust = [
-                            item
-                            for item in financial_statement_data.index.get_level_values(
-                                level=1
-                            )
-                            if item not in items_not_to_adjust
-                        ]
-                    else:
-                        items_to_adjust = (
-                            financial_statement_data.index.get_level_values(level=1)
-                        )
-
-                    financial_statement_data.loc[(ticker, items_to_adjust), :] = (
-                        financial_statement_data.loc[(ticker, items_to_adjust), :].mul(
-                            exchange_rate_data.loc[periods, currency], axis=1
-                        )
-                    ).to_numpy()
-
-                    currencies[currency].append(ticker)
-            else:
-                no_data.append(ticker)
-        except (KeyError, ValueError):
-            no_data.append(ticker)
-            continue
-
-    if no_data:
-        print(
-            "The following tickers could not be converted to the historical data currency: "
-            f"{', '.join(no_data)}"
-        )
-
-    currencies_text = []
-    for currency, ticker_match in currencies.items():
-        base_currency, quote_currency = currency[:3], currency[3:6]
-
-        if base_currency != quote_currency:
-            for ticker in ticker_match:
-                currencies_text.append(
-                    f"{ticker} ({base_currency} to {quote_currency})"
-                )
-
-    if currencies_text:
-        print(
-            f"The {financial_statement_name if financial_statement_name else 'financial statement'} "
-            f"from the following tickers are converted: {', '.join(currencies_text)}"
-        )
-
-    return financial_statement_data
-
-
-def combine_dataframes(dataset_dictionary: dict[str, pd.DataFrame]) -> pd.DataFrame:
-    """
-    Combine the dataframes from different companies of the same financial statement,
-    e.g. the balance sheet statement, into a single dataframe.
-
-    Args:
-        dataset_dictionary (dict[str, pd.DataFrame]): A dictionary containing the
-        dataframes for each company. It should have the structure key: ticker,
-        value: dataframe.
-
-    Returns:
-        pd.DataFrame: A pandas DataFrame with the combined financial statements.
-    """
-    combined_df = pd.concat(dict(dataset_dictionary), axis=0)
-
-    return combined_df.sort_index(level=0, sort_remaining=False)
-
-
-def equal_length(dataset1: pd.Series, dataset2: pd.Series) -> pd.Series:
-    """
-    Equalize the length of two datasets by adding zeros to the beginning of the shorter dataset.
-
-    Args:
-        dataset1 (pd.Series): The first dataset to be equalized.
-        dataset2 (pd.Series): The second dataset to be equalized.
-
-    Returns:
-        pd.Series, pd.Series: The equalized datasets.
-    """
-    if int(dataset1.columns[0]) > int(dataset2.columns[0]):
-        for value in range(
-            int(dataset1.columns[0]) - 1, int(dataset2.columns[0]) - 1, -1
-        ):
-            dataset1.insert(0, value, 0.0)
-        dataset1 = dataset1.sort_index()
-    elif int(dataset1.columns[0]) < int(dataset2.columns[0]):
-        for value in range(
-            int(dataset2.columns[0]) - 1, int(dataset1.columns[0]) - 1, -1
-        ):
-            dataset2.insert(0, value, 0.0)
-        dataset2 = dataset2.sort_index()
-
-    return dataset1, dataset2
 
 
 def calculate_growth(
@@ -357,198 +179,49 @@ def calculate_growth(
     return dataset.ffill().pct_change(periods=lag, axis=axis).round(rounding)
 
 
-def handle_errors(func):
+def combine_dataframes(dataset_dictionary: dict[str, pd.DataFrame]) -> pd.DataFrame:
     """
-    Decorator to handle specific errors that may occur in a function and provide informative messages.
+    Combine the dataframes from different companies of the same financial statement,
+    e.g. the balance sheet statement, into a single dataframe.
 
     Args:
-        func (function): The function to be decorated.
+        dataset_dictionary (dict[str, pd.DataFrame]): A dictionary containing the
+        dataframes for each company. It should have the structure key: ticker,
+        value: dataframe.
 
     Returns:
-        function: The decorated function.
-
-    Raises:
-        KeyError: If an index name is missing in the provided financial statements.
-        ValueError: If an error occurs while running the function, typically due to incomplete financial statements.
+        pd.DataFrame: A pandas DataFrame with the combined financial statements.
     """
+    combined_df = pd.concat(dict(dataset_dictionary), axis=0)
 
-    def wrapper(*args, **kwargs):
-        try:
-            return func(*args, **kwargs)
-        except KeyError as e:
-            function_name = func.__name__
-            print(
-                "There is an index name missing in the provided financial statements. "
-                f"This is {e}. This is required for the function ({function_name}) "
-                "to run. Please fill this column to be able to calculate the ratios."
-            )
-            return pd.Series(dtype="object")
-        except ValueError as e:
-            function_name = func.__name__
-            print(
-                f"An error occurred while trying to run the function "
-                f"{function_name}. {e}"
-            )
-            return pd.Series(dtype="object")
-        except AttributeError as e:
-            function_name = func.__name__
-            print(
-                f"An error occurred while trying to run the function "
-                f"{function_name}. {e}"
-            )
-            return pd.Series(dtype="object")
-        except ZeroDivisionError as e:
-            function_name = func.__name__
-            print(
-                f"An error occurred while trying to run the function "
-                f"{function_name}. {e} This is due to a division by zero."
-            )
-            return pd.Series(dtype="object")
-        except IndexError as e:
-            function_name = func.__name__
-            print(
-                f"An error occurred while trying to run the function "
-                f"{function_name}. {e} This is due to missing data."
-            )
-            return pd.Series(dtype="object")
-
-    # These steps are there to ensure the docstring of the function remains intact
-    wrapper.__doc__ = func.__doc__
-    wrapper.__name__ = func.__name__
-    wrapper.__signature__ = inspect.signature(func)
-    wrapper.__module__ = func.__module__
-
-    return wrapper
+    return combined_df.sort_index(level=0, sort_remaining=False)
 
 
-def check_for_error_messages(
-    dataset_dictionary: dict[str, pd.DataFrame],
-    user_subscription: str,
-    required_subscription: str = "Premium",
-    delete_tickers: bool = True,
-):
+def equal_length(dataset1: pd.Series, dataset2: pd.Series) -> pd.Series:
     """
-    This functionality checks whether any of the defined errors are found in the
-    dataset and if they are, report them accordingly. This function is written
-    to prevent spamming the command line with error messages.
+    Equalize the length of two datasets by adding zeros to the beginning of the shorter dataset.
 
     Args:
-        dataset_dictionary (dict[str, pd.DataFrame]): a dictionary with the ticker
-        as key and the dataframe as value.
-        user_subscription (str): the subscription type of the user.
-        subscription_type (str): the subscription type of the user. Defaults to "Premium".
-        delete_tickers (bool): whether to delete the tickers that have an error from the
-        dataset dictionary. Defaults to True.
+        dataset1 (pd.Series): The first dataset to be equalized.
+        dataset2 (pd.Series): The second dataset to be equalized.
+
+    Returns:
+        pd.Series, pd.Series: The equalized datasets.
     """
+    if int(dataset1.columns[0]) > int(dataset2.columns[0]):
+        for value in range(
+            int(dataset1.columns[0]) - 1, int(dataset2.columns[0]) - 1, -1
+        ):
+            dataset1.insert(0, value, 0.0)
+        dataset1 = dataset1.sort_index()
+    elif int(dataset1.columns[0]) < int(dataset2.columns[0]):
+        for value in range(
+            int(dataset2.columns[0]) - 1, int(dataset1.columns[0]) - 1, -1
+        ):
+            dataset2.insert(0, value, 0.0)
+        dataset2 = dataset2.sort_index()
 
-    not_available = []
-    exclusive_endpoint = []
-    special_endpoint = []
-    bandwidth_limit_reach = []
-    limit_reach = []
-    no_data = []
-    us_stocks_only = []
-    invalid_api_key = []
-    no_errors = []
-
-    for ticker, dataframe in dataset_dictionary.items():
-        if "EXCLUSIVE ENDPOINT" in dataframe.columns:
-            exclusive_endpoint.append(ticker)
-        elif "SPECIAL ENDPOINT" in dataframe.columns:
-            special_endpoint.append(ticker)
-        elif "NOT AVAILABLE" in dataframe.columns:
-            not_available.append(ticker)
-        elif "BANDWIDTH LIMIT REACH" in dataframe.columns:
-            bandwidth_limit_reach.append(ticker)
-        elif "LIMIT REACH" in dataframe.columns:
-            limit_reach.append(ticker)
-        elif "NO DATA" in dataframe.columns:
-            no_data.append(ticker)
-        elif "US STOCKS ONLY" in dataframe.columns:
-            us_stocks_only.append(ticker)
-        elif "INVALID API KEY" in dataframe.columns:
-            invalid_api_key.append(ticker)
-        elif "NO ERRORS" in dataframe.columns:
-            no_errors.append(ticker)
-
-    if exclusive_endpoint:
-        print(
-            f"The following tickers are using an exclusive endpoint: {', '.join(exclusive_endpoint)}.\n"
-            "This is not available in the Free plan. Consider upgrading your plan to a higher plan. "
-            "You can get 15% off by using the following affiliate link which also supports the project: "
-            "https://www.jeroenbouma.com/fmp"
-        )
-    if special_endpoint:
-        print(
-            f"The following tickers are using a special endpoint: {', '.join(special_endpoint)}.\n"
-            "This is not available in the Free plan. Consider upgrading your plan to a higher plan. "
-            "You can get 15% off by using the following affiliate link which also supports the project: "
-            "https://www.jeroenbouma.com/fmp"
-        )
-    if not_available:
-        print(
-            f"The requested data is part of the {required_subscription} Subscription from "
-            f"FinancialModelingPrep: {', '.join(not_available)}.\nIf you wish to access "
-            "this data, consider upgrading your plan. You can get 15% off by using the "
-            "following affiliate link which also supports the project: "
-            "https://www.jeroenbouma.com/fmp"
-        )
-
-    if bandwidth_limit_reach:
-        print(
-            f"The bandwidth limit has been reached for the following tickers: {', '.join(bandwidth_limit_reach)}.\n"
-            "Consider upgrading your plan to a higher plan to increase your bandwidth limit. You can get 15% "
-            "off by using the following affiliate link which also supports the project: "
-            "https://www.jeroenbouma.com/fmp"
-        )
-
-    if limit_reach:
-        print(
-            f"The limit has been reached for the following tickers: {', '.join(limit_reach)}.\n"
-            "Consider upgrading your plan to a higher plan to increase your limit. You can get 15% "
-            "off by using the following affiliate link which also supports the project: "
-            "https://www.jeroenbouma.com/fmp"
-        )
-
-    if no_data:
-        print(
-            "Some tickers have no data, verify if the ticker has any data to begin with. "
-            "If it does, please open an issue here: https://github.com/JerBouma/FinanceToolkit/issues. "
-            f"These tickers are: {', '.join(no_data)}"
-        )
-
-        if user_subscription == "Free":
-            print(
-                "Given that you are using the Free plan, it could be due to reaching the API "
-                "limit of the day, consider upgrading your plan. You can get 15% off by "
-                "using the following affiliate link which also supports the project: "
-                "https://www.jeroenbouma.com/fmp"
-            )
-
-    if us_stocks_only:
-        print(
-            "The Free plan is limited to US stocks only. Therefore the following tickers are not "
-            f"available: {', '.join(us_stocks_only)}\nConsider upgrading your plan to Starter or "
-            "higher. You can get 15% off by using the following affiliate link which also "
-            "supports the project: https://www.jeroenbouma.com/fmp"
-        )
-
-    if invalid_api_key:
-        print(
-            "You have entered an invalid API key from FinancialModelingPrep. Obtain your API key for free "
-            "and get 15% off the Premium plans by using the following affiliate link.\nThis also supports "
-            "the project: https://www.jeroenbouma.com/fmp"
-        )
-
-    if delete_tickers:
-        removed_tickers = set(
-            not_available + no_data + us_stocks_only + invalid_api_key + no_errors
-        )
-
-        for ticker in removed_tickers:
-            del dataset_dictionary[ticker]
-
-    return dataset_dictionary
+    return dataset1, dataset2
 
 
 def handle_portfolio(func):
@@ -639,7 +312,7 @@ def handle_portfolio(func):
                 result["Portfolio"] = weighted_averages
 
             if growth and isinstance(lag, list):
-                print(
+                logger.warning(
                     "Calculating multiple lags for the portfolio data is not currently available. \n"
                     "If desired, please reach out via https://github.com/JerBouma/FinanceToolkit/issues"
                 )
@@ -647,62 +320,3 @@ def handle_portfolio(func):
         return result
 
     return wrapper
-
-
-def load_cached_data(cached_data_location: str, file_name: str, method: str = "pandas"):
-    """
-    Load the cached data from the specified location and file name.
-
-    Args:
-        cached_data_location (str): The location of the cached data.
-        file_name (str): The name of the file to load.
-
-    Returns:
-        pd.DataFrame: The loaded DataFrame.
-    """
-    try:
-        if method == "pandas":
-            cached_data = pd.read_pickle(f"{cached_data_location}/{file_name}")
-        elif method == "pickle":
-            with open(f"{cached_data_location}/{file_name}", "rb") as file:
-                cached_data = pickle.load(file)
-        else:
-            raise ValueError("The method should be either 'pandas' or 'pickle'.")
-
-        return cached_data
-
-    except FileNotFoundError:
-        return pd.DataFrame()
-
-
-def save_cached_data(
-    cached_data: pd.DataFrame,
-    cached_data_location: str,
-    file_name: str,
-    method: str = "pandas",
-    include_message: bool = True,
-):
-    """
-    Save the cached data to the specified location and file name.
-
-    Args:
-        cached_data_location (str): The location to save the cached data.
-        file_name (str): The name of the file to save.
-    """
-    os.makedirs(cached_data_location, exist_ok=True)
-
-    if file_name in os.listdir(cached_data_location):
-        # When the file already exists do nothing.
-        pass
-    else:
-        try:
-            if method == "pandas":
-                cached_data.to_pickle(f"{cached_data_location}/{file_name}")
-            elif method == "pickle":
-                with open(f"{cached_data_location}/{file_name}", "wb") as file:
-                    pickle.dump(cached_data, file, protocol=pickle.HIGHEST_PROTOCOL)
-
-            if include_message:
-                print(f"The data has been saved to {cached_data_location}/{file_name}")
-        except Exception as error:  # pylint: disable=broad-except
-            print(f"An error occurred while saving the data: {error}")

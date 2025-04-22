@@ -9,7 +9,11 @@ from datetime import datetime, timedelta
 import pandas as pd
 
 from financetoolkit.economics import gmdb_model, oecd_model
-from financetoolkit.helpers import calculate_growth, handle_errors
+from financetoolkit.error_model import handle_errors
+from financetoolkit.helpers import calculate_growth
+from financetoolkit.logger_model import get_logger
+
+logger = get_logger()
 
 # pylint: disable=too-many-instance-attributes,too-few-public-methods,too-many-lines,
 # pylint: disable=too-many-locals,line-too-long,too-many-public-methods
@@ -175,7 +179,7 @@ class Economics:
 
             if inflation_adjusted:
                 if not gmdb_source:
-                    print(
+                    logger.info(
                         "OECD does not provide inflation adjusted GDP data, using GMDB source instead."
                     )
 

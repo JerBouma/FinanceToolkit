@@ -9,7 +9,9 @@ from datetime import datetime, timedelta
 import numpy as np
 import pandas as pd
 
+from financetoolkit import logger_model
 from financetoolkit.economics import oecd_model
+from financetoolkit.error_model import handle_errors
 from financetoolkit.fixedincome import (
     bond_model,
     derivative_model,
@@ -18,7 +20,9 @@ from financetoolkit.fixedincome import (
     fed_model,
     fred_model,
 )
-from financetoolkit.helpers import calculate_growth, handle_errors
+from financetoolkit.helpers import calculate_growth
+
+logger = logger_model.get_logger()
 
 # pylint: disable=too-many-instance-attributes,too-few-public-methods,too-many-lines,
 # pylint: disable=too-many-locals,line-too-long,too-many-public-methods
@@ -250,10 +254,13 @@ class FixedIncome:
         )
 
         if show_input_info:
-            print(
-                f"Par Value: {par_value:,}, Coupon Rate: {coupon_rate * 100}%, "
-                f"Years to Maturity: {years_to_maturity}, Yield to Maturity: {yield_to_maturity * 100}%, "
-                f"Frequency: {frequency}"
+            logger.info(
+                "Par Value: %s, Coupon Rate: %s%%, Years to Maturity: %s, Yield to Maturity: %s%%, Frequency: %s",
+                f"{par_value:,}",
+                f"{coupon_rate * 100}",
+                years_to_maturity,
+                f"{yield_to_maturity * 100}",
+                frequency,
             )
 
         return pd.Series(bond_statistics).round(self._rounding)
@@ -325,7 +332,7 @@ class FixedIncome:
             for maturity in years_to_maturity:
                 (bond_prices[coupon][maturity]) = bond_model.get_bond_price(
                     par_value=par_value,
-                    coupon_rate=coupon,
+                    coupon_rate=float(coupon),
                     years_to_maturity=maturity,
                     yield_to_maturity=yield_to_maturity,
                     frequency=frequency,
@@ -337,9 +344,11 @@ class FixedIncome:
         bond_prices_df.index.name = "Coupon Rate"
 
         if show_input_info:
-            print(
-                f"Par Value: {par_value:,}, Yield to Maturity: {yield_to_maturity * 100}%, "
-                f"Frequency: {frequency}"
+            logger.info(
+                "Par Value: %s, Yield to Maturity: %s%%, Frequency: %s",
+                f"{par_value:,}",
+                f"{yield_to_maturity * 100}",
+                frequency,
             )
 
         return bond_prices_df.round(2)
@@ -457,9 +466,12 @@ class FixedIncome:
         bond_prices_df.index.name = "Coupon Rate"
 
         if show_input_info:
-            print(
-                f"Par Value: {par_value:,}, Yield to Maturity: {yield_to_maturity * 100}%, "
-                f"Frequency: {frequency}, Type: {duration_type_lower.title()} Duration"
+            logger.info(
+                "Par Value: %s, Yield to Maturity: %s%%, Frequency: %s, Type: %s Duration",
+                f"{par_value:,}",
+                f"{yield_to_maturity * 100}",
+                frequency,
+                duration_type_lower.title(),
             )
 
         return bond_prices_df.round(2)
@@ -568,9 +580,11 @@ class FixedIncome:
         yield_to_maturities_df.index.name = "Bond Price"
 
         if show_input_info:
-            print(
-                f"Par Value: {par_value:,}, Coupon Rate: {coupon_rate * 100}%, "
-                f"Frequency: {frequency}"
+            logger.info(
+                "Par Value: %s, Coupon Rate: %s%%, Frequency: %s",
+                f"{par_value:,}",
+                f"{coupon_rate * 100}",
+                frequency,
             )
 
         return yield_to_maturities_df.round(self._rounding)
@@ -717,7 +731,7 @@ class FixedIncome:
                         derivative_payoffs[strike][maturity],
                     ) = derivative_model.get_black_price(
                         forward_rate=forward_rate,
-                        strike_rate=strike,
+                        strike_rate=float(strike),
                         volatility=volatility,
                         years_to_maturity=maturity,
                         risk_free_rate=risk_free_rate,
@@ -730,7 +744,7 @@ class FixedIncome:
                         derivative_payoffs[strike][maturity],
                     ) = derivative_model.get_bachelier_price(
                         forward_rate=forward_rate,
-                        strike_rate=strike,
+                        strike_rate=float(strike),
                         volatility=volatility,
                         years_to_maturity=maturity,
                         risk_free_rate=risk_free_rate,
@@ -748,11 +762,15 @@ class FixedIncome:
         derivative_prices_df.index.name = "Strike Rate"
 
         if show_input_info:
-            print(
-                f"Forward Rate: {forward_rate * 100}%, Volatility: {volatility * 100}%, "
-                f"Risk Free Rate: {risk_free_rate * 100}%, "
-                f"Holder: {'Receiver' if is_receiver else 'Payer'}, "
-                f"Notional: {notional:,}, Model: {model_lower.title()} Model"
+            logger.info(
+                "Forward Rate: %s%%, Volatility: %s%%, Risk Free Rate: %s%%, "
+                "Holder: %s, Notional: %s, Model: %s Model",
+                f"{forward_rate * 100}",
+                f"{volatility * 100}",
+                f"{risk_free_rate * 100}",
+                "Receiver" if is_receiver else "Payer",
+                f"{notional:,}",
+                model_lower.title(),
             )
 
         if include_payoff:
@@ -1210,14 +1228,16 @@ class FixedIncome:
 
         for maturity in maturities:
             if maturity not in ["1M", "3M", "6M", "1Y"]:
-                print(
-                    f"Invalid maturity: {maturity}, please choose from 1M, 3M, 6M, 1Y."
+                logger.error(
+                    "Invalid maturity: %s, please choose from 1M, 3M, 6M, 1Y.", maturity
                 )
 
             maturity_name = maturity_names[maturity]
 
             if not nominal and maturity == "3M" and len(maturities) > 1:
-                print("Please note that only the 3-Month Euribor rate has a real rate.")
+                logger.warning(
+                    "Please note that only the 3-Month Euribor rate has a real rate."
+                )
 
             euribor_rates[maturity_name] = euribor_model.get_euribor_rate(
                 maturity=maturity,

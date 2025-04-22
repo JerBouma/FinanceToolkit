@@ -6,7 +6,8 @@ import warnings
 
 import pandas as pd
 
-from financetoolkit.helpers import calculate_growth, handle_errors, handle_portfolio
+from financetoolkit.error_model import handle_errors
+from financetoolkit.helpers import calculate_growth, handle_portfolio
 from financetoolkit.risk import (
     cvar_model,
     evar_model,

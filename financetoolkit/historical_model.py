@@ -14,7 +14,9 @@ import numpy as np
 import pandas as pd
 import requests
 
-from financetoolkit import fundamentals_model, helpers
+from financetoolkit import error_model, fundamentals_model, helpers, logger_model
+
+logger = logger_model.get_logger()
 
 try:
     from tqdm import tqdm
@@ -24,11 +26,7 @@ except ImportError:
     ENABLE_TQDM = False
 
 try:
-    import logging
-
     import yfinance as yf
-
-    logging.disable(logging.ERROR)
 
     ENABLE_YFINANCE = True
 except ImportError:
@@ -225,7 +223,7 @@ def get_historical_data(
         thread.join()
 
     historical_data_dict = (
-        helpers.check_for_error_messages(
+        error_model.check_for_error_messages(
             dataset_dictionary=historical_data_dict, user_subscription=user_subscription
         )
         if show_errors
@@ -233,11 +231,13 @@ def get_historical_data(
     )
 
     if fmp_tickers and yf_tickers and show_ticker_seperation:
-        print(
-            f"The following tickers acquired historical data from FinancialModelingPrep: {', '.join(fmp_tickers)}"
+        logger.info(
+            "The following tickers acquired historical data from FinancialModelingPrep: %s",
+            ", ".join(fmp_tickers),
         )
-        print(
-            f"The following tickers acquired historical data from YahooFinance: {', '.join(yf_tickers)}"
+        logger.info(
+            "The following tickers acquired historical data from YahooFinance: %s",
+            ", ".join(yf_tickers),
         )
 
     if (
@@ -246,21 +246,24 @@ def get_historical_data(
         and source == "FinancialModelingPrep"
         and show_errors
     ):
-        print(
+        logger.warning(
             "No data found using FinancialModelingPrep, this is usually due to Bandwidth "
-            "API limits or usage of the Free plan. Therefore data was retrieved from YahooFinance instead for: "
-            f"{', '.join(yf_tickers)}"
+            "API limits or usage of the Free plan. Therefore data was retrieved from YahooFinance instead for: %s",
+            ", ".join(yf_tickers),
         )
 
     if no_data and show_errors:
         if not ENABLE_YFINANCE:
-            print(
+            logger.info(
                 "Due to a missing optional dependency (yfinance) and your current FinancialModelingPrep plan, "
-                f"data for the following tickers could not be acquired: {', '.join(no_data)}\n"
-                "Enable this functionality by using:\033[1m pip install 'financetoolkit[yfinance]' \033[0m"
+                "data for the following tickers could not be acquired: %s\n"
+                "Enable this functionality by using:\033[1m pip install 'financetoolkit[yfinance]' \033[0m",
+                ", ".join(no_data),
             )
         else:
-            print(f"No data found for the following tickers: {', '.join(no_data)}")
+            logger.warning(
+                "No data found for the following tickers: %s", ", ".join(no_data)
+            )
 
     if len(historical_data_dict) == 0:
         # Fill the DataFrame with zeros to ensure the DataFrame is returned
@@ -391,7 +394,9 @@ def get_historical_data_from_financial_modeling_prep(
     historical_data = historical_data.sort_index()
 
     if historical_data.loc[start_date_string:end_date_string].empty:
-        print(f"The given start and end date result in no data found for {ticker}")
+        logger.warning(
+            "The given start and end date result in no data found for %s", ticker
+        )
         return pd.DataFrame()
 
     historical_data.index = pd.to_datetime(historical_data.index)
@@ -549,7 +554,9 @@ def get_historical_data_from_yahoo_finance(
         return pd.DataFrame()
 
     if historical_data.loc[start:end].empty:
-        print(f"The given start and end date result in no data found for {ticker}")
+        logger.warning(
+            "The given start and end date result in no data found for %s", ticker
+        )
         return pd.DataFrame()
 
     historical_data.index = pd.to_datetime(historical_data.index)
@@ -677,7 +684,9 @@ def get_intraday_data_from_financial_modeling_prep(
     historical_data = historical_data.sort_index()
 
     if historical_data.loc[start_date_string:end_date_string].empty:
-        print(f"The given start and end date result in no data found for {ticker}")
+        logger.warning(
+            "The given start and end date result in no data found for %s", ticker
+        )
         return pd.DataFrame()
 
     if interval in ["1min", "5min", "15min", "30min"]:
@@ -775,8 +784,9 @@ def enrich_historical_data(
                 start:end, "Excess Return"
             ].std()
         except ValueError as error:
-            print(
-                f"Not able to calculate excess return and excess volatility due to {error}."
+            logger.error(
+                "Not able to calculate excess return and excess volatility due to %s",
+                error,
             )
             historical_data["Excess Return"] = 0
             historical_data["Excess Volatility"] = 0
@@ -878,7 +888,7 @@ def convert_daily_to_other_period(
             dates
         ).std() * np.sqrt(volatility_window)
 
-        if not risk_free_rate.empty:
+        if not risk_free_rate.empty and risk_free_rate["Adj Close"].sum() != 0:
             period_historical_data["Excess Return"] = period_historical_data[
                 "Return"
             ].sub(risk_free_rate["Adj Close"], axis=0)
@@ -1006,7 +1016,7 @@ def get_historical_statistics(
         thread.join()
 
     historical_statistics_dict = (
-        helpers.check_for_error_messages(
+        error_model.check_for_error_messages(
             dataset_dictionary=historical_statistics_dict,
             user_subscription=user_subscription,
         )

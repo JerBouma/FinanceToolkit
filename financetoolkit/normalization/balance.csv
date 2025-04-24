@@ -2,25 +2,34 @@ Balance,Generic
 cashAndCashEquivalents,Cash and Cash Equivalents
 shortTermInvestments,Short Term Investments
 cashAndShortTermInvestments,Cash and Short Term Investments
-netReceivables,Accounts Receivable
+accountsReceivables, Accounts Receivable
+otherReceivables, Other Receivables
+netReceivables,Net Receivables
 inventory,Inventory
+prepaids, Prepaids
 otherCurrentAssets,Other Current Assets
 totalCurrentAssets,Total Current Assets
 propertyPlantEquipmentNet,"Property, Plant and Equipment"
-longTermInvestments,Long Term Investments
-taxAssets,Tax Assets
 goodwill,Goodwill
 intangibleAssets,Intangible Assets
+goodwillAndIntangibleAssets,Goodwill and Intangible Assets
+longTermInvestments,Long Term Investments
+taxAssets,Tax Assets
 otherNonCurrentAssets,Other Fixed Assets
 totalNonCurrentAssets,Fixed Assets
 otherAssets,Other Assets
 totalAssets,Total Assets
 accountPayables,Accounts Payable
+otherPayables,Other Payables
+totalPayables,Total Payables
+accruedExpenses,Accrued Expenses
 shortTermDebt,Short Term Debt
+capitalLeaseObligationsCurrent,Current Capital Lease Obligations Current
 taxPayables,Tax Payables
 deferredRevenue,Deferred Revenue
 otherCurrentLiabilities,Other Current Liabilities
 totalCurrentLiabilities,Total Current Liabilities
+capitalLeaseObligationsNonCurrent, Capital Lease Obligations Non Current
 longTermDebt,Long Term Debt
 deferredRevenueNonCurrent,Deferred Revenue Non Current
 deferredTaxLiabilitiesNonCurrent,Deferred Tax Liabilities
@@ -32,13 +41,15 @@ totalDebt,Total Debt
 netDebt,Net Debt
 totalInvestments,Total Investments
 totalLiabilities,Total Liabilities
+treasuryStock, Treasury Stock
 preferredStock,Preferred Stock
 commonStock,Common Stock
 retainedEarnings,Retained Earnings
+additionalPaidInCapital,Additional Paid In Capital
 accumulatedOtherComprehensiveIncomeLoss,Accumulated Other Comprehensive Income
 othertotalStockholdersEquity,Other Total Shareholder Equity
 totalStockholdersEquity,Total Shareholder Equity
 totalEquity,Total Equity
-totalLiabilitiesAndStockholdersEquity,Total Liabilities and Shareholder Equity
 minorityInterest,Minority Interest
+totalLiabilitiesAndStockholdersEquity,Total Liabilities and Shareholder Equity
 totalLiabilitiesAndTotalEquity,Total Liabilities and Equity

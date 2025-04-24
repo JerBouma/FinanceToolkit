@@ -2,7 +2,6 @@ Income,Generic
 revenue,Revenue
 costOfRevenue,Cost of Goods Sold
 grossProfit,Gross Profit
-grossProfitRatio,Gross Profit Ratio
 researchAndDevelopmentExpenses,Research and Development Expenses
 generalAndAdministrativeExpenses,General and Administrative Expenses
 sellingAndMarketingExpenses,Selling and Marketing Expenses
@@ -12,17 +11,21 @@ operatingExpenses,Operating Expenses
 costAndExpenses,Cost and Expenses
 interestIncome,Interest Income
 interestExpense,Interest Expense
+netInterestIncome,Net Interest Income
 depreciationAndAmortization,Depreciation and Amortization
 ebitda,EBITDA
-ebitdaratio,EBITDA Ratio
+ebit,EBIT
+nonOperatingIncomeExcludingInterest,Non Operating Income Excluding Interest
 operatingIncome,Operating Income
-operatingIncomeRatio,Operating Income Ratio
-totalOtherIncomeExpensesNet,Total Other Income
+totalOtherIncomeExpensesNet,Total Other Income Expenses
 incomeBeforeTax,Income Before Tax
-incomeBeforeTaxRatio,Income Before Tax Ratio
 incomeTaxExpense,Income Tax Expense
-netIncome,Net Income
-netIncomeRatio,Net Income Ratio
+netIncomeFromContinuingOperations,Net Income from Continuing Operations
+netIncomeFromDiscontinuedOperations,Net Income from Discontinued Operations
+otherAdjustmentsToNetIncome,Other Adjustments to Net Income
+netIncome,Net Income before Deductions
+netIncomeDeductions,Net Income Deductions
+bottomLineNetIncome, Net Income
 eps,EPS
 epsdiluted,EPS Diluted
 weightedAverageShsOut,Weighted Average Shares

@@ -6,11 +6,10 @@ import inspect
 
 import pandas as pd
 
-from financetoolkit import logger_model
+from financetoolkit.utilities import logger_model
 
 logger = logger_model.get_logger()
 
-RETRY_LIMIT = 12
 
 # pylint: disable=comparison-with-itself,too-many-locals,protected-access
 

@@ -3,27 +3,9 @@
 __docformat__ = "google"
 
 import logging
-import os
 import sys
 
 # pylint: disable=too-few-public-methods
-
-
-class DottedPathFilter(logging.Filter):
-    """
-    A logging filter that adds a dotted_path attribute to log records.
-
-    The dotted_path represents the Python module path relative to the project root,
-    which makes log messages more readable and consistent.
-    """
-
-    def filter(self, record):
-        # Compute relative path from project root
-        project_root = os.path.dirname(__file__)  # Adjust if needed
-        relative_path = os.path.relpath(record.pathname, start=project_root)
-        dotted_path = os.path.splitext(relative_path)[0].replace(os.path.sep, ".")
-        record.dotted_path = dotted_path
-        return True
 
 
 def setup_logger(log_level=logging.INFO):
@@ -50,11 +32,10 @@ def setup_logger(log_level=logging.INFO):
         console_handler.setLevel(log_level)
 
         formatter = logging.Formatter(
-            "%(asctime)s - %(name)s.%(dotted_path)s:%(lineno)d - %(levelname)s - %(message)s",
+            "%(asctime)s - %(name)s - %(module)s - %(levelname)s - %(message)s",
             datefmt="%Y-%m-%d %H:%M:%S",
         )
         console_handler.setFormatter(formatter)
-        console_handler.addFilter(DottedPathFilter())
 
         logger.addHandler(console_handler)
 

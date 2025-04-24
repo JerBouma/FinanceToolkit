@@ -9,7 +9,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from financetoolkit import logger_model
+from financetoolkit.utilities import logger_model
 
 logger = logger_model.get_logger()
 
@@ -26,7 +26,16 @@ def read_normalization_file(statement: str, format_location: str = ""):
     Returns:
         A pandas Series containing the line items for the desired statement.
     """
-    if statement not in ["balance", "income", "cash", "statistics"]:
+    if statement not in [
+        "balance_yf",
+        "balance",
+        "income_yf",
+        "income",
+        "cash_yf",
+        "cash",
+        "statistics_yf",
+        "statistics",
+    ]:
         raise ValueError(
             "Please provide a valid statement type (balance, income, cash or statistics)."
         )
@@ -73,6 +82,18 @@ def convert_financial_statements(
                 naming[name] = statement_format.loc[name]
         except KeyError:
             continue
+
+    # Reorder naming based on the order of statement_format
+    ordered_naming = {}
+    for index_name in statement_format.index:
+        for original_name, _ in naming.items():
+            if index_name == original_name or (
+                original_name in naming and naming[original_name] == index_name
+            ):
+                ordered_naming[original_name] = naming[original_name]
+                break
+
+    naming = ordered_naming
 
     # Select only the columns it could trace back to the format
     financial_statements = financial_statements.loc[:, list(naming.keys()), :]

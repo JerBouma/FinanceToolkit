@@ -6,8 +6,8 @@ import numpy as np
 import pandas as pd
 from tqdm import tqdm
 
-from financetoolkit import logger_model
 from financetoolkit.portfolio import helpers
+from financetoolkit.utilities import logger_model
 
 logger = logger_model.get_logger()
 

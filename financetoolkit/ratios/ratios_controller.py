@@ -8,8 +8,6 @@ import warnings
 import numpy as np
 import pandas as pd
 
-from financetoolkit import logger_model
-from financetoolkit.error_model import handle_errors
 from financetoolkit.helpers import calculate_growth, handle_portfolio
 from financetoolkit.ratios import (
     efficiency_model,
@@ -19,6 +17,8 @@ from financetoolkit.ratios import (
     valuation_model,
 )
 from financetoolkit.ratios.helpers import map_period_data_to_daily_data
+from financetoolkit.utilities import logger_model
+from financetoolkit.utilities.error_model import handle_errors
 
 logger = logger_model.get_logger()
 

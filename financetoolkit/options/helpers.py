@@ -4,7 +4,7 @@ __docformat__ = "google"
 
 import pandas as pd
 
-from financetoolkit import logger_model
+from financetoolkit.utilities import logger_model
 
 logger = logger_model.get_logger()
 

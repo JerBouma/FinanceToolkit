@@ -9,9 +9,7 @@ from datetime import datetime, timedelta
 import numpy as np
 import pandas as pd
 
-from financetoolkit import logger_model
 from financetoolkit.economics import oecd_model
-from financetoolkit.error_model import handle_errors
 from financetoolkit.fixedincome import (
     bond_model,
     derivative_model,
@@ -21,6 +19,8 @@ from financetoolkit.fixedincome import (
     fred_model,
 )
 from financetoolkit.helpers import calculate_growth
+from financetoolkit.utilities import logger_model
+from financetoolkit.utilities.error_model import handle_errors
 
 logger = logger_model.get_logger()
 

@@ -4,7 +4,7 @@ __docformat__ = "google"
 
 import pandas as pd
 
-from financetoolkit.helpers import get_financial_data
+from financetoolkit.fmp_model import get_financial_data
 
 
 def get_instruments(

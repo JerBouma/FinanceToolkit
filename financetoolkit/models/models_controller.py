@@ -4,7 +4,6 @@ __docformat__ = "google"
 
 import pandas as pd
 
-from financetoolkit.error_model import handle_errors
 from financetoolkit.helpers import calculate_growth
 from financetoolkit.models import (
     altman_model,
@@ -18,6 +17,7 @@ from financetoolkit.models import (
 )
 from financetoolkit.performance.performance_model import get_beta
 from financetoolkit.ratios import liquidity_model, valuation_model
+from financetoolkit.utilities.error_model import handle_errors
 
 # pylint: disable=too-many-instance-attributes,too-many-locals,too-many-lines
 

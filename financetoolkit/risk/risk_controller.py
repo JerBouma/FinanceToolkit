@@ -6,7 +6,6 @@ import warnings
 
 import pandas as pd
 
-from financetoolkit.error_model import handle_errors
 from financetoolkit.helpers import calculate_growth, handle_portfolio
 from financetoolkit.risk import (
     cvar_model,
@@ -16,6 +15,7 @@ from financetoolkit.risk import (
     var_model,
 )
 from financetoolkit.risk.helpers import determine_within_historical_data
+from financetoolkit.utilities.error_model import handle_errors
 
 # Runtime errors are ignored on purpose given the nature of the calculations
 # sometimes leading to division by zero or other mathematical errors. This is however

@@ -9,9 +9,9 @@ from datetime import datetime, timedelta
 import pandas as pd
 
 from financetoolkit.economics import gmdb_model, oecd_model
-from financetoolkit.error_model import handle_errors
 from financetoolkit.helpers import calculate_growth
-from financetoolkit.logger_model import get_logger
+from financetoolkit.utilities.error_model import handle_errors
+from financetoolkit.utilities.logger_model import get_logger
 
 logger = get_logger()
 

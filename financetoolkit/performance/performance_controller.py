@@ -7,7 +7,6 @@ import warnings
 import pandas as pd
 
 from financetoolkit.helpers import calculate_growth, handle_portfolio
-from financetoolkit.logger_model import get_logger
 from financetoolkit.performance import performance_model
 from financetoolkit.performance.helpers import (
     determine_within_dataset,
@@ -15,6 +14,7 @@ from financetoolkit.performance.helpers import (
     handle_errors,
 )
 from financetoolkit.risk.risk_model import get_ui
+from financetoolkit.utilities.logger_model import get_logger
 
 try:
     from tqdm import tqdm

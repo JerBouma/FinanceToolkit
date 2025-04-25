@@ -1,7 +1,10 @@
 """FRED Model"""
 
+import io
+
 import numpy as np
 import pandas as pd
+import requests
 
 
 def get_fred_data(fred_series_id: str | list):
@@ -17,9 +20,22 @@ def get_fred_data(fred_series_id: str | list):
     if isinstance(fred_series_id, list):
         fred_series_id = ",".join(fred_series_id)
 
-    fred_data = pd.read_csv(
-        f"https://fred.stlouisfed.org/graph/fredgraph.csv?id={fred_series_id}"
-    )
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/58.0.3029.110 Safari/537.3"
+    }
+
+    url = f"https://fred.stlouisfed.org/graph/fredgraph.csv?id={fred_series_id}"
+
+    try:
+        response = requests.get(url, headers=headers, timeout=60)
+        response.raise_for_status()  # Raise HTTPError for bad responses (4xx or 5xx)
+        fred_data = pd.read_csv(io.StringIO(response.text))
+    except requests.exceptions.RequestException as e:
+        # Handle exceptions during the request (e.g., connection error, timeout, invalid URL)
+        # Consider logging the error or raising a more specific exception
+        raise RuntimeError(f"Error fetching data from FRED: {e}") from e
 
     # Fall back system in case the column name changes, the first column is assumed
     # to be the date column

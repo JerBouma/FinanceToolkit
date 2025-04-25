@@ -125,7 +125,8 @@ def convert_currencies(
 
     if no_data:
         logger.warning(
-            "The following tickers could not be converted to the historical data currency: "
+            "The following tickers could not be verified whether the currency of the "
+            "historical data matches with the financial statement data: "
             "%s",
             ", ".join(no_data),
         )

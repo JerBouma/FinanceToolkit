@@ -226,16 +226,16 @@ def collect_financial_statements(
     if no_data:
         if not ENABLE_YFINANCE:
             logger.info(
-            "Due to a missing optional dependency (yfinance) and your current FinancialModelingPrep plan, "
-            "data for the following tickers could not be acquired: %s\n"
-            "Enable this functionality by using:\033[1m pip install 'financetoolkit[yfinance]' \033[0m",
-            ", ".join(no_data),
+                "Due to a missing optional dependency (yfinance) and your current FinancialModelingPrep plan, "
+                "data for the following tickers could not be acquired: %s\n"
+                "Enable this functionality by using:\033[1m pip install 'financetoolkit[yfinance]' \033[0m",
+                ", ".join(no_data),
             )
         else:
             logger.info(
-            "No %s data found for the following tickers: %s",
-            statement,
-            ", ".join(no_data),
+                "No %s data found for the following tickers: %s",
+                statement,
+                ", ".join(no_data),
             )
 
     financial_statement_total = pd.concat(

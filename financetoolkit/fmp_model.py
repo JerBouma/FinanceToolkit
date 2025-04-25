@@ -1684,9 +1684,7 @@ def get_esg_scores(
     threads = []
 
     ticker_list_iterator = (
-        tqdm(ticker_list, desc="Obtaining ESG scores")
-        if  progress_bar
-        else ticker_list
+        tqdm(ticker_list, desc="Obtaining ESG scores") if progress_bar else ticker_list
     )
 
     for ticker in ticker_list_iterator:

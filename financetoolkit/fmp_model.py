@@ -17,7 +17,7 @@ import requests
 from tqdm import tqdm
 from urllib3.exceptions import MaxRetryError
 
-from financetoolkit import historical_model
+from financetoolkit import helpers
 from financetoolkit.utilities import error_model, logger_model
 
 logger = logger_model.get_logger()
@@ -395,7 +395,7 @@ def get_historical_data(
         ~historical_data.index.duplicated(keep="first")
     ]
 
-    historical_data = historical_model.enrich_historical_data(
+    historical_data = helpers.enrich_historical_data(
         historical_data=historical_data,
         start=start,
         end=end,
@@ -523,7 +523,7 @@ def get_intraday_data(
         ~historical_data.index.duplicated(keep="first")
     ]
 
-    historical_data = historical_model.enrich_historical_data(
+    historical_data = helpers.enrich_historical_data(
         historical_data=historical_data,
         start=start,
         end=end,

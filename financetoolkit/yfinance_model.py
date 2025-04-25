@@ -12,7 +12,7 @@ import pandas as pd
 import requests
 import yfinance as yf
 
-from financetoolkit import historical_model
+from financetoolkit import helpers
 from financetoolkit.utilities import logger_model
 
 logger = logger_model.get_logger()
@@ -206,7 +206,7 @@ def get_historical_data(
         ["Open", "High", "Low", "Close", "Adj Close", "Volume", "Dividends"]
     ]
 
-    historical_data = historical_model.enrich_historical_data(
+    historical_data = helpers.enrich_historical_data(
         historical_data=historical_data,
         start=start,
         end=end,

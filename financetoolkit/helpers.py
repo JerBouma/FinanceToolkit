@@ -2,6 +2,7 @@
 
 __docformat__ = "google"
 
+import contextlib
 import inspect
 import warnings
 from functools import wraps
@@ -141,6 +142,85 @@ def equal_length(dataset1: pd.Series, dataset2: pd.Series) -> pd.Series:
         dataset2 = dataset2.sort_index()
 
     return dataset1, dataset2
+
+
+def enrich_historical_data(
+    historical_data: pd.DataFrame,
+    start: str | None = None,
+    end: str | None = None,
+    return_column: str = "Adj Close",
+    risk_free_rate: pd.DataFrame = pd.DataFrame(),
+):
+    """
+    Retrieves enriched historical stock data for the given ticker(s) from Yahoo! Finance API for
+    a specified period. It calculates the following:
+
+        - Return: The return for the given period.
+        - Volatility: The volatility for the given period.
+        - Excess Return: The excess return for the given period.
+        - Excess Volatility: The excess volatility for the given period.
+        - Cumulative Return: The cumulative return for the given period.
+
+    The return is calculated as the percentage change in the given return column and the excess return
+    is calculated as the percentage change in the given return column minus the risk free rate.
+
+    The volatility is calculated as the standard deviation of the daily returns and the excess volatility
+    is calculated as the standard deviation of the excess returns.
+
+    The cumulative return is calculated as the cumulative product of the percentage change in the given
+    return column.
+
+    Args:
+        historical_data (pd.DataFrame): A pandas DataFrame object containing the historical stock data
+        for the given ticker(s).
+        start (str, optional): A string representing the start date of the period to retrieve data for
+            in 'YYYY-MM-DD' format. Defaults to None.
+        end (str, optional): A string representing the end date of the period to retrieve data for
+            in 'YYYY-MM-DD' format. Defaults to None.
+        return_column (str, optional): A string representing the column to use for return calculations.
+        risk_free_rate (pd.Series, optional): A pandas Series object containing the risk free rate data.
+        This is used to calculate the excess return and excess volatility. Defaults to pd.Series().
+
+
+    Returns:
+        pd.DataFrame: A pandas DataFrame object containing the enriched historical stock data for the given ticker(s).
+    """
+
+    historical_data["Return"] = historical_data[return_column].ffill().pct_change()
+
+    historical_data["Volatility"] = historical_data.loc[start:end, "Return"].std()
+
+    if not risk_free_rate.empty:
+        try:
+            historical_data["Excess Return"] = historical_data["Return"].sub(
+                risk_free_rate["Adj Close"]
+            )
+
+            historical_data["Excess Volatility"] = historical_data.loc[
+                start:end, "Excess Return"
+            ].std()
+        except ValueError as error:
+            logger.error(
+                "Not able to calculate excess return and excess volatility due to %s",
+                error,
+            )
+            historical_data["Excess Return"] = 0
+            historical_data["Excess Volatility"] = 0
+
+    historical_data["Cumulative Return"] = 1
+
+    adjusted_return = historical_data.loc[start:end, "Return"].copy()
+
+    with contextlib.suppress(IndexError):
+        adjusted_return.iloc[0] = 0
+
+    historical_data["Cumulative Return"] = pd.Series(np.nan).astype(float)
+
+    historical_data.loc[start:end, "Cumulative Return"] = (
+        1.0 + adjusted_return
+    ).cumprod()
+
+    return historical_data
 
 
 def handle_portfolio(func):

@@ -397,6 +397,7 @@ class Toolkit:
             self._fmp_plan = "Premium"
 
             for option in [
+                "PREMIUM QUERY PARAMETER",
                 "EXCLUSIVE ENDPOINT",
                 "NO DATA",
                 "BANDWIDTH LIMIT REACH",
@@ -646,10 +647,6 @@ class Toolkit:
             "statistics", format_location
         )
 
-        self._yf_statistics_statement_generic: pd.DataFrame = _read_normalization_file(
-            "statistics", format_location
-        )
-
         # Initialization of Financial Statements
         if not balance.empty:
             self._balance_sheet_statement: pd.DataFrame = _convert_date_label(
@@ -778,14 +775,18 @@ class Toolkit:
         """
         empty_data: list = []
 
-        if not self._api_key and (
-            self._balance_sheet_statement.empty
-            or self._income_statement.empty
-            or self._cash_flow_statement.empty
+        if (
+            not self._api_key
+            and (
+                self._balance_sheet_statement.empty
+                or self._income_statement.empty
+                or self._cash_flow_statement.empty
+            )
+            and self._enforce_source == "FinancialModelingPrep"
         ):
             raise ValueError(
-                "The ratios class requires an API key from FinancialModelPrep. "
-                "Get an API key here: https://www.jeroenbouma.com/fmp"
+                "The ratios class requires an API key from FinancialModelPrep if you wish to enforce the usage. "
+                "of Financial Modeling Prep. Get an API key here: https://www.jeroenbouma.com/fmp"
             )
 
         if self._balance_sheet_statement.empty:
@@ -2070,6 +2071,7 @@ class Toolkit:
 
     def get_historical_data(
         self,
+        enforce_source: str | None = None,
         period: str = "daily",
         return_column: str = "Adj Close",
         include_dividends: bool = True,
@@ -2102,12 +2104,12 @@ class Toolkit:
 
         Important to note is that when an api_key is included in the Toolkit initialization that the data
         collection defaults to FinancialModelingPrep which is a more stable source and utilises your subscription.
-        However, if this is undesired, it can be disabled by setting historical_source to "YahooFinance". If
+        However, if this is undesired, it can be disabled by setting enforce_source to "YahooFinance". If
         data collection fails from FinancialModelingPrep it automatically reverts back to YahooFinance.
 
         Args:
-            start (str): The start date for the historical data. Defaults to None.
-            end (str): The end date for the historical data. Defaults to None.
+            enforce_source (str, optional): A string containing the historical source you wish to enforce.
+            This can be either FinancialModelingPrep or YahooFinance. Defaults to no enforcement.
             period (str): The interval at which the historical data should be
             returned - daily, weekly, monthly, quarterly, or yearly.
             Defaults to "daily".
@@ -2120,8 +2122,6 @@ class Toolkit:
             overwrite (bool): Defines whether to overwrite the existing data. If this is not enabled, the function
             will return the earlier retrieved data. This is done to prevent too many API calls. Defaults to False.
             rounding (int): Defines the number of decimal places to round the data to.
-            sleep_timer (bool): Defines whether to include a sleep timer to prevent
-            overloading the API. Defaults to True.
             show_ticker_seperation (bool, optional): A boolean representing whether to show which tickers
             acquired data from FinancialModelingPrep and which tickers acquired data from YahooFinance.
             progress_bar (bool, optional): Whether to show a progress bar. Defaults to None.
@@ -2158,6 +2158,14 @@ class Toolkit:
         | 2022   | 128.41   | 129.95   | 127.43   | 129.93   |    129.378  | 7.70342e+07 |    0.91     | -0.264042  |     0.356964 |      -0.302832  |            0.377293 |             7.35566 |
         | 2023   | 187.84   | 188.51   | 187.68   | 188.108  |    188.108  | 4.72009e+06 |    0.71     |  0.453941  |     0.213359 |       0.412901  |            0.22327  |            10.6947  |
         """
+        if enforce_source is not None and enforce_source not in [
+            "FinancialModelingPrep",
+            "YahooFinance",
+        ]:
+            raise ValueError(
+                "The enforce_source parameter must be either 'FinancialModelingPrep' or 'YahooFinance'."
+            )
+
         if self._daily_risk_free_rate.empty or overwrite:
             self.get_treasury_data(
                 risk_free_rate=self._risk_free_rate,
@@ -2173,7 +2181,11 @@ class Toolkit:
                     else self._tickers
                 ),
                 api_key=self._api_key,
-                source=self._historical_source,
+                enforce_source=(
+                    enforce_source
+                    if enforce_source is not None
+                    else self._enforce_source
+                ),
                 start=self._start_date,
                 end=self._end_date,
                 interval="1d",
@@ -2424,7 +2436,7 @@ class Toolkit:
                     else self._tickers
                 ),
                 api_key=self._api_key,
-                source=self._historical_source,
+                enforce_source=None,
                 start=self._start_date,
                 end=self._end_date,
                 interval=period,
@@ -2743,6 +2755,7 @@ class Toolkit:
 
     def get_treasury_data(
         self,
+        enforce_source: str | None = None,
         period: str = "daily",
         risk_free_rate: str | None = None,
         fill_nan: bool = True,
@@ -2830,6 +2843,14 @@ class Toolkit:
             else []
         )
 
+        if enforce_source is not None and enforce_source not in [
+            "FinancialModelingPrep",
+            "YahooFinance",
+        ]:
+            raise ValueError(
+                "The enforce_source parameter must be either 'FinancialModelingPrep' or 'YahooFinance'."
+            )
+
         if self._daily_treasury_data.empty or False in specific_rates:
             # It collects data in the scenarios where the treasury data is empty or only contains one column which generally
             # means the data was collected for the historical data functionality which only requires a subselection
@@ -2839,7 +2860,11 @@ class Toolkit:
             ) = _get_historical_data(
                 tickers=risk_free_rate_tickers,
                 api_key=self._api_key,
-                source=self._historical_source,
+                enforce_source=(
+                    enforce_source
+                    if enforce_source is not None
+                    else self._enforce_source
+                ),
                 start=self._start_date,
                 end=self._end_date,
                 progress_bar=False,
@@ -2949,7 +2974,7 @@ class Toolkit:
 
         Important to note is that when an api_key is included in the Toolkit initialization that the data
         collection defaults to FinancialModelingPrep which is a more stable source and utilises your subscription.
-        However, if this is undesired, it can be disabled by setting historical_source to "YahooFinance". If
+        However, if this is undesired, it can be disabled by setting enforce_source to "YahooFinance". If
         data collection fails from FinancialModelingPrep it automatically reverts back to YahooFinance.
 
         Args:
@@ -3037,7 +3062,7 @@ class Toolkit:
                 self._daily_exchange_rate_data, _ = _get_historical_data(
                     tickers=currencies_to_collect_data_for,
                     api_key=self._api_key,
-                    source=self._historical_source,
+                    enforce_source=self._enforce_source,
                     start=self._start_date,
                     end=self._end_date,
                     interval="1d",
@@ -3186,6 +3211,7 @@ class Toolkit:
 
     def get_balance_sheet_statement(
         self,
+        enforce_source: str | None = None,
         overwrite: bool = False,
         rounding: int | None = None,
         growth: bool = False,
@@ -3210,7 +3236,8 @@ class Toolkit:
         available for this statement.
 
         Args:
-            limit (int): Defines the maximum years or quarters to obtain.
+            enforce_source (bool): Defines whether to enforce the source of the data. This can be
+                either "FinancialModelingPrep" or "YahooFinance". Defaults to None.
             overwrite (bool): Defines whether to overwrite the existing data.
             rounding (int): Defines the number of decimal places to round the data to.
             growth (bool): Defines whether to return the growth of the data.
@@ -3289,10 +3316,10 @@ class Toolkit:
         if (
             not self._api_key
             and self._balance_sheet_statement.empty
-            and self._historical_source == "FinancialModelingPrep"
+            and self._enforce_source == "FinancialModelingPrep"
         ):
             logger.error(
-                "The requested data requires the api_key parameter to be set or the historical_source "
+                "The requested data requires the api_key parameter to be set or the enforce_source "
                 "parameter set to 'YahooFinance', consider obtaining a key with the following link: "
                 "https://www.jeroenbouma.com/fmp"
                 "\nThe free plan allows for 250 requests per day, a limit of 5 years and has no "
@@ -3300,6 +3327,14 @@ class Toolkit:
                 "above affiliate link which also supports the project."
             )
             return None
+
+        if enforce_source is not None and enforce_source not in [
+            "FinancialModelingPrep",
+            "YahooFinance",
+        ]:
+            raise ValueError(
+                "The enforce_source parameter must be either 'FinancialModelingPrep' or 'YahooFinance'."
+            )
 
         # Correct for the case where a Portfolio ticker exists
         ticker_list = [ticker for ticker in self._tickers if ticker != "Portfolio"]
@@ -3320,13 +3355,16 @@ class Toolkit:
                 fmp_statement_format=self._fmp_balance_sheet_statement_generic,
                 fmp_statistics_format=self._fmp_statistics_statement_generic,
                 yf_statement_format=self._yf_balance_sheet_statement_generic,
-                yf_statistics_format=self._yf_statistics_statement_generic,
                 sleep_timer=self._sleep_timer,
                 progress_bar=(
                     progress_bar if progress_bar is not None else self._progress_bar
                 ),
                 user_subscription=self._fmp_plan,
-                enforce_source=self._enforce_source,
+                enforce_source=(
+                    enforce_source
+                    if enforce_source is not None
+                    else self._enforce_source
+                ),
             )
 
             if convert_currency:
@@ -3337,16 +3375,17 @@ class Toolkit:
                     ),
                 )
 
-                self._balance_sheet_statement = currencies_model.convert_currencies(
-                    financial_statement_data=self._balance_sheet_statement,
-                    financial_statement_currencies=self._statement_currencies,
-                    exchange_rate_data=(
-                        self._quarterly_exchange_rate_data["Adj Close"]
-                        if self._quarterly
-                        else self._yearly_exchange_rate_data["Adj Close"]
-                    ),
-                    financial_statement_name="balance sheet statement",
-                )
+                if not self._statement_currencies.empty:
+                    self._balance_sheet_statement = currencies_model.convert_currencies(
+                        financial_statement_data=self._balance_sheet_statement,
+                        financial_statement_currencies=self._statement_currencies,
+                        exchange_rate_data=(
+                            self._quarterly_exchange_rate_data["Adj Close"]
+                            if self._quarterly
+                            else self._yearly_exchange_rate_data["Adj Close"]
+                        ),
+                        financial_statement_name="balance sheet statement",
+                    )
 
             if self._use_cached_data:
                 cache_model.save_cached_data(
@@ -3389,6 +3428,7 @@ class Toolkit:
 
     def get_income_statement(
         self,
+        enforce_source: str | None = None,
         overwrite: bool = False,
         rounding: int | None = None,
         growth: bool = False,
@@ -3405,7 +3445,8 @@ class Toolkit:
         period. Therefore, trailing results are available for this statement.
 
         Args:
-            limit (int): Defines the maximum years or quarters to obtain.
+            enforce_source (bool): Defines whether to enforce the source of the data. This can be
+                either "FinancialModelingPrep" or "YahooFinance". Defaults to None.
             overwrite (bool): Defines whether to overwrite the existing data.
             rounding (int): Defines the number of decimal places to round the data to.
             growth (bool): Defines whether to return the growth of the data.
@@ -3469,10 +3510,10 @@ class Toolkit:
         if (
             not self._api_key
             and self._income_statement.empty
-            and self._historical_source == "FinancialModelingPrep"
+            and self._enforce_source == "FinancialModelingPrep"
         ):
             logger.error(
-                "The requested data requires the api_key parameter to be set or the historical_source "
+                "The requested data requires the api_key parameter to be set or the enforce_source "
                 "parameter set to 'YahooFinance', consider obtaining a key with the following link: "
                 "https://www.jeroenbouma.com/fmp"
                 "\nThe free plan allows for 250 requests per day, a limit of 5 years and has no "
@@ -3480,6 +3521,14 @@ class Toolkit:
                 "above affiliate link which also supports the project."
             )
             return None
+
+        if enforce_source is not None and enforce_source not in [
+            "FinancialModelingPrep",
+            "YahooFinance",
+        ]:
+            raise ValueError(
+                "The enforce_source parameter must be either 'FinancialModelingPrep' or 'YahooFinance'."
+            )
 
         # Correct for the case where a Portfolio ticker exists
         ticker_list = [ticker for ticker in self._tickers if ticker != "Portfolio"]
@@ -3500,13 +3549,16 @@ class Toolkit:
                 fmp_statement_format=self._fmp_income_statement_generic,
                 fmp_statistics_format=self._fmp_statistics_statement_generic,
                 yf_statement_format=self._yf_income_statement_generic,
-                yf_statistics_format=self._yf_statistics_statement_generic,
                 sleep_timer=self._sleep_timer,
                 progress_bar=(
                     progress_bar if progress_bar is not None else self._progress_bar
                 ),
                 user_subscription=self._fmp_plan,
-                enforce_source=self._enforce_source,
+                enforce_source=(
+                    enforce_source
+                    if enforce_source is not None
+                    else self._enforce_source
+                ),
             )
 
             if convert_currency:
@@ -3516,28 +3568,28 @@ class Toolkit:
                         progress_bar if progress_bar is not None else self._progress_bar
                     ),
                 )
-
-                self._income_statement = currencies_model.convert_currencies(
-                    financial_statement_data=self._income_statement,
-                    financial_statement_currencies=self._statement_currencies,
-                    exchange_rate_data=(
-                        self._quarterly_exchange_rate_data["Adj Close"]
-                        if self._quarterly
-                        else self._yearly_exchange_rate_data["Adj Close"]
-                    ),
-                    items_not_to_adjust=[
-                        "Gross Profit Ratio",
-                        "EBITDA Ratio",
-                        "Operating Income Ratio",
-                        "Income Before Tax Ratio",
-                        "Net Income Ratio",
-                        "EPS",
-                        "EPS Diluted",
-                        "Weighted Average Shares",
-                        "Weighted Average Shares Diluted",
-                    ],
-                    financial_statement_name="income statement",
-                )
+                if not self._statement_currencies.empty:
+                    self._income_statement = currencies_model.convert_currencies(
+                        financial_statement_data=self._income_statement,
+                        financial_statement_currencies=self._statement_currencies,
+                        exchange_rate_data=(
+                            self._quarterly_exchange_rate_data["Adj Close"]
+                            if self._quarterly
+                            else self._yearly_exchange_rate_data["Adj Close"]
+                        ),
+                        items_not_to_adjust=[
+                            "Gross Profit Ratio",
+                            "EBITDA Ratio",
+                            "Operating Income Ratio",
+                            "Income Before Tax Ratio",
+                            "Net Income Ratio",
+                            "EPS",
+                            "EPS Diluted",
+                            "Weighted Average Shares",
+                            "Weighted Average Shares Diluted",
+                        ],
+                        financial_statement_name="income statement",
+                    )
 
             if self._use_cached_data:
                 cache_model.save_cached_data(
@@ -3616,6 +3668,7 @@ class Toolkit:
 
     def get_cash_flow_statement(
         self,
+        enforce_source: str | None = None,
         overwrite: bool = False,
         rounding: int | None = None,
         growth: bool = False,
@@ -3632,7 +3685,7 @@ class Toolkit:
         affect cash and cash equivalents. Therefore, trailing results are available for this statement.
 
         Args:
-            limit (int): Defines the maximum years or quarters to obtain.
+            enforce_source (bool): Defines whether to enforce the source of the data. This can be
             overwrite (bool): Defines whether to overwrite the existing data.
             rounding (int): Defines the number of decimal places to round the data to.
             growth (bool): Defines whether to return the growth of the data.
@@ -3698,10 +3751,10 @@ class Toolkit:
         if (
             not self._api_key
             and self._cash_flow_statement.empty
-            and self._historical_source == "FinancialModelingPrep"
+            and self._enforce_source == "FinancialModelingPrep"
         ):
             logger.error(
-                "The requested data requires the api_key parameter to be set or the historical_source "
+                "The requested data requires the api_key parameter to be set or the enforce_source "
                 "parameter set to 'YahooFinance', consider obtaining a key with the following link: "
                 "https://www.jeroenbouma.com/fmp"
                 "\nThe free plan allows for 250 requests per day, a limit of 5 years and has no "
@@ -3709,6 +3762,14 @@ class Toolkit:
                 "above affiliate link which also supports the project."
             )
             return None
+
+        if enforce_source is not None and enforce_source not in [
+            "FinancialModelingPrep",
+            "YahooFinance",
+        ]:
+            raise ValueError(
+                "The enforce_source parameter must be either 'FinancialModelingPrep' or 'YahooFinance'."
+            )
 
         # Correct for the case where a Portfolio ticker exists
         ticker_list = [ticker for ticker in self._tickers if ticker != "Portfolio"]
@@ -3729,13 +3790,16 @@ class Toolkit:
                 fmp_statement_format=self._fmp_cash_flow_statement_generic,
                 fmp_statistics_format=self._fmp_statistics_statement_generic,
                 yf_statement_format=self._yf_cash_flow_statement_generic,
-                yf_statistics_format=self._yf_statistics_statement_generic,
                 sleep_timer=self._sleep_timer,
                 progress_bar=(
                     progress_bar if progress_bar is not None else self._progress_bar
                 ),
                 user_subscription=self._fmp_plan,
-                enforce_source=self._enforce_source,
+                enforce_source=(
+                    enforce_source
+                    if enforce_source is not None
+                    else self._enforce_source
+                ),
             )
 
             if convert_currency:
@@ -3746,16 +3810,17 @@ class Toolkit:
                     ),
                 )
 
-                self._cash_flow_statement = currencies_model.convert_currencies(
-                    financial_statement_data=self._cash_flow_statement,
-                    financial_statement_currencies=self._statement_currencies,
-                    exchange_rate_data=(
-                        self._quarterly_exchange_rate_data["Adj Close"]
-                        if self._quarterly
-                        else self._yearly_exchange_rate_data["Adj Close"]
-                    ),
-                    financial_statement_name="cash flow statement",
-                )
+                if not self._statement_currencies.empty:
+                    self._cash_flow_statement = currencies_model.convert_currencies(
+                        financial_statement_data=self._cash_flow_statement,
+                        financial_statement_currencies=self._statement_currencies,
+                        exchange_rate_data=(
+                            self._quarterly_exchange_rate_data["Adj Close"]
+                            if self._quarterly
+                            else self._yearly_exchange_rate_data["Adj Close"]
+                        ),
+                        financial_statement_name="cash flow statement",
+                    )
 
             if self._use_cached_data:
                 cache_model.save_cached_data(
@@ -3798,6 +3863,7 @@ class Toolkit:
 
     def get_statistics_statement(
         self,
+        enforce_source: str | None = None,
         overwrite: bool = False,
         progress_bar: bool | None = None,
         rounding: int | None = None,
@@ -3809,9 +3875,11 @@ class Toolkit:
         API call. This is done to reduce the number of API calls to FinancialModelingPrep.
 
         Args:
-            limit (int): Defines the maximum years or quarters to obtain.
+            enforce_source (bool): Defines whether to enforce the source of the data. This can be
+                either "FinancialModelingPrep" or "YahooFinance". Defaults to None.
             overwrite (bool): Defines whether to overwrite the existing data.
             progress_bar (bool): Defines whether to show a progress bar.
+            rounding (int): Defines the number of decimal places to round the data to.
 
         Returns:
             pd.DataFrame: A pandas DataFrame with the retrieved statistics statement data.
@@ -3850,6 +3918,14 @@ class Toolkit:
             )
             return None
 
+        if enforce_source is not None and enforce_source not in [
+            "FinancialModelingPrep",
+            "YahooFinance",
+        ]:
+            raise ValueError(
+                "The enforce_source parameter must be either 'FinancialModelingPrep' or 'YahooFinance'."
+            )
+
         # Correct for the case where a Portfolio ticker exists
         ticker_list = [ticker for ticker in self._tickers if ticker != "Portfolio"]
 
@@ -3869,13 +3945,16 @@ class Toolkit:
                 fmp_statement_format=self._fmp_balance_sheet_statement_generic,
                 fmp_statistics_format=self._fmp_statistics_statement_generic,
                 yf_statement_format=self._yf_balance_sheet_statement_generic,
-                yf_statistics_format=self._yf_statistics_statement_generic,
                 sleep_timer=self._sleep_timer,
                 progress_bar=(
                     progress_bar if progress_bar is not None else self._progress_bar
                 ),
                 user_subscription=self._fmp_plan,
-                enforce_source=self._enforce_source,
+                enforce_source=(
+                    self._enforce_source
+                    if enforce_source is not None
+                    else self._enforce_source
+                ),
             )
 
             if self._use_cached_data:

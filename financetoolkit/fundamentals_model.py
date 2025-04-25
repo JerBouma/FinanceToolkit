@@ -35,7 +35,7 @@ def collect_financial_statements(
     sleep_timer: bool = True,
     progress_bar: bool = True,
     user_subscription: str = "Free",
-    enforce_source: str = "FinancialModelingPrep",
+    enforce_source: str | None = None,
 ) -> pd.DataFrame:
     """
     Retrieves financial statements (balance, income, or cash flow statements) for one or multiple companies,

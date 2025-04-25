@@ -1361,7 +1361,7 @@ class Ratios:
         if trailing:
             cash_conversion_efficiency = (
                 efficiency_model.get_cash_conversion_efficiency(
-                    self._cash_flow_statement.loc[:, "Operating Cash Flow", :]
+                    self._cash_flow_statement.loc[:, "Cash Flow from Operations", :]
                     .T.rolling(trailing)
                     .sum()
                     .T,
@@ -1374,7 +1374,7 @@ class Ratios:
         else:
             cash_conversion_efficiency = (
                 efficiency_model.get_cash_conversion_efficiency(
-                    self._cash_flow_statement.loc[:, "Operating Cash Flow", :],
+                    self._cash_flow_statement.loc[:, "Cash Flow from Operations", :],
                     self._income_statement.loc[:, "Revenue", :],
                 )
             )
@@ -3186,7 +3186,7 @@ class Ratios:
                 .T.rolling(trailing)
                 .sum()
                 .T,
-                self._cash_flow_statement.loc[:, "Net Income", :]
+                self._income_statement.loc[:, "Net Income", :]
                 .T.rolling(trailing)
                 .sum()
                 .T,
@@ -3194,7 +3194,7 @@ class Ratios:
         else:
             income_quality_ratio = profitability_model.get_income_quality_ratio(
                 self._cash_flow_statement.loc[:, "Cash Flow from Operations", :],
-                self._cash_flow_statement.loc[:, "Net Income", :],
+                self._income_statement.loc[:, "Net Income", :],
             )
 
         if growth:
@@ -4095,7 +4095,7 @@ class Ratios:
                 .T.rolling(trailing)
                 .sum()
                 .T,
-                self._income_statement.loc[:, "Depreciation and Amortization", :]
+                self._cash_flow_statement.loc[:, "Depreciation and Amortization", :]
                 .T.rolling(trailing)
                 .sum()
                 .T,
@@ -4107,7 +4107,7 @@ class Ratios:
         else:
             interest_coverage_ratio = solvency_model.get_interest_coverage_ratio(
                 self._income_statement.loc[:, "Operating Income", :],
-                self._income_statement.loc[:, "Depreciation and Amortization", :],
+                self._cash_flow_statement.loc[:, "Depreciation and Amortization", :],
                 self._income_statement.loc[:, "Interest Expense", :],
             )
 
@@ -4438,7 +4438,7 @@ class Ratios:
                 .T.rolling(trailing)
                 .sum()
                 .T,
-                self._income_statement.loc[:, "Depreciation and Amortization", :]
+                self._cash_flow_statement.loc[:, "Depreciation and Amortization", :]
                 .T.rolling(trailing)
                 .sum()
                 .T,
@@ -4450,7 +4450,7 @@ class Ratios:
         else:
             net_debt_to_ebitda_ratio = solvency_model.get_net_debt_to_ebitda_ratio(
                 self._income_statement.loc[:, "Operating Income", :],
-                self._income_statement.loc[:, "Depreciation and Amortization", :],
+                self._cash_flow_statement.loc[:, "Depreciation and Amortization", :],
                 self._balance_sheet_statement.loc[:, "Net Debt", :],
             )
 
@@ -6225,7 +6225,7 @@ class Ratios:
         )
 
         operating_income = self._income_statement.loc[:, "Operating Income", :]
-        depreciation_and_amortization = self._income_statement.loc[
+        depreciation_and_amortization = self._cash_flow_statement.loc[
             :, "Depreciation and Amortization", :
         ]
 

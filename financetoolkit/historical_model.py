@@ -24,11 +24,21 @@ ENABLE_YFINANCE = yf_spec is not None
 
 TREASURY_LIMIT = 90
 
+INTERVAL_STR = {
+    "1min": "min",
+    "5min": "min",
+    "15min": "min",
+    "30min": "min",
+    "1hour": "h",
+    "4hour": "h",
+    "1d": "D",
+}
+
 
 def get_historical_data(
     tickers: list[str] | str,
     api_key: str | None = None,
-    source: str = "FinancialModelingPrep",
+    enforce_source: str = "FinancialModelingPrep",
     start: str | None = None,
     end: str | None = None,
     interval: str = "1d",
@@ -93,7 +103,7 @@ def get_historical_data(
     """
     empty_historical_data = pd.DataFrame(
         data=0,
-        index=pd.PeriodIndex(pd.date_range(start, end), freq="D"),
+        index=pd.PeriodIndex(pd.date_range(start, end), freq=INTERVAL_STR[interval]),
         columns=[
             "Open",
             "High",
@@ -120,6 +130,7 @@ def get_historical_data(
                 return_column=return_column,
                 sleep_timer=sleep_timer,
             )
+
         elif not api_key and interval in [
             "1min",
             "5min",
@@ -137,7 +148,7 @@ def get_historical_data(
                 "above affiliate link which also supports the project."
             )
         else:
-            if api_key and source == "FinancialModelingPrep":
+            if api_key and enforce_source in [None, "FinancialModelingPrep"]:
                 historical_data = fmp_model.get_historical_data(
                     ticker=ticker,
                     api_key=api_key,
@@ -154,17 +165,20 @@ def get_historical_data(
                 if not historical_data.empty:
                     fmp_tickers.append(ticker)
 
-            if source == "YahooFinance" or historical_data.empty:
-                if ENABLE_YFINANCE:
-                    historical_data = yfinance_model.get_historical_data(
-                        ticker=ticker,
-                        start=start,
-                        end=end,
-                        interval=interval,
-                        return_column=return_column,
-                        risk_free_rate=risk_free_rate,
-                        divide_ohlc_by=divide_ohlc_by,
-                    )
+            if (
+                enforce_source != "FinancialModelingPrep"
+                and historical_data.empty
+                and ENABLE_YFINANCE
+            ):
+                historical_data = yfinance_model.get_historical_data(
+                    ticker=ticker,
+                    start=start,
+                    end=end,
+                    interval=interval,
+                    return_column=return_column,
+                    risk_free_rate=risk_free_rate,
+                    divide_ohlc_by=divide_ohlc_by,
+                )
 
                 if not historical_data.empty:
                     yf_tickers.append(ticker)
@@ -229,7 +243,7 @@ def get_historical_data(
     if (
         yf_tickers
         and not fmp_tickers
-        and source == "FinancialModelingPrep"
+        and enforce_source == "FinancialModelingPrep"
         and show_errors
     ):
         logger.warning(
@@ -261,25 +275,25 @@ def get_historical_data(
 
     reorder_tickers = [ticker for ticker in tickers if ticker in historical_data_dict]
 
-    if not historical_data_dict:
-        raise ValueError("No data found for the given tickers.")
+    if historical_data_dict and len(no_data) != len(tickers):
+        historical_data = pd.concat(historical_data_dict).unstack(level=0)
+        historical_data = historical_data.reindex(reorder_tickers, level=1, axis=1)
 
-    historical_data = pd.concat(historical_data_dict).unstack(level=0)
-    historical_data = historical_data.reindex(reorder_tickers, level=1, axis=1)
+        if "Dividends" in historical_data.columns:
+            historical_data["Dividends"] = historical_data["Dividends"].fillna(0)
 
-    if "Dividends" in historical_data.columns:
-        historical_data["Dividends"] = historical_data["Dividends"].fillna(0)
+        if fill_nan:
+            # Interpolation is done when there are NaN values in the DataFrame
+            # while technically, that specific date doesn't have a value, it
+            # smoothens the result with limited impact on any metric.
+            historical_data = historical_data.interpolate(limit_area="inside")
 
-    if fill_nan:
-        # Interpolation is done when there are NaN values in the DataFrame
-        # while technically, that specific date doesn't have a value, it
-        # smoothens the result with limited impact on any metric.
-        historical_data = historical_data.interpolate(limit_area="inside")
+        if rounding:
+            historical_data = historical_data.round(rounding)
 
-    if rounding:
-        historical_data = historical_data.round(rounding)
+        return historical_data, no_data
 
-    return historical_data, no_data
+    return pd.DataFrame(), no_data
 
 
 def enrich_historical_data(

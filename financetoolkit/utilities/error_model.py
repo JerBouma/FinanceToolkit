@@ -107,6 +107,7 @@ def check_for_error_messages(
     """
 
     not_available = []
+    premium_query_parameter = []
     exclusive_endpoint = []
     special_endpoint = []
     bandwidth_limit_reach = []
@@ -117,6 +118,8 @@ def check_for_error_messages(
     no_errors = []
 
     for ticker, dataframe in dataset_dictionary.items():
+        if "PREMIUM QUERY PARAMETER" in dataframe.columns:
+            premium_query_parameter.append(ticker)
         if "EXCLUSIVE ENDPOINT" in dataframe.columns:
             exclusive_endpoint.append(ticker)
         elif "SPECIAL ENDPOINT" in dataframe.columns:
@@ -135,6 +138,15 @@ def check_for_error_messages(
             invalid_api_key.append(ticker)
         elif "NO ERRORS" in dataframe.columns:
             no_errors.append(ticker)
+
+    if premium_query_parameter:
+        logger.error(
+            "The following tickers are using a premium query parameter: %s.\n"
+            "This is not available in your current plan. Consider upgrading your plan to a higher plan. "
+            "You can get 15%% off by using the following affiliate link which also supports the project: "
+            "https://www.jeroenbouma.com/fmp",
+            ", ".join(premium_query_parameter),
+        )
 
     if exclusive_endpoint:
         logger.error(
@@ -214,8 +226,20 @@ def check_for_error_messages(
         )
 
     if delete_tickers:
+        # If any of the errors are found, remove the tickers from the dataset dictionary so that
+        # the user can continue using the program without having to worry about the errors.
         removed_tickers = set(
-            not_available + no_data + us_stocks_only + invalid_api_key + no_errors
+            premium_query_parameter
+            + exclusive_endpoint
+            + special_endpoint
+            + not_available
+            + bandwidth_limit_reach
+            + limit_reach
+            + us_stocks_only
+            + no_data
+            + us_stocks_only
+            + invalid_api_key
+            + no_errors
         )
 
         for ticker in removed_tickers:

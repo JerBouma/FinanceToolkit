@@ -1,3 +1,5 @@
+"""Fundamentals Model"""
+
 import importlib.util
 import threading
 import time
@@ -16,6 +18,8 @@ ENABLE_YFINANCE = yf_spec is not None
 
 logger = logger_model.get_logger()
 
+# pylint: disable=too-many-locals
+
 
 def collect_financial_statements(
     tickers: str | list[str],
@@ -28,7 +32,6 @@ def collect_financial_statements(
     fmp_statement_format: pd.DataFrame = pd.DataFrame(),
     fmp_statistics_format: pd.DataFrame = pd.DataFrame(),
     yf_statement_format: pd.DataFrame = pd.DataFrame(),
-    yf_statistics_format: pd.DataFrame = pd.DataFrame(),
     sleep_timer: bool = True,
     progress_bar: bool = True,
     user_subscription: str = "Free",
@@ -74,7 +77,9 @@ def collect_financial_statements(
             - no_data (list[str]): A list of tickers for which no data could be retrieved from any source.
     """
 
-    def worker(ticker, financial_statement_dict):
+    def worker(ticker, financial_statement_dict, enforce_source):
+        financial_statement_data = pd.DataFrame()
+
         if api_key and enforce_source in [None, "FinancialModelingPrep"]:
             financial_statement_data = fmp_model.get_financial_statement(
                 ticker=ticker,
@@ -94,9 +99,10 @@ def collect_financial_statements(
                 ] = financial_statement_data
 
         if enforce_source != "FinancialModelingPrep" and financial_statement_data.empty:
-            financial_statement_data = yfinance_model.get_financial_statement(
-                ticker=ticker, statement=statement, quarter=quarter
-            )
+            if ENABLE_YFINANCE:
+                financial_statement_data = yfinance_model.get_financial_statement(
+                    ticker=ticker, statement=statement, quarter=quarter
+                )
 
             if not financial_statement_data.empty:
                 yf_tickers.append(ticker)
@@ -147,7 +153,7 @@ def collect_financial_statements(
 
         thread = threading.Thread(
             target=worker,
-            args=(ticker, financial_statement_dict),
+            args=(ticker, financial_statement_dict, enforce_source),
         )
         thread.start()
         threads.append(thread)
@@ -158,7 +164,6 @@ def collect_financial_statements(
     fmp_financial_statements_total = pd.DataFrame()
     yf_financial_statements_total = pd.DataFrame()
     fmp_financial_statement_statistics = pd.DataFrame()
-    yf_financial_statement_statistics = pd.DataFrame()
 
     for source, _ in financial_statement_dict.items():
         # Check if there are any financial statements in the dataset
@@ -193,12 +198,6 @@ def collect_financial_statements(
                 financial_statement_dict[source], axis=0
             )
 
-            yf_financial_statement_statistics = (
-                normalization_model.convert_financial_statements(
-                    yf_financial_statements, yf_statistics_format, True
-                )
-            )
-
             yf_financial_statements_total = (
                 normalization_model.convert_financial_statements(
                     yf_financial_statements, yf_statement_format, True
@@ -207,38 +206,43 @@ def collect_financial_statements(
 
     if fmp_tickers and yf_tickers:
         logger.info(
-            f"The following tickers acquired {statement} data from FinancialModelingPrep: {', '.join(fmp_tickers)}"
+            "The following tickers acquired %s data from FinancialModelingPrep: %s",
+            statement,
+            ", ".join(fmp_tickers),
         )
         logger.info(
-            f"The following tickers acquired {statement} data from YahooFinance: {', '.join(yf_tickers)}"
+            "The following tickers acquired %s data from YahooFinance: %s",
+            statement,
+            ", ".join(yf_tickers),
         )
 
-    if yf_tickers and not fmp_tickers and source == "FinancialModelingPrep":
+    if yf_tickers and not fmp_tickers and enforce_source == "FinancialModelingPrep":
         logger.info(
             "No data found using FinancialModelingPrep, this is usually due to Bandwidth "
-            "API limits or usage of the Free plan. Therefore data was retrieved from YahooFinance instead for: "
-            f"{', '.join(yf_tickers)}"
+            "API limits or usage of the Free plan. Therefore data was retrieved from YahooFinance instead for: %s",
+            ", ".join(yf_tickers),
         )
 
     if no_data:
         if not ENABLE_YFINANCE:
             logger.info(
-                "Due to a missing optional dependency (yfinance) and your current FinancialModelingPrep plan, "
-                f"data for the following tickers could not be acquired: {', '.join(no_data)}\n"
-                "Enable this functionality by using:\033[1m pip install 'financetoolkit[yfinance]' \033[0m"
+            "Due to a missing optional dependency (yfinance) and your current FinancialModelingPrep plan, "
+            "data for the following tickers could not be acquired: %s\n"
+            "Enable this functionality by using:\033[1m pip install 'financetoolkit[yfinance]' \033[0m",
+            ", ".join(no_data),
             )
         else:
             logger.info(
-                f"No {statement} data found for the following tickers: {', '.join(no_data)}"
+            "No %s data found for the following tickers: %s",
+            statement,
+            ", ".join(no_data),
             )
 
     financial_statement_total = pd.concat(
         [fmp_financial_statements_total, yf_financial_statements_total], axis=0
     )
 
-    financial_statement_statistics = pd.concat(
-        [fmp_financial_statement_statistics, yf_financial_statement_statistics], axis=0
-    )
+    financial_statement_statistics = fmp_financial_statement_statistics
 
     try:
         financial_statement_total = financial_statement_total.astype(np.float64)
@@ -261,6 +265,7 @@ def collect_financial_statements(
         financial_statement_statistics.columns = pd.PeriodIndex(
             financial_statement_statistics.columns, freq="Y"
         )
+
         financial_statement_total.columns = pd.PeriodIndex(
             financial_statement_total.columns, freq="Y"
         )

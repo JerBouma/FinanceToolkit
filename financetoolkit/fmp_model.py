@@ -17,7 +17,7 @@ import requests
 from tqdm import tqdm
 from urllib3.exceptions import MaxRetryError
 
-from financetoolkit import helpers
+from financetoolkit import historical_model
 from financetoolkit.utilities import error_model, logger_model
 
 logger = logger_model.get_logger()
@@ -30,13 +30,6 @@ ENABLE_YFINANCE = yf_spec is not None
 logger = logger_model.get_logger()
 
 # pylint: disable=no-member,too-many-locals,too-many-lines
-
-try:
-    from tqdm import tqdm
-
-    ENABLE_TQDM = True
-except ImportError:
-    ENABLE_TQDM = False
 
 RETRY_LIMIT = 12
 
@@ -84,6 +77,8 @@ def get_financial_data(
         except (requests.exceptions.HTTPError, ValueError):
             error_message = response.text
 
+            if "Premium Query Parameter" in error_message:
+                return pd.DataFrame(columns=["PREMIUM QUERY PARAMETER"])
             if "Exclusive Endpoint" in error_message:
                 return pd.DataFrame(columns=["EXCLUSIVE ENDPOINT"])
             if "Special Endpoint" in error_message:
@@ -328,7 +323,7 @@ def get_historical_data(
     )
 
     try:
-        historical_data = helpers.get_financial_data(
+        historical_data = get_financial_data(
             url=historical_data_url,
             sleep_timer=sleep_timer,
             raw=True,
@@ -374,7 +369,7 @@ def get_historical_data(
 
     if include_dividends:
         try:
-            dividends = helpers.get_financial_data(
+            dividends = get_financial_data(
                 url=dividend_url,
                 sleep_timer=sleep_timer,
                 raw=True,
@@ -400,7 +395,7 @@ def get_historical_data(
         ~historical_data.index.duplicated(keep="first")
     ]
 
-    historical_data = helpers.enrich_historical_data(
+    historical_data = historical_model.enrich_historical_data(
         historical_data=historical_data,
         start=start,
         end=end,
@@ -481,7 +476,7 @@ def get_intraday_data(
     )
 
     try:
-        historical_data = helpers.get_financial_data(
+        historical_data = get_financial_data(
             url=historical_data_url,
             sleep_timer=sleep_timer,
             raw=True,
@@ -503,7 +498,7 @@ def get_intraday_data(
     if interval in ["1min", "5min", "15min", "30min"]:
         frequency = "min"
     elif interval in ["1hour", "4hour"]:
-        frequency = "H"
+        frequency = "h"
     else:
         raise ValueError(
             f"Interval {interval} is not valid. It should be either 1min, 5min, 15min, 30min, 1hour or 4hour."
@@ -528,7 +523,7 @@ def get_intraday_data(
         ~historical_data.index.duplicated(keep="first")
     ]
 
-    historical_data = helpers.enrich_historical_data(
+    historical_data = historical_model.enrich_historical_data(
         historical_data=historical_data,
         start=start,
         end=end,
@@ -636,7 +631,7 @@ def get_revenue_segmentation(
             f"https://financialmodelingprep.com/stable/{location}"
             f"?symbol={ticker}&period={period}&structure=flat&apikey={api_key}"
         )
-        revenue_segmentation_json = helpers.get_financial_data(
+        revenue_segmentation_json = get_financial_data(
             url=url,
             sleep_timer=sleep_timer,
             raw=True,
@@ -736,7 +731,7 @@ def get_revenue_segmentation(
 
     ticker_list_iterator = (
         tqdm(ticker_list, desc=f"Obtaining {method} segmentation data")
-        if ENABLE_TQDM & progress_bar
+        if progress_bar
         else ticker_list
     )
 
@@ -854,7 +849,7 @@ def get_analyst_estimates(
             "https://financialmodelingprep.com/api/v3/analyst-estimates/"
             f"{ticker}?period={period}&apikey={api_key}"
         )
-        analyst_estimates = helpers.get_financial_data(
+        analyst_estimates = get_financial_data(
             url=url, sleep_timer=sleep_timer, user_subscription=user_subscription
         )
 
@@ -945,7 +940,7 @@ def get_analyst_estimates(
 
     ticker_list_iterator = (
         tqdm(ticker_list, desc="Obtaining analyst estimates")
-        if ENABLE_TQDM & progress_bar
+        if progress_bar
         else ticker_list
     )
 
@@ -968,7 +963,7 @@ def get_analyst_estimates(
         dataset_dictionary=analyst_estimates_dict, user_subscription=user_subscription
     )
 
-    if analyst_estimates_dict:
+    if analyst_estimates_dict and len(no_data) != len(ticker_list):
         analyst_estimates_total = pd.concat(analyst_estimates_dict, axis=0)
 
         try:
@@ -983,6 +978,7 @@ def get_analyst_estimates(
                 "ratio calculations.",
                 error,
             )
+
         analyst_estimates_total.columns = pd.PeriodIndex(
             analyst_estimates_total.columns, freq="Q" if quarter else "Y"
         )
@@ -1032,9 +1028,7 @@ def get_profile(
 
     def worker(ticker, profile_dict):
         url = f"https://financialmodelingprep.com/api/v3/profile/{ticker}?apikey={api_key}"
-        profile_data = helpers.get_financial_data(
-            url=url, user_subscription=user_subscription
-        )
+        profile_data = get_financial_data(url=url, user_subscription=user_subscription)
 
         if profile_data.empty:
             no_data.append(ticker)
@@ -1088,7 +1082,7 @@ def get_profile(
 
     ticker_list_iterator = (
         tqdm(ticker_list, desc="Obtaining company profiles")
-        if ENABLE_TQDM & progress_bar
+        if progress_bar
         else ticker_list
     )
 
@@ -1159,9 +1153,7 @@ def get_quote(
         url = (
             f"https://financialmodelingprep.com/api/v3/quote/{ticker}?apikey={api_key}"
         )
-        quote_data = helpers.get_financial_data(
-            url=url, user_subscription=user_subscription
-        )
+        quote_data = get_financial_data(url=url, user_subscription=user_subscription)
 
         if quote_data.empty:
             no_data.append(ticker)
@@ -1207,7 +1199,7 @@ def get_quote(
 
     ticker_list_iterator = (
         tqdm(ticker_list, desc="Obtaining company quotes")
-        if ENABLE_TQDM & progress_bar
+        if progress_bar
         else ticker_list
     )
 
@@ -1260,9 +1252,7 @@ def get_rating(
 
     def worker(ticker, ratings_dict):
         url = f"https://financialmodelingprep.com/api/v3/historical-rating/{ticker}?l&apikey={api_key}"
-        ratings = helpers.get_financial_data(
-            url=url, user_subscription=user_subscription
-        )
+        ratings = get_financial_data(url=url, user_subscription=user_subscription)
 
         try:
             ratings = ratings.drop("symbol", axis=1).sort_values(
@@ -1309,7 +1299,7 @@ def get_rating(
 
     ticker_list_iterator = (
         tqdm(ticker_list, desc="Obtaining company ratings")
-        if ENABLE_TQDM & progress_bar
+        if progress_bar
         else ticker_list
     )
 
@@ -1378,7 +1368,7 @@ def get_earnings_calendar(
             "https://financialmodelingprep.com/api/v3/historical/earning_calendar/"
             f"{ticker}?apikey={api_key}"
         )
-        earnings_calendar = helpers.get_financial_data(
+        earnings_calendar = get_financial_data(
             url=url, sleep_timer=sleep_timer, user_subscription=user_subscription
         )
 
@@ -1439,7 +1429,7 @@ def get_earnings_calendar(
 
     ticker_list_iterator = (
         tqdm(ticker_list, desc="Obtaining earnings calendars")
-        if ENABLE_TQDM & progress_bar
+        if progress_bar
         else ticker_list
     )
 
@@ -1505,7 +1495,7 @@ def get_dividend_calendar(
             "https://financialmodelingprep.com/api/v3/historical-price-full/stock_dividend/"
             f"{ticker}?apikey={api_key}&from={start_date}&to={end_date}"
         )
-        dividend_calendar = helpers.get_financial_data(
+        dividend_calendar = get_financial_data(
             url=url,
             sleep_timer=sleep_timer,
             raw=True,
@@ -1564,7 +1554,7 @@ def get_dividend_calendar(
 
     ticker_list_iterator = (
         tqdm(ticker_list, desc="Obtaining dividend calendars")
-        if ENABLE_TQDM & progress_bar
+        if progress_bar
         else ticker_list
     )
 
@@ -1631,7 +1621,7 @@ def get_esg_scores(
             "https://financialmodelingprep.com/api/v4/esg-environmental-social-governance-data?"
             f"symbol={ticker}&apikey={api_key}"
         )
-        esg_scores = helpers.get_financial_data(
+        esg_scores = get_financial_data(
             url=url, sleep_timer=sleep_timer, user_subscription=user_subscription
         )
 
@@ -1695,7 +1685,7 @@ def get_esg_scores(
 
     ticker_list_iterator = (
         tqdm(ticker_list, desc="Obtaining ESG scores")
-        if ENABLE_TQDM & progress_bar
+        if  progress_bar
         else ticker_list
     )
 

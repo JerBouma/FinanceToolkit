@@ -23,6 +23,23 @@ def get_financial_statement(
     statement: str,
     quarter: bool = False,
 ):
+    """
+    Retrieves a specific financial statement (balance sheet, income statement, or cash flow statement)
+    for a given stock ticker using the yfinance library.
+
+    Args:
+        ticker (str): The stock ticker symbol (e.g., "AAPL" for Apple).
+        statement (str): The type of financial statement to retrieve.
+                         Must be one of 'balance', 'income', or 'cashflow'.
+        quarter (bool, optional): If True, retrieves quarterly data.
+                                  If False, retrieves yearly data. Defaults to False.
+
+    Returns:
+        pd.DataFrame: A pandas DataFrame containing the requested financial statement.
+                      The columns are periods (yearly or quarterly), and the rows are financial items.
+                      Returns an empty DataFrame if the data cannot be retrieved or if the
+                      ticker is invalid.
+    """
     period = "quarterly" if quarter else "yearly"
 
     if statement not in ["balance", "income", "cashflow"]:
@@ -45,6 +62,11 @@ def get_financial_statement(
         elif statement == "cashflow":
             # Get cash flow statement
             financial_statement = ticker_info.get_cash_flow(freq=period)
+        else:
+            raise ValueError(
+                "Please choose either 'balance', 'income', or "
+                "cashflow' for the statement parameter."
+            )
     except (HTTPError, URLError, RemoteDisconnected, IndexError, AttributeError):
         return pd.DataFrame()
 
@@ -103,10 +125,8 @@ def get_historical_data(
     if end is not None:
         # Additional data is collected to ensure return calculations are correct
         end_date = datetime.strptime(end, "%Y-%m-%d") + timedelta(days=1 * 365)
-        end_timestamp = int(end_date.timestamp())
     else:
         end_date = datetime.today()
-        end_timestamp = int(end_date.timestamp())
         end = end_date.strftime("%Y-%m-%d")
 
     if start is not None:
@@ -117,8 +137,6 @@ def get_historical_data(
             raise ValueError(
                 f"Start date ({start_date}) must be before end date ({end_date}))"
             )
-
-        start_timestamp = int(start_date.timestamp())
     else:
         start_date = datetime.now() - timedelta(days=10 * 365)
         start = start_date.strftime("%Y-%m-%d")
@@ -126,21 +144,18 @@ def get_historical_data(
         if start_date > end_date:
             start_date = end_date - timedelta(days=10 * 365)
 
-        start_timestamp = int(start_date.timestamp())
-
     if interval in ["yearly", "quarterly"]:
         interval = "1d"
 
     try:
-        historical_data = yf.download(
-            tickers=ticker,
-            progress=False,
-            actions=True,
-            start=start_timestamp,
-            end=end_timestamp,
+
+        historical_data = yf.Ticker(ticker).history(
+            start=start,
+            end=end,
             interval=interval,
+            actions=True,
             auto_adjust=True,
-            multi_level_index=False,
+            repair=True,
         )
 
         # Due to an odd error, it can sometimes occur that the columns are duplicated

@@ -83,14 +83,18 @@ def convert_financial_statements(
         except KeyError:
             continue
 
+    # Add missing columns if applicable. Fill these with NaN.
+    for name in statement_format.index:
+        for ticker in financial_statements.index.unique(level=0):
+            if name not in financial_statements.loc[ticker].index:
+                financial_statements.loc[(ticker, name), :] = np.nan
+
     # Reorder naming based on the order of statement_format
     ordered_naming = {}
     for index_name in statement_format.index:
-        for original_name, _ in naming.items():
-            if index_name == original_name or (
-                original_name in naming and naming[original_name] == index_name
-            ):
-                ordered_naming[original_name] = naming[original_name]
+        for original_name, mapped_name in naming.items():
+            if index_name in (original_name, mapped_name):
+                ordered_naming[original_name] = mapped_name
                 break
 
     naming = ordered_naming

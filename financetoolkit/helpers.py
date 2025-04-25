@@ -3,99 +3,18 @@
 __docformat__ = "google"
 
 import inspect
-import time
 import warnings
 from functools import wraps
-from io import StringIO
 
 import numpy as np
 import pandas as pd
-import requests
-from urllib3.exceptions import MaxRetryError
 
-from financetoolkit import logger_model
+from financetoolkit.utilities import logger_model
 
 logger = logger_model.get_logger()
 
-RETRY_LIMIT = 12
 
 # pylint: disable=comparison-with-itself,too-many-locals,protected-access
-
-
-def get_financial_data(
-    url: str,
-    sleep_timer: bool = True,
-    raw: bool = False,
-    user_subscription: str = "Free",
-) -> pd.DataFrame:
-    """
-    Collects the financial data from the FinancialModelingPrep API. This is a
-    separate function to properly segregate the different types of errors that can occur.
-
-    Args:
-        ticker (str): The company ticker (for example: "AAPL")
-        url (str): The url to retrieve the data from.
-        sleep_timer (bool): Whether to set a sleep timer when the rate limit is reached. Note that this only works
-        if you have a Premium subscription (Starter or higher) from FinancialModelingPrep. Defaults to False.
-        raw (bool): Whether to return the raw JSON data. Defaults to False.
-
-    Returns:
-        pd.DataFrame: A DataFrame containing the financial data.
-    """
-    error_retry_counter = 0
-    limit_retry_counter = 0
-
-    while True:
-        try:
-            response = requests.get(url, timeout=60)
-            response.raise_for_status()
-
-            if raw:
-                return response.json()
-
-            json_io = StringIO(response.text)
-
-            financial_data = pd.read_json(json_io)
-
-            return financial_data
-
-        except (requests.exceptions.HTTPError, ValueError):
-            error_message = response.text
-
-            if "Exclusive Endpoint" in error_message:
-                return pd.DataFrame(columns=["EXCLUSIVE ENDPOINT"])
-            if "Special Endpoint" in error_message:
-                return pd.DataFrame(columns=["SPECIAL ENDPOINT"])
-            if "Bandwidth Limit Reach" in error_message:
-                return pd.DataFrame(columns=["BANDWIDTH LIMIT REACH"])
-            if "Limit Reach" in error_message:
-                if (
-                    sleep_timer
-                    and limit_retry_counter < RETRY_LIMIT
-                    and user_subscription != "Free"
-                ):
-                    time.sleep(5.01)
-                    limit_retry_counter += 1
-                else:
-                    return pd.DataFrame(columns=["LIMIT REACH"])
-            if "US stocks only" in error_message:
-                return pd.DataFrame(columns=["US STOCKS ONLY"])
-
-            if "Invalid API KEY." in error_message:
-                return pd.DataFrame(columns=["INVALID API KEY"])
-
-        except (
-            MaxRetryError,
-            requests.exceptions.SSLError,
-            requests.exceptions.ConnectionError,
-        ):
-            # When the connection is refused, retry the request 12 times
-            # and if it doesn't work, then return an empty dataframe
-            if error_retry_counter == RETRY_LIMIT:
-                return pd.DataFrame(columns=["NO ERRORS"])
-
-            error_retry_counter += 1
-            time.sleep(5)
 
 
 def calculate_growth(

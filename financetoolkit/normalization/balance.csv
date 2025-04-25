@@ -2,11 +2,11 @@ Balance,Generic
 cashAndCashEquivalents,Cash and Cash Equivalents
 shortTermInvestments,Short Term Investments
 cashAndShortTermInvestments,Cash and Short Term Investments
-accountsReceivables, Accounts Receivable
+accountsReceivables,Accounts Receivable
 otherReceivables, Other Receivables
 netReceivables,Net Receivables
 inventory,Inventory
-prepaids, Prepaids
+prepaids,Prepaids
 otherCurrentAssets,Other Current Assets
 totalCurrentAssets,Total Current Assets
 propertyPlantEquipmentNet,"Property, Plant and Equipment"

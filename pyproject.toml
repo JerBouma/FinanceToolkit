@@ -49,6 +49,7 @@ scikit-learn = "^1.6"
 requests = "^2.32"
 yfinance = { version = "*", optional = true }
 openpyxl = "^3.1"
+tqdm = "^4.67"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.3.5"

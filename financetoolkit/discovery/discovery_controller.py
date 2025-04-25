@@ -4,7 +4,7 @@ __docformat__ = "google"
 
 import pandas as pd
 
-from financetoolkit import helpers
+from financetoolkit import fmp_model
 from financetoolkit.discovery import discovery_model
 
 # pylint: disable=too-many-instance-attributes,too-few-public-methods,too-many-lines,
@@ -69,8 +69,8 @@ class Discovery:
         # This tests the API key to determine the subscription plan. This is relevant for the sleep timer
         # but also for other components of the Toolkit. This prevents wait timers from occurring while
         # it wouldn't result to any other answer than a rate limit error.
-        determine_plan = helpers.get_financial_data(
-            url=f"https://financialmodelingprep.com/api/v3/income-statement/AAPL?period=quarter&apikey={api_key}",
+        determine_plan = fmp_model.get_financial_data(
+            url=f"https://financialmodelingprep.com/stable/income-statement?symbol=AAPL&apikey={api_key}&limit=10",
             sleep_timer=False,
             user_subscription="Free",
         )
@@ -78,14 +78,18 @@ class Discovery:
         self._fmp_plan = "Premium"
 
         for option in [
-            "NOT AVAILABLE",
+            "PREMIUM QUERY PARAMETER",
+            "EXCLUSIVE ENDPOINT",
             "NO DATA",
             "BANDWIDTH LIMIT REACH",
             "INVALID API KEY",
+            "LIMIT REACH",
         ]:
             if option in determine_plan:
                 self._fmp_plan = "Free"
                 break
+        else:
+            self._fmp_plan = "Premium"
 
     def search_instruments(self, query: str | None = None) -> pd.DataFrame:
         """

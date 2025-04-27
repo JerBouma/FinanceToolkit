@@ -1,43 +1,52 @@
 ,,2020,2021,2022,2023
 AAPL,Net Income,,0.6492,0.0541,-0.0281
 AAPL,Depreciation and Amortization,,0.0206,-0.016,0.0374
-AAPL,Deferred Income Tax,,21.2047,-1.1875,4.8045
+AAPL,Deferred Income Tax,,21.2047,-1.1875,-1.0
 AAPL,Stock Based Compensation,,0.1577,0.1432,0.1986
-AAPL,Change in Working Capital,,-1.8631,-1.2443,-5.3292
-AAPL,Accounts Receivables,,-2.4638,-0.82,-0.0741
-AAPL,Inventory,,19.8031,-1.5617,-2.0903
-AAPL,Accounts Payables,,-4.0345,-0.2335,-1.1999
-AAPL,Other Working Capital,,-2.5091,0.7694,-1.6568
-AAPL,Other Non Cash Items,,0.5155,-1.7551,-33.5135
+AAPL,Change in Working Capital,,-1.8631,-1.2443,-6.4808
+AAPL,Change in Accounts Receivables,,-2.6562,-0.334,-0.9554
+AAPL,Change in Inventory,,19.8031,-1.5617,-2.0903
+AAPL,Change in Accounts Payables,,-4.0345,-0.2335,-1.1999
+AAPL,Change in Other Working Capital,,-1.4024,-0.3139,5.8201
+AAPL,Other Non Cash Items,,0.5155,-1.7551,-21.0631
 AAPL,Cash Flow from Operations,,0.2896,0.1741,-0.095
-AAPL,"Property, Plant and Equipment",,0.5166,-0.034,-1.0
+AAPL,"Property, Plant and Equipment",,0.5166,-0.034,0.0234
 AAPL,Acquisitions,,-0.9783,8.2727,-1.0
-AAPL,Purchases of Investments,,-0.0485,-0.2979,-0.6163
-AAPL,Sales of Investments,,-0.1162,-0.3674,-0.3243
-AAPL,Other Investing Activities,,-0.555,4.0568,5.9079
+AAPL,Purchases of Investments,,-0.0468,-0.2979,-0.6163
+AAPL,Sales of Investments,,-0.1155,-0.3674,-0.3243
+AAPL,Other Investing Activities,,-0.5765,4.4182,-0.3591
 AAPL,Cash Flow from Investing,,2.3912,0.5369,-1.1657
-AAPL,Debt Repayment,,-0.3562,0.0906,-0.5831
+AAPL,Net Debt Issued,,3.6591,-1.3503,1.4279
+AAPL,Long Term Debt Issued,,2.3631,-1.3503,0.4524
+AAPL,Short Term Debt Issued,,-2.0613,2.8699,-2.0058
+AAPL,Net Stock Issued,,0.2787,-0.0338,-0.1326
+AAPL,Net Common Stock Issued,,0.1881,0.0399,-0.1326
 AAPL,Common Stock Issued,,0.2557,-1.0,
 AAPL,Common Stock Purchased,,0.1881,0.0399,-0.1326
+AAPL,Net Preferred Stock Issued,,-inf,-1.0,
+AAPL,Common Dividends Paid,,0.0274,0.0259,0.0124
+AAPL,Preferred Dividends Paid,,,,
 AAPL,Dividends Paid,,0.0274,0.0259,0.0124
-AAPL,Other Financing Activities,,0.1946,-0.7938,-4.9299
+AAPL,Other Financing Activities,,-1.6938,-2.2152,1.4761
 AAPL,Cash Flow from Financing,,0.0752,0.1863,-0.0204
 AAPL,Forex Changes on Cash,,,,
 AAPL,Net Change in Cash,,-0.6301,1.8373,-1.5259
 AAPL,Cash End of Period,,-0.097,-0.3048,0.2306
 AAPL,Cash Beginning of Period,,-0.2078,-0.097,-0.3048
 AAPL,Operating Cash Flow,,0.2896,0.1741,-0.095
-AAPL,Capital Expenditure,,0.5166,-0.034,-1.0
-AAPL,Free Cash Flow,,0.267,0.1989,-0.0081
+AAPL,Capital Expenditure,,0.5166,-0.034,0.0234
+AAPL,Free Cash Flow,,0.267,0.1989,-0.1064
+AAPL,Income Taxes Paid,,1.6718,-0.229,-0.0457
+AAPL,Interest Paid,,-0.1049,0.0662,0.3274
 MSFT,Net Income,,0.3837,0.1872,-0.0052
 MSFT,Depreciation and Amortization,,-0.0867,0.2374,-0.0414
 MSFT,Deferred Income Tax,,-0.9586,37.0133,0.0626
 MSFT,Stock Based Compensation,,0.1567,0.2262,0.2811
 MSFT,Change in Working Capital,,-1.4358,-1.4765,-6.3543
-MSFT,Accounts Receivables,,1.5149,0.0545,-0.402
-MSFT,Inventory,,-5.3869,0.5237,-2.106
-MSFT,Accounts Payables,,-0.0729,0.0518,-1.9246
-MSFT,Other Working Capital,,1.2638,0.5672,-0.4179
+MSFT,Change in Accounts Receivables,,1.5149,0.0545,-0.402
+MSFT,Change in Inventory,,-5.3869,0.5237,-2.106
+MSFT,Change in Accounts Payables,,-0.0729,0.0518,-1.9246
+MSFT,Change in Other Working Capital,,1.2638,0.5672,-0.4179
 MSFT,Other Non Cash Items,,4.7032,-0.6725,-1.4792
 MSFT,Cash Flow from Operations,,0.2648,0.1602,-0.0163
 MSFT,"Property, Plant and Equipment",,0.3355,0.1583,0.1767
@@ -46,9 +55,16 @@ MSFT,Purchases of Investments,,-0.1848,-0.5796,0.4232
 MSFT,Sales of Investments,,-0.2182,-0.3177,0.0662
 MSFT,Other Investing Activities,,-0.2571,2.064,0.103
 MSFT,Cash Flow from Investing,,1.2562,0.0991,-0.2518
-MSFT,Debt Repayment,,-0.3204,1.4061,-0.6952
+MSFT,Net Debt Issued,,-0.3204,1.4061,-0.6952
+MSFT,Long Term Debt Issued,,-0.3204,1.4061,-0.6952
+MSFT,Short Term Debt Issued,,,,
+MSFT,Net Stock Issued,,0.1881,0.201,-0.3395
+MSFT,Net Common Stock Issued,,0.1881,0.201,-0.3395
 MSFT,Common Stock Issued,,0.2606,0.0874,0.0136
 MSFT,Common Stock Purchased,,0.1923,0.1939,-0.3196
+MSFT,Net Preferred Stock Issued,,,,
+MSFT,Common Dividends Paid,,0.0914,0.0977,0.0918
+MSFT,Preferred Dividends Paid,,,,
 MSFT,Dividends Paid,,0.0914,0.0977,0.0918
 MSFT,Other Financing Activities,,-0.3274,-0.6579,0.1657
 MSFT,Cash Flow from Financing,,0.0533,0.2143,-0.2538
@@ -59,3 +75,5 @@ MSFT,Cash Beginning of Period,,0.1955,0.0477,-0.0206
 MSFT,Operating Cash Flow,,0.2648,0.1602,-0.0163
 MSFT,Capital Expenditure,,0.3355,0.1583,0.1767
 MSFT,Free Cash Flow,,0.2406,0.1609,-0.0871
+MSFT,Income Taxes Paid,,,,
+MSFT,Interest Paid,,,,

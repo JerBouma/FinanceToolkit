@@ -1,13 +1,13 @@
 ,,,2020,2021,2022,2023
-AAPL,Share Price,Lag 1,,0.3465,-0.2641,0.0
-AAPL,Share Price,Lag 2,,,-0.009,-0.2641
+AAPL,Share Price,Lag 1,,0.3465,-0.264,0.0
+AAPL,Share Price,Lag 2,,,-0.009,-0.264
 AAPL,Share Price,Lag 3,,,,-0.009
-AAPL,Market Capitalization,Lag 1,,0.2956,-0.2876,0.0
+AAPL,Market Capitalization,Lag 1,,0.2955,-0.2876,0.0
 AAPL,Market Capitalization,Lag 2,,,-0.077,-0.2876
 AAPL,Market Capitalization,Lag 3,,,,-0.077
-AAPL,Total Debt,Lag 1,,0.1092,-0.0373,-0.1566
-AAPL,Total Debt,Lag 2,,,0.0679,-0.188
-AAPL,Total Debt,Lag 3,,,,-0.0993
+AAPL,Total Debt,Lag 1,,0.1165,-0.0296,-0.1615
+AAPL,Total Debt,Lag 2,,,0.0834,-0.1863
+AAPL,Total Debt,Lag 3,,,,-0.0915
 AAPL,Minority Interest,Lag 1,,,,
 AAPL,Minority Interest,Lag 2,,,,
 AAPL,Minority Interest,Lag 3,,,,
@@ -17,15 +17,15 @@ AAPL,Preferred Equity,Lag 3,,,,
 AAPL,Cash and Cash Equivalents,Lag 1,,-0.0809,-0.3232,0.2672
 AAPL,Cash and Cash Equivalents,Lag 2,,,-0.378,-0.1424
 AAPL,Cash and Cash Equivalents,Lag 3,,,,-0.2118
-AAPL,Enterprise Value,Lag 1,,0.2927,-0.2769,0.0
-AAPL,Enterprise Value,Lag 2,,,-0.0653,-0.2769
-AAPL,Enterprise Value,Lag 3,,,,-0.0653
-MSFT,Share Price,Lag 1,,0.5248,-0.2803,0.0
-MSFT,Share Price,Lag 2,,,0.0974,-0.2803
-MSFT,Share Price,Lag 3,,,,0.0974
+AAPL,Enterprise Value,Lag 1,,0.2923,-0.2756,0.0
+AAPL,Enterprise Value,Lag 2,,,-0.0638,-0.2756
+AAPL,Enterprise Value,Lag 3,,,,-0.0638
+MSFT,Share Price,Lag 1,,0.5248,-0.2802,0.0
+MSFT,Share Price,Lag 2,,,0.0975,-0.2802
+MSFT,Share Price,Lag 3,,,,0.0975
 MSFT,Market Capitalization,Lag 1,,0.5099,-0.2867,0.0
-MSFT,Market Capitalization,Lag 2,,,0.077,-0.2867
-MSFT,Market Capitalization,Lag 3,,,,0.077
+MSFT,Market Capitalization,Lag 2,,,0.0771,-0.2867
+MSFT,Market Capitalization,Lag 3,,,,0.0771
 MSFT,Total Debt,Lag 1,,-0.0454,-0.096,-0.0213
 MSFT,Total Debt,Lag 2,,,-0.137,-0.1152
 MSFT,Total Debt,Lag 3,,,,-0.1554
@@ -38,6 +38,6 @@ MSFT,Preferred Equity,Lag 3,,,,
 MSFT,Cash and Cash Equivalents,Lag 1,,0.0477,-0.0206,1.4911
 MSFT,Cash and Cash Equivalents,Lag 2,,,0.0261,1.4398
 MSFT,Cash and Cash Equivalents,Lag 3,,,,1.5563
-MSFT,Enterprise Value,Lag 1,,0.4907,-0.2831,0.0
+MSFT,Enterprise Value,Lag 1,,0.4905,-0.2831,0.0
 MSFT,Enterprise Value,Lag 2,,,0.0686,-0.2831
 MSFT,Enterprise Value,Lag 3,,,,0.0686

@@ -1,17 +1,17 @@
 ,,2021,2022,2023
 AAPL,Days of Inventory Outstanding,,-0.0508,-0.0242
-AAPL,Days of Sales Outstanding,,0.0648,-0.2137
-AAPL,Operating Cycle,,0.0325,0.1878
+AAPL,Days of Sales Outstanding,,0.0821,0.0355
+AAPL,Operating Cycle,,0.2412,0.1658
 AAPL,Days of Accounts Payable Outstanding,,0.0733,0.0632
-AAPL,Cash Conversion Cycle,,0.1266,0.5047
+AAPL,Cash Conversion Cycle,,0.0913,0.0878
 AAPL,Cash Conversion Efficiency,,0.0315,0.0054
-AAPL,Receivables Turnover,,0.0647,-0.2135
+AAPL,Receivables Turnover,,0.0816,0.0363
 AAPL,Inventory Turnover Ratio,,-0.031,-0.0209
 AAPL,Accounts Payable Turnover Ratio,,-0.143,-0.1014
 AAPL,SGA-to-Revenue Ratio,,-0.0535,0.0388
 AAPL,Fixed Asset Turnover,,0.0853,0.0401
 AAPL,Asset Turnover Ratio,,0.1384,0.0207
-AAPL,Operating Ratio,,-0.0369,-0.0001
+AAPL,Operating Ratio,,-0.0366,-0.0001
 MSFT,Days of Inventory Outstanding,,0.2046,-0.1251
 MSFT,Days of Sales Outstanding,,-0.0023,0.0087
 MSFT,Operating Cycle,,0.0957,0.0101

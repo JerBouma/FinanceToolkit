@@ -7,7 +7,11 @@ historical = pd.read_pickle("tests/datasets/historical_dataset.pickle")
 risk_free_rate = pd.read_pickle("tests/datasets/risk_free_rate.pickle")
 
 toolkit = Toolkit(
-    tickers=["AAPL", "MSFT"], historical=historical, convert_currency=False
+    tickers=["AAPL", "MSFT"],
+    historical=historical,
+    convert_currency=False,
+    start_date="2019-12-31",
+    end_date="2023-01-01",
 )
 
 toolkit._daily_risk_free_rate = risk_free_rate

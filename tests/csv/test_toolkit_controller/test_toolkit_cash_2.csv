@@ -5,66 +5,87 @@ AAPL,Net Income,Lag 3,,,,0.6895
 AAPL,Depreciation and Amortization,Lag 1,,0.0206,-0.016,0.0374
 AAPL,Depreciation and Amortization,Lag 2,,,0.0043,0.0208
 AAPL,Depreciation and Amortization,Lag 3,,,,0.0419
-AAPL,Deferred Income Tax,Lag 1,,21.2047,-1.1875,4.8045
-AAPL,Deferred Income Tax,Lag 2,,,-5.1628,-2.0882
-AAPL,Deferred Income Tax,Lag 3,,,,-25.1628
+AAPL,Deferred Income Tax,Lag 1,,21.2047,-1.1875,-1.0
+AAPL,Deferred Income Tax,Lag 2,,,-5.1628,-1.0
+AAPL,Deferred Income Tax,Lag 3,,,,-1.0
 AAPL,Stock Based Compensation,Lag 1,,0.1577,0.1432,0.1986
 AAPL,Stock Based Compensation,Lag 2,,,0.3235,0.3702
 AAPL,Stock Based Compensation,Lag 3,,,,0.5863
-AAPL,Change in Working Capital,Lag 1,,-1.8631,-1.2443,-5.3292
-AAPL,Change in Working Capital,Lag 2,,,-0.7891,0.0578
-AAPL,Change in Working Capital,Lag 3,,,,-1.913
-AAPL,Accounts Receivables,Lag 1,,-2.4638,-0.82,-0.0741
-AAPL,Accounts Receivables,Lag 2,,,-1.2636,-0.8333
-AAPL,Accounts Receivables,Lag 3,,,,-1.244
-AAPL,Inventory,Lag 1,,19.8031,-1.5617,-2.0903
-AAPL,Inventory,Lag 2,,,-12.685,-0.3876
-AAPL,Inventory,Lag 3,,,,11.7402
-AAPL,Accounts Payables,Lag 1,,-4.0345,-0.2335,-1.1999
-AAPL,Accounts Payables,Lag 2,,,-3.3259,-1.1533
-AAPL,Accounts Payables,Lag 3,,,,-0.535
-AAPL,Other Working Capital,Lag 1,,-2.5091,0.7694,-1.6568
-AAPL,Other Working Capital,Lag 2,,,-3.6702,-2.1622
-AAPL,Other Working Capital,Lag 3,,,,0.7539
-AAPL,Other Non Cash Items,Lag 1,,0.5155,-1.7551,-33.5135
-AAPL,Other Non Cash Items,Lag 2,,,-2.1443,23.551
-AAPL,Other Non Cash Items,Lag 3,,,,36.2062
+AAPL,Change in Working Capital,Lag 1,,-1.8631,-1.2443,-6.4808
+AAPL,Change in Working Capital,Lag 2,,,-0.7891,0.3392
+AAPL,Change in Working Capital,Lag 3,,,,-2.1559
+AAPL,Change in Accounts Receivables,Lag 1,,-2.6562,-0.334,-0.9554
+AAPL,Change in Accounts Receivables,Lag 2,,,-2.1031,-0.9703
+AAPL,Change in Accounts Receivables,Lag 3,,,,-1.0492
+AAPL,Change in Inventory,Lag 1,,19.8031,-1.5617,-2.0903
+AAPL,Change in Inventory,Lag 2,,,-12.685,-0.3876
+AAPL,Change in Inventory,Lag 3,,,,11.7402
+AAPL,Change in Accounts Payables,Lag 1,,-4.0345,-0.2335,-1.1999
+AAPL,Change in Accounts Payables,Lag 2,,,-3.3259,-1.1533
+AAPL,Change in Accounts Payables,Lag 3,,,,-0.535
+AAPL,Change in Other Working Capital,Lag 1,,-1.4024,-0.3139,5.8201
+AAPL,Change in Other Working Capital,Lag 2,,,-1.2761,3.679
+AAPL,Change in Other Working Capital,Lag 3,,,,-2.8829
+AAPL,Other Non Cash Items,Lag 1,,0.5155,-1.7551,-21.0631
+AAPL,Other Non Cash Items,Lag 2,,,-2.1443,14.1497
+AAPL,Other Non Cash Items,Lag 3,,,,21.9588
 AAPL,Cash Flow from Operations,Lag 1,,0.2896,0.1741,-0.095
 AAPL,Cash Flow from Operations,Lag 2,,,0.5141,0.0625
 AAPL,Cash Flow from Operations,Lag 3,,,,0.3702
-AAPL,"Property, Plant and Equipment",Lag 1,,0.5166,-0.034,-1.0
-AAPL,"Property, Plant and Equipment",Lag 2,,,0.465,-1.0
-AAPL,"Property, Plant and Equipment",Lag 3,,,,-1.0
+AAPL,"Property, Plant and Equipment",Lag 1,,0.5166,-0.034,0.0234
+AAPL,"Property, Plant and Equipment",Lag 2,,,0.465,-0.0114
+AAPL,"Property, Plant and Equipment",Lag 3,,,,0.4994
 AAPL,Acquisitions,Lag 1,,-0.9783,8.2727,-1.0
 AAPL,Acquisitions,Lag 2,,,-0.7992,-1.0
 AAPL,Acquisitions,Lag 3,,,,-1.0
-AAPL,Purchases of Investments,Lag 1,,-0.0485,-0.2979,-0.6163
-AAPL,Purchases of Investments,Lag 2,,,-0.332,-0.7306
-AAPL,Purchases of Investments,Lag 3,,,,-0.7437
-AAPL,Sales of Investments,Lag 1,,-0.1162,-0.3674,-0.3243
-AAPL,Sales of Investments,Lag 2,,,-0.4409,-0.5726
-AAPL,Sales of Investments,Lag 3,,,,-0.6222
-AAPL,Other Investing Activities,Lag 1,,-0.555,4.0568,5.9079
-AAPL,Other Investing Activities,Lag 2,,,1.2503,33.9318
-AAPL,Other Investing Activities,Lag 3,,,,14.5449
+AAPL,Purchases of Investments,Lag 1,,-0.0468,-0.2979,-0.6163
+AAPL,Purchases of Investments,Lag 2,,,-0.3307,-0.7306
+AAPL,Purchases of Investments,Lag 3,,,,-0.7432
+AAPL,Sales of Investments,Lag 1,,-0.1155,-0.3674,-0.3243
+AAPL,Sales of Investments,Lag 2,,,-0.4405,-0.5726
+AAPL,Sales of Investments,Lag 3,,,,-0.6219
+AAPL,Other Investing Activities,Lag 1,,-0.5765,4.4182,-0.3591
+AAPL,Other Investing Activities,Lag 2,,,1.2948,2.4727
+AAPL,Other Investing Activities,Lag 3,,,,0.4708
 AAPL,Cash Flow from Investing,Lag 1,,2.3912,0.5369,-1.1657
 AAPL,Cash Flow from Investing,Lag 2,,,4.2119,-1.2547
 AAPL,Cash Flow from Investing,Lag 3,,,,-1.8638
-AAPL,Debt Repayment,Lag 1,,-0.3562,0.0906,-0.5831
-AAPL,Debt Repayment,Lag 2,,,-0.2979,-0.5454
-AAPL,Debt Repayment,Lag 3,,,,-0.7073
+AAPL,Net Debt Issued,Lag 1,,3.6591,-1.3503,1.4279
+AAPL,Net Debt Issued,Lag 2,,,-2.6319,-1.8504
+AAPL,Net Debt Issued,Lag 3,,,,-4.962
+AAPL,Long Term Debt Issued,Lag 1,,2.3631,-1.3503,0.4524
+AAPL,Long Term Debt Issued,Lag 2,,,-2.1779,-1.5087
+AAPL,Long Term Debt Issued,Lag 3,,,,-2.7109
+AAPL,Short Term Debt Issued,Lag 1,,-2.0613,2.8699,-2.0058
+AAPL,Short Term Debt Issued,Lag 2,,,-5.107,-4.8924
+AAPL,Short Term Debt Issued,Lag 3,,,,3.1308
+AAPL,Net Stock Issued,Lag 1,,0.2787,-0.0338,-0.1326
+AAPL,Net Stock Issued,Lag 2,,,0.2356,-0.1619
+AAPL,Net Stock Issued,Lag 3,,,,0.0718
+AAPL,Net Common Stock Issued,Lag 1,,0.1881,0.0399,-0.1326
+AAPL,Net Common Stock Issued,Lag 2,,,0.2356,-0.098
+AAPL,Net Common Stock Issued,Lag 3,,,,0.0718
 AAPL,Common Stock Issued,Lag 1,,0.2557,-1.0,
 AAPL,Common Stock Issued,Lag 2,,,-1.0,-1.0
 AAPL,Common Stock Issued,Lag 3,,,,-1.0
 AAPL,Common Stock Purchased,Lag 1,,0.1881,0.0399,-0.1326
 AAPL,Common Stock Purchased,Lag 2,,,0.2356,-0.098
 AAPL,Common Stock Purchased,Lag 3,,,,0.0718
+AAPL,Net Preferred Stock Issued,Lag 1,,-inf,-1.0,
+AAPL,Net Preferred Stock Issued,Lag 2,,,,-1.0
+AAPL,Net Preferred Stock Issued,Lag 3,,,,
+AAPL,Common Dividends Paid,Lag 1,,0.0274,0.0259,0.0124
+AAPL,Common Dividends Paid,Lag 2,,,0.054,0.0386
+AAPL,Common Dividends Paid,Lag 3,,,,0.067
+AAPL,Preferred Dividends Paid,Lag 1,,,,
+AAPL,Preferred Dividends Paid,Lag 2,,,,
+AAPL,Preferred Dividends Paid,Lag 3,,,,
 AAPL,Dividends Paid,Lag 1,,0.0274,0.0259,0.0124
 AAPL,Dividends Paid,Lag 2,,,0.054,0.0386
 AAPL,Dividends Paid,Lag 3,,,,0.067
-AAPL,Other Financing Activities,Lag 1,,0.1946,-0.7938,-4.9299
-AAPL,Other Financing Activities,Lag 2,,,-0.7537,-1.8103
-AAPL,Other Financing Activities,Lag 3,,,,-1.9679
+AAPL,Other Financing Activities,Lag 1,,-1.6938,-2.2152,1.4761
+AAPL,Other Financing Activities,Lag 2,,,-0.1569,-4.009
+AAPL,Other Financing Activities,Lag 3,,,,1.0875
 AAPL,Cash Flow from Financing,Lag 1,,0.0752,0.1863,-0.0204
 AAPL,Cash Flow from Financing,Lag 2,,,0.2756,0.1621
 AAPL,Cash Flow from Financing,Lag 3,,,,0.2496
@@ -83,12 +104,18 @@ AAPL,Cash Beginning of Period,Lag 3,,,,-0.5027
 AAPL,Operating Cash Flow,Lag 1,,0.2896,0.1741,-0.095
 AAPL,Operating Cash Flow,Lag 2,,,0.5141,0.0625
 AAPL,Operating Cash Flow,Lag 3,,,,0.3702
-AAPL,Capital Expenditure,Lag 1,,0.5166,-0.034,-1.0
-AAPL,Capital Expenditure,Lag 2,,,0.465,-1.0
-AAPL,Capital Expenditure,Lag 3,,,,-1.0
-AAPL,Free Cash Flow,Lag 1,,0.267,0.1989,-0.0081
-AAPL,Free Cash Flow,Lag 2,,,0.519,0.1892
-AAPL,Free Cash Flow,Lag 3,,,,0.5068
+AAPL,Capital Expenditure,Lag 1,,0.5166,-0.034,0.0234
+AAPL,Capital Expenditure,Lag 2,,,0.465,-0.0114
+AAPL,Capital Expenditure,Lag 3,,,,0.4994
+AAPL,Free Cash Flow,Lag 1,,0.267,0.1989,-0.1064
+AAPL,Free Cash Flow,Lag 2,,,0.519,0.0713
+AAPL,Free Cash Flow,Lag 3,,,,0.3574
+AAPL,Income Taxes Paid,Lag 1,,1.6718,-0.229,-0.0457
+AAPL,Income Taxes Paid,Lag 2,,,1.0601,-0.2642
+AAPL,Income Taxes Paid,Lag 3,,,,0.966
+AAPL,Interest Paid,Lag 1,,-0.1049,0.0662,0.3274
+AAPL,Interest Paid,Lag 2,,,-0.0456,0.4153
+AAPL,Interest Paid,Lag 3,,,,0.2668
 MSFT,Net Income,Lag 1,,0.3837,0.1872,-0.0052
 MSFT,Net Income,Lag 2,,,0.6426,0.181
 MSFT,Net Income,Lag 3,,,,0.6341
@@ -104,18 +131,18 @@ MSFT,Stock Based Compensation,Lag 3,,,,0.8172
 MSFT,Change in Working Capital,Lag 1,,-1.4358,-1.4765,-6.3543
 MSFT,Change in Working Capital,Lag 2,,,-0.7924,1.5513
 MSFT,Change in Working Capital,Lag 3,,,,-2.1117
-MSFT,Accounts Receivables,Lag 1,,1.5149,0.0545,-0.402
-MSFT,Accounts Receivables,Lag 2,,,1.6519,-0.3694
-MSFT,Accounts Receivables,Lag 3,,,,0.586
-MSFT,Inventory,Lag 1,,-5.3869,0.5237,-2.106
-MSFT,Inventory,Lag 2,,,-7.6845,-2.6852
-MSFT,Inventory,Lag 3,,,,6.3929
-MSFT,Accounts Payables,Lag 1,,-0.0729,0.0518,-1.9246
-MSFT,Accounts Payables,Lag 2,,,-0.0249,-1.9725
-MSFT,Accounts Payables,Lag 3,,,,-1.9016
-MSFT,Other Working Capital,Lag 1,,1.2638,0.5672,-0.4179
-MSFT,Other Working Capital,Lag 2,,,2.5478,-0.0878
-MSFT,Other Working Capital,Lag 3,,,,1.065
+MSFT,Change in Accounts Receivables,Lag 1,,1.5149,0.0545,-0.402
+MSFT,Change in Accounts Receivables,Lag 2,,,1.6519,-0.3694
+MSFT,Change in Accounts Receivables,Lag 3,,,,0.586
+MSFT,Change in Inventory,Lag 1,,-5.3869,0.5237,-2.106
+MSFT,Change in Inventory,Lag 2,,,-7.6845,-2.6852
+MSFT,Change in Inventory,Lag 3,,,,6.3929
+MSFT,Change in Accounts Payables,Lag 1,,-0.0729,0.0518,-1.9246
+MSFT,Change in Accounts Payables,Lag 2,,,-0.0249,-1.9725
+MSFT,Change in Accounts Payables,Lag 3,,,,-1.9016
+MSFT,Change in Other Working Capital,Lag 1,,1.2638,0.5672,-0.4179
+MSFT,Change in Other Working Capital,Lag 2,,,2.5478,-0.0878
+MSFT,Change in Other Working Capital,Lag 3,,,,1.065
 MSFT,Other Non Cash Items,Lag 1,,4.7032,-0.6725,-1.4792
 MSFT,Other Non Cash Items,Lag 2,,,0.8676,-1.1569
 MSFT,Other Non Cash Items,Lag 3,,,,-1.895
@@ -140,15 +167,36 @@ MSFT,Other Investing Activities,Lag 3,,,,1.5109
 MSFT,Cash Flow from Investing,Lag 1,,1.2562,0.0991,-0.2518
 MSFT,Cash Flow from Investing,Lag 2,,,1.4798,-0.1776
 MSFT,Cash Flow from Investing,Lag 3,,,,0.8555
-MSFT,Debt Repayment,Lag 1,,-0.3204,1.4061,-0.6952
-MSFT,Debt Repayment,Lag 2,,,0.6352,-0.2667
-MSFT,Debt Repayment,Lag 3,,,,-0.5016
+MSFT,Net Debt Issued,Lag 1,,-0.3204,1.4061,-0.6952
+MSFT,Net Debt Issued,Lag 2,,,0.6352,-0.2667
+MSFT,Net Debt Issued,Lag 3,,,,-0.5016
+MSFT,Long Term Debt Issued,Lag 1,,-0.3204,1.4061,-0.6952
+MSFT,Long Term Debt Issued,Lag 2,,,0.6352,-0.2667
+MSFT,Long Term Debt Issued,Lag 3,,,,-0.5016
+MSFT,Short Term Debt Issued,Lag 1,,,,
+MSFT,Short Term Debt Issued,Lag 2,,,,
+MSFT,Short Term Debt Issued,Lag 3,,,,
+MSFT,Net Stock Issued,Lag 1,,0.1881,0.201,-0.3395
+MSFT,Net Stock Issued,Lag 2,,,0.4268,-0.2068
+MSFT,Net Stock Issued,Lag 3,,,,-0.0576
+MSFT,Net Common Stock Issued,Lag 1,,0.1881,0.201,-0.3395
+MSFT,Net Common Stock Issued,Lag 2,,,0.4268,-0.2068
+MSFT,Net Common Stock Issued,Lag 3,,,,-0.0576
 MSFT,Common Stock Issued,Lag 1,,0.2606,0.0874,0.0136
 MSFT,Common Stock Issued,Lag 2,,,0.3708,0.1022
 MSFT,Common Stock Issued,Lag 3,,,,0.3894
 MSFT,Common Stock Purchased,Lag 1,,0.1923,0.1939,-0.3196
 MSFT,Common Stock Purchased,Lag 2,,,0.4235,-0.1877
 MSFT,Common Stock Purchased,Lag 3,,,,-0.0315
+MSFT,Net Preferred Stock Issued,Lag 1,,,,
+MSFT,Net Preferred Stock Issued,Lag 2,,,,
+MSFT,Net Preferred Stock Issued,Lag 3,,,,
+MSFT,Common Dividends Paid,Lag 1,,0.0914,0.0977,0.0918
+MSFT,Common Dividends Paid,Lag 2,,,0.1981,0.1985
+MSFT,Common Dividends Paid,Lag 3,,,,0.3081
+MSFT,Preferred Dividends Paid,Lag 1,,,,
+MSFT,Preferred Dividends Paid,Lag 2,,,,
+MSFT,Preferred Dividends Paid,Lag 3,,,,
 MSFT,Dividends Paid,Lag 1,,0.0914,0.0977,0.0918
 MSFT,Dividends Paid,Lag 2,,,0.1981,0.1985
 MSFT,Dividends Paid,Lag 3,,,,0.3081
@@ -179,3 +227,9 @@ MSFT,Capital Expenditure,Lag 3,,,,0.8203
 MSFT,Free Cash Flow,Lag 1,,0.2406,0.1609,-0.0871
 MSFT,Free Cash Flow,Lag 2,,,0.4403,0.0598
 MSFT,Free Cash Flow,Lag 3,,,,0.3148
+MSFT,Income Taxes Paid,Lag 1,,,,
+MSFT,Income Taxes Paid,Lag 2,,,,
+MSFT,Income Taxes Paid,Lag 3,,,,
+MSFT,Interest Paid,Lag 1,,,,
+MSFT,Interest Paid,Lag 2,,,,
+MSFT,Interest Paid,Lag 3,,,,

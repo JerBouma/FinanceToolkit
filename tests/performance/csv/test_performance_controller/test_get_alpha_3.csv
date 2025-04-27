@@ -1,6 +1,7 @@
 ,AAPL,AAPL,AAPL,MSFT,MSFT,MSFT
 ,Lag 1,Lag 2,Lag 3,Lag 1,Lag 2,Lag 3
 Date,,,,,,
-2020,,,,,,
-2021,inf,,,inf,,
-2022,-2.3902,-inf,,-1.4147,-inf,
+2019,,,,,,
+2020,inf,,,inf,,
+2021,-0.9075,inf,,-0.0186,inf,
+2022,-2.3885,-1.1285,-inf,-1.4143,-1.4066,-inf

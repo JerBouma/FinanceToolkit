@@ -17,48 +17,48 @@ AAPL,Book Value per Share,Lag 3,,,,0.0544
 AAPL,Price-to-Book,Lag 1,,0.3417,-0.113,0.0
 AAPL,Price-to-Book,Lag 2,,,0.1901,-0.113
 AAPL,Price-to-Book,Lag 3,,,,0.1901
-AAPL,Interest Debt per Share,Lag 1,,-0.2014,0.1142,-1.0
-AAPL,Interest Debt per Share,Lag 2,,,-0.1102,-1.0
-AAPL,Interest Debt per Share,Lag 3,,,,-1.0
-AAPL,CAPEX per Share,Lag 1,,0.5763,-0.0021,-1.0
-AAPL,CAPEX per Share,Lag 2,,,0.5729,-1.0
-AAPL,CAPEX per Share,Lag 3,,,,-1.0
-AAPL,Earnings Yield,Lag 1,,0.2709,0.4796,0.0
-AAPL,Earnings Yield,Lag 2,,,0.8805,0.4796
-AAPL,Earnings Yield,Lag 3,,,,0.8805
+AAPL,Interest Debt per Share,Lag 1,,-0.2066,0.1054,0.55
+AAPL,Interest Debt per Share,Lag 2,,,-0.123,0.7134
+AAPL,Interest Debt per Share,Lag 3,,,,0.3594
+AAPL,CAPEX per Share,Lag 1,,0.5763,-0.0021,0.0567
+AAPL,CAPEX per Share,Lag 2,,,0.5729,0.0545
+AAPL,CAPEX per Share,Lag 3,,,,0.6621
+AAPL,Earnings Yield,Lag 1,,0.2727,0.4783,0.0
+AAPL,Earnings Yield,Lag 2,,,0.8814,0.4783
+AAPL,Earnings Yield,Lag 3,,,,0.8814
 AAPL,Dividend Payout Ratio,Lag 1,,-0.3771,-0.0268,0.0417
 AAPL,Dividend Payout Ratio,Lag 2,,,-0.3938,0.0137
 AAPL,Dividend Payout Ratio,Lag 3,,,,-0.3685
-AAPL,Dividend Yield,Lag 1,,-0.755,0.4286,0.0
-AAPL,Dividend Yield,Lag 2,,,-0.65,0.4286
-AAPL,Dividend Yield,Lag 3,,,,-0.65
-AAPL,Weighted Dividend Yield,Lag 1,,-0.2097,0.4286,0.0
-AAPL,Weighted Dividend Yield,Lag 2,,,0.129,0.4286
-AAPL,Weighted Dividend Yield,Lag 3,,,,0.129
+AAPL,Dividend Yield,Lag 1,,-0.7525,0.42,0.0
+AAPL,Dividend Yield,Lag 2,,,-0.6485,0.42
+AAPL,Dividend Yield,Lag 3,,,,-0.6485
+AAPL,Weighted Dividend Yield,Lag 1,,-0.2097,0.449,0.0
+AAPL,Weighted Dividend Yield,Lag 2,,,0.1452,0.449
+AAPL,Weighted Dividend Yield,Lag 3,,,,0.1452
 AAPL,Price-to-Cash-Flow,Lag 1,,0.0046,-0.3932,0.0
 AAPL,Price-to-Cash-Flow,Lag 2,,,-0.3904,-0.3932
 AAPL,Price-to-Cash-Flow,Lag 3,,,,-0.3904
 AAPL,Price-to-Free-Cash-Flow,Lag 1,,0.0225,-0.4058,0.0
 AAPL,Price-to-Free-Cash-Flow,Lag 2,,,-0.3924,-0.4058
 AAPL,Price-to-Free-Cash-Flow,Lag 3,,,,-0.3924
-AAPL,Market Cap,Lag 1,,0.2956,-0.2876,0.0
+AAPL,Market Cap,Lag 1,,0.2955,-0.2876,0.0
 AAPL,Market Cap,Lag 2,,,-0.077,-0.2876
 AAPL,Market Cap,Lag 3,,,,-0.077
-AAPL,Enterprise Value,Lag 1,,0.2927,-0.2769,0.0
-AAPL,Enterprise Value,Lag 2,,,-0.0653,-0.2769
-AAPL,Enterprise Value,Lag 3,,,,-0.0653
-AAPL,EV-to-Sales,Lag 1,,-0.0299,-0.3292,0.0
-AAPL,EV-to-Sales,Lag 2,,,-0.3493,-0.3292
-AAPL,EV-to-Sales,Lag 3,,,,-0.3493
-AAPL,EV-to-EBIT,Lag 1,,-0.1914,-0.3373,0.0
-AAPL,EV-to-EBIT,Lag 2,,,-0.4641,-0.3373
-AAPL,EV-to-EBIT,Lag 3,,,,-0.4641
-AAPL,EV-to-EBITDA,Lag 1,,-0.1684,-0.334,0.0
-AAPL,EV-to-EBITDA,Lag 2,,,-0.4462,-0.334
-AAPL,EV-to-EBITDA,Lag 3,,,,-0.4462
-AAPL,EV-to-Operating-Cash-Flow,Lag 1,,0.0024,-0.3842,0.0
-AAPL,EV-to-Operating-Cash-Flow,Lag 2,,,-0.3827,-0.3842
-AAPL,EV-to-Operating-Cash-Flow,Lag 3,,,,-0.3827
+AAPL,Enterprise Value,Lag 1,,0.2923,-0.2756,0.0
+AAPL,Enterprise Value,Lag 2,,,-0.0638,-0.2756
+AAPL,Enterprise Value,Lag 3,,,,-0.0638
+AAPL,EV-to-Sales,Lag 1,,-0.0302,-0.328,0.0
+AAPL,EV-to-Sales,Lag 2,,,-0.3483,-0.328
+AAPL,EV-to-Sales,Lag 3,,,,-0.3483
+AAPL,EV-to-EBIT,Lag 1,,-0.1916,-0.336,0.0
+AAPL,EV-to-EBIT,Lag 2,,,-0.4633,-0.336
+AAPL,EV-to-EBIT,Lag 3,,,,-0.4633
+AAPL,EV-to-EBITDA,Lag 1,,-0.1687,-0.3328,0.0
+AAPL,EV-to-EBITDA,Lag 2,,,-0.4453,-0.3328
+AAPL,EV-to-EBITDA,Lag 3,,,,-0.4453
+AAPL,EV-to-Operating-Cash-Flow,Lag 1,,0.0021,-0.383,0.0
+AAPL,EV-to-Operating-Cash-Flow,Lag 2,,,-0.3817,-0.383
+AAPL,EV-to-Operating-Cash-Flow,Lag 3,,,,-0.3817
 AAPL,Tangible Asset Value,Lag 1,,-0.0344,-0.1968,0.2264
 AAPL,Tangible Asset Value,Lag 2,,,-0.2245,-0.015
 AAPL,Tangible Asset Value,Lag 3,,,,-0.0489
@@ -80,8 +80,8 @@ MSFT,Price-to-Earnings-Growth,Lag 3,,,,
 MSFT,Book Value per Share,Lag 1,,0.212,0.1835,0.2495
 MSFT,Book Value per Share,Lag 2,,,0.4344,0.4788
 MSFT,Book Value per Share,Lag 3,,,,0.7924
-MSFT,Price-to-Book,Lag 1,,0.258,-0.3919,0.0
-MSFT,Price-to-Book,Lag 2,,,-0.2349,-0.3919
+MSFT,Price-to-Book,Lag 1,,0.2581,-0.3918,0.0
+MSFT,Price-to-Book,Lag 2,,,-0.2349,-0.3918
 MSFT,Price-to-Book,Lag 3,,,,-0.2349
 MSFT,Interest Debt per Share,Lag 1,,-0.0608,-0.036,-0.0341
 MSFT,Interest Debt per Share,Lag 2,,,-0.0945,-0.0688
@@ -89,40 +89,40 @@ MSFT,Interest Debt per Share,Lag 3,,,,-0.1254
 MSFT,CAPEX per Share,Lag 1,,0.3487,0.1687,0.1874
 MSFT,CAPEX per Share,Lag 2,,,0.5762,0.3877
 MSFT,CAPEX per Share,Lag 3,,,,0.8716
-MSFT,Earnings Yield,Lag 1,,-0.0865,0.6667,0.0
-MSFT,Earnings Yield,Lag 2,,,0.5226,0.6667
-MSFT,Earnings Yield,Lag 3,,,,0.5226
+MSFT,Earnings Yield,Lag 1,,-0.0855,0.6667,0.0
+MSFT,Earnings Yield,Lag 2,,,0.5242,0.6667
+MSFT,Earnings Yield,Lag 3,,,,0.5242
 MSFT,Dividend Payout Ratio,Lag 1,,-0.2112,-0.0753,0.0975
 MSFT,Dividend Payout Ratio,Lag 2,,,-0.2706,0.0148
 MSFT,Dividend Payout Ratio,Lag 3,,,,-0.1995
-MSFT,Dividend Yield,Lag 1,,-0.2812,0.5507,0.0
-MSFT,Dividend Yield,Lag 2,,,0.1146,0.5507
-MSFT,Dividend Yield,Lag 3,,,,0.1146
-MSFT,Weighted Dividend Yield,Lag 1,,-0.2747,0.5303,0.0
-MSFT,Weighted Dividend Yield,Lag 2,,,0.1099,0.5303
-MSFT,Weighted Dividend Yield,Lag 3,,,,0.1099
+MSFT,Dividend Yield,Lag 1,,-0.2784,0.5429,0.0
+MSFT,Dividend Yield,Lag 2,,,0.1134,0.5429
+MSFT,Dividend Yield,Lag 3,,,,0.1134
+MSFT,Weighted Dividend Yield,Lag 1,,-0.2826,0.5455,0.0
+MSFT,Weighted Dividend Yield,Lag 2,,,0.1087,0.5455
+MSFT,Weighted Dividend Yield,Lag 3,,,,0.1087
 MSFT,Price-to-Cash-Flow,Lag 1,,0.1938,-0.3852,0.0
 MSFT,Price-to-Cash-Flow,Lag 2,,,-0.266,-0.3852
 MSFT,Price-to-Cash-Flow,Lag 3,,,,-0.266
-MSFT,Price-to-Free-Cash-Flow,Lag 1,,0.2171,-0.3856,0.0
-MSFT,Price-to-Free-Cash-Flow,Lag 2,,,-0.2522,-0.3856
+MSFT,Price-to-Free-Cash-Flow,Lag 1,,0.2171,-0.3855,0.0
+MSFT,Price-to-Free-Cash-Flow,Lag 2,,,-0.2522,-0.3855
 MSFT,Price-to-Free-Cash-Flow,Lag 3,,,,-0.2522
 MSFT,Market Cap,Lag 1,,0.5099,-0.2867,0.0
-MSFT,Market Cap,Lag 2,,,0.077,-0.2867
-MSFT,Market Cap,Lag 3,,,,0.077
-MSFT,Enterprise Value,Lag 1,,0.4907,-0.2831,0.0
+MSFT,Market Cap,Lag 2,,,0.0771,-0.2867
+MSFT,Market Cap,Lag 3,,,,0.0771
+MSFT,Enterprise Value,Lag 1,,0.4905,-0.2831,0.0
 MSFT,Enterprise Value,Lag 2,,,0.0686,-0.2831
 MSFT,Enterprise Value,Lag 3,,,,0.0686
-MSFT,EV-to-Sales,Lag 1,,0.2683,-0.3923,0.0
-MSFT,EV-to-Sales,Lag 2,,,-0.2292,-0.3923
+MSFT,EV-to-Sales,Lag 1,,0.2682,-0.3922,0.0
+MSFT,EV-to-Sales,Lag 2,,,-0.2292,-0.3922
 MSFT,EV-to-Sales,Lag 3,,,,-0.2292
-MSFT,EV-to-EBIT,Lag 1,,0.129,-0.3862,0.0
-MSFT,EV-to-EBIT,Lag 2,,,-0.307,-0.3862
+MSFT,EV-to-EBIT,Lag 1,,0.1288,-0.3861,0.0
+MSFT,EV-to-EBIT,Lag 2,,,-0.307,-0.3861
 MSFT,EV-to-EBIT,Lag 3,,,,-0.307
-MSFT,EV-to-EBITDA,Lag 1,,0.2012,-0.4021,0.0
-MSFT,EV-to-EBITDA,Lag 2,,,-0.2818,-0.4021
-MSFT,EV-to-EBITDA,Lag 3,,,,-0.2818
-MSFT,EV-to-Operating-Cash-Flow,Lag 1,,0.1786,-0.3821,0.0
+MSFT,EV-to-EBITDA,Lag 1,,0.201,-0.4021,0.0
+MSFT,EV-to-EBITDA,Lag 2,,,-0.2819,-0.4021
+MSFT,EV-to-EBITDA,Lag 3,,,,-0.2819
+MSFT,EV-to-Operating-Cash-Flow,Lag 1,,0.1785,-0.3821,0.0
 MSFT,EV-to-Operating-Cash-Flow,Lag 2,,,-0.2718,-0.3821
 MSFT,EV-to-Operating-Cash-Flow,Lag 3,,,,-0.2718
 MSFT,Tangible Asset Value,Lag 1,,0.2311,0.0731,0.3971

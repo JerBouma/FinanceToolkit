@@ -2,56 +2,60 @@
 AAPL,Revenue,,0.3326,0.0779,-0.028
 AAPL,Cost of Goods Sold,,0.2561,0.0496,-0.0421
 AAPL,Gross Profit,,0.4562,0.1174,-0.0096
-AAPL,Gross Profit Ratio,,0.0929,0.0366,0.0189
 AAPL,Research and Development Expenses,,0.1686,0.1979,0.1396
 AAPL,General and Administrative Expenses,,,,
 AAPL,Selling and Marketing Expenses,,,,
 AAPL,"Selling, General and Administrative Expenses",,0.1033,0.142,-0.0065
-AAPL,Other Expenses,,-0.6787,-2.2946,-1.0
-AAPL,Operating Expenses,,0.135,0.1699,0.0682
-AAPL,Cost and Expenses,,0.2336,0.0702,-0.0215
-AAPL,Interest Income,,-0.2445,-0.0063,-1.0
-AAPL,Interest Expense,,-0.0794,0.1081,-1.0
-AAPL,Depreciation and Amortization,,0.0206,-0.016,-1.0
-AAPL,EBITDA,,0.5545,0.0857,-0.1244
-AAPL,EBITDA Ratio,,0.1668,0.007,-0.0991
+AAPL,Other Expenses,,-1.6897,-4.8,0.6754
+AAPL,Operating Expenses,,0.1309,0.1767,0.0635
+AAPL,Cost and Expenses,,0.2328,0.0713,-0.0223
+AAPL,Interest Income,,-0.2445,-0.0063,0.3274
+AAPL,Interest Expense,,-0.0794,0.1081,0.3419
+AAPL,Net Interest Income,,-0.7775,-1.5354,0.7264
+AAPL,Depreciation and Amortization,,0.0206,-0.016,0.0374
+AAPL,EBITDA,,0.5545,0.0857,-0.0362
+AAPL,EBIT,,0.6436,0.0963,-0.043
+AAPL,Non Operating Income Excluding Interest,,,,
 AAPL,Operating Income,,0.6436,0.0963,-0.043
-AAPL,Operating Income Ratio,,0.2331,0.0171,-0.0155
-AAPL,Total Other Income,,-0.6787,-2.2946,0.6916
+AAPL,Total Other Income Expenses,,-0.6787,-2.2946,0.6916
 AAPL,Income Before Tax,,0.6277,0.0906,-0.0451
-AAPL,Income Before Tax Ratio,,0.2214,0.0117,-0.0175
 AAPL,Income Tax Expense,,0.5007,0.3286,-0.1326
+AAPL,Net Income from Continuing Operations,,0.6492,0.0541,-0.0281
+AAPL,Net Income from Discontinued Operations,,,,
+AAPL,Other Adjustments to Net Income,,,,
+AAPL,Net Income before Deductions,,0.6492,0.0541,-0.0281
+AAPL,Net Income Deductions,,,,
 AAPL,Net Income,,0.6492,0.0541,-0.0281
-AAPL,Net Income Ratio,,0.2377,-0.022,0.0
 AAPL,EPS,,0.713,0.0847,0.0016
-AAPL,EPS Diluted,,0.7104,0.0891,0.0033
 AAPL,Weighted Average Shares,,-0.0375,-0.0291,-0.0291
 AAPL,Weighted Average Shares Diluted,,-0.0378,-0.032,-0.0314
 MSFT,Revenue,,0.1753,0.1796,0.0688
 MSFT,Cost of Goods Sold,,0.1336,0.1995,0.0513
 MSFT,Gross Profit,,0.1952,0.1706,0.0769
-MSFT,Gross Profit Ratio,,0.017,-0.0077,0.0076
 MSFT,Research and Development Expenses,,0.0751,0.1832,0.1095
 MSFT,General and Administrative Expenses,,-0.0008,0.1553,0.2839
 MSFT,Selling and Marketing Expenses,,0.0265,0.0849,0.0428
 MSFT,"Selling, General and Administrative Expenses",,0.0208,0.0992,0.0941
-MSFT,Other Expenses,,14.4026,-0.7192,1.3664
+MSFT,Other Expenses,,-3.45,-1.3265,5.9688
 MSFT,Operating Expenses,,0.0446,0.1371,0.1013
 MSFT,Cost and Expenses,,0.0901,0.1703,0.074
 MSFT,Interest Income,,-0.2049,-0.0174,0.4298
 MSFT,Interest Expense,,-0.0946,-0.1206,-0.046
+MSFT,Net Interest Income,,-3.4157,-1.1442,32.0968
 MSFT,Depreciation and Amortization,,-0.0867,0.2374,-0.0414
-MSFT,EBITDA,,0.241,0.199,0.0464
-MSFT,EBITDA Ratio,,0.0559,0.0165,-0.0211
+MSFT,EBITDA,,0.2442,0.1774,0.0489
+MSFT,EBIT,,0.3204,0.1679,0.0641
+MSFT,Non Operating Income Excluding Interest,,0.3238,-0.3216,0.1503
 MSFT,Operating Income,,0.3202,0.1926,0.0616
-MSFT,Operating Income Ratio,,0.1231,0.0113,-0.0069
-MSFT,Total Other Income,,14.4026,-0.7192,1.3664
+MSFT,Total Other Income Expenses,,14.4026,-0.7192,1.3664
 MSFT,Income Before Tax,,0.3406,0.1774,0.0668
-MSFT,Income Before Tax Ratio,,0.1408,-0.0019,-0.0019
 MSFT,Income Tax Expense,,0.1229,0.1167,0.544
+MSFT,Net Income from Continuing Operations,,0.3837,0.1872,-0.0052
+MSFT,Net Income from Discontinued Operations,,,,
+MSFT,Other Adjustments to Net Income,,,,
+MSFT,Net Income before Deductions,,0.3837,0.1872,-0.0052
+MSFT,Net Income Deductions,,,,
 MSFT,Net Income,,0.3837,0.1872,-0.0052
-MSFT,Net Income Ratio,,0.1773,0.0066,-0.0692
 MSFT,EPS,,0.3952,0.1946,0.0021
-MSFT,EPS Diluted,,0.3976,0.1988,0.0031
 MSFT,Weighted Average Shares,,-0.0083,-0.0068,-0.0067
 MSFT,Weighted Average Shares Diluted,,-0.0098,-0.0089,-0.009

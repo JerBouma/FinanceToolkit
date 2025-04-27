@@ -1,13 +1,13 @@
 ,,2020,2021,2022,2023
 AAPL,Working Capital to Total Assets,0.1183,0.0267,-0.0527,-0.0049
 AAPL,Retained Earnings to Total Assets,0.0462,0.0158,-0.0087,-0.0006
-AAPL,EBIT to Total Assets,0.216,0.3187,0.3459,0.3226
-AAPL,Market Value to Total Liabilities,8.8513,10.2978,6.9922,
+AAPL,EBIT to Total Assets,0.216,0.3187,0.3459,0.3337
+AAPL,Market Value to Total Liabilities,8.7869,10.2228,6.9414,
 AAPL,Sales to Total Assets,0.8476,1.0422,1.1179,1.0871
-AAPL,Altman Z-Score,7.0778,8.3266,6.3794,
+AAPL,Altman Z-Score,7.0392,8.2816,6.349,
 MSFT,Working Capital to Total Assets,0.3638,0.2869,0.2045,0.1944
 MSFT,Retained Earnings to Total Assets,0.1147,0.1709,0.231,0.2885
 MSFT,EBIT to Total Assets,0.1846,0.22,0.2351,0.2216
-MSFT,Market Value to Total Liabilities,9.1118,13.1278,9.0568,
+MSFT,Market Value to Total Liabilities,9.0077,12.9778,8.9538,
 MSFT,Sales to Total Assets,0.4746,0.5036,0.5434,0.5144
-MSFT,Altman Z-Score,7.1481,9.69,7.3222,
+MSFT,Altman Z-Score,7.0856,9.6,7.2604,

@@ -5,18 +5,18 @@ AAPL,Working Capital to Total Assets,Lag 3,,,,-1.0418
 AAPL,Retained Earnings to Total Assets,Lag 1,,-0.6571,-1.5489,-0.9302
 AAPL,Retained Earnings to Total Assets,Lag 2,,,-1.1882,-1.0383
 AAPL,Retained Earnings to Total Assets,Lag 3,,,,-1.0131
-AAPL,EBIT to Total Assets,Lag 1,,0.4752,0.0856,-0.0675
-AAPL,EBIT to Total Assets,Lag 2,,,0.6015,0.0123
-AAPL,EBIT to Total Assets,Lag 3,,,,0.4933
+AAPL,EBIT to Total Assets,Lag 1,,0.4752,0.0856,-0.0353
+AAPL,EBIT to Total Assets,Lag 2,,,0.6015,0.0473
+AAPL,EBIT to Total Assets,Lag 3,,,,0.545
 AAPL,Market Value to Total Liabilities,Lag 1,,0.1634,-0.321,0.0
 AAPL,Market Value to Total Liabilities,Lag 2,,,-0.21,-0.321
 AAPL,Market Value to Total Liabilities,Lag 3,,,,-0.21
 AAPL,Sales to Total Assets,Lag 1,,0.2297,0.0726,-0.0275
 AAPL,Sales to Total Assets,Lag 2,,,0.3189,0.0431
 AAPL,Sales to Total Assets,Lag 3,,,,0.2826
-AAPL,Altman Z-Score,Lag 1,,0.1764,-0.2339,0.0
-AAPL,Altman Z-Score,Lag 2,,,-0.0987,-0.2339
-AAPL,Altman Z-Score,Lag 3,,,,-0.0987
+AAPL,Altman Z-Score,Lag 1,,0.1765,-0.2334,0.0
+AAPL,Altman Z-Score,Lag 2,,,-0.0981,-0.2334
+AAPL,Altman Z-Score,Lag 3,,,,-0.0981
 MSFT,Working Capital to Total Assets,Lag 1,,-0.2114,-0.2872,-0.0491
 MSFT,Working Capital to Total Assets,Lag 2,,,-0.4379,-0.3222
 MSFT,Working Capital to Total Assets,Lag 3,,,,-0.4654
@@ -32,6 +32,6 @@ MSFT,Market Value to Total Liabilities,Lag 3,,,,-0.006
 MSFT,Sales to Total Assets,Lag 1,,0.061,0.0791,-0.0535
 MSFT,Sales to Total Assets,Lag 2,,,0.145,0.0214
 MSFT,Sales to Total Assets,Lag 3,,,,0.0837
-MSFT,Altman Z-Score,Lag 1,,0.3556,-0.2444,0.0
-MSFT,Altman Z-Score,Lag 2,,,0.0244,-0.2444
-MSFT,Altman Z-Score,Lag 3,,,,0.0244
+MSFT,Altman Z-Score,Lag 1,,0.3549,-0.2437,0.0
+MSFT,Altman Z-Score,Lag 2,,,0.0247,-0.2437
+MSFT,Altman Z-Score,Lag 3,,,,0.0247

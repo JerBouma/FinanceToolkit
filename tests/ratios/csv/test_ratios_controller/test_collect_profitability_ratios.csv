@@ -2,19 +2,19 @@
 AAPL,Gross Margin,0.3823,0.4178,0.4331,0.4413
 AAPL,Operating Margin,0.2415,0.2978,0.3029,0.2982
 AAPL,Net Profit Margin,0.2091,0.2588,0.2531,0.2531
-AAPL,Interest Coverage Ratio,26.921,45.4567,44.538,inf
+AAPL,Interest Coverage Ratio,26.921,45.4567,44.538,31.9908
 AAPL,Income Before Tax Profit Margin,0.2444,0.2985,0.302,0.2967
 AAPL,Effective Tax Rate,0.1443,0.133,0.162,0.1472
 AAPL,Return on Assets,,0.2806,0.2836,0.275
 AAPL,Return on Equity,,1.4744,1.7546,1.7195
-AAPL,Return on Invested Capital,,0.5971,0.6395,0.6705
-AAPL,Return on Capital Employed,0.3202,0.496,0.6139,0.5487
+AAPL,Return on Invested Capital,,0.5637,0.599,0.6286
+AAPL,Return on Capital Employed,0.3202,0.496,0.6139,0.5677
 AAPL,Return on Tangible Assets,,0.155,0.1543,0.1495
 AAPL,Income Quality Ratio,1.4052,1.0988,1.2239,1.1397
 AAPL,Net Income per EBT,0.8557,0.867,0.838,0.8528
-AAPL,Free Cash Flow to Operating Cash Flow Ratio,0.9094,0.8935,0.9123,1.0
-AAPL,EBT to EBIT Ratio,0.9589,0.9764,0.976,1.0
-AAPL,EBIT to Revenue,0.2549,0.3058,0.3095,0.2967
+AAPL,Free Cash Flow to Operating Cash Flow Ratio,0.9094,0.8935,0.9123,0.9009
+AAPL,EBT to EBIT Ratio,0.9589,0.9764,0.976,0.9666
+AAPL,EBIT to Revenue,0.2549,0.3058,0.3095,0.307
 MSFT,Gross Margin,0.6778,0.6893,0.684,0.6892
 MSFT,Operating Margin,0.3703,0.4159,0.4206,0.4177
 MSFT,Net Profit Margin,0.3096,0.3645,0.3669,0.3415

@@ -13,7 +13,11 @@ historical_dataset = pd.read_pickle("tests/datasets/historical_dataset.pickle")
 
 def test_toolkit_balance(recorder):
     toolkit = Toolkit(
-        tickers=["AAPL", "MSFT"], balance=balance_dataset, convert_currency=False
+        tickers=["AAPL", "MSFT"],
+        balance=balance_dataset,
+        convert_currency=False,
+        start_date="2019-12-31",
+        end_date="2023-01-01",
     )
 
     recorder.capture(toolkit.get_balance_sheet_statement())
@@ -23,7 +27,11 @@ def test_toolkit_balance(recorder):
 
 def test_toolkit_income(recorder):
     toolkit = Toolkit(
-        tickers=["AAPL", "MSFT"], income=income_dataset, convert_currency=False
+        tickers=["AAPL", "MSFT"],
+        income=income_dataset,
+        convert_currency=False,
+        start_date="2019-12-31",
+        end_date="2023-01-01",
     )
 
     recorder.capture(toolkit.get_income_statement())
@@ -33,7 +41,11 @@ def test_toolkit_income(recorder):
 
 def test_toolkit_cash(recorder):
     toolkit = Toolkit(
-        tickers=["AAPL", "MSFT"], cash=cash_dataset, convert_currency=False
+        tickers=["AAPL", "MSFT"],
+        cash=cash_dataset,
+        convert_currency=False,
+        start_date="2019-12-31",
+        end_date="2023-01-01",
     )
 
     recorder.capture(toolkit.get_cash_flow_statement())
@@ -45,6 +57,8 @@ def test_toolkit_historical(recorder):
     toolkit = Toolkit(
         tickers=["AAPL", "MSFT"],
         historical=historical_dataset,
+        start_date="2019-12-31",
+        end_date="2023-01-01",
     )
 
     recorder.capture(toolkit.get_historical_data(period="yearly").round(0))
@@ -58,6 +72,8 @@ def test_toolkit_ratios(recorder):
         cash=cash_dataset,
         historical=historical_dataset,
         convert_currency=False,
+        start_date="2019-12-31",
+        end_date="2023-01-01",
     )
 
     recorder.capture(toolkit.ratios.get_debt_to_assets_ratio())
@@ -75,6 +91,8 @@ def test_toolkit_models(recorder):
         income=income_dataset,
         cash=cash_dataset,
         convert_currency=False,
+        start_date="2019-12-31",
+        end_date="2023-01-01",
     )
 
     recorder.capture(toolkit.models.get_dupont_analysis())
@@ -90,6 +108,8 @@ def test_toolkit_performance(recorder):
         cash=cash_dataset,
         historical=historical_dataset,
         convert_currency=False,
+        start_date="2019-12-31",
+        end_date="2023-01-01",
     )
 
     recorder.capture(toolkit.performance.get_beta())
@@ -105,6 +125,8 @@ def test_toolkit_risk(recorder):
         cash=cash_dataset,
         historical=historical_dataset,
         convert_currency=False,
+        start_date="2019-12-31",
+        end_date="2023-01-01",
     )
 
     recorder.capture(toolkit.risk.get_conditional_value_at_risk())
@@ -122,6 +144,8 @@ def test_toolkit_technicals(recorder):
         cash=cash_dataset,
         historical=historical_dataset,
         convert_currency=False,
+        start_date="2019-12-31",
+        end_date="2023-01-01",
     )
 
     recorder.capture(toolkit.technicals.collect_all_indicators())

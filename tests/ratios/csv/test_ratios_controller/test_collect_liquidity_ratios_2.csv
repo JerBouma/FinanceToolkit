@@ -2,9 +2,9 @@
 AAPL,Current Ratio,Lag 1,,-0.2119,-0.1816,0.1235
 AAPL,Current Ratio,Lag 2,,,-0.3551,-0.0806
 AAPL,Current Ratio,Lag 3,,,,-0.2754
-AAPL,Quick Ratio,Lag 1,,-0.2532,-0.2202,-0.1166
-AAPL,Quick Ratio,Lag 2,,,-0.4177,-0.3111
-AAPL,Quick Ratio,Lag 3,,,,-0.4856
+AAPL,Quick Ratio,Lag 1,,-0.3025,-0.299,0.2617
+AAPL,Quick Ratio,Lag 2,,,-0.5111,-0.1156
+AAPL,Quick Ratio,Lag 3,,,,-0.3831
 AAPL,Cash Ratio,Lag 1,,-0.4215,-0.3716,0.3503
 AAPL,Cash Ratio,Lag 2,,,-0.6365,-0.1514
 AAPL,Cash Ratio,Lag 3,,,,-0.5091
@@ -17,17 +17,17 @@ AAPL,Operating Cash Flow Ratio,Lag 3,,,,-0.0063
 AAPL,Operating Cash Flow to Sales Ratio,Lag 1,,-0.0323,0.0893,-0.0691
 AAPL,Operating Cash Flow to Sales Ratio,Lag 2,,,0.0541,0.0141
 AAPL,Operating Cash Flow to Sales Ratio,Lag 3,,,,-0.0187
-AAPL,Short Term Coverage Ratio,Lag 1,,-1.3066,1.213,-1.0596
-AAPL,Short Term Coverage Ratio,Lag 2,,,-1.6785,-1.1319
-AAPL,Short Term Coverage Ratio,Lag 3,,,,-0.9596
+AAPL,Short Term Coverage Ratio,Lag 1,,0.302,-0.17,0.0474
+AAPL,Short Term Coverage Ratio,Lag 2,,,0.0807,-0.1306
+AAPL,Short Term Coverage Ratio,Lag 3,,,,0.1319
 MSFT,Current Ratio,Lag 1,,-0.1732,-0.142,-0.0086
 MSFT,Current Ratio,Lag 2,,,-0.2906,-0.1494
 MSFT,Current Ratio,Lag 3,,,,-0.2968
-MSFT,Quick Ratio,Lag 1,,-0.1852,-0.1748,-0.0201
-MSFT,Quick Ratio,Lag 2,,,-0.3276,-0.1913
+MSFT,Quick Ratio,Lag 1,,-0.1856,-0.1744,-0.0201
+MSFT,Quick Ratio,Lag 2,,,-0.3276,-0.191
 MSFT,Quick Ratio,Lag 3,,,,-0.3411
-MSFT,Cash Ratio,Lag 1,,-0.2214,-0.2505,-0.0304
-MSFT,Cash Ratio,Lag 2,,,-0.4165,-0.2733
+MSFT,Cash Ratio,Lag 1,,-0.2219,-0.2501,-0.0304
+MSFT,Cash Ratio,Lag 2,,,-0.4165,-0.2729
 MSFT,Cash Ratio,Lag 3,,,,-0.4342
 MSFT,Working Capital,Lag 1,,-0.1264,-0.2209,0.0738
 MSFT,Working Capital,Lag 2,,,-0.3194,-0.1634

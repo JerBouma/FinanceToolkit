@@ -8,9 +8,6 @@ AAPL,Cost of Goods Sold,Lag 3,,,,0.2629
 AAPL,Gross Profit,Lag 1,,0.4562,0.1174,-0.0096
 AAPL,Gross Profit,Lag 2,,,0.6272,0.1067
 AAPL,Gross Profit,Lag 3,,,,0.6116
-AAPL,Gross Profit Ratio,Lag 1,,0.0929,0.0366,0.0189
-AAPL,Gross Profit Ratio,Lag 2,,,0.1329,0.0562
-AAPL,Gross Profit Ratio,Lag 3,,,,0.1543
 AAPL,Research and Development Expenses,Lag 1,,0.1686,0.1979,0.1396
 AAPL,Research and Development Expenses,Lag 2,,,0.3999,0.3651
 AAPL,Research and Development Expenses,Lag 3,,,,0.5953
@@ -23,60 +20,69 @@ AAPL,Selling and Marketing Expenses,Lag 3,,,,
 AAPL,"Selling, General and Administrative Expenses",Lag 1,,0.1033,0.142,-0.0065
 AAPL,"Selling, General and Administrative Expenses",Lag 2,,,0.26,0.1347
 AAPL,"Selling, General and Administrative Expenses",Lag 3,,,,0.2519
-AAPL,Other Expenses,Lag 1,,-0.6787,-2.2946,-1.0
-AAPL,Other Expenses,Lag 2,,,-1.4159,-1.0
-AAPL,Other Expenses,Lag 3,,,,-1.0
-AAPL,Operating Expenses,Lag 1,,0.135,0.1699,0.0682
-AAPL,Operating Expenses,Lag 2,,,0.3278,0.2497
-AAPL,Operating Expenses,Lag 3,,,,0.4184
-AAPL,Cost and Expenses,Lag 1,,0.2336,0.0702,-0.0215
-AAPL,Cost and Expenses,Lag 2,,,0.3202,0.0472
-AAPL,Cost and Expenses,Lag 3,,,,0.2918
-AAPL,Interest Income,Lag 1,,-0.2445,-0.0063,-1.0
-AAPL,Interest Income,Lag 2,,,-0.2493,-1.0
-AAPL,Interest Income,Lag 3,,,,-1.0
-AAPL,Interest Expense,Lag 1,,-0.0794,0.1081,-1.0
-AAPL,Interest Expense,Lag 2,,,0.0202,-1.0
-AAPL,Interest Expense,Lag 3,,,,-1.0
-AAPL,Depreciation and Amortization,Lag 1,,0.0206,-0.016,-1.0
-AAPL,Depreciation and Amortization,Lag 2,,,0.0043,-1.0
-AAPL,Depreciation and Amortization,Lag 3,,,,-1.0
-AAPL,EBITDA,Lag 1,,0.5545,0.0857,-0.1244
-AAPL,EBITDA,Lag 2,,,0.6878,-0.0493
-AAPL,EBITDA,Lag 3,,,,0.4778
-AAPL,EBITDA Ratio,Lag 1,,0.1668,0.007,-0.0991
-AAPL,EBITDA Ratio,Lag 2,,,0.175,-0.0928
-AAPL,EBITDA Ratio,Lag 3,,,,0.0586
+AAPL,Other Expenses,Lag 1,,-1.6897,-4.8,0.6754
+AAPL,Other Expenses,Lag 2,,,1.6207,-7.3667
+AAPL,Other Expenses,Lag 3,,,,3.3908
+AAPL,Operating Expenses,Lag 1,,0.1309,0.1767,0.0635
+AAPL,Operating Expenses,Lag 2,,,0.3307,0.2514
+AAPL,Operating Expenses,Lag 3,,,,0.4152
+AAPL,Cost and Expenses,Lag 1,,0.2328,0.0713,-0.0223
+AAPL,Cost and Expenses,Lag 2,,,0.3207,0.0474
+AAPL,Cost and Expenses,Lag 3,,,,0.2912
+AAPL,Interest Income,Lag 1,,-0.2445,-0.0063,0.3274
+AAPL,Interest Income,Lag 2,,,-0.2493,0.319
+AAPL,Interest Income,Lag 3,,,,-0.0035
+AAPL,Interest Expense,Lag 1,,-0.0794,0.1081,0.3419
+AAPL,Interest Expense,Lag 2,,,0.0202,0.487
+AAPL,Interest Expense,Lag 3,,,,0.369
+AAPL,Net Interest Income,Lag 1,,-0.7775,-1.5354,0.7264
+AAPL,Net Interest Income,Lag 2,,,-1.1191,-1.9242
+AAPL,Net Interest Income,Lag 3,,,,-1.2056
+AAPL,Depreciation and Amortization,Lag 1,,0.0206,-0.016,0.0374
+AAPL,Depreciation and Amortization,Lag 2,,,0.0043,0.0208
+AAPL,Depreciation and Amortization,Lag 3,,,,0.0419
+AAPL,EBITDA,Lag 1,,0.5545,0.0857,-0.0362
+AAPL,EBITDA,Lag 2,,,0.6878,0.0465
+AAPL,EBITDA,Lag 3,,,,0.6268
+AAPL,EBIT,Lag 1,,0.6436,0.0963,-0.043
+AAPL,EBIT,Lag 2,,,0.8018,0.0491
+AAPL,EBIT,Lag 3,,,,0.7243
+AAPL,Non Operating Income Excluding Interest,Lag 1,,,,
+AAPL,Non Operating Income Excluding Interest,Lag 2,,,,
+AAPL,Non Operating Income Excluding Interest,Lag 3,,,,
 AAPL,Operating Income,Lag 1,,0.6436,0.0963,-0.043
 AAPL,Operating Income,Lag 2,,,0.8018,0.0491
 AAPL,Operating Income,Lag 3,,,,0.7243
-AAPL,Operating Income Ratio,Lag 1,,0.2331,0.0171,-0.0155
-AAPL,Operating Income Ratio,Lag 2,,,0.2542,0.0013
-AAPL,Operating Income Ratio,Lag 3,,,,0.2348
-AAPL,Total Other Income,Lag 1,,-0.6787,-2.2946,0.6916
-AAPL,Total Other Income,Lag 2,,,-1.4159,-3.1899
-AAPL,Total Other Income,Lag 3,,,,-1.7036
+AAPL,Total Other Income Expenses,Lag 1,,-0.6787,-2.2946,0.6916
+AAPL,Total Other Income Expenses,Lag 2,,,-1.4159,-3.1899
+AAPL,Total Other Income Expenses,Lag 3,,,,-1.7036
 AAPL,Income Before Tax,Lag 1,,0.6277,0.0906,-0.0451
 AAPL,Income Before Tax,Lag 2,,,0.7752,0.0415
 AAPL,Income Before Tax,Lag 3,,,,0.6952
-AAPL,Income Before Tax Ratio,Lag 1,,0.2214,0.0117,-0.0175
-AAPL,Income Before Tax Ratio,Lag 2,,,0.2357,-0.006
-AAPL,Income Before Tax Ratio,Lag 3,,,,0.214
 AAPL,Income Tax Expense,Lag 1,,0.5007,0.3286,-0.1326
 AAPL,Income Tax Expense,Lag 2,,,0.9938,0.1524
 AAPL,Income Tax Expense,Lag 3,,,,0.7294
+AAPL,Net Income from Continuing Operations,Lag 1,,0.6492,0.0541,-0.0281
+AAPL,Net Income from Continuing Operations,Lag 2,,,0.7384,0.0245
+AAPL,Net Income from Continuing Operations,Lag 3,,,,0.6895
+AAPL,Net Income from Discontinued Operations,Lag 1,,,,
+AAPL,Net Income from Discontinued Operations,Lag 2,,,,
+AAPL,Net Income from Discontinued Operations,Lag 3,,,,
+AAPL,Other Adjustments to Net Income,Lag 1,,,,
+AAPL,Other Adjustments to Net Income,Lag 2,,,,
+AAPL,Other Adjustments to Net Income,Lag 3,,,,
+AAPL,Net Income before Deductions,Lag 1,,0.6492,0.0541,-0.0281
+AAPL,Net Income before Deductions,Lag 2,,,0.7384,0.0245
+AAPL,Net Income before Deductions,Lag 3,,,,0.6895
+AAPL,Net Income Deductions,Lag 1,,,,
+AAPL,Net Income Deductions,Lag 2,,,,
+AAPL,Net Income Deductions,Lag 3,,,,
 AAPL,Net Income,Lag 1,,0.6492,0.0541,-0.0281
 AAPL,Net Income,Lag 2,,,0.7384,0.0245
 AAPL,Net Income,Lag 3,,,,0.6895
-AAPL,Net Income Ratio,Lag 1,,0.2377,-0.022,0.0
-AAPL,Net Income Ratio,Lag 2,,,0.2104,-0.022
-AAPL,Net Income Ratio,Lag 3,,,,0.2104
 AAPL,EPS,Lag 1,,0.713,0.0847,0.0016
 AAPL,EPS,Lag 2,,,0.858,0.0864
 AAPL,EPS,Lag 3,,,,0.861
-AAPL,EPS Diluted,Lag 1,,0.7104,0.0891,0.0033
-AAPL,EPS Diluted,Lag 2,,,0.8628,0.0927
-AAPL,EPS Diluted,Lag 3,,,,0.8689
 AAPL,Weighted Average Shares,Lag 1,,-0.0375,-0.0291,-0.0291
 AAPL,Weighted Average Shares,Lag 2,,,-0.0655,-0.0573
 AAPL,Weighted Average Shares,Lag 3,,,,-0.0927
@@ -92,9 +98,6 @@ MSFT,Cost of Goods Sold,Lag 3,,,,0.4294
 MSFT,Gross Profit,Lag 1,,0.1952,0.1706,0.0769
 MSFT,Gross Profit,Lag 2,,,0.3991,0.2606
 MSFT,Gross Profit,Lag 3,,,,0.5067
-MSFT,Gross Profit Ratio,Lag 1,,0.017,-0.0077,0.0076
-MSFT,Gross Profit Ratio,Lag 2,,,0.0091,-0.0001
-MSFT,Gross Profit Ratio,Lag 3,,,,0.0168
 MSFT,Research and Development Expenses,Lag 1,,0.0751,0.1832,0.1095
 MSFT,Research and Development Expenses,Lag 2,,,0.2721,0.3128
 MSFT,Research and Development Expenses,Lag 3,,,,0.4113
@@ -107,9 +110,9 @@ MSFT,Selling and Marketing Expenses,Lag 3,,,,0.1613
 MSFT,"Selling, General and Administrative Expenses",Lag 1,,0.0208,0.0992,0.0941
 MSFT,"Selling, General and Administrative Expenses",Lag 2,,,0.1221,0.2026
 MSFT,"Selling, General and Administrative Expenses",Lag 3,,,,0.2276
-MSFT,Other Expenses,Lag 1,,14.4026,-0.7192,1.3664
-MSFT,Other Expenses,Lag 2,,,3.3247,-0.3356
-MSFT,Other Expenses,Lag 3,,,,9.2338
+MSFT,Other Expenses,Lag 1,,-3.45,-1.3265,5.9688
+MSFT,Other Expenses,Lag 2,,,-0.2,-3.2755
+MSFT,Other Expenses,Lag 3,,,,4.575
 MSFT,Operating Expenses,Lag 1,,0.0446,0.1371,0.1013
 MSFT,Operating Expenses,Lag 2,,,0.1878,0.2523
 MSFT,Operating Expenses,Lag 3,,,,0.3081
@@ -122,45 +125,54 @@ MSFT,Interest Income,Lag 3,,,,0.1172
 MSFT,Interest Expense,Lag 1,,-0.0946,-0.1206,-0.046
 MSFT,Interest Expense,Lag 2,,,-0.2038,-0.1611
 MSFT,Interest Expense,Lag 3,,,,-0.2404
+MSFT,Net Interest Income,Lag 1,,-3.4157,-1.1442,32.0968
+MSFT,Net Interest Income,Lag 2,,,-0.6517,-5.7721
+MSFT,Net Interest Income,Lag 3,,,,10.5281
 MSFT,Depreciation and Amortization,Lag 1,,-0.0867,0.2374,-0.0414
 MSFT,Depreciation and Amortization,Lag 2,,,0.13,0.1861
 MSFT,Depreciation and Amortization,Lag 3,,,,0.0832
-MSFT,EBITDA,Lag 1,,0.241,0.199,0.0464
-MSFT,EBITDA,Lag 2,,,0.488,0.2547
-MSFT,EBITDA,Lag 3,,,,0.5571
-MSFT,EBITDA Ratio,Lag 1,,0.0559,0.0165,-0.0211
-MSFT,EBITDA Ratio,Lag 2,,,0.0733,-0.0049
-MSFT,EBITDA Ratio,Lag 3,,,,0.0507
+MSFT,EBITDA,Lag 1,,0.2442,0.1774,0.0489
+MSFT,EBITDA,Lag 2,,,0.465,0.235
+MSFT,EBITDA,Lag 3,,,,0.5366
+MSFT,EBIT,Lag 1,,0.3204,0.1679,0.0641
+MSFT,EBIT,Lag 2,,,0.542,0.2428
+MSFT,EBIT,Lag 3,,,,0.6409
+MSFT,Non Operating Income Excluding Interest,Lag 1,,0.3238,-0.3216,0.1503
+MSFT,Non Operating Income Excluding Interest,Lag 2,,,-0.1019,-0.2197
+MSFT,Non Operating Income Excluding Interest,Lag 3,,,,0.033
 MSFT,Operating Income,Lag 1,,0.3202,0.1926,0.0616
 MSFT,Operating Income,Lag 2,,,0.5745,0.2661
 MSFT,Operating Income,Lag 3,,,,0.6715
-MSFT,Operating Income Ratio,Lag 1,,0.1231,0.0113,-0.0069
-MSFT,Operating Income Ratio,Lag 2,,,0.1358,0.0043
-MSFT,Operating Income Ratio,Lag 3,,,,0.128
-MSFT,Total Other Income,Lag 1,,14.4026,-0.7192,1.3664
-MSFT,Total Other Income,Lag 2,,,3.3247,-0.3356
-MSFT,Total Other Income,Lag 3,,,,9.2338
+MSFT,Total Other Income Expenses,Lag 1,,14.4026,-0.7192,1.3664
+MSFT,Total Other Income Expenses,Lag 2,,,3.3247,-0.3356
+MSFT,Total Other Income Expenses,Lag 3,,,,9.2338
 MSFT,Income Before Tax,Lag 1,,0.3406,0.1774,0.0668
 MSFT,Income Before Tax,Lag 2,,,0.5785,0.2561
 MSFT,Income Before Tax,Lag 3,,,,0.684
-MSFT,Income Before Tax Ratio,Lag 1,,0.1408,-0.0019,-0.0019
-MSFT,Income Before Tax Ratio,Lag 2,,,0.1386,-0.0038
-MSFT,Income Before Tax Ratio,Lag 3,,,,0.1365
 MSFT,Income Tax Expense,Lag 1,,0.1229,0.1167,0.544
 MSFT,Income Tax Expense,Lag 2,,,0.2539,0.7241
 MSFT,Income Tax Expense,Lag 3,,,,0.936
+MSFT,Net Income from Continuing Operations,Lag 1,,0.3837,0.1872,-0.0052
+MSFT,Net Income from Continuing Operations,Lag 2,,,0.6426,0.181
+MSFT,Net Income from Continuing Operations,Lag 3,,,,0.6341
+MSFT,Net Income from Discontinued Operations,Lag 1,,,,
+MSFT,Net Income from Discontinued Operations,Lag 2,,,,
+MSFT,Net Income from Discontinued Operations,Lag 3,,,,
+MSFT,Other Adjustments to Net Income,Lag 1,,,,
+MSFT,Other Adjustments to Net Income,Lag 2,,,,
+MSFT,Other Adjustments to Net Income,Lag 3,,,,
+MSFT,Net Income before Deductions,Lag 1,,0.3837,0.1872,-0.0052
+MSFT,Net Income before Deductions,Lag 2,,,0.6426,0.181
+MSFT,Net Income before Deductions,Lag 3,,,,0.6341
+MSFT,Net Income Deductions,Lag 1,,,,
+MSFT,Net Income Deductions,Lag 2,,,,
+MSFT,Net Income Deductions,Lag 3,,,,
 MSFT,Net Income,Lag 1,,0.3837,0.1872,-0.0052
 MSFT,Net Income,Lag 2,,,0.6426,0.181
 MSFT,Net Income,Lag 3,,,,0.6341
-MSFT,Net Income Ratio,Lag 1,,0.1773,0.0066,-0.0692
-MSFT,Net Income Ratio,Lag 2,,,0.1851,-0.0631
-MSFT,Net Income Ratio,Lag 3,,,,0.103
 MSFT,EPS,Lag 1,,0.3952,0.1946,0.0021
 MSFT,EPS,Lag 2,,,0.6667,0.197
 MSFT,EPS,Lag 3,,,,0.6701
-MSFT,EPS Diluted,Lag 1,,0.3976,0.1988,0.0031
-MSFT,EPS Diluted,Lag 2,,,0.6753,0.2025
-MSFT,EPS Diluted,Lag 3,,,,0.6806
 MSFT,Weighted Average Shares,Lag 1,,-0.0083,-0.0068,-0.0067
 MSFT,Weighted Average Shares,Lag 2,,,-0.015,-0.0134
 MSFT,Weighted Average Shares,Lag 3,,,,-0.0216

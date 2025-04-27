@@ -19,6 +19,8 @@ def map_period_data_to_daily_data(
     """
     daily_period = pd.DataFrame(columns=period_data.index, index=daily_dates)
 
+    print(daily_period)
+
     # Convert the dates to Quarterly or Yearly periods
     daily_period.index = pd.PeriodIndex(
         daily_period.index, freq="Q" if quarterly else "Y"
@@ -26,7 +28,8 @@ def map_period_data_to_daily_data(
 
     # Fill the results into the daily_period DataFrame
     for period in period_data.columns:
-        daily_period.loc[period, :] = period_data[period].to_numpy()
+        if period in daily_period.index:
+            daily_period.loc[period, :] = period_data[period].to_numpy()
 
     # Fill missing values using backward and forward fill
     daily_period = daily_period.astype(float).bfill().ffill()

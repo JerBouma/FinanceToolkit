@@ -22,7 +22,7 @@ jobs:
           poetry install
       - name: Test with pytest
         run: |
-          poetry run pytest --ignore=tests/portfolio
+          poetry run pytest
       - name: Generate Coverage Report
         run: |
           poetry run coverage report -m

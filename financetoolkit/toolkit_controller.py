@@ -3626,28 +3626,6 @@ class Toolkit:
             # The rolling window is calculated for the rest of the income statement.
             income_statement = self._income_statement.T.rolling(trailing).sum().T
 
-            # Ratios can't be simply added together and should be recalculated.
-            income_statement.loc[:, "Gross Profit Ratio", :] = (
-                income_statement.loc[:, "Gross Profit", :]
-                / income_statement.loc[:, "Revenue", :]
-            ).to_numpy()
-            income_statement.loc[:, "EBITDA Ratio", :] = (
-                income_statement.loc[:, "EBITDA", :]
-                / income_statement.loc[:, "Revenue", :]
-            ).to_numpy()
-            income_statement.loc[:, "Operating Income Ratio", :] = (
-                income_statement.loc[:, "Operating Income", :]
-                / income_statement.loc[:, "Revenue", :]
-            ).to_numpy()
-            income_statement.loc[:, "Income Before Tax Ratio", :] = (
-                income_statement.loc[:, "Income Before Tax", :]
-                / income_statement.loc[:, "Revenue", :]
-            ).to_numpy()
-            income_statement.loc[:, "Net Income Ratio", :] = (
-                income_statement.loc[:, "Net Income", :]
-                / income_statement.loc[:, "Revenue", :]
-            ).to_numpy()
-
             # The Weighted Average Shares and Weighted Average Shares Diluted should
             # not be summed up but rather kept equal to the current value.
             income_statement.loc[weighted_average_shares.index] = (

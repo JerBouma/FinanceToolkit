@@ -47,7 +47,10 @@ def read_normalization_file(statement: str, format_location: str = ""):
             f"normalization/{statement}.csv"
         )
 
-    return pd.read_csv(file_location, index_col=[0]).iloc[:, 0]
+    try:
+        return pd.read_csv(file_location, index_col=[0]).iloc[:, 0]
+    except FileNotFoundError:
+        return pd.Series()
 
 
 def convert_financial_statements(
@@ -73,7 +76,8 @@ def convert_financial_statements(
     naming = {}
 
     if statement_format.empty:
-        raise ValueError("Please provide a non-empty format DataFrame.")
+        # If not format is provided, simply use the original financial statements
+        return financial_statements
 
     for name in financial_statements.index.unique(level=1):
         try:

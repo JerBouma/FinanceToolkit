@@ -1,0 +1,4 @@
+Date,Identifier,Volume,Price,Costs,Invested Amount,Current Value,Return,Benchmark Return,Alpha
+2000Q1,ASML,9.0,30.8212,-3.0,280.3908,306.36,0.0926,0.0396,0.053
+2000Q1,FIX,17.0,6.0618,-1.0,104.0506,87.21,-0.1619,0.0482,-0.2101
+2000Q1,SKY,12.0,15.2328,-2.0,184.7941,170.7768,-0.0759,0.0281,-0.104

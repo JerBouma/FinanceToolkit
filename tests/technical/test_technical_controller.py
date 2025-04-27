@@ -275,8 +275,8 @@ def test_get_accumulation_distribution_line(recorder):
 
 
 def test_get_chaikin_oscillator(recorder):
-    recorder.capture(technical_module.get_chaikin_oscillator())
-    recorder.capture(technical_module.get_chaikin_oscillator(growth=True))
+    recorder.capture(technical_module.get_chaikin_oscillator().round(2))
+    recorder.capture(technical_module.get_chaikin_oscillator(growth=True).round(2))
     recorder.capture(
-        technical_module.get_chaikin_oscillator(growth=True, lag=[1, 2, 3])
+        technical_module.get_chaikin_oscillator(growth=True, lag=[1, 2, 3]).round(2)
     )

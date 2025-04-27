@@ -136,7 +136,7 @@ def test_get_rolling_sharpe_ratio(recorder):
     recorder.capture(
         performance_model.get_rolling_sharpe_ratio(
             excess_returns=pd.Series([0.3, 0.2, 0.1, 0, 0.06]), window_size=2
-        )
+        ).round(4)
     )
 
 

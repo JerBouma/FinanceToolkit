@@ -53,6 +53,7 @@ def read_normalization_file(statement: str, format_location: str = ""):
 def convert_financial_statements(
     financial_statements: pd.DataFrame,
     statement_format: pd.DataFrame = pd.DataFrame(),
+    adjust_financial_statements: bool = True,
     reverse_dates: bool = False,
 ):
     """
@@ -83,21 +84,22 @@ def convert_financial_statements(
         except KeyError:
             continue
 
-    # Add missing columns if applicable. Fill these with NaN.
-    for name in statement_format.index:
-        for ticker in financial_statements.index.unique(level=0):
-            if name not in financial_statements.loc[ticker].index:
-                financial_statements.loc[(ticker, name), :] = np.nan
+    if adjust_financial_statements:
+        # Add missing columns if applicable. Fill these with NaN.
+        for name in statement_format.index:
+            for ticker in financial_statements.index.unique(level=0):
+                if name not in financial_statements.loc[ticker].index:
+                    financial_statements.loc[(ticker, name), :] = np.nan
 
-    # Reorder naming based on the order of statement_format
-    ordered_naming = {}
-    for index_name in statement_format.index:
-        for original_name, mapped_name in naming.items():
-            if index_name in (original_name, mapped_name):
-                ordered_naming[original_name] = mapped_name
-                break
+        # Reorder naming based on the order of statement_format
+        ordered_naming = {}
+        for index_name in statement_format.index:
+            for original_name, mapped_name in naming.items():
+                if index_name in (original_name, mapped_name):
+                    ordered_naming[original_name] = mapped_name
+                    break
 
-    naming = ordered_naming
+        naming = ordered_naming
 
     # Select only the columns it could trace back to the format
     financial_statements = financial_statements.loc[:, list(naming.keys()), :]

@@ -651,7 +651,10 @@ class Toolkit:
         if not balance.empty:
             self._balance_sheet_statement: pd.DataFrame = _convert_date_label(
                 _convert_financial_statements(
-                    balance, self._fmp_balance_sheet_statement_generic, reverse_dates
+                    financial_statements=balance,
+                    statement_format=self._fmp_balance_sheet_statement_generic,
+                    adjust_financial_statements=False,
+                    reverse_dates=reverse_dates,
                 ),
                 self._start_date,
                 self._end_date,
@@ -672,7 +675,10 @@ class Toolkit:
         if not income.empty:
             self._income_statement: pd.DataFrame = _convert_date_label(
                 _convert_financial_statements(
-                    income, self._fmp_income_statement_generic, reverse_dates
+                    financial_statements=income,
+                    statement_format=self._fmp_income_statement_generic,
+                    adjust_financial_statements=False,
+                    reverse_dates=reverse_dates,
                 ),
                 self._start_date,
                 self._end_date,
@@ -693,7 +699,10 @@ class Toolkit:
         if not cash.empty:
             self._cash_flow_statement: pd.DataFrame = _convert_date_label(
                 _convert_financial_statements(
-                    cash, self._fmp_cash_flow_statement_generic, reverse_dates
+                    financial_statements=cash,
+                    statement_format=self._fmp_cash_flow_statement_generic,
+                    adjust_financial_statements=False,
+                    reverse_dates=reverse_dates,
                 ),
                 self._start_date,
                 self._end_date,

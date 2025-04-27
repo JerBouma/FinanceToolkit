@@ -303,6 +303,8 @@ def get_fama_and_french_model_multi(
         dict: the regression results.
         pd.Series: the residuals.
     """
+    error_message = None
+
     if excess_returns.isna().any():
         excess_returns = excess_returns.bfill(limit=None)
         excess_returns = excess_returns.ffill(limit=None)
@@ -314,7 +316,16 @@ def get_fama_and_french_model_multi(
     model = LinearRegression()
     model.fit(factor_dataset, excess_returns)
 
-    r_squared = model.score(factor_dataset, excess_returns)
+    # Check for sufficient samples before calculating R^2
+    if factor_dataset.shape[0] < 2:  # noqa
+        error_message = (
+            "R2 score is not well-defined with less than two samples. "
+            "Setting value to NaN"
+        )
+        r_squared = np.nan
+    else:
+        # Calculate R^2 using the model's score method
+        r_squared = model.score(factor_dataset, excess_returns)
 
     y_pred = model.predict(factor_dataset)
 
@@ -332,7 +343,7 @@ def get_fama_and_french_model_multi(
     regression_results["Mean Squared Error (MSE)"] = mse
     regression_results["R Squared"] = r_squared
 
-    return regression_results, residuals
+    return regression_results, residuals, error_message
 
 
 def get_fama_and_french_model_single(

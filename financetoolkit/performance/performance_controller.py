@@ -769,9 +769,15 @@ class Performance:
                     (
                         factor_scores[ticker][dataset_period],
                         daily_residuals[ticker][dataset_period],
+                        error_message,
                     ) = performance_model.get_fama_and_french_model_multi(
                         excess_returns=excess_returns, factor_dataset=factor_data
                     )
+
+                    if error_message:
+                        logger.warning(
+                            "%s for %s in %s.", error_message, ticker, dataset_period
+                        )
 
                     fama_and_french_model = pd.DataFrame.from_dict(
                         {

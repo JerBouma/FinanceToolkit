@@ -184,13 +184,17 @@ def collect_financial_statements(
 
             fmp_financial_statement_statistics = (
                 normalization_model.convert_financial_statements(
-                    fmp_financial_statements, fmp_statistics_format, True
+                    financial_statements=fmp_financial_statements,
+                    statement_format=fmp_statistics_format,
+                    reverse_dates=True,
                 )
             )
 
             fmp_financial_statements_total = (
                 normalization_model.convert_financial_statements(
-                    fmp_financial_statements, fmp_statement_format, True
+                    financial_statements=fmp_financial_statements,
+                    statement_format=fmp_statement_format,
+                    reverse_dates=True,
                 )
             )
         elif source == "YahooFinance" and financial_statement_dict[source]:
@@ -200,7 +204,9 @@ def collect_financial_statements(
 
             yf_financial_statements_total = (
                 normalization_model.convert_financial_statements(
-                    yf_financial_statements, yf_statement_format, True
+                    financial_statements=yf_financial_statements,
+                    statement_format=yf_statement_format,
+                    reverse_dates=True,
                 )
             )
 

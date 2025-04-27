@@ -228,7 +228,7 @@ def collect_financial_statements(
             logger.info(
                 "Due to a missing optional dependency (yfinance) and your current FinancialModelingPrep plan, "
                 "data for the following tickers could not be acquired: %s\n"
-                "Enable this functionality by using:\033[1m pip install 'financetoolkit[yfinance]' \033[0m",
+                "Enable this functionality by using:\033[1m pip install yfinance \033[0m",
                 ", ".join(no_data),
             )
         else:

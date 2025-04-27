@@ -93,7 +93,7 @@ tests-mypy = ["mypy (>=1.11.1) ; platform_python_implementation == \"CPython\" a
 name = "beautifulsoup4"
 version = "4.13.3"
 description = "Screen-scraping library"
-optional = true
+optional = false
 python-versions = ">=3.7.0"
 groups = ["main"]
 markers = "extra == \"yfinance\""
@@ -635,7 +635,7 @@ tests = ["asttokens (>=2.1.0)", "coverage", "coverage-enable-subprocess", "ipyth
 name = "frozendict"
 version = "2.4.6"
 description = "A simple immutable dictionary"
-optional = true
+optional = false
 python-versions = ">=3.6"
 groups = ["main"]
 markers = "extra == \"yfinance\""
@@ -1169,7 +1169,7 @@ typing-extensions = {version = ">=4.1.0", markers = "python_version < \"3.11\""}
 name = "multitasking"
 version = "0.0.11"
 description = "Non-blocking Python methods using decorators"
-optional = true
+optional = false
 python-versions = "*"
 groups = ["main"]
 markers = "extra == \"yfinance\""
@@ -1491,7 +1491,7 @@ files = [
 name = "peewee"
 version = "3.17.9"
 description = "a little orm"
-optional = true
+optional = false
 python-versions = "*"
 groups = ["main"]
 markers = "extra == \"yfinance\""
@@ -2642,7 +2642,7 @@ files = [
 name = "soupsieve"
 version = "2.6"
 description = "A modern CSS selector implementation for Beautiful Soup."
-optional = true
+optional = false
 python-versions = ">=3.8"
 groups = ["main"]
 markers = "extra == \"yfinance\""
@@ -3209,7 +3209,7 @@ propcache = ">=0.2.1"
 name = "yfinance"
 version = "0.2.55"
 description = "Download market data from Yahoo! Finance API"
-optional = true
+optional = false
 python-versions = "*"
 groups = ["main"]
 markers = "extra == \"yfinance\""
@@ -3239,4 +3239,4 @@ yfinance = ["yfinance"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.10, <3.14"
-content-hash = "1d2a195fef5be49bd22bdde4b77fd3f4e657b768d08e740b6e1fd928b1250631"
+content-hash = "1fde66942a52ee96d6ad8111fdae11d531a1f5dec71867910fbf4ce1e9f69570"

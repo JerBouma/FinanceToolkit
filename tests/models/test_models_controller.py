@@ -10,6 +10,7 @@ historical = pd.read_pickle("tests/datasets/historical_dataset.pickle")
 income_dataset = pd.read_pickle("tests/datasets/income_dataset.pickle")
 cash_dataset = pd.read_pickle("tests/datasets/cash_dataset.pickle")
 risk_free_rate = pd.read_pickle("tests/datasets/risk_free_rate.pickle")
+treasury_data = pd.read_pickle("tests/datasets/treasury_data.pickle")
 
 toolkit = Toolkit(
     tickers=["AAPL", "MSFT"],
@@ -20,9 +21,11 @@ toolkit = Toolkit(
     convert_currency=False,
     start_date="2019-12-31",
     end_date="2023-01-01",
+    sleep_timer=False,
 )
 
 toolkit._daily_risk_free_rate = risk_free_rate
+toolkit._daily_treasury_data = treasury_data
 
 models_module = toolkit.models
 

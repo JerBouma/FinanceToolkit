@@ -7,6 +7,9 @@ balance_dataset = pd.read_pickle("tests/datasets/balance_dataset.pickle")
 income_dataset = pd.read_pickle("tests/datasets/income_dataset.pickle")
 cash_dataset = pd.read_pickle("tests/datasets/cash_dataset.pickle")
 historical_dataset = pd.read_pickle("tests/datasets/historical_dataset.pickle")
+risk_free_rate = pd.read_pickle("tests/datasets/risk_free_rate.pickle")
+treasury_data = pd.read_pickle("tests/datasets/treasury_data.pickle")
+
 
 # pylint: disable=missing-function-docstring
 
@@ -18,7 +21,11 @@ def test_toolkit_balance(recorder):
         convert_currency=False,
         start_date="2019-12-31",
         end_date="2023-01-01",
+        sleep_timer=False,
     )
+
+    toolkit._daily_risk_free_rate = risk_free_rate
+    toolkit._daily_treasury_data = treasury_data
 
     recorder.capture(toolkit.get_balance_sheet_statement())
     recorder.capture(toolkit.get_balance_sheet_statement(growth=True))
@@ -32,7 +39,11 @@ def test_toolkit_income(recorder):
         convert_currency=False,
         start_date="2019-12-31",
         end_date="2023-01-01",
+        sleep_timer=False,
     )
+
+    toolkit._daily_risk_free_rate = risk_free_rate
+    toolkit._daily_treasury_data = treasury_data
 
     recorder.capture(toolkit.get_income_statement())
     recorder.capture(toolkit.get_income_statement(growth=True))
@@ -46,7 +57,11 @@ def test_toolkit_cash(recorder):
         convert_currency=False,
         start_date="2019-12-31",
         end_date="2023-01-01",
+        sleep_timer=False,
     )
+
+    toolkit._daily_risk_free_rate = risk_free_rate
+    toolkit._daily_treasury_data = treasury_data
 
     recorder.capture(toolkit.get_cash_flow_statement())
     recorder.capture(toolkit.get_cash_flow_statement(growth=True))
@@ -59,7 +74,11 @@ def test_toolkit_historical(recorder):
         historical=historical_dataset,
         start_date="2019-12-31",
         end_date="2023-01-01",
+        sleep_timer=False,
     )
+
+    toolkit._daily_risk_free_rate = risk_free_rate
+    toolkit._daily_treasury_data = treasury_data
 
     recorder.capture(toolkit.get_historical_data(period="yearly").round(0))
 
@@ -74,7 +93,11 @@ def test_toolkit_ratios(recorder):
         convert_currency=False,
         start_date="2019-12-31",
         end_date="2023-01-01",
+        sleep_timer=False,
     )
+
+    toolkit._daily_risk_free_rate = risk_free_rate
+    toolkit._daily_treasury_data = treasury_data
 
     recorder.capture(toolkit.ratios.get_debt_to_assets_ratio())
     recorder.capture(toolkit.ratios.get_debt_to_assets_ratio(growth=True))
@@ -93,7 +116,11 @@ def test_toolkit_models(recorder):
         convert_currency=False,
         start_date="2019-12-31",
         end_date="2023-01-01",
+        sleep_timer=False,
     )
+
+    toolkit._daily_risk_free_rate = risk_free_rate
+    toolkit._daily_treasury_data = treasury_data
 
     recorder.capture(toolkit.models.get_dupont_analysis())
     recorder.capture(toolkit.models.get_dupont_analysis(growth=True))
@@ -110,7 +137,11 @@ def test_toolkit_performance(recorder):
         convert_currency=False,
         start_date="2019-12-31",
         end_date="2023-01-01",
+        sleep_timer=False,
     )
+
+    toolkit._daily_risk_free_rate = risk_free_rate
+    toolkit._daily_treasury_data = treasury_data
 
     recorder.capture(toolkit.performance.get_beta())
     recorder.capture(toolkit.performance.get_beta(growth=True))
@@ -127,7 +158,11 @@ def test_toolkit_risk(recorder):
         convert_currency=False,
         start_date="2019-12-31",
         end_date="2023-01-01",
+        sleep_timer=False,
     )
+
+    toolkit._daily_risk_free_rate = risk_free_rate
+    toolkit._daily_treasury_data = treasury_data
 
     recorder.capture(toolkit.risk.get_conditional_value_at_risk())
     recorder.capture(toolkit.risk.get_conditional_value_at_risk(growth=True))
@@ -146,7 +181,11 @@ def test_toolkit_technicals(recorder):
         convert_currency=False,
         start_date="2019-12-31",
         end_date="2023-01-01",
+        sleep_timer=False,
     )
+
+    toolkit._daily_risk_free_rate = risk_free_rate
+    toolkit._daily_treasury_data = treasury_data
 
     recorder.capture(toolkit.technicals.collect_all_indicators())
     recorder.capture(toolkit.technicals.collect_all_indicators(growth=True))

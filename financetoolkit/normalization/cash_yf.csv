@@ -1,0 +1,52 @@
+Cash,Generic
+OperatingCashFlow,Operating Cash Flow
+CashFlowFromContinuingOperatingActivities,Cash Flow from Operations
+NetIncomeFromContinuingOperations,Net Income from Operations
+DepreciationAmortizationDepletion,"Depreciation, Amortization and Depletion"
+DepreciationAndAmortization,Depreciation and Amortization
+Depreciation,Depreciation
+DeferredTax,Deferred Tax
+DeferredIncomeTax,Deferred Income Tax
+StockBasedCompensation,Stock Based Compensation
+OtherNonCashItems,Other Non Cash Items
+ChangeInWorkingCapital,Change in Working Capital
+ChangeInReceivables,Change in Accounts Receivables
+ChangeInInventory,Change in Inventory
+ChangeInPayablesAndAccruedExpense,Change in Payables and Accrued Expense
+ChangeInPayable,Change in Payable
+ChangeInAccountPayables,Change in Accounts Payables
+ChangeInOtherCurrentAssets,Change in Other Current Assets
+ChangeInOtherCurrentLiabilities,Change in Other Current Liabilities
+ChangeInOtherWorkingCapital,Change in Other Working Capital
+InvestingCashFlow,Cash Flow from Investing
+CashFlowFromContinuingInvestingActivities, Cash Flow from Continuing Investing Activities
+NetPPEPurchaseAndSale,"Property, Plant and Equipment"
+PurchaseOfPPE,"Purchase of Property, Plant and Equipment"
+NetBusinessPurchaseAndSale,Net Business Purchase and Sale
+PurchaseOfBusiness,Purchase of Business
+NetInvestmentPurchaseAndSale,Net Investment Purchase and Sale
+PurchaseOfInvestments,Purchases of Investment
+SaleOfInvestment,Sales of Investments
+NetOtherInvestingChanges,Other Investing Activities
+FinancingCashFlow,Cash Flow from Financing
+CashFlowFromContinuingFinancingActivities,Cash Flow from Continuing Financing Activities
+NetIssuancePaymentsOfDebt,Net Issuance Payments of Debt
+NetLongTermDebtIssuance,Long Term Debt Issued
+NetShortTermDebtIssuance,Short Term Debt Issued
+NetCommonStockIssuance,Net Common Stock Issuance
+CommonStockIssuance,Common Stock Issued
+CommonStockPayments,Common Stock Purchased
+CashDividendsPaid,Dividends Paid
+CommonStockDividendPaid,Common Dividends Paid
+NetOtherFinancingCharges,Net Other Financing Charges
+EndCashPosition,Cash End of Period
+ChangesInCash,Net Change in Cash
+BeginningCashPosition,Cash Beginning of Period
+IncomeTaxPaidSupplementalData,Income Taxes Paid
+InterestPaidSupplementalData,Interest Paid
+CapitalExpenditure,Capital Expenditure
+IssuanceOfCapitalStock,Issuance of Capital Stock
+IssuanceOfDebt,Net Debt Issued
+RepaymentOfDebt,Debt Repayment
+RepurchaseOfCapitalStock,Repurchase of Capital Stock
+FreeCashFlow,Free Cash Flow

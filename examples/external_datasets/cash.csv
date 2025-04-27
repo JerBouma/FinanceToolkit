@@ -1,32 +1,52 @@
 Cash,Generic
-Net income,Net Income
-Depreciation & amortisation,Depreciation and Amortization
-,Deferred Income Tax
-Stock-based compensation,Stock Based Compensation
-Change in working capital,Change in Working Capital
-Accounts receivable,Accounts Receivables
-Inventory,Inventory
-accountsPayables,Accounts Payables
-Other working capital,Other Working Capital
-Other non-cash items,Other Non Cash Items
-Net cash provided by operating activities,Cash Flow from Operations
-"Investments in property, plant and equipment","Property, Plant and Equipment"
-"Acquisitions, net",Acquisitions
-Purchases of investments,Purchases of Investments
-Sales/maturities of investments,Sales of Investments
-Other investing activities,Other Investing Activities
-Net cash used for investing activities,Cash Flow from Investing
-Debt repayment,Debt Repayment
-Common stock issued,Common Stock Issued
-,Common Stock Purchased
-dividendPayout,Dividends Paid
-dividendPayoutPreferredStock,Preferred Dividends Paid
-Other financing activities,Other Financing Activities
-Net cash used provided by (used for) financing activities,Cash Flow from Financing
-,Forex Changes on Cash
-Net change in cash,Net Change in Cash
-Cash at end of period,Cash End of Period
-Cash at beginning of period,Cash Beginning of Period
-,Operating Cash Flow
-Capital expenditure,Capital Expenditure
-Free cash flow,Free Cash Flow
+OperatingCashFlow,Operating Cash Flow
+CashFlowFromContinuingOperatingActivities,Cash Flow from Operations
+NetIncomeFromContinuingOperations,Net Income from Operations
+DepreciationAmortizationDepletion,"Depreciation, Amortization and Depletion"
+DepreciationAndAmortization,Depreciation and Amortization
+Depreciation,Depreciation
+DeferredTax,Deferred Tax
+DeferredIncomeTax,Deferred Income Tax
+StockBasedCompensation,Stock Based Compensation
+OtherNonCashItems,Other Non Cash Items
+ChangeInWorkingCapital,Change in Working Capital
+ChangeInReceivables,Change in Accounts Receivables
+ChangeInInventory,Change in Inventory
+ChangeInPayablesAndAccruedExpense,Change in Payables and Accrued Expense
+ChangeInPayable,Change in Payable
+ChangeInAccountPayables,Change in Accounts Payables
+ChangeInOtherCurrentAssets,Change in Other Current Assets
+ChangeInOtherCurrentLiabilities,Change in Other Current Liabilities
+ChangeInOtherWorkingCapital,Change in Other Working Capital
+InvestingCashFlow,Cash Flow from Investing
+CashFlowFromContinuingInvestingActivities, Cash Flow from Continuing Investing Activities
+NetPPEPurchaseAndSale,"Property, Plant and Equipment"
+PurchaseOfPPE,"Purchase of Property, Plant and Equipment"
+NetBusinessPurchaseAndSale,Net Business Purchase and Sale
+PurchaseOfBusiness,Purchase of Business
+NetInvestmentPurchaseAndSale,Net Investment Purchase and Sale
+PurchaseOfInvestments,Purchases of Investment
+SaleOfInvestment,Sales of Investments
+NetOtherInvestingChanges,Other Investing Activities
+FinancingCashFlow,Cash Flow from Financing
+CashFlowFromContinuingFinancingActivities,Cash Flow from Continuing Financing Activities
+NetIssuancePaymentsOfDebt,Net Issuance Payments of Debt
+NetLongTermDebtIssuance,Long Term Debt Issued
+NetShortTermDebtIssuance,Short Term Debt Issued
+NetCommonStockIssuance,Net Common Stock Issuance
+CommonStockIssuance,Common Stock Issued
+CommonStockPayments,Common Stock Purchased
+CashDividendsPaid,Dividends Paid
+CommonStockDividendPaid,Common Dividends Paid
+NetOtherFinancingCharges,Net Other Financing Charges
+EndCashPosition,Cash End of Period
+ChangesInCash,Net Change in Cash
+BeginningCashPosition,Cash Beginning of Period
+IncomeTaxPaidSupplementalData,Income Taxes Paid
+InterestPaidSupplementalData,Interest Paid
+CapitalExpenditure,Capital Expenditure
+IssuanceOfCapitalStock,Issuance of Capital Stock
+IssuanceOfDebt,Net Debt Issued
+RepaymentOfDebt,Debt Repayment
+RepurchaseOfCapitalStock,Repurchase of Capital Stock
+FreeCashFlow,Free Cash Flow

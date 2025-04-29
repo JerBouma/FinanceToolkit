@@ -196,7 +196,7 @@ def get_financial_statement(
         url=url, sleep_timer=sleep_timer, user_subscription=user_subscription
     )
 
-    try:
+    if not financial_statement.empty:
         financial_statement = financial_statement.drop("symbol", axis=1)
 
         # One day is deducted from the date because it could be that
@@ -217,16 +217,14 @@ def get_financial_statement(
             ).dt.to_period("Y")
 
         financial_statement = financial_statement.set_index("date").T
-    except KeyError:
-        return pd.DataFrame()
 
-    if financial_statement.columns.duplicated().any():
-        # This happens in the rare case that a company has two financial statements for the same period.
-        # Browsing through the data has shown that these financial statements are equal therefore
-        # one of the columns can be dropped.
-        financial_statement = financial_statement.loc[
-            :, ~financial_statement.columns.duplicated()
-        ]
+        if financial_statement.columns.duplicated().any():
+            # This happens in the rare case that a company has two financial statements for the same period.
+            # Browsing through the data has shown that these financial statements are equal therefore
+            # one of the columns can be dropped.
+            financial_statement = financial_statement.loc[
+                :, ~financial_statement.columns.duplicated()
+            ]
 
     return financial_statement
 

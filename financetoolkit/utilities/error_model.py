@@ -141,7 +141,7 @@ def check_for_error_messages(
 
     if premium_query_parameter:
         logger.error(
-            "The following tickers are using a premium query parameter: %s.\n"
+            "The following tickers are using a premium query parameter from Financial Modeling Prep: %s.\n"
             "This is not available in your current plan. Consider upgrading your plan to a higher plan. "
             "You can get 15%% off by using the following affiliate link which also supports the project: "
             "https://www.jeroenbouma.com/fmp",
@@ -150,7 +150,7 @@ def check_for_error_messages(
 
     if exclusive_endpoint:
         logger.error(
-            "The following tickers are using an exclusive endpoint: %s.\n"
+            "The following tickers are using an exclusive endpoint from Financial Modeling Prep: %s.\n"
             "This is not available in the Free plan. Consider upgrading your plan to a higher plan. "
             "You can get 15%% off by using the following affiliate link which also supports the project: "
             "https://www.jeroenbouma.com/fmp",
@@ -158,7 +158,7 @@ def check_for_error_messages(
         )
     if special_endpoint:
         logger.error(
-            "The following tickers are using a special endpoint: %s.\n"
+            "The following tickers are using a special endpoint from Financial Modeling Prep: %s.\n"
             "This is not available in the Free plan. Consider upgrading your plan to a higher plan. "
             "You can get 15%% off by using the following affiliate link which also supports the project: "
             "https://www.jeroenbouma.com/fmp",
@@ -167,7 +167,7 @@ def check_for_error_messages(
     if not_available:
         logger.error(
             "The requested data is part of the %s Subscription from "
-            "FinancialModelingPrep: %s.\nIf you wish to access "
+            "Financial Modeling Prep: %s.\nIf you wish to access "
             "this data, consider upgrading your plan. You can get 15%% off by using the "
             "following affiliate link which also supports the project: "
             "https://www.jeroenbouma.com/fmp",
@@ -177,7 +177,7 @@ def check_for_error_messages(
 
     if bandwidth_limit_reach:
         logger.error(
-            "The bandwidth limit has been reached for the following tickers: %s.\n"
+            "The bandwidth limit from Financial Modeling Prep has been reached for the following tickers: %s.\n"
             "Consider upgrading your plan to a higher plan to increase your bandwidth limit. You can get 15%% "
             "off by using the following affiliate link which also supports the project: "
             "https://www.jeroenbouma.com/fmp",
@@ -186,7 +186,7 @@ def check_for_error_messages(
 
     if limit_reach:
         logger.error(
-            "The limit has been reached for the following tickers: %s.\n"
+            "The limit from Financial Modeling Prep has been reached for the following tickers: %s.\n"
             "Consider upgrading your plan to a higher plan to increase your limit. You can get 15%% "
             "off by using the following affiliate link which also supports the project: "
             "https://www.jeroenbouma.com/fmp",
@@ -195,8 +195,8 @@ def check_for_error_messages(
 
     if no_data:
         logger.error(
-            "Some tickers have no data, verify if the ticker has any data to begin with. "
-            "If it does, please open an issue here: https://github.com/JerBouma/FinanceToolkit/issues. "
+            "Some tickers from Financial Modeling Prep have no data, verify if the ticker has any data to "
+            "begin with. If it does, please open an issue here: https://github.com/JerBouma/FinanceToolkit/issues. "
             "These tickers are: %s",
             ", ".join(no_data),
         )
@@ -211,8 +211,8 @@ def check_for_error_messages(
 
     if us_stocks_only:
         logger.error(
-            "The Free plan is limited to US stocks only. Therefore the following tickers are not "
-            "available: %s\nConsider upgrading your plan to Starter or "
+            "The Free plan of Financial Modeling Prep is limited to US stocks only. "
+            "Therefore the following tickers are not available: %s\nConsider upgrading your plan to Starter or "
             "higher. You can get 15%% off by using the following affiliate link which also "
             "supports the project: https://www.jeroenbouma.com/fmp",
             ", ".join(us_stocks_only),
@@ -220,8 +220,8 @@ def check_for_error_messages(
 
     if invalid_api_key:
         logger.error(
-            "You have entered an invalid API key from FinancialModelingPrep. Obtain your API key for free "
-            "and get 15%% off the Premium plans by using the following affiliate link.\nThis also supports "
+            "You have entered an invalid API key from Financial Modeling Prep. Obtain an API key for free "
+            "or get 15%% off the Premium plans by using the following affiliate link.\nThis also supports "
             "the project: https://www.jeroenbouma.com/fmp"
         )
 

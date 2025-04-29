@@ -92,11 +92,12 @@ def collect_financial_statements(
                 user_subscription=user_subscription,
             )
 
+            financial_statement_dict["FinancialModelingPrep"][
+                ticker
+            ] = financial_statement_data
+
             if not financial_statement_data.empty:
                 fmp_tickers.append(ticker)
-                financial_statement_dict["FinancialModelingPrep"][
-                    ticker
-                ] = financial_statement_data
 
         if enforce_source != "FinancialModelingPrep" and financial_statement_data.empty:
             if ENABLE_YFINANCE:
@@ -104,11 +105,12 @@ def collect_financial_statements(
                     ticker=ticker, statement=statement, quarter=quarter
                 )
 
-            if not financial_statement_data.empty:
-                yf_tickers.append(ticker)
                 financial_statement_dict["YahooFinance"][
                     ticker
                 ] = financial_statement_data
+
+            if not financial_statement_data.empty:
+                yf_tickers.append(ticker)
 
         if financial_statement_data.empty:
             no_data.append(ticker)
@@ -166,18 +168,12 @@ def collect_financial_statements(
     fmp_financial_statement_statistics = pd.DataFrame()
 
     for source, _ in financial_statement_dict.items():
-        # Check if there are any financial statements in the dataset
-        financial_statement_dict[source] = {
-            ticker: df
-            for ticker, df in financial_statement_dict[source].items()
-            if not df.empty
-        }
+        financial_statement_dict[source] = error_model.check_for_error_messages(
+            dataset_dictionary=financial_statement_dict[source],
+            user_subscription=user_subscription,
+        )
 
         if source == "FinancialModelingPrep" and financial_statement_dict[source]:
-            financial_statement_dict[source] = error_model.check_for_error_messages(
-                dataset_dictionary=financial_statement_dict[source],
-                user_subscription=user_subscription,
-            )
             fmp_financial_statements = pd.concat(
                 financial_statement_dict[source], axis=0
             )

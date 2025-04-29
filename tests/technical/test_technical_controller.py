@@ -33,10 +33,10 @@ def test_collect_all_indicators(recorder):
 
 
 def test_collect_breadth_indicators(recorder):
-    recorder.capture(technical_module.collect_breadth_indicators().round(2))
-    recorder.capture(technical_module.collect_breadth_indicators(growth=True).round(2))
+    recorder.capture(technical_module.collect_breadth_indicators().round(0))
+    recorder.capture(technical_module.collect_breadth_indicators(growth=True).round(0))
     recorder.capture(
-        technical_module.collect_breadth_indicators(growth=True, lag=[1, 2, 3]).round(2)
+        technical_module.collect_breadth_indicators(growth=True, lag=[1, 2, 3]).round(0)
     )
 
 

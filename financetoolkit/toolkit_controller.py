@@ -111,7 +111,12 @@ class Toolkit:
         to True. If you want to use a specific location to store the cached data, you can define this as a string,
         e.g. "datasets".
 
-        See for more information on all of this, the following link: https://www.jeroenbouma.com/projects/financetoolkit
+        It is good to note that the Finance Toolkit will always attempt to acquire data from Financial Modeling Prep
+        if an API key is set. If this isn't the case, the data comes from Yahoo Finance. In case you have an API key
+        set and the current plan doesn't allow for the data to be collected, the Toolkit will automatically switch to
+        Yahoo Finance. You can disable this behaviour by setting the enforce_source variable to "FinancialModelingPrep".
+
+        For more information on the capabilities of the Finance Toolkit see here: https://www.jeroenbouma.com/projects/financetoolkit
 
         Args:
             tickers (list | str | None): A string or a list of strings containing the company ticker(s). E.g. 'TSLA' or 'MSFT'.

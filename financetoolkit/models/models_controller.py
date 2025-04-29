@@ -735,21 +735,20 @@ class Models:
 
         intrinsic_values_dict = {}
         for ticker in self._tickers:
+            perpetual_growth_rate_float = perpetual_growth_rate_dict.get(
+                ticker, perpetual_growth_rate
+            )
+            growth_rate_float = growth_rate_dict.get(ticker, growth_rate)
+            weighted_average_cost_of_capital_float = wacc_dict.get(
+                ticker, weighted_average_cost_of_capital
+            )
             intrinsic_values_dict[ticker] = intrinsic_model.get_intrinsic_value(
                 cash_flow=self._cash_flow_statement.loc[ticker, cash_flow_type]
                 .dropna()
                 .iloc[-1],
-                growth_rate=(
-                    growth_rate_dict[ticker] if growth_rate_dict else growth_rate
-                ),
-                perpetual_growth_rate=(
-                    perpetual_growth_rate_dict[ticker]
-                    if perpetual_growth_rate_dict
-                    else perpetual_growth_rate
-                ),
-                weighted_average_cost_of_capital=(
-                    wacc_dict[ticker] if wacc_dict else weighted_average_cost_of_capital
-                ),
+                growth_rate=growth_rate_float,
+                perpetual_growth_rate=perpetual_growth_rate_float,
+                weighted_average_cost_of_capital=weighted_average_cost_of_capital_float,
                 cash_and_cash_equivalents=self._balance_sheet_statement.loc[
                     ticker, "Cash and Cash Equivalents"
                 ]

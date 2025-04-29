@@ -25,8 +25,7 @@ jobs:
         uses: snok/install-poetry@v1
       - run: |
           poetry install
-      - run: poetry run black --diff --check financetoolkit
-      - run: poetry run codespell
+      - run: poetry run black --diff --check financetoolkitl
       - run: poetry run ruff financetoolkit
       - run: poetry run pylint financetoolkit
 

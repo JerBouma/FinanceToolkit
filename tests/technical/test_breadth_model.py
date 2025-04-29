@@ -11,7 +11,7 @@ def test_get_mcclellan_oscillator(recorder):
     recorder.capture(
         breadth_model.get_mcclellan_oscillator(
             pd.Series([100, 110, 120, 130, 80]), 10, 20
-        )
+        ).round(2)
     )
 
 

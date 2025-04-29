@@ -4,11 +4,13 @@ __docformat__ = "google"
 
 import contextlib
 import inspect
+import re
 import warnings
 from functools import wraps
 
 import numpy as np
 import pandas as pd
+import requests
 
 from financetoolkit.utilities import logger_model
 
@@ -142,6 +144,56 @@ def equal_length(dataset1: pd.Series, dataset2: pd.Series) -> pd.Series:
         dataset2 = dataset2.sort_index()
 
     return dataset1, dataset2
+
+
+def convert_isin_to_ticker(isin_code: str) -> str:
+    """
+    Converts an ISIN code to a ticker symbol using Yahoo Finance search.
+
+    Args:
+        isin_code (str): The ISIN code to convert.
+
+    Returns:
+        str: The corresponding ticker symbol if found, otherwise the original ISIN code.
+    """
+    if bool(re.match("^([A-Z]{2})([A-Z0-9]{9})([0-9])$", isin_code)):
+        try:
+            response = requests.get(
+                f"https://query2.finance.yahoo.com/v1/finance/search?q={isin_code}",
+                timeout=60,
+                headers={
+                    "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit"
+                    "/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36"
+                },
+            )
+            response.raise_for_status()  # Raise an exception for bad status codes
+
+            data = response.json()
+
+            if data.get("quotes"):
+                symbol = data["quotes"][0]["symbol"]
+                logger.info("Converted ISIN %s to ticker %s", isin_code, symbol)
+
+                return symbol
+
+            logger.warning(
+                "Could not find a ticker for ISIN %s. Returning ISIN.", isin_code
+            )
+            return isin_code
+
+        except requests.exceptions.RequestException as e:
+            logger.warning(
+                "Request failed for ISIN %s: %s. Returning ISIN.", isin_code, e
+            )
+            return isin_code
+        except (KeyError, ValueError, IndexError):
+            logger.warning(
+                "Could not parse response for ISIN %s. Returning ISIN.", isin_code
+            )
+            return isin_code
+    else:
+        # If it's not a valid ISIN format, return the original input
+        return isin_code
 
 
 def enrich_historical_data(

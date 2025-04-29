@@ -9,7 +9,6 @@ from collections import Counter
 from datetime import datetime, timedelta
 
 import pandas as pd
-import requests
 
 from financetoolkit import currencies_model, helpers
 from financetoolkit.economics.economics_controller import Economics
@@ -33,10 +32,8 @@ from financetoolkit.historical_model import (
 )
 from financetoolkit.models.models_controller import Models
 from financetoolkit.normalization_model import (
-    convert_date_label as _convert_date_label,
-    convert_financial_statements as _convert_financial_statements,
     copy_normalization_files as _copy_normalization_files,
-    read_normalization_file as _read_normalization_file,
+    initialize_statements_and_normalization as _initialize_statements_and_normalization,
 )
 from financetoolkit.options.options_controller import Options
 from financetoolkit.performance.performance_controller import Performance
@@ -204,6 +201,12 @@ class Toolkit:
             api_key="FINANCIAL_MODELING_PREP_KEY")
         ```
         """
+        self._api_key = api_key
+        self._risk_free_rate = risk_free_rate
+        self._rounding = rounding
+        self._remove_invalid_tickers = remove_invalid_tickers
+        self._invalid_tickers: list = []
+
         self._use_cached_data = (
             use_cached_data if isinstance(use_cached_data, bool) else True
         )
@@ -235,7 +238,6 @@ class Toolkit:
                 "Please select a valid risk free rate (13w, 5y, 10y or 30y)"
             )
 
-        self._api_key = api_key
         self._start_date = (
             start_date
             if start_date
@@ -245,7 +247,6 @@ class Toolkit:
         )
         self._end_date = end_date if end_date else datetime.now().strftime("%Y-%m-%d")
         self._quarterly = quarterly
-        self._risk_free_rate = risk_free_rate
 
         if use_cached_data:
             cached_configurations = cache_model.load_cached_data(
@@ -254,41 +255,34 @@ class Toolkit:
                 method="pickle",
             )
 
-            if len(cached_configurations):
-                # Given that it can be an empty pd.DataFrame or a filled
-                # dictionary, testing for both.
+            if cached_configurations:  # Check if dictionary is not empty
                 cached_overwrites = []
+                # Map cache keys to tuples of (initial_value, attribute_name)
+                config_mapping = {
+                    "start_date": (self._start_date, "_start_date"),
+                    "end_date": (self._end_date, "_end_date"),
+                    "quarterly": (self._quarterly, "_quarterly"),
+                    "benchmark_ticker": (self._benchmark_ticker, "_benchmark_ticker"),
+                    "risk_free_rate": (self._risk_free_rate, "_risk_free_rate"),
+                }
 
-                if self._start_date != cached_configurations["start_date"]:
-                    self._start_date = cached_configurations["start_date"]
-                    cached_overwrites.append(
-                        f"start_date ({cached_configurations['start_date']})"
-                    )
-                if self._end_date != cached_configurations["end_date"]:
-                    self._end_date = cached_configurations["end_date"]
-                    cached_overwrites.append(
-                        f"end_date ({cached_configurations['end_date']})"
-                    )
-                if self._quarterly != cached_configurations["quarterly"]:
-                    self._quarterly = cached_configurations["quarterly"]
-                    cached_overwrites.append(
-                        f"quarterly ({cached_configurations['quarterly']})"
-                    )
-                if self._benchmark_ticker != cached_configurations["benchmark_ticker"]:
-                    self._benchmark_ticker = cached_configurations["benchmark_ticker"]
-                    cached_overwrites.append(
-                        f"benchmark_ticker ({cached_configurations['benchmark_ticker']})"
-                    )
-                if self._risk_free_rate != cached_configurations["risk_free_rate"]:
-                    self._risk_free_rate = cached_configurations["risk_free_rate"]
-                    cached_overwrites.append(
-                        f"risk_free_rate ({cached_configurations['risk_free_rate']})"
-                    )
-                if tickers != cached_configurations["tickers"]:
-                    if tickers:
-                        # Only provide information if any tickers are provided
-                        cached_overwrites.append("tickers")
-                    tickers = cached_configurations["tickers"]
+                # Compare initial values with cached values, update instance if different
+                for key, (initial_value, attr_name) in config_mapping.items():
+                    cached_value = cached_configurations.get(key)
+                    # Check if cached value exists and is different from the initial value
+                    if cached_value is not None and initial_value != cached_value:
+                        setattr(
+                            self, attr_name, cached_value
+                        )  # Update instance attribute
+                        cached_overwrites.append(f"{key} ({cached_value})")
+
+                # Handle tickers separately: compare input tickers with cached tickers
+                cached_tickers = cached_configurations.get("tickers")
+                # Check if cached tickers exist and are different from the input tickers
+                if cached_tickers is not None and tickers != cached_tickers and tickers:
+                    # Only log the change if the user actually provided tickers initially
+                    cached_overwrites.append("tickers")
+                    tickers = cached_tickers
 
                 if cached_overwrites:
                     folder = (
@@ -307,14 +301,16 @@ class Toolkit:
                         folder,
                     )
             else:
+                # Save the current configuration if no cache exists
+                # Use the values as they are before potential overwrites from cache
                 cache_model.save_cached_data(
                     cached_data={
-                        "tickers": tickers,
+                        "tickers": tickers,  # Use the initial tickers list/str
                         "start_date": self._start_date,
                         "end_date": self._end_date,
                         "quarterly": self._quarterly,
                         "benchmark_ticker": self._benchmark_ticker,
-                        "risk_free_rate": risk_free_rate,
+                        "risk_free_rate": self._risk_free_rate,  # Use the initial risk_free_rate
                     },
                     cached_data_location=self._cached_data_location,
                     file_name="configurations.pickle",
@@ -337,30 +333,8 @@ class Toolkit:
         self._tickers: list[str] = []
 
         for ticker in tickers:
-            if bool(re.match("^([A-Z]{2})([A-Z0-9]{9})([0-9])$", ticker)):
-                response = requests.get(
-                    f"https://query2.finance.yahoo.com/v1/finance/search?q={ticker}",
-                    timeout=60,
-                    headers={
-                        "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit"
-                        "/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36"
-                    },
-                )
-
-                if response.status_code == 200:  # noqa
-                    data = response.json()
-
-                    try:
-                        logger.info(
-                            "Converted %s to %s", ticker, data["quotes"][0]["symbol"]
-                        )
-                        self._tickers.append(data["quotes"][0]["symbol"])
-                    except (KeyError, ValueError, IndexError):
-                        logger.warning("Could not convert %s", ticker)
-                else:
-                    logger.warning("Could not convert %s", ticker)
-            else:
-                self._tickers.append(ticker)
+            # Check whether the ticker is in ISIN format and if say so convert it to a ticker
+            self._tickers.append(helpers.convert_isin_to_ticker(ticker))
 
         # Take out duplicate tickers if applicable
         deduplicated_tickers = list(set(self._tickers))
@@ -379,7 +353,7 @@ class Toolkit:
             logger.warning(
                 "Please note that the benchmark ticker (%s) is also "
                 "included in the tickers. Therefore, this ticker will be removed from the "
-                "tickers list.",
+                "tickers list. If this is not desired, please set the benchmark_ticker to None.",
                 self._benchmark_ticker,
             )
             self._tickers.remove(self._benchmark_ticker)
@@ -410,122 +384,52 @@ class Toolkit:
         else:
             self._fmp_plan = "Premium"
 
-        self._rounding = rounding
-        self._remove_invalid_tickers = remove_invalid_tickers
-        self._invalid_tickers: list = []
         self._sleep_timer = (
             sleep_timer if sleep_timer is not None else self._fmp_plan != "Free"
         )
-        self._convert_currency = (
-            convert_currency
-            if convert_currency is not None
-            else self._fmp_plan != "Free"
-        )
+
         self._progress_bar = progress_bar
-        self._reverse_dates = reverse_dates
-        self._portfolio_weights: dict | None = None
-        self._historical = historical
-        self._currencies: list = []
-        self._statement_currencies: pd.Series = pd.Series()
-
-        if intraday_period and intraday_period not in [
-            "1min",
-            "5min",
-            "15min",
-            "30min",
-            "1hour",
-        ]:
-            raise ValueError(
-                "Please select a valid intraday period (1min, 5min, 15min, 30min or 1hour)"
-            )
-
-        self._intraday_period = intraday_period
 
         if self._api_key or self._use_cached_data:
-            # Initialization of FinancialModelingPrep Variables
-            self._profile: pd.DataFrame = (
-                cache_model.load_cached_data(
-                    cached_data_location=self._cached_data_location,
-                    file_name="profile.pickle",
-                )
-                if self._use_cached_data
-                else pd.DataFrame()
-            )
-            self._quote: pd.DataFrame = (
-                cache_model.load_cached_data(
-                    cached_data_location=self._cached_data_location,
-                    file_name="quote.pickle",
-                )
-                if self._use_cached_data
-                else pd.DataFrame()
-            )
-            self._rating: pd.DataFrame = (
-                cache_model.load_cached_data(
-                    cached_data_location=self._cached_data_location,
-                    file_name="rating.pickle",
-                )
-                if self._use_cached_data
-                else pd.DataFrame()
-            )
-            self._analyst_estimates: pd.DataFrame = (
-                cache_model.load_cached_data(
-                    cached_data_location=self._cached_data_location,
-                    file_name="analyst_estimates.pickle",
-                )
-                if self._use_cached_data
-                else pd.DataFrame()
-            )
-            self._analyst_estimates_growth: pd.DataFrame = (
-                cache_model.load_cached_data(
-                    cached_data_location=self._cached_data_location,
-                    file_name="analyst_estimates_growth.pickle",
-                )
-                if self._use_cached_data
-                else pd.DataFrame()
-            )
-            self._dividend_calendar: pd.DataFrame = (
-                cache_model.load_cached_data(
-                    cached_data_location=self._cached_data_location,
-                    file_name="dividend_calendar.pickle",
-                )
-                if self._use_cached_data
-                else pd.DataFrame()
-            )
-            self._earnings_calendar: pd.DataFrame = (
-                cache_model.load_cached_data(
-                    cached_data_location=self._cached_data_location,
-                    file_name="earnings_calendar.pickle",
-                )
-                if self._use_cached_data
-                else pd.DataFrame()
-            )
-            self._esg_scores: pd.DataFrame = (
-                cache_model.load_cached_data(
-                    cached_data_location=self._cached_data_location,
-                    file_name="esg_scores.pickle",
-                )
-                if self._use_cached_data
-                else pd.DataFrame()
-            )
-            self._revenue_geographic_segmentation: pd.DataFrame = (
-                cache_model.load_cached_data(
-                    cached_data_location=self._cached_data_location,
-                    file_name="revenue_geographic_segmentation.pickle",
-                )
-                if self._use_cached_data
-                else pd.DataFrame()
-            )
+            # Initialize attributes to empty DataFrames
+            self._profile: pd.DataFrame = pd.DataFrame()
+            self._quote: pd.DataFrame = pd.DataFrame()
+            self._rating: pd.DataFrame = pd.DataFrame()
+            self._analyst_estimates: pd.DataFrame = pd.DataFrame()
+            self._analyst_estimates_growth: pd.DataFrame = pd.DataFrame()
+            self._dividend_calendar: pd.DataFrame = pd.DataFrame()
+            self._earnings_calendar: pd.DataFrame = pd.DataFrame()
+            self._esg_scores: pd.DataFrame = pd.DataFrame()
+            self._revenue_geographic_segmentation: pd.DataFrame = pd.DataFrame()
+            self._revenue_product_segmentation: pd.DataFrame = pd.DataFrame()
             self._revenue_geographic_segmentation_growth: pd.DataFrame = pd.DataFrame()
-
-            self._revenue_product_segmentation: pd.DataFrame = (
-                cache_model.load_cached_data(
-                    cached_data_location=self._cached_data_location,
-                    file_name="revenue_product_segmentation.pickle",
-                )
-                if self._use_cached_data
-                else pd.DataFrame()
-            )
             self._revenue_product_segmentation_growth: pd.DataFrame = pd.DataFrame()
+
+            # Define attributes and their corresponding cache file names
+            cached_attributes = {
+                "_profile": "profile.pickle",
+                "_quote": "quote.pickle",
+                "_rating": "rating.pickle",
+                "_analyst_estimates": "analyst_estimates.pickle",
+                "_analyst_estimates_growth": "analyst_estimates_growth.pickle",
+                "_dividend_calendar": "dividend_calendar.pickle",
+                "_earnings_calendar": "earnings_calendar.pickle",
+                "_esg_scores": "esg_scores.pickle",
+                "_revenue_geographic_segmentation": "revenue_geographic_segmentation.pickle",
+                "_revenue_product_segmentation": "revenue_product_segmentation.pickle",
+            }
+
+            # Initialize FinancialModelingPrep Variables
+            for attr_name, file_name in cached_attributes.items():
+                data = (
+                    cache_model.load_cached_data(
+                        cached_data_location=self._cached_data_location,
+                        file_name=file_name,
+                    )
+                    if self._use_cached_data
+                    else pd.DataFrame()
+                )
+                setattr(self, attr_name, data)
 
         self._enforce_source = enforce_source
 
@@ -540,8 +444,20 @@ class Toolkit:
                 "historical data from FinancialModelingPrep."
             )
 
-        # Initialization of Historical Variables
+        if intraday_period and intraday_period not in [
+            "1min",
+            "5min",
+            "15min",
+            "30min",
+            "1hour",
+        ]:
+            raise ValueError(
+                "Please select a valid intraday period (1min, 5min, 15min, 30min or 1hour)"
+            )
 
+        self._intraday_period = intraday_period
+
+        # Load intraday data from cache if specified, otherwise initialize empty DataFrame
         self._intraday_historical_data: pd.DataFrame = (
             cache_model.load_cached_data(
                 cached_data_location=self._cached_data_location,
@@ -551,10 +467,13 @@ class Toolkit:
             else pd.DataFrame()
         )
 
-        if not historical.empty:
-            self._daily_historical_data: pd.DataFrame = historical
-        else:
-            self._daily_historical_data = (
+        # Use provided historical data if available, otherwise load daily data from cache or initialize empty DataFrame
+        self._historical = historical
+
+        self._daily_historical_data: pd.DataFrame = (
+            historical
+            if not historical.empty
+            else (
                 cache_model.load_cached_data(
                     cached_data_location=self._cached_data_location,
                     file_name="daily_historical_data.pickle",
@@ -562,46 +481,53 @@ class Toolkit:
                 if self._use_cached_data
                 else pd.DataFrame()
             )
-
-        self._weekly_historical_data: pd.DataFrame = (
-            _convert_daily_to_other_period(
-                "weekly",
-                self._daily_historical_data,
-                self._start_date,
-                self._end_date,
-            )
-            if not self._daily_historical_data.empty
-            else pd.DataFrame()
-        )
-        self._monthly_historical_data: pd.DataFrame = (
-            _convert_daily_to_other_period(
-                "monthly",
-                self._daily_historical_data,
-                self._start_date,
-                self._end_date,
-            )
-            if not self._daily_historical_data.empty
-            else pd.DataFrame()
-        )
-        self._quarterly_historical_data: pd.DataFrame = (
-            _convert_daily_to_other_period(
-                "quarterly",
-                self._daily_historical_data,
-                self._start_date,
-                self._end_date,
-            )
-            if not self._daily_historical_data.empty
-            else pd.DataFrame()
-        )
-        self._yearly_historical_data: pd.DataFrame = (
-            _convert_daily_to_other_period(
-                "yearly", self._daily_historical_data, self._start_date, self._end_date
-            )
-            if not self._daily_historical_data.empty
-            else pd.DataFrame()
         )
 
+        # Initialize other periods as empty DataFrames. They will be populated on demand.
+        self._weekly_historical_data: pd.DataFrame = pd.DataFrame()
+        self._monthly_historical_data: pd.DataFrame = pd.DataFrame()
+        self._quarterly_historical_data: pd.DataFrame = pd.DataFrame()
+        self._yearly_historical_data: pd.DataFrame = pd.DataFrame()
         self._historical_statistics: pd.DataFrame = pd.DataFrame()
+
+        # Initialization of the Financial Statements and Normalization
+        self._reverse_dates = reverse_dates
+
+        (
+            self._balance_sheet_statement,
+            self._income_statement,
+            self._cash_flow_statement,
+            self._statistics_statement,
+            self._fmp_balance_sheet_statement_generic,
+            self._yf_balance_sheet_statement_generic,
+            self._fmp_income_statement_generic,
+            self._yf_income_statement_generic,
+            self._fmp_cash_flow_statement_generic,
+            self._yf_cash_flow_statement_generic,
+            self._fmp_statistics_statement_generic,
+        ) = _initialize_statements_and_normalization(
+            balance=balance,
+            income=income,
+            cash=cash,
+            format_location=format_location,
+            reverse_dates=self._reverse_dates,
+            use_cached_data=use_cached_data,
+            cached_data_location=self._cached_data_location,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            quarterly=self._quarterly,
+        )
+
+        self._balance_sheet_statement_growth: pd.DataFrame = pd.DataFrame()
+        self._income_statement_growth: pd.DataFrame = pd.DataFrame()
+        self._cash_flow_statement_growth: pd.DataFrame = pd.DataFrame()
+        self._currencies: list = []
+        self._statement_currencies: pd.Series = pd.Series()
+        self._convert_currency = (
+            convert_currency
+            if convert_currency is not None
+            else self._fmp_plan != "Free"
+        )
 
         # Initialization of Risk Free Rate
         self._daily_risk_free_rate: pd.DataFrame = pd.DataFrame()
@@ -624,110 +550,8 @@ class Toolkit:
         self._quarterly_exchange_rate_data: pd.DataFrame = pd.DataFrame()
         self._yearly_exchange_rate_data: pd.DataFrame = pd.DataFrame()
 
-        # Initialization of Normalization Variables
-        self._fmp_balance_sheet_statement_generic: pd.DataFrame = (
-            _read_normalization_file("balance", format_location)
-        )
-        self._yf_balance_sheet_statement_generic: pd.DataFrame = (
-            _read_normalization_file("balance_yf", format_location)
-        )
-        self._fmp_income_statement_generic: pd.DataFrame = _read_normalization_file(
-            "income", format_location
-        )
-        self._yf_income_statement_generic: pd.DataFrame = _read_normalization_file(
-            "income_yf", format_location
-        )
-        self._fmp_cash_flow_statement_generic: pd.DataFrame = _read_normalization_file(
-            "cash", format_location
-        )
-        self._yf_cash_flow_statement_generic: pd.DataFrame = _read_normalization_file(
-            "cash_yf", format_location
-        )
-        self._fmp_statistics_statement_generic: pd.DataFrame = _read_normalization_file(
-            "statistics", format_location
-        )
-
-        # Initialization of Financial Statements
-        if not balance.empty:
-            self._balance_sheet_statement: pd.DataFrame = _convert_date_label(
-                _convert_financial_statements(
-                    financial_statements=balance,
-                    statement_format=self._fmp_balance_sheet_statement_generic,
-                    adjust_financial_statements=False,
-                    reverse_dates=reverse_dates,
-                ),
-                self._start_date,
-                self._end_date,
-                self._quarterly,
-            )
-        else:
-            self._balance_sheet_statement = (
-                cache_model.load_cached_data(
-                    cached_data_location=self._cached_data_location,
-                    file_name="balance_sheet_statement.pickle",
-                )
-                if self._use_cached_data
-                else pd.DataFrame()
-            )
-
-        self._balance_sheet_statement_growth: pd.DataFrame = pd.DataFrame()
-
-        if not income.empty:
-            self._income_statement: pd.DataFrame = _convert_date_label(
-                _convert_financial_statements(
-                    financial_statements=income,
-                    statement_format=self._fmp_income_statement_generic,
-                    adjust_financial_statements=False,
-                    reverse_dates=reverse_dates,
-                ),
-                self._start_date,
-                self._end_date,
-                self._quarterly,
-            )
-        else:
-            self._income_statement = (
-                cache_model.load_cached_data(
-                    cached_data_location=self._cached_data_location,
-                    file_name="income_statement.pickle",
-                )
-                if self._use_cached_data
-                else pd.DataFrame()
-            )
-
-        self._income_statement_growth: pd.DataFrame = pd.DataFrame()
-
-        if not cash.empty:
-            self._cash_flow_statement: pd.DataFrame = _convert_date_label(
-                _convert_financial_statements(
-                    financial_statements=cash,
-                    statement_format=self._fmp_cash_flow_statement_generic,
-                    adjust_financial_statements=False,
-                    reverse_dates=reverse_dates,
-                ),
-                self._start_date,
-                self._end_date,
-                self._quarterly,
-            )
-        else:
-            self._cash_flow_statement = (
-                cache_model.load_cached_data(
-                    cached_data_location=self._cached_data_location,
-                    file_name="cash_flow_statement.pickle",
-                )
-                if self._use_cached_data
-                else pd.DataFrame()
-            )
-
-        self._cash_flow_statement_growth: pd.DataFrame = pd.DataFrame()
-
-        self._statistics_statement: pd.DataFrame = (
-            cache_model.load_cached_data(
-                cached_data_location=self._cached_data_location,
-                file_name="statistics_statement.pickle",
-            )
-            if self._use_cached_data
-            else pd.DataFrame()
-        )
+        # Initialization of the Portfolio Variables
+        self._portfolio_weights: dict | None = None
 
         pd.set_option("display.float_format", str)
 

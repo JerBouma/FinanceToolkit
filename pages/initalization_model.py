@@ -106,7 +106,8 @@ def create_api_key_sidebar(session_state: st.session_state):
         """
         Access all **200+ metrics** from the Finance Toolkit right in your browser! Once you've entered your API key
         and pressed ENTER, you will automatically be able to access a rich history of financial data from any stock
-        you choose.\n\n**To obtain an API key (with a 15% discount), please visit [this page](https://www.jeroenbouma.com/fmp).**
+        you choose.\n\n**To obtain an API key (with a 15% discount), please visit
+        [this page](https://www.jeroenbouma.com/fmp).**
         """
     )
 
@@ -148,7 +149,7 @@ def create_configurations_section(session_state: st.session_state):
     )
 
     if "discovery" not in session_state:
-        stock_list = pd.read_parquet("app/stock_list.parquet")
+        stock_list = pd.read_parquet("pages/stock_list.parquet")
 
         session_state["stocks_list"] = {
             f"{name} ({symbol})": symbol for symbol, name in stock_list["Name"].items()
@@ -206,7 +207,7 @@ def create_configurations_section(session_state: st.session_state):
             max_value=datetime.now(),
         )
 
-    metrics_list = list(pd.read_parquet("app/metrics_list.parquet")[0].sort_values())
+    metrics_list = list(pd.read_parquet("pages/metrics_list.parquet")[0].sort_values())
 
     session_state["metrics_list"] = st.multiselect("Metrics", options=metrics_list)
 
@@ -303,6 +304,7 @@ def initalize_financetoolkit(session_state: st.session_state):
                 else None
             ),
             progress_bar=False,
+            enforce_source="FinancialModelingPrep",
         )
 
         session_state["financetoolkit"] = instance

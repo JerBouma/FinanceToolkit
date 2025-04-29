@@ -2,7 +2,7 @@
 
 import streamlit as st
 
-from financetoolkit import helpers
+from financetoolkit import fmp_model
 
 
 def check_api_key_status(api_key: str):
@@ -20,9 +20,10 @@ def check_api_key_status(api_key: str):
             with a premium plan.
 
     """
-    determine_plan = helpers.get_financial_data(
-        url=f"https://financialmodelingprep.com/api/v3/income-statement/AAPL?period=quarter&apikey={api_key}",
+    determine_plan = fmp_model.get_financial_data(
+        url=f"https://financialmodelingprep.com/stable/income-statement?symbol=AAPL&apikey={api_key}&limit=10",
         sleep_timer=False,
+        user_subscription="Free",
     )
 
     premium_plan = True
@@ -33,11 +34,15 @@ def check_api_key_status(api_key: str):
         invalid_api_key = True
         reason = "Invalid API Key."
 
-    if "EXCLUSIVE ENDPOINT" in determine_plan:
+    if (
+        "EXCLUSIVE ENDPOINT" in determine_plan
+        or "SPECIAL ENDPOINT" in determine_plan
+        or "PREMIUM QUERY PARAMETER" in determine_plan
+    ):
         invalid_api_key = False
         premium_plan = False
 
-    if "LIMIT REACH" in determine_plan:
+    if "LIMIT REACH" in determine_plan or "BANDWIDTH LIMIT REACH" in determine_plan:
         invalid_api_key = True
         premium_plan = False
         reason = "API Key Limit Reached."

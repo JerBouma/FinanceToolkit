@@ -103,7 +103,7 @@ class Toolkit:
         progress_bar: bool = True,
     ):
         """
-        Initializes an Toolkit object with a ticker or a list of tickers. The way the Toolkit is initialized
+        Initializes a Toolkit object with a ticker or a list of tickers. The way the Toolkit is initialized
         will define how the data is collected. For example, if you enable the quarterly flag, you will
         be able to collect quarterly data. Next to that, you can define the start and end date to specify
         a specific range. Another option is to work with cached data. This is useful when you have collected
@@ -114,53 +114,41 @@ class Toolkit:
         See for more information on all of this, the following link: https://www.jeroenbouma.com/projects/financetoolkit
 
         Args:
-
-        tickers (str or list): A string or a list of strings containing the company ticker(s). E.g. 'TSLA' or 'MSFT'
-        Find the tickers on a variety of websites or via the FinanceDatabase: https://github.com/JerBouma/financedatabase
-        api_key (str): An API key from FinancialModelingPrep. Obtain one here: https://www.jeroenbouma.com/fmp
-        start_date (str): A string containing the start date of the data. This needs to be formatted as YYYY-MM-DD.
-            The default is today minus 10 years which can be freely changed to extend the period.
-        end_date (str): A string containing the end date of the data. This needs to be formatted as YYYY-MM-DD.
-            The default is today which can be freely changed to extend the period.
-        quarterly (bool): A boolean indicating whether to collect quarterly data. This defaults to False and thus
-        collects yearly financial statements. Note that historical data can still be collected for
-        any period and interval.
-        use_cached_data (bool or str): A boolean indicating whether to use cached data. This is useful when you
-        have collected data before and want to use this data again. If you want to use a specific location to
-        store the cached data, you can define this as a string, e.g. "datasets". Defaults to False.
-        risk_free_rate (str): A string containing the risk free rate. This can be 13w, 5y, 10y or 30y. This is
-        based on the US Treasury Yields and is used to calculate various ratios and Excess Returns.
-        benchmark_ticker (str): A string containing the benchmark ticker. Defaults to SPY (S&P 500). This is
-        meant to calculate ratios and indicators such as the CAPM and Jensen's Alpha but also serves as purpose to
-        give insights in the performance of a stock compared to a benchmark.
-        enforce_source (str): A string containing the historical source you wish to enforce. This can be either FinancialModelingPrep
-        or YahooFinance. Defaults to no enforcement. Note that with the Free plan of FinancialModelingPrep the amount
-        of historical data is limited to 5 years. If you want to collect more data, you need to upgrade to a paid plan.
-        historical (pd.DataFrame): A DataFrame containing historical data. This is a custom dataset only relevant if
-        you are looking to use custom data. See for more information the following Notebook:
-        https://www.jeroenbouma.com/projects/financetoolkit/external-datasets
-        balance (pd.DataFrame): A DataFrame containing balance sheet data. This is a custom dataset only
-        relevant if you are looking to use custom data. See for more information the notebook as mentioned at historical.
-        cash (pd.DataFrame): A DataFrame containing cash flow statement data. This is a custom dataset only
-        relevant if you are looking to use custom data. See for more information the notebook as mentioned at historical.
-        format_location (str): A string containing the location of the normalization files.
-        convert_currency (bool): A boolean indicating whether to convert the currency of the financial statements to
-        match that of the related historical data. This is an important conversion when comparing the financial
-        statements between each ticker as well as for calculations that are done with the historical data.
-            If you are using a Free plan from FinancialModelingPrep, this will be set to False.
-            If you are using a Premium plan from FinancialModelingPrep, this will be set to True. Defaults to None
-        and can thus be overridden.
-        reverse_dates (bool): A boolean indicating whether to reverse the dates in the financial statements.
-        intraday_period (str): A string containing the intraday period. This can be 1min, 5min, 15min, 30min or 1hour.
-        This is used to collect intraday data. Note that this is only relevant if you have are looking to utilize
-        intraday data through the Toolkit and wish to access Risk, Performance and Technicals for very short
-        timeframes. Defaults to None which means it will not use intraday data.
-        rounding (int): An integer indicating the number of decimals to round the results to.
-        remove_invalid_tickers (bool): A boolean indicating whether to remove invalid tickers. Defaults to False.
-        sleep_timer (bool): Whether to set a sleep timer when the rate limit is reached. Note that this only works
-        if you have a Premium subscription (Starter or higher) from FinancialModelingPrep. Defaults to None which
-        means it is determined by the model (Free plan = False, Premium plan = True).
-        progress_bar (bool): Whether to enable the progress bar when ticker amount is over 10. Defaults to True.
+            tickers (list | str | None): A string or a list of strings containing the company ticker(s). E.g. 'TSLA' or 'MSFT'.
+            Find tickers on various websites or via the FinanceDatabase: https://github.com/JerBouma/financedatabase. Defaults to None.
+            api_key (str): An API key from FinancialModelingPrep. Obtain one here: https://www.jeroenbouma.com/fmp. Defaults to "".
+            start_date (str | None): A string containing the start date of the data. Needs to be formatted as YYYY-MM-DD.
+            Defaults to 5 years/quarters back from today depending on the 'quarterly' flag.
+            end_date (str | None): A string containing the end date of the data. Needs to be formatted as YYYY-MM-DD.
+            Defaults to today.
+            quarterly (bool): A boolean indicating whether to collect quarterly data. Defaults to False (yearly).
+            Note that historical data can still be collected for any period and interval.
+            use_cached_data (bool | str): A boolean indicating whether to use cached data. If True, uses a 'cached' folder.
+            If a string is provided, uses that string as the path to the cache folder. Defaults to False.
+            risk_free_rate (str): The risk-free rate identifier ('13w', '5y', '10y', '30y'). Based on US Treasury Yields.
+            Used for calculations like Excess Returns. Defaults to "10y".
+            benchmark_ticker (str | None): The benchmark ticker (e.g., 'SPY' for S&P 500). Used for comparative analysis
+            (CAPM, Alpha, Beta). Defaults to "SPY". Set to None to disable benchmark comparison.
+            enforce_source (str | None): Enforce data source ('FinancialModelingPrep' or 'YahooFinance').
+            Defaults to None (uses FMP if api_key provided, otherwise YahooFinance, with fallback).
+            historical (pd.DataFrame): Custom historical price data. See notebook:
+            https://www.jeroenbouma.com/projects/financetoolkit/external-datasets. Defaults to an empty DataFrame.
+            balance (pd.DataFrame): Custom balance sheet data. See notebook link above. Defaults to an empty DataFrame.
+            income (pd.DataFrame): Custom income statement data. See notebook link above. Defaults to an empty DataFrame.
+            cash (pd.DataFrame): Custom cash flow statement data. See notebook link above. Defaults to an empty DataFrame.
+            format_location (str): Path to custom normalization files. Defaults to "".
+            convert_currency (bool | None): Convert financial statements currency to match historical data currency.
+            Important for cross-ticker comparison and calculations involving both data types.
+            Defaults to None (True if FMP plan is Premium, False if Free). Can be overridden.
+            reverse_dates (bool): Reverse the order of dates in financial statements (oldest first). Defaults to True.
+            intraday_period (str | None): Intraday data interval ('1min', '5min', '15min', '30min', '1hour').
+            Enables short-term analysis using Risk, Performance, and Technicals modules. Requires FMP Premium.
+            Defaults to None (no intraday data).
+            rounding (int | None): Number of decimal places for results. Defaults to 4.
+            remove_invalid_tickers (bool): Remove tickers that fail data retrieval. Defaults to False.
+            sleep_timer (bool | None): Enable sleep timer on FMP rate limit (requires Premium).
+            Defaults to None (determined by FMP plan: True for Premium, False for Free).
+            progress_bar (bool): Show progress bar for operations involving multiple tickers. Defaults to True.
 
         As an example:
 
@@ -178,11 +166,17 @@ class Toolkit:
             quarterly=True,
             api_key="FINANCIAL_MODELING_PREP_KEY")
 
+        # Enforce a specific source
+        toolkit = Toolkit(
+            tickers=["ASML", "BABA"],
+            quarterly=True,
+            enforce_source="YahooFinance")
+
         # Including a start and end date
         toolkit = Toolkit(
             tickers=["MSFT", "MU"],
             start_date="2020-01-01",
-            end_date="2023-01-01"
+            end_date="2023-01-01",
             quarterly=True,
             api_key="FINANCIAL_MODELING_PREP_KEY")
 

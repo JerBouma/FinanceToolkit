@@ -266,17 +266,11 @@ def convert_financial_statements(
         for name in statement_format.index:
             for ticker in financial_statements.index.unique(level=0):
                 if name not in financial_statements.loc[ticker].index:
-                    financial_statements.loc[(ticker, name), :] = np.nan
+                    financial_statements.loc[(ticker, name), :] = 0
 
-        # Reorder naming based on the order of statement_format
-        ordered_naming = {}
-        for index_name in statement_format.index:
-            for original_name, mapped_name in naming.items():
-                if index_name in (original_name, mapped_name):
-                    ordered_naming[original_name] = mapped_name
-                    break
-
-        naming = ordered_naming
+        # Given that all the columns are now present, it is possible to
+        # simply overwrite the naming variable with the original statement format
+        naming = statement_format
 
     # Select only the columns it could trace back to the format
     financial_statements = financial_statements.loc[:, list(naming.keys()), :]

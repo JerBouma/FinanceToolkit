@@ -84,6 +84,10 @@ def get_financial_statement(
             :, ~financial_statement.columns.duplicated()
         ]
 
+    # Check for NaN values and fill them with 0
+    if financial_statement.isna().to_numpy().any():
+        financial_statement = financial_statement.infer_objects(copy=False).fillna(0)
+
     return financial_statement
 
 

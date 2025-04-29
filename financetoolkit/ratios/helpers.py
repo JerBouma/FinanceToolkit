@@ -19,8 +19,6 @@ def map_period_data_to_daily_data(
     """
     daily_period = pd.DataFrame(columns=period_data.index, index=daily_dates)
 
-    print(daily_period)
-
     # Convert the dates to Quarterly or Yearly periods
     daily_period.index = pd.PeriodIndex(
         daily_period.index, freq="Q" if quarterly else "Y"

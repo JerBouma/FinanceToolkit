@@ -352,6 +352,19 @@ class Toolkit:
             )
             self._tickers.remove(self._benchmark_ticker)
 
+        self._enforce_source: str | None = enforce_source
+
+        if self._enforce_source not in [None, "FinancialModelingPrep", "YahooFinance"]:
+            raise ValueError(
+                "Please select either FinancialModelingPrep or YahooFinance as the "
+                "enforced source."
+            )
+        if self._enforce_source == "FinancialModelingPrep" and not self._api_key:
+            raise ValueError(
+                "Please input an API key from FinancialModelingPrep if you wish to use "
+                "historical data from FinancialModelingPrep."
+            )
+
         if sleep_timer is None:
             # This tests the API key to determine the subscription plan. This is relevant for the sleep timer
             # but also for other components of the Toolkit. This prevents wait timers from occurring while
@@ -373,6 +386,13 @@ class Toolkit:
                 "LIMIT REACH",
             ]:
                 if option in determine_plan:
+                    if option == "INVALID API KEY":
+                        self._enforce_source = "YahooFinance"
+                        logger.error(
+                            "You have entered an invalid API key from FinancialModelingPrep. Obtain your API key for free "
+                            "and get 15%% off the Premium plans by using the following affiliate link.\nThis also supports "
+                            "the project: https://www.jeroenbouma.com/fmp. Using Yahoo Finance as data source instead."
+                        )
                     self._fmp_plan = "Free"
                     break
         else:
@@ -424,19 +444,6 @@ class Toolkit:
                     else pd.DataFrame()
                 )
                 setattr(self, attr_name, data)
-
-        self._enforce_source = enforce_source
-
-        if self._enforce_source not in [None, "FinancialModelingPrep", "YahooFinance"]:
-            raise ValueError(
-                "Please select either FinancialModelingPrep or YahooFinance as the "
-                "enforced source."
-            )
-        if self._enforce_source == "FinancialModelingPrep" and not self._api_key:
-            raise ValueError(
-                "Please input an API key from FinancialModelingPrep if you wish to use "
-                "historical data from FinancialModelingPrep."
-            )
 
         if intraday_period and intraday_period not in [
             "1min",

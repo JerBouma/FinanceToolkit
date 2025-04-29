@@ -1,4 +1,4 @@
-Date,Open,High,Low,Close,Adj Close,Volume,Dividends,Return,Volatility,Excess Return,Excess Volatility,Cumulative Return
+date,Open,High,Low,Close,Adj Close,Volume,Dividends,Return,Volatility,Excess Return,Excess Volatility,Cumulative Return
 2000-01-07,1403.45,1441.47,1400.73,1441.47,1441.47,1225200000,0,0.0,0.0122,-0.0379,0.018,1.0
 2000-01-10,1441.47,1464.36,1441.47,1457.6,1457.6,1064800000,0,0.0112,0.0122,-0.0544,0.018,1.0112
 2000-01-11,1457.6,1458.66,1434.42,1438.56,1438.56,1014000000,0,-0.0131,0.0122,-0.0797,0.018,0.998

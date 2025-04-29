@@ -70,7 +70,7 @@ ___
 
 Through the link you are able to subscribe for the free plan and also premium plans at a **15% discount**. This is an affiliate link and thus supports the project at the same time. I have chosen FinancialModelingPrep as a source as I find it to be the most transparent, reliable and at an affordable price. I have yet to find a platform offering such low prices for the amount of data offered. When you notice that the data is inaccurate or have any other issue related to the data, note that I simply provide the means to access this data and I am not responsible for the accuracy of the data itself. For this, use [their contact form](https://site.financialmodelingprep.com/contact) or provide the data yourself. 
 
-The dependencies of the package are on purpose *very slim* so that it will work well with any combination of packages and not result in conflicts. In case you wish to use the Finance Toolkit in combination with Yahoo Finance, you can do so by installing the optional dependency with `pip install "financetoolkit[yfinance]"`.
+There is logic in place within the the Finance Toolkit that checks whether the data can be acquired from Financial Modeling Prep and if not, due to for example usage of the Free plan or an invalid API key, it will collect the data from Yahoo Finance instead. If this is undesirable, set `enforce_source="FinancialModelingPrep"` when initialising the Toolkit. This will ensure that the data is only collected from Financial Modeling Prep and if not available, it will raise an error instead.
 
 # Basic Usage
 

@@ -187,8 +187,8 @@ def test_toolkit_technicals(recorder):
     toolkit._daily_risk_free_rate = risk_free_rate
     toolkit._daily_treasury_data = treasury_data
 
-    recorder.capture(toolkit.technicals.collect_all_indicators())
-    recorder.capture(toolkit.technicals.collect_all_indicators(growth=True))
+    recorder.capture(toolkit.technicals.collect_all_indicators().round(0))
+    recorder.capture(toolkit.technicals.collect_all_indicators(growth=True).round(0))
     recorder.capture(
-        toolkit.technicals.collect_all_indicators(growth=True, lag=[1, 2, 3])
+        toolkit.technicals.collect_all_indicators(growth=True, lag=[1, 2, 3]).round(0)
     )

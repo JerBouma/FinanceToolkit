@@ -1,21 +1,30 @@
+# Finance Toolkit Ignored Files
+*.csv
+*.xlsx
+*.xls
+*.ipynb
+cached/
+
+# Finance Toolkit Example Datasets
+!examples/*.ipynb
+!financetoolkit/portfolio/example_datasets/*.xlsx
+!financetoolkit/portfolio/example_datasets/*.csv
+
+# Finance Toolkit Normalization Files
+!financetoolkit/normalization/*.csv
+
+# Finance Toolkit Tests
+!tests/datasets/*.xlsx
+!tests/*/csv/*/*.csv
+!tests/csv/*/*.csv
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
 *$py.class
 .DS_Store
 .ipynb_checkpoints/
-*.ipynb
-!examples/*.ipynb
 .DS_Store
-*.csv
-*.xlsx
-*.xls
-cached/
-!tests/datasets/*.xlsx
-!tests/*/csv/*/*.csv
-!financetoolkit/normalization/*.csv
-!financetoolkit/portfolio/example_datasets/*.xlsx
-!financetoolkit/portfolio/example_datasets/*.csv
 
 # C extensions
 *.so

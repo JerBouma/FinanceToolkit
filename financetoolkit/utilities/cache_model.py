@@ -14,16 +14,23 @@ logger = logger_model.get_logger()
 # pylint: disable=comparison-with-itself,too-many-locals,protected-access
 
 
-def load_cached_data(cached_data_location: str, file_name: str, method: str = "pandas"):
+def load_cached_data(
+    cached_data_location: str,
+    file_name: str,
+    method: str = "pandas",
+    return_empty_type: pd.DataFrame | dict = pd.DataFrame(),
+):
     """
     Load the cached data from the specified location and file name.
 
     Args:
         cached_data_location (str): The location of the cached data.
         file_name (str): The name of the file to load.
+        method (str): The method to use for loading the data, either "pandas" or "pickle".
+        return_empty_type (pd.DataFrame | dict): The type to return if the file is not found.
 
     Returns:
-        pd.DataFrame: The loaded DataFrame.
+        pd.DataFrame | dict: The loaded DataFrame or dictionary.
     """
     try:
         if method == "pandas":
@@ -37,7 +44,7 @@ def load_cached_data(cached_data_location: str, file_name: str, method: str = "p
         return cached_data
 
     except FileNotFoundError:
-        return pd.DataFrame()
+        return return_empty_type
 
 
 def save_cached_data(

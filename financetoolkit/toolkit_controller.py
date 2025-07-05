@@ -252,6 +252,7 @@ class Toolkit:
                 cached_data_location=self._cached_data_location,
                 file_name="configurations.pickle",
                 method="pickle",
+                return_empty_type={},
             )
 
             if cached_configurations:  # Check if dictionary is not empty

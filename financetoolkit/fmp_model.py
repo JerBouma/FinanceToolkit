@@ -334,7 +334,10 @@ def get_historical_data(
 
     historical_data = historical_data.sort_index()
 
-    if historical_data.loc[start_date_string:end_date_string].empty:
+    if (
+        not historical_data.empty
+        and historical_data.loc[start_date_string:end_date_string].empty
+    ):
         logger.warning(
             "The given start and end date result in no data found for %s", ticker
         )
@@ -487,7 +490,10 @@ def get_intraday_data(
 
     historical_data = historical_data.sort_index()
 
-    if historical_data.loc[start_date_string:end_date_string].empty:
+    if (
+        not historical_data.empty
+        and historical_data.loc[start_date_string:end_date_string].empty
+    ):
         logger.warning(
             "The given start and end date result in no data found for %s", ticker
         )

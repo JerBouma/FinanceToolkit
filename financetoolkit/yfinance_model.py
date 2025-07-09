@@ -19,9 +19,7 @@ logger = logger_model.get_logger()
 
 
 def get_financial_statement(
-    ticker: str,
-    statement: str,
-    quarter: bool = False,
+    ticker: str, statement: str, quarter: bool = False, fallback: bool = False
 ):
     """
     Retrieves a specific financial statement (balance sheet, income statement, or cash flow statement)
@@ -67,11 +65,29 @@ def get_financial_statement(
                 "Please choose either 'balance', 'income', or "
                 "cashflow' for the statement parameter."
             )
-    except (HTTPError, URLError, RemoteDisconnected, IndexError, AttributeError):
+    except (
+        HTTPError,
+        URLError,
+        RemoteDisconnected,
+        IndexError,
+        AttributeError,
+    ):
         return pd.DataFrame()
+    except yf.exceptions.YFRateLimitError:
+        error_code = (
+            "YFINANCE RATE LIMIT REACHED FALLBACK"
+            if fallback
+            else "YFINANCE RATE LIMIT REACHED"
+        )
+        return pd.DataFrame(columns=[error_code])
 
     if financial_statement.empty:
-        return pd.DataFrame()
+        error_code = (
+            "YFINANCE RATE LIMIT OR NO DATA FOUND FALLBACK"
+            if fallback
+            else "YFINANCE RATE LIMIT OR NO DATA FOUND"
+        )
+        return pd.DataFrame(columns=[error_code])
 
     # yfinance returns the statements with dates as columns and items as rows
     # Convert dates to period format
@@ -99,6 +115,7 @@ def get_historical_data(
     return_column: str = "Adj Close",
     risk_free_rate: pd.DataFrame = pd.DataFrame(),
     divide_ohlc_by: int | float | None = None,
+    fallback: bool = False,
 ):
     """
     Retrieves historical stock data for the given ticker(s) from Yahoo! Finance API for a specified period.
@@ -173,8 +190,11 @@ def get_historical_data(
 
     except (HTTPError, URLError, RemoteDisconnected, IndexError):
         return pd.DataFrame()
+    except yf.exceptions.YFRateLimitError:
+        error_code = "YFINANCE RATE LIMIT REACHED" + " FALLBACK" if fallback else ""
+        return pd.DataFrame(columns=[error_code])
 
-    if historical_data.loc[start:end].empty:
+    if not historical_data.empty and historical_data.loc[start:end].empty:
         logger.warning(
             "The given start and end date result in no data found for %s", ticker
         )
@@ -203,7 +223,7 @@ def get_historical_data(
         )
     elif "Stock Splits" in historical_data:
         historical_data = historical_data.drop(columns=["Stock Splits"])
-    else:
+    elif "Capital Gains" in historical_data:
         historical_data = historical_data.drop(columns=["Capital Gains"])
 
     historical_data = historical_data[

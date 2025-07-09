@@ -235,6 +235,8 @@ def obtain_fama_and_french_dataset(fama_and_french_url: str | None = None):
             # Skip the first 3 rows which are header information
             fama_and_french_dataset = pd.read_csv(csv_file, skiprows=3, index_col=0)
 
+        fama_and_french_dataset = fama_and_french_dataset.dropna(axis="index")
+
         fama_and_french_dataset.index = pd.to_datetime(
             fama_and_french_dataset.index, format="%Y%m%d"
         ).to_period(freq="D")

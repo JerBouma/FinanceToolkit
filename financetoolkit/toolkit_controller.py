@@ -2043,9 +2043,10 @@ class Toolkit:
             )
 
             # Change the benchmark ticker name to Benchmark
-            self._daily_historical_data = self._daily_historical_data.rename(
-                columns={self._benchmark_ticker: "Benchmark"}, level=1
-            )
+            if not self._daily_historical_data.empty:
+                self._daily_historical_data = self._daily_historical_data.rename(
+                    columns={self._benchmark_ticker: "Benchmark"}, level=1
+                )
 
             if self._use_cached_data:
                 cache_model.save_cached_data(
@@ -2060,6 +2061,9 @@ class Toolkit:
                 for ticker in self._tickers
                 if ticker not in self._invalid_tickers
             ]
+
+        if self._daily_historical_data.empty:
+            return pd.DataFrame()
 
         if period == "daily":
             historical_data = self._daily_historical_data.loc[
@@ -2716,13 +2720,22 @@ class Toolkit:
                 tqdm_message="Obtaining treasury data",
             )
 
-            self._daily_treasury_data = self._daily_treasury_data.rename(
-                columns=treasury_names, level=1
-            )
+            if not self._daily_treasury_data.empty:
+                self._daily_treasury_data = self._daily_treasury_data.rename(
+                    columns=treasury_names, level=1
+                )
+                self._daily_risk_free_rate = self._daily_treasury_data.xs(
+                    risk_free_rate, level=1, axis=1
+                )
 
-            self._daily_risk_free_rate = self._daily_treasury_data.xs(
-                risk_free_rate, level=1, axis=1
-            )
+            if self._daily_treasury_data.empty:
+                logger.debug(
+                    "No treasury data could be retrieved. This is usually due to an invalid API key, "
+                    "reaching the API limit, or unavailability within Yahoo Finance. Consider "
+                    "obtaining a key with the following link or upgrading you plan: https://www.jeroenbouma.com/fmp"
+                    "\nYou can get 15% off by using the above affiliate link which also supports the project."
+                )
+                return pd.DataFrame()
 
         if period == "daily":
             return self._daily_treasury_data.loc[self._start_date : self._end_date, :]

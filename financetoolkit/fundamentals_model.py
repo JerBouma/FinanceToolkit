@@ -79,6 +79,7 @@ def collect_financial_statements(
 
     def worker(ticker, financial_statement_dict, enforce_source):
         financial_statement_data = pd.DataFrame()
+        attempted_fmp = False
 
         if api_key and enforce_source in [None, "FinancialModelingPrep"]:
             financial_statement_data = fmp_model.get_financial_statement(
@@ -99,10 +100,15 @@ def collect_financial_statements(
             if not financial_statement_data.empty:
                 fmp_tickers.append(ticker)
 
+            attempted_fmp = True
+
         if enforce_source != "FinancialModelingPrep" and financial_statement_data.empty:
             if ENABLE_YFINANCE:
                 financial_statement_data = yfinance_model.get_financial_statement(
-                    ticker=ticker, statement=statement, quarter=quarter
+                    ticker=ticker,
+                    statement=statement,
+                    quarter=quarter,
+                    fallback=attempted_fmp,
                 )
 
                 financial_statement_dict["YahooFinance"][
@@ -199,11 +205,15 @@ def collect_financial_statements(
             )
 
             yf_financial_statements_total = (
-                normalization_model.convert_financial_statements(
-                    financial_statements=yf_financial_statements,
-                    statement_format=yf_statement_format,
-                    reverse_dates=True,
+                (
+                    normalization_model.convert_financial_statements(
+                        financial_statements=yf_financial_statements,
+                        statement_format=yf_statement_format,
+                        reverse_dates=True,
+                    )
                 )
+                if not yf_financial_statements.empty
+                else pd.DataFrame()
             )
 
     if fmp_tickers and yf_tickers:

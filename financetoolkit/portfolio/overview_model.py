@@ -46,8 +46,8 @@ def create_transactions_overview(
     percentage_return = []
     value_return = []
 
-    for row, (_, ticker) in enumerate(portfolio_volume.index):
-        bought_value = portfolio_volume.iloc[row] * portfolio_price.iloc[row] - abs(
+    for row, ticker in enumerate(portfolio_volume.index):
+        bought_value = portfolio_volume.iloc[row] * portfolio_price.iloc[row] + abs(
             portfolio_costs.iloc[row]
         )
 

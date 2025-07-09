@@ -793,12 +793,26 @@ class Portfolio:
             period="daily", progress_bar=progress_bar
         )
 
+        if self._daily_historical_data.empty:
+            api_key_check = (
+                "\nConsider obtaining an API key from FinancialModelingPrep to potentially "
+                "avoid this issue. You can get 15% "
+                "off by using the following affiliate link which also supports the project: "
+                "https://www.jeroenbouma.com/fmp"
+                if not self._api_key
+                else ""
+            )
+            raise ValueError(
+                "No historical data found for the provided tickers and therefore no further calculations are possible."
+                + api_key_check
+            )
+
         self._daily_historical_data = self._daily_historical_data.rename(
             columns=self._ticker_combinations, level=1
         )
 
         currency_conversions = {}
-        if self._currency_column:  # type: ignore
+        if self._currency_column and not self._historical_statistics.empty:  # type: ignore
             self._historical_statistics = self._toolkit.get_historical_statistics(
                 progress_bar=False
             )

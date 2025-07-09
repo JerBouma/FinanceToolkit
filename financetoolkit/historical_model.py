@@ -118,6 +118,7 @@ def get_historical_data(
 
     def worker(ticker, historical_data_dict, historical_data_error_dict):
         historical_data = pd.DataFrame()
+        attempted_fmp = False
 
         if api_key and interval in ["1min", "5min", "15min", "30min", "1hour", "4hour"]:
             historical_data = fmp_model.get_intraday_data(
@@ -164,6 +165,8 @@ def get_historical_data(
                 if not historical_data.empty:
                     fmp_tickers.append(ticker)
 
+                attempted_fmp = True
+
             if (
                 enforce_source != "FinancialModelingPrep"
                 and historical_data.empty
@@ -177,6 +180,7 @@ def get_historical_data(
                     return_column=return_column,
                     risk_free_rate=risk_free_rate,
                     divide_ohlc_by=divide_ohlc_by,
+                    fallback=attempted_fmp,
                 )
 
                 if not historical_data.empty:
@@ -221,13 +225,11 @@ def get_historical_data(
     for thread in threads:
         thread.join()
 
-    historical_data_dict = (
+    if show_errors:
         error_model.check_for_error_messages(
-            dataset_dictionary=historical_data_dict, user_subscription=user_subscription
+            dataset_dictionary=historical_data_error_dict,
+            user_subscription=user_subscription,
         )
-        if show_errors
-        else historical_data_dict
-    )
 
     if fmp_tickers and yf_tickers and show_ticker_seperation:
         logger.info(
@@ -508,6 +510,9 @@ def get_historical_statistics(
         else historical_statistics_dict
     )
 
-    historical_statistics = pd.concat(historical_statistics_dict, axis=1)
+    if historical_statistics_dict:
+        historical_statistics = pd.concat(historical_statistics_dict, axis=1)
 
-    return historical_statistics, no_data
+        return historical_statistics, no_data
+
+    return pd.DataFrame(), no_data

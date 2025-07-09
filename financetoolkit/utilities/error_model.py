@@ -112,6 +112,10 @@ def check_for_error_messages(
     special_endpoint = []
     bandwidth_limit_reach = []
     limit_reach = []
+    yfinance_rate_limit_reached = []
+    yfinance_rate_limit_reached_fallback = []
+    yfinance_rate_limit_or_no_data_found = []
+    yfinance_rate_limit_or_no_data_found_fallback = []
     no_data = []
     us_stocks_only = []
     invalid_api_key = []
@@ -130,6 +134,14 @@ def check_for_error_messages(
             bandwidth_limit_reach.append(ticker)
         elif "LIMIT REACH" in dataframe.columns:
             limit_reach.append(ticker)
+        elif "YFINANCE RATE LIMIT OR NO DATA FOUND FALLBACK" in dataframe.columns:
+            yfinance_rate_limit_or_no_data_found_fallback.append(ticker)
+        elif "YFINANCE RATE LIMIT OR NO DATA FOUND" in dataframe.columns:
+            yfinance_rate_limit_or_no_data_found.append(ticker)
+        elif "YFINANCE RATE LIMIT REACHED FALLBACK" in dataframe.columns:
+            yfinance_rate_limit_reached_fallback.append(ticker)
+        elif "YFINANCE RATE LIMIT REACHED" in dataframe.columns:
+            yfinance_rate_limit_reached.append(ticker)
         elif "NO DATA" in dataframe.columns:
             no_data.append(ticker)
         elif "US STOCKS ONLY" in dataframe.columns:
@@ -193,6 +205,45 @@ def check_for_error_messages(
             ", ".join(limit_reach),
         )
 
+    if yfinance_rate_limit_or_no_data_found_fallback:
+        ticker_text = (
+            "tickers"
+            if len(yfinance_rate_limit_or_no_data_found_fallback) > 1
+            else "ticker"
+        )
+        logger.error(
+            "The rate limit from Yahoo Finance has been reached or no data "
+            "could be found from this source for the following %s: %s.\n"
+            "This occurred after a previous attempt to use FinancialModelingPrep was unsuccessful "
+            "and is likely due to no data being available for the %s.",
+            ticker_text,
+            ", ".join(yfinance_rate_limit_or_no_data_found_fallback),
+            ticker_text,
+        )
+    if yfinance_rate_limit_or_no_data_found:
+        logger.error(
+            "The rate limit from Yahoo Finance has been reached or no data could be found "
+            "from this source for the following tickers: %s.\n"
+            "Consider obtaining an API key from FinancialModelingPrep to potentially "
+            "avoid this issue. You can get 15%% "
+            "off by using the following affiliate link which also supports the project: "
+            "https://www.jeroenbouma.com/fmp",
+            ", ".join(yfinance_rate_limit_or_no_data_found),
+        )
+    if yfinance_rate_limit_reached_fallback:
+        logger.error(
+            "The rate limit from Yahoo Finance has been reached for the following tickers: %s.\n"
+            "This occurred after a previous attempt to use FinancialModelingPrep was unsuccessful.",
+            ", ".join(yfinance_rate_limit_reached_fallback),
+        )
+    if yfinance_rate_limit_reached:
+        logger.error(
+            "The rate limit from Yahoo Finance has been reached for the following tickers: %s.\n"
+            "Consider obtaining an API key from FinancialModelingPrep to potentially avoid this issue. "
+            "You can get 15%% off by using the following affiliate link which also supports the project: "
+            "https://www.jeroenbouma.com/fmp",
+            ", ".join(yfinance_rate_limit_reached),
+        )
     if no_data:
         logger.error(
             "Some tickers from Financial Modeling Prep have no data, verify if the ticker has any data to "
@@ -235,6 +286,10 @@ def check_for_error_messages(
             + not_available
             + bandwidth_limit_reach
             + limit_reach
+            + yfinance_rate_limit_or_no_data_found
+            + yfinance_rate_limit_or_no_data_found_fallback
+            + yfinance_rate_limit_reached
+            + yfinance_rate_limit_reached_fallback
             + us_stocks_only
             + no_data
             + us_stocks_only

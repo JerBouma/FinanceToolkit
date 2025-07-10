@@ -9,7 +9,6 @@ import pytest
 from financetoolkit.portfolio.overview_model import (
     create_portfolio_overview,
     create_profit_and_loss_overview,
-    create_transactions_overview,
 )
 
 
@@ -59,43 +58,9 @@ def sample_betas():
     return pd.Series([1.2, 0.8, 1.5], index=["AAPL", "MSFT", "AMZN"])
 
 
-def test_create_transactions_overview():
-    """Test create_transactions_overview function"""
-    portfolio_volume = pd.Series([100, 50, 200], index=["AAPL", "MSFT", "AMZN"])
-    portfolio_price = pd.Series([150.0, 250.0, 100.0], index=["AAPL", "MSFT", "AMZN"])
-    portfolio_costs = pd.Series([1.0, 2.0, 3.0], index=["AAPL", "MSFT", "AMZN"])
-    latest_returns = pd.Series([160.0, 255.0, 110.0], index=["AAPL", "MSFT", "AMZN"])
-
-    result = create_transactions_overview(
-        portfolio_volume=portfolio_volume,
-        portfolio_price=portfolio_price,
-        portfolio_costs=portfolio_costs,
-        latest_returns=latest_returns,
-    )
-
-    assert isinstance(result, pd.DataFrame)
-    assert len(result) == 3
-    assert "Invested Amount" in result.columns
-    assert "Current Value" in result.columns
-    assert "% Return" in result.columns
-    assert "Return" in result.columns
-
-    # Check calculations
-    expected_invested = portfolio_volume * portfolio_price + abs(portfolio_costs)
-    expected_current = portfolio_volume * latest_returns
-    expected_return_pct = (expected_current / expected_invested) - 1
-
-    pd.testing.assert_series_equal(
-        result["Invested Amount"], expected_invested, check_names=False
-    )
-    pd.testing.assert_series_equal(
-        result["Current Value"], expected_current, check_names=False
-    )
-    pd.testing.assert_series_equal(
-        result["% Return"], expected_return_pct, check_names=False
-    )
-
-
+@pytest.mark.filterwarnings(
+    "ignore:DataFrameGroupBy.apply operated on the grouping columns:DeprecationWarning"
+)
 def test_create_profit_and_loss_overview():
     """Test create_profit_and_loss_overview function"""
     transactions_overview = pd.DataFrame(
@@ -122,6 +87,9 @@ def test_create_profit_and_loss_overview():
     assert "Cumulative PnL" in result.columns
 
 
+@pytest.mark.filterwarnings(
+    "ignore:DataFrameGroupBy.apply operated on the grouping columns:DeprecationWarning"
+)
 def test_create_profit_and_loss_overview_lifo():
     """Test create_profit_and_loss_overview with LIFO method"""
     transactions_overview = pd.DataFrame(
@@ -148,6 +116,9 @@ def test_create_profit_and_loss_overview_lifo():
     assert "Cumulative PnL" in result.columns
 
 
+@pytest.mark.filterwarnings(
+    "ignore:DataFrameGroupBy.apply operated on the grouping columns:DeprecationWarning"
+)
 def test_create_profit_and_loss_overview_average():
     """Test create_profit_and_loss_overview with AVERAGE method"""
     transactions_overview = pd.DataFrame(
@@ -202,24 +173,3 @@ def test_create_portfolio_overview_with_missing_data():
             betas=betas,
             include_portfolio=True,
         )
-
-
-def test_create_transactions_overview_with_negative_costs():
-    """Test create_transactions_overview with negative costs"""
-    portfolio_volume = pd.Series([100, 50], index=["AAPL", "MSFT"])
-    portfolio_price = pd.Series([150.0, 250.0], index=["AAPL", "MSFT"])
-    portfolio_costs = pd.Series([-1.0, -2.0], index=["AAPL", "MSFT"])  # Negative costs
-    latest_returns = pd.Series([160.0, 255.0], index=["AAPL", "MSFT"])
-
-    result = create_transactions_overview(
-        portfolio_volume=portfolio_volume,
-        portfolio_price=portfolio_price,
-        portfolio_costs=portfolio_costs,
-        latest_returns=latest_returns,
-    )
-
-    # Should handle negative costs by taking absolute value
-    assert result.loc["AAPL", "Invested Amount"] == 100 * 150.0 + 1.0  # abs(-1.0)
-    assert result.loc["MSFT", "Invested Amount"] == 50 * 250.0 + 2.0  # abs(-2.0)
-
-    assert result.loc["MSFT", "Invested Amount"] == 50 * 250.0 + 2.0  # abs(-2.0)

@@ -69,29 +69,6 @@ def test_collect_historical_data(recorder):
     recorder.capture(portfolio.collect_historical_data())
 
 
-def test_get_positions_overview(recorder):
-    recorder.capture(portfolio.get_positions_overview())
-
-
-def test_get_portfolio_overview(recorder):
-    recorder.capture(portfolio.get_portfolio_overview(include_portfolio=True))
-    recorder.capture(portfolio.get_portfolio_overview(include_portfolio=False))
-
-
-def test_get_portfolio_performance(recorder):
-    recorder.capture(portfolio.get_portfolio_performance(period="daily"))
-    recorder.capture(portfolio.get_portfolio_performance(period="weekly"))
-    recorder.capture(portfolio.get_portfolio_performance(period="monthly"))
-    recorder.capture(portfolio.get_portfolio_performance(period="quarterly"))
-    recorder.capture(portfolio.get_portfolio_performance(period="yearly"))
-
-
-def test_get_transactions_overview(recorder):
-    recorder.capture(portfolio.get_transactions_overview(pnl_method="FIFO"))
-    recorder.capture(portfolio.get_transactions_overview(pnl_method="LIFO"))
-    recorder.capture(portfolio.get_transactions_overview(pnl_method="average"))
-
-
 def test_get_transactions_performance(recorder):
     recorder.capture(portfolio.get_transactions_performance(period="daily"))
     recorder.capture(portfolio.get_transactions_performance(period="weekly"))

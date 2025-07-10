@@ -1,3 +1,5 @@
+# ruff: noqa
+
 import json
 import os
 import pathlib

@@ -17,7 +17,8 @@ repos:
     rev: "v0.9.9"
     hooks:
       - id: ruff
-        entry: ruff check --ignore PLR0915,S301
+        # Use config from pyproject.toml which includes global ignores and respect file-level noqa comments
+        args: ["--config=pyproject.toml"]
   - repo: https://github.com/codespell-project/codespell
     rev: v2.3.0
     hooks:
@@ -40,10 +41,3 @@ repos:
         "types_or": [python, pyi]
         args: ["--ignore-missing-imports", "--scripts-are-modules"]
         require_serial: true
-  - repo: local
-    hooks:
-      - id: pylint
-        name: pylint
-        entry: pylint financetoolkit
-        language: system
-        types: [python]

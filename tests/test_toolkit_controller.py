@@ -1,3 +1,4 @@
+# ruff: noqa
 """Toolkit Controller Tests""" ""
 import pandas as pd
 

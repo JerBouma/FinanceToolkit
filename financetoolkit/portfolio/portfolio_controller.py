@@ -282,8 +282,14 @@ class Portfolio:
 
         if self._weekly_historical_data.empty:
             self.collect_historical_data()
+
+            if self._daily_historical_data.empty:
+                return pd.DataFrame()
         if self._weekly_benchmark_data.empty:
             self.collect_benchmark_historical_data()
+
+            if self._daily_historical_data.empty:
+                return pd.DataFrame()
 
         symbols = list(self._tickers) + ["Portfolio"]  # type: ignore
 
@@ -609,6 +615,9 @@ class Portfolio:
         if self._weekly_historical_data.empty:
             self.collect_historical_data()
 
+            if self._daily_historical_data.empty:
+                return pd.DataFrame()
+
         benchmark_ticker = (
             benchmark_ticker
             if benchmark_ticker
@@ -793,26 +802,22 @@ class Portfolio:
             period="daily", progress_bar=progress_bar
         )
 
-        if self._daily_historical_data.empty:
-            api_key_check = (
-                "\nConsider obtaining an API key from FinancialModelingPrep to potentially "
-                "avoid this issue. You can get 15% "
-                "off by using the following affiliate link which also supports the project: "
-                "https://www.jeroenbouma.com/fmp"
-                if not self._api_key
-                else ""
+        if self._daily_historical_data.empty and not self._api_key:
+            logger.error(
+                "Failed to collect historical data. Please ensure you have provided valid tickers. "
+                "Yahoo Finance is unstable and has rate limits which you could have reached.\n"
+                "Therefore, consider obtaining an API key with the following link: "
+                "https://www.jeroenbouma.com/fmp. You can get 15% off by using the "
+                "affiliate link which also supports the project."
             )
-            raise ValueError(
-                "No historical data found for the provided tickers and therefore no further calculations are possible."
-                + api_key_check
-            )
+            return pd.DataFrame()
 
         self._daily_historical_data = self._daily_historical_data.rename(
             columns=self._ticker_combinations, level=1
         )
 
         currency_conversions = {}
-        if self._currency_column and not self._historical_statistics.empty:  # type: ignore
+        if self._currency_column:  # type: ignore
             self._historical_statistics = self._toolkit.get_historical_statistics(
                 progress_bar=False
             )
@@ -820,14 +825,15 @@ class Portfolio:
                 columns=self._ticker_combinations, level=0
             )
 
-            for (_, ticker), currency in self._portfolio_dataset[
-                self._currency_column  # type: ignore
-            ].items():
-                data_currency = self._historical_statistics.loc["Currency", ticker]
-                if self._historical_statistics.loc["Currency", ticker] != currency:
-                    currency_conversions[ticker] = (
-                        f"{currency}{data_currency}=X".upper()
-                    )
+            if not self._historical_statistics.empty:
+                for (_, ticker), currency in self._portfolio_dataset[
+                    self._currency_column  # type: ignore
+                ].items():
+                    data_currency = self._historical_statistics.loc["Currency", ticker]
+                    if self._historical_statistics.loc["Currency", ticker] != currency:
+                        currency_conversions[ticker] = (
+                            f"{currency}{data_currency}=X".upper()
+                        )
 
         if currency_conversions:
             self._currency_toolkit = Toolkit(
@@ -962,20 +968,16 @@ class Portfolio:
         | 2025-02-28 |      101 |     -14 |           1747.63 |         4932.84 |              2.8226 |            0.0126 |           0.0054 |
         """
         if self._weekly_historical_data.empty:
-            try:
-                self.collect_historical_data()
-            except ValueError as error:
-                raise ValueError(
-                    f"Failed to collect historical data due to {error}"
-                ) from error
+            self.collect_historical_data()
+
+            if self._daily_historical_data.empty:
+                return pd.DataFrame()
 
         if self._weekly_benchmark_data.empty:
-            try:
-                self.collect_benchmark_historical_data()
-            except ValueError as error:
-                raise ValueError(
-                    f"Failed to collect benchmark historical data due to {error}"
-                ) from error
+            self.collect_benchmark_historical_data()
+
+            if self._daily_historical_data.empty:
+                return pd.DataFrame()
 
         if self._transactions_overview.empty:
             try:
@@ -1093,20 +1095,16 @@ class Portfolio:
         | Portfolio    |     2142 |    -532 |  59.8406 |  128710    |        368.549 |      789432    |   5.1334 |    660721      |             2.0773 |       0.4187 |                 0.1937 |  3.0561 | 1.3272 |   1      |
         """
         if self._weekly_historical_data.empty:
-            try:
-                self.collect_historical_data()
-            except ValueError as error:
-                raise ValueError(
-                    f"Failed to collect historical data: {error}"
-                ) from error
+            self.collect_historical_data()
+
+            if self._daily_historical_data.empty:
+                return pd.DataFrame()
 
         if self._weekly_benchmark_data.empty:
-            try:
-                self.collect_benchmark_historical_data()
-            except ValueError as error:
-                raise ValueError(
-                    f"Failed to collect benchmark historical data: {error}"
-                ) from error
+            self.collect_benchmark_historical_data()
+
+            if self._daily_historical_data.empty:
+                return pd.DataFrame()
 
         if self._portfolio_volatilities.empty:
             self._portfolio_volatilities = pd.concat(
@@ -1237,20 +1235,16 @@ class Portfolio:
             period = "quarterly" if self._quarterly else "yearly"
 
         if self._weekly_historical_data.empty:
-            try:
-                self.collect_historical_data()
-            except ValueError as error:
-                raise ValueError(
-                    f"Failed to collect historical data: {error}"
-                ) from error
+            self.collect_historical_data()
+
+            if self._daily_historical_data.empty:
+                return pd.DataFrame()
 
         if self._weekly_benchmark_data.empty:
-            try:
-                self.collect_benchmark_historical_data()
-            except ValueError as error:
-                raise ValueError(
-                    f"Failed to collect benchmark historical data: {error}"
-                ) from error
+            self.collect_benchmark_historical_data()
+
+            if self._daily_historical_data.empty:
+                return pd.DataFrame()
 
         if self._positions_overview.empty:
             try:
@@ -1377,20 +1371,16 @@ class Portfolio:
             )
 
         if self._weekly_historical_data.empty:
-            try:
-                self.collect_historical_data()
-            except ValueError as error:
-                raise ValueError(
-                    f"Failed to collect historical data: {error}"
-                ) from error
+            self.collect_historical_data()
+
+            if self._daily_historical_data.empty:
+                return pd.DataFrame()
 
         if self._weekly_benchmark_data.empty:
-            try:
-                self.collect_benchmark_historical_data()
-            except ValueError as error:
-                raise ValueError(
-                    f"Failed to collect benchmark historical data: {error}"
-                ) from error
+            self.collect_benchmark_historical_data()
+
+            if self._daily_historical_data.empty:
+                return pd.DataFrame()
 
         try:
             new_columns = overview_model.create_transactions_overview(
@@ -1519,20 +1509,16 @@ class Portfolio:
             period = "quarterly" if self._quarterly else "yearly"
 
         if self._weekly_historical_data.empty:
-            try:
-                self.collect_historical_data()
-            except ValueError as error:
-                raise ValueError(
-                    f"Failed to collect historical data: {error}"
-                ) from error
+            self.collect_historical_data()
+
+            if self._daily_historical_data.empty:
+                return pd.DataFrame()
 
         if self._weekly_benchmark_data.empty:
-            try:
-                self.collect_benchmark_historical_data()
-            except ValueError as error:
-                raise ValueError(
-                    f"Failed to collect benchmark historical data: {error}"
-                ) from error
+            self.collect_benchmark_historical_data()
+
+            if self._daily_historical_data.empty:
+                return pd.DataFrame()
 
         if not period:
             raise ValueError(

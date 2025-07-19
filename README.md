@@ -18,18 +18,6 @@ The Finance Toolkit not only supports Equities. Even for Options, Currencies, Cr
 
 The Finance Toolkit is complimented very well with the [Finance Database 🌎](https://github.com/JerBouma/FinanceDatabase), a database that features 300.000+ symbols containing Equities, ETFs, Funds, Indices, Currencies, Cryptocurrencies and Money Markets. By utilising both, it is possible to do a fully-fledged competitive analysis with the tickers found from the FinanceDatabase inputted into the FinanceToolkit.
 
----
-
-**Interested in seeing the Finance Toolkit in action?** Find below a dashboard that can plot most of the metrics found inside the Finance Toolkit. <a href="https://www.jeroenbouma.com/projects/financetoolkit/interactive-dashboard" target="_blank">**Find the dashboard here.**</a>
-
-<p align="center">
-    <a href="https://www.jeroenbouma.com/projects/financetoolkit/interactive-dashboard" target="_blank">
-        <img src="pages/assets/financetoolkit-dashboard.gif" alt="Finance Toolkit Illustration" width="100%" onerror="this.style.display = 'none'"/>
-    </a>
-</p>
-
----
-
 # Table of Contents
 
 1. [Installation](#installation)

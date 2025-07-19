@@ -25,7 +25,8 @@ The Finance Toolkit is complimented very well with the [Finance Database 🌎](h
 3. [Functionality and Metrics](#core-functionality-and-metrics)
 4. [Questions & Answers](#questions--answers)
 5. [Contributing](#contributing)
-6. [Contact](#contact)
+6. [Mentions](#mentions)
+7. [Contact](#contact)
 
 # Installation
 
@@ -3278,6 +3279,26 @@ ___
 ___
 
 The goal of the Finance Toolkit is to make any type of financial calculation as transparent and efficient as possible. I want to make these type of calculations as accessible to anyone as possible and seeing how many websites exists that do the same thing (but instead you have to pay) gave me plenty of reasons to work on this.
+
+# Mentions
+
+The FinanceToolkit has been mentioned in various blogposts, research papers, newsletters and social media. Below is a list of some of the mentions that I am aware of. **If you have any other mentions, feel free to reach out to me so I can add them to this list.**
+
+**Blogposts**
+- [A Deep Dive into EOY Financial Performance & Risk Measures of Big Five using the FinanceToolkit in Python](https://wire.insiderfinance.io/a-deep-dive-into-eoy-financial-performance-risk-measures-of-big-five-using-the-financetoolkit-in-ef93fddd11db)
+- [Discovering the Best Integrated Platforms for Big Tech Quantitative Finance — 1. Finance Toolkit](https://wire.insiderfinance.io/discovering-the-best-integrated-platforms-for-big-tech-quantitative-finance-1-finance-toolkit-2e29b67eb4ea)
+- [Investment Analysis — Finance Database](https://alpha2phi.medium.com/investment-analysis-finance-database-61f47ecfe7ca)
+
+**Research**
+- [AI, Help Me Think—but for Myself: Assisting People in Complex Decision-Making by Providing Different Kinds of Cognitive Support](https://www.microsoft.com/en-us/research/wp-content/uploads/2025/03/AI-Help-Me-Think-CHI-2025.pdf)
+- [Fundamental Analysis using Muli-Agent System and Agentic RAG](https://connect.cfauk.org/HigherLogic/System/DownloadDocumentFile.ashx?DocumentFileKey=3ae6f3fc-593a-04ec-c3b8-be5643cab479&forceDialog=0)
+
+**Newsletters & Social Media**
+- [LinkedIn #1](https://www.linkedin.com/posts/jerry-liu-64390071_this-is-an-extremely-comprehensive-100-activity-7340897396471623681-plI4?utm_source=share&utm_medium=member_desktop&rcm=ACoAABhYAQUBkaNnlBjz_IYBRfaurU68rfoZPE8) and [Linkedin #2](https://www.linkedin.com/posts/pyquant-news_getting-clean-fundamental-data-used-to-be-activity-7314273012927651841-KXP3?utm_source=share&utm_medium=member_desktop&rcm=ACoAABhYAQUBkaNnlBjz_IYBRfaurU68rfoZPE8)
+- [Quant Seeker](https://www.quantseeker.com/p/weekly-research-recap)
+- [Python Hub](https://pythonhub.dev/digest/2023-08-13/)
+- [Python Weekly](https://www.pythonweekly.com/p/python-weekly-issue-611-august-3-2023)
+- [Quant Science](https://www.threads.com/@quantscience_/post/DH1FDTGI7oi/the-project-is-finance-toolkit-its-available-on-github-here-httpsgithubcomjerbou?hl=zh-hk)
 
 # Contact
 If you have any questions about the FinanceToolkit or would like to share with me what you have been working on, feel free to reach out to me via:

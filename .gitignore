@@ -4,6 +4,7 @@
 *.xls
 *.ipynb
 cached/
+config.py
 
 # Finance Toolkit Example Datasets
 !examples/*.ipynb

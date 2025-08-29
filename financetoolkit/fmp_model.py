@@ -311,13 +311,13 @@ def get_historical_data(
         interval = "1d"
 
     historical_data_url = (
-        f"https://financialmodelingprep.com/api/v3/historical-price-full/{ticker}?"
-        f"apikey={api_key}&from={start_date_string}&to={end_date_string}"
+        f"https://financialmodelingprep.com/stable/historical-price-full"
+        f"?symbol={ticker}&apikey={api_key}&from={start_date_string}&to={end_date_string}"
     )
 
     dividend_url = (
-        f"https://financialmodelingprep.com/api/v3/historical-price-full/stock_dividend/{ticker}?"
-        f"apikey={api_key}&from={start_date_string}&to={end_date_string}"
+        f"https://financialmodelingprep.com/stable/dividends"
+        f"?symbol={ticker}&apikey={api_key}&from={start_date_string}&to={end_date_string}"
     )
 
     try:
@@ -472,8 +472,8 @@ def get_intraday_data(
     start_date_string = start_date_value.strftime("%Y-%m-%d")
 
     historical_data_url = (
-        f"https://financialmodelingprep.com/api/v3/historical-chart/{interval}/{ticker}?"
-        f"from={start_date_string}&to={end_date_string}&apikey={api_key}"
+        f"https://financialmodelingprep.com/stable/historical-chart/{interval}"
+        f"?symbol={ticker}&from={start_date_string}&to={end_date_string}&apikey={api_key}"
     )
 
     try:
@@ -850,8 +850,8 @@ def get_analyst_estimates(
 
     def worker(ticker, analyst_estimates_dict):
         url = (
-            "https://financialmodelingprep.com/api/v3/analyst-estimates/"
-            f"{ticker}?period={period}&apikey={api_key}"
+            "https://financialmodelingprep.com/stable/analyst-estimates"
+            f"?symbol={ticker}&period={period}&apikey={api_key}"
         )
         analyst_estimates = get_financial_data(
             url=url, sleep_timer=sleep_timer, user_subscription=user_subscription
@@ -1031,7 +1031,7 @@ def get_profile(
     """
 
     def worker(ticker, profile_dict):
-        url = f"https://financialmodelingprep.com/api/v3/profile/{ticker}?apikey={api_key}"
+        url = f"https://financialmodelingprep.com/stable/profile?symbol={ticker}&apikey={api_key}"
         profile_data = get_financial_data(url=url, user_subscription=user_subscription)
 
         if profile_data.empty:
@@ -1155,7 +1155,7 @@ def get_quote(
 
     def worker(ticker, quote_dict):
         url = (
-            f"https://financialmodelingprep.com/api/v3/quote/{ticker}?apikey={api_key}"
+            f"https://financialmodelingprep.com/stable/quote?symbol={ticker}&apikey={api_key}"
         )
         quote_data = get_financial_data(url=url, user_subscription=user_subscription)
 
@@ -1255,7 +1255,7 @@ def get_rating(
     """
 
     def worker(ticker, ratings_dict):
-        url = f"https://financialmodelingprep.com/api/v3/historical-rating/{ticker}?l&apikey={api_key}"
+        url = f"https://financialmodelingprep.com/stable/historical-rating?symbol={ticker}&apikey={api_key}"
         ratings = get_financial_data(url=url, user_subscription=user_subscription)
 
         try:
@@ -1369,8 +1369,8 @@ def get_earnings_calendar(
 
     def worker(ticker, earnings_calendar_dict):
         url = (
-            "https://financialmodelingprep.com/api/v3/historical/earning_calendar/"
-            f"{ticker}?apikey={api_key}"
+            "https://financialmodelingprep.com/stable/earning_calendar"
+            f"?symbol={ticker}&apikey={api_key}"
         )
         earnings_calendar = get_financial_data(
             url=url, sleep_timer=sleep_timer, user_subscription=user_subscription
@@ -1496,8 +1496,8 @@ def get_dividend_calendar(
 
     def worker(ticker, dividend_calendar_dict):
         url = (
-            "https://financialmodelingprep.com/api/v3/historical-price-full/stock_dividend/"
-            f"{ticker}?apikey={api_key}&from={start_date}&to={end_date}"
+            "https://financialmodelingprep.com/stable/dividends"
+            f"?symbol={ticker}&apikey={api_key}&from={start_date}&to={end_date}"
         )
         dividend_calendar = get_financial_data(
             url=url,

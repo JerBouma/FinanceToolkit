@@ -5,10 +5,14 @@ __docformat__ = "google"
 import pandas as pd
 
 from financetoolkit.fmp_model import get_financial_data
+from financetoolkit.utilities import error_model
 
 
 def get_instruments(
-    api_key: str, query: str, user_subscription: str = "Free"
+    api_key: str,
+    query: str,
+    search_method: str = "name",
+    user_subscription: str = "Free",
 ) -> pd.DataFrame:
     """
     Get a list of instruments based on a query.
@@ -21,21 +25,31 @@ def get_instruments(
     Returns:
         pd.DataFrame: DataFrame of instruments.
     """
-    url = f"https://financialmodelingprep.com/stable/search?query={query}&apikey={api_key}"
+    url = f"https://financialmodelingprep.com/stable/search-{search_method}?query={query}&apikey={api_key}"
 
     instruments_query = get_financial_data(url=url, user_subscription=user_subscription)
 
-    instruments_query = instruments_query.rename(
-        columns={
-            "symbol": "Symbol",
-            "name": "Name",
-            "currency": "Currency",
-            "stockExchange": "Exchange",
-            "exchangeShortName": "Exchange Code",
-        }
+    error_model.check_for_error_messages(
+        {"SEARCH_INSTRUMENTS": instruments_query}, user_subscription=user_subscription
     )
 
-    instruments_query = instruments_query.set_index("Symbol")
+    if not instruments_query.empty:
+        instruments_query = instruments_query.rename(
+            columns={
+                "symbol": "Symbol",
+                "name": "Name",
+                "companyName": "Name",
+                "currency": "Currency",
+                "exchangeFullName": "Exchange",
+                "exchange": "Exchange Code",
+                "cusip": "CUSIP",
+                "cik": "CIK",
+                "isin": "ISIN",
+                "marketCap": "Market Cap",
+            }
+        )
+
+        instruments_query = instruments_query.set_index("Symbol")
 
     return instruments_query
 
@@ -77,7 +91,7 @@ def get_stock_screener(
     Returns:
         pd.DataFrame: DataFrame of instruments matching the query.
     """
-    url = f"https://financialmodelingprep.com/stable/stock-screener?apikey={api_key}"
+    url = f"https://financialmodelingprep.com/stable/company-screener?apikey={api_key}"
 
     if market_cap_higher:
         url += f"&marketCapMoreThan={market_cap_higher}"
@@ -143,24 +157,16 @@ def get_stock_list(api_key: str, user_subscription: str = "Free") -> pd.DataFram
     Returns:
         pd.DataFrame: DataFrame of stocks.
     """
-    url = f"https://financialmodelingprep.com/stable/stock/list?apikey={api_key}"
+    url = f"https://financialmodelingprep.com/stable/stock-list?apikey={api_key}"
 
     stock_list = get_financial_data(url=url, user_subscription=user_subscription)
 
     stock_list = stock_list.rename(
         columns={
             "symbol": "Symbol",
-            "name": "Name",
-            "price": "Price",
-            "exchange": "Exchange",
-            "exchangeShortName": "Exchange Code",
-            "type": "Type",
+            "companyName": "Name",
         }
     )
-
-    stock_list = stock_list[stock_list["Type"] == "stock"]
-
-    stock_list = stock_list.drop(columns=["Type"])
 
     stock_list = stock_list.set_index("Symbol").sort_index()
 
@@ -298,7 +304,7 @@ def get_biggest_gainers(api_key: str, user_subscription: str = "Free") -> pd.Dat
     Returns:
         pd.DataFrame: DataFrame of biggest gainers.
     """
-    url = f"https://financialmodelingprep.com/stable/stock_market/gainers?apikey={api_key}"
+    url = f"https://financialmodelingprep.com/stable/biggest-gainers?apikey={api_key}"
 
     biggest_gainers = get_financial_data(url=url, user_subscription=user_subscription)
 
@@ -309,6 +315,7 @@ def get_biggest_gainers(api_key: str, user_subscription: str = "Free") -> pd.Dat
             "change": "Change",
             "price": "Price",
             "changesPercentage": "Change %",
+            "exchange": "Exchange",
         }
     )
 
@@ -328,9 +335,7 @@ def get_biggest_losers(api_key: str, user_subscription: str = "Free") -> pd.Data
     Returns:
         pd.DataFrame: DataFrame of biggest losers.
     """
-    url = (
-        f"https://financialmodelingprep.com/stable/stock_market/losers?apikey={api_key}"
-    )
+    url = f"https://financialmodelingprep.com/stable/biggest-losers?apikey={api_key}"
 
     biggest_losers = get_financial_data(url=url, user_subscription=user_subscription)
 
@@ -341,6 +346,7 @@ def get_biggest_losers(api_key: str, user_subscription: str = "Free") -> pd.Data
             "change": "Change",
             "price": "Price",
             "changesPercentage": "Change %",
+            "exchange": "Exchange",
         }
     )
 
@@ -362,7 +368,7 @@ def get_most_active_stocks(
     Returns:
         pd.DataFrame: DataFrame of most active stocks.
     """
-    url = f"https://financialmodelingprep.com/stable/stock_market/actives?apikey={api_key}"
+    url = f"https://financialmodelingprep.com/stable/most-actives?apikey={api_key}"
 
     most_active = get_financial_data(url=url, user_subscription=user_subscription)
 
@@ -373,6 +379,7 @@ def get_most_active_stocks(
             "change": "Change",
             "price": "Price",
             "changesPercentage": "Change %",
+            "exchange": "Exchange",
         }
     )
 
@@ -392,7 +399,9 @@ def get_crypto_list(api_key: str, user_subscription: str = "Free") -> pd.DataFra
     Returns:
         pd.DataFrame: DataFrame of cryptocurrencies.
     """
-    url = f"https://financialmodelingprep.com/stable/symbol/available-cryptocurrencies?apikey={api_key}"
+    url = (
+        f"https://financialmodelingprep.com/stable/cryptocurrency-list?apikey={api_key}"
+    )
 
     crypto_list = get_financial_data(url=url, user_subscription=user_subscription)
 
@@ -400,13 +409,12 @@ def get_crypto_list(api_key: str, user_subscription: str = "Free") -> pd.DataFra
         columns={
             "symbol": "Symbol",
             "name": "Name",
-            "currency": "Currency",
-            "stockExchange": "Exchange",
-            "exchangeShortName": "Exchange Code",
+            "exchange": "Currency",
+            "icoDate": "ICO Date",
+            "circulatingSupply": "Circulating Supply",
+            "totalSupply": "Total Supply",
         }
     )
-
-    crypto_list = crypto_list.drop(columns=["Exchange Code"])
 
     crypto_list = crypto_list.set_index("Symbol").sort_index()
 
@@ -447,57 +455,6 @@ def get_delisted_stocks(api_key: str, user_subscription: str = "Free") -> pd.Dat
     return delisted_companies
 
 
-def get_crypto_quotes(api_key: str, user_subscription: str = "Free") -> pd.DataFrame:
-    """
-    Get the quotes for all cryptocurrencies.
-
-    Args:
-        api_key (str): the API key from Financial Modeling Prep.
-        user_subscription (str, optional): The user subscription level. Defaults to "Free".
-
-    Returns:
-        pd.DataFrame: DataFrame of crypto quotes.
-    """
-    url = f"https://financialmodelingprep.com/stable/quotes/crypto?apikey={api_key}"
-
-    crypto_quotes = get_financial_data(url=url, user_subscription=user_subscription)
-
-    crypto_quotes = crypto_quotes.rename(
-        columns={
-            "symbol": "Symbol",
-            "name": "Name",
-            "price": "Price",
-            "changesPercentage": "Change %",
-            "change": "Change",
-            "dayLow": "Day Low",
-            "dayHigh": "Day High",
-            "yearHigh": "Year High",
-            "yearLow": "Year Low",
-            "marketCap": "Market Cap",
-            "priceAvg50": "50 Day Avg",
-            "priceAvg200": "200 Day Avg",
-            "exchange": "Exchange",
-            "volume": "Volume",
-            "avgVolume": "Avg Volume",
-            "open": "Open",
-            "previousClose": "Previous Close",
-            "eps": "EPS",
-            "pe": "PE",
-            "earningsAnnouncement": "Earnings Announcement",
-            "sharesOutstanding": "Shares Outstanding",
-            "timestamp": "Timestamp",
-        }
-    )
-
-    crypto_quotes = crypto_quotes.drop(columns=["Exchange"])
-
-    crypto_quotes = crypto_quotes.set_index("Symbol").sort_index()
-
-    crypto_quotes = crypto_quotes.dropna(how="all", axis=1)
-
-    return crypto_quotes
-
-
 def get_forex_list(api_key: str, user_subscription: str = "Free") -> pd.DataFrame:
     """
     Get a list of forex pairs.
@@ -530,57 +487,6 @@ def get_forex_list(api_key: str, user_subscription: str = "Free") -> pd.DataFram
     return forex_list
 
 
-def get_forex_quotes(api_key: str, user_subscription: str = "Free") -> pd.DataFrame:
-    """
-    Get the quotes for all forex pairs.
-
-    Args:
-        api_key (str): the API key from Financial Modeling Prep.
-        user_subscription (str, optional): The user subscription level. Defaults to "Free".
-
-    Returns:
-        pd.DataFrame: DataFrame of forex quotes.
-    """
-    url = f"https://financialmodelingprep.com/stable/quotes/forex?apikey={api_key}"
-
-    forex_quotes = get_financial_data(url=url, user_subscription=user_subscription)
-
-    forex_quotes = forex_quotes.rename(
-        columns={
-            "symbol": "Symbol",
-            "name": "Name",
-            "price": "Price",
-            "changesPercentage": "Change %",
-            "change": "Change",
-            "dayLow": "Day Low",
-            "dayHigh": "Day High",
-            "yearHigh": "Year High",
-            "yearLow": "Year Low",
-            "marketCap": "Market Cap",
-            "priceAvg50": "50 Day Avg",
-            "priceAvg200": "200 Day Avg",
-            "exchange": "Exchange",
-            "volume": "Volume",
-            "avgVolume": "Avg Volume",
-            "open": "Open",
-            "previousClose": "Previous Close",
-            "eps": "EPS",
-            "pe": "PE",
-            "earningsAnnouncement": "Earnings Announcement",
-            "sharesOutstanding": "Shares Outstanding",
-            "timestamp": "Timestamp",
-        }
-    )
-
-    forex_quotes = forex_quotes.drop(columns=["Exchange"])
-
-    forex_quotes = forex_quotes.set_index("Symbol").sort_index()
-
-    forex_quotes = forex_quotes.dropna(how="all", axis=1)
-
-    return forex_quotes
-
-
 def get_commodity_list(api_key: str, user_subscription: str = "Free") -> pd.DataFrame:
     """
     Get a list of commodities.
@@ -611,57 +517,6 @@ def get_commodity_list(api_key: str, user_subscription: str = "Free") -> pd.Data
     commody_list = commody_list.set_index("Symbol").sort_index()
 
     return commody_list
-
-
-def get_commodity_quotes(api_key: str, user_subscription: str = "Free") -> pd.DataFrame:
-    """
-    Get the quotes for all commodities.
-
-    Args:
-        api_key (str): the API key from Financial Modeling Prep.
-        user_subscription (str, optional): The user subscription level. Defaults to "Free".
-
-    Returns:
-        pd.DataFrame: DataFrame of commodity quotes.
-    """
-    url = f"https://financialmodelingprep.com/stable/quotes/commodity?apikey={api_key}"
-
-    commodity_quotes = get_financial_data(url=url, user_subscription=user_subscription)
-
-    commodity_quotes = commodity_quotes.rename(
-        columns={
-            "symbol": "Symbol",
-            "name": "Name",
-            "price": "Price",
-            "changesPercentage": "Change %",
-            "change": "Change",
-            "dayLow": "Day Low",
-            "dayHigh": "Day High",
-            "yearHigh": "Year High",
-            "yearLow": "Year Low",
-            "marketCap": "Market Cap",
-            "priceAvg50": "50 Day Avg",
-            "priceAvg200": "200 Day Avg",
-            "exchange": "Exchange",
-            "volume": "Volume",
-            "avgVolume": "Avg Volume",
-            "open": "Open",
-            "previousClose": "Previous Close",
-            "eps": "EPS",
-            "pe": "PE",
-            "earningsAnnouncement": "Earnings Announcement",
-            "sharesOutstanding": "Shares Outstanding",
-            "timestamp": "Timestamp",
-        }
-    )
-
-    commodity_quotes = commodity_quotes.drop(columns=["Exchange"])
-
-    commodity_quotes = commodity_quotes.set_index("Symbol").sort_index()
-
-    commodity_quotes = commodity_quotes.dropna(how="all", axis=1)
-
-    return commodity_quotes
 
 
 def get_etf_list(api_key: str, user_subscription: str = "Free") -> pd.DataFrame:
@@ -727,54 +582,3 @@ def get_index_list(api_key: str, user_subscription: str = "Free") -> pd.DataFram
     index_list = index_list.set_index("Symbol").sort_index()
 
     return index_list
-
-
-def get_index_quotes(api_key: str, user_subscription: str = "Free") -> pd.DataFrame:
-    """
-    Get the quotes for all indexes.
-
-    Args:
-        api_key (str): the API key from Financial Modeling Prep.
-        user_subscription (str, optional): The user subscription level. Defaults to "Free".
-
-    Returns:
-        pd.DataFrame: DataFrame of index quotes.
-    """
-    url = f"https://financialmodelingprep.com/stable/quotes/index?apikey={api_key}"
-
-    index_quotes = get_financial_data(url=url, user_subscription=user_subscription)
-
-    index_quotes = index_quotes.rename(
-        columns={
-            "symbol": "Symbol",
-            "name": "Name",
-            "price": "Price",
-            "changesPercentage": "Change %",
-            "change": "Change",
-            "dayLow": "Day Low",
-            "dayHigh": "Day High",
-            "yearHigh": "Year High",
-            "yearLow": "Year Low",
-            "marketCap": "Market Cap",
-            "priceAvg50": "50 Day Avg",
-            "priceAvg200": "200 Day Avg",
-            "exchange": "Exchange",
-            "volume": "Volume",
-            "avgVolume": "Avg Volume",
-            "open": "Open",
-            "previousClose": "Previous Close",
-            "eps": "EPS",
-            "pe": "PE",
-            "earningsAnnouncement": "Earnings Announcement",
-            "sharesOutstanding": "Shares Outstanding",
-            "timestamp": "Timestamp",
-        }
-    )
-
-    index_quotes = index_quotes.drop(columns=["Exchange"])
-
-    index_quotes = index_quotes.set_index("Symbol").sort_index()
-
-    index_quotes = index_quotes.dropna(how="all", axis=1)
-
-    return index_quotes

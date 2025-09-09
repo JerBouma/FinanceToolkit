@@ -2307,6 +2307,9 @@ class Toolkit:
         # Save the period to prevent having to reacquire the data
         self._intraday_period = period
 
+        if self._intraday_historical_data.empty:
+            return pd.DataFrame()
+
         # Change the benchmark ticker name to Benchmark
         self._intraday_historical_data = self._intraday_historical_data.rename(
             columns={self._benchmark_ticker: "Benchmark"}, level=1
@@ -2425,6 +2428,12 @@ class Toolkit:
 
         if len(self._tickers) == 1 and not self._dividend_calendar.empty:
             return dividend_calendar.loc[self._tickers[0]]
+
+        if dividend_calendar.empty and self._fmp_plan == "Free":
+            logger.warning(
+                "Dividend data is only available for Premium subscriptions and higher. Get 15% off by using the following link: "
+                "https://www.jeroenbouma.com/fmp"
+            )
 
         return dividend_calendar
 

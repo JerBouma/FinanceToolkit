@@ -83,6 +83,8 @@ def get_financial_data(
                 return pd.DataFrame(columns=["EXCLUSIVE ENDPOINT"])
             if "Special Endpoint" in error_message:
                 return pd.DataFrame(columns=["SPECIAL ENDPOINT"])
+            if "Premium Endpoint" in error_message:
+                return pd.DataFrame(columns=["SPECIAL ENDPOINT"])
             if "Bandwidth Limit Reach" in error_message:
                 return pd.DataFrame(columns=["BANDWIDTH LIMIT REACH"])
             if "Limit Reach" in error_message:
@@ -184,8 +186,8 @@ def get_financial_statement(
             end_year = pd.to_datetime(end_date).year
             periods_to_fetch = end_year - start_year + 1
 
-        # Ensure we don't exceed the API's limit
-        periods_to_fetch = min(periods_to_fetch, 100)
+    # Ensure we don't exceed the API's limit
+    periods_to_fetch = min(periods_to_fetch, 9999) if user_subscription != "Free" else 5
 
     url = (
         f"https://financialmodelingprep.com/stable/{location}"
@@ -311,13 +313,13 @@ def get_historical_data(
         interval = "1d"
 
     historical_data_url = (
-        f"https://financialmodelingprep.com/stable/historical-price-full"
+        f"https://financialmodelingprep.com/stable/historical-price-eod/full"
         f"?symbol={ticker}&apikey={api_key}&from={start_date_string}&to={end_date_string}"
     )
 
     dividend_url = (
         f"https://financialmodelingprep.com/stable/dividends"
-        f"?symbol={ticker}&apikey={api_key}&from={start_date_string}&to={end_date_string}"
+        f"?symbol={ticker}&apikey={api_key}&limit={'99999' if user_subscription != 'Free' else '5'}"
     )
 
     try:
@@ -328,7 +330,7 @@ def get_historical_data(
             user_subscription=user_subscription,
         )
 
-        historical_data = pd.DataFrame(historical_data["historical"]).set_index("date")
+        historical_data = pd.DataFrame(historical_data).set_index("date")
     except (HTTPError, KeyError, ValueError, URLError, RemoteDisconnected):
         return pd.DataFrame(historical_data)
 
@@ -357,6 +359,7 @@ def get_historical_data(
         }
     )
 
+    historical_data["Adj Close"] = historical_data["Close"]
     historical_data = historical_data[
         ["Open", "High", "Low", "Close", "Adj Close", "Volume"]
     ]
@@ -378,7 +381,7 @@ def get_historical_data(
             )
 
             try:
-                dividends_df = pd.DataFrame(dividends["historical"]).set_index("date")
+                dividends_df = pd.DataFrame(dividends).set_index("date")
 
                 if not dividends_df.empty:
                     dividends_df.index = pd.to_datetime(dividends_df.index)
@@ -587,7 +590,7 @@ def get_historical_statistics(ticker: str, api_key: str) -> pd.Series:
 
         profile_df.loc["Currency"] = profile.loc["Currency"]
         profile_df.loc["Symbol"] = profile.loc["Symbol"]
-        profile_df.loc["Exchange Name"] = profile.loc["Exchange Short Name"]
+        profile_df.loc["Exchange Name"] = profile.loc["Exchange"]
         profile_df.loc["IPO Date"] = profile.loc["IPO Date"]
 
     return profile_df
@@ -890,11 +893,11 @@ def get_analyst_estimates(
                 ]
 
             analyst_estimates.loc["Number of Analysts", :] = (
-                analyst_estimates.loc["numberAnalystEstimatedRevenue", :]
-                + analyst_estimates.loc["numberAnalystsEstimatedEps", :]
+                analyst_estimates.loc["numAnalystsRevenue", :]
+                + analyst_estimates.loc["numAnalystsEps", :]
             ) // 2
             analyst_estimates = analyst_estimates.drop(
-                ["numberAnalystEstimatedRevenue", "numberAnalystsEstimatedEps"], axis=0
+                ["numAnalystsRevenue", "numAnalystsEps"], axis=0
             )
 
             analyst_estimates_dict[ticker] = analyst_estimates.rename(index=naming)
@@ -903,24 +906,24 @@ def get_analyst_estimates(
             analyst_estimates_dict[ticker] = analyst_estimates
 
     naming: dict = {
-        "estimatedRevenueLow": "Estimated Revenue Low",
-        "estimatedRevenueHigh": "Estimated Revenue High",
-        "estimatedRevenueAvg": "Estimated Revenue Average",
-        "estimatedEbitdaLow": "Estimated EBITDA Low",
-        "estimatedEbitdaHigh": "Estimated EBITDA High",
-        "estimatedEbitdaAvg": "Estimated EBITDA Average",
-        "estimatedEbitLow": "Estimated EBIT Low",
-        "estimatedEbitHigh": "Estimated EBIT High",
-        "estimatedEbitAvg": "Estimated EBIT Average",
-        "estimatedNetIncomeLow": "Estimated Net Income Low",
-        "estimatedNetIncomeHigh": "Estimated Net Income High",
-        "estimatedNetIncomeAvg": "Estimated Net Income Average",
-        "estimatedSgaExpenseLow": "Estimated SGA Expense Low",
-        "estimatedSgaExpenseHigh": "Estimated SGA Expense High",
-        "estimatedSgaExpenseAvg": "Estimated SGA Expense Average",
-        "estimatedEpsLow": "Estimated EPS Low",
-        "estimatedEpsHigh": "Estimated EPS High",
-        "estimatedEpsAvg": "Estimated EPS Average",
+        "revenueLow": "Estimated Revenue Low",
+        "revenueHigh": "Estimated Revenue High",
+        "revenueAvg": "Estimated Revenue Average",
+        "ebitdaLow": "Estimated EBITDA Low",
+        "ebitdaHigh": "Estimated EBITDA High",
+        "ebitdaAvg": "Estimated EBITDA Average",
+        "ebitLow": "Estimated EBIT Low",
+        "ebitHigh": "Estimated EBIT High",
+        "ebitAvg": "Estimated EBIT Average",
+        "netIncomeLow": "Estimated Net Income Low",
+        "netIncomeHigh": "Estimated Net Income High",
+        "netIncomeAvg": "Estimated Net Income Average",
+        "sgaExpenseLow": "Estimated SGA Expense Low",
+        "sgaExpenseHigh": "Estimated SGA Expense High",
+        "sgaExpenseAvg": "Estimated SGA Expense Average",
+        "epsLow": "Estimated EPS Low",
+        "epsHigh": "Estimated EPS High",
+        "epsAvg": "Estimated EPS Average",
     }
 
     if isinstance(tickers, str):
@@ -1044,18 +1047,20 @@ def get_profile(
         "symbol": "Symbol",
         "price": "Price",
         "beta": "Beta",
-        "volAvg": "Average Volume",
-        "mktCap": "Market Capitalization",
-        "lastDiv": "Last Dividend",
+        "marketCap": "Market Capitalization",
+        "volume": "Volume",
+        "averageVolume": "Average Volume",
+        "lastDividend": "Last Dividend",
         "range": "Range",
-        "changes": "Changes",
+        "change": "Change",
+        "changePercentage": "Change %",
         "companyName": "Company Name",
         "currency": "Currency",
         "cik": "CIK",
         "isin": "ISIN",
         "cusip": "CUSIP",
         "exchange": "Exchange",
-        "exchangeShortName": "Exchange Short Name",
+        "exchangeFullName": "Exchange Full Name",
         "industry": "Industry",
         "website": "Website",
         "description": "Description",
@@ -1154,9 +1159,7 @@ def get_quote(
     """
 
     def worker(ticker, quote_dict):
-        url = (
-            f"https://financialmodelingprep.com/stable/quote?symbol={ticker}&apikey={api_key}"
-        )
+        url = f"https://financialmodelingprep.com/stable/quote?symbol={ticker}&apikey={api_key}"
         quote_data = get_financial_data(url=url, user_subscription=user_subscription)
 
         if quote_data.empty:
@@ -1169,8 +1172,8 @@ def get_quote(
         "symbol": "Symbol",
         "name": "Name",
         "price": "Price",
-        "changesPercentage": "Changes Percentage",
         "change": "Change",
+        "changePercentage": "Change %",
         "dayLow": "Day Low",
         "dayHigh": "Day High",
         "yearHigh": "Year High",
@@ -1369,8 +1372,8 @@ def get_earnings_calendar(
 
     def worker(ticker, earnings_calendar_dict):
         url = (
-            "https://financialmodelingprep.com/stable/earning_calendar"
-            f"?symbol={ticker}&apikey={api_key}"
+            "https://financialmodelingprep.com/stable/earnings"
+            f"?symbol={ticker}&apikey={api_key}&limit={'99999' if user_subscription != 'Free' else '5'}"
         )
         earnings_calendar = get_financial_data(
             url=url, sleep_timer=sleep_timer, user_subscription=user_subscription
@@ -1393,7 +1396,6 @@ def get_earnings_calendar(
                     :, ~earnings_calendar.columns.duplicated()
                 ]
 
-            earnings_calendar = earnings_calendar.drop(["updatedFromDate"], axis=1)
             earnings_calendar = earnings_calendar.rename(columns=naming)
 
             earnings_calendar = earnings_calendar.sort_index(axis=0).truncate(
@@ -1406,12 +1408,11 @@ def get_earnings_calendar(
             earnings_calendar_dict[ticker] = earnings_calendar
 
     naming: dict = {
-        "eps": "EPS",
+        "epsActual": "EPS",
         "epsEstimated": "Estimated EPS",
-        "revenue": "Revenue",
+        "revenueActual": "Revenue",
         "revenueEstimated": "Estimated Revenue",
-        "fiscalDateEnding": "Fiscal Date Ending",
-        "time": "Time",
+        "lastUpdated": "Last Updated",
     }
 
     if isinstance(tickers, str):
@@ -1497,7 +1498,7 @@ def get_dividend_calendar(
     def worker(ticker, dividend_calendar_dict):
         url = (
             "https://financialmodelingprep.com/stable/dividends"
-            f"?symbol={ticker}&apikey={api_key}&from={start_date}&to={end_date}"
+            f"?symbol={ticker}&apikey={api_key}&limit={'99999' if user_subscription != 'Free' else '5'}"
         )
         dividend_calendar = get_financial_data(
             url=url,
@@ -1507,7 +1508,7 @@ def get_dividend_calendar(
         )
 
         try:
-            dividend_calendar = pd.DataFrame(dividend_calendar["historical"])
+            dividend_calendar = pd.DataFrame(dividend_calendar)
 
             if "date" not in dividend_calendar.columns:
                 no_data.append(ticker)
@@ -1519,7 +1520,6 @@ def get_dividend_calendar(
 
                 dividend_calendar = dividend_calendar.sort_index()
 
-                dividend_calendar = dividend_calendar.drop(["label"], axis=1)
                 dividend_calendar = dividend_calendar.rename(columns=naming)
 
                 dividend_calendar = dividend_calendar.sort_index(axis=0).truncate(
@@ -1534,6 +1534,7 @@ def get_dividend_calendar(
     naming: dict = {
         "adjDividend": "Adj Dividend",
         "dividend": "Dividend",
+        "yield": "Yield",
         "recordDate": "Record Date",
         "paymentDate": "Payment Date",
         "declarationDate": "Declaration Date",
@@ -1622,7 +1623,7 @@ def get_esg_scores(
 
     def worker(ticker, esg_scores_dict):
         url = (
-            "https://financialmodelingprep.com/api/v4/esg-environmental-social-governance-data?"
+            "https://financialmodelingprep.com/stable/esg-disclosures?"
             f"symbol={ticker}&apikey={api_key}"
         )
         esg_scores = get_financial_data(

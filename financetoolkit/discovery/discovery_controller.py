@@ -6,10 +6,18 @@ import pandas as pd
 
 from financetoolkit import fmp_model
 from financetoolkit.discovery import discovery_model
+from financetoolkit.utilities import logger_model
+from financetoolkit.utilities.error_model import handle_errors
 
 # pylint: disable=too-many-instance-attributes,too-few-public-methods,too-many-lines,
 # pylint: disable=too-many-locals,line-too-long,too-many-public-methods
 # ruff: noqa: E501
+
+# Set up logger, this is meant to display useful messages, warnings or errors when
+# the Finance Toolkit runs into issues or does something that might not be entirely
+# logical at first
+logger_model.setup_logger()
+logger = logger_model.get_logger()
 
 
 class Discovery:
@@ -91,7 +99,10 @@ class Discovery:
         else:
             self._fmp_plan = "Premium"
 
-    def search_instruments(self, query: str | None = None) -> pd.DataFrame:
+    @handle_errors
+    def search_instruments(
+        self, query: str | None = None, search_method: str = "name"
+    ) -> pd.DataFrame:
         """
         The search instruments function allows you to search for a company or financial instrument
         by name. It returns a dataframe with all the symbols that match the query.
@@ -123,14 +134,26 @@ class Discovery:
         | META.JK  | PT Nusantara Infrastructure Tbk       | IDR        | Jakarta Stock Exchange | JKT             |
 
         """
+        if search_method not in ["symbol", "name", "cik", "cusip", "isin"]:
+            raise ValueError(
+                "Please enter a valid search method. Valid options are: 'symbol', 'name', 'cik', 'cusip', 'isin'. "
+            )
         if not query:
             raise ValueError(
                 "Please enter a query to search for, e.g. search_instruments(query='META'). "
             )
 
         symbol_list = discovery_model.get_instruments(
-            api_key=self._api_key, query=query, user_subscription=self._fmp_plan
+            api_key=self._api_key,
+            query=query,
+            search_method=search_method,
+            user_subscription=self._fmp_plan,
         )
+
+        if symbol_list.empty and len(symbol_list.columns) == 0:
+            logger.error(
+                f"No results found for the given query ({query}). Please try a different query."
+            )
 
         return symbol_list
 
@@ -270,48 +293,6 @@ class Discovery:
         )
 
         return stock_list
-
-    def get_stock_quotes(self) -> pd.DataFrame:
-        """
-        Returns the real time stock prices for each company. This includes the bid and ask size,
-        the volume, the bid and ask price, the last sales price and the last sales size.
-
-        Returns:
-            pd.DataFrame: A dataframe with quotes for each company.
-
-        As an example:
-
-        ```python
-        from financetoolkit import Discovery
-
-        discovery = Discovery(api_key="FINANCIAL_MODELING_PREP_KEY")
-
-        stock_quotes = discovery.get_stock_quotes()
-
-        stock_quotes.iloc[3000:3010]
-        ```
-
-        Which returns:
-
-        | Symbol   |  Bid Size |   Ask Price |           Volume |   Ask Size |   Bid Price |   Last Sale Price |   Last Sale Size |   Last Sale Time |
-        |:---------|----------:|------------:|-----------------:|-----------:|------------:|------------------:|-----------------:|-----------------:|
-        | EIPX     |         0 |        0    |  59676           |          0 |        0    |           21.28   |                0 |      1.7039e+12  |
-        | EIRL     |         2 |       64.67 |   5455           |          2 |       57.7  |           61.1316 |                0 |      1.7039e+12  |
-        | EIS      |        10 |       61.71 |  15886           |          2 |       56.2  |           58.1909 |                0 |      1.7039e+12  |
-        | EIX      |         1 |       75.7  |      1.41398e+06 |          1 |       50.1  |           71.49   |                0 |      1.70389e+12 |
-        | EJAN     |         1 |       31.42 | 252595           |          1 |       28.1  |           28.67   |                0 |      1.7039e+12  |
-        | EJH      |         6 |        3.83 |      0           |          8 |        3.82 |            3.82   |              100 |      1.7042e+12  |
-        | EJUL     |         2 |       27.97 |  10226           |          2 |       23.16 |           23.63   |                0 |      1.7039e+12  |
-        | EKG      |         4 |       20    |   1197           |          1 |        6.38 |           15.9357 |                0 |      1.70388e+12 |
-        | EKSO     |         3 |        2.54 |      0           |          5 |        2.31 |            2.31   |              100 |      1.7042e+12  |
-        | EL       |         1 |      143.9  |      0           |          1 |      142.5  |          143      |              100 |      1.7042e+12  |
-        """
-
-        stock_quotes = discovery_model.get_stock_quotes(
-            api_key=self._api_key, user_subscription=self._fmp_plan
-        )
-
-        return stock_quotes
 
     def get_stock_shares_float(self) -> pd.DataFrame:
         """
@@ -600,50 +581,6 @@ class Discovery:
 
         return crypto_list
 
-    def get_crypto_quotes(self) -> pd.DataFrame:
-        """
-        Returns the quotes for each crypto. This includes the symbol, the name,
-        the price, the change, the change percentage, day low, day high, year high,
-        year low, market cap, 50 day average, 200 day average, volume, average volume,
-        open, previous close, EPS, PE, earnings announcement, shares outstanding and
-        the timestamp.
-
-        Returns:
-            pd.DataFrame: A dataframe with the quotes for each crypto.
-
-        As an example:
-
-        ```python
-        from financetoolkit import Discovery
-
-        discovery = Discovery(api_key="FINANCIAL_MODELING_PREP_KEY")
-
-        crypto_quotes = discovery.get_crypto_quotes()
-
-        crypto_quotes.head(10)
-        ```
-
-        Which returns:
-
-        | Symbol       | Name                                 |        Price |   Change % |       Change |      Day Low |    Day High |   Year High |     Year Low |       Market Cap |   50 Day Avg |   200 Day Avg |      Volume |       Avg Volume |        Open |   Previous Close |   EPS |   PE |   Earnings Announcement |   Shares Outstanding | Timestamp           |
-        |:-------------|:-------------------------------------|-------------:|-----------:|-------------:|-------------:|------------:|------------:|-------------:|-----------------:|-------------:|--------------:|------------:|-----------------:|------------:|-----------------:|------:|-----:|------------------------:|---------------------:|:--------------------|
-        | .ALPHAUSD    | .Alpha USD                           | 21.4023      |    0       |  0           | 21.3991      | 21.4023     |  193.252    | 21.4023      |      0           | 23.7774      |  51.0497      |     30      |    162           | 21.4023     |      21.4023     |   nan |  nan |                     nan |        nan           | 2022-10-10 23:28:00 |
-        | 00USD        | 00 Token USD                         |  0.082484    |    0.67363 |  0.00055192  |  0.0808863   |  0.0857288  |    0.28559  |  0.062939    |      0           |  0.0853295   |   0.0824169   | 210396      | 235403           |  0.0819321  |       0.0819321  |   nan |  nan |                     nan |          0           | 2024-01-02 14:05:40 |
-        | 0NEUSD       | Stone USD                            |  7.39e-10    |   -1.70872 | -1.3e-11     |  7.37e-10    |  7.79e-10   |    7.76e-10 |  7.52e-10    |      0           |  0           |   0           |   1110.14   |    nan           |  7.52e-10   |       7.52e-10   |   nan |  nan |                     nan |          0           | 2024-01-02 14:05:12 |
-        | 0X0USD       | 0x0.ai USD                           |  0.15383     |    4.3101  |  0.00635643  |  0.14748     |  0.1551     |    0.17925  |  0.000275    |      1.33615e+08 |  0.12582     |   0.0734378   | 805257      |      1.17131e+06 |  0.14748    |       0.14748    |   nan |  nan |                     nan |          8.68563e+08 | 2024-01-02 14:05:13 |
-        | 0X1USD       | 0x1.tools: AI Multi-tool Plaform USD |  0.00596268  |    2.65558 |  0.000154248 |  0.00580843  |  0.00608836 |    0.48504  |  0.005089    |      0           |  0.00587516  |   0.0448096   |     42.9976 |    216           |  0.00580843 |       0.00580843 |   nan |  nan |                     nan |          0           | 2024-01-02 14:06:00 |
-        | 0XAUSD       | 0xApe USD                            |  9.86177e-06 |  -99.9921  | -0.12519     |  9.86177e-06 |  0.12527    |    0.12527  |  9.86177e-06 |      0           |  1.08846e-05 |   1.08846e-05 |    197      |    nan           |  0.1252     |       0.1252     |   nan |  nan |                     nan |        nan           | 2023-06-24 18:30:00 |
-        | 0XBTCUSD     | 0xBitcoin USD                        |  0.097478    |    0.6003  |  0.00058167  |  0.0944255   |  0.10393    |    4.13419  |  0.03222     | 946195           |  0.17478     |   0.39561     |    344.45   |  97856           |  0.0968963  |       0.0968963  |   nan |  nan |                     nan |          9.70675e+06 | 2024-01-02 14:05:24 |
-        | 0XENCRYPTUSD | Encryption AI USD                    |  0.0213021   |    0       |  0           |  0.0213021   |  0.0213021  |   15.4064   |  0.020326    |      0           |  1.55438     |   3.26515     |      2      | 202458           |  0.0213021  |       0.0213021  |   nan |  nan |                     nan |        nan           | 2023-07-26 18:30:00 |
-        | 0XGASUSD     | 0xGasless USD                        |  0.11228     |   12.1894  |  0.0121997   |  0.10008     |  0.11228    |    0.19216  |  3.7e-05     |      0           |  0.038569    |   0.0143848   |   8700      |   9628           |  0.10008    |       0.10008    |   nan |  nan |                     nan |          0           | 2024-01-02 14:06:00 |
-        | 0XMRUSD      | 0xMonero USD                         |  0.0497938   |  -38.9213  | -0.0317302   |  0.0496646   |  2.79013    |    0.18734  |  0.0418889   |      0           |  0.13616     |   0.11633     |    347.276  |     11           |  0.081524   |       0.081524   |   nan |  nan |                     nan |        nan           | 2024-01-02 14:05:07 |
-        """
-        crypto_quotes = discovery_model.get_crypto_quotes(
-            api_key=self._api_key, user_subscription=self._fmp_plan
-        )
-
-        return crypto_quotes
-
     def get_forex_list(self) -> pd.DataFrame:
         """
         The forex list function returns a complete list of all forex symbols that can be
@@ -685,51 +622,6 @@ class Discovery:
 
         return forex_list
 
-    def get_forex_quotes(self) -> pd.DataFrame:
-        """
-        Returns the quotes for each forex. This includes the symbol, the name,
-        the price, the change, the change percentage, day low, day high, year high,
-        year low, market cap, 50 day average, 200 day average, volume, average volume,
-        open, previous close, EPS, PE, earnings announcement, shares outstanding and
-        the timestamp.
-
-        Returns:
-            pd.DataFrame: A dataframe with quotes for each forex.
-
-        As an example:
-
-        ```python
-        from financetoolkit import Discovery
-
-        discovery = Discovery(api_key="FINANCIAL_MODELING_PREP_KEY")
-
-        forex_quotes = discovery.get_forex_quotes()
-
-        forex_quotes.head(10)
-        ```
-
-        Which returns:
-
-        | Symbol   | Name    |    Price |     Change % |       Change |   Day Low |   Day High |   Year High |   Year Low |   50 Day Avg |   200 Day Avg |   Volume |   Avg Volume |     Open |   Previous Close | Timestamp           |
-        |:---------|:--------|---------:|-------------:|-------------:|----------:|-----------:|------------:|-----------:|-------------:|--------------:|---------:|-------------:|---------:|-----------------:|:--------------------|
-        | AEDAUD   | AED/AUD |  0.40089 |    0.40826   |   0.00163    |   0.39766 |    0.40118 |     0.43341 |  0.38041   |      0.41514 |       0.41372 |       11 |     nan      |  0.39921 |          0.39926 | 2024-01-02 14:02:15 |
-        | AEDBHD   | AED/BHD |  0.10262 |    0.0608637 |   6.2422e-05 |   0.10244 |    0.10266 |     0.10323 |  0.0991399 |      0.10264 |       0.10241 |       37 |      48.006  |  0.10256 |          0       | 2024-01-02 13:46:14 |
-        | AEDCAD   | AED/CAD |  0.36177 |    0.43587   |   0.00157    |   0.35996 |    0.36295 |     0.37817 |  0.35657   |      0.3701  |       0.36716 |       14 |     nan      |  0.36002 |          0.3602  | 2024-01-02 14:02:15 |
-        | AEDCHF   | AED/CHF |  0.23062 |    0.8704    |   0.00199    |   0.22847 |    0.23099 |     0.25693 |  0.2278    |      0.23976 |       0.24231 |      nan |     nan      |  0.22847 |          0.22863 | 2024-01-02 14:02:15 |
-        | AEDDKK   | AED/DKK |  1.84023 |   84.023     |   0.84023    |   1.83775 |    1.84081 |     1.94068 |  1.78424   |      1.86572 |       1.87037 |       16 |      49.5329 |  1.83874 |          1       | 2024-01-02 09:37:59 |
-        | AEDEUR   | AED/EUR |  0.2486  |    0.81044   |   0.00199857 |   0.24636 |    0.24871 |     0.265   |  0.2417    |      0.25271 |       0.25197 |       38 |     nan      |  0.24668 |          0.2466  | 2024-01-02 14:02:15 |
-        | AEDGBP   | AED/GBP |  0.21499 |    0.75924   |   0.00162    |   0.21298 |    0.2157  |     0.23039 |  0.2073    |      0.21802 |       0.21732 |       14 |     nan      |  0.2133  |          0.21337 | 2024-01-02 14:02:15 |
-        | AEDILS   | AED/ILS |  0.98746 | -100         | nan          |   0.98385 |    0.99536 |     1.1108  |  0.97828   |      1.01241 |       1.03478 |      923 |     549.264  |  0.98761 |        nan       | 2024-01-02 14:05:06 |
-        | AEDINR   | AED/INR | 22.7025  |    0.14076   |   0.0319101  |  22.625   |   22.72    |    22.72    | 20.1966    |     19.8653  |      20.1966  |       14 |     nan      | 22.7082  |         22.6706  | 2024-01-02 14:02:15 |
-        | AEDJOD   | AED/JOD |  0.19335 |   -3.32563   |  -0.00665126 |   0.19315 |    0.19364 |     0.19412 |  0.19185   |      0.19314 |       0.19315 |       38 |      18.8451 |  0.19331 |          0.2     | 2024-01-02 13:51:18 |
-
-        """
-        forex_quotes = discovery_model.get_forex_quotes(
-            api_key=self._api_key, user_subscription=self._fmp_plan
-        )
-
-        return forex_quotes
-
     def get_commodity_list(self) -> pd.DataFrame:
         """
         The commodity list function returns a complete list of all commodity symbols that can be
@@ -770,50 +662,6 @@ class Discovery:
         )
 
         return commodity_list
-
-    def get_commodity_quotes(self) -> pd.DataFrame:
-        """
-        Returns the quotes for each commodity. This includes the symbol, the name,
-        the price, the change, the change percentage, day low, day high, year high,
-        year low, market cap, 50 day average, 200 day average, volume, average volume,
-        open, previous close, EPS, PE, earnings announcement, shares outstanding and
-        the timestamp.
-
-        Returns:
-            pd.DataFrame: A dataframe with the quotes for each commodity.
-
-        As an example:
-
-        ```python
-        from financetoolkit import Discovery
-
-        discovery = Discovery(api_key="FINANCIAL_MODELING_PREP_KEY")
-
-        commodity_quotes = discovery.get_commodity_quotes()
-
-        commodity_quotes.head(10)
-        ```
-
-        Which returns:
-
-        | Symbol   | Name                   |    Price |   Change % |   Change |   Day Low |   Day High |   Year High |   Year Low |   50 Day Avg |   200 Day Avg |   Volume |       Avg Volume |     Open |   Previous Close | Timestamp           |
-        |:---------|:-----------------------|---------:|-----------:|---------:|----------:|-----------:|------------:|-----------:|-------------:|--------------:|---------:|-----------------:|---------:|-----------------:|:--------------------|
-        | ALIUSD   | Aluminum Futures       | 2347     | -1.12691   |  -26.75  |  2344     |    2383.5  |     2670.75 |    2073.25 |    2200.86   |     2221.04   |     4321 |     22           | 2370.75  |         2373.75  | 2024-01-02 13:54:40 |
-        | BZUSD    | Brent Crude Oil        |   78.1   |  1.37591   |    1.06  |    77.21  |      79.06 |       97.63 |      68.2  |      81.291  |       81.9377 |     2285 |  30060           |   77.21  |           77.04  | 2024-01-02 14:10:12 |
-        | CCUSD    | Cocoa                  | 4249.5   |  1.27502   |   53.5   |   101.03  |    4274.5  |     4478    |    2507    |    4115.52   |     3483.99   |    18596 |  14509           | 4209     |         4196     | 2024-01-02 14:10:12 |
-        | CLUSD    | Crude Oil              |   72.63  |  1.36776   |    0.98  |    71.63  |      73.65 |       95.03 |      63.64 |      76.3836 |       77.7364 |    37720 | 307715           |   71.71  |           71.65  | 2024-01-02 14:10:12 |
-        | CTUSX    | Cotton                 |   80.78  | -0.2716    |   -0.22  |     3.87  |      81.75 |       90.75 |      74.77 |      79.8394 |       82.7224 |      960 |  15911           |   80.87  |           81     | 2024-01-02 14:10:00 |
-        | DCUSD    | Class III Milk Futures |   16.35  |  1.5528    |    0.25  |    15.43  |      17.16 |       20.49 |      13.75 |      16.6668 |       16.7265 |       51 |    212           |   16.1   |           16.1   | 2024-01-02 13:36:35 |
-        | DXUSD    | US Dollar              |  101.862 |  0.82452   |    0.833 |   101.027 |     101.88 |      107.05 |      99.22 |     103.915  |      103.24   |     2999 |  14880           |  101.065 |          101.029 | 2024-01-02 14:10:10 |
-        | ESUSD    | E-Mini S&P 500         | 4783     | -0.76763   |  -37     |  4777.75  |    4828    |     4841.5  |    3808.75 |    4527.31   |     4378.91   |    75910 |      1.63378e+06 | 4818     |         4820     | 2024-01-02 14:00:13 |
-        | GCUSD    | Gold Futures           | 2075     |  0.15446   |    3.2   |  2071.4   |    2094.7  |     2130.2  |    1808.1  |    2003.86   |     1960.64   |    38456 |   3511           | 2072.7   |         2071.8   | 2024-01-02 14:00:13 |
-        | GFUSX    | Feeder Cattle Futures  |  223.125 |  0.0112057 |    0.025 |   222.725 |     224.45 |      257.5  |     177.55 |     226.9    |      230.114  |     4395 |   3915           |  224.4   |          223.1   | 2023-12-29 19:04:57 |
-        """
-        commodity_quotes = discovery_model.get_commodity_quotes(
-            api_key=self._api_key, user_subscription=self._fmp_plan
-        )
-
-        return commodity_quotes
 
     def get_etf_list(self) -> pd.DataFrame:
         """
@@ -897,47 +745,3 @@ class Discovery:
         )
 
         return index_list
-
-    def get_index_quotes(self) -> pd.DataFrame:
-        """
-        Returns the quotes for each index. This includes the symbol, the name,
-        the price, the change, the change percentage, day low, day high, year high,
-        year low, market cap, 50 day average, 200 day average, volume, average volume,
-        open, previous close, EPS, PE, earnings announcement, shares outstanding and
-        the timestamp.
-
-        Returns:
-            pd.DataFrame: A dataframe with all the symbols in the toolkit.
-
-        As an example:
-
-        ```python
-        from financetoolkit import Discovery
-
-        discovery = Discovery(api_key="FINANCIAL_MODELING_PREP_KEY")
-
-        index_quotes = discovery.get_index_quotes()
-
-        index_quotes.head(10)
-        ```
-
-        Which returns:
-
-        | Symbol      | Name                          |     Price |   Change % |     Change |   Day Low |   Day High |   Year High |   Year Low |   50 Day Avg |   200 Day Avg |     Volume |   Avg Volume |      Open |   Previous Close |   Timestamp |
-        |:------------|:------------------------------|----------:|-----------:|-----------:|----------:|-----------:|------------:|-----------:|-------------:|--------------:|-----------:|-------------:|----------:|-----------------:|------------:|
-        | 000001.SS   | SSE Composite Index           |  2962.28  |    -0.4255 |   -12.6587 |  2962.28  |   2976.27  |    3418.95  |   2882.02  |     2999.76  |      3160.83  |  349408228 |       290686 |  2972.78  |         2974.93  |  1704178820 |
-        | 399967.SZ   | CSI NATIONAL DEFENSE          |  9891.22  |     0.4875 |    47.9902 |  9834.98  |  10041.4   |   10041.4   |   9834.98  |        0     |         0     | 1115610197 |            0 |  9857.19  |         9843.23  |  1704184147 |
-        | 512.HK      | CES CHINA HK MAINLAND INDEX   |  6901.25  |     0      |     0      |  6786.45  |   6912.54  |    6912.54  |   6786.45  |        0     |         0     | 2785244718 |            0 |  6862.61  |          nan     |  1434960128 |
-        | DX-Y.NYB    | US Dollar/USDX - Index - Cash |   102.136 |     0.7924 |     0.803  |   101.34  |    102.167 |     107.35  |     99.58  |      104.108 |       103.421 |          0 |            0 |   101.417 |          101.333 |  1704204265 |
-        | FTSEMIB.MI  | FTSE MIB Index                | 30396.8   |     0.1488 |    45.1699 | 30326.9   |  30863.6   |   30863.6   |  24111     |    29233.6   |     28164     |          0 |    473923362 | 30519.5   |        30351.6   |  1704203960 |
-        | IAR.BA      | MERVAL ARGENTINA              | 33784.6   |     0      | 33784.6    | 33227.6   |  33871.5   |   33871.5   |  33227.6   |        0     |         0     |          0 |            0 | 33227.6   |          nan     |  1576872141 |
-        | IDX30.JK    | IDX30                         |   498.424 |     0.6486 |     3.212  |   492.621 |    498.424 |     498.424 |    492.621 |        0     |         0     |          0 |            0 |   493.985 |          495.212 |  1704186018 |
-        | IMOEX.ME    | MOEX Russia Index             |  2222.51  |    -0.1859 |    -4.1399 |  2202.52  |   2234.55  |    4292.68  |   1681.55  |     2264.41  |      3183.63  |          0 |            0 |  2225.02  |         2226.65  |  1657295461 |
-        | ITLMS.MI    | FTSE Italia All-Share Index   | 32507     |     0.0859 |    27.9004 | 32434.3   |  32999.1   |   32999.1   |  23017.3   |    22902.7   |     23017.3   |          0 |            0 | 32651.2   |        32479.1   |  1704203955 |
-        | KOSPI200.KS | KOSPI 200 Index               |   360.55  |     0.7151 |     2.56   |   355.96  |    361.53  |     361.53  |    355.96  |        0     |         0     |     106709 |            0 |   356.43  |          357.99  |  1704186335 |
-        """
-        index_quotes = discovery_model.get_index_quotes(
-            api_key=self._api_key, user_subscription=self._fmp_plan
-        )
-
-        return index_quotes

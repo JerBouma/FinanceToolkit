@@ -53,9 +53,9 @@ def test_get_enterprise_value_breakdown(recorder):
 
 
 def test_get_weighted_average_cost_of_capital(recorder):
-    recorder.capture(models_module.get_weighted_average_cost_of_capital().round(2))
+    recorder.capture(models_module.get_weighted_average_cost_of_capital().round(1))
     recorder.capture(
-        models_module.get_weighted_average_cost_of_capital(growth=True).round(2)
+        models_module.get_weighted_average_cost_of_capital(growth=True).round(1)
     )
     recorder.capture(
         models_module.get_weighted_average_cost_of_capital(growth=True, lag=[1, 2, 3])

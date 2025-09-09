@@ -21,7 +21,7 @@ def get_instruments(
     Returns:
         pd.DataFrame: DataFrame of instruments.
     """
-    url = f"https://financialmodelingprep.com/api/v3/search?query={query}&apikey={api_key}"
+    url = f"https://financialmodelingprep.com/stable/search?query={query}&apikey={api_key}"
 
     instruments_query = get_financial_data(url=url, user_subscription=user_subscription)
 
@@ -77,7 +77,7 @@ def get_stock_screener(
     Returns:
         pd.DataFrame: DataFrame of instruments matching the query.
     """
-    url = f"https://financialmodelingprep.com/api/v3/stock-screener?apikey={api_key}"
+    url = f"https://financialmodelingprep.com/stable/stock-screener?apikey={api_key}"
 
     if market_cap_higher:
         url += f"&marketCapMoreThan={market_cap_higher}"
@@ -143,7 +143,7 @@ def get_stock_list(api_key: str, user_subscription: str = "Free") -> pd.DataFram
     Returns:
         pd.DataFrame: DataFrame of stocks.
     """
-    url = f"https://financialmodelingprep.com/api/v3/stock/list?apikey={api_key}"
+    url = f"https://financialmodelingprep.com/stable/stock/list?apikey={api_key}"
 
     stock_list = get_financial_data(url=url, user_subscription=user_subscription)
 
@@ -178,7 +178,7 @@ def get_stock_quotes(api_key: str, user_subscription: str = "Free") -> pd.DataFr
     Returns:
         pd.DataFrame: DataFrame of stock quotes.
     """
-    url = f"https://financialmodelingprep.com/api/v3/stock/full/real-time-price?apikey={api_key}"
+    url = f"https://financialmodelingprep.com/stable/stock/full/real-time-price?apikey={api_key}"
 
     stock_quotes = get_financial_data(url=url, user_subscription=user_subscription)
 
@@ -250,7 +250,7 @@ def get_sectors_performance(
     Returns:
         pd.DataFrame: DataFrame of sectors performance.
     """
-    url = f"https://financialmodelingprep.com/api/v3/historical-sectors-performance?apikey={api_key}"
+    url = f"https://financialmodelingprep.com/stable/historical-sectors-performance?apikey={api_key}"
 
     sectors_performance = get_financial_data(
         url=url, user_subscription=user_subscription
@@ -298,7 +298,7 @@ def get_biggest_gainers(api_key: str, user_subscription: str = "Free") -> pd.Dat
     Returns:
         pd.DataFrame: DataFrame of biggest gainers.
     """
-    url = f"https://financialmodelingprep.com/api/v3/stock_market/gainers?apikey={api_key}"
+    url = f"https://financialmodelingprep.com/stable/stock_market/gainers?apikey={api_key}"
 
     biggest_gainers = get_financial_data(url=url, user_subscription=user_subscription)
 
@@ -329,7 +329,7 @@ def get_biggest_losers(api_key: str, user_subscription: str = "Free") -> pd.Data
         pd.DataFrame: DataFrame of biggest losers.
     """
     url = (
-        f"https://financialmodelingprep.com/api/v3/stock_market/losers?apikey={api_key}"
+        f"https://financialmodelingprep.com/stable/stock_market/losers?apikey={api_key}"
     )
 
     biggest_losers = get_financial_data(url=url, user_subscription=user_subscription)
@@ -362,7 +362,7 @@ def get_most_active_stocks(
     Returns:
         pd.DataFrame: DataFrame of most active stocks.
     """
-    url = f"https://financialmodelingprep.com/api/v3/stock_market/actives?apikey={api_key}"
+    url = f"https://financialmodelingprep.com/stable/stock_market/actives?apikey={api_key}"
 
     most_active = get_financial_data(url=url, user_subscription=user_subscription)
 
@@ -392,7 +392,7 @@ def get_crypto_list(api_key: str, user_subscription: str = "Free") -> pd.DataFra
     Returns:
         pd.DataFrame: DataFrame of cryptocurrencies.
     """
-    url = f"https://financialmodelingprep.com/api/v3/symbol/available-cryptocurrencies?apikey={api_key}"
+    url = f"https://financialmodelingprep.com/stable/symbol/available-cryptocurrencies?apikey={api_key}"
 
     crypto_list = get_financial_data(url=url, user_subscription=user_subscription)
 
@@ -425,7 +425,7 @@ def get_delisted_stocks(api_key: str, user_subscription: str = "Free") -> pd.Dat
         pd.DataFrame: DataFrame of delisted companies.
     """
     url = (
-        f"https://financialmodelingprep.com/api/v3/delisted-companies?apikey={api_key}"
+        f"https://financialmodelingprep.com/stable/delisted-companies?apikey={api_key}"
     )
 
     delisted_companies = get_financial_data(
@@ -458,7 +458,7 @@ def get_crypto_quotes(api_key: str, user_subscription: str = "Free") -> pd.DataF
     Returns:
         pd.DataFrame: DataFrame of crypto quotes.
     """
-    url = f"https://financialmodelingprep.com/api/v3/quotes/crypto?apikey={api_key}"
+    url = f"https://financialmodelingprep.com/stable/quotes/crypto?apikey={api_key}"
 
     crypto_quotes = get_financial_data(url=url, user_subscription=user_subscription)
 
@@ -509,7 +509,7 @@ def get_forex_list(api_key: str, user_subscription: str = "Free") -> pd.DataFram
     Returns:
         pd.DataFrame: DataFrame of forex pairs.
     """
-    url = f"https://financialmodelingprep.com/api/v3/symbol/available-forex-currency-pairs?apikey={api_key}"
+    url = f"https://financialmodelingprep.com/stable/symbol/available-forex-currency-pairs?apikey={api_key}"
 
     forex_list = get_financial_data(url=url, user_subscription=user_subscription)
 
@@ -541,7 +541,7 @@ def get_forex_quotes(api_key: str, user_subscription: str = "Free") -> pd.DataFr
     Returns:
         pd.DataFrame: DataFrame of forex quotes.
     """
-    url = f"https://financialmodelingprep.com/api/v3/quotes/forex?apikey={api_key}"
+    url = f"https://financialmodelingprep.com/stable/quotes/forex?apikey={api_key}"
 
     forex_quotes = get_financial_data(url=url, user_subscription=user_subscription)
 
@@ -592,7 +592,7 @@ def get_commodity_list(api_key: str, user_subscription: str = "Free") -> pd.Data
     Returns:
         pd.DataFrame: DataFrame of commodities.
     """
-    url = f"https://financialmodelingprep.com/api/v3/symbol/available-commodities?apikey={api_key}"
+    url = f"https://financialmodelingprep.com/stable/symbol/available-commodities?apikey={api_key}"
 
     commody_list = get_financial_data(url=url, user_subscription=user_subscription)
 
@@ -624,7 +624,7 @@ def get_commodity_quotes(api_key: str, user_subscription: str = "Free") -> pd.Da
     Returns:
         pd.DataFrame: DataFrame of commodity quotes.
     """
-    url = f"https://financialmodelingprep.com/api/v3/quotes/commodity?apikey={api_key}"
+    url = f"https://financialmodelingprep.com/stable/quotes/commodity?apikey={api_key}"
 
     commodity_quotes = get_financial_data(url=url, user_subscription=user_subscription)
 
@@ -675,7 +675,7 @@ def get_etf_list(api_key: str, user_subscription: str = "Free") -> pd.DataFrame:
     Returns:
         pd.DataFrame: DataFrame of ETFs.
     """
-    url = f"https://financialmodelingprep.com/api/v3/etf/list?apikey={api_key}"
+    url = f"https://financialmodelingprep.com/stable/etf/list?apikey={api_key}"
 
     etf_list = get_financial_data(url=url, user_subscription=user_subscription)
 
@@ -708,7 +708,7 @@ def get_index_list(api_key: str, user_subscription: str = "Free") -> pd.DataFram
     Returns:
         pd.DataFrame: DataFrame of indexes.
     """
-    url = f"https://financialmodelingprep.com/api/v3/symbol/available-indexes?apikey={api_key}"
+    url = f"https://financialmodelingprep.com/stable/symbol/available-indexes?apikey={api_key}"
 
     index_list = get_financial_data(url=url, user_subscription=user_subscription)
 
@@ -740,7 +740,7 @@ def get_index_quotes(api_key: str, user_subscription: str = "Free") -> pd.DataFr
     Returns:
         pd.DataFrame: DataFrame of index quotes.
     """
-    url = f"https://financialmodelingprep.com/api/v3/quotes/index?apikey={api_key}"
+    url = f"https://financialmodelingprep.com/stable/quotes/index?apikey={api_key}"
 
     index_quotes = get_financial_data(url=url, user_subscription=user_subscription)
 

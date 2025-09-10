@@ -182,25 +182,18 @@ class Options:
         expiry_dates = options_model.get_option_expiry_dates(ticker=self._tickers[0])
 
         if show_expiration_dates:
-            return list(expiry_dates.index)
+            return expiry_dates
 
-        if expiry_dates.empty:
-            raise ValueError(
-                "The expiration dates are not available. This is usually because no valid tickers were provided."
-            )
         if expiration_date is None:
-            expiration_date = expiry_dates.index[0]
-            expiration_date_value = expiry_dates.loc[expiry_dates.index[0]].iloc[0]
-        elif expiration_date not in expiry_dates.index:
+            expiration_date = expiry_dates[0]
+        elif expiration_date not in expiry_dates:
             raise ValueError(
-                f"The expiration date {expiration_date} is not a valid date. Choose from {', '.join(expiry_dates.index)}"
+                f"The expiration date {expiration_date} is not a valid date. Choose from {', '.join(expiry_dates)}"
             )
-        else:
-            expiration_date_value = expiry_dates.loc[expiration_date].iloc[0]
 
         option_chains = options_model.get_option_chains(
             tickers=self._tickers,
-            expiration_date=expiration_date_value,
+            expiration_date=expiration_date,
             put_option=put_option,
         )
 
@@ -519,7 +512,7 @@ class Options:
             for strike_price, row in option_chain.iterrows():
                 # The expiration date is used to calculate the days to expiration
                 # which serves as input for the time to expiration parameter in the Black Scholes Model.
-                days_to_expiration = (pd.to_datetime(row["Expiration"]) - today).days
+                days_to_expiration = (pd.to_datetime(option_chains.name) - today).days
 
                 def objective_function(sigma: float):
                     return (

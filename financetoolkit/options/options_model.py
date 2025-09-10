@@ -1,113 +1,43 @@
 """Options Model"""
 
-__doc__ = "google"
-
 import pandas as pd
-import requests
+import yfinance as yf
 
 
-def get_option_expiry_dates(ticker: str):
+def get_option_expiry_dates(ticker: str) -> list[str]:
     """
-    Get the option expiry dates for a given ticker.
+    Retrieve available option expiry dates for a given ticker symbol.
 
     Args:
-        ticker (str): Ticker symbol.
+        ticker (str): The ticker symbol for which to fetch option expiry dates.
 
     Returns:
-        pd.DataFrame: Option expiry dates.
+        list[str]: A list of option expiry dates in 'YYYY-MM-DD' format.
     """
-
-    try:
-        response = requests.get(
-            f"https://query1.finance.yahoo.com/v6/finance/options/{ticker}",
-            timeout=60,
-            headers={
-                "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit"
-                "/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36"
-            },
-        )
-
-        response.raise_for_status()
-    except requests.exceptions.HTTPError:
-        response = requests.get(
-            f"https://query1.finance.yahoo.com/v7/finance/options/{ticker}",
-            timeout=60,
-            headers={
-                "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit"
-                "/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36"
-            },
-        )
-
-        if response.status_code != 200:  # noqa
-            return pd.DataFrame()
-
-    result = response.json()
-
-    timestamps = pd.Series(result["optionChain"]["result"][0]["expirationDates"])
-    dates = pd.to_datetime(timestamps, unit="s").dt.strftime("%Y-%m-%d")
-
-    ticker_result = pd.concat([timestamps, dates], axis=1)
-    ticker_result.columns = ["Timestamp", "Date"]
-
-    ticker_result = ticker_result.set_index("Date")
-
-    return ticker_result
+    return yf.Ticker(ticker).options
 
 
 def get_option_chains(
     tickers: list[str], expiration_date: str, put_option: bool = False
-):
+) -> pd.DataFrame:
     """
-    Get the option chains for a given list of tickers and expiration date.
+    Retrieve option chains (calls or puts) for a list of tickers and a specific expiration date.
 
     Args:
         tickers (list[str]): List of ticker symbols.
-        expiration_date (str): Option expiration date.
-        put_option (bool, optional): Whether to get put options. Defaults to False.
+        expiration_date (str): The expiration date for the options (format: 'YYYY-MM-DD').
+        put_option (bool, optional): If True, fetch put options; otherwise, fetch call options. Defaults to False.
 
     Returns:
-        pd.DataFrame: Option chains.
+        pd.DataFrame: A DataFrame containing the option chains for the specified tickers and expiration date.
     """
     result_dict = {}
 
     for ticker in tickers:
-        try:
-            response = requests.get(
-                f"https://query1.finance.yahoo.com/v6/finance/options/{ticker}?date={expiration_date}",
-                timeout=60,
-                headers={
-                    "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit"
-                    "/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36"
-                },
-            )
+        option_chain = yf.Ticker(ticker).option_chain(expiration_date)
+        options_df = option_chain.puts if put_option else option_chain.calls
 
-            response.raise_for_status()
-        except requests.exceptions.HTTPError:
-            response = requests.get(
-                f"https://query1.finance.yahoo.com/v7/finance/options/{ticker}?date={expiration_date}",
-                timeout=60,
-                headers={
-                    "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit"
-                    "/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36"
-                },
-            )
-
-            if response.status_code != 200:  # noqa
-                result_dict[ticker] = pd.DataFrame()
-                continue
-
-        result = response.json()
-
-        ticker_result = pd.DataFrame(
-            result["optionChain"]["result"][0]["options"][0][
-                "puts" if put_option else "calls"
-            ]
-        )
-
-        if ticker_result.empty:
-            continue
-
-        ticker_result = ticker_result.rename(
+        options_df = options_df.rename(
             columns={
                 "contractSymbol": "Contract Symbol",
                 "strike": "Strike",
@@ -127,18 +57,17 @@ def get_option_chains(
             }
         )
 
-        ticker_result = ticker_result.drop(columns="Contract Size")
+        if "Contract Size" in options_df.columns:
+            options_df = options_df.drop(columns="Contract Size")
 
-        result_dict[ticker] = ticker_result.set_index("Strike")
+        options_df = options_df.set_index("Strike")
+        result_dict[ticker] = options_df
 
     result_final = pd.concat(result_dict)
-
-    result_final["Expiration"] = pd.to_datetime(
-        result_final["Expiration"], unit="s"
-    ).dt.strftime("%Y-%m-%d")
-    result_final["Last Trade Date"] = pd.to_datetime(
-        result_final["Last Trade Date"], unit="s"
-    ).dt.strftime("%Y-%m-%d")
+    if "Last Trade Date" in result_final.columns:
+        result_final["Last Trade Date"] = pd.to_datetime(
+            result_final["Last Trade Date"], unit="s", errors="coerce"
+        ).dt.strftime("%Y-%m-%d")
 
     result_final.index.names = ["Ticker", "Strike Price"]
 

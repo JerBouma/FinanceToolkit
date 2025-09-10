@@ -1258,7 +1258,10 @@ def get_rating(
     """
 
     def worker(ticker, ratings_dict):
-        url = f"https://financialmodelingprep.com/stable/historical-rating?symbol={ticker}&apikey={api_key}"
+        url = (
+            f"https://financialmodelingprep.com/stable/ratings-historical?symbol={ticker}&"
+            f"apikey={api_key}&limit={'99999' if user_subscription != 'Free' else '1'}"
+        )
         ratings = get_financial_data(url=url, user_subscription=user_subscription)
 
         try:
@@ -1271,20 +1274,13 @@ def get_rating(
             ratings = ratings.rename(
                 columns={
                     "rating": "Rating",
-                    "ratingScore": "Rating Score",
-                    "ratingRecommendation": "Rating Recommendation",
-                    "ratingDetailsDCFScore": "DCF Score",
-                    "ratingDetailsDCFRecommendation": "DCF Recommendation",
-                    "ratingDetailsROEScore": "ROE Score",
-                    "ratingDetailsROERecommendation": "ROE Recommendation",
-                    "ratingDetailsROAScore": "ROA Score",
-                    "ratingDetailsROARecommendation": "ROA Recommendation",
-                    "ratingDetailsDEScore": "DE Score",
-                    "ratingDetailsDERecommendation": "DE Recommendation",
-                    "ratingDetailsPEScore": "PE Score",
-                    "ratingDetailsPERecommendation": "PE Recommendation",
-                    "ratingDetailsPBScore": "PB Score",
-                    "ratingDetailsPBRecommendation": "PB Recommendation",
+                    "overallScore": "Rating Score",
+                    "discountedCashFlowScore": "DCF Score",
+                    "returnOnEquityScore": "ROE Score",
+                    "returnOnAssetsScore": "ROA Score",
+                    "debtToEquityScore": "DE Score",
+                    "priceToEarningsScore": "PE Score",
+                    "priceToBookScore": "PB Score",
                 }
             )
 

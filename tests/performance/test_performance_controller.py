@@ -82,28 +82,40 @@ def test_get_factor_correlations(recorder):
 
 
 def test_get_fama_and_french_model(recorder):
-    recorder.capture(performance_module.get_fama_and_french_model().round(2))
     recorder.capture(
-        performance_module.get_fama_and_french_model(period="monthly").round(2)
+        performance_module.get_fama_and_french_model().round(2).sort_index(axis=1)
     )
     recorder.capture(
-        performance_module.get_fama_and_french_model(method="multi").round(2)
+        performance_module.get_fama_and_french_model(period="monthly")
+        .round(2)
+        .sort_index(axis=1)
     )
     recorder.capture(
-        performance_module.get_fama_and_french_model(method="simple").round(2)
+        performance_module.get_fama_and_french_model(method="multi")
+        .round(2)
+        .sort_index(axis=1)
+    )
+    recorder.capture(
+        performance_module.get_fama_and_french_model(method="simple")
+        .round(2)
+        .sort_index(axis=1)
     )
 
     result1, result2 = performance_module.get_fama_and_french_model(
         include_daily_residuals=True
     )
-    recorder.capture(result1.round(2))
-    recorder.capture(result2.round(2))
+    recorder.capture(result1.round(2).sort_index(axis=1))
+    recorder.capture(result2.round(2).sort_index(axis=1))
 
-    recorder.capture(performance_module.get_fama_and_french_model(growth=True).round(2))
     recorder.capture(
-        performance_module.get_fama_and_french_model(growth=True, lag=[1, 2, 3]).round(
-            2
-        )
+        performance_module.get_fama_and_french_model(growth=True)
+        .round(2)
+        .sort_index(axis=1)
+    )
+    recorder.capture(
+        performance_module.get_fama_and_french_model(growth=True, lag=[1, 2, 3])
+        .round(2)
+        .sort_index(axis=1)
     )
 
 

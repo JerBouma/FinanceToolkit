@@ -1,6 +1,6 @@
 ,AAPL,AAPL,AAPL,AAPL,AAPL,AAPL,AAPL,AAPL,MSFT,MSFT,MSFT,MSFT,MSFT,MSFT,MSFT,MSFT
-,Intercept,Mkt-RF Slope,SMB Slope,HML Slope,RMW Slope,CMA Slope,Mean Squared Error (MSE),R Squared,Intercept,Mkt-RF Slope,SMB Slope,HML Slope,RMW Slope,CMA Slope,Mean Squared Error (MSE),R Squared
+,CMA Slope,HML Slope,Intercept,Mean Squared Error (MSE),Mkt-RF Slope,R Squared,RMW Slope,SMB Slope,CMA Slope,HML Slope,Intercept,Mean Squared Error (MSE),Mkt-RF Slope,R Squared,RMW Slope,SMB Slope
 2019,,,,,,,,,,,,,,,,
-2020,-1.0,inf,-inf,-inf,inf,inf,inf,,13.0,-0.03,0.83,-0.25,-0.75,-0.51,-0.5,-0.09
-2021,-inf,-1.0,-1.0,-1.0,-1.0,-1.0,-1.0,0.0,-0.71,-0.01,-0.12,-0.24,0.39,-1.61,0.0,0.19
-2022,-1.11,inf,-inf,-inf,inf,inf,,-0.05,2.31,-0.1,1.66,-0.12,-0.4,-0.84,0.0,-0.13
+2020,inf,-inf,-1.0,inf,inf,,inf,-inf,-0.51,-0.25,13.0,-0.5,-0.03,-0.09,-0.75,0.83
+2021,-1.0,-1.0,-inf,-1.0,-1.0,0.0,-1.0,-1.0,-1.61,-0.24,-0.71,0.0,-0.01,0.19,0.39,-0.12
+2022,inf,-inf,-1.11,,inf,-0.05,inf,-inf,-0.84,-0.12,2.31,0.0,-0.1,-0.13,-0.4,1.66

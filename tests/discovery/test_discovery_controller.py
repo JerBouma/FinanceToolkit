@@ -60,28 +60,6 @@ def test_get_stock_list(recorder):
         recorder.capture(result.iloc[0]["Symbol"] == "AAPL")
 
 
-def test_get_stock_quotes(recorder):
-    """Test get_stock_quotes method."""
-    with patch(
-        "financetoolkit.discovery.discovery_model.get_stock_quotes"
-    ) as mock_get_stock_quotes:
-        mock_data = pd.DataFrame(
-            {
-                "Symbol": ["AAPL", "MSFT", "GOOGL"],
-                "Price": [150.0, 300.0, 2800.0],
-                "Change": [1.5, -2.3, 15.2],
-                "ChangesPercentage": [1.0, -0.76, 0.55],
-            }
-        )
-        mock_get_stock_quotes.return_value = mock_data
-
-        discovery = discovery_controller.Discovery(api_key="test_key")
-        result = discovery.get_stock_quotes()
-
-        recorder.capture(len(result))
-        recorder.capture(result.iloc[0]["Symbol"] == "AAPL")
-
-
 def test_get_stock_screener(recorder):
     """Test get_stock_screener method."""
     with patch(

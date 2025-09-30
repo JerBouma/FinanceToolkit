@@ -82,13 +82,127 @@ After setting up Git, you can fork and pull the project in.
     - **Using the command line:** [Fork the repo](https://docs.github.com/en/github/getting-started-with-github/fork-a-repo#fork-an-example-repository) so that you can make your changes without affecting the original project until you're ready to merge them.
 2. Pull the Repository Locally ([more info](https://github.com/git-guides/git-pull))
 3. Create your own branch (`git checkout -b feature/contribution`)
-4. Add your changes (`git add .`)
-5. Install pre-commit, this checks the code for any errors before committing (`pre-commit install`)
-6. Commit your Changes (`git commit -m 'Improve the Toolkit'`)
-7. Check whether the tests still pass (`pytest tests`) and if not, correct then.
+4. Install dependencies (see [Setting Up Your Python Environment with `uv`](#setting-up-your-python-environment-with-uv) below)
+5. Add your changes (`git add .`)
+6. Install pre-commit, this checks the code for any errors before committing (`pre-commit install`)
+7. Commit your Changes (`git commit -m 'Improve the Toolkit'`)
+8. Check whether the tests still pass (`pytest tests`) and if not, correct then.
     - When no formulas have changed or new tests have been added, you can use `pytest tests --record-mode=rewrite` (please do provide reasoning in this case).
     - If formulas or calculations have changed, adjusts the tests inside the `tests` directory.
-8. Push to your Branch (`git push origin feature/contribution`)
-9. Open a Pull Request
+9. Push to your Branch (`git push origin feature/contribution`)
+10. Open a Pull Request
 
 **Note:** feel free to reach out if you run into any issues: jer.bouma@gmail.com or [LinkedIn](https://www.linkedin.com/in/boumajeroen/) or open a GitHub Issue.
+
+## Setting Up Your Python Environment with `uv`
+
+To ensure a consistent and reproducible development environment, we recommend using [`uv`](https://github.com/astral-sh/uv) for Python virtual environment and dependency management. `uv` is a fast, modern tool that simplifies creating and syncing virtual environments.
+
+You can execute the below script to get going straight away. This script will:
+
+- Prompt you to select a Python version (between 3.10 and 3.14) and create a virtual environment for your project in a central location (`$HOME/uv/virtualenvs/<project_name>`).
+- Link the virtual environment to your project folder as `.venv`.
+- Sync all dependencies as specified in `pyproject.toml` using [`uv`](https://github.com/astral-sh/uv).
+- Add `ipykernel` to development dependencies for Jupyter/VS Code support.
+- Configure VS Code to use the new `.venv/bin/python` interpreter automatically.
+- Activate the virtual environment and install pre-commit hooks for code quality checks.
+
+Just run the script from your project root (where `pyproject.toml` is located) and follow the prompts. When done, your environment will be ready for development and contribution.
+
+The script can be saved as a bash file (e.g. `set-configs.sh`) and executed with `bash set-configs.sh`.
+
+```bash
+#!/usr/bin/env bash
+
+set -e
+
+# 🟩 Python/venv setup
+echo "🟩 Installing Uv"
+pip install -q uv --disable-pip-version-check
+
+if [ ! -f pyproject.toml ]; then
+  echo "❌ pyproject.toml not found in the current directory. Please make sure you are in the project root."
+  exit 1
+fi
+
+PROJECT_NAME=$(awk -F ' *= *' '
+  /^\[project\]/ { in_project=1 }
+  in_project && /^name/ { gsub(/["'\'']/, "", $2); print $2; exit }
+' pyproject.toml)
+
+if [ -z "$PROJECT_NAME" ]; then
+  echo "❌ Could not determine project name from pyproject.toml"
+  exit 1
+fi
+
+# Determine suggested Python version from requires-python
+SUGGESTED_VERSION="3.10"
+for v in 3.14 3.13 3.12 3.11 3.10; do
+  if [[ "$PY_VERSION_RAW" == *">=$v"* ]]; then
+    SUGGESTED_VERSION="$v"
+    break
+  fi
+done
+
+echo "🟩 Suggested Python version: $SUGGESTED_VERSION"
+read -p "Enter Python version to use [${SUGGESTED_VERSION}]: " PYTHON_VERSION
+PYTHON_VERSION="${PYTHON_VERSION:-$SUGGESTED_VERSION}"
+
+if [[ ! "$PYTHON_VERSION" =~ ^3\.(10|11|12|13|14)$ ]]; then
+  echo "❌ Invalid Python version selected. Please choose between 3.10 and 3.14."
+  exit 1
+fi
+
+VENV_BASE="$HOME/uv/virtualenvs"
+VENV_DIR="$VENV_BASE/$PROJECT_NAME"
+LINK_NAME=".venv"
+
+echo "🟩 Detected project: $PROJECT_NAME"
+echo "🟩 Creating venv at: $VENV_DIR"
+echo "🟩 Using Python: $PYTHON_VERSION"
+
+if [ -L "$LINK_NAME" ]; then
+  echo "🟩 Removing old .venv symlink..."
+  rm "$LINK_NAME"
+fi
+
+if [ -d "$VENV_DIR" ]; then
+  echo "🟩 Removing existing venv at $VENV_DIR..."
+  rm -rf "$VENV_DIR"
+fi
+
+echo "🟩 Creating new virtual environment with uv..."
+mkdir -p "$VENV_BASE"
+uv venv "$VENV_DIR" --python "$PYTHON_VERSION"
+
+echo "🟩 Linking .venv to project folder..."
+ln -sf "$VENV_DIR" "$LINK_NAME"
+
+echo "🟩 Syncing dependencies with uv..."
+uv sync --python "$PYTHON_VERSION" --no-cache -q
+
+echo "🟩 Adding ipykernel to development dependencies..."
+if ! uv add ipykernel --dev --quiet; then
+  echo "⚠️ Failed to add ipykernel, continuing setup..."
+fi
+
+echo "🟩 Virtual env created and linked! To activate: source .venv/bin/activate"
+
+echo "🟩 Configuring VS Code to use .venv/bin/python..."
+mkdir -p .vscode
+cat > .vscode/settings.json <<EOF
+{
+  "python.defaultInterpreterPath": ".venv/bin/python"
+}
+EOF
+
+echo "🟩 Activating .venv ..."
+source .venv/bin/activate
+
+echo "🟧 Installing pre-commit hooks..."
+pip install pre-commit -q --no-cache
+pre-commit install
+
+echo "✅ Done! Make sure the .venv is selected in the bottom right corner when you open a Python file."
+echo "It should say for example '$PYTHON_VERSION.X (venv)'. If it doesn't you can change it by clicking on it."
+```

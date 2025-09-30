@@ -1,13 +1,11 @@
-[tool.poetry]
+[project]
 name = "financetoolkit"
 version = "2.0.5"
 description = "Transparent and Efficient Financial Analysis"
-license = "MIT"
-authors = ["Jeroen Bouma"]
-packages = [
-    { include = "financetoolkit" },
+license = {text = "MIT"}
+authors = [
+    { name = "Jeroen Bouma" }
 ]
-include = ["normalization/*.csv", "financetoolkit/portfolio/example_datasets/*"]
 readme = "README.md"
 homepage = "https://www.jeroenbouma.com/projects/financetoolkit"
 repository = "https://github.com/JerBouma/FinanceToolkit"
@@ -41,42 +39,47 @@ keywords = [
     "Commodities",
     "Options"
 ]
+requires-python = ">=3.10, <3.14"
+dependencies = [
+    "pandas>=2.2",
+    "scikit-learn>=1.6",
+    "requests>=2.32",
+    "yfinance",
+    "openpyxl>=3.1",
+    "tqdm>=4.67",
+]
 
-[tool.poetry.dependencies]
-python = ">=3.10, <3.14"
-pandas = "^2.2"
-scikit-learn = "^1.6"
-requests = "^2.32"
-yfinance = "*"
-openpyxl = "^3.1"
-tqdm = "^4.67"
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "ipykernel>=6.29",
+    "pylint>=3.3",
+    "codespell>=2.4",
+    "black[jupyter]>=25.1",
+    "pytest-mock>=3.14",
+    "pytest-recording>=0.13",
+    "pytest-cov>=6.1",
+    "pytest-timeout>=2.3",
+    "ruff>=0.11",
+    "mypy>=1.15",
+    "types-pyyaml>=6.0",
+    "types-requests>=2.32",
+]
 
-[tool.poetry.group.dev.dependencies]
-pytest = "^8.3.5"
-ipykernel = "^6.29.5"
-tqdm = "^4.67.1"
-pylint = "^3.3.6"
-codespell = "^2.4.1"
-black = {extras = ["jupyter"], version = "^25.1.0"}
-pytest-mock = "^3.14.0"
-pytest-recording = "^0.13.2"
-pytest-cov = "^6.1.1"
-pytest-timeout = "^2.3.1"
-ruff = "^0.11.4"
-mypy = "^1.15.0"
-types-pyyaml = "^6.0.12.20250402"
-types-requests = "^2.32.0.20250328"
-
-[tool.poetry.group.dashboard.dependencies]
-plotly = "^6.0.1"
-streamlit = "^1.44.1"
-
-[tool.poetry.extras]
-yfinance = ["yfinance"]
+[tool.uv]
+default-groups = ["dev"]
 
 [build-system]
-requires = ["poetry-core>=1.0.0"]
-build-backend = "poetry.core.masonry.api"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["financetoolkit"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "financetoolkit/**",
+]
 
 [tool.ruff]
 line-length = 122

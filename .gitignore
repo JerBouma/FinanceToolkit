@@ -5,6 +5,8 @@
 *.ipynb
 cached/
 debugging.py
+.vscode/
+*.sh
 
 # Finance Toolkit Example Datasets
 !examples/*.ipynb

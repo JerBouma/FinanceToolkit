@@ -226,6 +226,10 @@ def get_historical_data(
     elif "Capital Gains" in historical_data:
         historical_data = historical_data.drop(columns=["Capital Gains"])
 
+    if "Dividends" not in historical_data:
+        # If there are no dividends, create a column with 0.0 values
+        historical_data["Dividends"] = 0.0
+
     historical_data = historical_data[
         ["Open", "High", "Low", "Close", "Adj Close", "Volume", "Dividends"]
     ]

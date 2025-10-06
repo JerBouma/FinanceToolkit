@@ -23,10 +23,11 @@ The Finance Toolkit is complimented very well with the [Finance Database 🌎](h
 1. [Installation](#installation)
 2. [Basic Usage](#basic-usage)
 3. [Functionality and Metrics](#core-functionality-and-metrics)
-4. [Questions & Answers](#questions--answers)
-5. [Contributing](#contributing)
-6. [Mentions](#mentions)
-7. [Contact](#contact)
+4. [Deployment Guide](#deployment-guide)
+5. [Questions & Answers](#questions--answers)
+6. [Contributing](#contributing)
+7. [Mentions](#mentions)
+8. [Contact](#contact)
 
 # Installation
 
@@ -3221,6 +3222,24 @@ This returns a rather large DataFrame so to keep it concise, only the first 5 ti
 | 2025-02-27 |  95584.9 | 13718.3 | 28179.9 | 46718.5 | 43178.3 |
 
 </details>
+
+# Deployment Guide
+
+The FinanceToolkit is a Python library that can be integrated into various applications and deployment scenarios. For comprehensive guidance on deploying applications that use the FinanceToolkit in containerized environments and Kubernetes, please refer to the **[Deployment Guide](/DEPLOYMENT.md)**.
+
+The guide covers:
+- **Docker containerization** - How to containerize applications using the FinanceToolkit
+- **Kubernetes deployment** - Complete configurations for deploying in Kubernetes clusters
+- **Best practices** - Resource management, API rate limiting, caching strategies, and security
+- **Example configurations** - Ready-to-use YAML files for CronJobs, Deployments, and Services
+- **Monitoring and scaling** - Health checks, logging, and horizontal pod autoscaling
+
+Whether you're running scheduled financial analysis jobs, building REST APIs, or deploying production services, the deployment guide provides practical examples and recommendations.
+
+___ 
+
+<b><div align="center">Find the complete Deployment Guide <a href="/DEPLOYMENT.md">here</a>.</div></b>
+___
 
 # Questions & Answers
 

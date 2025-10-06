@@ -229,13 +229,16 @@ spec:
 
 Mount in your deployment:
 ```yaml
-        volumeMounts:
-        - name: cache-storage
-          mountPath: /app/cache
-      volumes:
-      - name: cache-storage
-        persistentVolumeClaim:
-          claimName: financetoolkit-cache
+# Add to your Deployment spec.template.spec.containers[0]
+volumeMounts:
+- name: cache-storage
+  mountPath: /app/cache
+
+# Add to your Deployment spec.template.spec
+volumes:
+- name: cache-storage
+  persistentVolumeClaim:
+    claimName: financetoolkit-cache
 ```
 
 ### 3. Security Best Practices

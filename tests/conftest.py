@@ -1,6 +1,7 @@
 # ruff: noqa
 
 import json
+import math
 import os
 import pathlib
 from typing import Any
@@ -34,6 +35,40 @@ EXTENSIONS_MATCHING: dict[str, list[type]] = {
 
 
 class Record:
+    @staticmethod
+    def _values_approx_equal(a: Any, b: Any, rel_tol: float = 1e-9) -> bool:
+        """Recursively compare two JSON-parsed values using approximate
+        comparison for floats.  Everything else is compared by equality."""
+        if isinstance(a, float) and isinstance(b, float):
+            return math.isclose(a, b, rel_tol=rel_tol)
+        if isinstance(a, list) and isinstance(b, list):
+            if len(a) != len(b):
+                return False
+            return all(
+                Record._values_approx_equal(x, y, rel_tol=rel_tol)
+                for x, y in zip(a, b)
+            )
+        if isinstance(a, dict) and isinstance(b, dict):
+            if a.keys() != b.keys():
+                return False
+            return all(
+                Record._values_approx_equal(a[k], b[k], rel_tol=rel_tol)
+                for k in a
+            )
+        return a == b
+
+    @staticmethod
+    def _json_strings_approx_equal(
+        recorded: str, captured: str, rel_tol: float = 1e-9
+    ) -> bool:
+        """Parse two JSON strings and compare with float tolerance."""
+        try:
+            return Record._values_approx_equal(
+                json.loads(recorded), json.loads(captured), rel_tol=rel_tol
+            )
+        except (json.JSONDecodeError, ValueError):
+            return recorded == captured
+
     @staticmethod
     def extract_string(data: Any, **kwargs) -> str:
         if isinstance(data, tuple(EXTENSIONS_MATCHING["txt"])):
@@ -74,15 +109,25 @@ class Record:
     @property
     def record_changed(self) -> bool:
         if self.__recorded is None:
-            changed = True
-        elif self.__strip and self.__recorded.strip() != self.__captured.strip():
-            changed = True
-        elif not self.__strip and self.__recorded != self.__captured:
-            changed = True
-        else:
-            changed = False
+            return True
 
-        return changed
+        recorded = self.__recorded
+        captured = self.__captured
+
+        if self.__strip:
+            recorded = recorded.strip()
+            captured = captured.strip()
+
+        if recorded == captured:
+            return False
+
+        # For JSON records, fall back to approximate float comparison so that
+        # differences in float string representation (e.g. 0.011710000000000002
+        # vs 0.01171) don't cause spurious failures across Python versions.
+        if self.__record_path.endswith(".json"):
+            return not self._json_strings_approx_equal(recorded, captured)
+
+        return True
 
     @property
     def record_exists(self) -> bool:

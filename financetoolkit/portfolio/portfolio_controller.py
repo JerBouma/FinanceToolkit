@@ -830,7 +830,19 @@ class Portfolio:
                     self._currency_column  # type: ignore
                 ].items():
                     data_currency = self._historical_statistics.loc["Currency", ticker]
-                    if self._historical_statistics.loc["Currency", ticker] != currency:
+
+                    # Skip when either currency code is missing or NaN,
+                    # otherwise a bogus symbol like "NAN=X" gets sent to
+                    # Yahoo Finance and triggers a 404.
+                    if (
+                        not currency
+                        or not data_currency
+                        or pd.isna(currency)
+                        or pd.isna(data_currency)
+                    ):
+                        continue
+
+                    if data_currency != currency:
                         currency_conversions[ticker] = (
                             f"{currency}{data_currency}=X".upper()
                         )

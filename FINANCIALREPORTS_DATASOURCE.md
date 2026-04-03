@@ -1,8 +1,8 @@
-# Data Source Suggestion: FinancialReports.eu for Regulatory Filing Access
+# Data Source Suggestion: FinancialReports.eu for Filing Access
 
 ## Overview
 
-[FinancialReports.eu](https://financialreports.eu) provides API access to **14M+ regulatory filings** from 35 official sources across 30+ countries. It complements FinanceToolkit's financial analysis capabilities by providing access to the **source regulatory documents** behind the computed metrics.
+[FinancialReports.eu](https://financialreports.eu) provides API access to **14M+ filings** from data sources across 30+ countries. It complements FinanceToolkit's financial analysis capabilities by providing access to the **source filing documents** behind the computed metrics.
 
 ## Why This Fits FinanceToolkit
 
@@ -12,7 +12,7 @@ FinanceToolkit computes financial ratios, models, and indicators. FinancialRepor
 - **Global company coverage** — 33,000+ companies with ISIN and LEI identifiers, matching FinanceToolkit's international scope
 - **Markdown endpoint** — extract text from filings for programmatic analysis alongside computed ratios
 - **11 standardized categories** — Financial Reporting, ESG, M&A, Debt/Equity, and more
-- **35 official regulators** — SEC, FCA (UK), Euronext, EDINET (Japan), and more
+- **30+ countries** including UK, EU, Japan, and more
 
 ## Integration Approaches
 
@@ -82,7 +82,7 @@ filings = filings_list.sync(client=client, company_isin="NL0010273215", categori
 | **Rate Limiting** | Burst limit + monthly quota |
 | **Companies** | 33,230+ |
 | **Total Filings** | 14,135,359+ |
-| **Sources** | 35 official regulators |
+| **Coverage** | 30+ countries |
 
 ## Complementary Value
 
@@ -90,6 +90,6 @@ filings = filings_list.sync(client=client, company_isin="NL0010273215", categori
 |---|---|
 | Computed financial ratios | Source regulatory documents |
 | Fundamental analysis models | Original annual report text |
-| International company data | Filing documents from 35 regulators |
+| International company data | Filing documents from 30+ countries |
 | Technical indicators | Filing event dates as signals |
 | — | ESG disclosures, M&A announcements |

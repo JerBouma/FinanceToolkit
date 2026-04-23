@@ -760,7 +760,7 @@ Which returns:
 <details>
     <summary><b>Revenue Segmentations</b></summary>
 
-Retrieve the [product revenue segmentation](https://www.jeroenbouma.com/projects/financetoolkit/docs#get_revenue_product_segmentationPermalink) for each company. This is for example iPhone, iPad, Mac, Wearables, Services, and Other Products for Apple and helps understand the products that grow the fastest and slowest. 
+Retrieve the [product revenue segmentation](https://www.jeroenbouma.com/projects/financetoolkit/docs#get_revenue_product_segmentation) for each company. This is for example iPhone, iPad, Mac, Wearables, Services, and Other Products for Apple and helps understand the products that grow the fastest and slowest. 
 
 As an example:
 
@@ -856,7 +856,7 @@ Which returns:
 
 ## Discover Instruments
 
-The Discovery module contains lists of companies, cryptocurrencies, forex, commodities, etfs and indices including screeners, quotes, performance metrics and more to find and select tickers to use in the Finance Toolkit.  **Find the Notebook [here](https://www.jeroenbouma.com/projects/financetoolkit/discovery-module) and the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/discovery) which includes an explanation about the functionality, the parameters and an example.**
+The Discovery module contains lists of companies, cryptocurrencies, forex, commodities, etfs and indices including screeners, quotes, performance metrics and more to find and select tickers to use in the Finance Toolkit.  **Find the Notebook [here](https://www.jeroenbouma.com/projects/financetoolkit/discovery-notebook) and the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/discovery) which includes an explanation about the functionality, the parameters and an example.**
 
 <details>
     <summary><b>Companies</b></summary>
@@ -961,37 +961,6 @@ Which returns:
 | LESAF       | Le Saunda Holdings Limited   |   0.071 | Other OTC                       | PNK             |
 | LESHAIND.BO | Lesha Industries Limited     |   4.68  | Bombay Stock Exchange           | BSE             |
 | LESL        | Leslie's, Inc.               |   6.91  | NASDAQ Global Select            | NASDAQ          |
-
-> **Company Quotes**
-
-Returns the real time stock prices for each company. This includes the bid and ask size, the volume, the bid and ask price, the last sales price and the last sales size. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/discovery#get_stock_quotes).
-
-As an example:
-
-```python
-from financetoolkit import Discovery
-
-discovery = Discovery(api_key="FINANCIAL_MODELING_PREP_KEY")
-
-stock_quotes = discovery.get_stock_quotes()
-
-stock_quotes.iloc[3000:3010]
-```
-
-Which returns:
-
-| Symbol   |  Bid Size |   Ask Price |           Volume |   Ask Size |   Bid Price |   Last Sale Price |   Last Sale Size |   Last Sale Time |
-|:---------|----------:|------------:|-----------------:|-----------:|------------:|------------------:|-----------------:|-----------------:|
-| EIPX     |         0 |        0    |  59676           |          0 |        0    |           21.28   |                0 |      1.7039e+12  |
-| EIRL     |         2 |       64.67 |   5455           |          2 |       57.7  |           61.1316 |                0 |      1.7039e+12  |
-| EIS      |        10 |       61.71 |  15886           |          2 |       56.2  |           58.1909 |                0 |      1.7039e+12  |
-| EIX      |         1 |       75.7  |      1.41398e+06 |          1 |       50.1  |           71.49   |                0 |      1.70389e+12 |
-| EJAN     |         1 |       31.42 | 252595           |          1 |       28.1  |           28.67   |                0 |      1.7039e+12  |
-| EJH      |         6 |        3.83 |      0           |          8 |        3.82 |            3.82   |              100 |      1.7042e+12  |
-| EJUL     |         2 |       27.97 |  10226           |          2 |       23.16 |           23.63   |                0 |      1.7039e+12  |
-| EKG      |         4 |       20    |   1197           |          1 |        6.38 |           15.9357 |                0 |      1.70388e+12 |
-| EKSO     |         3 |        2.54 |      0           |          5 |        2.31 |            2.31   |              100 |      1.7042e+12  |
-| EL       |         1 |      143.9  |      0           |          1 |      142.5  |          143      |              100 |      1.7042e+12  |
 
 > **Floating Shares**
 
@@ -1212,37 +1181,6 @@ Which returns:
 | 0XGASUSD     | 0xGasless USD                        | USD        | CCC        |
 | 0XMRUSD      | 0xMonero USD                         | USD        | CCC        |
 
-> **Cryptocurrency Quotes**
-
-Returns the quotes for each crypto. This includes the symbol, the name, the price, the change, the change percentage, day low, day high, year high, year low, market cap, 50 day average, 200 day average, volume, average volume, open, previous close, EPS, PE, earnings announcement, shares outstanding and the timestamp. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/discovery#get_crypto_quotes).
-
-As an example:
-
-```python
-from financetoolkit import Discovery
-
-discovery = Discovery(api_key="FINANCIAL_MODELING_PREP_KEY")
-
-crypto_quotes = discovery.get_crypto_quotes()
-
-crypto_quotes.head(10)
-```
-
-Which returns:
-
-| Symbol       | Name                                 |        Price |   Change % |       Change |      Day Low |    Day High |   Year High |     Year Low |       Market Cap |   50 Day Avg |   200 Day Avg |      Volume |       Avg Volume |        Open |   Previous Close |   EPS |   PE |   Earnings Announcement |   Shares Outstanding | Timestamp           |
-|:-------------|:-------------------------------------|-------------:|-----------:|-------------:|-------------:|------------:|------------:|-------------:|-----------------:|-------------:|--------------:|------------:|-----------------:|------------:|-----------------:|------:|-----:|------------------------:|---------------------:|:--------------------|
-| .ALPHAUSD    | .Alpha USD                           | 21.4023      |    0       |  0           | 21.3991      | 21.4023     |  193.252    | 21.4023      |      0           | 23.7774      |  51.0497      |     30      |    162           | 21.4023     |      21.4023     |   nan |  nan |                     nan |        nan           | 2022-10-10 23:28:00 |
-| 00USD        | 00 Token USD                         |  0.082484    |    0.67363 |  0.00055192  |  0.0808863   |  0.0857288  |    0.28559  |  0.062939    |      0           |  0.0853295   |   0.0824169   | 210396      | 235403           |  0.0819321  |       0.0819321  |   nan |  nan |                     nan |          0           | 2024-01-02 14:05:40 |
-| 0NEUSD       | Stone USD                            |  7.39e-10    |   -1.70872 | -1.3e-11     |  7.37e-10    |  7.79e-10   |    7.76e-10 |  7.52e-10    |      0           |  0           |   0           |   1110.14   |    nan           |  7.52e-10   |       7.52e-10   |   nan |  nan |                     nan |          0           | 2024-01-02 14:05:12 |
-| 0X0USD       | 0x0.ai USD                           |  0.15383     |    4.3101  |  0.00635643  |  0.14748     |  0.1551     |    0.17925  |  0.000275    |      1.33615e+08 |  0.12582     |   0.0734378   | 805257      |      1.17131e+06 |  0.14748    |       0.14748    |   nan |  nan |                     nan |          8.68563e+08 | 2024-01-02 14:05:13 |
-| 0X1USD       | 0x1.tools: AI Multi-tool Plaform USD |  0.00596268  |    2.65558 |  0.000154248 |  0.00580843  |  0.00608836 |    0.48504  |  0.005089    |      0           |  0.00587516  |   0.0448096   |     42.9976 |    216           |  0.00580843 |       0.00580843 |   nan |  nan |                     nan |          0           | 2024-01-02 14:06:00 |
-| 0XAUSD       | 0xApe USD                            |  9.86177e-06 |  -99.9921  | -0.12519     |  9.86177e-06 |  0.12527    |    0.12527  |  9.86177e-06 |      0           |  1.08846e-05 |   1.08846e-05 |    197      |    nan           |  0.1252     |       0.1252     |   nan |  nan |                     nan |        nan           | 2023-06-24 18:30:00 |
-| 0XBTCUSD     | 0xBitcoin USD                        |  0.097478    |    0.6003  |  0.00058167  |  0.0944255   |  0.10393    |    4.13419  |  0.03222     | 946195           |  0.17478     |   0.39561     |    344.45   |  97856           |  0.0968963  |       0.0968963  |   nan |  nan |                     nan |          9.70675e+06 | 2024-01-02 14:05:24 |
-| 0XENCRYPTUSD | Encryption AI USD                    |  0.0213021   |    0       |  0           |  0.0213021   |  0.0213021  |   15.4064   |  0.020326    |      0           |  1.55438     |   3.26515     |      2      | 202458           |  0.0213021  |       0.0213021  |   nan |  nan |                     nan |        nan           | 2023-07-26 18:30:00 |
-| 0XGASUSD     | 0xGasless USD                        |  0.11228     |   12.1894  |  0.0121997   |  0.10008     |  0.11228    |    0.19216  |  3.7e-05     |      0           |  0.038569    |   0.0143848   |   8700      |   9628           |  0.10008    |       0.10008    |   nan |  nan |                     nan |          0           | 2024-01-02 14:06:00 |
-| 0XMRUSD      | 0xMonero USD                         |  0.0497938   |  -38.9213  | -0.0317302   |  0.0496646   |  2.79013    |    0.18734  |  0.0418889   |      0           |  0.13616     |   0.11633     |    347.276  |     11           |  0.081524   |       0.081524   |   nan |  nan |                     nan |        nan           | 2024-01-02 14:05:07 |
-
 </details>
 
 <details>
@@ -1281,37 +1219,6 @@ Which returns:
 | AEDINR   | AED/INR | INR        | CCY        |
 | AEDJOD   | AED/JOD | JOD        | CCY        |
 
-> **Forex Quotes**
-
-Returns the quotes for each forex. This includes the symbol, the name, the price, the change, the change percentage, day low, day high, year high, year low, market cap, 50 day average, 200 day average, volume, average volume, open, previous close, EPS, PE, earnings announcement, shares outstanding and the timestamp. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/discovery#get_forex_quotes).
-
-As an example:
-
-```python
-from financetoolkit import Discovery
-
-discovery = Discovery(api_key="FINANCIAL_MODELING_PREP_KEY")
-
-forex_quotes = discovery.get_forex_quotes()
-
-forex_quotes.head(10)
-```
-
-Which returns:
-
-| Symbol   | Name    |    Price |     Change % |       Change |   Day Low |   Day High |   Year High |   Year Low |   50 Day Avg |   200 Day Avg |   Volume |   Avg Volume |     Open |   Previous Close | Timestamp           |
-|:---------|:--------|---------:|-------------:|-------------:|----------:|-----------:|------------:|-----------:|-------------:|--------------:|---------:|-------------:|---------:|-----------------:|:--------------------|
-| AEDAUD   | AED/AUD |  0.40089 |    0.40826   |   0.00163    |   0.39766 |    0.40118 |     0.43341 |  0.38041   |      0.41514 |       0.41372 |       11 |     nan      |  0.39921 |          0.39926 | 2024-01-02 14:02:15 |
-| AEDBHD   | AED/BHD |  0.10262 |    0.0608637 |   6.2422e-05 |   0.10244 |    0.10266 |     0.10323 |  0.0991399 |      0.10264 |       0.10241 |       37 |      48.006  |  0.10256 |          0       | 2024-01-02 13:46:14 |
-| AEDCAD   | AED/CAD |  0.36177 |    0.43587   |   0.00157    |   0.35996 |    0.36295 |     0.37817 |  0.35657   |      0.3701  |       0.36716 |       14 |     nan      |  0.36002 |          0.3602  | 2024-01-02 14:02:15 |
-| AEDCHF   | AED/CHF |  0.23062 |    0.8704    |   0.00199    |   0.22847 |    0.23099 |     0.25693 |  0.2278    |      0.23976 |       0.24231 |      nan |     nan      |  0.22847 |          0.22863 | 2024-01-02 14:02:15 |
-| AEDDKK   | AED/DKK |  1.84023 |   84.023     |   0.84023    |   1.83775 |    1.84081 |     1.94068 |  1.78424   |      1.86572 |       1.87037 |       16 |      49.5329 |  1.83874 |          1       | 2024-01-02 09:37:59 |
-| AEDEUR   | AED/EUR |  0.2486  |    0.81044   |   0.00199857 |   0.24636 |    0.24871 |     0.265   |  0.2417    |      0.25271 |       0.25197 |       38 |     nan      |  0.24668 |          0.2466  | 2024-01-02 14:02:15 |
-| AEDGBP   | AED/GBP |  0.21499 |    0.75924   |   0.00162    |   0.21298 |    0.2157  |     0.23039 |  0.2073    |      0.21802 |       0.21732 |       14 |     nan      |  0.2133  |          0.21337 | 2024-01-02 14:02:15 |
-| AEDILS   | AED/ILS |  0.98746 | -100         | nan          |   0.98385 |    0.99536 |     1.1108  |  0.97828   |      1.01241 |       1.03478 |      923 |     549.264  |  0.98761 |        nan       | 2024-01-02 14:05:06 |
-| AEDINR   | AED/INR | 22.7025  |    0.14076   |   0.0319101  |  22.625   |   22.72    |    22.72    | 20.1966    |     19.8653  |      20.1966  |       14 |     nan      | 22.7082  |         22.6706  | 2024-01-02 14:02:15 |
-| AEDJOD   | AED/JOD |  0.19335 |   -3.32563   |  -0.00665126 |   0.19315 |    0.19364 |     0.19412 |  0.19185   |      0.19314 |       0.19315 |       38 |      18.8451 |  0.19331 |          0.2     | 2024-01-02 13:51:18 |
-
 </details>
 
 <details>
@@ -1349,37 +1256,6 @@ Which returns:
 | ESUSD    | E-Mini S&P 500         | USD        | CME        |
 | GCUSD    | Gold Futures           | USD        | CME        |
 | GFUSX    | Feeder Cattle Futures  | USX        | CME        |
-
-> **Commodity Quotes**
-
-Returns the quotes for each commodity. This includes the symbol, the name, the price, the change, the change percentage, day low, day high, year high, year low, market cap, 50 day average, 200 day average, volume, average volume, open, previous close, EPS, PE, earnings announcement, shares outstanding and the timestamp. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/discovery#get_commodity_quotes).
-
-As an example:
-
-```python
-from financetoolkit import Discovery
-
-discovery = Discovery(api_key="FINANCIAL_MODELING_PREP_KEY")
-
-commodity_quotes = discovery.get_commodity_quotes()
-
-commodity_quotes.head(10)
-```
-
-Which returns:
-
-| Symbol   | Name                   |    Price |   Change % |   Change |   Day Low |   Day High |   Year High |   Year Low |   50 Day Avg |   200 Day Avg |   Volume |       Avg Volume |     Open |   Previous Close | Timestamp           |
-|:---------|:-----------------------|---------:|-----------:|---------:|----------:|-----------:|------------:|-----------:|-------------:|--------------:|---------:|-----------------:|---------:|-----------------:|:--------------------|
-| ALIUSD   | Aluminum Futures       | 2347     | -1.12691   |  -26.75  |  2344     |    2383.5  |     2670.75 |    2073.25 |    2200.86   |     2221.04   |     4321 |     22           | 2370.75  |         2373.75  | 2024-01-02 13:54:40 |
-| BZUSD    | Brent Crude Oil        |   78.1   |  1.37591   |    1.06  |    77.21  |      79.06 |       97.63 |      68.2  |      81.291  |       81.9377 |     2285 |  30060           |   77.21  |           77.04  | 2024-01-02 14:10:12 |
-| CCUSD    | Cocoa                  | 4249.5   |  1.27502   |   53.5   |   101.03  |    4274.5  |     4478    |    2507    |    4115.52   |     3483.99   |    18596 |  14509           | 4209     |         4196     | 2024-01-02 14:10:12 |
-| CLUSD    | Crude Oil              |   72.63  |  1.36776   |    0.98  |    71.63  |      73.65 |       95.03 |      63.64 |      76.3836 |       77.7364 |    37720 | 307715           |   71.71  |           71.65  | 2024-01-02 14:10:12 |
-| CTUSX    | Cotton                 |   80.78  | -0.2716    |   -0.22  |     3.87  |      81.75 |       90.75 |      74.77 |      79.8394 |       82.7224 |      960 |  15911           |   80.87  |           81     | 2024-01-02 14:10:00 |
-| DCUSD    | Class III Milk Futures |   16.35  |  1.5528    |    0.25  |    15.43  |      17.16 |       20.49 |      13.75 |      16.6668 |       16.7265 |       51 |    212           |   16.1   |           16.1   | 2024-01-02 13:36:35 |
-| DXUSD    | US Dollar              |  101.862 |  0.82452   |    0.833 |   101.027 |     101.88 |      107.05 |      99.22 |     103.915  |      103.24   |     2999 |  14880           |  101.065 |          101.029 | 2024-01-02 14:10:10 |
-| ESUSD    | E-Mini S&P 500         | 4783     | -0.76763   |  -37     |  4777.75  |    4828    |     4841.5  |    3808.75 |    4527.31   |     4378.91   |    75910 |      1.63378e+06 | 4818     |         4820     | 2024-01-02 14:00:13 |
-| GCUSD    | Gold Futures           | 2075     |  0.15446   |    3.2   |  2071.4   |    2094.7  |     2130.2  |    1808.1  |    2003.86   |     1960.64   |    38456 |   3511           | 2072.7   |         2071.8   | 2024-01-02 14:00:13 |
-| GFUSX    | Feeder Cattle Futures  |  223.125 |  0.0112057 |    0.025 |   222.725 |     224.45 |      257.5  |     177.55 |     226.9    |      230.114  |     4395 |   3915           |  224.4   |          223.1   | 2023-12-29 19:04:57 |
 
 </details>
 
@@ -1450,42 +1326,11 @@ Which returns:
 | ITLMS.MI    | FTSE Italia All-Share Index   | EUR        | Milan                  |
 | KOSPI200.KS | KOSPI 200 Index               | KRW        | KSE                    |
 
-> **Index Quotes**
-
-Returns the quotes for each index. This includes the symbol, the name, the price, the change, the change percentage, day low, day high, year high, year low, market cap, 50 day average, 200 day average, volume, average volume, open, previous close, EPS, PE, earnings announcement, shares outstanding and the timestamp. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/discovery#get_index_quotes).
-
-As an example:
-
-```python
-from financetoolkit import Discovery
-
-discovery = Discovery(api_key="FINANCIAL_MODELING_PREP_KEY")
-
-index_quotes = discovery.get_index_quotes()
-
-index_quotes.head(10)
-```
-
-Which returns:
-
-| Symbol      | Name                          |     Price |   Change % |     Change |   Day Low |   Day High |   Year High |   Year Low |   50 Day Avg |   200 Day Avg |     Volume |   Avg Volume |      Open |   Previous Close |   Timestamp |
-|:------------|:------------------------------|----------:|-----------:|-----------:|----------:|-----------:|------------:|-----------:|-------------:|--------------:|-----------:|-------------:|----------:|-----------------:|------------:|
-| 000001.SS   | SSE Composite Index           |  2962.28  |    -0.4255 |   -12.6587 |  2962.28  |   2976.27  |    3418.95  |   2882.02  |     2999.76  |      3160.83  |  349408228 |       290686 |  2972.78  |         2974.93  |  1704178820 |
-| 399967.SZ   | CSI NATIONAL DEFENSE          |  9891.22  |     0.4875 |    47.9902 |  9834.98  |  10041.4   |   10041.4   |   9834.98  |        0     |         0     | 1115610197 |            0 |  9857.19  |         9843.23  |  1704184147 |
-| 512.HK      | CES CHINA HK MAINLAND INDEX   |  6901.25  |     0      |     0      |  6786.45  |   6912.54  |    6912.54  |   6786.45  |        0     |         0     | 2785244718 |            0 |  6862.61  |          nan     |  1434960128 |
-| DX-Y.NYB    | US Dollar/USDX - Index - Cash |   102.136 |     0.7924 |     0.803  |   101.34  |    102.167 |     107.35  |     99.58  |      104.108 |       103.421 |          0 |            0 |   101.417 |          101.333 |  1704204265 |
-| FTSEMIB.MI  | FTSE MIB Index                | 30396.8   |     0.1488 |    45.1699 | 30326.9   |  30863.6   |   30863.6   |  24111     |    29233.6   |     28164     |          0 |    473923362 | 30519.5   |        30351.6   |  1704203960 |
-| IAR.BA      | MERVAL ARGENTINA              | 33784.6   |     0      | 33784.6    | 33227.6   |  33871.5   |   33871.5   |  33227.6   |        0     |         0     |          0 |            0 | 33227.6   |          nan     |  1576872141 |
-| IDX30.JK    | IDX30                         |   498.424 |     0.6486 |     3.212  |   492.621 |    498.424 |     498.424 |    492.621 |        0     |         0     |          0 |            0 |   493.985 |          495.212 |  1704186018 |
-| IMOEX.ME    | MOEX Russia Index             |  2222.51  |    -0.1859 |    -4.1399 |  2202.52  |   2234.55  |    4292.68  |   1681.55  |     2264.41  |      3183.63  |          0 |            0 |  2225.02  |         2226.65  |  1657295461 |
-| ITLMS.MI    | FTSE Italia All-Share Index   | 32507     |     0.0859 |    27.9004 | 32434.3   |  32999.1   |   32999.1   |  23017.3   |    22902.7   |     23017.3   |          0 |            0 | 32651.2   |        32479.1   |  1704203955 |
-| KOSPI200.KS | KOSPI 200 Index               |   360.55  |     0.7151 |     2.56   |   355.96  |    361.53  |     361.53  |    355.96  |        0     |         0     |     106709 |            0 |   356.43  |          357.99  |  1704186335 |
-
 </details>
 
 ## Financial Ratios
 
-The Ratios Module contains over 50+ ratios that can be used to analyse companies. These ratios are divided into 5 categories which are efficiency, liquidity, profitability, solvency and valuation. Each ratio is calculated using the data from the Toolkit module.  **Find the Notebook [here](https://www.jeroenbouma.com/projects/financetoolkit/ratios-module) and the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios) which includes an explanation about the ratio, the parameters and an example.**
+The Ratios Module contains over 50+ ratios that can be used to analyse companies. These ratios are divided into 5 categories which are efficiency, liquidity, profitability, solvency and valuation. Each ratio is calculated using the data from the Toolkit module.  **Find the Notebook [here](https://www.jeroenbouma.com/projects/financetoolkit/ratios-notebook) and the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios) which includes an explanation about the ratio, the parameters and an example.**
 
 It is also possible to define custom ratios and calculate these automatically based on the balance sheet, income and cash flow statements. With this, it is possible to calculate any collection of custom ratios without needing to understanding the backend of the Finance Toolkit. Learn how [here](https://www.jeroenbouma.com/projects/financetoolkit/custom-ratios).
 
@@ -1879,7 +1724,7 @@ The net current asset value is a financial metric that represents the total valu
 
 ## Financial Models
 
-The Models module is meant to execute well-known models such as DUPONT and the Discounted Cash Flow (DCF) model. These models are also directly related to the data retrieved from the Toolkit module. **Find the Notebook [here](https://www.jeroenbouma.com/projects/financetoolkit/models-module) and the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/models) which includes an explanation about the model, the parameters and an example.**
+The Models module is meant to execute well-known models such as DUPONT and the Discounted Cash Flow (DCF) model. These models are also directly related to the data retrieved from the Toolkit module. **Find the Notebook [here](https://www.jeroenbouma.com/projects/financetoolkit/models-notebook) and the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/models) which includes an explanation about the model, the parameters and an example.**
 
 <details>
   <summary><b>Financial Models</b></summary>
@@ -1939,7 +1784,7 @@ The Present Value of Growth Opportunities (PVGO) is a financial metric that repr
 
 ## Options and Greeks
 
-The Options module is meant to calculate theoretical values based on Black Scholes for European Options. This includes the theoretical value of the Option for each Strike Price and Expiration Date which is intelligently chosen. It also includes the First, Second and Third Order Greeks such as Delta, Gamma, Vega, Vomma and Ultima. **Find the Notebook [here](https://www.jeroenbouma.com/projects/financetoolkit/options-module) and the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/options) which includes an explanation about the model, the parameters and an example.**
+The Options module is meant to calculate theoretical values based on Black Scholes for European Options. This includes the theoretical value of the Option for each Strike Price and Expiration Date which is intelligently chosen. It also includes the First, Second and Third Order Greeks such as Delta, Gamma, Vega, Vomma and Ultima. **Find the Notebook [here](https://www.jeroenbouma.com/projects/financetoolkit/options-notebook) and the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/options) which includes an explanation about the model, the parameters and an example.**
 
 <details>
   <summary><b>Option Pricing 📊</b></summary>
@@ -2210,7 +2055,7 @@ Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolki
 
 ## Performance Metrics
 
-The Performance module is meant to calculate important performance metrics such as Sharpe Ratio, Sortino Ratio, Treynor Ratio, Information Ratio, Jensen's Alpha, Beta, Capital Asset Pricing Model, Factor Models and more. **Find the Notebook [here](https://www.jeroenbouma.com/projects/financetoolkit/performance-module) and the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/performance) which includes an explanation about the performance metrics, the parameters and an example.**
+The Performance module is meant to calculate important performance metrics such as Sharpe Ratio, Sortino Ratio, Treynor Ratio, Information Ratio, Jensen's Alpha, Beta, Capital Asset Pricing Model, Factor Models and more. **Find the Notebook [here](https://www.jeroenbouma.com/projects/financetoolkit/performance-notebook) and the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/performance) which includes an explanation about the performance metrics, the parameters and an example.**
 
 <details>
     <summary><b>Performance Metrics</b></summary>
@@ -2314,7 +2159,7 @@ The Compound Annual Growth Rate is a measure that provides the mean growth rate 
 
 ## Risk Metrics
 
-The Risk module is meant to calculate important risk metrics such as Value at Risk (VaR), Conditional Value at Risk (cVaR), Maximum Drawdown, Correlations, Beta, GARCH, EWMA and more. **Find the Notebook [here](https://www.jeroenbouma.com/projects/financetoolkit/risk-module) and the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/risk) which includes an explanation about the risk metrics, the parameters and an example.**
+The Risk module is meant to calculate important risk metrics such as Value at Risk (VaR), Conditional Value at Risk (cVaR), Maximum Drawdown, Correlations, Beta, GARCH, EWMA and more. **Find the Notebook [here](https://www.jeroenbouma.com/projects/financetoolkit/risk-notebook) and the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/risk) which includes an explanation about the risk metrics, the parameters and an example.**
 
 <details>
     <summary><b>Risk Metrics</b></summary>
@@ -2368,7 +2213,7 @@ Kurtosis is a statistical measure used in finance to evaluate the shape of the p
 
 ## Technical Indicators
 
-The Technicals Module contains 30+ Technical Indicators that can be used to analyse companies. These ratios are divided into 4 categories which are breadth, momentum, overlap and volatility. Each indicator is calculated using the data from the Toolkit module. **Find the Notebook [here](https://www.jeroenbouma.com/projects/financetoolkit/technicals-module) and the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals) which includes an explanation about the indicator, the parameters and an example.**
+The Technicals Module contains 30+ Technical Indicators that can be used to analyse companies. These ratios are divided into 4 categories which are breadth, momentum, overlap and volatility. Each indicator is calculated using the data from the Toolkit module. **Find the Notebook [here](https://www.jeroenbouma.com/projects/financetoolkit/technicals-notebook) and the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals) which includes an explanation about the indicator, the parameters and an example.**
 
 <details>
     <summary><b>Breadth Indicators 💨</b></summary>
@@ -2576,7 +2421,7 @@ Bollinger Bands are a volatility indicator that consists of three lines: an uppe
 
 ## Fixed Income
 
-The Fixed Income module contains a wide variety of fixed income related calculations such as the Effective Yield, the Macaulay Duration, the Modified Duration Convexity, the Yield to Maturity and models such as Black and Bachelier to valuate derivative instruments such as Swaptions. This module can be called directly via the Toolkit but also separately if desired through `from financetoolkit import FixedIncome`. **Find the Notebook [here](https://www.jeroenbouma.com/projects/financetoolkit/fixedincome-module) and the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/fixedincome) which includes an explanation about each indicator, the parameters and an example.**
+The Fixed Income module contains a wide variety of fixed income related calculations such as the Effective Yield, the Macaulay Duration, the Modified Duration Convexity, the Yield to Maturity and models such as Black and Bachelier to valuate derivative instruments such as Swaptions. This module can be called directly via the Toolkit but also separately if desired through `from financetoolkit import FixedIncome`. **Find the Notebook [here](https://www.jeroenbouma.com/projects/financetoolkit/fixedincome-notebook) and the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/fixedincome) which includes an explanation about each indicator, the parameters and an example.**
 
 <details>
     <summary><b>Bond Valuations</b></summary>
@@ -2793,7 +2638,7 @@ Yield to worst is the lowest potential yield that a bond can generate without th
 
 ## Key Economic Indicators
 
-The Economics Module contains a variety of Key Economic Indicators that help in understanding the health and performance of more than 60 different countries. This module can be called directly via the Toolkit but also separately if desired through `from financetoolkit import Economics`. **Find the Notebook [here](https://www.jeroenbouma.com/projects/financetoolkit/economics-module) and the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics) which includes an explanation about each indicator, the parameters and an example.**
+The Economics Module contains a variety of Key Economic Indicators that help in understanding the health and performance of more than 60 different countries. This module can be called directly via the Toolkit but also separately if desired through `from financetoolkit import Economics`. **Find the Notebook [here](https://www.jeroenbouma.com/projects/financetoolkit/economics-notebook) and the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics) which includes an explanation about each indicator, the parameters and an example.**
 
 <details>
     <summary><b>Government 💵</b></summary>

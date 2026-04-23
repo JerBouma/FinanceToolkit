@@ -3072,7 +3072,7 @@ However, two countries with the same poverty rates may differ in terms of the re
 
 Through the `Portfolio` class, you are able to load in your own portfolio and perform various calculations to evaluate your portfolio's performance compared to some benchmark. Furthermore, it allows you to pull your portfolio directly into the `Toolkit` including a special "Portfolio" ticker which is constructed as the weighted average of your portfolio at a given point in time. 
 
-The `Portfolio` class can be called by using `from financetoolkit import Portfolio`. **Find the Notebook [here](https://www.jeroenbouma.com/projects/financetoolkit/portfolio-module) and the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/portfolio) which includes an explanation about each function, the parameters and an example.**
+The `Portfolio` class can be called by using `from financetoolkit import Portfolio`. **Find the Notebook [here](https://www.jeroenbouma.com/projects/financetoolkit/portfolio-notebook) and the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/portfolio) which includes an explanation about each function, the parameters and an example.**
 
 <details>
     <summary><b>Portfolio Evaluation</b></summary>

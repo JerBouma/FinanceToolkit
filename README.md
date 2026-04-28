@@ -112,6 +112,43 @@ corporate_bond_yields = companies.fixedincome.get_ice_bofa_effective_yield()
 unemployment_rates = companies.economics.get_unemployment_rate()
 ````
 
+### Working with Optional External Sentiment Data
+
+The Toolkit also supports custom external datasets through the `historical`,
+`balance`, `income`, and `cash` parameters. For market-neutral research and
+factor experiments, it can be useful to keep the FinanceToolkit price history
+and then join a second dataset as an extra signal layer.
+
+For example, the repository now includes an optional Adanos Market Sentiment API
+example in [`examples/external_datasets/adanos_market_sentiment.py`](examples/external_datasets/adanos_market_sentiment.py).
+It fetches daily `trend_history` sentiment data for multiple tickers and joins it
+onto the FinanceToolkit historical dataset so it can be used in downstream
+performance, technical, or custom factor workflows.
+
+```python
+from financetoolkit import Toolkit
+from financetoolkit.utilities.external_dataset_model import (
+    combine_external_dataset,
+    get_adanos_sentiment,
+)
+
+toolkit = Toolkit(["AAPL", "MSFT"], benchmark_ticker="SPY", start_date="2024-01-01")
+historical_data = toolkit.get_historical_data()
+
+reddit_sentiment = get_adanos_sentiment(
+    ["AAPL", "MSFT"],
+    api_key="ADANOS_API_KEY",
+    source="reddit",
+    days=30,
+)
+
+sentiment_enriched_history = combine_external_dataset(
+    historical_data,
+    reddit_sentiment,
+    dataset_name="Adanos Reddit Sentiment",
+)
+```
+
 Generally, the functions return a DataFrame with a multi-index in which all tickers, in this case Apple and Microsoft, are presented. To keep things manageable for this README, I select just Apple but in essence the list of tickers can be endless as I've seen DataFrames with thousands of tickers. The filtering is done through `.loc['AAPL']` and `.xs('AAPL', level=1, axis=1)` based on whether it's fundamental data or historical data respectively.
 
 ### Obtaining Historical Data

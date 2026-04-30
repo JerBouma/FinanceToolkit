@@ -112,6 +112,28 @@ corporate_bond_yields = companies.fixedincome.get_ice_bofa_effective_yield()
 unemployment_rates = companies.economics.get_unemployment_rate()
 ````
 
+### Working with Optional Market Sentiment Data
+
+The Toolkit can collect optional Adanos Market Sentiment API data directly for
+the tickers and date range configured on the `Toolkit` object. This keeps the
+sentiment data aligned with the rest of the Toolkit workflow while still only
+calling Adanos when the user provides an Adanos API key.
+
+```python
+from financetoolkit import Toolkit
+
+toolkit = Toolkit(
+    ["AAPL", "MSFT"],
+    start_date="2024-01-01",
+    end_date="2024-01-31",
+)
+
+sentiment = toolkit.get_sentiment(
+    adanos_api_key="ADANOS_API_KEY",
+    source=["reddit", "news"],
+)
+```
+
 Generally, the functions return a DataFrame with a multi-index in which all tickers, in this case Apple and Microsoft, are presented. To keep things manageable for this README, I select just Apple but in essence the list of tickers can be endless as I've seen DataFrames with thousands of tickers. The filtering is done through `.loc['AAPL']` and `.xs('AAPL', level=1, axis=1)` based on whether it's fundamental data or historical data respectively.
 
 ### Obtaining Historical Data

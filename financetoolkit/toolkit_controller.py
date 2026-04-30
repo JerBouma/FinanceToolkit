@@ -10,7 +10,7 @@ from datetime import datetime, timedelta
 
 import pandas as pd
 
-from financetoolkit import currencies_model, helpers
+from financetoolkit import currencies_model, helpers, sentiment_model
 from financetoolkit.economics.economics_controller import Economics
 from financetoolkit.fixedincome.fixedincome_controller import FixedIncome
 from financetoolkit.fmp_model import (
@@ -496,6 +496,7 @@ class Toolkit:
         self._quarterly_historical_data: pd.DataFrame = pd.DataFrame()
         self._yearly_historical_data: pd.DataFrame = pd.DataFrame()
         self._historical_statistics: pd.DataFrame = pd.DataFrame()
+        self._sentiment: pd.DataFrame = pd.DataFrame()
 
         # Initialization of the Financial Statements and Normalization
         self._reverse_dates = reverse_dates
@@ -1259,6 +1260,66 @@ class Toolkit:
             quarterly=self._quarterly,
             rounding=self._rounding,
         )
+
+    def get_sentiment(
+        self,
+        adanos_api_key: str | None = None,
+        source: str | list[str] = "reddit",
+        base_url: str = "https://api.adanos.org",
+        timeout: int = 30,
+        rounding: int | None = None,
+    ) -> pd.DataFrame:
+        """
+        Retrieve Adanos market sentiment for the tickers in the Toolkit.
+
+        This functionality uses the Adanos Market Sentiment API to collect daily
+        sentiment data for the Toolkit tickers over the Toolkit start and end date.
+        The returned DataFrame is indexed by daily periods and contains multi-index
+        columns with the selected Adanos source and ticker.
+
+        Args:
+            adanos_api_key (str | None): Adanos API key. If omitted, the
+                ADANOS_API_KEY environment variable is used.
+            source (str | list[str]): One or more of reddit, x, news or
+                polymarket. Defaults to "reddit".
+            base_url (str): Base Adanos API URL. Defaults to
+                "https://api.adanos.org".
+            timeout (int): Requests timeout in seconds. Defaults to 30.
+            rounding (int | None): Number of decimals to round the result to.
+
+        Returns:
+            pd.DataFrame: Daily Adanos sentiment data for the Toolkit tickers.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            tickers=["AAPL", "MSFT"],
+            start_date="2024-01-01",
+            end_date="2024-01-31",
+        )
+
+        sentiment = toolkit.get_sentiment(
+            adanos_api_key="ADANOS_API_KEY",
+            source=["reddit", "news"],
+        )
+        ```
+        """
+        ticker_list = [ticker for ticker in self._tickers if ticker != "Portfolio"]
+
+        self._sentiment = sentiment_model.get_sentiment(
+            tickers=ticker_list,
+            api_key=adanos_api_key,
+            source=source,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            base_url=base_url,
+            timeout=timeout,
+        )
+
+        return self._sentiment.round(rounding if rounding else self._rounding)
 
     def get_profile(self, progress_bar: bool | None = None):
         """

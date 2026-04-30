@@ -112,40 +112,25 @@ corporate_bond_yields = companies.fixedincome.get_ice_bofa_effective_yield()
 unemployment_rates = companies.economics.get_unemployment_rate()
 ````
 
-### Working with Optional External Sentiment Data
+### Working with Optional Market Sentiment Data
 
-The Toolkit also supports custom external datasets through the `historical`,
-`balance`, `income`, and `cash` parameters. For market-neutral research and
-factor experiments, it can be useful to keep the FinanceToolkit price history
-and then join a second dataset as an extra signal layer.
-
-For example, the repository now includes an optional Adanos Market Sentiment API
-example in [`examples/external_datasets/adanos_market_sentiment.py`](examples/external_datasets/adanos_market_sentiment.py).
-It fetches daily `trend_history` sentiment data for multiple tickers and joins it
-onto the FinanceToolkit historical dataset so it can be used in downstream
-performance, technical, or custom factor workflows.
+The Toolkit can collect optional Adanos Market Sentiment API data directly for
+the tickers and date range configured on the `Toolkit` object. This keeps the
+sentiment data aligned with the rest of the Toolkit workflow while still only
+calling Adanos when the user provides an Adanos API key.
 
 ```python
 from financetoolkit import Toolkit
-from financetoolkit.utilities.external_dataset_model import (
-    combine_external_dataset,
-    get_adanos_sentiment,
-)
 
-toolkit = Toolkit(["AAPL", "MSFT"], benchmark_ticker="SPY", start_date="2024-01-01")
-historical_data = toolkit.get_historical_data()
-
-reddit_sentiment = get_adanos_sentiment(
+toolkit = Toolkit(
     ["AAPL", "MSFT"],
-    api_key="ADANOS_API_KEY",
-    source="reddit",
-    days=30,
+    start_date="2024-01-01",
+    end_date="2024-01-31",
 )
 
-sentiment_enriched_history = combine_external_dataset(
-    historical_data,
-    reddit_sentiment,
-    dataset_name="Adanos Reddit Sentiment",
+sentiment = toolkit.get_sentiment(
+    adanos_api_key="ADANOS_API_KEY",
+    source=["reddit", "news"],
 )
 ```
 

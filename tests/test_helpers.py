@@ -275,31 +275,15 @@ def test_enrich_historical_data_basic():
 
     # Check new columns
     assert "Return" in result.columns
-    assert "Volatility" in result.columns
     assert "Cumulative Return" in result.columns
+
+    # Volatility is intentionally no longer calculated here, it lives in the Risk
+    # module instead (risk_model.get_volatility)
+    assert "Volatility" not in result.columns
 
     # Check return calculation
     assert pd.isna(result["Return"].iloc[0])
     assert abs(result["Return"].iloc[1] - 0.1) < 0.01
-
-
-def test_enrich_historical_data_with_risk_free_rate():
-    """Test enrichment with risk-free rate."""
-    data = pd.DataFrame(
-        {"Adj Close": [100, 110, 121, 133]},
-        index=pd.date_range("2020-01-01", periods=4, freq="D"),
-    )
-
-    risk_free_rate = pd.DataFrame(
-        {"Adj Close": [0.01, 0.01, 0.01, 0.01]},
-        index=pd.date_range("2020-01-01", periods=4, freq="D"),
-    )
-
-    result = helpers.enrich_historical_data(data, risk_free_rate=risk_free_rate)
-
-    # Check excess return columns
-    assert "Excess Return" in result.columns
-    assert "Excess Volatility" in result.columns
 
 
 def test_enrich_historical_data_with_date_range():

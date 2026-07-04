@@ -1,7 +1,7 @@
-,Alpha,Alpha,Beta,Beta,CAPM,CAPM,Jensen's Alpha,Jensen's Alpha,Treynor Ratio,Treynor Ratio,Sharpe Ratio,Sharpe Ratio,Sortino Ratio,Sortino Ratio,Ulcer Index,Ulcer Index,M2 Ratio,M2 Ratio,Tracking Error,Tracking Error,Information Ratio,Information Ratio
-,AAPL,MSFT,AAPL,MSFT,AAPL,MSFT,AAPL,MSFT,AAPL,MSFT,AAPL,MSFT,AAPL,MSFT,AAPL,MSFT,AAPL,MSFT,AAPL,MSFT,AAPL,MSFT
-Date,,,,,,,,,,,,,,,,,,,,,,
-2019,,,,,,,,,,,,,,,,,,,,,,
-2020,inf,inf,,,,,,,,,,,,,,,-1.0,-1.0,,,,
-2021,-0.9075,-0.0186,0.1441,0.0109,0.7823,0.5827,-1.0477,-0.1037,-0.6441,0.2117,3.0698,2.7127,2.8551,2.5211,-0.2682,1.7935,-0.2433,1.5534,-0.2976,-0.3261,-0.801,0.1988
-2022,-2.3885,-1.4143,-0.0171,0.1015,-1.6614,-1.7348,-0.4692,-1.1905,-1.9293,-1.5681,0.5532,0.3978,0.3822,0.2572,-1.5089,-1.2503,-1.6424,-1.3731,-0.0254,0.2366,-2.0965,-1.4293
+,Alpha,Alpha,Beta,Beta,CAPM,CAPM,Jensen's Alpha,Jensen's Alpha,Treynor Ratio,Treynor Ratio,Sharpe Ratio,Sharpe Ratio,Sortino Ratio,Sortino Ratio,Ulcer Index,Ulcer Index,M2 Ratio,M2 Ratio,Tracking Error,Tracking Error,Information Ratio,Information Ratio,Returns,Returns,Returns,Excess Return,Excess Return,Excess Return
+,AAPL,MSFT,AAPL,MSFT,AAPL,MSFT,AAPL,MSFT,AAPL,MSFT,AAPL,MSFT,AAPL,MSFT,AAPL,MSFT,AAPL,MSFT,AAPL,MSFT,AAPL,MSFT,AAPL,MSFT,Benchmark,AAPL,MSFT,Benchmark
+Date,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+2019,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+2020,inf,inf,,,,,,,,,,,,,,,,,,,,,inf,inf,inf,-43.4375,-22.625,-10.0521
+2021,-0.9075,-0.0186,0.1441,0.0109,0.7823,0.5827,-1.0477,-0.1037,-0.6441,0.2117,3.0698,2.7127,2.8551,2.5211,-0.2682,1.7935,-0.2432,1.5532,-0.2976,-0.3261,-0.801,0.1988,-0.5799,0.2361,0.5689,-0.5936,0.2271,0.565
+2022,-2.3885,-1.4143,-0.0171,0.1015,-1.6614,-1.7348,-0.4692,-1.1905,-1.9293,-1.5681,0.5532,0.3978,0.3822,0.2572,-1.5089,-1.2503,-1.6425,-1.3731,-0.0254,0.2366,-2.0965,-1.4293,-1.762,-1.5351,-1.6325,-1.9139,-1.6271,-1.8103

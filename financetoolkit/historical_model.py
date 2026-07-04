@@ -9,7 +9,7 @@ import time
 import numpy as np
 import pandas as pd
 
-from financetoolkit import fmp_model, yfinance_model
+from financetoolkit import fmp_model, helpers, yfinance_model
 from financetoolkit.utilities import error_model, logger_model
 
 logger = logger_model.get_logger()
@@ -41,9 +41,7 @@ def get_historical_data(
     end: str | None = None,
     interval: str = "1d",
     return_column: str = "Adj Close",
-    risk_free_rate: pd.DataFrame = pd.DataFrame(),
     include_dividends: bool = True,
-    progress_bar: bool = True,
     fill_nan: bool = True,
     divide_ohlc_by: int | float | None = None,
     rounding: int | None = None,
@@ -74,14 +72,11 @@ def get_historical_data(
             in 'YYYY-MM-DD' format. Defaults to None.
         interval (str, optional): A string representing the interval to retrieve data for.
         return_column (str, optional): A string representing the column to use for return calculations.
-        risk_free_rate (pd.Series, optional): A pandas Series object containing the risk free rate data.
-        This is used to calculate the excess return and excess volatility. Defaults to pd.Series().
         include_dividends (bool, optional): A boolean representing whether to include dividends in the
         historical data. Defaults to True.
-        progress_bar (bool, optional): A boolean representing whether to show a progress bar. Defaults to True.
         fill_nan (bool, optional): A boolean representing whether to fill NaN values with the previous
         value. Defaults to True.
-        divide_ohlc_by (int, optional): An integer representing the value to divide the OHLC data by.
+        divide_ohlc_by (int, optional): An intege   r representing the value to divide the OHLC data by.
         This is useful if the OHLC data is presented in percentages or similar. Defaults to None.
         rounding (int, optional): The number of decimal places to round the data to. Defaults to None.
         sleep_timer (bool, optional): A boolean representing whether to introduce a sleep timer to prevent
@@ -110,7 +105,6 @@ def get_historical_data(
             "Adj Close",
             "Volume",
             "Return",
-            "Volatility",
             "Cumulative Return",
         ],
     )
@@ -155,7 +149,6 @@ def get_historical_data(
                     end=end,
                     interval=interval,
                     return_column=return_column,
-                    risk_free_rate=risk_free_rate,
                     include_dividends=include_dividends,
                     divide_ohlc_by=divide_ohlc_by,
                     sleep_timer=sleep_timer,
@@ -177,7 +170,6 @@ def get_historical_data(
                     end=end,
                     interval=interval,
                     return_column=return_column,
-                    risk_free_rate=risk_free_rate,
                     divide_ohlc_by=divide_ohlc_by,
                     fallback=attempted_fmp,
                 )
@@ -199,7 +191,7 @@ def get_historical_data(
     else:
         raise ValueError(f"Type for the tickers ({type(tickers)}) variable is invalid.")
 
-    logger.info("%s for %d tickers", log_message, len(ticker_list))
+    logger.info("%s for %d ticker(s)", log_message, len(ticker_list))
     historical_data_dict: dict[str, pd.DataFrame] = {}
     historical_data_error_dict: dict[str, pd.DataFrame] = {}
     fmp_tickers: list[str] = []
@@ -306,7 +298,6 @@ def convert_daily_to_other_period(
     daily_historical_data: pd.DataFrame,
     start: str | None = None,
     end: str | None = None,
-    risk_free_rate: pd.Series = pd.DataFrame(),
     rounding: int | None = None,
 ):
     """
@@ -318,9 +309,6 @@ def convert_daily_to_other_period(
 
     It calculates the following:
         - Return: The return for the given period.
-        - Volatility: The volatility for the given period.
-        - Excess Return: The excess return for the given period.
-        - Excess Volatility: The excess volatility for the given period.
         - Cumulative Return: The cumulative return for the given period.
 
     Args:
@@ -331,27 +319,13 @@ def convert_daily_to_other_period(
         The index of the DataFrame is the date of the data and the columns are a multi-index
         with the ticker symbol(s) as the first level and the OHLC data as the second level.
     """
-    period_translation = {
-        "weekly": "W",
-        "monthly": "M",
-        "quarterly": "Q",
-        "yearly": "Y",
-    }
-    volatility_window_translation = {
-        "weekly": 252 / 52,
-        "monthly": 252 / 12,
-        "quarterly": 252 / 4,
-        "yearly": 252,
-    }
-
     if period not in ["weekly", "monthly", "quarterly", "yearly"]:
         raise ValueError(
             f"Period {period} is not valid. It should be either "
             "weekly, monthly, quarterly or yearly."
         )
 
-    period_str = period_translation[period]
-    volatility_window = volatility_window_translation[period]
+    period_str = helpers.PERIOD_TRANSLATION[period]
 
     daily_historical_data.index.name = "Date"
     dates = daily_historical_data.index.asfreq(period_str)
@@ -375,21 +349,6 @@ def convert_daily_to_other_period(
             / period_historical_data["Adj Close"].shift()
             - 1
         ).replace([np.inf, -np.inf], np.nan)
-
-        # Volatility is calculated as the daily volatility multiplied by the
-        # square root of the number of trading days (252)
-        period_historical_data["Volatility"] = daily_historical_data["Return"].groupby(
-            dates
-        ).std() * np.sqrt(volatility_window)
-
-        if not risk_free_rate.empty and risk_free_rate["Adj Close"].sum() != 0:
-            period_historical_data["Excess Return"] = period_historical_data[
-                "Return"
-            ].sub(risk_free_rate["Adj Close"], axis=0)
-
-            period_historical_data["Excess Volatility"] = daily_historical_data[
-                "Excess Return"
-            ].groupby(dates).std() * np.sqrt(volatility_window)
 
     if "Cumulative Return" in period_historical_data:
         if start:
@@ -422,7 +381,6 @@ def convert_daily_to_other_period(
 def get_historical_statistics(
     tickers: list[str] | str,
     api_key: str | None = None,
-    progress_bar: bool = True,
     show_errors: bool = False,
     log_message: str = "Obtaining historical statistics",
     user_subscription: str = "Free",
@@ -449,7 +407,6 @@ def get_historical_statistics(
     Args:
         tickers (list of str): A list of one or more ticker symbols to retrieve data for.
         api_key (str, optional): The API key to use to retrieve the data from FinancialModelingPrep.
-        progress_bar (bool, optional): A boolean representing whether to show a progress bar. Defaults to True.
         show_errors (bool, optional): A boolean representing whether to show errors. Defaults to True.
         log_message (str, optional): A string representing the message to show in the log output.
 
@@ -485,7 +442,7 @@ def get_historical_statistics(
     else:
         raise ValueError(f"Type for the tickers ({type(tickers)}) variable is invalid.")
 
-    logger.info("%s for %d tickers", log_message, len(ticker_list))
+    logger.info("%s for %d ticker(s)", log_message, len(ticker_list))
     historical_statistics_dict: dict[str, pd.DataFrame] = {}
     no_data: list[str] = []
     threads = []

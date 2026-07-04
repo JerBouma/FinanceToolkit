@@ -10,7 +10,7 @@ from scipy.stats import linregress
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import mean_squared_error
 
-from financetoolkit.helpers import get_request
+from financetoolkit.helpers import PERIOD_TRANSLATION, get_request
 
 # This is meant for calculations in which a Multi Index exists. This is the case
 # when calculating a "within period" in which the first index represents the period
@@ -711,3 +711,84 @@ def get_compound_growth_rate(
         float: CGR value.
     """
     return (prices.iloc[-1] / prices.iloc[0]) ** (1 / periods) - 1
+
+
+def get_returns(
+    returns: pd.Series | pd.DataFrame, period: str, cumulative: bool = False
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculates the Return for a given period (weekly, monthly, quarterly or
+    yearly) based on daily historical returns.
+
+    The period Return is obtained by compounding the daily returns within each
+    period, following the formula:
+
+        - Period Return = ((1 + Return 1) * (1 + Return 2) * ... * (1 + Return N)) - 1
+
+    If cumulative is set to True, the period returns are compounded further into
+    a cumulative return, following the formula:
+
+        - Cumulative Return = (1 + Period Return 1) * (1 + Period Return 2) * ... * (1 + Period Return N)
+
+    Args:
+        returns (pd.Series | pd.DataFrame): A Series or Dataframe of daily returns.
+        period (str): The period to calculate the Return for. Can be weekly,
+        monthly, quarterly or yearly.
+        cumulative (bool, optional): Whether to return the cumulative return over
+        time instead of the discrete return per period. Defaults to False.
+
+    Returns:
+        pd.Series | pd.DataFrame: Return values with time as the index, resampled
+        to the given period. If cumulative is True, the cumulative return is
+        returned instead.
+    """
+    if period not in PERIOD_TRANSLATION:
+        raise ValueError(
+            f"Period {period} is not valid. It should be either "
+            "weekly, monthly, quarterly or yearly."
+        )
+
+    if not isinstance(returns, pd.Series | pd.DataFrame):
+        raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
+
+    period_str = PERIOD_TRANSLATION[period]
+    dates = returns.index.asfreq(period_str)
+
+    period_returns = (1 + returns).groupby(dates).prod() - 1
+
+    if cumulative:
+        return (1 + period_returns).cumprod()
+
+    return period_returns
+
+
+def get_excess_return(
+    returns: pd.Series | pd.DataFrame,
+    risk_free_rate: pd.Series,
+    cumulative: bool = False,
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculates the Excess Return, i.e. the return minus the risk free rate.
+
+    If cumulative is set to True, the excess returns are compounded into a
+    cumulative excess return, following the formula:
+
+        - Cumulative Excess Return = (1 + Excess Return 1) * (1 + Excess Return 2) * ... * (1 + Excess Return N)
+
+    Args:
+        returns (pd.Series | pd.DataFrame): A Series or Dataframe of returns.
+        risk_free_rate (pd.Series): A Series of the risk free rate, aligned to the
+        same period as the returns.
+        cumulative (bool, optional): Whether to return the cumulative excess return
+        over time instead of the discrete excess return per period. Defaults to False.
+
+    Returns:
+        pd.Series | pd.DataFrame: Excess Return values with time as the index. If
+        cumulative is True, the cumulative excess return is returned instead.
+    """
+    excess_return = returns.sub(risk_free_rate, axis=0)
+
+    if cumulative:
+        return (1 + excess_return).cumprod()
+
+    return excess_return

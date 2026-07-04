@@ -13,7 +13,7 @@ from financetoolkit.performance.helpers import (
     determine_within_historical_data,
     handle_errors,
 )
-from financetoolkit.risk.risk_model import get_ui
+from financetoolkit.risk.risk_model import get_ui, get_volatility
 from financetoolkit.utilities.logger_model import get_logger
 
 # Runtime errors are ignored on purpose given the nature of the calculations
@@ -105,6 +105,17 @@ class Performance:
 
         # Within Period Calculations
         daily_historical_data = self._historical_data["daily"].copy()
+
+        excess_return = performance_model.get_excess_return(
+            daily_historical_data["Return"], self._risk_free_rate_data["daily"]
+        )
+        excess_return.columns = pd.MultiIndex.from_product(
+            [["Excess Return"], excess_return.columns]
+        )
+        daily_historical_data = pd.concat(
+            [daily_historical_data, excess_return], axis=1
+        )
+
         intraday_historical_data = self._historical_data["intraday"].copy()
 
         daily_historical_data.index = pd.DatetimeIndex(
@@ -202,6 +213,14 @@ class Performance:
                 period=period, rounding=rounding, growth=growth, lag=lag
             ),
         }
+
+        if period != "daily":
+            performance_metrics["Returns"] = self.get_returns(
+                period=period, rounding=rounding, growth=growth, lag=lag
+            )
+            performance_metrics["Excess Return"] = self.get_excess_return(
+                period=period, rounding=rounding, growth=growth, lag=lag
+            )
 
         performance_metrics = pd.concat(performance_metrics, axis=1)
 
@@ -1258,20 +1277,20 @@ class Performance:
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
-        historical_data = (
-            self._within_historical_data[period]
-            if not rolling
-            else self._historical_data[period]
-        )
-        excess_return = historical_data.loc[:, "Excess Return"][
-            self._tickers_without_portfolio
-        ]
-
         if rolling:
+            period_returns = self._historical_data[period].loc[:, "Return"][
+                self._tickers_without_portfolio
+            ]
+            excess_return = performance_model.get_excess_return(
+                period_returns, self._risk_free_rate_data[period]
+            )
             sharpe_ratio = performance_model.get_rolling_sharpe_ratio(
                 excess_return, rolling
             )
         else:
+            excess_return = self._within_historical_data[period].loc[
+                :, "Excess Return"
+            ][self._tickers_without_portfolio]
             sharpe_ratio = performance_model.get_sharpe_ratio(excess_return)
 
         sharpe_ratio = sharpe_ratio.round(rounding if rounding else self._rounding).loc[
@@ -1423,14 +1442,20 @@ class Performance:
         """
 
         period = period if period else "quarterly" if self._quarterly else "yearly"
-        return_column = "Return" if period == "intraday" else "Excess Return"
 
         historical_data = self._within_historical_data[period]
         returns = historical_data.loc[:, "Return"][self._tickers_without_portfolio]
-        historical_data_within_period = self._historical_data[period]
-        excess_return = historical_data_within_period.loc[:, return_column][
+
+        period_returns = self._historical_data[period].loc[:, "Return"][
             self._tickers_without_portfolio
         ]
+        excess_return = (
+            period_returns
+            if period == "intraday"
+            else performance_model.get_excess_return(
+                period_returns, self._risk_free_rate_data[period]
+            )
+        )
 
         ulcer_index = get_ui(returns, rolling)
 
@@ -1511,9 +1536,10 @@ class Performance:
         period_returns = historical_period_data.loc[:, "Return"][
             self._tickers_without_portfolio
         ]
-        period_standard_deviation = historical_period_data.loc[:, "Volatility"][
+        daily_returns = self._historical_data["daily"].loc[:, "Return"][
             self._tickers_without_portfolio
         ]
+        period_standard_deviation = get_volatility(daily_returns, period)
         risk_free_rate = self._risk_free_rate_data[period]
 
         m2_ratio = performance_model.get_m2_ratio(
@@ -1799,3 +1825,163 @@ class Performance:
         )
 
         return compound_growth_rate
+
+    @handle_portfolio
+    @handle_errors
+    def get_returns(
+        self,
+        period: str | None = None,
+        cumulative: bool = False,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+    ):
+        """
+        Calculate the Return of an investment portfolio or asset for a given period
+        based on the daily historical returns.
+
+        The period Return is obtained by compounding the daily returns within each
+        period, following the formula:
+
+            - Period Return = ((1 + Return 1) * (1 + Return 2) * ... * (1 + Return N)) - 1
+
+        If cumulative is set to True, the period returns are compounded further into
+        a cumulative return over time instead. The cumulative return is always rebased
+        to start at 1 at the beginning of the selected date range.
+
+        Also known as: periodic return.
+
+        Args:
+            period (str, optional): The data frequency for returns (weekly, monthly,
+            quarterly, or yearly). Defaults to "yearly".
+            cumulative (bool, optional): Whether to return the cumulative return over time
+            instead of the discrete return per period. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the Return values over time. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+
+        Returns:
+            pd.Series: Return values with time as the index.
+
+        Notes:
+        - The method retrieves the daily historical return data and calculates the Return for
+        the specified `period` for each asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of Return values using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AMZN", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.performance.get_returns(period="yearly")
+        ```
+        """
+        period = period if period else "quarterly" if self._quarterly else "yearly"
+
+        if period not in ["weekly", "monthly", "quarterly", "yearly"]:
+            raise ValueError("Period must be weekly, monthly, quarterly, or yearly.")
+
+        returns = self._historical_data["daily"]["Return"]
+
+        period_returns = performance_model.get_returns(
+            returns, period, cumulative=cumulative
+        ).loc[self._start_date : self._end_date]
+
+        if cumulative:
+            period_returns = period_returns / period_returns.iloc[0]
+
+        period_returns = period_returns.round(rounding if rounding else self._rounding)
+        period_returns = period_returns.dropna(how="all", axis=0)
+
+        if growth:
+            return calculate_growth(
+                period_returns,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
+                axis="index",
+            )
+
+        return period_returns
+
+    @handle_portfolio
+    @handle_errors
+    def get_excess_return(
+        self,
+        period: str | None = None,
+        cumulative: bool = False,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+    ):
+        """
+        Calculate the Excess Return of an investment portfolio or asset for a given period
+        based on the daily historical returns.
+
+        The Excess Return is defined as the period Return minus the risk free rate.
+
+        If cumulative is set to True, the excess returns are compounded further into
+        a cumulative excess return over time instead. The cumulative excess return is
+        always rebased to start at 1 at the beginning of the selected date range.
+
+        Also known as: return minus the risk-free rate.
+
+        Args:
+            period (str, optional): The data frequency for returns (weekly, monthly,
+            quarterly, or yearly). Defaults to "yearly".
+            cumulative (bool, optional): Whether to return the cumulative excess return over time
+            instead of the discrete excess return per period. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the Excess Return values over time.
+            Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+
+        Returns:
+            pd.Series: Excess Return values with time as the index.
+
+        Notes:
+        - The method retrieves the daily historical return data and calculates the Excess Return for
+        the specified `period` for each asset in the Toolkit instance.
+        - The risk-free rate is often represented by the return of a risk-free investment, such as a Treasury bond.
+        - If `growth` is set to True, the method calculates the growth of Excess Return values using the
+        specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AMZN", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.performance.get_excess_return(period="yearly")
+        ```
+        """
+        period = period if period else "quarterly" if self._quarterly else "yearly"
+
+        if period not in ["weekly", "monthly", "quarterly", "yearly"]:
+            raise ValueError("Period must be weekly, monthly, quarterly, or yearly.")
+
+        returns = self._historical_data["daily"]["Return"]
+        period_returns = performance_model.get_returns(returns, period)
+        risk_free_rate = self._risk_free_rate_data[period]
+
+        excess_return = performance_model.get_excess_return(
+            period_returns, risk_free_rate, cumulative=cumulative
+        ).loc[self._start_date : self._end_date]
+
+        if cumulative:
+            excess_return = excess_return / excess_return.iloc[0]
+
+        excess_return = excess_return.round(rounding if rounding else self._rounding)
+        excess_return = excess_return.dropna(how="all", axis=0)
+
+        if growth:
+            return calculate_growth(
+                excess_return,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
+                axis="index",
+            )
+
+        return excess_return

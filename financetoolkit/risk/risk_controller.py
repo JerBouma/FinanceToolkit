@@ -37,9 +37,12 @@ class Risk:
         self,
         tickers: str | list[str],
         historical_data: pd.DataFrame = pd.DataFrame(),
+        risk_free_rate_data: pd.DataFrame = pd.DataFrame(),
         intraday_period: str | None = None,
         quarterly: bool = False,
         rounding: int | None = 4,
+        start_date: str | None = None,
+        end_date: str | None = None,
     ):
         """
         Initializes the Risk Controller Class.
@@ -48,10 +51,14 @@ class Risk:
             tickers (str | list[str]): The tickers to use for the Toolkit instance.
             historical_data (pd.DataFrame, optional): The historical data containing all periods.
                 Defaults to pd.DataFrame().
+            risk_free_rate_data (pd.DataFrame, optional): The risk free rate data to use for the
+                Excess Volatility calculations. Defaults to pd.DataFrame().
             intraday_period (str | None, optional): The intraday period used for within-period calculations.
                 Defaults to None.
             quarterly (bool, optional): Whether to use quarterly data. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            start_date (str | None, optional): The start date to use for the calculations. Defaults to None.
+            end_date (str | None, optional): The end date to use for the calculations. Defaults to None.
 
         As an example:
 
@@ -81,9 +88,12 @@ class Risk:
         | 2023   |  1.8549 |  1.8238 |
         """
         self._historical_data = historical_data
+        self._risk_free_rate_data = risk_free_rate_data
         self._tickers = tickers
         self._quarterly = quarterly
         self._rounding: int | None = rounding
+        self._start_date: str | None = start_date
+        self._end_date: str | None = end_date
         self._portfolio_weights: dict | None = None
 
         # Within Return Calculations
@@ -179,6 +189,17 @@ class Risk:
                 period=period, rounding=rounding, growth=growth, lag=lag
             ),
         }
+
+        if period != "daily":
+            risk_metrics["Variance"] = self.get_variance(
+                period=period, rounding=rounding, growth=growth, lag=lag
+            )
+            risk_metrics["Volatility"] = self.get_volatility(
+                period=period, rounding=rounding, growth=growth, lag=lag
+            )
+            risk_metrics["Excess Volatility"] = self.get_excess_volatility(
+                period=period, rounding=rounding, growth=growth, lag=lag
+            )
 
         risk_metrics = pd.concat(risk_metrics, axis=1)
 
@@ -1104,3 +1125,222 @@ class Risk:
             )
 
         return kurtosis.round(rounding if rounding else self._rounding)
+
+    @handle_portfolio
+    @handle_errors
+    def get_variance(
+        self,
+        period: str | None = None,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+    ):
+        """
+        Calculate the Variance of an investment portfolio or asset's returns for a
+        given period based on the daily historical returns.
+
+        Variance measures the spread or dispersion of returns around the mean. A higher
+        Variance indicates more variability in the returns, while a lower Variance suggests
+        that the returns are closer to the mean.
+
+        The daily Variance is scaled to the given period by multiplying it with the number
+        of trading days within that period (e.g. 252 / 52 for weekly).
+
+        Also known as: dispersion, spread.
+
+        Args:
+            period (str, optional): The data frequency for returns (weekly, monthly,
+            quarterly, or yearly). Defaults to "yearly".
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the Variance values over time. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+
+        Returns:
+            pd.Series: Variance values with time as the index.
+
+        Notes:
+        - The method retrieves the daily historical return data and calculates the Variance for
+        the specified `period` for each asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of Variance values using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AMZN", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.risk.get_variance(period="yearly")
+        ```
+        """
+        period = period if period else "quarterly" if self._quarterly else "yearly"
+
+        if period not in ["weekly", "monthly", "quarterly", "yearly"]:
+            raise ValueError("Period must be weekly, monthly, quarterly, or yearly.")
+
+        returns = self._historical_data["daily"]["Return"]
+
+        variance = risk_model.get_variance(returns, period)
+
+        variance = variance.round(rounding if rounding else self._rounding).loc[
+            self._start_date : self._end_date
+        ]
+
+        variance = variance.dropna(how="all", axis=0)
+
+        if growth:
+            return calculate_growth(
+                variance,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
+                axis="index",
+            )
+
+        return variance
+
+    @handle_portfolio
+    @handle_errors
+    def get_volatility(
+        self,
+        period: str | None = None,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+    ):
+        """
+        Calculate the Volatility of an investment portfolio or asset's returns for a
+        given period based on the daily historical returns.
+
+        Volatility measures the amount of dispersion or variability in returns. It is the
+        square root of the Variance. A higher Volatility indicates greater variability, while
+        a lower Volatility suggests that returns are closer to the mean.
+
+        The daily Volatility is scaled to the given period by multiplying it with the square
+        root of the number of trading days within that period (e.g. SQRT(252 / 52) for weekly).
+
+        Also known as: standard deviation of returns.
+
+        Args:
+            period (str, optional): The data frequency for returns (weekly, monthly,
+            quarterly, or yearly). Defaults to "yearly".
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the Volatility values over time.
+            Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+
+        Returns:
+            pd.Series: Volatility values with time as the index.
+
+        Notes:
+        - The method retrieves the daily historical return data and calculates the Volatility for
+        the specified `period` for each asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of Volatility values using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AMZN", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.risk.get_volatility(period="yearly")
+        ```
+        """
+        period = period if period else "quarterly" if self._quarterly else "yearly"
+
+        if period not in ["weekly", "monthly", "quarterly", "yearly"]:
+            raise ValueError("Period must be weekly, monthly, quarterly, or yearly.")
+
+        returns = self._historical_data["daily"]["Return"]
+
+        volatility = risk_model.get_volatility(returns, period)
+
+        volatility = volatility.round(rounding if rounding else self._rounding).loc[
+            self._start_date : self._end_date
+        ]
+
+        volatility = volatility.dropna(how="all", axis=0)
+
+        if growth:
+            return calculate_growth(
+                volatility,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
+                axis="index",
+            )
+
+        return volatility
+
+    @handle_portfolio
+    @handle_errors
+    def get_excess_volatility(
+        self,
+        period: str | None = None,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+    ):
+        """
+        Calculate the Excess Volatility of an investment portfolio or asset's returns for a
+        given period based on the daily historical returns.
+
+        Excess Volatility is the Volatility of the Excess Return, i.e. the daily return minus
+        the risk free rate, scaled to the given period in the same way as the Volatility.
+
+        Also known as: standard deviation of excess returns.
+
+        Args:
+            period (str, optional): The data frequency for returns (weekly, monthly,
+            quarterly, or yearly). Defaults to "yearly".
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the Excess Volatility values
+            over time. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+
+        Returns:
+            pd.Series: Excess Volatility values with time as the index.
+
+        Notes:
+        - The method retrieves the daily historical return data and calculates the Excess Volatility for
+        the specified `period` for each asset in the Toolkit instance.
+        - The risk-free rate is often represented by the return of a risk-free investment, such as a Treasury bond.
+        - If `growth` is set to True, the method calculates the growth of Excess Volatility values using
+        the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AMZN", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.risk.get_excess_volatility(period="yearly")
+        ```
+        """
+        period = period if period else "quarterly" if self._quarterly else "yearly"
+
+        if period not in ["weekly", "monthly", "quarterly", "yearly"]:
+            raise ValueError("Period must be weekly, monthly, quarterly, or yearly.")
+
+        returns = self._historical_data["daily"]["Return"]
+        risk_free_rate = self._risk_free_rate_data["daily"]
+
+        excess_volatility = risk_model.get_excess_volatility(
+            returns, risk_free_rate, period
+        )
+
+        excess_volatility = excess_volatility.round(
+            rounding if rounding else self._rounding
+        ).loc[self._start_date : self._end_date]
+
+        excess_volatility = excess_volatility.dropna(how="all", axis=0)
+
+        if growth:
+            return calculate_growth(
+                excess_volatility,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
+                axis="index",
+            )
+
+        return excess_volatility

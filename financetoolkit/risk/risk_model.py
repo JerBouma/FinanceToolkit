@@ -3,6 +3,8 @@
 import numpy as np
 import pandas as pd
 
+from financetoolkit.helpers import PERIOD_TRANSLATION, VOLATILITY_WINDOW_TRANSLATION
+
 ALPHA_CONSTRAINT = 0.5
 
 # This is meant for calculations in which a Multi Index exists. This is the case
@@ -166,3 +168,102 @@ def get_kurtosis(
         return (((returns - returns.mean()) / returns.std(ddof=0)) ** 4).mean()
 
     raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
+
+
+def get_variance(
+    returns: pd.Series | pd.DataFrame, period: str
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculates the Variance of returns for a given period (weekly, monthly,
+    quarterly or yearly) based on daily historical returns.
+
+    The daily Variance is scaled to the given period by multiplying it with the
+    number of trading days within that period (e.g. 252 / 52 for weekly).
+
+    Args:
+        returns (pd.Series | pd.DataFrame): A Series or Dataframe of daily returns.
+        period (str): The period to calculate the Variance for. Can be weekly,
+        monthly, quarterly or yearly.
+
+    Returns:
+        pd.Series | pd.DataFrame: Variance values with time as the index, resampled
+        to the given period.
+    """
+    if period not in PERIOD_TRANSLATION:
+        raise ValueError(
+            f"Period {period} is not valid. It should be either "
+            "weekly, monthly, quarterly or yearly."
+        )
+
+    if not isinstance(returns, pd.Series | pd.DataFrame):
+        raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
+
+    period_str = PERIOD_TRANSLATION[period]
+    volatility_window = VOLATILITY_WINDOW_TRANSLATION[period]
+    dates = returns.index.asfreq(period_str)
+
+    return returns.groupby(dates).var() * volatility_window
+
+
+def get_volatility(
+    returns: pd.Series | pd.DataFrame, period: str
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculates the Volatility of returns for a given period (weekly, monthly,
+    quarterly or yearly) based on daily historical returns.
+
+    The daily Volatility is scaled to the given period by multiplying it with the
+    square root of the number of trading days within that period
+    (e.g. SQRT(252 / 52) for weekly).
+
+    Args:
+        returns (pd.Series | pd.DataFrame): A Series or Dataframe of daily returns.
+        period (str): The period to calculate the Volatility for. Can be weekly,
+        monthly, quarterly or yearly.
+
+    Returns:
+        pd.Series | pd.DataFrame: Volatility values with time as the index, resampled
+        to the given period.
+    """
+    if period not in PERIOD_TRANSLATION:
+        raise ValueError(
+            f"Period {period} is not valid. It should be either "
+            "weekly, monthly, quarterly or yearly."
+        )
+
+    if not isinstance(returns, pd.Series | pd.DataFrame):
+        raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
+
+    period_str = PERIOD_TRANSLATION[period]
+    volatility_window = VOLATILITY_WINDOW_TRANSLATION[period]
+    dates = returns.index.asfreq(period_str)
+
+    return returns.groupby(dates).std() * np.sqrt(volatility_window)
+
+
+def get_excess_volatility(
+    returns: pd.Series | pd.DataFrame,
+    risk_free_rate: pd.Series,
+    period: str,
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculates the Excess Volatility of returns for a given period (weekly, monthly,
+    quarterly or yearly) based on daily historical returns.
+
+    The Excess Volatility is the Volatility of the Excess Return, i.e. the daily return
+    minus the risk free rate, scaled to the given period in the same way as the Volatility
+    (see get_volatility).
+
+    Args:
+        returns (pd.Series | pd.DataFrame): A Series or Dataframe of daily returns.
+        risk_free_rate (pd.Series): A Series of the daily risk free rate.
+        period (str): The period to calculate the Excess Volatility for. Can be weekly,
+        monthly, quarterly or yearly.
+
+    Returns:
+        pd.Series | pd.DataFrame: Excess Volatility values with time as the index, resampled
+        to the given period.
+    """
+    excess_returns = returns.sub(risk_free_rate, axis=0)
+
+    return get_volatility(excess_returns, period)

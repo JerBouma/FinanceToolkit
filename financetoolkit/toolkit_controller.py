@@ -660,11 +660,11 @@ class Toolkit:
             logger.info("Obtaining financial statements")
             for statement in empty_data:
                 if statement == "Balance Sheet Statement":
-                    self.get_balance_sheet_statement(progress_bar=False)
+                    self.get_balance_sheet_statement()
                 if statement == "Income Statement":
-                    self.get_income_statement(progress_bar=False)
+                    self.get_income_statement()
                 if statement == "Cash Flow Statement":
-                    self.get_cash_flow_statement(progress_bar=False)
+                    self.get_cash_flow_statement()
 
         if (
             self._balance_sheet_statement.empty
@@ -778,11 +778,11 @@ class Toolkit:
             logger.info("Obtaining financial statements")
             for statement in empty_data:
                 if statement == "Balance Sheet Statement":
-                    self.get_balance_sheet_statement(progress_bar=False)
+                    self.get_balance_sheet_statement()
                 if statement == "Income Statement":
-                    self.get_income_statement(progress_bar=False)
+                    self.get_income_statement()
                 if statement == "Cash Flow Statement":
-                    self.get_cash_flow_statement(progress_bar=False)
+                    self.get_cash_flow_statement()
 
         if (
             self._balance_sheet_statement.empty
@@ -1162,14 +1162,25 @@ class Toolkit:
             "yearly": self._yearly_historical_data,
         }
 
+        risk_free_rate_data = {
+            "daily": self._daily_risk_free_rate["Adj Close"],
+            "weekly": self._weekly_risk_free_rate["Adj Close"],
+            "monthly": self._monthly_risk_free_rate["Adj Close"],
+            "quarterly": self._quarterly_risk_free_rate["Adj Close"],
+            "yearly": self._yearly_risk_free_rate["Adj Close"],
+        }
+
         risk = Risk(
             tickers=(
                 tickers + ["Portfolio"] if "Portfolio" in self._tickers else tickers
             ),
             historical_data=historical_data,
+            risk_free_rate_data=risk_free_rate_data,
             intraday_period=self._intraday_period,
             quarterly=self._quarterly,
             rounding=self._rounding,
+            start_date=self._start_date,
+            end_date=self._end_date,
         )
 
         if self._portfolio_weights:
@@ -1277,7 +1288,7 @@ class Toolkit:
             rounding=self._rounding,
         )
 
-    def get_profile(self, progress_bar: bool | None = None):
+    def get_profile(self):
         """
         Obtain the profile of the specified tickers. These include important metrics
         such as the beta, market capitalization, currency, isin, industry, and ipo date
@@ -1286,7 +1297,6 @@ class Toolkit:
         Also known as: company description, sector, industry, CEO, employee count.
 
         Args:
-            progress_bar (bool, optional): Whether to show a progress bar. Defaults to None.
 
         As an example:
 
@@ -1347,9 +1357,6 @@ class Toolkit:
             self._profile, self._invalid_tickers = _get_profile(
                 tickers=self._tickers,
                 api_key=self._api_key,
-                progress_bar=(
-                    progress_bar if progress_bar is not None else self._progress_bar
-                ),
                 user_subscription=self._fmp_plan,
             )
 
@@ -1369,7 +1376,7 @@ class Toolkit:
 
         return self._profile
 
-    def get_quote(self, progress_bar: bool | None = None):
+    def get_quote(self):
         """
         Get the quote of the specified tickers. These include important metrics
         such as the price, changes, day low, day high, year low, year high, market
@@ -1381,7 +1388,6 @@ class Toolkit:
         Also known as: real-time price, current stock price, live quote.
 
         Args:
-            progress_bar (bool, optional): Whether to show a progress bar. Defaults to None.
 
         As an example:
 
@@ -1430,9 +1436,6 @@ class Toolkit:
             self._quote, self._invalid_tickers = _get_quote(
                 tickers=self._tickers,
                 api_key=self._api_key,
-                progress_bar=(
-                    progress_bar if progress_bar is not None else self._progress_bar
-                ),
                 user_subscription=self._fmp_plan,
             )
 
@@ -1452,7 +1455,7 @@ class Toolkit:
 
         return self._quote
 
-    def get_rating(self, progress_bar: bool | None = None):
+    def get_rating(self):
         """
         Get the rating of the specified tickers. These scores and recommendations are categorized
         as follows:
@@ -1468,7 +1471,6 @@ class Toolkit:
         Also known as: analyst consensus, buy sell hold recommendation.
 
         Args:
-            progress_bar (bool, optional): Whether to show a progress bar. Defaults to None.
 
         Raises:
             ValueError: If an API key is not defined for FinancialModelingPrep.
@@ -1513,9 +1515,6 @@ class Toolkit:
             self._rating, self._invalid_tickers = _get_rating(
                 tickers=self._tickers,
                 api_key=self._api_key,
-                progress_bar=(
-                    progress_bar if progress_bar is not None else self._progress_bar
-                ),
                 user_subscription=self._fmp_plan,
             )
 
@@ -1542,7 +1541,6 @@ class Toolkit:
         growth: bool = False,
         lag: int | list[int] = 1,
         show_columns: list[str] | None = None,
-        progress_bar: bool | None = None,
     ):
         """
         Obtain analyst estimates regarding revenues, EBITDA, EBIT, Net Income
@@ -1557,7 +1555,6 @@ class Toolkit:
             rounding (int | None, optional): Defines the number of decimal places to round the data to. Defaults to None.
             growth (bool, optional): Defines whether to return the growth of the data. Defaults to False.
             lag (int | list[int], optional): Defines the number of periods to lag the growth data by. Defaults to 1.
-            progress_bar (bool | None, optional): Whether to show a progress bar. Defaults to None.
 
         Returns:
             pandas.DataFrame: The analyst estimates for the specified tickers.
@@ -1620,9 +1617,6 @@ class Toolkit:
                 start_date=self._start_date,
                 rounding=rounding if rounding else self._rounding,
                 sleep_timer=self._sleep_timer,
-                progress_bar=(
-                    progress_bar if progress_bar is not None else self._progress_bar
-                ),
                 user_subscription=self._fmp_plan,
             )
 
@@ -1664,7 +1658,6 @@ class Toolkit:
         overwrite: bool = False,
         rounding: int | None = None,
         show_columns: list[str] | None = None,
-        progress_bar: bool | None = None,
     ):
         """
         Obtain Earnings Calendars for any range of companies. You have the option to
@@ -1732,9 +1725,6 @@ class Toolkit:
                 end_date=self._end_date,
                 actual_dates=actual_dates,
                 sleep_timer=self._sleep_timer,
-                progress_bar=(
-                    progress_bar if progress_bar is not None else self._progress_bar
-                ),
                 user_subscription=self._fmp_plan,
             )
 
@@ -1767,7 +1757,6 @@ class Toolkit:
         self,
         overwrite: bool = False,
         show_columns: list[str] | None = None,
-        progress_bar: bool | None = None,
     ):
         """
         Obtain revenue by geographic segmentation (e.g. United States, Europe, Asia).
@@ -1778,7 +1767,6 @@ class Toolkit:
 
         Args:
             overwrite (bool): Defines whether to overwrite the existing data.
-            progress_bar (bool, optional): Whether to show a progress bar. Defaults to None.
 
         Returns:
             pd.DataFrame: The revenue by geographic segmentation for the specified tickers.
@@ -1829,9 +1817,6 @@ class Toolkit:
                 start_date=self._start_date,
                 end_date=self._end_date,
                 sleep_timer=self._sleep_timer,
-                progress_bar=(
-                    progress_bar if progress_bar is not None else self._progress_bar
-                ),
                 user_subscription=self._fmp_plan,
             )
 
@@ -1863,7 +1848,6 @@ class Toolkit:
         self,
         overwrite: bool = False,
         show_columns: list[str] | None = None,
-        progress_bar: bool | None = None,
     ):
         """
         Obtain revenue by product segmentation (e.g. iPad, Advertisement, Windows).
@@ -1874,7 +1858,6 @@ class Toolkit:
 
         Args:
             overwrite (bool): Defines whether to overwrite the existing data.
-            progress_bar (bool, optional): Whether to show a progress bar. Defaults to None.
 
         Returns:
             pd.DataFrame: The revenue by product segmentation for the specified tickers.
@@ -1929,9 +1912,6 @@ class Toolkit:
                 start_date=self._start_date,
                 end_date=self._end_date,
                 sleep_timer=self._sleep_timer,
-                progress_bar=(
-                    progress_bar if progress_bar is not None else self._progress_bar
-                ),
                 user_subscription=self._fmp_plan,
             )
 
@@ -1967,7 +1947,6 @@ class Toolkit:
         rounding: int | None = None,
         show_ticker_seperation: bool = True,
         show_columns: list[str] | None = None,
-        progress_bar: bool | None = None,
     ):
         """
         Returns historical data for the specified tickers. This contains the following columns:
@@ -1979,12 +1958,12 @@ class Toolkit:
             - Volume: The volume for the period.
             - Dividends: The dividends for the period.
             - Return: The return for the period.
-            - Volatility: The volatility for the period.
-            - Excess Return: The excess return for the period. This is defined as the return minus
-            the a predefined risk free rate. Only calculated when excess_return is True.
-            - Excess Volatility: The excess volatility for the period. This is defined as the volatility
-            of the excess return. Only calculated when excess_return is True.
             - Cumulative Return: The cumulative return for the period.
+
+        Volatility, Excess Return and Excess Volatility are not included here. These are available
+        as dedicated calculations in the Risk module (e.g. toolkit.risk.get_volatility,
+        toolkit.risk.get_excess_volatility) and the Performance module (e.g.
+        toolkit.performance.get_excess_return) instead.
 
         If a benchmark ticker is selected, it also calculates the benchmark ticker together with the results.
         By default this is set to "SPY" (S&P 500 Index) but can be any ticker. This is relevant for calculations
@@ -2015,10 +1994,9 @@ class Toolkit:
             show_ticker_seperation (bool, optional): A boolean representing whether to show which tickers
             acquired data from FinancialModelingPrep and which tickers acquired data from YahooFinance.
             show_columns (list[str], optional): A list of columns to include in the output. Valid columns
-            are Open, High, Low, Close, Adj Close, Volume, Dividends, Return, Volatility, Excess Return,
-            Excess Volatility and Cumulative Return. Invalid column names are logged as warnings. If all
+            are Open, High, Low, Close, Adj Close, Volume, Dividends, Return and Cumulative Return.
+            Invalid column names are logged as warnings. If all
             provided columns are invalid the full dataset is returned. Defaults to None (all columns).
-            progress_bar (bool, optional): Whether to show a progress bar. Defaults to None.
 
         Raises:
             ValueError: If an invalid value is specified for period.
@@ -2038,19 +2016,19 @@ class Toolkit:
 
         Which returns:
 
-        | Date   |     Open |     High |      Low |    Close |   Adj Close |      Volume |   Dividends |     Return |   Volatility |   Excess Return |   Excess Volatility |   Cumulative Return |
-        |:-------|---------:|---------:|---------:|---------:|------------:|------------:|------------:|-----------:|-------------:|----------------:|--------------------:|--------------------:|
-        | 2013   |  19.7918 |  20.0457 |  19.7857 |  20.0364 |     17.5889 | 2.23084e+08 |    0.108929 |  0         |     0.240641 |       0         |            0.244248 |             1       |
-        | 2014   |  28.205  |  28.2825 |  27.5525 |  27.595  |     24.734  | 1.65614e+08 |    0.461429 |  0.406225  |     0.216574 |       0.384525  |            0.219536 |             1.40623 |
-        | 2015   |  26.7525 |  26.7575 |  26.205  |  26.315  |     23.9886 | 1.63649e+08 |    0.5075   | -0.0301373 |     0.267373 |      -0.0528273 |            0.269845 |             1.36385 |
-        | 2016   |  29.1625 |  29.3    |  28.8575 |  28.955  |     26.9824 | 1.22345e+08 |    0.5575   |  0.124804  |     0.233383 |       0.100344  |            0.240215 |             1.53406 |
-        | 2017   |  42.63   |  42.6475 |  42.305  |  42.3075 |     40.0593 | 1.04e+08    |    0.615    |  0.484644  |     0.176058 |       0.460594  |            0.17468  |             2.27753 |
-        | 2018   |  39.6325 |  39.84   |  39.12   |  39.435  |     37.9    | 1.40014e+08 |    0.705    | -0.0539019 |     0.287421 |      -0.0807619 |            0.289905 |             2.15477 |
-        | 2019   |  72.4825 |  73.42   |  72.38   |  73.4125 |     71.615  | 1.00806e+08 |    0.76     |  0.889578  |     0.261384 |       0.870388  |            0.269945 |             4.0716  |
-        | 2020   | 134.08   | 134.74   | 131.72   | 132.69   |    130.559  | 9.91166e+07 |    0.8075   |  0.823067  |     0.466497 |       0.813897  |            0.470743 |             7.4228  |
-        | 2021   | 178.09   | 179.23   | 177.26   | 177.57   |    175.795  | 6.40623e+07 |    0.865    |  0.346482  |     0.251019 |       0.331362  |            0.251429 |             9.99467 |
-        | 2022   | 128.41   | 129.95   | 127.43   | 129.93   |    129.378  | 7.70342e+07 |    0.91     | -0.264042  |     0.356964 |      -0.302832  |            0.377293 |             7.35566 |
-        | 2023   | 187.84   | 188.51   | 187.68   | 188.108  |    188.108  | 4.72009e+06 |    0.71     |  0.453941  |     0.213359 |       0.412901  |            0.22327  |            10.6947  |
+        | Date   |     Open |     High |      Low |    Close |   Adj Close |      Volume |   Dividends |     Return |   Cumulative Return |
+        |:-------|---------:|---------:|---------:|---------:|------------:|------------:|------------:|-----------:|---------------------:|
+        | 2013   |  19.7918 |  20.0457 |  19.7857 |  20.0364 |     17.5889 | 2.23084e+08 |    0.108929 |  0         |             1       |
+        | 2014   |  28.205  |  28.2825 |  27.5525 |  27.595  |     24.734  | 1.65614e+08 |    0.461429 |  0.406225  |             1.40623 |
+        | 2015   |  26.7525 |  26.7575 |  26.205  |  26.315  |     23.9886 | 1.63649e+08 |    0.5075   | -0.0301373 |             1.36385 |
+        | 2016   |  29.1625 |  29.3    |  28.8575 |  28.955  |     26.9824 | 1.22345e+08 |    0.5575   |  0.124804  |             1.53406 |
+        | 2017   |  42.63   |  42.6475 |  42.305  |  42.3075 |     40.0593 | 1.04e+08    |    0.615    |  0.484644  |             2.27753 |
+        | 2018   |  39.6325 |  39.84   |  39.12   |  39.435  |     37.9    | 1.40014e+08 |    0.705    | -0.0539019 |             2.15477 |
+        | 2019   |  72.4825 |  73.42   |  72.38   |  73.4125 |     71.615  | 1.00806e+08 |    0.76     |  0.889578  |             4.0716  |
+        | 2020   | 134.08   | 134.74   | 131.72   | 132.69   |    130.559  | 9.91166e+07 |    0.8075   |  0.823067  |             7.4228  |
+        | 2021   | 178.09   | 179.23   | 177.26   | 177.57   |    175.795  | 6.40623e+07 |    0.865    |  0.346482  |             9.99467 |
+        | 2022   | 128.41   | 129.95   | 127.43   | 129.93   |    129.378  | 7.70342e+07 |    0.91     | -0.264042  |             7.35566 |
+        | 2023   | 187.84   | 188.51   | 187.68   | 188.108  |    188.108  | 4.72009e+06 |    0.71     |  0.453941  |            10.6947  |
         """
         if enforce_source is not None and enforce_source not in [
             "FinancialModelingPrep",
@@ -2084,11 +2062,7 @@ class Toolkit:
                 end=self._end_date,
                 interval="1d",
                 return_column=return_column,
-                risk_free_rate=self._daily_risk_free_rate,
                 include_dividends=include_dividends,
-                progress_bar=(
-                    progress_bar if progress_bar is not None else self._progress_bar
-                ),
                 fill_nan=fill_nan,
                 rounding=rounding if rounding else self._rounding,
                 sleep_timer=self._sleep_timer,
@@ -2136,7 +2110,6 @@ class Toolkit:
                 daily_historical_data=self._daily_historical_data,
                 start=self._start_date,
                 end=self._end_date,
-                risk_free_rate=self._weekly_risk_free_rate,
                 rounding=rounding if rounding else self._rounding,
             )
 
@@ -2156,7 +2129,6 @@ class Toolkit:
                 daily_historical_data=self._daily_historical_data,
                 start=self._start_date,
                 end=self._end_date,
-                risk_free_rate=self._monthly_risk_free_rate,
                 rounding=rounding if rounding else self._rounding,
             )
 
@@ -2176,7 +2148,6 @@ class Toolkit:
                 daily_historical_data=self._daily_historical_data,
                 start=self._start_date,
                 end=self._end_date,
-                risk_free_rate=self._quarterly_risk_free_rate,
                 rounding=rounding if rounding else self._rounding,
             )
 
@@ -2196,7 +2167,6 @@ class Toolkit:
                 daily_historical_data=self._daily_historical_data,
                 start=self._start_date,
                 end=self._end_date,
-                risk_free_rate=self._yearly_risk_free_rate,
                 rounding=rounding if rounding else self._rounding,
             )
 
@@ -2245,7 +2215,6 @@ class Toolkit:
         fill_nan: bool = True,
         rounding: int | None = None,
         show_columns: list[str] | None = None,
-        progress_bar: bool | None = None,
     ):
         """
         Returns intraday historical data for the specified tickers. This contains the following columns:
@@ -2255,8 +2224,10 @@ class Toolkit:
             - Close: The closing price for the period.
             - Volume: The volume for the period.
             - Return: The return for the period.
-            - Volatility: The volatility for the period.
             - Cumulative Return: The cumulative return for the period.
+
+        Volatility is not included here. This is available as a dedicated calculation in the
+        Risk module instead (e.g. toolkit.risk.get_volatility).
 
         Keep in mind that this data is available for a shorter period. This means that the start date is
         ignored if the difference between the start and end date is bigger than the maximum period.
@@ -2276,7 +2247,6 @@ class Toolkit:
             return_column (str, optional): The column to use for the return calculation. Defaults to "Close".
             fill_nan (bool, optional): Defines whether to forward fill NaN values. Defaults to True.
             rounding (int | None, optional): Defines the number of decimal places to round the data to. Defaults to None.
-            progress_bar (bool | None, optional): Whether to show a progress bar. Defaults to None.
 
         Returns:
             pandas.DataFrame: The intraday data for the specified tickers.
@@ -2293,23 +2263,23 @@ class Toolkit:
 
         Which returns:
 
-        | date             |   Open |   High |     Low |   Close |   Volume |   Return |   Volatility |   Cumulative Return |
-        |:-----------------|-------:|-------:|--------:|--------:|---------:|---------:|-------------:|--------------------:|
-        | 2024-01-19 15:45 | 397.64 | 397.88 | 397.63  | 397.88  |    49202 |   0.0006 |       0.0005 |              1.0266 |
-        | 2024-01-19 15:46 | 397.86 | 397.93 | 397.788 | 397.82  |    68913 |  -0.0002 |       0.0005 |              1.0264 |
-        | 2024-01-19 15:47 | 397.81 | 397.97 | 397.76  | 397.78  |    62605 |  -0.0001 |       0.0005 |              1.0263 |
-        | 2024-01-19 15:48 | 397.78 | 397.85 | 397.675 | 397.845 |    62146 |   0.0002 |       0.0005 |              1.0265 |
-        | 2024-01-19 15:49 | 397.85 | 397.97 | 397.8   | 397.94  |    72700 |   0.0002 |       0.0005 |              1.0267 |
-        | 2024-01-19 15:50 | 397.92 | 398.27 | 397.9   | 398.04  |   140754 |   0.0003 |       0.0005 |              1.027  |
-        | 2024-01-19 15:51 | 398.04 | 398.15 | 397.96  | 398     |   122208 |  -0.0001 |       0.0005 |              1.0269 |
-        | 2024-01-19 15:52 | 397.99 | 398.26 | 397.98  | 398.05  |    83546 |   0.0001 |       0.0005 |              1.027  |
-        | 2024-01-19 15:53 | 398.04 | 398.12 | 397.98  | 398.09  |    85098 |   0.0001 |       0.0005 |              1.0271 |
-        | 2024-01-19 15:54 | 398.1  | 398.52 | 398.03  | 398.45  |   187358 |   0.0009 |       0.0005 |              1.028  |
-        | 2024-01-19 15:55 | 398.45 | 398.62 | 398.25  | 398.335 |   237902 |  -0.0003 |       0.0005 |              1.0278 |
-        | 2024-01-19 15:56 | 398.33 | 398.44 | 398.3   | 398.415 |   149157 |   0.0002 |       0.0005 |              1.028  |
-        | 2024-01-19 15:57 | 398.42 | 398.5  | 398.29  | 398.43  |   181074 |   0      |       0.0005 |              1.028  |
-        | 2024-01-19 15:58 | 398.46 | 398.47 | 398.29  | 398.35  |   278802 |  -0.0002 |       0.0005 |              1.0278 |
-        | 2024-01-19 15:59 | 398.35 | 398.66 | 398.22  | 398.66  |   586344 |   0.0008 |       0.0005 |              1.0286 |
+        | date             |   Open |   High |     Low |   Close |   Volume |   Return |   Cumulative Return |
+        |:-----------------|-------:|-------:|--------:|--------:|---------:|---------:|--------------------:|
+        | 2024-01-19 15:45 | 397.64 | 397.88 | 397.63  | 397.88  |    49202 |   0.0006 |              1.0266 |
+        | 2024-01-19 15:46 | 397.86 | 397.93 | 397.788 | 397.82  |    68913 |  -0.0002 |              1.0264 |
+        | 2024-01-19 15:47 | 397.81 | 397.97 | 397.76  | 397.78  |    62605 |  -0.0001 |              1.0263 |
+        | 2024-01-19 15:48 | 397.78 | 397.85 | 397.675 | 397.845 |    62146 |   0.0002 |              1.0265 |
+        | 2024-01-19 15:49 | 397.85 | 397.97 | 397.8   | 397.94  |    72700 |   0.0002 |              1.0267 |
+        | 2024-01-19 15:50 | 397.92 | 398.27 | 397.9   | 398.04  |   140754 |   0.0003 |              1.027  |
+        | 2024-01-19 15:51 | 398.04 | 398.15 | 397.96  | 398     |   122208 |  -0.0001 |              1.0269 |
+        | 2024-01-19 15:52 | 397.99 | 398.26 | 397.98  | 398.05  |    83546 |   0.0001 |              1.027  |
+        | 2024-01-19 15:53 | 398.04 | 398.12 | 397.98  | 398.09  |    85098 |   0.0001 |              1.0271 |
+        | 2024-01-19 15:54 | 398.1  | 398.52 | 398.03  | 398.45  |   187358 |   0.0009 |              1.028  |
+        | 2024-01-19 15:55 | 398.45 | 398.62 | 398.25  | 398.335 |   237902 |  -0.0003 |              1.0278 |
+        | 2024-01-19 15:56 | 398.33 | 398.44 | 398.3   | 398.415 |   149157 |   0.0002 |              1.028  |
+        | 2024-01-19 15:57 | 398.42 | 398.5  | 398.29  | 398.43  |   181074 |   0      |              1.028  |
+        | 2024-01-19 15:58 | 398.46 | 398.47 | 398.29  | 398.35  |   278802 |  -0.0002 |              1.0278 |
+        | 2024-01-19 15:59 | 398.35 | 398.66 | 398.22  | 398.66  |   586344 |   0.0008 |              1.0286 |
         """
         if not self._api_key:
             logger.error(
@@ -2341,11 +2311,7 @@ class Toolkit:
                 end=self._end_date,
                 interval=period,
                 return_column=return_column,
-                risk_free_rate=pd.DataFrame(),
                 include_dividends=False,
-                progress_bar=(
-                    progress_bar if progress_bar is not None else self._progress_bar
-                ),
                 fill_nan=fill_nan,
                 rounding=rounding if rounding else self._rounding,
                 sleep_timer=self._sleep_timer,
@@ -2397,7 +2363,6 @@ class Toolkit:
         overwrite: bool = False,
         rounding: int | None = None,
         show_columns: list[str] | None = None,
-        progress_bar: bool | None = None,
     ):
         """
         Obtain Dividend Calendars for any range of companies. It includes the following columns:
@@ -2416,7 +2381,6 @@ class Toolkit:
         Args:
             overwrite (bool): Defines whether to overwrite the existing data.
             rounding (int): Defines the number of decimal places to round the data to.
-            progress_bar (bool, optional): Whether to show a progress bar. Defaults to None.
 
         Returns:
             pd.DataFrame: The earnings calendar for the specified tickers.
@@ -2472,9 +2436,6 @@ class Toolkit:
                 start_date=self._start_date,
                 end_date=self._end_date,
                 sleep_timer=self._sleep_timer,
-                progress_bar=(
-                    progress_bar if progress_bar is not None else self._progress_bar
-                ),
                 user_subscription=self._fmp_plan,
             )
 
@@ -2514,7 +2475,6 @@ class Toolkit:
         overwrite: bool = False,
         rounding: int | None = None,
         show_columns: list[str] | None = None,
-        progress_bar: bool | None = None,
     ):
         """
         ESG scores, which stands for Environmental, Social, and Governance scores, are a crucial
@@ -2600,9 +2560,6 @@ class Toolkit:
                 start_date=self._start_date,
                 end_date=self._end_date,
                 sleep_timer=self._sleep_timer,
-                progress_bar=(
-                    progress_bar if progress_bar is not None else self._progress_bar
-                ),
                 user_subscription=self._fmp_plan,
             )
 
@@ -2623,7 +2580,7 @@ class Toolkit:
 
         return esg_scores
 
-    def get_historical_statistics(self, progress_bar: bool | None = None):
+    def get_historical_statistics(self):
         """
         Retrieve statistics about each ticker's historical data. This is especially useful to understand why certain
         tickers might fluctuate more than others as it could be due to local regulations or the currency the instrument
@@ -2640,9 +2597,6 @@ class Toolkit:
             - Exchange Timezone Name: The name of the timezone the instrument is traded in.
 
         Also known as: key statistics over time, historical key metrics.
-
-        Args:
-            progress_bar (bool): Defines whether to show a progress bar. Defaults to None.
 
         Returns:
             pd.DataFrame: A DataFrame containing the statistics for each ticker.
@@ -2676,9 +2630,6 @@ class Toolkit:
             self._historical_statistics, _ = _get_historical_statistics(
                 tickers=self._tickers,
                 api_key=self._api_key if self._api_key is not None else None,
-                progress_bar=(
-                    progress_bar if progress_bar is not None else self._progress_bar
-                ),
             )
 
         if len(self._tickers) == 1 and not self._historical_statistics.empty:
@@ -2802,7 +2753,6 @@ class Toolkit:
                 ),
                 start=self._start_date,
                 end=self._end_date,
-                progress_bar=False,
                 divide_ohlc_by=divide_ohlc_by,
                 rounding=rounding if rounding else self._rounding,
                 show_errors=show_errors,
@@ -2901,7 +2851,6 @@ class Toolkit:
         overwrite: bool = False,
         rounding: int | None = None,
         show_ticker_seperation: bool = True,
-        progress_bar: bool | None = None,
     ):
         """
         This functionality looks at the exchange rates between the currency of the historical data and the currency
@@ -2956,32 +2905,24 @@ class Toolkit:
 
         Which returns:
 
-        | Date    |   Open |   High |    Low |   Close |   Adj Close |   Volume |   Return |   Volatility |   Cumulative Return |
-        |:--------|-------:|-------:|-------:|--------:|------------:|---------:|---------:|-------------:|--------------------:|
-        | 2023-03 | 1.0905 | 1.0926 | 1.0861 |  1.0905 |      1.0905 |        0 |   0.0277 |       0.0298 |              0.7896 |
-        | 2023-04 | 1.1011 | 1.1037 | 1.0963 |  1.0969 |      1.0969 |   131812 |   0.0059 |       0.0278 |              0.7943 |
-        | 2023-05 | 1.0693 | 1.0771 | 1.066  |  1.076  |      1.0733 |   162069 |  -0.0215 |       0.0143 |              0.7772 |
-        | 2023-06 | 1.09   | 1.09   | 1.08   |  1.09   |      1.0868 |        0 |   0.0126 |       0.0179 |              0.787  |
-        | 2023-07 | 1.0996 | 1.102  | 1.0952 |  1.1007 |      1.1024 |   183278 |   0.0144 |       0.0225 |              0.7983 |
-        | 2023-08 | 1.0842 | 1.0882 | 1.077  |  1.0796 |      1.09   |   171695 |  -0.0112 |       0.0219 |              0.7893 |
-        | 2023-09 | 1.06   | 1.06   | 1.06   |  1.06   |      1.06   |        0 |  -0.0275 |       0.0264 |              0.7676 |
-        | 2023-10 | 1.0614 | 1.0674 | 1.0556 |  1.0578 |      1.0615 |   184667 |   0.0014 |       0.0232 |              0.7686 |
-        | 2023-11 | 1.0973 | 1.0984 | 1.0878 |  1.0892 |      1.0974 |   173646 |   0.0338 |       0.0202 |              0.7946 |
-        | 2023-12 | 1.088  | 1.0898 | 1.0848 |  1.0871 |      1.0871 |    90494 |  -0.0094 |       0.0173 |              0.7872 |
+        | Date    |   Open |   High |    Low |   Close |   Adj Close |   Volume |   Return |   Cumulative Return |
+        |:--------|-------:|-------:|-------:|--------:|------------:|---------:|---------:|--------------------:|
+        | 2023-03 | 1.0905 | 1.0926 | 1.0861 |  1.0905 |      1.0905 |        0 |   0.0277 |              0.7896 |
+        | 2023-04 | 1.1011 | 1.1037 | 1.0963 |  1.0969 |      1.0969 |   131812 |   0.0059 |              0.7943 |
+        | 2023-05 | 1.0693 | 1.0771 | 1.066  |  1.076  |      1.0733 |   162069 |  -0.0215 |              0.7772 |
+        | 2023-06 | 1.09   | 1.09   | 1.08   |  1.09   |      1.0868 |        0 |   0.0126 |              0.787  |
+        | 2023-07 | 1.0996 | 1.102  | 1.0952 |  1.1007 |      1.1024 |   183278 |   0.0144 |              0.7983 |
+        | 2023-08 | 1.0842 | 1.0882 | 1.077  |  1.0796 |      1.09   |   171695 |  -0.0112 |              0.7893 |
+        | 2023-09 | 1.06   | 1.06   | 1.06   |  1.06   |      1.06   |        0 |  -0.0275 |              0.7676 |
+        | 2023-10 | 1.0614 | 1.0674 | 1.0556 |  1.0578 |      1.0615 |   184667 |   0.0014 |              0.7686 |
+        | 2023-11 | 1.0973 | 1.0984 | 1.0878 |  1.0892 |      1.0974 |   173646 |   0.0338 |              0.7946 |
+        | 2023-12 | 1.088  | 1.0898 | 1.0848 |  1.0871 |      1.0871 |    90494 |  -0.0094 |              0.7872 |
         """
         if not self._currencies or overwrite:
             if self._historical_statistics.empty:
-                self.get_historical_statistics(
-                    progress_bar=(
-                        progress_bar if progress_bar is not None else self._progress_bar
-                    )
-                )
+                self.get_historical_statistics()
             if self._statistics_statement.empty:
-                self.get_statistics_statement(
-                    progress_bar=(
-                        progress_bar if progress_bar is not None else self._progress_bar
-                    )
-                )
+                self.get_statistics_statement()
 
             if not self._statistics_statement.empty:
                 (
@@ -3013,11 +2954,7 @@ class Toolkit:
                     end=self._end_date,
                     interval="1d",
                     return_column=return_column,
-                    risk_free_rate=pd.DataFrame(),
                     include_dividends=False,
-                    progress_bar=(
-                        progress_bar if progress_bar is not None else self._progress_bar
-                    ),
                     fill_nan=fill_nan,
                     rounding=rounding if rounding else self._rounding,
                     sleep_timer=self._sleep_timer,
@@ -3045,7 +2982,6 @@ class Toolkit:
                             ("Adj Close", "USDUSD=X"),
                             ("Volume", "USDUSD=X"),
                             ("Return", "USDUSD=X"),
-                            ("Volatility", "USDUSD=X"),
                             ("Cumulative Return", "USDUSD=X"),
                         ]
                     ),
@@ -3082,7 +3018,6 @@ class Toolkit:
                 daily_historical_data=self._daily_exchange_rate_data,
                 start=self._start_date,
                 end=self._end_date,
-                risk_free_rate=pd.DataFrame(),
                 rounding=rounding if rounding else self._rounding,
             )
 
@@ -3102,7 +3037,6 @@ class Toolkit:
                 daily_historical_data=self._daily_exchange_rate_data,
                 start=self._start_date,
                 end=self._end_date,
-                risk_free_rate=pd.DataFrame(),
                 rounding=rounding if rounding else self._rounding,
             )
 
@@ -3122,7 +3056,6 @@ class Toolkit:
                 daily_historical_data=self._daily_exchange_rate_data,
                 start=self._start_date,
                 end=self._end_date,
-                risk_free_rate=pd.DataFrame(),
                 rounding=rounding if rounding else self._rounding,
             )
 
@@ -3142,7 +3075,6 @@ class Toolkit:
                 daily_historical_data=self._daily_exchange_rate_data,
                 start=self._start_date,
                 end=self._end_date,
-                risk_free_rate=pd.DataFrame(),
                 rounding=rounding if rounding else self._rounding,
             )
 
@@ -3165,7 +3097,6 @@ class Toolkit:
         growth: bool = False,
         lag: int | list[int] = 1,
         show_columns: list[str] | None = None,
-        progress_bar: bool | None = None,
     ):
         """
         Retrieves the balance sheet statement data for the specified tickers. The balance sheet statement
@@ -3194,7 +3125,6 @@ class Toolkit:
             growth (bool): Defines whether to return the growth of the data.
             lag (int | str): Defines the number of periods to lag the growth data by.
             E.g. when selecting 4 with quarterly data, the TTM is calculated.
-            progress_bar (bool): Defines whether to show a progress bar.
 
         Returns:
             pd.DataFrame: A pandas DataFrame with the retrieved balance sheet statement data.
@@ -3308,9 +3238,6 @@ class Toolkit:
                 fmp_statistics_format=self._fmp_statistics_statement_generic,
                 yf_statement_format=self._yf_balance_sheet_statement_generic,
                 sleep_timer=self._sleep_timer,
-                progress_bar=(
-                    progress_bar if progress_bar is not None else self._progress_bar
-                ),
                 user_subscription=self._fmp_plan,
                 enforce_source=(
                     enforce_source
@@ -3323,9 +3250,6 @@ class Toolkit:
             if convert_currency:
                 self.get_exchange_rates(
                     period="quarterly" if self._quarterly else "yearly",
-                    progress_bar=(
-                        progress_bar if progress_bar is not None else self._progress_bar
-                    ),
                 )
 
                 if not self._statement_currencies.empty:
@@ -3394,7 +3318,6 @@ class Toolkit:
         lag: int | list[int] = 1,
         trailing: int | None = None,
         show_columns: list[str] | None = None,
-        progress_bar: bool | None = None,
     ):
         """
         Retrieves the income statement data for the specified tickers. The income statement is a financial
@@ -3415,7 +3338,6 @@ class Toolkit:
             lag (int | str): Defines the number of periods to lag the growth data by.
             trailing (int): Defines whether to select a trailing period.
             E.g. when selecting 4 with quarterly data, the TTM is calculated.
-            progress_bar (bool): Defines whether to show a progress bar.
 
         Returns:
             pd.DataFrame: A pandas DataFrame with the retrieved income statement data.
@@ -3513,9 +3435,6 @@ class Toolkit:
                 fmp_statistics_format=self._fmp_statistics_statement_generic,
                 yf_statement_format=self._yf_income_statement_generic,
                 sleep_timer=self._sleep_timer,
-                progress_bar=(
-                    progress_bar if progress_bar is not None else self._progress_bar
-                ),
                 user_subscription=self._fmp_plan,
                 enforce_source=(
                     enforce_source
@@ -3528,9 +3447,6 @@ class Toolkit:
             if convert_currency:
                 self.get_exchange_rates(
                     period="quarterly" if self._quarterly else "yearly",
-                    progress_bar=(
-                        progress_bar if progress_bar is not None else self._progress_bar
-                    ),
                 )
                 if not self._statement_currencies.empty:
                     self._income_statement = currencies_model.convert_currencies(
@@ -3621,7 +3537,6 @@ class Toolkit:
         lag: int | list[int] = 1,
         trailing: int | None = None,
         show_columns: list[str] | None = None,
-        progress_bar: bool | None = None,
     ):
         """
         Retrieves the cash flow statement data for the specified tickers. The cash flow statement is a financial
@@ -3641,7 +3556,6 @@ class Toolkit:
             lag (int | str): Defines the number of periods to lag the growth data by.
             trailing (int): Defines whether to select a trailing period.
             E.g. when selecting 4 with quarterly data, the TTM is calculated.
-            progress_bar (bool): Defines whether to show a progress bar.
 
         Returns:
             pd.DataFrame: A pandas DataFrame with the retrieved cash flow statement data.
@@ -3741,9 +3655,6 @@ class Toolkit:
                 fmp_statistics_format=self._fmp_statistics_statement_generic,
                 yf_statement_format=self._yf_cash_flow_statement_generic,
                 sleep_timer=self._sleep_timer,
-                progress_bar=(
-                    progress_bar if progress_bar is not None else self._progress_bar
-                ),
                 user_subscription=self._fmp_plan,
                 enforce_source=(
                     enforce_source
@@ -3756,9 +3667,6 @@ class Toolkit:
             if convert_currency:
                 self.get_exchange_rates(
                     period="quarterly" if self._quarterly else "yearly",
-                    progress_bar=(
-                        progress_bar if progress_bar is not None else self._progress_bar
-                    ),
                 )
 
                 if not self._statement_currencies.empty:
@@ -3823,7 +3731,6 @@ class Toolkit:
         self,
         enforce_source: str | None = None,
         overwrite: bool = False,
-        progress_bar: bool | None = None,
         rounding: int | None = None,
         show_columns: list[str] | None = None,
     ):
@@ -3839,7 +3746,6 @@ class Toolkit:
             enforce_source (bool): Defines whether to enforce the source of the data. This can be
                 either "FinancialModelingPrep" or "YahooFinance". Defaults to None.
             overwrite (bool): Defines whether to overwrite the existing data.
-            progress_bar (bool): Defines whether to show a progress bar.
             rounding (int): Defines the number of decimal places to round the data to.
 
         Returns:
@@ -3908,9 +3814,6 @@ class Toolkit:
                 fmp_statistics_format=self._fmp_statistics_statement_generic,
                 yf_statement_format=self._yf_balance_sheet_statement_generic,
                 sleep_timer=self._sleep_timer,
-                progress_bar=(
-                    progress_bar if progress_bar is not None else self._progress_bar
-                ),
                 user_subscription=self._fmp_plan,
                 enforce_source=(
                     self._enforce_source

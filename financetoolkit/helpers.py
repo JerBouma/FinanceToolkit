@@ -28,6 +28,27 @@ HEADERS = {
     "Connection": "keep-alive",
 }
 
+# This is used to translate a period to the corresponding Pandas frequency string
+# which is required to resample daily historical data to a lower frequency. This is
+# shared across historical_model.py, risk_model.py and performance_model.py so that
+# every period-based calculation (Return, Variance, Volatility, ...) agrees on the
+# same frequency mapping.
+PERIOD_TRANSLATION = {
+    "weekly": "W",
+    "monthly": "M",
+    "quarterly": "Q",
+    "yearly": "Y",
+}
+
+# This is used to scale a daily Variance or Volatility to the corresponding
+# period by multiplying it with the number of trading days within that period.
+VOLATILITY_WINDOW_TRANSLATION = {
+    "weekly": 252 / 52,
+    "monthly": 252 / 12,
+    "quarterly": 252 / 4,
+    "yearly": 252,
+}
+
 
 def get_request(
     url: str,
@@ -247,26 +268,23 @@ def enrich_historical_data(
     start: str | None = None,
     end: str | None = None,
     return_column: str = "Adj Close",
-    risk_free_rate: pd.DataFrame = pd.DataFrame(),
 ):
     """
     Retrieves enriched historical stock data for the given ticker(s) from Yahoo! Finance API for
     a specified period. It calculates the following:
 
         - Return: The return for the given period.
-        - Volatility: The volatility for the given period.
-        - Excess Return: The excess return for the given period.
-        - Excess Volatility: The excess volatility for the given period.
         - Cumulative Return: The cumulative return for the given period.
 
-    The return is calculated as the percentage change in the given return column and the excess return
-    is calculated as the percentage change in the given return column minus the risk free rate.
-
-    The volatility is calculated as the standard deviation of the daily returns and the excess volatility
-    is calculated as the standard deviation of the excess returns.
+    The return is calculated as the percentage change in the given return column.
 
     The cumulative return is calculated as the cumulative product of the percentage change in the given
     return column.
+
+    Note that Volatility, Excess Return and Excess Volatility are intentionally not calculated here
+    anymore. These are available as dedicated, reusable calculations in the Risk module
+    (e.g. risk_model.get_volatility, risk_model.get_excess_volatility) and the Performance module
+    (e.g. performance_model.get_excess_return) instead.
 
     Args:
         historical_data (pd.DataFrame): A pandas DataFrame object containing the historical stock data
@@ -276,34 +294,12 @@ def enrich_historical_data(
         end (str, optional): A string representing the end date of the period to retrieve data for
             in 'YYYY-MM-DD' format. Defaults to None.
         return_column (str, optional): A string representing the column to use for return calculations.
-        risk_free_rate (pd.Series, optional): A pandas Series object containing the risk free rate data.
-        This is used to calculate the excess return and excess volatility. Defaults to pd.Series().
-
 
     Returns:
         pd.DataFrame: A pandas DataFrame object containing the enriched historical stock data for the given ticker(s).
     """
 
     historical_data["Return"] = historical_data[return_column].ffill().pct_change()
-
-    historical_data["Volatility"] = historical_data.loc[start:end, "Return"].std()
-
-    if not risk_free_rate.empty:
-        try:
-            historical_data["Excess Return"] = historical_data["Return"].sub(
-                risk_free_rate["Adj Close"]
-            )
-
-            historical_data["Excess Volatility"] = historical_data.loc[
-                start:end, "Excess Return"
-            ].std()
-        except ValueError as error:
-            logger.error(
-                "Not able to calculate excess return and excess volatility due to %s",
-                error,
-            )
-            historical_data["Excess Return"] = 0
-            historical_data["Excess Volatility"] = 0
 
     historical_data["Cumulative Return"] = 1
 

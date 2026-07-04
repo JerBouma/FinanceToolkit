@@ -149,8 +149,10 @@ def create_portfolio_overview(
         }
     )
 
-    benchmark_volatility = volatilities.loc["Benchmark"] * np.sqrt(252)
-    asset_volatilities = volatilities.drop("Benchmark") * np.sqrt(252)
+    # volatilities is expected to already be annualized (see risk_model.get_volatility),
+    # this function no longer performs the annualization itself.
+    benchmark_volatility = volatilities.loc["Benchmark"]
+    asset_volatilities = volatilities.drop("Benchmark")
     asset_volatilities = asset_volatilities.reindex(portfolio_overview_grouped.index)
     betas = betas.reindex(portfolio_overview_grouped.index)
 

@@ -33,7 +33,6 @@ def collect_financial_statements(
     fiscal_year_adjustments: dict | None = None,
     yf_statement_format: pd.DataFrame = pd.DataFrame(),
     sleep_timer: bool = True,
-    progress_bar: bool = True,
     user_subscription: str = "Free",
     enforce_source: str | None = None,
 ) -> pd.DataFrame:
@@ -61,7 +60,6 @@ def collect_financial_statements(
                                             statistics data.
                                              Defaults to an empty DataFrame.
         sleep_timer (bool): Whether to pause execution temporarily if the FMP API rate limit is reached. Defaults to True.
-        progress_bar (bool): Whether to display a progress bar during data retrieval. Defaults to True.
         user_subscription (str): The FMP subscription plan ("Free", "Starter", etc.). Defaults to "Free".
         enforce_source (str): Specifies the data source to use ("FinancialModelingPrep" or "YahooFinance").
                               If "FinancialModelingPrep", only FMP is used. If "YahooFinance", only Yahoo Finance is used.

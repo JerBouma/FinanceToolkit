@@ -7,6 +7,7 @@ from importlib import resources
 import pandas as pd
 
 from financetoolkit.portfolio import helpers, overview_model, portfolio_model
+from financetoolkit.risk import risk_model
 from financetoolkit.toolkit_controller import Toolkit
 from financetoolkit.utilities import logger_model
 
@@ -551,10 +552,11 @@ class Portfolio:
         - Volume: the volume of the benchmark over time.
         - Dividends: the dividends of the benchmark over time.
         - Returns: the returns of the benchmark over time.
-        - Volatility: the volatility of the benchmark over the whole period.
-        - Excess Return: the excess return (return minus risk free rate) of the benchmark over time.
-        - Excess Volatility: the excess volatility (return minus risk free rate) of the benchmark over time.
         - Cumulative Return: the cumulative return of the benchmark over time.
+
+        Volatility, Excess Return and Excess Volatility are no longer included here. These are
+        available via the Risk module (e.g. toolkit.risk.get_volatility) and the Performance
+        module (e.g. toolkit.performance.get_excess_return) instead.
 
         This method retrieves historical benchmark data (daily, weekly, monthly, quarterly, and yearly)
         for the portfolio, based on a specified benchmark ticker or a mapping of portfolio tickers to
@@ -599,18 +601,18 @@ class Portfolio:
 
         Which returns:
 
-        | Date       |    Open |    High |     Low |   Close |   Adj Close |      Volume |   Dividends |   Return |   Volatility |   Excess Return |   Excess Volatility |   Cumulative Return |
-        |:-----------|--------:|--------:|--------:|--------:|------------:|------------:|------------:|---------:|-------------:|----------------:|--------------------:|--------------------:|
-        | 2025-02-14 | 6115.52 | 6127.47 | 6107.62 | 6114.63 |     6114.63 | 4.33519e+09 |           0 |  -0.0001 |       0.0122 |         -0.0448 |               0.018 |              4.2419 |
-        | 2025-02-18 | 6121.6  | 6129.63 | 6099.51 | 6129.58 |     6129.58 | 4.68498e+09 |           0 |   0.0024 |       0.0122 |         -0.043  |               0.018 |              4.2523 |
-        | 2025-02-19 | 6117.76 | 6147.43 | 6111.15 | 6144.15 |     6144.15 | 4.56233e+09 |           0 |   0.0024 |       0.0122 |         -0.0429 |               0.018 |              4.2624 |
-        | 2025-02-20 | 6134.5  | 6134.5  | 6084.59 | 6117.52 |     6117.52 | 4.81369e+09 |           0 |  -0.0043 |       0.0122 |         -0.0493 |               0.018 |              4.2439 |
-        | 2025-02-21 | 6114.1  | 6114.82 | 6008.56 | 6013.13 |     6013.13 | 5.43456e+09 |           0 |  -0.0171 |       0.0122 |         -0.0613 |               0.018 |              4.1715 |
-        | 2025-02-24 | 6026.69 | 6043.65 | 5977.83 | 5983.25 |     5983.25 | 4.99012e+09 |           0 |  -0.005  |       0.0122 |         -0.0489 |               0.018 |              4.1508 |
-        | 2025-02-25 | 5982.73 | 5992.65 | 5908.49 | 5955.25 |     5955.25 | 5.37469e+09 |           0 |  -0.0047 |       0.0122 |         -0.0477 |               0.018 |              4.1314 |
-        | 2025-02-26 | 5970.87 | 6009.82 | 5932.69 | 5956.06 |     5956.06 | 4.86958e+09 |           0 |   0.0001 |       0.0122 |         -0.0424 |               0.018 |              4.1319 |
-        | 2025-02-27 | 5981.88 | 5993.69 | 5858.78 | 5861.57 |     5861.57 | 5.05768e+09 |           0 |  -0.0159 |       0.0122 |         -0.0587 |               0.018 |              4.0664 |
-        | 2025-02-28 | 5856.74 | 5959.4  | 5837.66 | 5954.5  |     5954.5  | 6.44114e+09 |           0 |   0.0159 |       0.0122 |         -0.0264 |               0.018 |              4.1309 |
+        | Date       |    Open |    High |     Low |   Close |   Adj Close |      Volume |   Dividends |   Return |   Cumulative Return |
+        |:-----------|--------:|--------:|--------:|--------:|------------:|------------:|------------:|---------:|---------------------:|
+        | 2025-02-14 | 6115.52 | 6127.47 | 6107.62 | 6114.63 |     6114.63 | 4.33519e+09 |           0 |  -0.0001 |               4.2419 |
+        | 2025-02-18 | 6121.6  | 6129.63 | 6099.51 | 6129.58 |     6129.58 | 4.68498e+09 |           0 |   0.0024 |               4.2523 |
+        | 2025-02-19 | 6117.76 | 6147.43 | 6111.15 | 6144.15 |     6144.15 | 4.56233e+09 |           0 |   0.0024 |               4.2624 |
+        | 2025-02-20 | 6134.5  | 6134.5  | 6084.59 | 6117.52 |     6117.52 | 4.81369e+09 |           0 |  -0.0043 |               4.2439 |
+        | 2025-02-21 | 6114.1  | 6114.82 | 6008.56 | 6013.13 |     6013.13 | 5.43456e+09 |           0 |  -0.0171 |               4.1715 |
+        | 2025-02-24 | 6026.69 | 6043.65 | 5977.83 | 5983.25 |     5983.25 | 4.99012e+09 |           0 |  -0.005  |               4.1508 |
+        | 2025-02-25 | 5982.73 | 5992.65 | 5908.49 | 5955.25 |     5955.25 | 5.37469e+09 |           0 |  -0.0047 |               4.1314 |
+        | 2025-02-26 | 5970.87 | 6009.82 | 5932.69 | 5956.06 |     5956.06 | 4.86958e+09 |           0 |   0.0001 |               4.1319 |
+        | 2025-02-27 | 5981.88 | 5993.69 | 5858.78 | 5861.57 |     5861.57 | 5.05768e+09 |           0 |  -0.0159 |               4.0664 |
+        | 2025-02-28 | 5856.74 | 5959.4  | 5837.66 | 5954.5  |     5954.5  | 6.44114e+09 |           0 |   0.0159 |               4.1309 |
         """
         if self._weekly_historical_data.empty:
             self.collect_historical_data()
@@ -639,20 +641,20 @@ class Portfolio:
 
         # Reindex the benchmark data to the dates of the historical dataset so that they are matched up.
         self._daily_benchmark_data = self._benchmark_toolkit.get_historical_data(
-            period="daily", progress_bar=False
+            period="daily"
         ).reindex(self._daily_historical_data.index, method="backfill")
 
         self._weekly_benchmark_data = self._benchmark_toolkit.get_historical_data(
-            period="weekly", progress_bar=False
+            period="weekly"
         )
         self._monthly_benchmark_data = self._benchmark_toolkit.get_historical_data(
-            period="monthly", progress_bar=False
+            period="monthly"
         )
         self._quarterly_benchmark_data = self._benchmark_toolkit.get_historical_data(
-            period="quarterly", progress_bar=False
+            period="quarterly"
         )
         self._yearly_benchmark_data = self._benchmark_toolkit.get_historical_data(
-            period="yearly", progress_bar=False
+            period="yearly"
         )
 
         # It could be that a specific date does not exist for the given benchmark. In that case,
@@ -706,7 +708,6 @@ class Portfolio:
     def collect_historical_data(
         self,
         rounding: int | None = None,
-        progress_bar: bool = True,
     ):
         """
         Collect and adjust historical price data for the portfolio's tickers.
@@ -721,10 +722,11 @@ class Portfolio:
         - Volume: the volume of each asset over time.
         - Dividends: the dividends of each asset over time.
         - Returns: the returns of each asset over time.
-        - Volatility: the volatility of each asset over the whole period.
-        - Excess Return: the excess return (return minus risk free rate) of each asset over time.
-        - Excess Volatility: the excess volatility (return minus risk free rate) of each asset over time.
         - Cumulative Return: the cumulative return of each asset over time.
+
+        Volatility, Excess Return and Excess Volatility are no longer included here. These are
+        available via the Risk module (e.g. toolkit.risk.get_volatility) and the Performance
+        module (e.g. toolkit.performance.get_excess_return) instead.
 
         This method retrieves historical price data (daily, weekly, monthly, quarterly, and yearly)
         for the portfolio's tickers and adjusts for any currency mismatches if necessary. It fetches
@@ -738,7 +740,6 @@ class Portfolio:
         Args:
             rounding (int | None): An optional integer specifying the number of decimal places to round the
                 historical price data. If None, the default rounding value is used.
-            progress_bar (bool): A boolean indicating whether to show a progress bar during data retrieval.
 
         Returns:
             pd.DataFrame: A DataFrame containing the adjusted daily historical price data for the portfolio.
@@ -769,18 +770,18 @@ class Portfolio:
         Which returns:
 
 
-        | Date       |   Open |   High |   Low |   Close |   Adj Close |      Volume |   Dividends |   Return |   Volatility |   Excess Return |   Excess Volatility |   Cumulative Return |
-        |:-----------|-------:|-------:|------:|--------:|------------:|------------:|------------:|---------:|-------------:|----------------:|--------------------:|--------------------:|
-        | 2025-02-14 |  48.23 |  49.09 | 48.01 |   48.06 |       48.06 | 1.04361e+07 |           0 |   0.0038 |       0.0253 |         -0.0409 |              0.0284 |              9.2171 |
-        | 2025-02-18 |  48.86 |  49.14 | 47.91 |   48.84 |       48.84 | 1.53775e+07 |           0 |   0.0162 |       0.0253 |         -0.0292 |              0.0284 |              9.3667 |
-        | 2025-02-19 |  49.5  |  52.17 | 49.3  |   50.99 |       50.99 | 2.72406e+07 |           0 |   0.044  |       0.0253 |         -0.0013 |              0.0284 |              9.7791 |
-        | 2025-02-20 |  51.17 |  52.58 | 50.49 |   52.09 |       52.09 | 1.41794e+07 |           0 |   0.0216 |       0.0253 |         -0.0234 |              0.0284 |              9.99   |
-        | 2025-02-21 |  51.8  |  51.99 | 50.39 |   50.42 |       50.42 | 1.38929e+07 |           0 |  -0.0321 |       0.0253 |         -0.0763 |              0.0284 |              9.6698 |
-        | 2025-02-24 |  50.07 |  50.4  | 49.5  |   49.86 |       49.86 | 1.11417e+07 |           0 |  -0.0111 |       0.0253 |         -0.055  |              0.0284 |              9.5624 |
-        | 2025-02-25 |  49.81 |  49.96 | 48.57 |   48.89 |       48.89 | 1.11453e+07 |           0 |  -0.0195 |       0.0253 |         -0.0625 |              0.0284 |              9.3763 |
-        | 2025-02-26 |  49.02 |  49.2  | 48.26 |   48.55 |       48.55 | 7.2188e+06  |           0 |  -0.007  |       0.0253 |         -0.0495 |              0.0284 |              9.3111 |
-        | 2025-02-27 |  48.9  |  49.43 | 48.34 |   48.65 |       48.65 | 1.04084e+07 |           0 |   0.0021 |       0.0253 |         -0.0407 |              0.0284 |              9.3303 |
-        | 2025-02-28 |  48.48 |  48.93 | 47.75 |   48.84 |       48.84 | 1.26817e+07 |           0 |   0.0039 |       0.0253 |         -0.0384 |              0.0284 |              9.3667 |
+        | Date       |   Open |   High |   Low |   Close |   Adj Close |      Volume |   Dividends |   Return |   Cumulative Return |
+        |:-----------|-------:|-------:|------:|--------:|------------:|------------:|------------:|---------:|---------------------:|
+        | 2025-02-14 |  48.23 |  49.09 | 48.01 |   48.06 |       48.06 | 1.04361e+07 |           0 |   0.0038 |               9.2171 |
+        | 2025-02-18 |  48.86 |  49.14 | 47.91 |   48.84 |       48.84 | 1.53775e+07 |           0 |   0.0162 |               9.3667 |
+        | 2025-02-19 |  49.5  |  52.17 | 49.3  |   50.99 |       50.99 | 2.72406e+07 |           0 |   0.044  |               9.7791 |
+        | 2025-02-20 |  51.17 |  52.58 | 50.49 |   52.09 |       52.09 | 1.41794e+07 |           0 |   0.0216 |               9.99   |
+        | 2025-02-21 |  51.8  |  51.99 | 50.39 |   50.42 |       50.42 | 1.38929e+07 |           0 |  -0.0321 |               9.6698 |
+        | 2025-02-24 |  50.07 |  50.4  | 49.5  |   49.86 |       49.86 | 1.11417e+07 |           0 |  -0.0111 |               9.5624 |
+        | 2025-02-25 |  49.81 |  49.96 | 48.57 |   48.89 |       48.89 | 1.11453e+07 |           0 |  -0.0195 |               9.3763 |
+        | 2025-02-26 |  49.02 |  49.2  | 48.26 |   48.55 |       48.55 | 7.2188e+06  |           0 |  -0.007  |               9.3111 |
+        | 2025-02-27 |  48.9  |  49.43 | 48.34 |   48.65 |       48.65 | 1.04084e+07 |           0 |   0.0021 |               9.3303 |
+        | 2025-02-28 |  48.48 |  48.93 | 47.75 |   48.84 |       48.84 | 1.26817e+07 |           0 |   0.0039 |               9.3667 |
         """
         if not self._toolkit:
             self._toolkit = Toolkit(
@@ -798,9 +799,7 @@ class Portfolio:
             zip(self._tickers, self._original_tickers)  # type: ignore
         )
 
-        self._daily_historical_data = self._toolkit.get_historical_data(
-            period="daily", progress_bar=progress_bar
-        )
+        self._daily_historical_data = self._toolkit.get_historical_data(period="daily")
 
         if self._daily_historical_data.empty and not self._api_key:
             logger.error(
@@ -818,9 +817,7 @@ class Portfolio:
 
         currency_conversions = {}
         if self._currency_column:  # type: ignore
-            self._historical_statistics = self._toolkit.get_historical_statistics(
-                progress_bar=False
-            )
+            self._historical_statistics = self._toolkit.get_historical_statistics()
             self._historical_statistics = self._historical_statistics.rename(
                 columns=self._ticker_combinations, level=0
             )
@@ -855,7 +852,7 @@ class Portfolio:
             )
 
             self._daily_currency_data = self._currency_toolkit.get_historical_data(
-                period="daily", progress_bar=False
+                period="daily"
             )
 
             for ticker, currency in currency_conversions.items():
@@ -1040,10 +1037,10 @@ class Portfolio:
         - Return: The return of the asset based on the latest value and invested amount.
         - Return Value: The absolute return value of the asset based on the latest value and invested amount.
         - Benchmark Return: The return of the asset's benchmark based on the latest value and invested amount.
-        - Volatility: The yearly volatility of the asset based on the historical data, this computes the volatility
-        over the entire period and multiplies this number by SQRT(252).
-        - Benchmark Volatility: The yearly volatility of the asset's benchmark based on the historical data, this computes
-        the volatility over the entire period and multiplies this number by SQRT(252).
+        - Volatility: The annualized volatility of the asset over the most recent year, calculated via the
+        Risk module (risk_model.get_volatility).
+        - Benchmark Volatility: The annualized volatility of the asset's benchmark over the most recent year,
+        calculated via the Risk module (risk_model.get_volatility).
         - Alpha: The alpha is based on the difference between the asset's return and the benchmark return.
         - Beta: The beta is based on the asset's return and the benchmark return. It measures the asset's volatility
         compared to the benchmark. A beta >1 indicates that the asset is more volatile than the benchmark and a beta <1
@@ -1119,13 +1116,17 @@ class Portfolio:
                 return pd.DataFrame()
 
         if self._portfolio_volatilities.empty:
+            asset_volatility = risk_model.get_volatility(
+                self._daily_historical_data["Return"], "yearly"
+            ).iloc[-1]
+            benchmark_volatility = risk_model.get_volatility(
+                self._daily_benchmark_data["Return"], "yearly"
+            ).iloc[-1]
+
             self._portfolio_volatilities = pd.concat(
                 [
-                    self._daily_historical_data["Volatility"].iloc[-1],
-                    pd.Series(
-                        [self._daily_benchmark_data["Volatility"].iloc[-1]],
-                        index=["Benchmark"],
-                    ),
+                    asset_volatility,
+                    pd.Series([benchmark_volatility], index=["Benchmark"]),
                 ]
             )
 

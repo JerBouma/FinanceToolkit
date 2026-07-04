@@ -4,7 +4,6 @@ __docformat__ = "google"
 
 from datetime import datetime
 
-import numpy as np
 import pandas as pd
 from scipy.optimize import minimize
 
@@ -16,6 +15,7 @@ from financetoolkit.options import (
     options_model,
 )
 from financetoolkit.ratios import valuation_model
+from financetoolkit.risk import risk_model
 from financetoolkit.utilities import logger_model
 
 # pylint: disable=too-many-instance-attributes,too-few-public-methods,too-many-lines,too-many-locals,cell-var-from-loop
@@ -97,7 +97,14 @@ class Options:
 
         # Option Statistics
         self._prices = self._daily_historical["Adj Close"]
-        self._volatility = self._daily_historical["Volatility"] * np.sqrt(252)
+
+        yearly_volatility = risk_model.get_volatility(
+            self._daily_historical["Return"], "yearly"
+        )
+        year_labels = self._daily_historical.index.asfreq("Y")
+        self._volatility = yearly_volatility.reindex(year_labels)
+        self._volatility.index = self._daily_historical.index
+
         self._risk_free_rate = risk_free_rate["Adj Close"]
         self._annual_historical = annual_historical
 

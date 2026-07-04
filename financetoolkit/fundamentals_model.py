@@ -141,7 +141,7 @@ def collect_financial_statements(
             "For more information, look here: https://www.jeroenbouma.com/fmp"
         )
 
-    logger.info("Obtaining %s data for %d tickers", statement, len(ticker_list))
+    logger.info("Obtaining %s data for %d ticker(s)", statement, len(ticker_list))
     financial_statement_dict: dict[str, pd.DataFrame] = {
         "FinancialModelingPrep": {},
         "YahooFinance": {},

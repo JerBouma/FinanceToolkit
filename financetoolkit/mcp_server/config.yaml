@@ -195,8 +195,8 @@ search_stop_words:
 # ──────────────────────────────────────────────────────────────────────────────
 category_descriptions:
   ratios:                  "Pre-computed financial ratios (PE, EPS, ROE, margins, liquidity, valuation). Use INSTEAD of raw financial statements."
-  performance:             "Risk-adjusted returns (Sharpe, Sortino, alpha, beta, CAPM, Fama-French). No need to fetch price data first."
-  risk:                    "Risk metrics (VaR, CVaR, GARCH, drawdown, skewness, kurtosis). No need to fetch price data first."
+  performance:             "Risk-adjusted returns (Sharpe, Sortino, alpha, beta, CAPM, Fama-French, period/cumulative Returns and Excess Returns). No need to fetch price data first."
+  risk:                    "Risk metrics (VaR, CVaR, GARCH, drawdown, skewness, kurtosis, Variance, Volatility, Excess Volatility). No need to fetch price data first."
   models:                  "Financial models (DCF/intrinsic value, WACC, DuPont, Altman Z, Piotroski). Pre-computed."
   technicals:              "Technical indicators (RSI, MACD, Bollinger Bands, moving averages). Applied to price data automatically."
   options:                 "Option pricing and Greeks (Black-Scholes, binomial, delta, gamma, theta, vega, implied vol)."
@@ -288,13 +288,13 @@ tool_groups:
 
   - tool_name:    "performance"
     display_name: "Performance Metrics"
-    description:  "Pre-computed risk-adjusted performance metrics (Sharpe ratio, Sortino ratio, Alpha, Beta, CAPM, Fama-French factors). Requires tickers='AAPL' — use comma-separated values for multiple tickers. Does NOT support period='daily'; use weekly, monthly, quarterly, or yearly instead."
+    description:  "Pre-computed risk-adjusted performance metrics (Sharpe ratio, Sortino ratio, Alpha, Beta, CAPM, Fama-French factors, period Returns, Excess Returns — both support cumulative=true for a compounded growth index rebased to 1). Requires tickers='AAPL' — use comma-separated values for multiple tickers. Does NOT support period='daily'; use weekly, monthly, quarterly, or yearly instead."
     module_name:  "performance"
     category:     "ticker"
 
   - tool_name:    "risk"
     display_name: "Risk Metrics"
-    description:  "Pre-computed risk metrics (VaR, CVaR, GARCH volatility, max drawdown, skewness, kurtosis). Requires tickers='AAPL' — use comma-separated values for multiple tickers. Does NOT support period='daily'; use weekly, monthly, quarterly, or yearly instead."
+    description:  "Pre-computed risk metrics (VaR, CVaR, GARCH volatility, max drawdown, skewness, kurtosis, Variance, Volatility, Excess Volatility). Requires tickers='AAPL' — use comma-separated values for multiple tickers. Does NOT support period='daily'; use weekly, monthly, quarterly, or yearly instead."
     module_name:  "risk"
     category:     "ticker"
 

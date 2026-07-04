@@ -51,6 +51,11 @@ _PARAM_DESCRIPTIONS: dict[str, str] = {
     "benchmark_ticker": "Ticker used as the market benchmark, e.g. 'SPY' or '^GSPC'.",
     "growth": "Return period-over-period growth rates instead of absolute values.",
     "lag": "Number of periods to lag when computing growth rates.",
+    "cumulative": (
+        "Return the cumulative value compounded over time instead of the discrete "
+        "value per period. Always rebased to start at 1 at the beginning of the "
+        "selected date range."
+    ),
     "trailing": "Number of trailing periods for rolling-window calculations.",
     "days": "Number of calendar days used in day-count-based calculations.",
     "period": "Observation frequency, e.g. 'monthly', 'quarterly', or 'annual'.",

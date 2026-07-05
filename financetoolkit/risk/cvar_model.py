@@ -52,6 +52,30 @@ def get_cvar_historic(returns: pd.Series | pd.DataFrame, alpha: float) -> pd.Ser
     raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
 
 
+def get_rolling_cvar_historic(
+    returns: pd.Series | pd.DataFrame, alpha: float, window_size: int
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate the rolling historical Conditional Value at Risk (CVaR) of returns.
+
+    Args:
+        returns (pd.Series | pd.DataFrame): A Series or Dataframe of returns.
+        alpha (float): The confidence level (e.g., 0.05 for 95% confidence).
+        window_size (int): The size of the rolling window.
+
+    Returns:
+        pd.Series | pd.DataFrame: Rolling CVaR values with time as index.
+    """
+
+    def _cvar(window):
+        value_at_risk = np.percentile(window, alpha * 100)
+        tail_losses = window[window <= value_at_risk]
+
+        return tail_losses.mean() if len(tail_losses) > 0 else np.nan
+
+    return returns.rolling(window=window_size).apply(_cvar, raw=True)
+
+
 def get_cvar_gaussian(
     returns: pd.Series | pd.DataFrame, alpha: float
 ) -> pd.Series | pd.DataFrame:

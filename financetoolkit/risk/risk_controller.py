@@ -173,7 +173,19 @@ class Risk:
             "Entropic Value at Risk": self.get_entropic_value_at_risk(
                 period=period, rounding=rounding, growth=growth, lag=lag
             ),
+            "Conditional Drawdown at Risk": self.get_conditional_drawdown_at_risk(
+                period=period, rounding=rounding, growth=growth, lag=lag
+            ),
+            "Tail Ratio": self.get_tail_ratio(
+                period=period, rounding=rounding, growth=growth, lag=lag
+            ),
             "Maximum Drawdown": self.get_maximum_drawdown(
+                period=period, rounding=rounding, growth=growth, lag=lag
+            ),
+            "Maximum Drawdown Duration": self.get_maximum_drawdown_duration(
+                period=period, rounding=rounding, growth=growth, lag=lag
+            ),
+            "Maximum Drawdown Recovery Time": self.get_maximum_drawdown_recovery_time(
                 period=period, rounding=rounding, growth=growth, lag=lag
             ),
             "Ulcer Index": self.get_ulcer_index(
@@ -186,6 +198,9 @@ class Risk:
                 period=period, rounding=rounding, growth=growth, lag=lag
             ),
             "Kurtosis": self.get_kurtosis(
+                period=period, rounding=rounding, growth=growth, lag=lag
+            ),
+            "Downside Deviation": self.get_downside_deviation(
                 period=period, rounding=rounding, growth=growth, lag=lag
             ),
         }
@@ -215,10 +230,12 @@ class Risk:
         period: str | None = None,
         alpha: float = 0.05,
         within_period: bool = True,
+        rolling: int | None = None,
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
         distribution: str = "historic",
+        threshold_percentile: float = 0.95,
     ):
         """
         Calculate the Value at Risk (VaR) of an investment portfolio or asset's returns.
@@ -241,11 +258,16 @@ class Risk:
             within_period (bool, optional): Whether to calculate VaR within the specified period or for the entire
             period. Thus whether to look at the VaR within a specific year (if period = 'yearly') or look at the entirety
             of all years. Defaults to True.
+            rolling (int, optional): The rolling window size to use for the calculation. If set, VaR is
+            calculated over a rolling window of this many periods across the full return history instead
+            of per `period` (e.g. a rolling 60-day VaR). Defaults to None.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the VaR values over time. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
-            distribution (str): The distribution to use for the VaR calculations (historic, gaussian, cf
-            or studentt). Defaults to "historic".
+            distribution (str): The distribution to use for the VaR calculations (historic, gaussian, cf,
+            studentt or evt). Defaults to "historic".
+            threshold_percentile (float, optional): Only used when `distribution` is "evt". The percentile
+            of losses above which the Generalized Pareto Distribution is fitted. Defaults to 0.95.
 
         Returns:
             pd.Series: VaR values with time as the index.
@@ -291,22 +313,32 @@ class Risk:
         if period == "daily" and self._historical_data["intraday"].empty:
             raise ValueError("Intraday data is required for daily calculations.")
 
-        returns = (
-            self._within_historical_data[period]["Return"]
-            if within_period
-            else self._historical_data[period]["Return"]
-        )
-
-        if distribution == "historic":
-            value_at_risk = var_model.get_var_historic(returns, alpha)
-        elif distribution == "gaussian":
-            value_at_risk = var_model.get_var_gaussian(returns, alpha)
-        elif distribution == "cf":
-            value_at_risk = var_model.get_var_gaussian(returns, alpha, True)
-        elif distribution == "studentt":
-            value_at_risk = var_model.get_var_studentt(returns, alpha)
+        if rolling:
+            returns = self._historical_data[period]["Return"]
+            value_at_risk = var_model.get_rolling_var_historic(returns, alpha, rolling)
         else:
-            raise ValueError("Distribution must be historic, gaussian, cf or studentt.")
+            returns = (
+                self._within_historical_data[period]["Return"]
+                if within_period
+                else self._historical_data[period]["Return"]
+            )
+
+            if distribution == "historic":
+                value_at_risk = var_model.get_var_historic(returns, alpha)
+            elif distribution == "gaussian":
+                value_at_risk = var_model.get_var_gaussian(returns, alpha)
+            elif distribution == "cf":
+                value_at_risk = var_model.get_var_gaussian(returns, alpha, True)
+            elif distribution == "studentt":
+                value_at_risk = var_model.get_var_studentt(returns, alpha)
+            elif distribution == "evt":
+                value_at_risk = var_model.get_var_evt(
+                    returns, alpha, threshold_percentile
+                )
+            else:
+                raise ValueError(
+                    "Distribution must be historic, gaussian, cf, studentt or evt."
+                )
 
         if growth:
             return calculate_growth(
@@ -325,6 +357,7 @@ class Risk:
         period: str | None = None,
         alpha: float = 0.05,
         within_period: bool = True,
+        rolling: int | None = None,
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
@@ -351,6 +384,9 @@ class Risk:
             within_period (bool, optional): Whether to calculate CVaR within the specified period or for the entire
             period. Thus whether to look at the CVaR within a specific year (if period = 'yearly') or look at the entirety
             of all years. Defaults to True.
+            rolling (int, optional): The rolling window size to use for the calculation. If set, CVaR is
+            calculated over a rolling window of this many periods across the full return history instead
+            of per `period` (e.g. a rolling 60-day CVaR). Defaults to None.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the CVaR values over time. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
@@ -401,26 +437,32 @@ class Risk:
         if period == "daily" and self._historical_data["intraday"].empty:
             raise ValueError("Intraday data is required for daily calculations.")
 
-        returns = (
-            self._within_historical_data[period]["Return"]
-            if within_period
-            else self._historical_data[period]["Return"]
-        )
-
-        if distribution == "historic":
-            conditional_value_at_risk = cvar_model.get_cvar_historic(returns, alpha)
-        elif distribution == "gaussian":
-            conditional_value_at_risk = cvar_model.get_cvar_gaussian(returns, alpha)
-        elif distribution == "studentt":
-            conditional_value_at_risk = var_model.get_var_studentt(returns, alpha)
-        elif distribution == "laplace":
-            conditional_value_at_risk = cvar_model.get_cvar_laplace(returns, alpha)
-        elif distribution == "logistic":
-            conditional_value_at_risk = cvar_model.get_cvar_logistic(returns, alpha)
-        else:
-            raise ValueError(
-                "Distribution must be historic, gaussian, studentt, laplace or logistic."
+        if rolling:
+            returns = self._historical_data[period]["Return"]
+            conditional_value_at_risk = cvar_model.get_rolling_cvar_historic(
+                returns, alpha, rolling
             )
+        else:
+            returns = (
+                self._within_historical_data[period]["Return"]
+                if within_period
+                else self._historical_data[period]["Return"]
+            )
+
+            if distribution == "historic":
+                conditional_value_at_risk = cvar_model.get_cvar_historic(returns, alpha)
+            elif distribution == "gaussian":
+                conditional_value_at_risk = cvar_model.get_cvar_gaussian(returns, alpha)
+            elif distribution == "studentt":
+                conditional_value_at_risk = var_model.get_var_studentt(returns, alpha)
+            elif distribution == "laplace":
+                conditional_value_at_risk = cvar_model.get_cvar_laplace(returns, alpha)
+            elif distribution == "logistic":
+                conditional_value_at_risk = cvar_model.get_cvar_logistic(returns, alpha)
+            else:
+                raise ValueError(
+                    "Distribution must be historic, gaussian, studentt, laplace or logistic."
+                )
 
         if growth:
             return calculate_growth(
@@ -532,6 +574,188 @@ class Risk:
 
     @handle_portfolio
     @handle_errors
+    def get_conditional_drawdown_at_risk(
+        self,
+        period: str | None = None,
+        alpha: float = 0.05,
+        within_period: bool = True,
+        rolling: int | None = None,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+    ):
+        """
+        Calculate the Conditional Drawdown at Risk (CDaR) of an investment portfolio or asset's returns.
+
+        Conditional Drawdown at Risk (CDaR) extends the concept of Value at Risk and Conditional Value at
+        Risk to the drawdown series instead of the return series. It is calculated as the average of the
+        worst drawdowns that exceed the Drawdown at Risk (DaR), i.e. the alpha-quantile of the drawdown
+        distribution, giving insight into the depth of the most severe drawdowns an investment portfolio or
+        asset could experience.
+
+        Also known as: CDaR.
+
+        Args:
+            period (str, optional): The data frequency for returns (daily, weekly, quarterly, or yearly).
+            Defaults to "yearly".
+            alpha (float, optional): The confidence level for CDaR calculation (e.g., 0.05 for 95% confidence).
+            Defaults to 0.05.
+            within_period (bool, optional): Whether to calculate CDaR within the specified period or for the entire
+            period. Thus whether to look at the CDaR within a specific year (if period = 'yearly') or look at the entirety
+            of all years. Defaults to True.
+            rolling (int, optional): The rolling window size to use for the calculation. If set, CDaR is
+            calculated over a rolling window of this many periods across the full return history instead
+            of per `period`. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the CDaR values over time. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+
+        Returns:
+            pd.Series: CDaR values with time as the index.
+
+        Notes:
+        - The method retrieves historical return data based on the specified `period` and calculates CDaR for each
+        asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of CDaR values using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AMZN", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.risk.get_conditional_drawdown_at_risk()
+        ```
+        """
+        period = period if period else "quarterly" if self._quarterly else "yearly"
+
+        if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
+            raise ValueError(
+                "Period must be daily, weekly, monthly, quarterly, or yearly."
+            )
+        if period == "daily" and self._historical_data["intraday"].empty:
+            raise ValueError("Intraday data is required for daily calculations.")
+
+        if rolling:
+            returns = self._historical_data[period]["Return"]
+            conditional_drawdown_at_risk = (
+                risk_model.get_rolling_conditional_drawdown_at_risk(
+                    returns, alpha, rolling
+                )
+            )
+        else:
+            returns = (
+                self._within_historical_data[period]["Return"]
+                if within_period
+                else self._historical_data[period]["Return"]
+            )
+
+            conditional_drawdown_at_risk = risk_model.get_conditional_drawdown_at_risk(
+                returns, alpha
+            )
+
+        if growth:
+            return calculate_growth(
+                conditional_drawdown_at_risk,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
+                axis="index",
+            )
+
+        return conditional_drawdown_at_risk.round(
+            rounding if rounding else self._rounding
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_tail_ratio(
+        self,
+        period: str | None = None,
+        alpha: float = 0.05,
+        within_period: bool = True,
+        rolling: int | None = None,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+    ):
+        """
+        Calculate the Tail Ratio of an investment portfolio or asset's returns.
+
+        The Tail Ratio compares the size of the right (gain) tail to the left (loss) tail of the
+        return distribution, calculated as the absolute value of the (1 - alpha)-th percentile of
+        returns divided by the absolute value of the alpha-th percentile of returns. A Tail Ratio
+        above 1 indicates that best-case gains outsize worst-case losses.
+
+        Also known as: gain-to-pain tail ratio.
+
+        Args:
+            period (str, optional): The data frequency for returns (daily, weekly, quarterly, or yearly).
+            Defaults to "yearly".
+            alpha (float, optional): The percentile used to define each tail (e.g., 0.05 uses the 5th and
+            95th percentile). Defaults to 0.05.
+            within_period (bool, optional): Whether to calculate the Tail Ratio within the specified period or
+            for the entire period. Thus whether to look at the Tail Ratio within a specific year (if period =
+            'yearly') or look at the entirety of all years. Defaults to True.
+            rolling (int, optional): The rolling window size to use for the calculation. If set, the Tail
+            Ratio is calculated over a rolling window of this many periods across the full return history
+            instead of per `period`. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the Tail Ratio values over time.
+            Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+
+        Returns:
+            pd.Series: Tail Ratio values with time as the index.
+
+        Notes:
+        - The method retrieves historical return data based on the specified `period` and calculates the Tail
+        Ratio for each asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of Tail Ratio values using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AMZN", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.risk.get_tail_ratio()
+        ```
+        """
+        period = period if period else "quarterly" if self._quarterly else "yearly"
+
+        if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
+            raise ValueError(
+                "Period must be daily, weekly, monthly, quarterly, or yearly."
+            )
+        if period == "daily" and self._historical_data["intraday"].empty:
+            raise ValueError("Intraday data is required for daily calculations.")
+
+        if rolling:
+            returns = self._historical_data[period]["Return"]
+            tail_ratio = risk_model.get_rolling_tail_ratio(returns, alpha, rolling)
+        else:
+            returns = (
+                self._within_historical_data[period]["Return"]
+                if within_period
+                else self._historical_data[period]["Return"]
+            )
+
+            tail_ratio = risk_model.get_tail_ratio(returns, alpha)
+
+        if growth:
+            return calculate_growth(
+                tail_ratio,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
+                axis="index",
+            )
+
+        return tail_ratio.round(rounding if rounding else self._rounding)
+
+    @handle_portfolio
+    @handle_errors
     def get_maximum_drawdown(
         self,
         period: str | None = None,
@@ -623,6 +847,159 @@ class Risk:
             )
 
         return maximum_drawdown.round(rounding if rounding else self._rounding)
+
+    @handle_portfolio
+    @handle_errors
+    def get_maximum_drawdown_duration(
+        self,
+        period: str | None = None,
+        within_period: bool = True,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+    ):
+        """
+        Calculate the Maximum Drawdown Duration of an investment portfolio or asset's returns.
+
+        The Maximum Drawdown Duration is the number of periods between the peak and the lowest point
+        of the largest drawdown, giving insight into how long the worst loss of value took to unfold.
+
+        Also known as: drawdown length.
+
+        Args:
+            period (str, optional): The data frequency for returns (daily, weekly, quarterly, or yearly).
+            Defaults to "yearly".
+            within_period (bool, optional): Whether to calculate the duration within the specified period or
+            for the entire period. Thus whether to look at the duration within a specific year (if period =
+            'yearly') or look at the entirety of all years. Defaults to True.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the duration values over time. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+
+        Returns:
+            pd.Series: Maximum Drawdown Duration values, in number of periods, with time as the index.
+
+        Notes:
+        - The method retrieves historical return data based on the specified `period` and calculates the Maximum
+        Drawdown Duration for each asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the duration values using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AMZN", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.risk.get_maximum_drawdown_duration()
+        ```
+        """
+        period = period if period else "quarterly" if self._quarterly else "yearly"
+
+        if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
+            raise ValueError(
+                "Period must be daily, weekly, monthly, quarterly, or yearly."
+            )
+        if period == "daily" and self._historical_data["intraday"].empty:
+            raise ValueError("Intraday data is required for daily calculations.")
+
+        returns = (
+            self._within_historical_data[period]["Return"]
+            if within_period
+            else self._historical_data[period]["Return"]
+        )
+
+        maximum_drawdown_duration = risk_model.get_max_drawdown_duration(returns)
+
+        if growth:
+            return calculate_growth(
+                maximum_drawdown_duration,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
+                axis="index",
+            )
+
+        return maximum_drawdown_duration.round(rounding if rounding else self._rounding)
+
+    @handle_portfolio
+    @handle_errors
+    def get_maximum_drawdown_recovery_time(
+        self,
+        period: str | None = None,
+        within_period: bool = True,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+    ):
+        """
+        Calculate the Maximum Drawdown Recovery Time of an investment portfolio or asset's returns.
+
+        The Maximum Drawdown Recovery Time is the number of periods it takes for the cumulative return
+        to reach a new high after the lowest point of the largest drawdown. If the drawdown has not yet been
+        recovered from within the selected period, this returns NaN.
+
+        Also known as: time to recovery, drawdown recovery.
+
+        Args:
+            period (str, optional): The data frequency for returns (daily, weekly, quarterly, or yearly).
+            Defaults to "yearly".
+            within_period (bool, optional): Whether to calculate the recovery time within the specified period
+            or for the entire period. Thus whether to look at the recovery time within a specific year (if
+            period = 'yearly') or look at the entirety of all years. Defaults to True.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the recovery time values over time.
+            Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+
+        Returns:
+            pd.Series: Maximum Drawdown Recovery Time values, in number of periods, with time as the index.
+
+        Notes:
+        - The method retrieves historical return data based on the specified `period` and calculates the Maximum
+        Drawdown Recovery Time for each asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the recovery time values using the
+        specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AMZN", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.risk.get_maximum_drawdown_recovery_time()
+        ```
+        """
+        period = period if period else "quarterly" if self._quarterly else "yearly"
+
+        if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
+            raise ValueError(
+                "Period must be daily, weekly, monthly, quarterly, or yearly."
+            )
+        if period == "daily" and self._historical_data["intraday"].empty:
+            raise ValueError("Intraday data is required for daily calculations.")
+
+        returns = (
+            self._within_historical_data[period]["Return"]
+            if within_period
+            else self._historical_data[period]["Return"]
+        )
+
+        maximum_drawdown_recovery_time = risk_model.get_max_drawdown_recovery_time(
+            returns
+        )
+
+        if growth:
+            return calculate_growth(
+                maximum_drawdown_recovery_time,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
+                axis="index",
+            )
+
+        return maximum_drawdown_recovery_time.round(
+            rounding if rounding else self._rounding
+        )
 
     @handle_portfolio
     @handle_errors
@@ -947,6 +1324,7 @@ class Risk:
         self,
         period: str | None = None,
         within_period: bool = True,
+        rolling: int | None = None,
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
@@ -972,6 +1350,9 @@ class Risk:
             within_period (bool, optional): Whether to calculate CVaR within the specified period or for the entire
             period. Thus whether to look at the CVaR within a specific year (if period = 'yearly') or look at the entirety
             of all years. Defaults to True.
+            rolling (int, optional): The rolling window size to use for the calculation. If set, Skewness is
+            calculated over a rolling window of this many periods across the full return history instead of
+            per `period`. Defaults to None.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the CVaR values over time. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
@@ -1013,13 +1394,17 @@ class Risk:
         if period == "daily" and self._historical_data["intraday"].empty:
             raise ValueError("Intraday data is required for daily calculations.")
 
-        returns = (
-            self._within_historical_data[period]["Return"]
-            if within_period
-            else self._historical_data[period]["Return"]
-        )
+        if rolling:
+            returns = self._historical_data[period]["Return"]
+            skewness = risk_model.get_rolling_skewness(returns, rolling)
+        else:
+            returns = (
+                self._within_historical_data[period]["Return"]
+                if within_period
+                else self._historical_data[period]["Return"]
+            )
 
-        skewness = risk_model.get_skewness(returns)
+            skewness = risk_model.get_skewness(returns)
 
         if growth:
             return calculate_growth(
@@ -1038,6 +1423,7 @@ class Risk:
         period: str | None = None,
         within_period: bool = True,
         fisher: bool = False,
+        rolling: int | None = None,
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
@@ -1066,6 +1452,9 @@ class Risk:
             the entirety of all years. Defaults to True.
             fisher (bool, optional): Whether to use Fisher's definition of kurtosis (kurtosis = 0.0
             for a normal distribution).
+            rolling (int, optional): The rolling window size to use for the calculation. If set, Kurtosis is
+            calculated over a rolling window of this many periods across the full return history instead of
+            per `period`. Defaults to None.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the CVaR values over time.
             efaults to False.
@@ -1108,13 +1497,17 @@ class Risk:
         if period == "daily" and self._historical_data["intraday"].empty:
             raise ValueError("Intraday data is required for daily calculations.")
 
-        returns = (
-            self._within_historical_data[period]["Return"]
-            if within_period
-            else self._historical_data[period]["Return"]
-        )
+        if rolling:
+            returns = self._historical_data[period]["Return"]
+            kurtosis = risk_model.get_rolling_kurtosis(returns, rolling, fisher=fisher)
+        else:
+            returns = (
+                self._within_historical_data[period]["Return"]
+                if within_period
+                else self._historical_data[period]["Return"]
+            )
 
-        kurtosis = risk_model.get_kurtosis(returns, fisher=fisher)
+            kurtosis = risk_model.get_kurtosis(returns, fisher=fisher)
 
         if growth:
             return calculate_growth(
@@ -1131,6 +1524,7 @@ class Risk:
     def get_variance(
         self,
         period: str | None = None,
+        rolling: int | None = None,
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
@@ -1151,6 +1545,10 @@ class Risk:
         Args:
             period (str, optional): The data frequency for returns (weekly, monthly,
             quarterly, or yearly). Defaults to "yearly".
+            rolling (int, optional): The rolling window size to use for the calculation. If set,
+            Variance is calculated over a rolling window of this many periods (e.g. period='monthly'
+            and rolling=6 gives the rolling 6-month Variance) instead of one value per `period`.
+            Defaults to None.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the Variance values over time. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
@@ -1178,9 +1576,12 @@ class Risk:
         if period not in ["weekly", "monthly", "quarterly", "yearly"]:
             raise ValueError("Period must be weekly, monthly, quarterly, or yearly.")
 
-        returns = self._historical_data["daily"]["Return"]
-
-        variance = risk_model.get_variance(returns, period)
+        if rolling:
+            period_returns = self._historical_data[period]["Return"]
+            variance = risk_model.get_rolling_variance(period_returns, period, rolling)
+        else:
+            returns = self._historical_data["daily"]["Return"]
+            variance = risk_model.get_variance(returns, period)
 
         variance = variance.round(rounding if rounding else self._rounding).loc[
             self._start_date : self._end_date
@@ -1203,6 +1604,7 @@ class Risk:
     def get_volatility(
         self,
         period: str | None = None,
+        rolling: int | None = None,
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
@@ -1223,6 +1625,10 @@ class Risk:
         Args:
             period (str, optional): The data frequency for returns (weekly, monthly,
             quarterly, or yearly). Defaults to "yearly".
+            rolling (int, optional): The rolling window size to use for the calculation. If set,
+            Volatility is calculated over a rolling window of this many periods (e.g. period='monthly'
+            and rolling=6 gives the rolling 6-month Volatility) instead of one value per `period`.
+            Defaults to None.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the Volatility values over time.
             Defaults to False.
@@ -1251,9 +1657,14 @@ class Risk:
         if period not in ["weekly", "monthly", "quarterly", "yearly"]:
             raise ValueError("Period must be weekly, monthly, quarterly, or yearly.")
 
-        returns = self._historical_data["daily"]["Return"]
-
-        volatility = risk_model.get_volatility(returns, period)
+        if rolling:
+            period_returns = self._historical_data[period]["Return"]
+            volatility = risk_model.get_rolling_volatility(
+                period_returns, period, rolling
+            )
+        else:
+            returns = self._historical_data["daily"]["Return"]
+            volatility = risk_model.get_volatility(returns, period)
 
         volatility = volatility.round(rounding if rounding else self._rounding).loc[
             self._start_date : self._end_date
@@ -1276,6 +1687,7 @@ class Risk:
     def get_excess_volatility(
         self,
         period: str | None = None,
+        rolling: int | None = None,
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
@@ -1292,6 +1704,10 @@ class Risk:
         Args:
             period (str, optional): The data frequency for returns (weekly, monthly,
             quarterly, or yearly). Defaults to "yearly".
+            rolling (int, optional): The rolling window size to use for the calculation. If set,
+            Excess Volatility is calculated over a rolling window of this many periods (e.g.
+            period='monthly' and rolling=6 gives the rolling 6-month Excess Volatility) instead of
+            one value per `period`. Defaults to None.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the Excess Volatility values
             over time. Defaults to False.
@@ -1322,12 +1738,19 @@ class Risk:
         if period not in ["weekly", "monthly", "quarterly", "yearly"]:
             raise ValueError("Period must be weekly, monthly, quarterly, or yearly.")
 
-        returns = self._historical_data["daily"]["Return"]
-        risk_free_rate = self._risk_free_rate_data["daily"]
+        if rolling:
+            period_returns = self._historical_data[period]["Return"]
+            risk_free_rate = self._risk_free_rate_data[period]
+            excess_volatility = risk_model.get_rolling_excess_volatility(
+                period_returns, risk_free_rate, period, rolling
+            )
+        else:
+            returns = self._historical_data["daily"]["Return"]
+            risk_free_rate = self._risk_free_rate_data["daily"]
 
-        excess_volatility = risk_model.get_excess_volatility(
-            returns, risk_free_rate, period
-        )
+            excess_volatility = risk_model.get_excess_volatility(
+                returns, risk_free_rate, period
+            )
 
         excess_volatility = excess_volatility.round(
             rounding if rounding else self._rounding
@@ -1344,3 +1767,95 @@ class Risk:
             )
 
         return excess_volatility
+
+    @handle_portfolio
+    @handle_errors
+    def get_downside_deviation(
+        self,
+        period: str | None = None,
+        minimum_acceptable_return: float = 0.0,
+        within_period: bool = True,
+        rolling: int | None = None,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+    ):
+        """
+        Calculate the Downside Deviation of an investment portfolio or asset's returns.
+
+        The Downside Deviation, also known as semi-deviation, is the standard deviation of only the
+        returns that fall below a minimum acceptable return (MAR), isolating the volatility of negative
+        outcomes from the volatility of the overall return distribution. It underlies risk-adjusted
+        return measures such as the Sortino Ratio and the Omega Ratio.
+
+        Also known as: semi-deviation, downside risk, downside volatility.
+
+        Args:
+            period (str, optional): The data frequency for returns (daily, weekly, quarterly, or yearly).
+            Defaults to "yearly".
+            minimum_acceptable_return (float, optional): The minimum acceptable return (MAR) used as the
+            threshold below which returns are considered downside. Defaults to 0.0.
+            within_period (bool, optional): Whether to calculate the Downside Deviation within the specified
+            period or for the entire period. Thus whether to look at the Downside Deviation within a specific
+            year (if period = 'yearly') or look at the entirety of all years. Defaults to True.
+            rolling (int, optional): The rolling window size to use for the calculation. If set, the Downside
+            Deviation is calculated over a rolling window of this many periods across the full return history
+            instead of per `period`. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the Downside Deviation values over
+            time. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+
+        Returns:
+            pd.Series: Downside Deviation values with time as the index.
+
+        Notes:
+        - The method retrieves historical return data based on the specified `period` and calculates the
+        Downside Deviation for each asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the Downside Deviation values using
+        the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AMZN", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.risk.get_downside_deviation()
+        ```
+        """
+        period = period if period else "quarterly" if self._quarterly else "yearly"
+
+        if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
+            raise ValueError(
+                "Period must be daily, weekly, monthly, quarterly, or yearly."
+            )
+        if period == "daily" and self._historical_data["intraday"].empty:
+            raise ValueError("Intraday data is required for daily calculations.")
+
+        if rolling:
+            returns = self._historical_data[period]["Return"]
+            downside_deviation = risk_model.get_rolling_downside_deviation(
+                returns, rolling, minimum_acceptable_return
+            )
+        else:
+            returns = (
+                self._within_historical_data[period]["Return"]
+                if within_period
+                else self._historical_data[period]["Return"]
+            )
+
+            downside_deviation = risk_model.get_downside_deviation(
+                returns, minimum_acceptable_return
+            )
+
+        if growth:
+            return calculate_growth(
+                downside_deviation,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
+                axis="index",
+            )
+
+        return downside_deviation.round(rounding if rounding else self._rounding)

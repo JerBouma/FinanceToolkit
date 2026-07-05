@@ -56,7 +56,25 @@ _PARAM_DESCRIPTIONS: dict[str, str] = {
         "value per period. Always rebased to start at 1 at the beginning of the "
         "selected date range."
     ),
-    "trailing": "Number of trailing periods for rolling-window calculations.",
+    "rolling": (
+        "Rolling window size in number of periods. When set, the metric is computed over "
+        "a smoothly overlapping trailing window across the full history (e.g. period='monthly' "
+        "and rolling=6 gives a rolling 6-month value) instead of one value per period, or "
+        "(for economics indicators) a simple moving average used to smooth the raw series."
+    ),
+    "trailing": (
+        "Trailing window size in number of periods. Sums the raw values over the trailing N "
+        "periods (e.g. trailing=4 on quarterly data gives a trailing-4-quarter / TTM-style sum) "
+        "instead of returning one value per period."
+    ),
+    "threshold_percentile": (
+        "Only used when distribution='evt'. The percentile of losses above which the "
+        "Generalized Pareto Distribution is fitted, e.g. 0.95 fits on the worst 5% of losses."
+    ),
+    "minimum_acceptable_return": (
+        "The minimum acceptable return (MAR) threshold below which returns are considered "
+        "downside, e.g. 0.0 for downside relative to a zero return."
+    ),
     "days": "Number of calendar days used in day-count-based calculations.",
     "period": "Observation frequency, e.g. 'monthly', 'quarterly', or 'annual'.",
     "measure": "Sub-measure selector, e.g. 'M1', 'M2', or 'M3' for money supply.",

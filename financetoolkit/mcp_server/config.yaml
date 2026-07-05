@@ -195,16 +195,16 @@ search_stop_words:
 # ──────────────────────────────────────────────────────────────────────────────
 category_descriptions:
   ratios:                  "Pre-computed financial ratios (PE, EPS, ROE, margins, liquidity, valuation). Use INSTEAD of raw financial statements."
-  performance:             "Risk-adjusted returns (Sharpe, Sortino, alpha, beta, CAPM, Fama-French, period/cumulative Returns and Excess Returns). No need to fetch price data first."
-  risk:                    "Risk metrics (VaR, CVaR, GARCH, drawdown, skewness, kurtosis, Variance, Volatility, Excess Volatility). No need to fetch price data first."
+  performance:             "Risk-adjusted returns (Sharpe, Sortino, alpha, beta, CAPM, Treynor, M2, tracking error, information ratio, Fama-French, period/cumulative Returns and Excess Returns). Most metrics support rolling= for a rolling-window value instead of one per period. No need to fetch price data first."
+  risk:                    "Risk metrics (VaR incl. EVT/GPD tail fitting, CVaR, EVaR, GARCH, max drawdown, drawdown duration/recovery time, CDaR, tail ratio, skewness, kurtosis, downside deviation, Variance, Volatility, Excess Volatility). Most metrics support rolling= for a rolling-window value instead of one per period. No need to fetch price data first."
   models:                  "Financial models (DCF/intrinsic value, WACC, DuPont, Altman Z, Piotroski). Pre-computed."
   technicals:              "Technical indicators (RSI, MACD, Bollinger Bands, moving averages). Applied to price data automatically."
   options:                 "Option pricing and Greeks (Black-Scholes, binomial, delta, gamma, theta, vega, implied vol)."
-  government_economy:      "Government fiscal metrics by country (debt, deficit, expenditure, revenue, tax). Use countries= param."
-  general_economy:         "Macroeconomic indicators by country (GDP, CPI, inflation, trade, investment, consumption, confidence). Use countries= param."
-  environment:             "Environmental and ESG data. Carbon footprint and renewable energy use countries=; ESG scores use tickers=."
-  jobs_and_society:        "Labour and social metrics by country (unemployment, population, poverty, income inequality). Use countries= param."
-  interest_rates:          "Interest rate data — central bank rates, government/corporate bond yields, EURIBOR, short/long-term rates. Use countries= param."
+  government_economy:      "Government fiscal metrics by country (debt, deficit, expenditure, revenue, tax). Use countries= param. Supports rolling= (moving-average) and trailing= (trailing-period sum)."
+  general_economy:         "Macroeconomic indicators by country (GDP, CPI, inflation, trade, investment, consumption, confidence, money supply). Use countries= param. Supports rolling= (moving-average) and trailing= (trailing-period sum)."
+  environment:             "Environmental and ESG data. Carbon footprint and renewable energy use countries= (supports rolling=/trailing=); ESG scores use tickers=."
+  jobs_and_society:        "Labour and social metrics by country (unemployment, population, poverty, income inequality). Use countries= param. Supports rolling= (moving-average) and trailing= (trailing-period sum)."
+  interest_rates:          "Interest rate data — central bank rates, government/corporate bond yields, EURIBOR, short/long-term rates. Use countries= param. Economics-sourced rates support rolling=/trailing=."
   fixed_income_valuations: "Bond and derivative valuation calculations (duration, present value, yield-to-maturity, derivative pricing)."
   discovery:               "Market discovery (stock/ETF/crypto lists, screener, gainers/losers, sector performance). No tickers needed."
   toolkit:                 "Raw data (historical prices, financial statements, company profile, quotes). Use ratios/performance/risk tools for computed metrics."
@@ -288,13 +288,13 @@ tool_groups:
 
   - tool_name:    "performance"
     display_name: "Performance Metrics"
-    description:  "Pre-computed risk-adjusted performance metrics (Sharpe ratio, Sortino ratio, Alpha, Beta, CAPM, Fama-French factors, period Returns, Excess Returns — both support cumulative=true for a compounded growth index rebased to 1). Requires tickers='AAPL' — use comma-separated values for multiple tickers. Does NOT support period='daily'; use weekly, monthly, quarterly, or yearly instead."
+    description:  "Pre-computed risk-adjusted performance metrics (Sharpe ratio, Sortino ratio, Alpha, Jensen's Alpha, Beta, CAPM, Treynor ratio, M2 ratio, Tracking Error, Information Ratio, Fama-French factors, period Returns, Excess Returns — Returns/Excess Returns support cumulative=true for a compounded growth index rebased to 1). Beta, CAPM, Alpha, Jensen's Alpha, Treynor, Sortino, M2, Tracking Error and Information Ratio support rolling=N for a rolling N-period value spanning the full history instead of one value per period (e.g. period='monthly', rolling=6 for a rolling 6-month figure). Requires tickers='AAPL' — use comma-separated values for multiple tickers. Does NOT support period='daily'; use weekly, monthly, quarterly, or yearly instead."
     module_name:  "performance"
     category:     "ticker"
 
   - tool_name:    "risk"
     display_name: "Risk Metrics"
-    description:  "Pre-computed risk metrics (VaR, CVaR, GARCH volatility, max drawdown, skewness, kurtosis, Variance, Volatility, Excess Volatility). Requires tickers='AAPL' — use comma-separated values for multiple tickers. Does NOT support period='daily'; use weekly, monthly, quarterly, or yearly instead."
+    description:  "Pre-computed risk metrics (VaR incl. historic/gaussian/cf/studentt/evt distributions, CVaR, EVaR, GARCH volatility, max drawdown, drawdown duration, drawdown recovery time, Conditional Drawdown at Risk (CDaR), Tail Ratio, skewness, kurtosis, downside deviation, Variance, Volatility, Excess Volatility). VaR, CVaR, skewness, kurtosis, CDaR, Tail Ratio, downside deviation, Variance, Volatility and Excess Volatility support rolling=N for a rolling N-period value spanning the full history instead of one value per period (e.g. period='monthly', rolling=6 for a rolling 6-month figure). Requires tickers='AAPL' — use comma-separated values for multiple tickers. Does NOT support period='daily'; use weekly, monthly, quarterly, or yearly instead."
     module_name:  "risk"
     category:     "ticker"
 
@@ -308,7 +308,7 @@ tool_groups:
   # All government debt, deficit, expenditure, revenue, tax, and trust metrics.
   - tool_name:       "government"
     display_name:    "Government & Fiscal Metrics"
-    description:     "Government fiscal metrics by country (debt, deficit, expenditure, revenue, tax revenue, trust in government). Requires countries='United States' — use comma-separated values for multiple countries. Do NOT use tickers= for this tool. Supports start_date/end_date and quarterly=true."
+    description:     "Government fiscal metrics by country (debt, deficit, expenditure, revenue, tax revenue, trust in government). Requires countries='United States' — use comma-separated values for multiple countries. Do NOT use tickers= for this tool. Supports start_date/end_date and quarterly=true. Supports rolling=N (moving-average smoothing) and trailing=N (trailing N-period sum, e.g. a trailing-4-quarter sum) on the raw series."
     module_name:     "economics"
     category:        "standalone"
     index_category:  "government_economy"
@@ -330,7 +330,7 @@ tool_groups:
   # confidence indices, house/rent prices, exchange rates, share prices.
   - tool_name:       "macroeconomics"
     display_name:    "General Economy"
-    description:     "Macroeconomic indicators by country (GDP, CPI, inflation rate, trade balance, imports, exports, investment, consumption, business/consumer confidence, house prices, rent prices, exchange rates). Requires countries='United States' — use comma-separated values for multiple countries. Do NOT use tickers= for this tool. Supports start_date/end_date and quarterly=true."
+    description:     "Macroeconomic indicators by country (GDP, CPI, inflation rate, trade balance, imports, exports, investment, consumption, business/consumer confidence, house prices, rent prices, exchange rates, money supply). Requires countries='United States' — use comma-separated values for multiple countries. Do NOT use tickers= for this tool. Supports start_date/end_date and quarterly=true. Supports rolling=N (moving-average smoothing) and trailing=N (trailing N-period sum, e.g. a trailing-4-quarter sum) on the raw series."
     module_name:     "economics"
     category:        "standalone"
     index_category:  "general_economy"
@@ -366,7 +366,7 @@ tool_groups:
   # BOTH tickers= and countries= are accepted.
   - tool_name:       "environment"
     display_name:    "Environment & ESG"
-    description:     "Environmental and ESG data. For ESG scores (E, S, G ratings) use tickers='AAPL'. For carbon footprint and renewable energy data use countries='United States'. This is the only tool that accepts BOTH tickers= and countries= depending on the indicator."
+    description:     "Environmental and ESG data. For ESG scores (E, S, G ratings) use tickers='AAPL'. For carbon footprint and renewable energy data use countries='United States' (also supports rolling=N and trailing=N smoothing/summation). This is the only tool that accepts BOTH tickers= and countries= depending on the indicator."
     module_name:     "mixed"
     category:        "mixed"
     index_category:  "environment"
@@ -389,7 +389,7 @@ tool_groups:
   # Unemployment, labour productivity, population, poverty, income inequality.
   - tool_name:       "jobs"
     display_name:    "Jobs & Society"
-    description:     "Labour and social metrics by country (unemployment rate, labour productivity, population statistics, poverty rate, income inequality). Requires countries='United States' — use comma-separated values for multiple countries. Do NOT use tickers= for this tool. Supports start_date/end_date and quarterly=true."
+    description:     "Labour and social metrics by country (unemployment rate, labour productivity, population statistics, poverty rate, income inequality). Requires countries='United States' — use comma-separated values for multiple countries. Do NOT use tickers= for this tool. Supports start_date/end_date and quarterly=true. Supports rolling=N (moving-average smoothing) and trailing=N (trailing N-period sum) on the raw series."
     module_name:     "economics"
     category:        "standalone"
     index_category:  "jobs_and_society"
@@ -407,7 +407,7 @@ tool_groups:
   # All indicators use countries= (both modules are CATEGORY_STANDALONE).
   - tool_name:       "rates"
     display_name:    "Interest Rates"
-    description:     "Interest rate data (central bank policy rates, short/long-term rates, government bond yields, ICE BofA corporate bond series, EURIBOR, ECB rates, Federal Reserve rates). Requires countries='United States' — use comma-separated values for multiple countries. Do NOT use tickers= for this tool. Supports start_date/end_date and quarterly=true."
+    description:     "Interest rate data (central bank policy rates, short/long-term rates, government bond yields, ICE BofA corporate bond series, EURIBOR, ECB rates, Federal Reserve rates). Requires countries='United States' — use comma-separated values for multiple countries. Do NOT use tickers= for this tool. Supports start_date/end_date and quarterly=true. The central bank policy rate and short/long-term rate indicators additionally support rolling=N (moving-average smoothing) and trailing=N (trailing N-period sum)."
     module_name:     "mixed"
     category:        "mixed"
     index_category:  "interest_rates"

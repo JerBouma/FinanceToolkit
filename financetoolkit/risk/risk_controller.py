@@ -151,6 +151,17 @@ class Risk:
 
         toolkit.risk.collect_all_metrics()
         ```
+
+        Which returns:
+
+        |      |   Ulcer Index |   GARCH |   Skewness |   Kurtosis |   Downside Deviation |   Variance |   Volatility |
+        |:-----|--------------:|--------:|-----------:|-----------:|---------------------:|-----------:|-------------:|
+        | 2021 |        0.0376 |  0.0616 |    -0.0677 |     3.3347 |               0.0102 |     0.063  |       0.2511 |
+        | 2022 |        0.0672 |  0.1223 |     0.3199 |     4.012  |               0.0135 |     0.1274 |       0.357  |
+        | 2023 |        0.0332 |  0.1667 |    -0.0672 |     4.4211 |               0.0082 |     0.0412 |       0.203  |
+        | 2024 |        0.0341 |  0.2181 |     0.4479 |     6.516  |               0.0091 |     0.0515 |       0.2268 |
+        | 2025 |        0.0492 |  0.2452 |     1.1284 |    16.8074 |               0.0149 |     0.1056 |       0.3249 |
+        | 2026 |        0.0391 |  0.2585 |    -0.2958 |     4.5239 |               0.0119 |     0.0717 |       0.2677 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
@@ -640,6 +651,17 @@ class Risk:
 
         toolkit.risk.get_conditional_drawdown_at_risk()
         ```
+
+        Which returns:
+
+        |      |    AMZN |    TSLA |   Benchmark |
+        |:-----|--------:|--------:|------------:|
+        | 2021 | -0.1325 | -0.3407 |     -0.0437 |
+        | 2022 | -0.499  | -0.6603 |     -0.2424 |
+        | 2023 | -0.1756 | -0.2867 |     -0.0832 |
+        | 2024 | -0.1612 | -0.3662 |     -0.0576 |
+        | 2025 | -0.2721 | -0.4558 |     -0.1459 |
+        | 2026 | -0.1869 | -0.2267 |     -0.072  |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
@@ -740,6 +762,17 @@ class Risk:
 
         toolkit.risk.get_tail_ratio()
         ```
+
+        Which returns:
+
+        |      |   AMZN |   TSLA |   Benchmark |
+        |:-----|-------:|-------:|------------:|
+        | 2021 | 0.8591 | 1.0173 |      1.0688 |
+        | 2022 | 0.8406 | 1.0049 |      0.9524 |
+        | 2023 | 1.2609 | 1.1958 |      1.0432 |
+        | 2024 | 1.1246 | 1.1942 |      0.9049 |
+        | 2025 | 0.9359 | 1.0702 |      0.93   |
+        | 2026 | 1.0012 | 0.9592 |      0.8828 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
@@ -917,6 +950,17 @@ class Risk:
 
         toolkit.risk.get_maximum_drawdown_duration()
         ```
+
+        Which returns:
+
+        |      |   AMZN |   TSLA |   Benchmark |
+        |:-----|-------:|-------:|------------:|
+        | 2021 |     30 |     28 |          21 |
+        | 2022 |    248 |    247 |         195 |
+        | 2023 |     25 |     73 |          63 |
+        | 2024 |     23 |     76 |          14 |
+        | 2025 |     52 |     57 |          34 |
+        | 2026 |     24 |     64 |          43 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
@@ -998,6 +1042,17 @@ class Risk:
 
         toolkit.risk.get_maximum_drawdown_recovery_time()
         ```
+
+        Which returns:
+
+        |      |   AMZN |   TSLA |   Benchmark |
+        |:-----|-------:|-------:|------------:|
+        | 2021 |    nan |    159 |          13 |
+        | 2022 |    nan |    nan |         nan |
+        | 2023 |     46 |    nan |          24 |
+        | 2024 |     66 |     51 |          32 |
+        | 2025 |    135 |    114 |          55 |
+        | 2026 |     40 |    nan |          11 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
@@ -1614,6 +1669,17 @@ class Risk:
 
         toolkit.risk.get_variance(period="yearly")
         ```
+
+        Which returns:
+
+        | Date   |   AMZN |   TSLA |   Benchmark |
+        |:-------|-------:|-------:|------------:|
+        | 2021   | 0.058  | 0.2999 |      0.0172 |
+        | 2022   | 0.2508 | 0.4446 |      0.0589 |
+        | 2023   | 0.109  | 0.2922 |      0.0174 |
+        | 2024   | 0.0789 | 0.4032 |      0.0158 |
+        | 2025   | 0.1184 | 0.4031 |      0.0379 |
+        | 2026   | 0.0999 | 0.1859 |      0.02   |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
@@ -1691,6 +1757,17 @@ class Risk:
 
         toolkit.risk.get_volatility(period="yearly")
         ```
+
+        Which returns:
+
+        | Date   |   AMZN |   TSLA |   Benchmark |
+        |:-------|-------:|-------:|------------:|
+        | 2021   | 0.2409 | 0.5476 |      0.131  |
+        | 2022   | 0.5008 | 0.6668 |      0.2427 |
+        | 2023   | 0.3302 | 0.5406 |      0.1318 |
+        | 2024   | 0.2809 | 0.635  |      0.1258 |
+        | 2025   | 0.3442 | 0.6349 |      0.1948 |
+        | 2026   | 0.3161 | 0.4312 |      0.1414 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
@@ -1768,6 +1845,17 @@ class Risk:
 
         toolkit.risk.get_excess_volatility(period="yearly")
         ```
+
+        Which returns:
+
+        | Date   |   AMZN |   TSLA |   Benchmark |
+        |:-------|-------:|-------:|------------:|
+        | 2021   | 0.2414 | 0.5483 |      0.1333 |
+        | 2022   | 0.5207 | 0.686  |      0.2663 |
+        | 2023   | 0.3421 | 0.5535 |      0.1527 |
+        | 2024   | 0.2841 | 0.6346 |      0.1336 |
+        | 2025   | 0.3435 | 0.635  |      0.1946 |
+        | 2026   | 0.3196 | 0.4331 |      0.1446 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
@@ -1856,6 +1944,17 @@ class Risk:
 
         toolkit.risk.get_downside_deviation()
         ```
+
+        Which returns:
+
+        |      |   AMZN |   TSLA |   Benchmark |
+        |:-----|-------:|-------:|------------:|
+        | 2021 | 0.0106 | 0.0215 |      0.0058 |
+        | 2022 | 0.0202 | 0.0283 |      0.0095 |
+        | 2023 | 0.0129 | 0.0217 |      0.005  |
+        | 2024 | 0.0118 | 0.0227 |      0.006  |
+        | 2025 | 0.0146 | 0.0257 |      0.0096 |
+        | 2026 | 0.0123 | 0.0165 |      0.0061 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 

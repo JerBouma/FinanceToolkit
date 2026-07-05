@@ -315,6 +315,28 @@ class FixedIncome:
 
         Returns:
             pandas.DataFrame: A DataFrame containing the bond prices for different coupon rates and years to maturity.
+
+        As an example:
+
+        ```python
+        from financetoolkit import FixedIncome
+
+        fixedincome = FixedIncome()
+
+        fixedincome.get_present_value(
+            coupon_rate=[0.03, 0.05, 0.07],
+            years_to_maturity=[5, 10, 15],
+            show_input_info=False,
+        )
+        ```
+
+        Which returns:
+
+        |   Coupon Rate |   (5,) |   (10,) |   (15,) |
+        |--------------:|-------:|--------:|--------:|
+        |          0.03 |  80.04 |   66.45 |   57.2  |
+        |          0.05 |  88.02 |   79.87 |   74.32 |
+        |          0.07 |  96.01 |   93.29 |   91.44 |
         """
         coupon_rate = (
             np.round(
@@ -410,6 +432,29 @@ class FixedIncome:
 
         Returns:
             pandas.DataFrame: A DataFrame containing the bond duration for different coupon rates and years to maturity.
+
+        As an example:
+
+        ```python
+        from financetoolkit import FixedIncome
+
+        fixedincome = FixedIncome()
+
+        fixedincome.get_duration(
+            duration_type='modified',
+            coupon_rate=[0.03, 0.05, 0.07],
+            years_to_maturity=[5, 10, 15],
+            show_input_info=False,
+        )
+        ```
+
+        Which returns:
+
+        |   Coupon Rate |   (5,) |   (10,) |   (15,) |
+        |--------------:|-------:|--------:|--------:|
+        |          0.03 |   4.33 |    7.82 |   10.4  |
+        |          0.05 |   4.18 |    7.26 |    9.41 |
+        |          0.07 |   4.05 |    6.87 |    8.79 |
         """
         duration_type_lower = duration_type.lower()
 
@@ -542,6 +587,29 @@ class FixedIncome:
 
         Returns:
             pandas.DataFrame: A DataFrame containing the yield to maturity for different bond prices and years to maturity.
+
+        As an example:
+
+        ```python
+        from financetoolkit import FixedIncome
+
+        fixedincome = FixedIncome()
+
+        fixedincome.get_yield_to_maturity(
+            coupon_rate=0.05,
+            years_to_maturity=[5, 10, 15],
+            bond_price=[95, 100, 105],
+            show_input_info=False,
+        )
+        ```
+
+        Which returns:
+
+        |   Bond Price |   (5,) |   (10,) |   (15,) |
+        |-------------:|-------:|--------:|--------:|
+        |           95 | 0.0619 |  0.0567 |  0.055  |
+        |          100 | 0.05   |  0.05   |  0.05   |
+        |          105 | 0.0388 |  0.0437 |  0.0453 |
         """
         if bond_price is None:
             # Determine the step size based on the input number
@@ -660,7 +728,7 @@ class FixedIncome:
             pandas.DataFrame: The Black derivative prices rounded to the specified decimal places.
             pandas.DataFrame (optional): The Black derivative payoffs rounded to the specified decimal places if include_payoff is True.
 
-        For example:
+        As an example:
 
         ```python
         from financetoolkit import FixedIncome

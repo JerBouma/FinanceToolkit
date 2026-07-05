@@ -168,6 +168,15 @@ class Models:
 
         dupont_analysis = toolkit.models.get_dupont_analysis()
         ```
+
+        Which returns:
+
+        |                   |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:------------------|-------:|-------:|-------:|-------:|-------:|
+        | Net Profit Margin | 0.2588 | 0.2531 | 0.2531 | 0.2397 | 0.2692 |
+        | Asset Turnover    | 1.0841 | 1.1206 | 1.0868 | 1.0899 | 1.1493 |
+        | Equity Multiplier | 5.255  | 6.1862 | 6.252  | 6.0251 | 5.5418 |
+        | Return on Equity  | 1.4744 | 1.7546 | 1.7195 | 1.5741 | 1.7142 |
         """
         if trailing:
             self._dupont_analysis = dupont_model.get_dupont_analysis(
@@ -285,6 +294,17 @@ class Models:
 
         extended_dupont_analysis = toolkit.models.get_extended_dupont_analysis()
         ```
+
+        Which returns:
+
+        |                         |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:------------------------|-------:|-------:|-------:|-------:|-------:|
+        | Interest Burden Ratio   | 0.9976 | 1.0028 | 1.005  | 0.9978 | 1.0024 |
+        | Tax Burden Ratio        | 0.869  | 0.8356 | 0.8486 | 0.7607 | 0.8419 |
+        | Operating Profit Margin | 0.2985 | 0.302  | 0.2967 | 0.3158 | 0.3189 |
+        | Asset Turnover          | 1.0841 | 1.1206 | 1.0868 | 1.0899 | 1.1493 |
+        | Equity Multiplier       | 5.255  | 6.1862 | 6.252  | 6.0251 | 5.5418 |
+        | Return on Equity        | 1.4744 | 1.7546 | 1.7195 | 1.5741 | 1.7142 |
         """
         if trailing:
             self._extended_dupont_analysis = dupont_model.get_extended_dupont_analysis(
@@ -412,6 +432,18 @@ class Models:
 
         enterprise_value_breakdown = toolkit.models.get_enterprise_value_breakdown()
         ```
+
+        Which returns:
+
+        |                           |          2021 |          2022 |          2023 |          2024 |          2025 |
+        |:--------------------------|--------------:|--------------:|--------------:|--------------:|--------------:|
+        | Share Price               | 177.57        | 129.93        | 192.53        | 250.42        | 271.86        |
+        | Market Capitalization     |   2.9947e+12  |   2.12121e+12 |   3.04439e+12 |   3.8585e+12  |   4.07918e+12 |
+        | Total Debt                |   1.36522e+11 |   1.3248e+11  |   1.2393e+11  |   1.19059e+11 |   1.12377e+11 |
+        | Minority Interest         |   0           |   0           |   0           |   0           |   0           |
+        | Preferred Equity          |   0           |   0           |   0           |   0           |   0           |
+        | Cash and Cash Equivalents |   3.494e+10   |   2.3646e+10  |   2.9965e+10  |   2.9943e+10  |   3.5934e+10  |
+        | Enterprise Value          |   3.09629e+12 |   2.23005e+12 |   3.13835e+12 |   3.94761e+12 |   4.15562e+12 |
         """
         average_shares = (
             self._income_statement.loc[:, "Weighted Average Shares Diluted", :]
@@ -553,6 +585,17 @@ class Models:
 
         toolkit.models.get_weighted_average_cost_of_capital()
         ```
+
+        Which returns:
+
+        |                                  |        2021 |         2022 |        2023 |        2024 |        2025 |
+        |:---------------------------------|------------:|-------------:|------------:|------------:|------------:|
+        | Market Value Equity              | 2.9947e+12  |  2.12121e+12 | 3.04439e+12 | 3.8585e+12  | 4.07918e+12 |
+        | Market Value Debt                | 1.36522e+11 |  1.3248e+11  | 1.2393e+11  | 1.19059e+11 | 1.12377e+11 |
+        | Cost of Equity                   | 0.3494      | -0.2646      | 0.2633      | 0.2266      | 0.1938      |
+        | Cost of Debt                     | 0.0194      |  0.0221      | 0.0317      | 0           | 0           |
+        | Corporate Tax Rate               | 0.133       |  0.162       | 0.1472      | 0.2409      | 0.1561      |
+        | Weighted Average Cost of Capital | 0.3349      | -0.248       | 0.2541      | 0.2198      | 0.1886      |
         """
         average_shares = (
             self._income_statement.loc[:, "Weighted Average Shares Diluted", :]
@@ -756,6 +799,16 @@ class Models:
 
         toolkit.models.get_intrinsic_valuation(0.05, 0.025, 0.094)
         ```
+
+        Which returns:
+
+        |                      |   Periods = 5 |
+        |:---------------------|--------------:|
+        | Terminal Value       |   1.87255e+12 |
+        | Cash Flow Projection |   1.9986e+12  |
+        | Enterprise Value     |   1.58232e+12 |
+        | Equity Value         |   1.50588e+12 |
+        | Intrinsic Value      | 100.36        |
         """
         if cash_flow_type not in [
             "Free Cash Flow",
@@ -923,6 +976,21 @@ class Models:
 
         toolkit.models.get_gorden_growth_model(0.20, 0.05)
         ```
+
+        Which returns:
+
+        |      |   AAPL |    MSFT |
+        |:-----|-------:|--------:|
+        | 2022 | 0      |  0      |
+        | 2023 | 0      |  0      |
+        | 2024 | 0      |  0      |
+        | 2025 | 5.46   | 12.18   |
+        | 2026 | 5.733  | 12.789  |
+        | 2027 | 6.0196 | 13.4284 |
+        | 2028 | 6.3206 | 14.0999 |
+        | 2029 | 6.6367 | 14.8049 |
+        | 2030 | 6.9685 | 15.5451 |
+        | 2031 | 7.3169 | 16.3224 |
         """
         dividends_per_share = self._historical_data[
             "quarterly" if self._quarterly else "yearly"
@@ -1035,6 +1103,17 @@ class Models:
 
         altman_z_score = toolkit.models.get_altman_z_score()
         ```
+
+        Which returns:
+
+        |                                   |    2021 |    2022 |    2023 |    2024 |    2025 |
+        |:----------------------------------|--------:|--------:|--------:|--------:|--------:|
+        | Working Capital to Total Assets   |  0.0267 | -0.0527 | -0.0049 | -0.0641 | -0.0492 |
+        | Retained Earnings to Total Assets |  0.0158 | -0.0087 | -0.0006 | -0.0525 | -0.0397 |
+        | EBIT to Total Assets              |  0.3187 |  0.3459 |  0.3337 |  0.3383 |  0.3695 |
+        | Market Value to Total Liabilities | 10.4015 |  7.022  | 10.4821 | 12.5264 | 14.2874 |
+        | Sales to Total Assets             |  1.0422 |  1.1179 |  1.0871 |  1.0714 |  1.1584 |
+        | Altman Z-Score                    |  8.3888 |  6.3973 |  8.4709 |  9.5533 | 10.8355 |
         """
         altman_z_score = {}
 
@@ -1263,6 +1342,21 @@ class Models:
 
         toolkit.models.get_piotroski_score()
         ```
+
+        Which returns:
+
+        |                                     |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:------------------------------------|-------:|-------:|-------:|-------:|-------:|
+        | Return on Assets Criteria           |      1 |      1 |      1 |      1 |      1 |
+        | Operating Cashflow Criteria         |      1 |      1 |      1 |      1 |      1 |
+        | Change in Return on Assets Criteria |      0 |      0 |      0 |      0 |      1 |
+        | Accruals Criteria                   |      1 |      1 |      1 |      1 |      1 |
+        | Change in Leverage Criteria         |      0 |      1 |      1 |      1 |      1 |
+        | Change in Current Ratio Criteria    |      0 |      0 |      1 |      0 |      1 |
+        | Number of Shares Criteria           |      0 |      1 |      1 |      1 |      1 |
+        | Gross Margin Criteria               |      1 |      1 |      1 |      1 |      1 |
+        | Asset Turnover Criteria             |      0 |      1 |      0 |      1 |      1 |
+        | Piotroski Score                     |      4 |      7 |      7 |      7 |      9 |
         """
         piotroski_score = {}
 
@@ -1470,6 +1564,16 @@ class Models:
 
         toolkit.models.get_present_value_of_growth_opportunities()
         ```
+
+        Which returns:
+
+        |      |    AAPL |    TSLA |
+        |:-----|--------:|--------:|
+        | 2021 | 160.807 | 348.912 |
+        | 2022 | 154.58  | 133.203 |
+        | 2023 | 168.39  | 239.608 |
+        | 2024 | 222.742 | 399.662 |
+        | 2025 | 232.279 | 446.273 |
         """
         wacc = self.get_weighted_average_cost_of_capital(
             show_full_results=False, trailing=trailing

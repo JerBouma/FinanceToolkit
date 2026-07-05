@@ -173,6 +173,21 @@ class Ratios:
 
         toolkit.ratios.collect_all_ratios()
         ```
+
+        Which returns:
+
+        |                           |         2021 |         2022 |         2023 |         2024 |         2025 |
+        |:--------------------------|-------------:|-------------:|-------------:|-------------:|-------------:|
+        | Price-to-Cash-Flow        | 28.7847      | 17.3655      | 27.5403      | 32.6289      | 36.5905      |
+        | Price-to-Free-Cash-Flow   | 32.2174      | 19.0341      | 30.5711      | 35.4618      | 41.301       |
+        | Market Cap                |  2.9947e+12  |  2.12121e+12 |  3.04439e+12 |  3.8585e+12  |  4.07918e+12 |
+        | Enterprise Value          |  3.09629e+12 |  2.23005e+12 |  3.13835e+12 |  3.94761e+12 |  4.15562e+12 |
+        | EV-to-Sales               |  8.464       |  5.6553      |  8.188       | 10.0953      |  9.9856      |
+        | EV-to-EBIT                | 27.682       | 18.274       | 26.671       | 31.9683      | 31.3091      |
+        | EV-to-EBITDA              | 25.7524      | 17.0831      | 24.9432      | 29.3152      | 28.7093      |
+        | EV-to-Operating-Cash-Flow | 29.7611      | 18.2565      | 28.3904      | 33.3825      | 37.2762      |
+        | Tangible Asset Value      |  6.309e+10   |  5.0672e+10  |  6.2146e+10  |  5.695e+10   |  7.3733e+10  |
+        | Net Current Asset Value   |  9.355e+09   | -1.8577e+10  | -1.742e+09   | -2.3405e+10  | -1.7674e+10  |
         """
         if not days:
             days = 365 / 4 if self._quarterly else 365
@@ -495,6 +510,21 @@ class Ratios:
 
         toolkit.ratios.collect_efficiency_ratios()
         ```
+
+        Which returns:
+
+        |                                      |     2021 |     2022 |     2023 |     2024 |     2025 |
+        |:-------------------------------------|---------:|---------:|---------:|---------:|---------:|
+        | Days of Accounts Payable Outstanding |  83.1683 |  97.0504 | 108.003  | 114.15   | 114.657  |
+        | Cash Conversion Cycle                | -52.8985 | -62.435  | -70.9225 | -72.9716 | -71.8218 |
+        | Cash Conversion Efficiency           |   0.2844 |   0.3098 |   0.2884 |   0.3024 |   0.2679 |
+        | Receivables Turnover                 |   0.0579 |   0.0691 |   0.0753 |   0.0805 |   0.0879 |
+        | Inventory Turnover Ratio             |  40.0303 |  38.7899 |  37.9777 |  30.8955 |  33.9834 |
+        | Accounts Payable Turnover Ratio      |   4.3887 |   3.7609 |   3.3795 |   3.1975 |   3.1834 |
+        | SGA-to-Revenue Ratio                 |   0.0601 |   0.0636 |   0.065  |   0.0667 |   0.0663 |
+        | Fixed Asset Turnover                 |   1.846  |   1.8192 |   1.7979 |   1.8576 |   1.9664 |
+        | Asset Turnover Ratio                 |   1.0841 |   1.1206 |   1.0868 |   1.0899 |   1.1493 |
+        | Operating Ratio                      |   0.7022 |   0.6971 |   0.7018 |   0.6849 |   0.6803 |
         """
         if not days:
             days = 365 / 4 if self._quarterly else 365
@@ -635,6 +665,13 @@ class Ratios:
 
         asset_turnover_ratios = toolkit.ratios.get_asset_turnover_ratio()
         ```
+
+        Which returns:
+
+        |      |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:-----|-------:|-------:|-------:|-------:|-------:|
+        | AAPL | 1.0841 | 1.1206 | 1.0868 | 1.0899 | 1.1493 |
+        | TSLA | 0.942  | 1.1277 | 1.0243 | 0.8544 | 0.7298 |
         """
         if trailing:
             asset_turnover_ratio = efficiency_model.get_asset_turnover_ratio(
@@ -714,6 +751,13 @@ class Ratios:
 
         inventory_turnover_ratios = toolkit.ratios.get_inventory_turnover_ratio()
         ```
+
+        Which returns:
+
+        |      |    2021 |    2022 |    2023 |    2024 |    2025 |
+        |:-----|--------:|--------:|--------:|--------:|--------:|
+        | AAPL | 40.0303 | 38.7899 | 37.9777 | 30.8955 | 33.9834 |
+        | TSLA |  8.1593 |  6.5185 |  5.9787 |  6.2582 |  6.3692 |
         """
         if trailing:
             inventory_turnover_ratio = efficiency_model.get_inventory_turnover_ratio(
@@ -798,6 +842,13 @@ class Ratios:
 
         toolkit.ratios.get_days_of_inventory_outstanding()
         ```
+
+        Which returns:
+
+        |      |    2021 |    2022 |    2023 |    2024 |    2025 |
+        |:-----|--------:|--------:|--------:|--------:|--------:|
+        | AAPL |  9.1181 |  9.4097 |  9.6109 | 11.814  | 10.7405 |
+        | TSLA | 44.7344 | 55.9945 | 61.0502 | 58.3231 | 57.307  |
         """
         if not days:
             days = 365 / 4 if self._quarterly else 365
@@ -891,6 +942,13 @@ class Ratios:
 
         dso_ratios = toolkit.ratios.get_days_of_sales_outstanding()
         ```
+
+        Which returns:
+
+        |      |    2021 |    2022 |    2023 |    2024 |    2025 |
+        |:-----|--------:|--------:|--------:|--------:|--------:|
+        | AAPL | 21.1517 | 25.2057 | 27.4699 | 29.3645 | 32.0949 |
+        | TSLA | 12.8814 | 10.8991 | 12.1826 | 14.807  | 17.3095 |
         """
         if not days:
             days = 365 / 4 if self._quarterly else 365
@@ -975,6 +1033,13 @@ class Ratios:
 
         operating_cycle_ratios = toolkit.ratios.get_operating_cycle()
         ```
+
+        Which returns:
+
+        |      |    2021 |    2022 |    2023 |    2024 |    2025 |
+        |:-----|--------:|--------:|--------:|--------:|--------:|
+        | AAPL | 30.2698 | 34.6154 | 37.0808 | 41.1785 | 42.8354 |
+        | TSLA | 57.6159 | 66.8936 | 73.2328 | 73.1301 | 74.6164 |
         """
         if not days:
             days = 365 / 4 if self._quarterly else 365
@@ -1083,6 +1148,13 @@ class Ratios:
 
         ap_turnover_ratios = toolkit.ratios.get_accounts_payables_turnover_ratio()
         ```
+
+        Which returns:
+
+        |      |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:-----|-------:|-------:|-------:|-------:|-------:|
+        | AAPL | 4.3887 | 3.7609 | 3.3795 | 3.1975 | 3.1834 |
+        | TSLA | 5.0034 | 4.795  | 5.33   | 5.9647 | 6.0153 |
         """
         if trailing:
             accounts_payables_turnover_ratio = (
@@ -1171,6 +1243,13 @@ class Ratios:
 
         dpo_ratios = toolkit.ratios.get_days_of_accounts_payable_outstanding()
         ```
+
+        Which returns:
+
+        |      |    2021 |    2022 |     2023 |     2024 |     2025 |
+        |:-----|--------:|--------:|---------:|---------:|---------:|
+        | AAPL | 83.1683 | 97.0504 | 108.003  | 114.15   | 114.657  |
+        | TSLA | 72.951  | 76.1207 |  68.4805 |  61.1935 |  60.6784 |
         """
         if not days:
             days = 365 / 4 if self._quarterly else 365
@@ -1262,6 +1341,13 @@ class Ratios:
 
         ccc_values = toolkit.ratios.get_cash_conversion_cycle()
         ```
+
+        Which returns:
+
+        |      |     2021 |     2022 |     2023 |     2024 |     2025 |
+        |:-----|---------:|---------:|---------:|---------:|---------:|
+        | AAPL | -52.8985 | -62.435  | -70.9225 | -72.9716 | -71.8218 |
+        | TSLA | -15.3351 |  -9.2271 |   4.7523 |  11.9367 |  13.9381 |
         """
         if not days:
             days = 365 / 4 if self._quarterly else 365
@@ -1395,6 +1481,13 @@ class Ratios:
 
         toolkit.ratios.get_cash_conversion_efficiency()
         ```
+
+        Which returns:
+
+        |      |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:-----|-------:|-------:|-------:|-------:|-------:|
+        | AAPL | 0.2844 | 0.3098 | 0.2884 | 0.3024 | 0.2679 |
+        | TSLA | 0.2136 | 0.1807 | 0.137  | 0.1528 | 0.1555 |
         """
         if trailing:
             cash_conversion_efficiency = (
@@ -1476,6 +1569,13 @@ class Ratios:
 
         receivables_turnover = toolkit.ratios.get_receivables_turnover()
         ```
+
+        Which returns:
+
+        |      |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:-----|-------:|-------:|-------:|-------:|-------:|
+        | AAPL | 0.0579 | 0.0691 | 0.0753 | 0.0805 | 0.0879 |
+        | TSLA | 0.0353 | 0.0299 | 0.0334 | 0.0406 | 0.0474 |
         """
         if trailing:
             receivables_turnover = efficiency_model.get_receivables_turnover(
@@ -1554,6 +1654,13 @@ class Ratios:
 
         sga_to_revenue_ratios = toolkit.ratios.get_sga_to_revenue_ratio()
         ```
+
+        Which returns:
+
+        |      |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:-----|-------:|-------:|-------:|-------:|-------:|
+        | AAPL | 0.0601 | 0.0636 | 0.065  | 0.0667 | 0.0663 |
+        | TSLA | 0.0839 | 0.0484 | 0.0496 | 0.0527 | 0.0615 |
         """
         if trailing:
             sga_to_revenue_ratio = efficiency_model.get_sga_to_revenue_ratio(
@@ -1633,6 +1740,13 @@ class Ratios:
 
         fixed_asset_turnover_ratios = toolkit.ratios.get_fixed_asset_turnover()
         ```
+
+        Which returns:
+
+        |      |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:-----|-------:|-------:|-------:|-------:|-------:|
+        | AAPL | 1.846  | 1.8192 | 1.7979 | 1.8576 | 1.9664 |
+        | TSLA | 1.7804 | 2.1312 | 1.9665 | 1.6185 | 1.4273 |
         """
         if trailing:
             fixed_asset_turnover = efficiency_model.get_fixed_asset_turnover(
@@ -1710,6 +1824,13 @@ class Ratios:
 
         operating_ratios = toolkit.ratios.get_operating_ratio()
         ```
+
+        Which returns:
+
+        |      |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:-----|-------:|-------:|-------:|-------:|-------:|
+        | AAPL | 0.7022 | 0.6971 | 0.7018 | 0.6849 | 0.6803 |
+        | TSLA | 0.8793 | 0.8324 | 0.9081 | 0.9276 | 0.9541 |
         """
         if trailing:
             operating_ratio = efficiency_model.get_operating_ratio(
@@ -1775,6 +1896,18 @@ class Ratios:
 
         liquidity_ratios = toolkit.ratios.collect_liquidity_ratios()
         ```
+
+        Which returns:
+
+        |                                    |       2021 |        2022 |       2023 |        2024 |        2025 |
+        |:-----------------------------------|-----------:|------------:|-----------:|------------:|------------:|
+        | Current Ratio                      |  1.0746    |  0.8794     |  0.988     |  0.8673     |  0.8933     |
+        | Quick Ratio                        |  0.7086    |  0.4967     |  0.6267    |  0.5589     |  0.5704     |
+        | Cash Ratio                         |  0.4992    |  0.3137     |  0.4236    |  0.3695     |  0.3302     |
+        | Working Capital                    |  9.355e+09 | -1.8577e+10 | -1.742e+09 | -2.3405e+10 | -1.7674e+10 |
+        | Operating Cash Flow Ratio          |  0.8291    |  0.7933     |  0.7607    |  0.6704     |  0.6731     |
+        | Operating Cash Flow to Sales Ratio |  0.2844    |  0.3098     |  0.2884    |  0.3024     |  0.2679     |
+        | Short Term Coverage Ratio          | -4.7495    | -3.9423     | -4.1291    | -4.1839     | -4.5755     |
         """
         liquidity_ratios: dict = {}
 
@@ -1885,6 +2018,13 @@ class Ratios:
 
         current_ratios = toolkit.ratios.get_current_ratio()
         ```
+
+        Which returns:
+
+        |      |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:-----|-------:|-------:|-------:|-------:|-------:|
+        | AAPL | 1.0746 | 0.8794 | 0.988  | 0.8673 | 0.8933 |
+        | TSLA | 1.3753 | 1.532  | 1.7259 | 2.0249 | 2.1644 |
         """
         if trailing:
             current_ratio = liquidity_model.get_current_ratio(
@@ -1964,6 +2104,13 @@ class Ratios:
 
         quick_ratios = toolkit.ratios.get_quick_ratio()
         ```
+
+        Which returns:
+
+        |      |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:-----|-------:|-------:|-------:|-------:|-------:|
+        | AAPL | 0.7086 | 0.4967 | 0.6267 | 0.5589 | 0.5704 |
+        | TSLA | 0.9957 | 0.9411 | 1.1341 | 1.4219 | 1.5335 |
         """
         if trailing:
             quick_ratio = liquidity_model.get_quick_ratio(
@@ -2049,6 +2196,13 @@ class Ratios:
 
         cash_ratios = toolkit.ratios.get_cash_ratio()
         ```
+
+        Which returns:
+
+        |      |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:-----|-------:|-------:|-------:|-------:|-------:|
+        | AAPL | 0.4992 | 0.3137 | 0.4236 | 0.3695 | 0.3302 |
+        | TSLA | 0.8986 | 0.8306 | 1.012  | 1.2686 | 1.3893 |
         """
         if trailing:
             cash_ratio = liquidity_model.get_cash_ratio(
@@ -2129,6 +2283,13 @@ class Ratios:
 
         working_capitals = toolkit.ratios.get_working_capital()
         ```
+
+        Which returns:
+
+        |      |      2021 |        2022 |        2023 |        2024 |        2025 |
+        |:-----|----------:|------------:|------------:|------------:|------------:|
+        | AAPL | 9.355e+09 | -1.8577e+10 | -1.742e+09  | -2.3405e+10 | -1.7674e+10 |
+        | TSLA | 7.395e+09 |  1.4208e+10 |  2.0868e+10 |  2.9539e+10 |  3.6928e+10 |
         """
         if trailing:
             working_capital = liquidity_model.get_working_capital(
@@ -2206,6 +2367,13 @@ class Ratios:
 
         operating_cash_flow_ratios = toolkit.ratios.get_operating_cash_flow_ratio()
         ```
+
+        Which returns:
+
+        |      |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:-----|-------:|-------:|-------:|-------:|-------:|
+        | AAPL | 0.8291 | 0.7933 | 0.7607 | 0.6704 | 0.6731 |
+        | TSLA | 0.5835 | 0.5513 | 0.4611 | 0.5178 | 0.465  |
         """
         if trailing:
             operating_cash_flow_ratio = liquidity_model.get_operating_cash_flow_ratio(
@@ -2283,6 +2451,13 @@ class Ratios:
 
         operating_cash_flow_sales_ratios = toolkit.ratios.get_operating_cash_flow_sales_ratio()
         ```
+
+        Which returns:
+
+        |      |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:-----|-------:|-------:|-------:|-------:|-------:|
+        | AAPL | 0.2844 | 0.3098 | 0.2884 | 0.3024 | 0.2679 |
+        | TSLA | 0.2136 | 0.1807 | 0.137  | 0.1528 | 0.1555 |
         """
         if trailing:
             operating_cash_flow_sales_ratio = (
@@ -2354,6 +2529,13 @@ class Ratios:
 
         toolkit.ratios.get_short_term_coverage_ratio()
         ```
+
+        Which returns:
+
+        |      |    2021 |    2022 |    2023 |    2024 |    2025 |
+        |:-----|--------:|--------:|--------:|--------:|--------:|
+        | AAPL | -4.7495 | -3.9423 | -4.1291 | -4.1839 | -4.5755 |
+        | TSLA | -4.882  | 27.4701 |  4.9042 |  3.7675 |  4.0998 |
         """
         if trailing:
             short_term_coverage_ratio = liquidity_model.get_short_term_coverage_ratio(
@@ -2427,6 +2609,21 @@ class Ratios:
 
         profitability_ratios = toolkit.ratios.collect_profitability_ratios()
         ```
+
+        Which returns:
+
+        |                                             |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:--------------------------------------------|-------:|-------:|-------:|-------:|-------:|
+        | Return on Assets                            | 0.2806 | 0.2836 | 0.275  | 0.2613 | 0.3093 |
+        | Return on Equity                            | 1.4744 | 1.7546 | 1.7195 | 1.5741 | 1.7142 |
+        | Return on Invested Capital                  | 0.5637 | 0.599  | 0.6068 | 0.6019 | 0.7038 |
+        | Return on Capital Employed                  | 0.496  | 0.6139 | 0.5677 | 0.6548 | 0.6855 |
+        | Return on Tangible Assets                   | 0.155  | 0.1543 | 0.1495 | 0.1425 | 0.17   |
+        | Income Quality Ratio                        | 1.0988 | 1.2239 | 1.1397 | 1.2616 | 0.9953 |
+        | Net Income per EBT                          | 0.867  | 0.838  | 0.8528 | 0.7591 | 0.8439 |
+        | Free Cash Flow to Operating Cash Flow Ratio | 0.8935 | 0.9123 | 0.9009 | 0.9201 | 0.8859 |
+        | EBT to EBIT Ratio                           | 0.9764 | 0.976  | 0.9666 | 1      | 1      |
+        | EBIT to Revenue                             | 0.3058 | 0.3095 | 0.307  | 0.3158 | 0.3189 |
         """
         profitability_ratios: dict = {}
 
@@ -2568,6 +2765,13 @@ class Ratios:
 
         gross_margin_ratios = toolkit.ratios.get_gross_margin()
         ```
+
+        Which returns:
+
+        |      |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:-----|-------:|-------:|-------:|-------:|-------:|
+        | AAPL | 0.4178 | 0.4331 | 0.4413 | 0.4621 | 0.4691 |
+        | TSLA | 0.2528 | 0.256  | 0.1825 | 0.1786 | 0.1803 |
         """
         if trailing:
             gross_margin = profitability_model.get_gross_margin(
@@ -2640,6 +2844,13 @@ class Ratios:
 
         operating_margin_ratios = toolkit.ratios.get_operating_margin()
         ```
+
+        Which returns:
+
+        |      |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:-----|-------:|-------:|-------:|-------:|-------:|
+        | AAPL | 0.2978 | 0.3029 | 0.2982 | 0.3151 | 0.3197 |
+        | TSLA | 0.1212 | 0.1676 | 0.0919 | 0.0724 | 0.0459 |
         """
         if trailing:
             operating_margin = profitability_model.get_operating_margin(
@@ -2714,6 +2925,13 @@ class Ratios:
 
         net_profit_margin_ratios = toolkit.ratios.get_net_profit_margin()
         ```
+
+        Which returns:
+
+        |      |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:-----|-------:|-------:|-------:|-------:|-------:|
+        | AAPL | 0.2588 | 0.2531 | 0.2531 | 0.2397 | 0.2692 |
+        | TSLA | 0.1028 | 0.1545 | 0.155  | 0.073  | 0.04   |
         """
         if trailing:
             net_profit_margin = profitability_model.get_net_profit_margin(
@@ -2792,6 +3010,13 @@ class Ratios:
 
         interest_coverage_ratios = toolkit.ratios.get_interest_burden_ratio()
         ```
+
+        Which returns:
+
+        |      |    2021 |    2022 |    2023 |     2024 |     2025 |
+        |:-----|--------:|--------:|--------:|---------:|---------:|
+        | AAPL | 41.1905 | 40.7496 | 29.062  | inf      | inf      |
+        | TSLA | 17.5822 | 71.4974 | 56.9936 |  20.2171 |  12.8846 |
         """
         if trailing:
             interest_burden_ratio = profitability_model.get_interest_coverage_ratio(
@@ -2868,6 +3093,13 @@ class Ratios:
 
         pretax_profit_margin = toolkit.ratios.get_income_before_tax_profit_margin()
         ```
+
+        Which returns:
+
+        |      |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:-----|-------:|-------:|-------:|-------:|-------:|
+        | AAPL | 0.2985 | 0.302  | 0.2967 | 0.3158 | 0.3189 |
+        | TSLA | 0.1178 | 0.1684 | 0.1031 | 0.092  | 0.0557 |
         """
         if trailing:
             income_before_tax_profit_margin = (
@@ -2948,6 +3180,13 @@ class Ratios:
 
         effective_tax_rate = toolkit.ratios.get_effective_tax_rate()
         ```
+
+        Which returns:
+
+        |      |   2021 |   2022 |    2023 |   2024 |   2025 |
+        |:-----|-------:|-------:|--------:|-------:|-------:|
+        | AAPL | 0.133  | 0.162  |  0.1472 | 0.2409 | 0.1561 |
+        | TSLA | 0.1102 | 0.0825 | -0.5015 | 0.2043 | 0.2696 |
         """
         if trailing:
             effective_tax_rate = profitability_model.get_effective_tax_rate(
@@ -3025,6 +3264,13 @@ class Ratios:
 
         roa_ratios = toolkit.ratios.get_return_on_assets()
         ```
+
+        Which returns:
+
+        |      |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:-----|-------:|-------:|-------:|-------:|-------:|
+        | AAPL | 0.2806 | 0.2836 | 0.275  | 0.2613 | 0.3093 |
+        | TSLA | 0.0968 | 0.1742 | 0.1588 | 0.0624 | 0.0292 |
         """
         if trailing:
             return_on_assets = profitability_model.get_return_on_assets(
@@ -3108,6 +3354,13 @@ class Ratios:
 
         roe_ratios = toolkit.ratios.get_return_on_equity()
         ```
+
+        Which returns:
+
+        |      |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:-----|-------:|-------:|-------:|-------:|-------:|
+        | AAPL | 1.4744 | 1.7546 | 1.7195 | 1.5741 | 1.7142 |
+        | TSLA | 0.2002 | 0.3248 | 0.2739 | 0.1039 | 0.0485 |
         """
         if trailing:
             return_on_equity = profitability_model.get_return_on_equity(
@@ -3190,6 +3443,13 @@ class Ratios:
 
         roic_ratios = toolkit.ratios.get_return_on_invested_capital()
         ```
+
+        Which returns:
+
+        |      |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:-----|-------:|-------:|-------:|-------:|-------:|
+        | AAPL | 0.5637 | 0.599  | 0.6068 | 0.6019 | 0.7038 |
+        | TSLA | 0.1429 | 0.2733 | 0.2403 | 0.0889 | 0.0425 |
         """
         if trailing:
             return_on_invested_capital = (
@@ -3295,6 +3555,13 @@ class Ratios:
 
         income_quality_ratios = toolkit.ratios.get_income_quality_ratio()
         ```
+
+        Which returns:
+
+        |      |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:-----|-------:|-------:|-------:|-------:|-------:|
+        | AAPL | 1.0988 | 1.2239 | 1.1397 | 1.2616 | 0.9953 |
+        | TSLA | 2.0779 | 1.1701 | 0.8838 | 2.093  | 3.8869 |
         """
         if trailing:
             income_quality_ratio = profitability_model.get_income_quality_ratio(
@@ -3371,6 +3638,13 @@ class Ratios:
 
         rota_ratios = toolkit.ratios.get_return_on_tangible_assets()
         ```
+
+        Which returns:
+
+        |      |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:-----|-------:|-------:|-------:|-------:|-------:|
+        | AAPL | 0.155  | 0.1543 | 0.1495 | 0.1425 | 0.17   |
+        | TSLA | 0.0632 | 0.118  | 0.1114 | 0.0443 | 0.0208 |
         """
         if trailing:
             return_on_tangible_assets = (
@@ -3469,6 +3743,13 @@ class Ratios:
 
         roce_ratios = toolkit.ratios.get_return_on_capital_employed()
         ```
+
+        Which returns:
+
+        |      |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:-----|-------:|-------:|-------:|-------:|-------:|
+        | AAPL | 0.496  | 0.6139 | 0.5677 | 0.6548 | 0.6855 |
+        | TSLA | 0.1556 | 0.25   | 0.1304 | 0.0999 | 0.0524 |
         """
         if trailing:
             return_on_capital_employed = (
@@ -3567,6 +3848,13 @@ class Ratios:
 
         net_income_per_ebt_ratios = toolkit.ratios.get_net_income_per_ebt()
         ```
+
+        Which returns:
+
+        |      |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:-----|-------:|-------:|-------:|-------:|-------:|
+        | AAPL | 0.867  | 0.838  | 0.8528 | 0.7591 | 0.8439 |
+        | TSLA | 0.8878 | 0.9175 | 1.5002 | 0.7951 | 0.7272 |
         """
         if trailing:
             net_income_per_ebt = profitability_model.get_net_income_per_ebt(
@@ -3643,6 +3931,13 @@ class Ratios:
 
         fcf_to_ocf_ratios = toolkit.ratios.get_free_cash_flow_operating_cash_flow_ratio()
         ```
+
+        Which returns:
+
+        |      |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:-----|-------:|-------:|-------:|-------:|-------:|
+        | AAPL | 0.8935 | 0.9123 | 0.9009 | 0.9201 | 0.8859 |
+        | TSLA | 0.3029 | 0.5129 | 0.3287 | 0.24   | 0.4218 |
         """
         if trailing:
             free_cash_flow_operating_cash_flow_ratio = (
@@ -3725,6 +4020,13 @@ class Ratios:
 
         tax_burden_ratios = toolkit.ratios.get_tax_burden_ratio()
         ```
+
+        Which returns:
+
+        |      |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:-----|-------:|-------:|-------:|-------:|-------:|
+        | AAPL | 0.867  | 0.838  | 0.8528 | 0.7591 | 0.8439 |
+        | TSLA | 0.8723 | 0.9173 | 1.504  | 0.7931 | 0.7188 |
         """
         if trailing:
             tax_burden_ratio = profitability_model.get_tax_burden_ratio(
@@ -3803,6 +4105,13 @@ class Ratios:
 
         ebt_to_ebit_ratios = toolkit.ratios.get_EBT_to_EBIT()
         ```
+
+        Which returns:
+
+        |      |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:-----|-------:|-------:|-------:|-------:|-------:|
+        | AAPL | 0.9764 | 0.976  | 0.9666 | 1      | 1      |
+        | TSLA | 0.9438 | 0.9863 | 0.9846 | 0.9624 | 0.9392 |
         """
         if trailing:
             EBT_to_EBIT = profitability_model.get_EBT_to_EBIT(
@@ -3896,6 +4205,13 @@ class Ratios:
 
         ebit_to_revenue_ratios = toolkit.ratios.get_EBIT_to_revenue()
         ```
+
+        Which returns:
+
+        |      |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:-----|-------:|-------:|-------:|-------:|-------:|
+        | AAPL | 0.3058 | 0.3095 | 0.307  | 0.3158 | 0.3189 |
+        | TSLA | 0.1227 | 0.1707 | 0.1049 | 0.0954 | 0.0586 |
         """
         if trailing:
             EBIT_to_revenue = profitability_model.get_EBIT_to_revenue(
@@ -3967,6 +4283,20 @@ class Ratios:
 
         solvency_ratios = toolkit.ratios.collect_solvency_ratios()
         ```
+
+        Which returns:
+
+        |                               |    2021 |     2022 |     2023 |     2024 |    2025 |
+        |:------------------------------|--------:|---------:|---------:|---------:|--------:|
+        | Debt-to-Assets Ratio          |  0.3889 |   0.3756 |   0.3515 |   0.3262 |  0.3128 |
+        | Debt-to-Equity Ratio          |  2.1639 |   2.6145 |   1.9942 |   2.0906 |  1.5241 |
+        | Debt Service Coverage Ratio   |  0.8683 |   0.7757 |   0.7866 |   0.6985 |  0.8033 |
+        | Equity Multiplier             |  5.255  |   6.1862 |   6.252  |   6.0251 |  5.5418 |
+        | Free Cash Flow Yield          |  0.031  |   0.0525 |   0.0327 |   0.0282 |  0.0242 |
+        | Net-Debt to EBITDA Ratio      |  0.8449 |   0.8337 |   0.7468 |   0.6618 |  0.5281 |
+        | Cash Flow Coverage Ratio      |  0.7621 |   0.922  |   0.892  |   0.9932 |  0.992  |
+        | CAPEX Coverage Ratio          | -9.3855 | -11.4075 | -10.087  | -12.5176 | -8.7678 |
+        | Dividend CAPEX Coverage Ratio | -4.0716 |  -4.781  |  -4.2543 |  -4.7913 | -3.9623 |
         """
         solvency_ratios: dict = {}
 
@@ -4087,6 +4417,13 @@ class Ratios:
 
         debt_to_assets_ratios = toolkit.ratios.get_debt_to_assets_ratio()
         ```
+
+        Which returns:
+
+        |      |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:-----|-------:|-------:|-------:|-------:|-------:|
+        | AAPL | 0.3889 | 0.3756 | 0.3515 | 0.3262 | 0.3128 |
+        | TSLA | 0.1428 | 0.0698 | 0.0898 | 0.1116 | 0.0608 |
         """
         if trailing:
             debt_to_assets_ratio = solvency_model.get_debt_to_assets_ratio(
@@ -4165,6 +4502,13 @@ class Ratios:
 
         debt_to_equity_ratios = toolkit.ratios.get_debt_to_equity_ratio()
         ```
+
+        Which returns:
+
+        |      |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:-----|-------:|-------:|-------:|-------:|-------:|
+        | AAPL | 2.1639 | 2.6145 | 1.9942 | 2.0906 | 1.5241 |
+        | TSLA | 0.2809 | 0.1252 | 0.1505 | 0.1849 | 0.1011 |
         """
         if trailing:
             debt_to_equity_ratio = solvency_model.get_debt_to_equity_ratio(
@@ -4242,6 +4586,13 @@ class Ratios:
 
         interest_coverage_ratios = toolkit.ratios.get_interest_coverage_ratio()
         ```
+
+        Which returns:
+
+        |      |    2021 |    2022 |    2023 |     2024 |    2025 |
+        |:-----|--------:|--------:|--------:|---------:|--------:|
+        | AAPL | 45.4567 | 44.538  | 31.9908 | inf      | inf     |
+        | TSLA | 25.4286 | 90.0471 | 86.9103 |  35.5543 |  31.074 |
         """
         if trailing:
             interest_coverage_ratio = solvency_model.get_interest_coverage_ratio(
@@ -4324,6 +4675,13 @@ class Ratios:
 
         equity_multipliers = toolkit.ratios.get_equity_multiplier()
         ```
+
+        Which returns:
+
+        |      |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:-----|-------:|-------:|-------:|-------:|-------:|
+        | AAPL | 5.255  | 6.1862 | 6.252  | 6.0251 | 5.5418 |
+        | TSLA | 2.0679 | 1.8646 | 1.7255 | 1.6657 | 1.6601 |
         """
         if trailing:
             equity_multiplier = solvency_model.get_equity_multiplier(
@@ -4406,6 +4764,13 @@ class Ratios:
 
         debt_service_coverage_ratios = toolkit.ratios.get_debt_service_coverage_ratio()
         ```
+
+        Which returns:
+
+        |      |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:-----|-------:|-------:|-------:|-------:|-------:|
+        | AAPL | 0.8683 | 0.7757 | 0.7866 | 0.6985 | 0.8033 |
+        | TSLA | 0.331  | 0.5113 | 0.3093 | 0.2455 | 0.1373 |
         """
         if trailing:
             debt_service_coverage_ratio = (
@@ -4491,6 +4856,13 @@ class Ratios:
 
         free_cash_flow_yield_ratios = toolkit.ratios.get_free_cash_flow_yield()
         ```
+
+        Which returns:
+
+        |      |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:-----|-------:|-------:|-------:|-------:|-------:|
+        | AAPL | 0.031  | 0.0525 | 0.0327 | 0.0282 | 0.0242 |
+        | TSLA | 0.0029 | 0.0176 | 0.005  | 0.0025 | 0.0039 |
         """
         average_shares = (
             self._income_statement.loc[:, "Weighted Average Shares Diluted", :]
@@ -4609,6 +4981,13 @@ class Ratios:
 
         net_debt_to_ebitda_ratios = toolkit.ratios.get_net_debt_to_ebitda_ratio()
         ```
+
+        Which returns:
+
+        |      |    2021 |    2022 |    2023 |    2024 |    2025 |
+        |:-----|--------:|--------:|--------:|--------:|--------:|
+        | AAPL |  0.8449 |  0.8337 |  0.7468 |  0.6618 |  0.5281 |
+        | TSLA | -0.9225 | -0.6108 | -0.5034 | -0.2022 | -0.7747 |
         """
         if trailing:
             net_debt_to_ebitda_ratio = solvency_model.get_net_debt_to_ebitda_ratio(
@@ -4687,6 +5066,13 @@ class Ratios:
 
         cash_flow_coverage_ratios = toolkit.ratios.get_cash_flow_coverage_ratio()
         ```
+
+        Which returns:
+
+        |      |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:-----|-------:|-------:|-------:|-------:|-------:|
+        | AAPL | 0.7621 | 0.922  | 0.892  | 0.9932 | 0.992  |
+        | TSLA | 1.2957 | 2.5616 | 1.3847 | 1.0954 | 1.7606 |
         """
         if trailing:
             cash_flow_coverage_ratio = solvency_model.get_cash_flow_coverage_ratio(
@@ -4764,6 +5150,13 @@ class Ratios:
 
         capex_coverage_ratios = toolkit.ratios.get_capex_coverage_ratio()
         ```
+
+        Which returns:
+
+        |      |    2021 |     2022 |     2023 |     2024 |    2025 |
+        |:-----|--------:|---------:|---------:|---------:|--------:|
+        | AAPL | -9.3855 | -11.4075 | -10.087  | -12.5176 | -8.7678 |
+        | TSLA | -1.4346 |  -2.053  |  -1.4896 |  -1.3157 | -1.7294 |
         """
         if trailing:
             capex_coverage_ratio = solvency_model.get_capex_coverage_ratio(
@@ -4843,6 +5236,13 @@ class Ratios:
 
         capex_dividend_coverage_ratios = toolkit.ratios.get_capex_dividend_coverage_ratio()
         ```
+
+        Which returns:
+
+        |      |    2021 |   2022 |    2023 |    2024 |    2025 |
+        |:-----|--------:|-------:|--------:|--------:|--------:|
+        | AAPL | -4.0716 | -4.781 | -4.2543 | -4.7913 | -3.9623 |
+        | TSLA | -1.4346 | -2.053 | -1.4896 | -1.3157 | -1.7294 |
         """
         if trailing:
             dividend_capex_coverage_ratio = (
@@ -4919,6 +5319,21 @@ class Ratios:
 
         valuation_ratios = toolkit.ratios.collect_valuation_ratios()
         ```
+
+        Which returns:
+
+        |                           |         2021 |         2022 |         2023 |         2024 |         2025 |
+        |:--------------------------|-------------:|-------------:|-------------:|-------------:|-------------:|
+        | Price-to-Cash-Flow        | 28.7847      | 17.3655      | 27.5403      | 32.6289      | 36.5905      |
+        | Price-to-Free-Cash-Flow   | 32.2174      | 19.0341      | 30.5711      | 35.4618      | 41.301       |
+        | Market Cap                |  2.9947e+12  |  2.12121e+12 |  3.04439e+12 |  3.8585e+12  |  4.07918e+12 |
+        | Enterprise Value          |  3.09629e+12 |  2.23005e+12 |  3.13835e+12 |  3.94761e+12 |  4.15562e+12 |
+        | EV-to-Sales               |  8.464       |  5.6553      |  8.188       | 10.0953      |  9.9856      |
+        | EV-to-EBIT                | 27.682       | 18.274       | 26.671       | 31.9683      | 31.3091      |
+        | EV-to-EBITDA              | 25.7524      | 17.0831      | 24.9432      | 29.3152      | 28.7093      |
+        | EV-to-Operating-Cash-Flow | 29.7611      | 18.2565      | 28.3904      | 33.3825      | 37.2762      |
+        | Tangible Asset Value      |  6.309e+10   |  5.0672e+10  |  6.2146e+10  |  5.695e+10   |  7.3733e+10  |
+        | Net Current Asset Value   |  9.355e+09   | -1.8577e+10  | -1.742e+09   | -2.3405e+10  | -1.7674e+10  |
         """
         valuation_ratios: dict = {}
 
@@ -5094,6 +5509,13 @@ class Ratios:
 
         eps_ratios = toolkit.ratios.get_earnings_per_share()
         ```
+
+        Which returns:
+
+        |      |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:-----|-------:|-------:|-------:|-------:|-------:|
+        | AAPL | 5.614  | 6.1132 | 6.1341 | 6.0836 | 7.465  |
+        | TSLA | 1.6341 | 3.6213 | 4.3067 | 2.0383 | 1.0754 |
         """
         average_shares = (
             self._income_statement.loc[:, "Weighted Average Shares Diluted", :]
@@ -5193,6 +5615,13 @@ class Ratios:
 
         revenue_per_share = toolkit.ratios.get_revenue_per_share()
         ```
+
+        Which returns:
+
+        |      |    2021 |    2022 |    2023 |    2024 |    2025 |
+        |:-----|--------:|--------:|--------:|--------:|--------:|
+        | AAPL | 21.691  | 24.1536 | 24.2393 | 25.3785 | 27.7354 |
+        | TSLA | 15.8957 | 23.4423 | 27.7864 | 27.9274 | 26.8784 |
         """
         average_shares = (
             self._income_statement.loc[:, "Weighted Average Shares Diluted", :]
@@ -5273,6 +5702,13 @@ class Ratios:
 
         pe_ratio = toolkit.ratios.get_price_to_earnings_ratio()
         ```
+
+        Which returns:
+
+        |      |     2021 |    2022 |    2023 |     2024 |    2025 |
+        |:-----|---------:|--------:|--------:|---------:|--------:|
+        | AAPL |  31.6299 | 21.254  | 31.3868 |  41.1631 |  36.418 |
+        | TSLA | 215.568  | 34.0154 | 57.6961 | 198.126  | 418.189 |
         """
         eps = self.get_earnings_per_share(
             include_dividends,
@@ -5372,6 +5808,13 @@ class Ratios:
 
         peg_ratio = toolkit.ratios.get_price_to_earnings_growth_ratio()
         ```
+
+        Which returns:
+
+        |      |   2021 |   2022 |   2023 |   2024 |    2025 |
+        |:-----|-------:|-------:|-------:|-------:|--------:|
+        | AAPL |    nan |    nan |    nan |    nan |  2.371  |
+        | TSLA |    nan |    nan |    nan |    nan | 62.6969 |
         """
         trailing_metric = 5 * 4 if self._quarterly else 5
 
@@ -5462,6 +5905,13 @@ class Ratios:
 
         book_value_per_share = toolkit.ratios.get_book_value_per_share()
         ```
+
+        Which returns:
+
+        |      |   2021 |    2022 |    2023 |    2024 |    2025 |
+        |:-----|-------:|--------:|--------:|--------:|--------:|
+        | AAPL | 3.7409 |  3.1038 |  3.9302 |  3.6961 |  4.914  |
+        | TSLA | 8.9158 | 12.8645 | 17.9841 | 20.8442 | 23.2815 |
         """
         average_shares = (
             self._income_statement.loc[:, "Weighted Average Shares Diluted", :]
@@ -5550,6 +6000,13 @@ class Ratios:
 
         price_to_book_ratio = toolkit.ratios.get_price_to_book_ratio()
         ```
+
+        Which returns:
+
+        |      |    2021 |    2022 |    2023 |    2024 |    2025 |
+        |:-----|--------:|--------:|--------:|--------:|--------:|
+        | AAPL | 47.4672 | 41.8616 | 48.9873 | 67.7525 | 55.3236 |
+        | TSLA | 39.5096 |  9.5752 | 13.8166 | 19.3742 | 19.3166 |
         """
         book_value_per_share = self.get_book_value_per_share(
             diluted, trailing=trailing if trailing else None
@@ -5640,6 +6097,13 @@ class Ratios:
 
         interest_debt_per_share = toolkit.ratios.get_interest_debt_per_share()
         ```
+
+        Which returns:
+
+        |      |        2021 |        2022 |        2023 |        2024 |        2025 |
+        |:-----|------------:|------------:|------------:|------------:|------------:|
+        | AAPL | 3.26744e+08 | 3.61194e+08 | 5.01822e+08 | 0           | 0           |
+        | TSLA | 1.41576e+08 | 1.15471e+08 | 5.67543e+07 | 8.98701e+07 | 1.42367e+08 |
         """
         average_shares = (
             self._income_statement.loc[:, "Weighted Average Shares Diluted", :]
@@ -5727,6 +6191,13 @@ class Ratios:
 
         capex_per_share = toolkit.ratios.get_capex_per_share()
         ```
+
+        Which returns:
+
+        |      |    2021 |    2022 |    2023 |    2024 |    2025 |
+        |:-----|--------:|--------:|--------:|--------:|--------:|
+        | AAPL | -0.6573 | -0.6559 | -0.6931 | -0.6131 | -0.8474 |
+        | TSLA | -2.3668 | -2.0639 | -2.5552 | -3.2424 | -2.417  |
         """
         average_shares = (
             self._income_statement.loc[:, "Weighted Average Shares Diluted", :]
@@ -5809,6 +6280,13 @@ class Ratios:
 
         dividend_yield = toolkit.ratios.get_dividend_yield()
         ```
+
+        Which returns:
+
+        |      |   2021 |   2022 |   2023 |   2024 |   2025 |   2026 |
+        |:-----|-------:|-------:|-------:|-------:|-------:|-------:|
+        | AAPL |      0 |      0 |      0 |      0 | 0.0029 | 0.0017 |
+        | TSLA |      0 |      0 |      0 |      0 | 0      | 0      |
         """
         if show_daily:
             share_prices = self._daily_historical_data.loc[:, "Adj Close"][
@@ -5905,6 +6383,13 @@ class Ratios:
 
         weighted_dividend_yield = toolkit.ratios.get_weighted_dividend_yield()
         ```
+
+        Which returns:
+
+        |      |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:-----|-------:|-------:|-------:|-------:|-------:|
+        | AAPL | 0.0048 |  0.007 | 0.0049 | 0.0039 | 0.0038 |
+        | TSLA | 0      |  0     | 0      | 0      | 0      |
         """
         average_shares = (
             self._income_statement.loc[:, "Weighted Average Shares Diluted", :]
@@ -6022,6 +6507,13 @@ class Ratios:
 
         price_to_cash_flow_ratio = toolkit.ratios.get_price_to_cash_flow_ratio()
         ```
+
+        Which returns:
+
+        |      |     2021 |    2022 |    2023 |    2024 |     2025 |
+        |:-----|---------:|--------:|--------:|--------:|---------:|
+        | AAPL |  28.7847 | 17.3655 | 27.5403 | 32.6289 |  36.5905 |
+        | TSLA | 103.745  | 29.0716 | 65.2832 | 94.6614 | 107.589  |
         """
         average_shares = (
             self._income_statement.loc[:, "Weighted Average Shares Diluted", :]
@@ -6138,6 +6630,13 @@ class Ratios:
 
         price_to_free_cash_flow_ratio = toolkit.ratios.get_price_to_free_cash_flow_ratio()
         ```
+
+        Which returns:
+
+        |      |     2021 |    2022 |     2023 |     2024 |    2025 |
+        |:-----|---------:|--------:|---------:|---------:|--------:|
+        | AAPL |  32.2174 | 19.0341 |  30.5711 |  35.4618 |  41.301 |
+        | TSLA | 342.45   | 56.6804 | 198.621  | 394.48   | 255.082 |
         """
         market_cap = self.get_market_cap(
             diluted=diluted,
@@ -6232,6 +6731,13 @@ class Ratios:
 
         market_cap = toolkit.ratios.get_market_cap()
         ```
+
+        Which returns:
+
+        |      |        2021 |        2022 |        2023 |        2024 |        2025 |
+        |:-----|------------:|------------:|------------:|------------:|------------:|
+        | AAPL | 2.9947e+12  | 2.12121e+12 | 3.04439e+12 | 3.8585e+12  | 4.07918e+12 |
+        | TSLA | 1.19275e+12 | 4.2805e+11  | 8.65394e+11 | 1.41263e+12 | 1.58661e+12 |
         """
         average_shares = (
             self._income_statement.loc[:, "Weighted Average Shares Diluted", :]
@@ -6326,6 +6832,13 @@ class Ratios:
 
         enterprise_value = toolkit.ratios.get_enterprise_value()
         ```
+
+        Which returns:
+
+        |      |        2021 |        2022 |        2023 |        2024 |        2025 |
+        |:-----|------------:|------------:|------------:|------------:|------------:|
+        | AAPL | 3.09629e+12 | 2.23005e+12 | 3.13835e+12 | 3.94761e+12 | 4.15562e+12 |
+        | TSLA | 1.18544e+12 | 4.1874e+11  | 8.59544e+11 | 1.41088e+12 | 1.5792e+12  |
         """
         total_debt = self._balance_sheet_statement.loc[:, "Total Debt", :]
         minority_interest = self._balance_sheet_statement.loc[:, "Minority Interest", :]
@@ -6459,6 +6972,13 @@ class Ratios:
 
         ev_to_sales_ratio = toolkit.ratios.get_ev_to_sales_ratio()
         ```
+
+        Which returns:
+
+        |      |    2021 |   2022 |   2023 |    2024 |    2025 |
+        |:-----|--------:|-------:|-------:|--------:|--------:|
+        | AAPL |  8.464  | 5.6553 | 8.188  | 10.0953 |  9.9856 |
+        | TSLA | 22.0248 | 5.1403 | 8.8821 | 14.4425 | 16.6535 |
         """
         enterprise_value = self.get_enterprise_value(
             diluted=diluted,
@@ -6548,6 +7068,13 @@ class Ratios:
 
         ev_to_ebitda_ratio = toolkit.ratios.get_ev_to_ebitda_ratio()
         ```
+
+        Which returns:
+
+        |      |     2021 |    2022 |    2023 |     2024 |     2025 |
+        |:-----|---------:|--------:|--------:|---------:|---------:|
+        | AAPL |  25.7524 | 17.0831 | 24.9432 |  29.3152 |  28.7093 |
+        | TSLA | 125.656  | 24.3467 | 63.3975 | 113.379  | 150.357  |
         """
         enterprise_value = self.get_enterprise_value(
             diluted=diluted,
@@ -6652,6 +7179,13 @@ class Ratios:
 
         ev_to_operating_cashflow_ratio = toolkit.ratios.get_ev_to_operating_cashflow_ratio()
         ```
+
+        Which returns:
+
+        |      |     2021 |    2022 |    2023 |    2024 |     2025 |
+        |:-----|---------:|--------:|--------:|--------:|---------:|
+        | AAPL |  29.7611 | 18.2565 | 28.3904 | 33.3825 |  37.2762 |
+        | TSLA | 103.109  | 28.4392 | 64.8419 | 94.5442 | 107.086  |
         """
         enterprise_value = self.get_enterprise_value(
             diluted=diluted,
@@ -6752,6 +7286,13 @@ class Ratios:
 
         earnings_yield_ratio = toolkit.ratios.get_earnings_yield()
         ```
+
+        Which returns:
+
+        |      |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:-----|-------:|-------:|-------:|-------:|-------:|
+        | AAPL | 0.0316 | 0.047  | 0.0319 | 0.0243 | 0.0275 |
+        | TSLA | 0.0046 | 0.0294 | 0.0173 | 0.005  | 0.0024 |
         """
         eps = self.get_earnings_per_share(
             include_dividends, diluted=diluted, trailing=trailing if trailing else None
@@ -6836,6 +7377,13 @@ class Ratios:
 
         toolkit.ratios.get_dividend_payout_ratio()
         ```
+
+        Which returns:
+
+        |      |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:-----|-------:|-------:|-------:|-------:|-------:|
+        | AAPL | 0.1528 | 0.1487 | 0.1549 | 0.1625 | 0.1377 |
+        | TSLA | 0      | 0      | 0      | 0      | 0      |
         """
         if trailing:
             payout_ratio = valuation_model.get_dividend_payout_ratio(
@@ -6907,6 +7455,13 @@ class Ratios:
 
         toolkit.ratios.get_reinvestment_rate()
         ```
+
+        Which returns:
+
+        |      |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:-----|-------:|-------:|-------:|-------:|-------:|
+        | AAPL | 0.8472 | 0.8513 | 0.8451 | 0.8375 | 0.8623 |
+        | TSLA | 1      | 1      | 1      | 1      | 1      |
         """
         if trailing:
             dividend_payout_ratio = self.get_dividend_payout_ratio(trailing=trailing)
@@ -6969,6 +7524,13 @@ class Ratios:
 
         tangible_asset_value = toolkit.ratios.get_tangible_asset_value()
         ```
+
+        Which returns:
+
+        |      |       2021 |       2022 |       2023 |       2024 |       2025 |
+        |:-----|-----------:|-----------:|-----------:|-----------:|-----------:|
+        | AAPL | 6.309e+10  | 5.0672e+10 | 6.2146e+10 | 5.695e+10  | 7.3733e+10 |
+        | TSLA | 3.1383e+10 | 4.5704e+10 | 6.3356e+10 | 7.3436e+10 | 8.2608e+10 |
         """
         if trailing:
             tangible_asset_value = valuation_model.get_tangible_asset_value(
@@ -7042,6 +7604,13 @@ class Ratios:
 
         net_current_asset_value = toolkit.ratios.get_net_current_asset_value()
         ```
+
+        Which returns:
+
+        |      |      2021 |        2022 |        2023 |        2024 |        2025 |
+        |:-----|----------:|------------:|------------:|------------:|------------:|
+        | AAPL | 9.355e+09 | -1.8577e+10 | -1.742e+09  | -2.3405e+10 | -1.7674e+10 |
+        | TSLA | 7.395e+09 |  1.4208e+10 |  2.0868e+10 |  2.9539e+10 |  3.6928e+10 |
         """
         if trailing:
             net_current_asset_value = valuation_model.get_net_current_asset_value(
@@ -7112,6 +7681,13 @@ class Ratios:
 
         ev_to_ebit_ratio = toolkit.ratios.get_ev_to_ebit()
         ```
+
+        Which returns:
+
+        |      |    2021 |   2022 |    2023 |     2024 |     2025 |
+        |:-----|--------:|-------:|--------:|---------:|---------:|
+        | AAPL |  27.682 | 18.274 | 26.671  |  31.9683 |  31.3091 |
+        | TSLA | 179.531 | 30.11  | 84.6508 | 151.431  | 284.285  |
         """
         enterprise_value = self.get_enterprise_value(
             diluted=diluted,

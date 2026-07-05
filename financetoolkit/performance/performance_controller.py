@@ -174,6 +174,17 @@ class Performance:
 
         toolkit.performance.collect_all_metrics()
         ```
+
+        Which returns:
+
+        |      |   Win Rate |   Upside Capture Ratio |   Downside Capture Ratio |   M2 Ratio |   Tracking Error |
+        |:-----|-----------:|-----------------------:|-------------------------:|-----------:|-----------------:|
+        | 2021 |     0.4921 |                 1.3754 |                   1.4016 |     1.2868 |           0.0118 |
+        | 2022 |     0.4821 |                 1.3044 |                   1.3043 |    -0.8603 |           0.0115 |
+        | 2023 |     0.576  |                 1.1783 |                   0.9486 |     2.1832 |           0.009  |
+        | 2024 |     0.504  |                 1.1158 |                   1.0337 |     1.1242 |           0.0121 |
+        | 2025 |     0.472  |                 1.0162 |                   1.0842 |     0.1354 |           0.0139 |
+        | 2026 |     0.504  |                 0.766  |                   0.5691 |     0.3377 |           0.0154 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
         rounding = rounding if rounding else self._rounding
@@ -318,6 +329,17 @@ class Performance:
 
         toolkit.performance.get_beta()
         ```
+
+        Which returns:
+
+        | Date   |   AAPL |   AMZN |
+        |:-------|-------:|-------:|
+        | 2021   | 1.3093 | 1.0276 |
+        | 2022   | 1.2989 | 1.6292 |
+        | 2023   | 1.1    | 1.5133 |
+        | 2024   | 0.9656 | 1.5442 |
+        | 2025   | 1.2485 | 1.3264 |
+        | 2026   | 0.7887 | 1.281  |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
@@ -423,6 +445,17 @@ class Performance:
 
         toolkit.performance.get_capital_asset_pricing_model()
         ```
+
+        Which returns:
+
+        | Date   |    AAPL |    TSLA |
+        |:-------|--------:|--------:|
+        | 2021   |  0.3494 |  0.4914 |
+        | 2022   | -0.2646 | -0.3666 |
+        | 2023   |  0.2633 |  0.4905 |
+        | 2024   |  0.2266 |  0.4924 |
+        | 2025   |  0.1938 |  0.3135 |
+        | 2026   |  0.0822 |  0.1364 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
@@ -510,6 +543,17 @@ class Performance:
 
         toolkit.performance.get_factor_asset_correlations()
         ```
+
+        Which returns:
+
+        |      |   AAPL |   TSLA |
+        |:-----|-------:|-------:|
+        | 2021 | 0.6688 | 0.5063 |
+        | 2022 | 0.8365 | 0.6432 |
+        | 2023 | 0.6986 | 0.5615 |
+        | 2024 | 0.518  | 0.4874 |
+        | 2025 | 0.7403 | 0.6978 |
+        | 2026 | 0.4834 | 0.6055 |
         """
 
         factors_to_calculate = (
@@ -631,6 +675,16 @@ class Performance:
 
         toolkit.performance.get_factor_correlations()
         ```
+
+        Which returns:
+
+        |        |   Mkt-RF |     SMB |     HML |     RMW |     CMA |
+        |:-------|---------:|--------:|--------:|--------:|--------:|
+        | Mkt-RF |   1      | -0.4121 |  0.332  |  0.014  | -0.4682 |
+        | SMB    |  -0.4121 |  1      | -0.1718 | -0.2326 |  0.1379 |
+        | HML    |   0.332  | -0.1718 |  1      | -0.4551 |  0.184  |
+        | RMW    |   0.014  | -0.2326 | -0.4551 |  1      | -0.4106 |
+        | CMA    |  -0.4682 |  0.1379 |  0.184  | -0.4106 |  1      |
         """
         factors_to_calculate = (
             factors_to_calculate
@@ -758,6 +812,17 @@ class Performance:
         # Calculate Fama and French 5 Factor model scores
         toolkit.performance.get_fama_and_french_model()
         ```
+
+        Which returns:
+
+        |      |    AAPL |    TSLA |
+        |:-----|--------:|--------:|
+        | 2021 | -0.0051 | -0.0195 |
+        | 2022 | -0.0196 | -0.02   |
+        | 2023 | -0.013  |  0.0045 |
+        | 2024 |  0.0022 | -0.0059 |
+        | 2025 | -0.0191 | -0.0191 |
+        | 2026 | -0.0204 | -0.0153 |
         """
         if method not in ["simple", "multi"]:
             raise ValueError(
@@ -1031,6 +1096,17 @@ class Performance:
 
         toolkit.performance.get_alpha()
         ```
+
+        Which returns:
+
+        | Date   |    AAPL |    TSLA |
+        |:-------|--------:|--------:|
+        | 2021   |  0.0678 |  0.2272 |
+        | 2022   | -0.0735 | -0.4555 |
+        | 2023   |  0.2389 |  0.7743 |
+        | 2024   |  0.0677 |  0.3922 |
+        | 2025   | -0.0779 | -0.0499 |
+        | 2026   |  0.0431 | -0.2173 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
@@ -1130,6 +1206,17 @@ class Performance:
 
         toolkit.performance.get_jensens_alpha()
         ```
+
+        Which returns:
+
+        | Date   |    AAPL |    TSLA |
+        |:-------|--------:|--------:|
+        | 2021   | -0.0112 |  0.0062 |
+        | 2022   | -0.0037 | -0.2837 |
+        | 2023   |  0.2185 |  0.5267 |
+        | 2024   |  0.0741 |  0.1328 |
+        | 2025   | -0.1082 | -0.1999 |
+        | 2026   |  0.0531 | -0.2615 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
@@ -1235,6 +1322,17 @@ class Performance:
 
         toolkit.performance.get_treynor_ratio()
         ```
+
+        Which returns:
+
+        | Date   |    AAPL |    TSLA |
+        |:-------|--------:|--------:|
+        | 2021   |  0.2468 |  0.2586 |
+        | 2022   | -0.2364 | -0.3971 |
+        | 2023   |  0.4028 |  0.4422 |
+        | 2024   |  0.2641 |  0.243  |
+        | 2025   |  0.0352 |  0.0323 |
+        | 2026   |  0.1146 | -0.0879 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
@@ -1349,6 +1447,17 @@ class Performance:
 
         toolkit.performance.get_sharpe_ratio()
         ```
+
+        Which returns:
+
+        | Date   |    AAPL |    TSLA |
+        |:-------|--------:|--------:|
+        | 2021   | -0.8286 | -0.3537 |
+        | 2022   | -1.2859 | -0.7606 |
+        | 2023   | -2.7296 | -1.0402 |
+        | 2024   | -2.8575 | -0.9845 |
+        | 2025   | -2.0637 | -1.0411 |
+        | 2026   | -2.4952 | -1.6057 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
@@ -1447,6 +1556,17 @@ class Performance:
 
         toolkit.performance.get_sortino_ratio()
         ```
+
+        Which returns:
+
+        | Date   |    AAPL |    TSLA |
+        |:-------|--------:|--------:|
+        | 2021   | -1.0988 | -0.5282 |
+        | 2022   | -1.5168 | -0.9959 |
+        | 2023   | -2.8934 | -1.3591 |
+        | 2024   | -3.097  | -1.3744 |
+        | 2025   | -2.4472 | -1.3183 |
+        | 2026   | -2.5624 | -1.7784 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
@@ -1529,6 +1649,17 @@ class Performance:
 
         toolkit.performance.get_ulcer_performance_index()
         ```
+
+        Which returns:
+
+        | Date   |    AAPL |    TSLA |
+        |:-------|--------:|--------:|
+        | 2021   |  8.5991 |  5.6729 |
+        | 2022   | -4.5711 | -5.0182 |
+        | 2023   | 13.3465 | 11.6618 |
+        | 2024   |  7.4872 |  6.3795 |
+        | 2025   |  0.8946 |  0.7159 |
+        | 2026   |  2.3126 | -2.6591 |
         """
 
         period = period if period else "quarterly" if self._quarterly else "yearly"
@@ -1622,6 +1753,17 @@ class Performance:
 
         toolkit.performance.get_calmar_ratio()
         ```
+
+        Which returns:
+
+        | Date   |    AAPL |    TSLA |
+        |:-------|--------:|--------:|
+        | 2021   |  1.8052 |  1.3727 |
+        | 2022   | -0.8734 | -0.8942 |
+        | 2023   |  3.1929 |  3.1074 |
+        | 2024   |  1.9404 |  1.461  |
+        | 2025   |  0.2834 |  0.2356 |
+        | 2026   |  1.0648 | -0.5212 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
@@ -1713,6 +1855,17 @@ class Performance:
 
         toolkit.performance.get_sterling_ratio()
         ```
+
+        Which returns:
+
+        | Date   |    AAPL |    TSLA |
+        |:-------|--------:|--------:|
+        | 2021   |  2.0094 |  1.7258 |
+        | 2022   | -1.074  | -1.4667 |
+        | 2023   |  3.2891 |  4.193  |
+        | 2024   |  1.9286 |  2.1544 |
+        | 2025   |  0.4371 |  0.3785 |
+        | 2026   |  0.886  | -0.6097 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
@@ -1800,6 +1953,17 @@ class Performance:
 
         toolkit.performance.get_burke_ratio()
         ```
+
+        Which returns:
+
+        | Date   |    AAPL |    TSLA |
+        |:-------|--------:|--------:|
+        | 2021   |  0.2606 |  0.1513 |
+        | 2022   | -0.1172 | -0.1172 |
+        | 2023   |  0.502  |  0.4155 |
+        | 2024   |  0.2519 |  0.1765 |
+        | 2025   |  0.0246 |  0.0195 |
+        | 2026   |  0.1417 | -0.1284 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
@@ -1893,6 +2057,17 @@ class Performance:
 
         toolkit.performance.get_m2_ratio()
         ```
+
+        Which returns:
+
+        | Date   |    AAPL |    TSLA |
+        |:-------|--------:|--------:|
+        | 2021   |  1.2868 |  0.8811 |
+        | 2022   | -0.8603 | -1.0335 |
+        | 2023   |  2.1832 |  1.8102 |
+        | 2024   |  1.1242 |  0.9127 |
+        | 2025   |  0.1354 |  0.1134 |
+        | 2026   |  0.3377 | -0.3943 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
@@ -1987,6 +2162,17 @@ class Performance:
 
         toolkit.performance.get_tracking_error()
         ```
+
+        Which returns:
+
+        | Date   |   AAPL |   TSLA |
+        |:-------|-------:|-------:|
+        | 2021   | 0.0118 | 0.0317 |
+        | 2022   | 0.0115 | 0.0344 |
+        | 2023   | 0.009  | 0.0304 |
+        | 2024   | 0.0121 | 0.0369 |
+        | 2025   | 0.0139 | 0.0328 |
+        | 2026   | 0.0154 | 0.0226 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
@@ -2087,6 +2273,17 @@ class Performance:
 
         toolkit.performance.get_information_ratio()
         ```
+
+        Which returns:
+
+        | Date   |    AAPL |    TSLA |
+        |:-------|--------:|--------:|
+        | 2021   |  0.0253 |  0.0381 |
+        | 2022   | -0.0212 | -0.0739 |
+        | 2023   |  0.0833 |  0.0817 |
+        | 2024   |  0.0231 |  0.0499 |
+        | 2025   | -0.0106 |  0.0164 |
+        | 2026   |  0.0269 | -0.0641 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
@@ -2167,6 +2364,17 @@ class Performance:
 
         toolkit.performance.get_upside_capture_ratio()
         ```
+
+        Which returns:
+
+        | Date   |   AAPL |   TSLA |
+        |:-------|-------:|-------:|
+        | 2021   | 1.3754 | 2.1079 |
+        | 2022   | 1.3044 | 1.7261 |
+        | 2023   | 1.1783 | 2.3099 |
+        | 2024   | 1.1158 | 2.5976 |
+        | 2025   | 1.0162 | 2.2065 |
+        | 2026   | 0.766  | 1.593  |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
@@ -2238,6 +2446,17 @@ class Performance:
 
         toolkit.performance.get_downside_capture_ratio()
         ```
+
+        Which returns:
+
+        | Date   |   AAPL |   TSLA |
+        |:-------|-------:|-------:|
+        | 2021   | 1.4016 | 2.0639 |
+        | 2022   | 1.3043 | 2.0238 |
+        | 2023   | 0.9486 | 1.8386 |
+        | 2024   | 1.0337 | 2.4414 |
+        | 2025   | 1.0842 | 2.2603 |
+        | 2026   | 0.5691 | 2.2236 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
@@ -2305,6 +2524,17 @@ class Performance:
 
         toolkit.performance.get_win_rate()
         ```
+
+        Which returns:
+
+        | Date   |   AAPL |   TSLA |
+        |:-------|-------:|-------:|
+        | 2021   | 0.4921 | 0.5    |
+        | 2022   | 0.4821 | 0.498  |
+        | 2023   | 0.576  | 0.532  |
+        | 2024   | 0.504  | 0.4683 |
+        | 2025   | 0.472  | 0.468  |
+        | 2026   | 0.504  | 0.472  |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
@@ -2378,6 +2608,17 @@ class Performance:
 
         toolkit.performance.get_kappa_ratio()
         ```
+
+        Which returns:
+
+        | Date   |    AAPL |    TSLA |
+        |:-------|--------:|--------:|
+        | 2021   | -0.5191 | -0.2779 |
+        | 2022   | -0.6896 | -0.4956 |
+        | 2023   | -0.8901 | -0.6046 |
+        | 2024   | -0.9024 | -0.6129 |
+        | 2025   | -0.8423 | -0.6148 |
+        | 2026   | -0.8718 | -0.7635 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
@@ -2462,6 +2703,17 @@ class Performance:
 
         toolkit.performance.get_omega_ratio()
         ```
+
+        Which returns:
+
+        |      |   AAPL |   TSLA |
+        |:-----|-------:|-------:|
+        | 2021 | 1.2354 | 1.1945 |
+        | 2022 | 0.892  | 0.8129 |
+        | 2023 | 1.4034 | 1.3043 |
+        | 2024 | 1.2462 | 1.2098 |
+        | 2025 | 1.0873 | 1.0871 |
+        | 2026 | 1.2062 | 0.9358 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
@@ -2547,6 +2799,17 @@ class Performance:
 
         toolkit.performance.get_gain_to_pain_ratio()
         ```
+
+        Which returns:
+
+        |      |    AAPL |    TSLA |
+        |:-----|--------:|--------:|
+        | 2021 |  0.2354 |  0.1945 |
+        | 2022 | -0.108  | -0.1871 |
+        | 2023 |  0.4034 |  0.3043 |
+        | 2024 |  0.2462 |  0.2098 |
+        | 2025 |  0.0873 |  0.0871 |
+        | 2026 |  0.2062 | -0.0642 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
@@ -2615,6 +2878,16 @@ class Performance:
 
         toolkit.performance.get_compound_growth_rate()
         ```
+
+        Which returns:
+
+        |                                       |   AAPL |   TSLA |   Benchmark |
+        |:--------------------------------------|-------:|-------:|------------:|
+        | Compound Annual Growth Rate (CAGR)    | 0.0965 | 0.0186 |      0.0779 |
+        | Compound Quarterly Growth Rate (CQGR) | 0.0124 | 0.0089 |      0.0087 |
+        | Compound Monthly Growth Rate (CMGR)   | 0.0124 | 0.0089 |      0.0087 |
+        | Compound Weekly Growth Rate (CWGR)    | 0.0029 | 0.0022 |      0.0021 |
+        | Compound Daily Growth Rate (CDGR)     | 0.0006 | 0.0005 |      0.0004 |
         """
         prices = (
             self._historical_data["yearly"]
@@ -2724,6 +2997,17 @@ class Performance:
 
         toolkit.performance.get_returns(period="yearly")
         ```
+
+        Which returns:
+
+        | Date   |    AMZN |    TSLA |   Benchmark |
+        |:-------|--------:|--------:|------------:|
+        | 2021   |  0.0236 |  0.4983 |      0.2701 |
+        | 2022   | -0.496  | -0.6503 |     -0.1949 |
+        | 2023   |  0.8089 |  1.0174 |      0.2429 |
+        | 2024   |  0.4449 |  0.6255 |      0.2339 |
+        | 2025   |  0.0516 |  0.1129 |      0.1638 |
+        | 2026   |  0.0508 | -0.1254 |      0.0918 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
@@ -2803,6 +3087,17 @@ class Performance:
 
         toolkit.performance.get_excess_return(period="yearly")
         ```
+
+        Which returns:
+
+        | Date   |    AMZN |    TSLA |   Benchmark |
+        |:-------|--------:|--------:|------------:|
+        | 2021   |  0.0085 |  0.4832 |      0.255  |
+        | 2022   | -0.5348 | -0.6891 |     -0.2337 |
+        | 2023   |  0.7702 |  0.9787 |      0.2042 |
+        | 2024   |  0.3992 |  0.5798 |      0.1882 |
+        | 2025   |  0.01   |  0.0713 |      0.1222 |
+        | 2026   |  0.0059 | -0.1703 |      0.0469 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 

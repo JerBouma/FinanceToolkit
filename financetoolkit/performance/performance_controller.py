@@ -331,6 +331,7 @@ class Performance:
     def get_capital_asset_pricing_model(
         self,
         period: str | None = None,
+        rolling: int | None = None,
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
@@ -369,6 +370,9 @@ class Performance:
         Args:
             period (str, optional): The period to use for the calculation. Defaults to None which
             results in basing it off the quarterly parameter as defined in the class instance.
+            rolling (int, optional): The rolling window size to use for the Beta component of the
+            calculation. If set, Beta is estimated over a rolling window of this many periods across
+            the full return history instead of per `period`. Defaults to None.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
@@ -395,11 +399,20 @@ class Performance:
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
-        historical_data = self._within_historical_data[period]
-        returns = historical_data.loc[:, "Return"][self._tickers_without_portfolio]
-        benchmark_returns = historical_data.loc[:, "Return"][self._benchmark_name]
+        if rolling:
+            historical_data = self._historical_data[period]
+            returns = historical_data.loc[:, "Return"][self._tickers_without_portfolio]
+            benchmark_returns = historical_data.loc[:, "Return"][self._benchmark_name]
 
-        beta = performance_model.get_beta(returns, benchmark_returns)
+            beta = performance_model.get_rolling_beta(
+                returns, benchmark_returns, rolling
+            )
+        else:
+            historical_data = self._within_historical_data[period]
+            returns = historical_data.loc[:, "Return"][self._tickers_without_portfolio]
+            benchmark_returns = historical_data.loc[:, "Return"][self._benchmark_name]
+
+            beta = performance_model.get_beta(returns, benchmark_returns)
 
         risk_free_rate = self._risk_free_rate_data[period]
         benchmark_returns = self._historical_data[period].loc[:, "Return"][
@@ -947,6 +960,7 @@ class Performance:
         self,
         period: str | None = None,
         show_full_results: bool = False,
+        rolling: int | None = None,
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
@@ -967,6 +981,9 @@ class Performance:
         Args:
             period (str, optional): The period to use for the calculation. Defaults to None which
             results in basing it off the quarterly parameter as defined in the class instance.
+            rolling (int, optional): The rolling window size to use for the calculation. If set,
+            Alpha is calculated as the rolling mean excess return over this many periods across
+            the full return history instead of per `period`. Defaults to None.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
@@ -994,7 +1011,12 @@ class Performance:
         returns = historical_data.loc[:, "Return"][self._tickers_without_portfolio]
         benchmark_returns = historical_data.loc[:, "Return"][self._benchmark_name]
 
-        alpha = performance_model.get_alpha(returns, benchmark_returns)
+        if rolling:
+            alpha = performance_model.get_rolling_alpha(
+                returns, benchmark_returns, rolling
+            )
+        else:
+            alpha = performance_model.get_alpha(returns, benchmark_returns)
 
         alpha = alpha.round(rounding if rounding else self._rounding).loc[
             self._start_date : self._end_date
@@ -1032,6 +1054,7 @@ class Performance:
     def get_jensens_alpha(
         self,
         period: str | None = None,
+        rolling: int | None = None,
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
@@ -1054,6 +1077,9 @@ class Performance:
         Args:
             period (str, optional): The period to use for the calculation. Defaults to None which
             results in basing it off the quarterly parameter as defined in the class instance.
+            rolling (int, optional): The rolling window size to use for the Beta component of the
+            calculation. If set, Beta is estimated over a rolling window of this many periods across
+            the full return history instead of per `period`. Defaults to None.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
@@ -1080,15 +1106,24 @@ class Performance:
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
-        historical_within_data = self._within_historical_data[period]
-        returns = historical_within_data.loc[:, "Return"][
-            self._tickers_without_portfolio
-        ]
-        benchmark_returns = historical_within_data.loc[:, "Return"][
-            self._benchmark_name
-        ]
+        if rolling:
+            historical_data = self._historical_data[period]
+            returns = historical_data.loc[:, "Return"][self._tickers_without_portfolio]
+            benchmark_returns = historical_data.loc[:, "Return"][self._benchmark_name]
 
-        beta = performance_model.get_beta(returns, benchmark_returns)
+            beta = performance_model.get_rolling_beta(
+                returns, benchmark_returns, rolling
+            )
+        else:
+            historical_within_data = self._within_historical_data[period]
+            returns = historical_within_data.loc[:, "Return"][
+                self._tickers_without_portfolio
+            ]
+            benchmark_returns = historical_within_data.loc[:, "Return"][
+                self._benchmark_name
+            ]
+
+            beta = performance_model.get_beta(returns, benchmark_returns)
 
         historical_data = self._historical_data[period]
 
@@ -1124,6 +1159,7 @@ class Performance:
     def get_treynor_ratio(
         self,
         period: str | None = None,
+        rolling: int | None = None,
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
@@ -1146,6 +1182,9 @@ class Performance:
         Args:
             period (str, optional): The period to use for the calculation. Defaults to None which
             results in basing it off the quarterly parameter as defined in the class instance.
+            rolling (int, optional): The rolling window size to use for the Beta component of the
+            calculation. If set, Beta is estimated over a rolling window of this many periods across
+            the full return history instead of per `period`. Defaults to None.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
@@ -1172,15 +1211,24 @@ class Performance:
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
-        historical_within_data = self._within_historical_data[period]
-        returns = historical_within_data.loc[:, "Return"][
-            self._tickers_without_portfolio
-        ]
-        benchmark_returns = historical_within_data.loc[:, "Return"][
-            self._benchmark_name
-        ]
+        if rolling:
+            historical_data = self._historical_data[period]
+            returns = historical_data.loc[:, "Return"][self._tickers_without_portfolio]
+            benchmark_returns = historical_data.loc[:, "Return"][self._benchmark_name]
 
-        beta = performance_model.get_beta(returns, benchmark_returns)
+            beta = performance_model.get_rolling_beta(
+                returns, benchmark_returns, rolling
+            )
+        else:
+            historical_within_data = self._within_historical_data[period]
+            returns = historical_within_data.loc[:, "Return"][
+                self._tickers_without_portfolio
+            ]
+            benchmark_returns = historical_within_data.loc[:, "Return"][
+                self._benchmark_name
+            ]
+
+            beta = performance_model.get_beta(returns, benchmark_returns)
 
         historical_data = self._historical_data[period]
 
@@ -1314,6 +1362,7 @@ class Performance:
     def get_sortino_ratio(
         self,
         period: str | None = None,
+        rolling: int | None = None,
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
@@ -1345,6 +1394,9 @@ class Performance:
         Args:
             period (str, optional): The period to use for the calculation. Defaults to None which
             results in basing it off the quarterly parameter as defined in the class instance.
+            rolling (int, optional): The rolling window size to use for the calculation. If set,
+            the Sortino ratio is calculated over a rolling window of this many periods across the
+            full return history instead of per `period`. Defaults to None.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
@@ -1371,12 +1423,23 @@ class Performance:
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
-        historical_data = self._within_historical_data[period]
-        excess_return = historical_data.loc[:, "Excess Return"][
-            self._tickers_without_portfolio
-        ]
+        if rolling:
+            period_returns = self._historical_data[period].loc[:, "Return"][
+                self._tickers_without_portfolio
+            ]
+            excess_return = performance_model.get_excess_return(
+                period_returns, self._risk_free_rate_data[period]
+            )
+            sortino_ratio = performance_model.get_rolling_sortino_ratio(
+                excess_return, rolling
+            )
+        else:
+            historical_data = self._within_historical_data[period]
+            excess_return = historical_data.loc[:, "Excess Return"][
+                self._tickers_without_portfolio
+            ]
 
-        sortino_ratio = performance_model.get_sortino_ratio(excess_return)
+            sortino_ratio = performance_model.get_sortino_ratio(excess_return)
 
         sortino_ratio = sortino_ratio.round(
             rounding if rounding else self._rounding
@@ -1483,6 +1546,7 @@ class Performance:
     def get_m2_ratio(
         self,
         period: str | None = None,
+        rolling: int | None = None,
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
@@ -1506,6 +1570,9 @@ class Performance:
         Args:
             period (str, optional): The period to use for the calculation. Defaults to None which
             results in basing it off the quarterly parameter as defined in the class instance.
+            rolling (int, optional): The rolling window size to use for the calculation. If set,
+            the M2 ratio is calculated over a rolling window of this many periods across the full
+            return history instead of per `period`. Defaults to None.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
@@ -1536,15 +1603,21 @@ class Performance:
         period_returns = historical_period_data.loc[:, "Return"][
             self._tickers_without_portfolio
         ]
-        daily_returns = self._historical_data["daily"].loc[:, "Return"][
-            self._tickers_without_portfolio
-        ]
-        period_standard_deviation = get_volatility(daily_returns, period)
         risk_free_rate = self._risk_free_rate_data[period]
 
-        m2_ratio = performance_model.get_m2_ratio(
-            period_returns, risk_free_rate, period_standard_deviation
-        )
+        if rolling:
+            m2_ratio = performance_model.get_rolling_m2_ratio(
+                period_returns, risk_free_rate, rolling
+            )
+        else:
+            daily_returns = self._historical_data["daily"].loc[:, "Return"][
+                self._tickers_without_portfolio
+            ]
+            period_standard_deviation = get_volatility(daily_returns, period)
+
+            m2_ratio = performance_model.get_m2_ratio(
+                period_returns, risk_free_rate, period_standard_deviation
+            )
 
         m2_ratio = m2_ratio.round(rounding if rounding else self._rounding).loc[
             self._start_date : self._end_date
@@ -1567,6 +1640,7 @@ class Performance:
     def get_tracking_error(
         self,
         period: str | None = None,
+        rolling: int | None = None,
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
@@ -1590,6 +1664,9 @@ class Performance:
         Args:
             period (str, optional): The period to use for the calculation. Defaults to None which
             results in basing it off the quarterly parameter as defined in the class instance.
+            rolling (int, optional): The rolling window size to use for the calculation. If set,
+            Tracking Error is calculated over a rolling window of this many periods across the
+            full return history instead of per `period`. Defaults to None.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
@@ -1616,13 +1693,22 @@ class Performance:
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
-        historical_data = self._within_historical_data[period]
-        returns = historical_data.loc[:, "Return"][self._tickers_without_portfolio]
-        benchmark_returns = historical_data.loc[:, "Return"][self._benchmark_name]
+        if rolling:
+            historical_data = self._historical_data[period]
+            returns = historical_data.loc[:, "Return"][self._tickers_without_portfolio]
+            benchmark_returns = historical_data.loc[:, "Return"][self._benchmark_name]
 
-        tracking_error = performance_model.get_tracking_error(
-            returns, benchmark_returns
-        )
+            tracking_error = performance_model.get_rolling_tracking_error(
+                returns, benchmark_returns, rolling
+            )
+        else:
+            historical_data = self._within_historical_data[period]
+            returns = historical_data.loc[:, "Return"][self._tickers_without_portfolio]
+            benchmark_returns = historical_data.loc[:, "Return"][self._benchmark_name]
+
+            tracking_error = performance_model.get_tracking_error(
+                returns, benchmark_returns
+            )
 
         tracking_error = tracking_error.round(
             rounding if rounding else self._rounding
@@ -1645,6 +1731,7 @@ class Performance:
     def get_information_ratio(
         self,
         period: str | None = None,
+        rolling: int | None = None,
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
@@ -1677,6 +1764,9 @@ class Performance:
         Args:
             period (str, optional): The period to use for the calculation. Defaults to None which
             results in basing it off the quarterly parameter as defined in the class instance.
+            rolling (int, optional): The rolling window size to use for the calculation. If set,
+            the Information Ratio is calculated over a rolling window of this many periods across
+            the full return history instead of per `period`. Defaults to None.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
@@ -1703,13 +1793,22 @@ class Performance:
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
-        historical_data = self._within_historical_data[period]
-        returns = historical_data.loc[:, "Return"][self._tickers_without_portfolio]
-        benchmark_returns = historical_data.loc[:, "Return"][self._benchmark_name]
+        if rolling:
+            historical_data = self._historical_data[period]
+            returns = historical_data.loc[:, "Return"][self._tickers_without_portfolio]
+            benchmark_returns = historical_data.loc[:, "Return"][self._benchmark_name]
 
-        information_ratio = performance_model.get_information_ratio(
-            returns, benchmark_returns
-        )
+            information_ratio = performance_model.get_rolling_information_ratio(
+                returns, benchmark_returns, rolling
+            )
+        else:
+            historical_data = self._within_historical_data[period]
+            returns = historical_data.loc[:, "Return"][self._tickers_without_portfolio]
+            benchmark_returns = historical_data.loc[:, "Return"][self._benchmark_name]
+
+            information_ratio = performance_model.get_information_ratio(
+                returns, benchmark_returns
+            )
 
         information_ratio = information_ratio.round(
             rounding if rounding else self._rounding

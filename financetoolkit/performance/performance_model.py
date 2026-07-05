@@ -414,6 +414,27 @@ def get_alpha(
     return alpha
 
 
+def get_rolling_alpha(
+    asset_returns: pd.Series | pd.DataFrame,
+    benchmark_returns: pd.Series,
+    window_size: int,
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate the rolling Alpha of returns.
+
+    Args:
+        asset_returns (pd.Series | pd.DataFrame): Asset returns.
+        benchmark_returns (pd.Series): Benchmark returns.
+        window_size (int): The size of the rolling window.
+
+    Returns:
+        pd.Series | pd.DataFrame: Rolling Alpha values with time as index.
+    """
+    return (
+        asset_returns.sub(benchmark_returns, axis=0).rolling(window=window_size).mean()
+    )
+
+
 def get_jensens_alpha(
     asset_returns: pd.Series | float,
     risk_free_rate: pd.Series | float,
@@ -570,6 +591,33 @@ def get_sortino_ratio(excess_returns: pd.Series | pd.DataFrame) -> pd.Series:
     raise TypeError("Expects pd.DataFrame, pd.Series inputs, no other value.")
 
 
+def get_rolling_sortino_ratio(
+    excess_returns: pd.Series | pd.DataFrame, window_size: int
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate the rolling Sortino ratio of returns.
+
+    Args:
+        excess_returns (pd.Series | pd.DataFrame): A Series or DataFrame of returns with risk-free rate subtracted.
+        window_size (int): The size of the rolling window.
+
+    Returns:
+        pd.Series | pd.DataFrame: Rolling Sortino ratio values with time as index.
+    """
+
+    def _downside_volatility(window):
+        downside_returns = window[window < 0]
+
+        return downside_returns.std() if len(downside_returns) > 1 else np.nan
+
+    rolling_mean = excess_returns.rolling(window=window_size).mean()
+    rolling_downside_volatility = excess_returns.rolling(window=window_size).apply(
+        _downside_volatility, raw=True
+    )
+
+    return rolling_mean / rolling_downside_volatility
+
+
 def get_ulcer_performance_index(
     excess_returns: pd.Series | pd.DataFrame, ulcer_index: pd.Series | pd.DataFrame
 ) -> pd.Series:
@@ -624,6 +672,30 @@ def get_m2_ratio(
     return m2_ratio
 
 
+def get_rolling_m2_ratio(
+    asset_returns: pd.Series | pd.DataFrame,
+    risk_free_rate: pd.Series,
+    window_size: int,
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate the rolling M2 Ratio (Modigliani-Modigliani Measure) of returns.
+
+    Args:
+        asset_returns (pd.Series | pd.DataFrame): Asset returns.
+        risk_free_rate (pd.Series): The risk free rate, aligned to the same period as the returns.
+        window_size (int): The size of the rolling window.
+
+    Returns:
+        pd.Series | pd.DataFrame: Rolling M2 Ratio values with time as index.
+    """
+    excess_returns = asset_returns.sub(risk_free_rate, axis=0)
+
+    rolling_mean = excess_returns.rolling(window=window_size).mean()
+    rolling_std = asset_returns.rolling(window=window_size).std()
+
+    return rolling_mean / rolling_std
+
+
 def get_tracking_error(
     asset_returns: pd.Series | pd.DataFrame, benchmark_returns: pd.Series
 ) -> pd.Series:
@@ -655,6 +727,27 @@ def get_tracking_error(
         tracking_error = (asset_returns - benchmark_returns).std()
 
     return tracking_error
+
+
+def get_rolling_tracking_error(
+    asset_returns: pd.Series | pd.DataFrame,
+    benchmark_returns: pd.Series,
+    window_size: int,
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate the rolling Tracking Error of returns.
+
+    Args:
+        asset_returns (pd.Series | pd.DataFrame): Asset returns.
+        benchmark_returns (pd.Series): Benchmark returns.
+        window_size (int): The size of the rolling window.
+
+    Returns:
+        pd.Series | pd.DataFrame: Rolling Tracking Error values with time as index.
+    """
+    return (
+        asset_returns.sub(benchmark_returns, axis=0).rolling(window=window_size).std()
+    )
 
 
 def get_information_ratio(
@@ -693,6 +786,30 @@ def get_information_ratio(
         information_ratio = difference.mean() / difference.std()
 
     return information_ratio
+
+
+def get_rolling_information_ratio(
+    asset_returns: pd.Series | pd.DataFrame,
+    benchmark_returns: pd.Series,
+    window_size: int,
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate the rolling Information Ratio of returns.
+
+    Args:
+        asset_returns (pd.Series | pd.DataFrame): Asset returns.
+        benchmark_returns (pd.Series): Benchmark returns.
+        window_size (int): The size of the rolling window.
+
+    Returns:
+        pd.Series | pd.DataFrame: Rolling Information Ratio values with time as index.
+    """
+    difference = asset_returns.sub(benchmark_returns, axis=0)
+
+    rolling_mean = difference.rolling(window=window_size).mean()
+    rolling_std = difference.rolling(window=window_size).std()
+
+    return rolling_mean / rolling_std
 
 
 def get_compound_growth_rate(

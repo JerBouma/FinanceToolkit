@@ -13,7 +13,7 @@ from financetoolkit.performance.helpers import (
     determine_within_historical_data,
     handle_errors,
 )
-from financetoolkit.risk.risk_model import get_ui, get_volatility
+from financetoolkit.risk.risk_model import get_max_drawdown, get_ui, get_volatility
 from financetoolkit.utilities.logger_model import get_logger
 
 # Runtime errors are ignored on purpose given the nature of the calculations
@@ -201,6 +201,33 @@ class Performance:
                 period=period, rounding=rounding, growth=growth, lag=lag
             ),
             "Ulcer Index": self.get_ulcer_performance_index(
+                period=period, rounding=rounding, growth=growth, lag=lag
+            ),
+            "Calmar Ratio": self.get_calmar_ratio(
+                period=period, rounding=rounding, growth=growth, lag=lag
+            ),
+            "Sterling Ratio": self.get_sterling_ratio(
+                period=period, rounding=rounding, growth=growth, lag=lag
+            ),
+            "Burke Ratio": self.get_burke_ratio(
+                period=period, rounding=rounding, growth=growth, lag=lag
+            ),
+            "Omega Ratio": self.get_omega_ratio(
+                period=period, rounding=rounding, growth=growth, lag=lag
+            ),
+            "Kappa Ratio": self.get_kappa_ratio(
+                period=period, rounding=rounding, growth=growth, lag=lag
+            ),
+            "Gain to Pain Ratio": self.get_gain_to_pain_ratio(
+                period=period, rounding=rounding, growth=growth, lag=lag
+            ),
+            "Win Rate": self.get_win_rate(
+                period=period, rounding=rounding, growth=growth, lag=lag
+            ),
+            "Upside Capture Ratio": self.get_upside_capture_ratio(
+                period=period, rounding=rounding, growth=growth, lag=lag
+            ),
+            "Downside Capture Ratio": self.get_downside_capture_ratio(
                 period=period, rounding=rounding, growth=growth, lag=lag
             ),
             "M2 Ratio": self.get_m2_ratio(
@@ -976,7 +1003,7 @@ class Performance:
 
         See definition: https://en.wikipedia.org/wiki/Alpha_(finance)
 
-        Also known as: excess return, outperformance.
+        Also known as: excess return, outperformance, active return.
 
         Args:
             period (str, optional): The period to use for the calculation. Defaults to None which
@@ -1543,6 +1570,276 @@ class Performance:
 
     @handle_portfolio
     @handle_errors
+    def get_calmar_ratio(
+        self,
+        period: str | None = None,
+        within_period: bool = True,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+    ):
+        """
+        Calculate the Calmar Ratio of an investment portfolio or asset's returns.
+
+        The Calmar Ratio is a risk-adjusted return metric that divides the (annualized) return
+        of an investment portfolio or asset by its Maximum Drawdown, providing insight into the
+        return achieved per unit of the worst historical loss of value.
+
+        The formula is as follows:
+
+        - Calmar Ratio = Return / |Maximum Drawdown|
+
+        See definition: https://en.wikipedia.org/wiki/Calmar_ratio
+
+        Also known as: Drawdown ratio.
+
+        Args:
+            period (str, optional): The period to use for the calculation. Defaults to None which
+            results in basing it off the quarterly parameter as defined in the class instance.
+            within_period (bool, optional): Whether to calculate the Maximum Drawdown within the
+            specified period or for the entire period. Thus whether to look at the Maximum Drawdown
+            within a specific year (if period = 'yearly') or look at the entirety of all years.
+            Defaults to True.
+            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+
+        Returns:
+            pd.DataFrame: Calmar Ratio values.
+
+        Notes:
+        - The method retrieves historical data and calculates the Calmar Ratio for each asset in
+        the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the ratio values using
+        the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.performance.get_calmar_ratio()
+        ```
+        """
+        period = period if period else "quarterly" if self._quarterly else "yearly"
+
+        returns = (
+            self._within_historical_data[period]
+            if within_period
+            else self._historical_data[period]
+        ).loc[:, "Return"][self._tickers_without_portfolio]
+
+        maximum_drawdown = get_max_drawdown(returns)
+
+        period_returns = self._historical_data[period].loc[:, "Return"][
+            self._tickers_without_portfolio
+        ]
+
+        calmar_ratio = performance_model.get_calmar_ratio(
+            period_returns, maximum_drawdown
+        )
+
+        calmar_ratio = calmar_ratio.round(rounding if rounding else self._rounding).loc[
+            self._start_date : self._end_date
+        ]
+
+        calmar_ratio = calmar_ratio.dropna(how="all", axis=0)
+
+        if growth:
+            return calculate_growth(
+                calmar_ratio,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
+                axis="index",
+            )
+
+        return calmar_ratio
+
+    @handle_portfolio
+    @handle_errors
+    def get_sterling_ratio(
+        self,
+        period: str | None = None,
+        within_period: bool = True,
+        adjustment: float = 0.1,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+    ):
+        """
+        Calculate the Sterling Ratio of an investment portfolio or asset's returns.
+
+        The Sterling Ratio is a risk-adjusted return metric that divides the (annualized) return
+        of an investment portfolio or asset by its Average Drawdown plus a fixed adjustment
+        (conventionally 10%), providing insight into the return achieved relative to the typical
+        depth of its drawdowns rather than only the single worst one (as with the Calmar Ratio).
+
+        The formula is as follows:
+
+        - Sterling Ratio = Return / (|Average Drawdown| + Adjustment)
+
+        Also known as: Sterling-Calmar ratio.
+
+        Args:
+            period (str, optional): The period to use for the calculation. Defaults to None which
+            results in basing it off the quarterly parameter as defined in the class instance.
+            within_period (bool, optional): Whether to calculate the Average Drawdown within the
+            specified period or for the entire period. Thus whether to look at the Average Drawdown
+            within a specific year (if period = 'yearly') or look at the entirety of all years.
+            Defaults to True.
+            adjustment (float, optional): The fixed adjustment added to the Average Drawdown,
+            conventionally 0.1 (10%). Defaults to 0.1.
+            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+
+        Returns:
+            pd.DataFrame: Sterling Ratio values.
+
+        Notes:
+        - The method retrieves historical data and calculates the Sterling Ratio for each asset in
+        the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the ratio values using
+        the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.performance.get_sterling_ratio()
+        ```
+        """
+        period = period if period else "quarterly" if self._quarterly else "yearly"
+
+        returns = (
+            self._within_historical_data[period]
+            if within_period
+            else self._historical_data[period]
+        ).loc[:, "Return"][self._tickers_without_portfolio]
+
+        average_drawdown = performance_model.get_average_drawdown(returns)
+
+        period_returns = self._historical_data[period].loc[:, "Return"][
+            self._tickers_without_portfolio
+        ]
+
+        sterling_ratio = performance_model.get_sterling_ratio(
+            period_returns, average_drawdown, adjustment
+        )
+
+        sterling_ratio = sterling_ratio.round(
+            rounding if rounding else self._rounding
+        ).loc[self._start_date : self._end_date]
+
+        sterling_ratio = sterling_ratio.dropna(how="all", axis=0)
+
+        if growth:
+            return calculate_growth(
+                sterling_ratio,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
+                axis="index",
+            )
+
+        return sterling_ratio
+
+    @handle_portfolio
+    @handle_errors
+    def get_burke_ratio(
+        self,
+        period: str | None = None,
+        within_period: bool = True,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+    ):
+        """
+        Calculate the Burke Ratio of an investment portfolio or asset's returns.
+
+        The Burke Ratio is a risk-adjusted return metric that divides the excess return (return
+        minus the risk-free rate) of an investment portfolio or asset by the square root of the
+        sum of its squared drawdowns, penalizing both the frequency and depth of drawdowns more
+        heavily than the Calmar or Sterling Ratios.
+
+        The formula is as follows:
+
+        - Burke Ratio = (Return — Risk-Free Rate) / SQRT(SUM(Drawdowns^2))
+
+        Args:
+            period (str, optional): The period to use for the calculation. Defaults to None which
+            results in basing it off the quarterly parameter as defined in the class instance.
+            within_period (bool, optional): Whether to calculate the drawdowns within the specified
+            period or for the entire period. Thus whether to look at the drawdowns within a specific
+            year (if period = 'yearly') or look at the entirety of all years. Defaults to True.
+            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+
+        Returns:
+            pd.DataFrame: Burke Ratio values.
+
+        Notes:
+        - The method retrieves historical data and calculates the Burke Ratio for each asset in
+        the Toolkit instance.
+        - The risk-free rate is often represented by the return of a risk-free investment, such as
+        a Treasury bond.
+        - If `growth` is set to True, the method calculates the growth of the ratio values using
+        the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.performance.get_burke_ratio()
+        ```
+        """
+        period = period if period else "quarterly" if self._quarterly else "yearly"
+
+        returns = (
+            self._within_historical_data[period]
+            if within_period
+            else self._historical_data[period]
+        ).loc[:, "Return"][self._tickers_without_portfolio]
+
+        burke_drawdown_measure = performance_model.get_burke_drawdown_measure(returns)
+
+        period_returns = self._historical_data[period].loc[:, "Return"][
+            self._tickers_without_portfolio
+        ]
+        excess_return = performance_model.get_excess_return(
+            period_returns, self._risk_free_rate_data[period]
+        )
+
+        burke_ratio = performance_model.get_burke_ratio(
+            excess_return, burke_drawdown_measure
+        )
+
+        burke_ratio = burke_ratio.round(rounding if rounding else self._rounding).loc[
+            self._start_date : self._end_date
+        ]
+
+        burke_ratio = burke_ratio.dropna(how="all", axis=0)
+
+        if growth:
+            return calculate_growth(
+                burke_ratio,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
+                axis="index",
+            )
+
+        return burke_ratio
+
+    @handle_portfolio
+    @handle_errors
     def get_m2_ratio(
         self,
         period: str | None = None,
@@ -1823,6 +2120,457 @@ class Performance:
             )
 
         return information_ratio
+
+    @handle_portfolio
+    @handle_errors
+    def get_upside_capture_ratio(
+        self,
+        period: str | None = None,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+    ):
+        """
+        Calculate the Upside Capture Ratio of an investment portfolio or asset's returns.
+
+        The Upside Capture Ratio measures how well an investment portfolio or asset performs
+        relative to a benchmark during periods in which the benchmark's return is positive. A
+        ratio above 1 (or 100%) indicates the asset captured more of the benchmark's gains than
+        the benchmark itself.
+
+        The formula is as follows:
+
+        - Upside Capture Ratio = Average Return in Up Periods / Average Benchmark Return in Up Periods
+
+        Args:
+            period (str, optional): The period to use for the calculation. Defaults to None which
+            results in basing it off the quarterly parameter as defined in the class instance.
+            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+
+        Returns:
+            pd.DataFrame: Upside Capture Ratio values.
+
+        Notes:
+        - The method retrieves historical data and calculates the Upside Capture Ratio for each
+        asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the ratio values using
+        the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.performance.get_upside_capture_ratio()
+        ```
+        """
+        period = period if period else "quarterly" if self._quarterly else "yearly"
+
+        historical_data = self._within_historical_data[period]
+        returns = historical_data.loc[:, "Return"][self._tickers_without_portfolio]
+        benchmark_returns = historical_data.loc[:, "Return"][self._benchmark_name]
+
+        upside_capture_ratio = performance_model.get_upside_capture_ratio(
+            returns, benchmark_returns
+        )
+
+        upside_capture_ratio = upside_capture_ratio.round(
+            rounding if rounding else self._rounding
+        ).loc[self._start_date : self._end_date]
+
+        if growth:
+            return calculate_growth(
+                upside_capture_ratio,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
+                axis="index",
+            )
+
+        return upside_capture_ratio
+
+    @handle_portfolio
+    @handle_errors
+    def get_downside_capture_ratio(
+        self,
+        period: str | None = None,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+    ):
+        """
+        Calculate the Downside Capture Ratio of an investment portfolio or asset's returns.
+
+        The Downside Capture Ratio measures how well an investment portfolio or asset performs
+        relative to a benchmark during periods in which the benchmark's return is negative. A
+        ratio below 1 (or 100%) indicates the asset lost less than the benchmark during those
+        periods.
+
+        The formula is as follows:
+
+        - Downside Capture Ratio = Average Return in Down Periods / Average Benchmark Return in Down Periods
+
+        Args:
+            period (str, optional): The period to use for the calculation. Defaults to None which
+            results in basing it off the quarterly parameter as defined in the class instance.
+            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+
+        Returns:
+            pd.DataFrame: Downside Capture Ratio values.
+
+        Notes:
+        - The method retrieves historical data and calculates the Downside Capture Ratio for each
+        asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the ratio values using
+        the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.performance.get_downside_capture_ratio()
+        ```
+        """
+        period = period if period else "quarterly" if self._quarterly else "yearly"
+
+        historical_data = self._within_historical_data[period]
+        returns = historical_data.loc[:, "Return"][self._tickers_without_portfolio]
+        benchmark_returns = historical_data.loc[:, "Return"][self._benchmark_name]
+
+        downside_capture_ratio = performance_model.get_downside_capture_ratio(
+            returns, benchmark_returns
+        )
+
+        downside_capture_ratio = downside_capture_ratio.round(
+            rounding if rounding else self._rounding
+        ).loc[self._start_date : self._end_date]
+
+        if growth:
+            return calculate_growth(
+                downside_capture_ratio,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
+                axis="index",
+            )
+
+        return downside_capture_ratio
+
+    @handle_portfolio
+    @handle_errors
+    def get_win_rate(
+        self,
+        period: str | None = None,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+    ):
+        """
+        Calculate the Win Rate of an investment portfolio or asset's returns.
+
+        The Win Rate is the percentage of periods in which the asset's return exceeds the
+        benchmark's return.
+
+        Also known as: batting average.
+
+        Args:
+            period (str, optional): The period to use for the calculation. Defaults to None which
+            results in basing it off the quarterly parameter as defined in the class instance.
+            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+
+        Returns:
+            pd.DataFrame: Win Rate values.
+
+        Notes:
+        - The method retrieves historical data and calculates the Win Rate for each asset in the
+        Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the ratio values using
+        the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.performance.get_win_rate()
+        ```
+        """
+        period = period if period else "quarterly" if self._quarterly else "yearly"
+
+        historical_data = self._within_historical_data[period]
+        returns = historical_data.loc[:, "Return"][self._tickers_without_portfolio]
+        benchmark_returns = historical_data.loc[:, "Return"][self._benchmark_name]
+
+        win_rate = performance_model.get_win_rate(returns, benchmark_returns)
+
+        win_rate = win_rate.round(rounding if rounding else self._rounding).loc[
+            self._start_date : self._end_date
+        ]
+
+        if growth:
+            return calculate_growth(
+                win_rate,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
+                axis="index",
+            )
+
+        return win_rate
+
+    @handle_portfolio
+    @handle_errors
+    def get_kappa_ratio(
+        self,
+        period: str | None = None,
+        order: int = 3,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+    ):
+        """
+        Calculate the Kappa Ratio of an investment portfolio or asset's returns.
+
+        The Kappa Ratio is a generalization of the Sortino Ratio that penalizes downside risk
+        using a higher-order lower partial moment. The Sortino Ratio is the special case of the
+        Kappa Ratio with order=2.
+
+        Note that this already subtracts the Risk Free Rate.
+
+        Args:
+            period (str, optional): The period to use for the calculation. Defaults to None which
+            results in basing it off the quarterly parameter as defined in the class instance.
+            order (int, optional): The order of the lower partial moment used in the denominator.
+            Defaults to 3.
+            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+
+        Returns:
+            pd.DataFrame: Kappa Ratio values.
+
+        Notes:
+        - Daily Kappa Ratio is not an option as the standard deviation for 1 day is close to zero.
+        Therefore, it does not give any useful insights.
+        - The method retrieves historical data and calculates the Kappa Ratio for each asset in
+        the Toolkit instance.
+        - The risk-free rate is often represented by the return of a risk-free investment, such as
+        a Treasury bond.
+        - If `growth` is set to True, the method calculates the growth of the ratio values using
+        the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.performance.get_kappa_ratio()
+        ```
+        """
+        period = period if period else "quarterly" if self._quarterly else "yearly"
+
+        historical_data = self._within_historical_data[period]
+        excess_return = historical_data.loc[:, "Excess Return"][
+            self._tickers_without_portfolio
+        ]
+
+        kappa_ratio = performance_model.get_kappa_ratio(excess_return, order)
+
+        kappa_ratio = kappa_ratio.round(rounding if rounding else self._rounding).loc[
+            self._start_date : self._end_date
+        ]
+
+        kappa_ratio = kappa_ratio.dropna(how="all", axis=0)
+
+        if growth:
+            return calculate_growth(
+                kappa_ratio,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
+                axis="index",
+            )
+
+        return kappa_ratio
+
+    @handle_portfolio
+    @handle_errors
+    def get_omega_ratio(
+        self,
+        period: str | None = None,
+        within_period: bool = True,
+        rolling: int | None = None,
+        minimum_acceptable_return: float = 0.0,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+    ):
+        """
+        Calculate the Omega Ratio of an investment portfolio or asset's returns.
+
+        The Omega Ratio is a risk-return measure that divides the sum of gains above a minimum
+        acceptable return (MAR) by the sum of losses below it, capturing the full shape of the
+        return distribution rather than only its first two moments (unlike the Sharpe Ratio).
+
+        The formula is as follows:
+
+        - Omega Ratio = SUM(Gains above MAR) / SUM(Losses below MAR)
+
+        See definition: https://en.wikipedia.org/wiki/Omega_ratio
+
+        Args:
+            period (str, optional): The period to use for the calculation. Defaults to None which
+            results in basing it off the quarterly parameter as defined in the class instance.
+            within_period (bool, optional): Whether to calculate the Omega Ratio within the specified
+            period or for the entire period. Thus whether to look at the Omega Ratio within a specific
+            year (if period = 'yearly') or look at the entirety of all years. Defaults to True.
+            rolling (int, optional): The rolling window size to use for the calculation. If set, the
+            Omega Ratio is calculated over a rolling window of this many periods across the full
+            return history instead of per `period`. Defaults to None.
+            minimum_acceptable_return (float, optional): The minimum acceptable return (MAR) used as
+            the threshold between gains and losses. Defaults to 0.0.
+            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+
+        Returns:
+            pd.DataFrame: Omega Ratio values.
+
+        Notes:
+        - The method retrieves historical data and calculates the Omega Ratio for each asset in
+        the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the ratio values using
+        the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.performance.get_omega_ratio()
+        ```
+        """
+        period = period if period else "quarterly" if self._quarterly else "yearly"
+
+        if rolling:
+            returns = self._historical_data[period].loc[:, "Return"][
+                self._tickers_without_portfolio
+            ]
+            omega_ratio = performance_model.get_rolling_omega_ratio(
+                returns, rolling, minimum_acceptable_return
+            )
+        else:
+            returns = (
+                self._within_historical_data[period]
+                if within_period
+                else self._historical_data[period]
+            ).loc[:, "Return"][self._tickers_without_portfolio]
+
+            omega_ratio = performance_model.get_omega_ratio(
+                returns, minimum_acceptable_return
+            )
+
+        omega_ratio = omega_ratio.round(rounding if rounding else self._rounding).loc[
+            self._start_date : self._end_date
+        ]
+
+        if growth:
+            return calculate_growth(
+                omega_ratio,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
+                axis="index",
+            )
+
+        return omega_ratio
+
+    @handle_portfolio
+    @handle_errors
+    def get_gain_to_pain_ratio(
+        self,
+        period: str | None = None,
+        within_period: bool = True,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+    ):
+        """
+        Calculate the Gain-to-Pain Ratio of an investment portfolio or asset's returns.
+
+        The Gain-to-Pain Ratio, popularized by Jack Schwager, divides the sum of all returns by
+        the sum of the absolute value of all losses, summarizing the entire return history into
+        a single measure of return earned per unit of pain endured.
+
+        The formula is as follows:
+
+        - Gain-to-Pain Ratio = SUM(Returns) / SUM(|Losses|)
+
+        Args:
+            period (str, optional): The period to use for the calculation. Defaults to None which
+            results in basing it off the quarterly parameter as defined in the class instance.
+            within_period (bool, optional): Whether to calculate the Gain-to-Pain Ratio within the
+            specified period or for the entire period. Thus whether to look at the Gain-to-Pain Ratio
+            within a specific year (if period = 'yearly') or look at the entirety of all years.
+            Defaults to True.
+            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+
+        Returns:
+            pd.DataFrame: Gain-to-Pain Ratio values.
+
+        Notes:
+        - The method retrieves historical data and calculates the Gain-to-Pain Ratio for each asset
+        in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the ratio values using
+        the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.performance.get_gain_to_pain_ratio()
+        ```
+        """
+        period = period if period else "quarterly" if self._quarterly else "yearly"
+
+        returns = (
+            self._within_historical_data[period]
+            if within_period
+            else self._historical_data[period]
+        ).loc[:, "Return"][self._tickers_without_portfolio]
+
+        gain_to_pain_ratio = performance_model.get_gain_to_pain_ratio(returns)
+
+        gain_to_pain_ratio = gain_to_pain_ratio.round(
+            rounding if rounding else self._rounding
+        ).loc[self._start_date : self._end_date]
+
+        if growth:
+            return calculate_growth(
+                gain_to_pain_ratio,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
+                axis="index",
+            )
+
+        return gain_to_pain_ratio
 
     @handle_portfolio
     @handle_errors

@@ -340,6 +340,9 @@ class Risk:
                     "Distribution must be historic, gaussian, cf, studentt or evt."
                 )
 
+        if rolling or within_period:
+            value_at_risk = value_at_risk.loc[self._start_date : self._end_date]
+
         if growth:
             return calculate_growth(
                 value_at_risk,
@@ -464,6 +467,11 @@ class Risk:
                     "Distribution must be historic, gaussian, studentt, laplace or logistic."
                 )
 
+        if rolling or within_period:
+            conditional_value_at_risk = conditional_value_at_risk.loc[
+                self._start_date : self._end_date
+            ]
+
         if growth:
             return calculate_growth(
                 conditional_value_at_risk,
@@ -562,6 +570,11 @@ class Risk:
 
         entropic_value_at_risk = evar_model.get_evar_gaussian(returns, alpha)
 
+        if within_period:
+            entropic_value_at_risk = entropic_value_at_risk.loc[
+                self._start_date : self._end_date
+            ]
+
         if growth:
             return calculate_growth(
                 entropic_value_at_risk,
@@ -655,6 +668,11 @@ class Risk:
                 returns, alpha
             )
 
+        if rolling or within_period:
+            conditional_drawdown_at_risk = conditional_drawdown_at_risk.loc[
+                self._start_date : self._end_date
+            ]
+
         if growth:
             return calculate_growth(
                 conditional_drawdown_at_risk,
@@ -743,6 +761,9 @@ class Risk:
             )
 
             tail_ratio = risk_model.get_tail_ratio(returns, alpha)
+
+        if rolling or within_period:
+            tail_ratio = tail_ratio.loc[self._start_date : self._end_date]
 
         if growth:
             return calculate_growth(
@@ -838,6 +859,9 @@ class Risk:
 
         maximum_drawdown = risk_model.get_max_drawdown(returns)
 
+        if within_period:
+            maximum_drawdown = maximum_drawdown.loc[self._start_date : self._end_date]
+
         if growth:
             return calculate_growth(
                 maximum_drawdown,
@@ -910,6 +934,11 @@ class Risk:
         )
 
         maximum_drawdown_duration = risk_model.get_max_drawdown_duration(returns)
+
+        if within_period:
+            maximum_drawdown_duration = maximum_drawdown_duration.loc[
+                self._start_date : self._end_date
+            ]
 
         if growth:
             return calculate_growth(
@@ -988,6 +1017,11 @@ class Risk:
         maximum_drawdown_recovery_time = risk_model.get_max_drawdown_recovery_time(
             returns
         )
+
+        if within_period:
+            maximum_drawdown_recovery_time = maximum_drawdown_recovery_time.loc[
+                self._start_date : self._end_date
+            ]
 
         if growth:
             return calculate_growth(
@@ -1081,6 +1115,8 @@ class Risk:
         returns = self._within_historical_data[period]["Return"]
 
         ulcer_index = risk_model.get_ui(returns, rolling)
+
+        ulcer_index = ulcer_index.loc[self._start_date : self._end_date]
 
         if growth:
             return calculate_growth(
@@ -1183,6 +1219,8 @@ class Risk:
             time_steps=time_steps,
             optimization_t=optimization_t,
         )
+
+        garch_sigma_2 = garch_sigma_2.loc[self._start_date : self._end_date]
 
         if growth:
             return calculate_growth(
@@ -1406,6 +1444,9 @@ class Risk:
 
             skewness = risk_model.get_skewness(returns)
 
+        if rolling or within_period:
+            skewness = skewness.loc[self._start_date : self._end_date]
+
         if growth:
             return calculate_growth(
                 skewness,
@@ -1509,6 +1550,9 @@ class Risk:
 
             kurtosis = risk_model.get_kurtosis(returns, fisher=fisher)
 
+        if rolling or within_period:
+            kurtosis = kurtosis.loc[self._start_date : self._end_date]
+
         if growth:
             return calculate_growth(
                 kurtosis,
@@ -1583,11 +1627,7 @@ class Risk:
             returns = self._historical_data["daily"]["Return"]
             variance = risk_model.get_variance(returns, period)
 
-        variance = variance.round(rounding if rounding else self._rounding).loc[
-            self._start_date : self._end_date
-        ]
-
-        variance = variance.dropna(how="all", axis=0)
+        variance = variance.loc[self._start_date : self._end_date]
 
         if growth:
             return calculate_growth(
@@ -1597,7 +1637,7 @@ class Risk:
                 axis="index",
             )
 
-        return variance
+        return variance.round(rounding if rounding else self._rounding)
 
     @handle_portfolio
     @handle_errors
@@ -1666,11 +1706,7 @@ class Risk:
             returns = self._historical_data["daily"]["Return"]
             volatility = risk_model.get_volatility(returns, period)
 
-        volatility = volatility.round(rounding if rounding else self._rounding).loc[
-            self._start_date : self._end_date
-        ]
-
-        volatility = volatility.dropna(how="all", axis=0)
+        volatility = volatility.loc[self._start_date : self._end_date]
 
         if growth:
             return calculate_growth(
@@ -1680,7 +1716,7 @@ class Risk:
                 axis="index",
             )
 
-        return volatility
+        return volatility.round(rounding if rounding else self._rounding)
 
     @handle_portfolio
     @handle_errors
@@ -1752,11 +1788,7 @@ class Risk:
                 returns, risk_free_rate, period
             )
 
-        excess_volatility = excess_volatility.round(
-            rounding if rounding else self._rounding
-        ).loc[self._start_date : self._end_date]
-
-        excess_volatility = excess_volatility.dropna(how="all", axis=0)
+        excess_volatility = excess_volatility.loc[self._start_date : self._end_date]
 
         if growth:
             return calculate_growth(
@@ -1766,7 +1798,7 @@ class Risk:
                 axis="index",
             )
 
-        return excess_volatility
+        return excess_volatility.round(rounding if rounding else self._rounding)
 
     @handle_portfolio
     @handle_errors
@@ -1849,6 +1881,11 @@ class Risk:
             downside_deviation = risk_model.get_downside_deviation(
                 returns, minimum_acceptable_return
             )
+
+        if rolling or within_period:
+            downside_deviation = downside_deviation.loc[
+                self._start_date : self._end_date
+            ]
 
         if growth:
             return calculate_growth(

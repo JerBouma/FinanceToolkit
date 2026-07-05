@@ -9,6 +9,21 @@ def test_get_gross_domestic_product(recorder, economics_module):
     recorder.capture(
         economics_module.get_gross_domestic_product(growth=True, lag=[1, 2, 3])
     )
+    recorder.capture(
+        economics_module.get_gross_domestic_product(
+            rolling=2, countries=["Netherlands", "Germany"]
+        )
+    )
+    recorder.capture(
+        economics_module.get_gross_domestic_product(
+            trailing=2, countries=["Netherlands", "Germany"]
+        )
+    )
+    recorder.capture(
+        economics_module.get_gross_domestic_product(
+            rolling=2, growth=True, countries=["Netherlands", "Germany"]
+        )
+    )
 
 
 def test_get_gross_domestic_product_deflator(recorder, economics_module):
@@ -130,6 +145,11 @@ def test_get_government_deficit(recorder, economics_module):
 def test_get_government_deficit_to_gdp_ratio(recorder, economics_module):
     recorder.capture(economics_module.get_government_deficit_to_gdp_ratio())
     recorder.capture(economics_module.get_government_deficit_to_gdp_ratio(growth=True))
+    recorder.capture(
+        economics_module.get_government_deficit_to_gdp_ratio(
+            countries=["Netherlands", "Germany"], rolling=2
+        )
+    )
 
 
 def test_get_trust_in_government(recorder, economics_module):
@@ -165,6 +185,11 @@ def test_get_composite_leading_indicator(recorder, economics_module):
 def test_get_house_prices(recorder, economics_module):
     recorder.capture(economics_module.get_house_prices())
     recorder.capture(economics_module.get_house_prices(growth=True))
+    recorder.capture(
+        economics_module.get_house_prices(
+            countries=["Netherlands", "Germany"], rolling=2
+        )
+    )
 
 
 def test_get_rent_prices(recorder, economics_module):
@@ -185,6 +210,16 @@ def test_get_exchange_rates(recorder, economics_module):
 def test_get_money_supply(recorder, economics_module):
     recorder.capture(economics_module.get_money_supply())
     recorder.capture(economics_module.get_money_supply(growth=True))
+    recorder.capture(
+        economics_module.get_money_supply(
+            measure="M2", countries=["Netherlands", "Germany"], rolling=2
+        )
+    )
+    recorder.capture(
+        economics_module.get_money_supply(
+            measure="M2", countries=["Netherlands", "Germany"], trailing=2
+        )
+    )
 
 
 def test_get_central_bank_policy_rate(recorder, economics_module):
@@ -225,6 +260,9 @@ def test_get_labour_productivity(recorder, economics_module):
 def test_get_income_inequality(recorder, economics_module):
     recorder.capture(economics_module.get_income_inequality())
     recorder.capture(economics_module.get_income_inequality(growth=True))
+    recorder.capture(
+        economics_module.get_income_inequality(countries="United States", rolling=2)
+    )
 
 
 def test_get_population_statistics(recorder, economics_module):

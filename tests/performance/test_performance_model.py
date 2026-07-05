@@ -100,6 +100,16 @@ def test_get_alpha(recorder):
     )
 
 
+def test_get_rolling_alpha(recorder):
+    recorder.capture(
+        performance_model.get_rolling_alpha(
+            asset_returns=pd.Series([0.3, 0.2, 0.1, 0, 0.06]),
+            benchmark_returns=pd.Series([0.31, 0.19, 0.5, 0, 0.03]),
+            window_size=2,
+        ).round(4)
+    )
+
+
 def test_get_jensens_alpha(recorder):
     recorder.capture(
         performance_model.get_jensens_alpha(
@@ -148,6 +158,15 @@ def test_get_sortino_ratio(recorder):
     )
 
 
+def test_get_rolling_sortino_ratio(recorder):
+    recorder.capture(
+        performance_model.get_rolling_sortino_ratio(
+            excess_returns=pd.Series([0.3, 0.2, -0.1, -0.05, 0.06, -0.2, 0.1]),
+            window_size=3,
+        ).round(4)
+    )
+
+
 def test_get_ulcer_performance_index(recorder):
     recorder.capture(
         performance_model.get_ulcer_performance_index(
@@ -167,6 +186,16 @@ def test_get_m2_ratio(recorder):
     )
 
 
+def test_get_rolling_m2_ratio(recorder):
+    recorder.capture(
+        performance_model.get_rolling_m2_ratio(
+            asset_returns=pd.Series([0.3, 0.2, 0.1, 0, 0.06]),
+            risk_free_rate=pd.Series([0.01, 0.02, 0.01, 0.0, 0.006]),
+            window_size=2,
+        ).round(4)
+    )
+
+
 def test_get_tracking_error(recorder):
     recorder.capture(
         performance_model.get_tracking_error(
@@ -176,12 +205,32 @@ def test_get_tracking_error(recorder):
     )
 
 
+def test_get_rolling_tracking_error(recorder):
+    recorder.capture(
+        performance_model.get_rolling_tracking_error(
+            asset_returns=pd.Series([0.3, 0.2, 0.1, 0, 0.06]),
+            benchmark_returns=pd.Series([0.31, 0.19, 0.5, 0, 0.03]),
+            window_size=2,
+        ).round(4)
+    )
+
+
 def test_get_information_ratio(recorder):
     recorder.capture(
         performance_model.get_information_ratio(
             asset_returns=pd.Series([0.3, 0.2, 0.1, 0, 0.06]),
             benchmark_returns=pd.Series([0.31, 0.19, 0.5, 0, 0.03]),
         )
+    )
+
+
+def test_get_rolling_information_ratio(recorder):
+    recorder.capture(
+        performance_model.get_rolling_information_ratio(
+            asset_returns=pd.Series([0.3, 0.2, 0.1, 0, 0.06]),
+            benchmark_returns=pd.Series([0.31, 0.19, 0.5, 0, 0.03]),
+            window_size=2,
+        ).round(4)
     )
 
 

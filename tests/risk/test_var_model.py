@@ -105,6 +105,92 @@ def test_get_var_studentt_dataframe(recorder):
     recorder.capture(result.round(4))
 
 
+def test_get_rolling_var_historic(recorder):
+    returns = pd.Series([0.3, 0.2, 0.1, 0, 0.06, -0.1, -0.15, -0.05, 0.08, 0.12])
+    recorder.capture(
+        var_model.get_rolling_var_historic(
+            returns=returns, alpha=0.05, window_size=3
+        ).round(4)
+    )
+
+
+def test_get_rolling_var_historic_dataframe(recorder):
+    returns_df = pd.DataFrame(
+        {
+            "AAPL": [0.3, 0.2, 0.1, 0, 0.06, -0.1, -0.05],
+            "MSFT": [0.25, 0.15, 0.08, -0.02, 0.04, -0.08, -0.03],
+        }
+    )
+    recorder.capture(
+        var_model.get_rolling_var_historic(
+            returns=returns_df, alpha=0.05, window_size=3
+        ).round(4)
+    )
+
+
+def test_get_var_evt(recorder):
+    returns = pd.Series(
+        [0.02, -0.01, 0.03, -0.15, 0.01, -0.02, 0.04, -0.2, 0.02, -0.01, -0.18, 0.03]
+    )
+    recorder.capture(
+        round(
+            var_model.get_var_evt(
+                returns=returns, alpha=0.05, threshold_percentile=0.7
+            ),
+            4,
+        )
+    )
+
+
+def test_get_var_evt_dataframe(recorder):
+    returns_df = pd.DataFrame(
+        {
+            "AAPL": [
+                0.02,
+                -0.01,
+                0.03,
+                -0.15,
+                0.01,
+                -0.02,
+                0.04,
+                -0.2,
+                0.02,
+                -0.01,
+                -0.18,
+                0.03,
+            ],
+            "MSFT": [
+                0.01,
+                -0.02,
+                0.02,
+                -0.12,
+                0.02,
+                -0.01,
+                0.03,
+                -0.17,
+                0.01,
+                -0.02,
+                -0.14,
+                0.02,
+            ],
+        }
+    )
+    recorder.capture(
+        var_model.get_var_evt(
+            returns=returns_df, alpha=0.05, threshold_percentile=0.7
+        ).round(4)
+    )
+
+
+def test_get_var_evt_insufficient_exceedances(recorder):
+    # Too few exceedances above the threshold to fit a GPD, should return NaN
+    # rather than raise.
+    returns = pd.Series([0.01, 0.02, -0.01, 0.015, -0.005])
+    recorder.capture(
+        var_model.get_var_evt(returns=returns, alpha=0.05, threshold_percentile=0.95)
+    )
+
+
 def test_var_edge_cases(recorder):
     # Test with very small dataset
     small_returns = pd.Series([0.01, 0.02])

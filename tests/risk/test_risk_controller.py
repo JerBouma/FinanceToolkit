@@ -14,6 +14,14 @@ def test_get_value_at_risk(recorder, risk_module):
     recorder.capture(risk_module.get_value_at_risk(period="monthly"))
     recorder.capture(risk_module.get_value_at_risk(growth=True))
     recorder.capture(risk_module.get_value_at_risk(growth=True, lag=[1, 2, 3]))
+    recorder.capture(
+        risk_module.get_value_at_risk(
+            period="monthly", within_period=False, distribution="evt"
+        )
+    )
+    recorder.capture(
+        risk_module.get_value_at_risk(period="monthly", within_period=False, rolling=6)
+    )
 
 
 def test_get_conditional_value_at_risk(recorder, risk_module):
@@ -24,6 +32,33 @@ def test_get_conditional_value_at_risk(recorder, risk_module):
     recorder.capture(
         risk_module.get_conditional_value_at_risk(growth=True, lag=[1, 2, 3])
     )
+    recorder.capture(
+        risk_module.get_conditional_value_at_risk(
+            period="monthly", within_period=False, rolling=6
+        )
+    )
+
+
+def test_get_conditional_drawdown_at_risk(recorder, risk_module):
+    recorder.capture(risk_module.get_conditional_drawdown_at_risk())
+    recorder.capture(risk_module.get_conditional_drawdown_at_risk(within_period=False))
+    recorder.capture(risk_module.get_conditional_drawdown_at_risk(period="monthly"))
+    recorder.capture(risk_module.get_conditional_drawdown_at_risk(growth=True))
+    recorder.capture(
+        risk_module.get_conditional_drawdown_at_risk(growth=True, lag=[1, 2, 3])
+    )
+    recorder.capture(
+        risk_module.get_conditional_drawdown_at_risk(period="monthly", rolling=6)
+    )
+
+
+def test_get_tail_ratio(recorder, risk_module):
+    recorder.capture(risk_module.get_tail_ratio())
+    recorder.capture(risk_module.get_tail_ratio(within_period=False))
+    recorder.capture(risk_module.get_tail_ratio(period="monthly"))
+    recorder.capture(risk_module.get_tail_ratio(growth=True))
+    recorder.capture(risk_module.get_tail_ratio(growth=True, lag=[1, 2, 3]))
+    recorder.capture(risk_module.get_tail_ratio(period="monthly", rolling=6))
 
 
 def test_get_entropic_value_at_risk(recorder, risk_module):
@@ -56,6 +91,28 @@ def test_get_maximum_drawdown(recorder, risk_module):
     recorder.capture(risk_module.get_maximum_drawdown(growth=True, lag=[1, 2, 3]))
 
 
+def test_get_maximum_drawdown_duration(recorder, risk_module):
+    recorder.capture(risk_module.get_maximum_drawdown_duration())
+    recorder.capture(risk_module.get_maximum_drawdown_duration(within_period=False))
+    recorder.capture(risk_module.get_maximum_drawdown_duration(period="monthly"))
+    recorder.capture(risk_module.get_maximum_drawdown_duration(growth=True))
+    recorder.capture(
+        risk_module.get_maximum_drawdown_duration(growth=True, lag=[1, 2, 3])
+    )
+
+
+def test_get_maximum_drawdown_recovery_time(recorder, risk_module):
+    recorder.capture(risk_module.get_maximum_drawdown_recovery_time())
+    recorder.capture(
+        risk_module.get_maximum_drawdown_recovery_time(within_period=False)
+    )
+    recorder.capture(risk_module.get_maximum_drawdown_recovery_time(period="monthly"))
+    recorder.capture(risk_module.get_maximum_drawdown_recovery_time(growth=True))
+    recorder.capture(
+        risk_module.get_maximum_drawdown_recovery_time(growth=True, lag=[1, 2, 3])
+    )
+
+
 def test_get_ulcer_index(recorder, risk_module):
     recorder.capture(risk_module.get_ulcer_index())
     recorder.capture(risk_module.get_ulcer_index(rolling=5))
@@ -70,6 +127,7 @@ def test_get_skewness(recorder, risk_module):
     recorder.capture(risk_module.get_skewness(period="monthly"))
     recorder.capture(risk_module.get_skewness(growth=True))
     recorder.capture(risk_module.get_skewness(growth=True, lag=[1, 2, 3]))
+    recorder.capture(risk_module.get_skewness(period="monthly", rolling=6))
 
 
 def test_get_kurtosis(recorder, risk_module):
@@ -78,3 +136,38 @@ def test_get_kurtosis(recorder, risk_module):
     recorder.capture(risk_module.get_kurtosis(period="monthly"))
     recorder.capture(risk_module.get_kurtosis(growth=True))
     recorder.capture(risk_module.get_kurtosis(growth=True, lag=[1, 2, 3]))
+    recorder.capture(risk_module.get_kurtosis(period="monthly", rolling=6))
+
+
+def test_get_downside_deviation(recorder, risk_module):
+    recorder.capture(risk_module.get_downside_deviation())
+    recorder.capture(risk_module.get_downside_deviation(within_period=False))
+    recorder.capture(risk_module.get_downside_deviation(period="monthly"))
+    recorder.capture(risk_module.get_downside_deviation(minimum_acceptable_return=0.01))
+    recorder.capture(risk_module.get_downside_deviation(growth=True))
+    recorder.capture(risk_module.get_downside_deviation(growth=True, lag=[1, 2, 3]))
+    recorder.capture(risk_module.get_downside_deviation(period="monthly", rolling=6))
+
+
+def test_get_variance(recorder, risk_module):
+    recorder.capture(risk_module.get_variance())
+    recorder.capture(risk_module.get_variance(period="monthly"))
+    recorder.capture(risk_module.get_variance(growth=True))
+    recorder.capture(risk_module.get_variance(growth=True, lag=[1, 2, 3]))
+    recorder.capture(risk_module.get_variance(period="monthly", rolling=6))
+
+
+def test_get_volatility(recorder, risk_module):
+    recorder.capture(risk_module.get_volatility())
+    recorder.capture(risk_module.get_volatility(period="monthly"))
+    recorder.capture(risk_module.get_volatility(growth=True))
+    recorder.capture(risk_module.get_volatility(growth=True, lag=[1, 2, 3]))
+    recorder.capture(risk_module.get_volatility(period="monthly", rolling=6))
+
+
+def test_get_excess_volatility(recorder, risk_module):
+    recorder.capture(risk_module.get_excess_volatility())
+    recorder.capture(risk_module.get_excess_volatility(period="monthly"))
+    recorder.capture(risk_module.get_excess_volatility(growth=True))
+    recorder.capture(risk_module.get_excess_volatility(growth=True, lag=[1, 2, 3]))
+    recorder.capture(risk_module.get_excess_volatility(period="monthly", rolling=6))

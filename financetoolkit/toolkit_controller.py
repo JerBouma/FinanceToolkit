@@ -12,6 +12,10 @@ from datetime import datetime, timedelta
 import pandas as pd
 
 from financetoolkit import currencies_model
+from financetoolkit.discovery.discovery_model import (
+    search_press_releases as _search_press_releases,
+    search_stock_news as _search_stock_news,
+)
 from financetoolkit.economics.economics_controller import Economics
 from financetoolkit.fixedincome.fixedincome_controller import FixedIncome
 from financetoolkit.fmp_model import (
@@ -1753,6 +1757,116 @@ class Toolkit:
             return filter_columns(earnings_calendar.loc[self._tickers[0]], show_columns)
 
         return filter_columns(earnings_calendar, show_columns)
+
+    def get_stock_news(
+        self,
+        pages: int = 1,
+        limit: int = 100,
+        show_columns: list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Obtain the latest stock market news articles for the tickers of this Toolkit
+        instance. Qualitative companion to the toolkit's quantitative data. Automatically
+        filtered to this Toolkit instance's start_date and end_date.
+
+        Also known as: ticker news, company news feed.
+
+        Args:
+            pages (int, optional): The number of pages to collect, each page is a
+                separate API call, e.g. pages=5 makes 5 calls. Defaults to 1.
+            limit (int, optional): The number of articles to return per page. Defaults to 100.
+
+        Returns:
+            pd.DataFrame: The latest news articles for the specified tickers.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "MSFT"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        stock_news = toolkit.get_stock_news(limit=5)
+
+        stock_news[["Symbol", "Publisher", "Title"]]
+        ```
+
+        Which returns:
+
+        | Published Date      | Symbol   | Publisher     | Title                                                                                        |
+        |:---------------------|:---------|:--------------|:---------------------------------------------------------------------------------------------|
+        | 2026-07-07 10:46:52  | AAPL     | Benzinga      | Walmart, Apple And Nike May Be Agentic AI's First Winners. Grocery May Be The First Loser      |
+        | 2026-07-07 10:21:00  | MSFT     | GlobeNewsWire | MSFT Investors Have Opportunity to Lead Microsoft Corporation Securities Fraud Lawsuit...      |
+        | 2026-07-07 10:20:11  | AAPL     | Forbes        | Why Investors Fell Back In Love With Apple's Cheap AI Strategy                                 |
+        | 2026-07-07 09:59:19  | MSFT     | Benzinga      | Michael Burry's $700 Microsoft Bet: Should You Copy His LEAP Trade?                            |
+        | 2026-07-07 09:26:50  | AAPL     | Benzinga      | Forget the iPhone. Apple's AI Story May Belong to Macs                                         |
+        """
+        stock_news = _search_stock_news(
+            api_key=self._api_key,
+            symbols=self._tickers,
+            limit=limit,
+            pages=pages,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            user_subscription=self._fmp_plan,
+        )
+
+        return filter_columns(stock_news, show_columns)
+
+    def get_press_releases(
+        self,
+        pages: int = 1,
+        limit: int = 100,
+        show_columns: list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Obtain the latest official company press releases for the tickers of this
+        Toolkit instance, such as earnings announcements and corporate communications.
+        Automatically filtered to this Toolkit instance's start_date and end_date.
+
+        Also known as: corporate announcements, company press release feed.
+
+        Args:
+            pages (int, optional): The number of pages to collect, each page is a
+                separate API call, e.g. pages=5 makes 5 calls. Defaults to 1.
+            limit (int, optional): The number of articles to return per page. Defaults to 100.
+
+        Returns:
+            pd.DataFrame: The latest press releases for the specified tickers.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "MSFT"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        press_releases = toolkit.get_press_releases(limit=5)
+
+        press_releases[["Symbol", "Publisher", "Title"]]
+        ```
+
+        Which returns:
+
+        | Published Date      | Symbol   | Publisher     | Title                                                                                      |
+        |:---------------------|:---------|:--------------|:-----------------------------------------------------------------------------------------------|
+        | 2026-07-07 10:21:00  | MSFT     | GlobeNewsWire | MSFT Investors Have Opportunity to Lead Microsoft Corporation Securities Fraud Lawsuit...        |
+        | 2026-07-07 06:36:00  | MSFT     | PRNewsWire    | MSFT Investment Deadline: Microsoft Securities Fraud Class Action Focuses on Copilot...          |
+        | 2026-07-06 15:34:00  | MSFT     | GlobeNewsWire | MICROSOFT CLASS ACTION ALERT: Bragar Eagel & Squire, P.C. Urges Microsoft Corporation...         |
+        | 2026-07-06 13:24:00  | MSFT     | GlobeNewsWire | Deadline Alert: Microsoft Corporation (MSFT) Shareholders Who Lost Money Urged To Contact...     |
+        | 2026-07-06 10:07:00  | MSFT     | GlobeNewsWire | Levi & Korsinsky Reminds Shareholders of a Lead Plaintiff Deadline of August 11, 2026...         |
+        """
+        press_releases = _search_press_releases(
+            api_key=self._api_key,
+            symbols=self._tickers,
+            limit=limit,
+            pages=pages,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            user_subscription=self._fmp_plan,
+        )
+
+        return filter_columns(press_releases, show_columns)
 
     def get_revenue_geographic_segmentation(
         self,

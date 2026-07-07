@@ -2,9 +2,13 @@
 
 __docformat__ = "google"
 
+import numpy as np
 import pandas as pd
 
 from financetoolkit.technicals.overlap_model import get_exponential_moving_average
+
+# Number of trading days used to annualize realized volatility.
+TRADING_DAYS_PER_YEAR = 252
 
 
 def get_true_range(
@@ -91,6 +95,89 @@ def get_keltner_channels(
         keys=["Upper Line", "Middle Line", "Lower Line"],
         axis=1,
     )
+
+
+def get_donchian_channels(
+    prices_high: pd.Series, prices_low: pd.Series, window: int
+) -> pd.DataFrame:
+    """
+    Calculate the Donchian Channels of a given price series.
+
+    Donchian Channels plot the highest high and lowest low over a specified window,
+    with the middle line being the average of the two. They are used to identify
+    breakouts and the overall volatility of the price range.
+
+    Args:
+        prices_high (pd.Series): Series of high prices.
+        prices_low (pd.Series): Series of low prices.
+        window (int): Number of periods to consider for the Donchian Channels.
+
+    Returns:
+        pd.DataFrame: Donchian Channels (upper, middle, lower).
+    """
+    upper_channel = prices_high.rolling(window=window).max()
+    lower_channel = prices_low.rolling(window=window).min()
+    middle_channel = (upper_channel + lower_channel) / 2
+
+    return pd.concat(
+        [upper_channel, middle_channel, lower_channel],
+        keys=["Upper Channel", "Middle Channel", "Lower Channel"],
+        axis=1,
+    )
+
+
+def get_volatility_cone(
+    prices_close: pd.Series, windows: list[int] | None = None
+) -> pd.DataFrame:
+    """
+    Calculate the Volatility Cone of a given price series.
+
+    The Volatility Cone summarizes the distribution of historical annualized realized
+    volatility over a range of rolling windows, showing how the current realized
+    volatility for each window compares to its own historical range. It is commonly
+    used to judge whether current (or implied) volatility is cheap or expensive
+    relative to history.
+
+    Args:
+        prices_close (pd.Series): Series of closing prices.
+        windows (list[int] | None): The rolling windows (in periods) to calculate
+            realized volatility for. Defaults to [10, 20, 30, 60, 90, 120].
+
+    Returns:
+        pd.DataFrame: Volatility Cone with, for each window, the historical minimum,
+            10th, 25th, 50th (median), 75th and 90th percentiles, maximum and the
+            current realized volatility.
+    """
+    if windows is None:
+        windows = [10, 20, 30, 60, 90, 120]
+
+    log_returns = np.log(prices_close / prices_close.shift(1))
+
+    volatility_cone = {}
+    for window in windows:
+        realized_volatility = log_returns.rolling(window=window).std() * np.sqrt(
+            TRADING_DAYS_PER_YEAR
+        )
+
+        volatility_cone[window] = {
+            "Min": realized_volatility.min(),
+            "10th Percentile": realized_volatility.quantile(0.10),
+            "25th Percentile": realized_volatility.quantile(0.25),
+            "Median": realized_volatility.median(),
+            "75th Percentile": realized_volatility.quantile(0.75),
+            "90th Percentile": realized_volatility.quantile(0.90),
+            "Max": realized_volatility.max(),
+            "Current": (
+                realized_volatility.iloc[-1]
+                if not realized_volatility.empty
+                else np.nan
+            ),
+        }
+
+    volatility_cone_df = pd.DataFrame(volatility_cone).T
+    volatility_cone_df.index.name = "Window"
+
+    return volatility_cone_df
 
 
 def get_bollinger_bands(

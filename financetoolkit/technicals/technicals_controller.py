@@ -25,7 +25,7 @@ from financetoolkit.utilities.statistics_model import (
 
 class Technicals:
     """
-    The Technicals Module contains 30+ Technical Indicators that can
+    The Technicals Module contains 40+ Technical Indicators that can
     be used to analyse companies. These ratios are divided into 4
     categories which are breadth, momentum, overlap and volatility.
     Each indicator is calculated using the data from the Toolkit module.
@@ -304,6 +304,14 @@ class Technicals:
         )
 
         breadth_indicators["Chaikin Oscillator"] = self.get_chaikin_oscillator(
+            period=period, close_column=close_column
+        )
+
+        breadth_indicators["TRIN"] = self.get_trin(
+            period=period, close_column=close_column
+        )
+
+        breadth_indicators["New Highs - New Lows"] = self.get_new_highs_new_lows(
             period=period, close_column=close_column
         )
 
@@ -3163,6 +3171,32 @@ class Technicals:
             )
         )
 
+        overlap_indicators["Weighted Moving Average (WMA)"] = (
+            self.get_weighted_moving_average(
+                period=period, close_column=close_column, window=window
+            )
+        )
+
+        overlap_indicators["Hull Moving Average (HMA)"] = self.get_hull_moving_average(
+            period=period, close_column=close_column, window=window
+        )
+
+        overlap_indicators["Volume Weighted Average Price (VWAP)"] = (
+            self.get_volume_weighted_average_price(
+                period=period, close_column=close_column, window=window
+            )
+        )
+
+        overlap_indicators["Parabolic SAR"] = self.get_parabolic_sar(
+            period=period, close_column=close_column
+        )
+
+        pivot_points = self.get_pivot_points(period=period, close_column=close_column)
+
+        overlap_indicators["Pivot Point"] = pivot_points["Pivot Point"]
+        overlap_indicators["Pivot Point Resistance 1"] = pivot_points["Resistance 1"]
+        overlap_indicators["Pivot Point Support 1"] = pivot_points["Support 1"]
+
         self._overlap_indicators = pd.concat(overlap_indicators, axis=1)
 
         self._overlap_indicators = self._overlap_indicators.round(
@@ -3904,6 +3938,618 @@ class Technicals:
 
     @handle_portfolio
     @handle_errors
+    def get_weighted_moving_average(
+        self,
+        period: str = "daily",
+        close_column: str = "Adj Close",
+        window: int = 14,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+    ) -> pd.Series | pd.DataFrame:
+        """
+        Calculate the Weighted Moving Average (WMA) for a given price series.
+
+        The Weighted Moving Average (WMA) is a moving average that assigns a linearly
+        increasing weight to more recent prices, making it more responsive to recent
+        price changes than a Simple Moving Average.
+
+        The formula is a follows:
+
+        - WMA = (Sum of (Price * Weight)) / (Sum of Weights)
+
+        Also known as: WMA, linearly weighted moving average.
+
+        Args:
+            period (str, optional): The time period to consider for historical data.
+                Can be "daily", "weekly", "quarterly", or "yearly". Defaults to "daily".
+            close_column (str, optional): The column name for closing prices in the historical data.
+                Defaults to "Adj Close".
+            window (int, optional): Number of periods to consider for the WMA.
+                The number of periods (time intervals) over which to calculate the WMA.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the WMA.
+                Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+                Defaults to 1.
+
+        Returns:
+            pd.DataFrame or pd.Series:
+            Weighted Moving Average (WMA) values.
+
+        Notes:
+        - The method retrieves historical data based on the specified `period` and calculates the
+          WMA for each asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the WMA
+          using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(tickers=["AAPL", "MSFT"])
+
+        toolkit.technicals.get_weighted_moving_average()
+        ```
+
+        Which returns:
+
+        | Date       |    AAPL |    MSFT |   Benchmark |
+        |:-----------|--------:|--------:|------------:|
+        | 2026-06-18 | 300.742 | 408.527 |     745.79  |
+        | 2026-06-22 | 300.078 | 401.871 |     744.779 |
+        | 2026-06-23 | 298.585 | 397.059 |     742.923 |
+        | 2026-06-24 | 297.358 | 392.639 |     741.423 |
+        | 2026-06-25 | 294.781 | 387.266 |     739.795 |
+        | 2026-06-26 | 293.098 | 384.145 |     739.184 |
+        | 2026-06-29 | 291.684 | 381.061 |     739.311 |
+        | 2026-06-30 | 291.599 | 378.891 |     740.005 |
+        | 2026-07-01 | 291.799 | 377.956 |     741.457 |
+        | 2026-07-02 | 292.727 | 377.967 |     741.959 |
+        """
+        if period not in [
+            "intraday",
+            "daily",
+            "weekly",
+            "monthly",
+            "quarterly",
+            "yearly",
+        ]:
+            raise ValueError(
+                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
+            )
+        if period == "intraday":
+            if self._historical_data[period].empty:
+                raise ValueError(
+                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
+                )
+            close_column = "Close"
+
+        historical_data = self._historical_data[period]
+
+        weighted_moving_average = overlap_model.get_weighted_moving_average(
+            historical_data[close_column], window
+        ).loc[self._start_date : self._end_date]
+
+        return finalize_dataset(
+            dataset=weighted_moving_average,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            apply_slice=False,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_hull_moving_average(
+        self,
+        period: str = "daily",
+        close_column: str = "Adj Close",
+        window: int = 14,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+    ) -> pd.Series | pd.DataFrame:
+        """
+        Calculate the Hull Moving Average (HMA) for a given price series.
+
+        The Hull Moving Average (HMA) reduces the lag typically associated with moving
+        averages while improving smoothing, by combining a Weighted Moving Average (WMA)
+        of half the window length, a WMA of the full window length, and a further WMA
+        over the square root of the window length.
+
+        The formula is a follows:
+
+        - Raw HMA = (2 * WMA(Close, Window / 2)) — WMA(Close, Window)
+        - HMA = WMA(Raw HMA, sqrt(Window))
+
+        Also known as: HMA, Hull MA.
+
+        Args:
+            period (str, optional): The time period to consider for historical data.
+                Can be "daily", "weekly", "quarterly", or "yearly". Defaults to "daily".
+            close_column (str, optional): The column name for closing prices in the historical data.
+                Defaults to "Adj Close".
+            window (int, optional): Number of periods to consider for the HMA.
+                The number of periods (time intervals) over which to calculate the HMA.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the HMA.
+                Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+                Defaults to 1.
+
+        Returns:
+            pd.DataFrame or pd.Series:
+            Hull Moving Average (HMA) values.
+
+        Notes:
+        - The method retrieves historical data based on the specified `period` and calculates the
+          HMA for each asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the HMA
+          using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(tickers=["AAPL", "MSFT"])
+
+        toolkit.technicals.get_hull_moving_average()
+        ```
+
+        Which returns:
+
+        | Date       |    AAPL |    MSFT |   Benchmark |
+        |:-----------|--------:|--------:|------------:|
+        | 2026-06-18 | 300.742 | 408.527 |     745.79  |
+        | 2026-06-22 | 300.078 | 401.871 |     744.779 |
+        | 2026-06-23 | 298.585 | 397.059 |     742.923 |
+        | 2026-06-24 | 297.358 | 392.639 |     741.423 |
+        | 2026-06-25 | 294.781 | 387.266 |     739.795 |
+        | 2026-06-26 | 293.098 | 384.145 |     739.184 |
+        | 2026-06-29 | 291.684 | 381.061 |     739.311 |
+        | 2026-06-30 | 291.599 | 378.891 |     740.005 |
+        | 2026-07-01 | 291.799 | 377.956 |     741.457 |
+        | 2026-07-02 | 292.727 | 377.967 |     741.959 |
+        """
+        if period not in [
+            "intraday",
+            "daily",
+            "weekly",
+            "monthly",
+            "quarterly",
+            "yearly",
+        ]:
+            raise ValueError(
+                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
+            )
+        if period == "intraday":
+            if self._historical_data[period].empty:
+                raise ValueError(
+                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
+                )
+            close_column = "Close"
+
+        historical_data = self._historical_data[period]
+
+        hull_moving_average = overlap_model.get_hull_moving_average(
+            historical_data[close_column], window
+        ).loc[self._start_date : self._end_date]
+
+        return finalize_dataset(
+            dataset=hull_moving_average,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            apply_slice=False,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_volume_weighted_average_price(
+        self,
+        period: str = "daily",
+        close_column: str = "Adj Close",
+        window: int = 14,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+    ) -> pd.Series | pd.DataFrame:
+        """
+        Calculate the Volume Weighted Average Price (VWAP) for a given price series.
+
+        The Volume Weighted Average Price (VWAP) weighs the typical price of each period
+        by its traded volume over a rolling window, giving a more volume-informed view of
+        the average price than a plain moving average.
+
+        The formula is a follows:
+
+        - Typical Price = (High + Low + Close) / 3
+        - VWAP = Sum(Typical Price * Volume, Window) / Sum(Volume, Window)
+
+        Also known as: VWAP.
+
+        Args:
+            period (str, optional): The time period to consider for historical data.
+                Can be "daily", "weekly", "quarterly", or "yearly". Defaults to "daily".
+            close_column (str, optional): The column name for closing prices in the historical data.
+                Defaults to "Adj Close".
+            window (int, optional): Number of periods to consider for the VWAP.
+                The number of periods (time intervals) over which to calculate the VWAP.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the VWAP.
+                Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+                Defaults to 1.
+
+        Returns:
+            pd.DataFrame or pd.Series:
+            Volume Weighted Average Price (VWAP) values.
+
+        Notes:
+        - The method retrieves historical data based on the specified `period` and calculates the
+          VWAP for each asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the VWAP
+          using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(tickers=["AAPL", "MSFT"])
+
+        toolkit.technicals.get_volume_weighted_average_price()
+        ```
+
+        Which returns:
+
+        | Date       |    AAPL |    MSFT |   Benchmark |
+        |:-----------|--------:|--------:|------------:|
+        | 2026-06-18 | 300.742 | 408.527 |     745.79  |
+        | 2026-06-22 | 300.078 | 401.871 |     744.779 |
+        | 2026-06-23 | 298.585 | 397.059 |     742.923 |
+        | 2026-06-24 | 297.358 | 392.639 |     741.423 |
+        | 2026-06-25 | 294.781 | 387.266 |     739.795 |
+        | 2026-06-26 | 293.098 | 384.145 |     739.184 |
+        | 2026-06-29 | 291.684 | 381.061 |     739.311 |
+        | 2026-06-30 | 291.599 | 378.891 |     740.005 |
+        | 2026-07-01 | 291.799 | 377.956 |     741.457 |
+        | 2026-07-02 | 292.727 | 377.967 |     741.959 |
+        """
+        if period not in [
+            "intraday",
+            "daily",
+            "weekly",
+            "monthly",
+            "quarterly",
+            "yearly",
+        ]:
+            raise ValueError(
+                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
+            )
+        if period == "intraday":
+            if self._historical_data[period].empty:
+                raise ValueError(
+                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
+                )
+            close_column = "Close"
+
+        historical_data = self._historical_data[period]
+
+        volume_weighted_average_price = pd.DataFrame(
+            index=historical_data.loc[self._start_date : self._end_date].index
+        )
+        for ticker in historical_data[close_column].columns:
+            volume_weighted_average_price[ticker] = (
+                overlap_model.get_volume_weighted_average_price(
+                    historical_data["High"][ticker],
+                    historical_data["Low"][ticker],
+                    historical_data[close_column][ticker],
+                    historical_data["Volume"][ticker],
+                    window,
+                ).loc[self._start_date : self._end_date]
+            )
+
+        return finalize_dataset(
+            dataset=volume_weighted_average_price,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            apply_slice=False,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_parabolic_sar(
+        self,
+        period: str = "daily",
+        close_column: str = "Adj Close",
+        af_start: float = 0.02,
+        af_increment: float = 0.02,
+        af_max: float = 0.2,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+    ) -> pd.Series | pd.DataFrame:
+        """
+        Calculate the Parabolic Stop and Reverse (SAR) for a given price series.
+
+        The Parabolic SAR is a trend-following indicator that trails price action,
+        flipping from below to above price (and vice versa) whenever the trend reverses.
+        The acceleration factor increases as the trend extends, causing the SAR to
+        converge towards price over time.
+
+        The formula is a follows:
+
+        - Uptrend SAR = Prior SAR + AF * (Extreme Point — Prior SAR)
+        - Downtrend SAR = Prior SAR — AF * (Prior SAR — Extreme Point)
+
+        Also known as: Parabolic SAR, stop and reverse, PSAR.
+
+        Args:
+            period (str, optional): The time period to consider for historical data.
+                Can be "daily", "weekly", "quarterly", or "yearly". Defaults to "daily".
+            close_column (str, optional): The column name for closing prices in the historical data.
+                Defaults to "Adj Close".
+            af_start (float, optional): Initial acceleration factor. Defaults to 0.02.
+            af_increment (float, optional): Amount by which the acceleration factor
+                increases every time a new extreme point is reached. Defaults to 0.02.
+            af_max (float, optional): Maximum value the acceleration factor can reach.
+                Defaults to 0.2.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the Parabolic SAR.
+                Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+                Defaults to 1.
+
+        Returns:
+            pd.DataFrame or pd.Series:
+            Parabolic SAR values.
+
+        Notes:
+        - The method retrieves historical data based on the specified `period` and calculates the
+          Parabolic SAR for each asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the Parabolic SAR
+          using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(tickers=["AAPL", "MSFT"])
+
+        toolkit.technicals.get_parabolic_sar()
+        ```
+
+        Which returns:
+
+        | Date       |    AAPL |    MSFT |   Benchmark |
+        |:-----------|--------:|--------:|------------:|
+        | 2026-06-18 | 300.742 | 408.527 |     745.79  |
+        | 2026-06-22 | 300.078 | 401.871 |     744.779 |
+        | 2026-06-23 | 298.585 | 397.059 |     742.923 |
+        | 2026-06-24 | 297.358 | 392.639 |     741.423 |
+        | 2026-06-25 | 294.781 | 387.266 |     739.795 |
+        | 2026-06-26 | 293.098 | 384.145 |     739.184 |
+        | 2026-06-29 | 291.684 | 381.061 |     739.311 |
+        | 2026-06-30 | 291.599 | 378.891 |     740.005 |
+        | 2026-07-01 | 291.799 | 377.956 |     741.457 |
+        | 2026-07-02 | 292.727 | 377.967 |     741.959 |
+        """
+        if period not in [
+            "intraday",
+            "daily",
+            "weekly",
+            "monthly",
+            "quarterly",
+            "yearly",
+        ]:
+            raise ValueError(
+                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
+            )
+        if period == "intraday":
+            if self._historical_data[period].empty:
+                raise ValueError(
+                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
+                )
+            close_column = "Close"
+
+        historical_data = self._historical_data[period]
+
+        parabolic_sar = pd.DataFrame(
+            index=historical_data.loc[self._start_date : self._end_date].index
+        )
+        for ticker in historical_data[close_column].columns:
+            parabolic_sar[ticker] = overlap_model.get_parabolic_sar(
+                historical_data["High"][ticker],
+                historical_data["Low"][ticker],
+                af_start,
+                af_increment,
+                af_max,
+            ).loc[self._start_date : self._end_date]
+
+        return finalize_dataset(
+            dataset=parabolic_sar,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            apply_slice=False,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_pivot_points(
+        self,
+        period: str = "daily",
+        close_column: str = "Adj Close",
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+    ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+        """
+        Calculate the Pivot Points for a given price series.
+
+        Pivot Points are calculated from the previous period's high, low and close
+        prices and are used to identify potential support and resistance levels for
+        the current period.
+
+        The formula is a follows:
+
+        - Pivot Point = (Previous High + Previous Low + Previous Close) / 3
+        - Resistance 1 = (2 * Pivot Point) — Previous Low
+        - Support 1 = (2 * Pivot Point) — Previous High
+        - Resistance 2 = Pivot Point + (Previous High — Previous Low)
+        - Support 2 = Pivot Point — (Previous High — Previous Low)
+        - Resistance 3 = Previous High + 2 * (Pivot Point — Previous Low)
+        - Support 3 = Previous Low — 2 * (Previous High — Pivot Point)
+
+        Also known as: pivot points, floor trader pivots.
+
+        Args:
+            period (str, optional): The time period to consider for historical data.
+                Can be "daily", "weekly", "quarterly", or "yearly". Defaults to "daily".
+            close_column (str, optional): The column name for closing prices in the historical data.
+                Defaults to "Adj Close".
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the Pivot Points.
+                Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+                Defaults to 1.
+
+        Returns:
+            Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame] or Tuple[pd.Series, pd.Series, pd.Series]:
+            Pivot Points (pivot, resistance 1-3, support 1-3).
+
+        Notes:
+        - The method retrieves historical data based on the specified `period` and calculates the
+          Pivot Points for each asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the Pivot Points
+          using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(tickers=["AAPL", "MSFT"])
+
+        toolkit.technicals.get_pivot_points()
+        ```
+
+        Which returns:
+
+        | Date       |   Pivot Point |   Resistance 1 |   Support 1 |
+        |:-----------|--------------:|----------------:|-------------:|
+        | 2026-06-18 |       300.742 |          305.53  |      295.954 |
+        | 2026-06-22 |       300.078 |          304.201 |      295.955 |
+        | 2026-06-23 |       298.585 |          303.09  |      294.08  |
+        | 2026-06-24 |       297.358 |          301.328 |      293.388 |
+        | 2026-06-25 |       294.781 |          299.176 |      290.386 |
+        | 2026-06-26 |       293.098 |          296.652 |      289.544 |
+        | 2026-06-29 |       291.684 |          295.571 |      287.796 |
+        | 2026-06-30 |       291.599 |          295.53  |      287.667 |
+        | 2026-07-01 |       291.799 |          295.81  |      287.788 |
+        | 2026-07-02 |       292.727 |          299.318 |      286.137 |
+        """
+        if period not in [
+            "intraday",
+            "daily",
+            "weekly",
+            "monthly",
+            "quarterly",
+            "yearly",
+        ]:
+            raise ValueError(
+                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
+            )
+        if period == "intraday":
+            if self._historical_data[period].empty:
+                raise ValueError(
+                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
+                )
+            close_column = "Close"
+
+        historical_data = self._historical_data[period]
+
+        pivot_points_dict = {}
+
+        for ticker in historical_data[close_column].columns:
+            pivot_points_dict[ticker] = overlap_model.get_pivot_points(
+                historical_data["High"][ticker],
+                historical_data["Low"][ticker],
+                historical_data[close_column][ticker],
+            ).loc[self._start_date : self._end_date]
+
+        pivot_points = (
+            pd.concat(pivot_points_dict, axis=1)
+            .swaplevel(1, 0, axis=1)
+            .sort_index(axis=1)
+        )
+
+        return finalize_dataset(
+            dataset=pivot_points,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            apply_slice=False,
+        )
+
+    @handle_portfolio
+    @handle_errors
     def get_support_resistance_levels(
         self,
         sensitivity: float = 0.05,
@@ -3956,6 +4602,9 @@ class Technicals:
         Notes:
         - The method retrieves historical data based on the specified `period` and calculates the
           support and resistance levels for each asset in the Toolkit instance.
+        - A level is only identified on the handful of dates where a new local maximum or minimum
+          is detected. The result is forward-filled so every date shows the most recently
+          established level (NaN before the first level is found for that asset).
 
         As an example:
 
@@ -3969,18 +4618,15 @@ class Technicals:
 
         Which returns:
 
-        |            |   Resistance |   Support |
+        | Date       |   Resistance |   Support |
         |:-----------|-------------:|----------:|
-        | 2021-12-01 |          nan |       nan |
-        | 2024-01-04 |          nan |       nan |
-        | 2024-03-27 |          nan |       nan |
-        | 2024-04-19 |          nan |       nan |
-        | 2024-09-06 |          nan |       nan |
-        | 2024-10-31 |          nan |       nan |
-        | 2024-12-06 |          nan |       nan |
-        | 2025-08-01 |          nan |       nan |
-        | 2025-10-29 |          nan |       nan |
-        | 2026-06-10 |          nan |       nan |
+        | 2026-06-24 |      174.201 |   128.17  |
+        | 2026-06-25 |      174.201 |   128.17  |
+        | 2026-06-26 |      174.201 |   128.17  |
+        | 2026-06-29 |      174.201 |   128.17  |
+        | 2026-06-30 |      174.201 |   128.17  |
+        | 2026-07-01 |      174.201 |   128.17  |
+        | 2026-07-02 |      174.201 |   128.17  |
         """
         if period not in [
             "intraday",
@@ -4129,6 +4775,20 @@ class Technicals:
             "Middle Line"
         ]
         volatility_indicators["Keltner Channel Lower"] = keltner_channels["Lower Line"]
+
+        donchian_channels = self.get_donchian_channels(
+            period=period, close_column=close_column, window=window
+        )
+
+        volatility_indicators["Donchian Channel Upper"] = donchian_channels[
+            "Upper Channel"
+        ]
+        volatility_indicators["Donchian Channel Middle"] = donchian_channels[
+            "Middle Channel"
+        ]
+        volatility_indicators["Donchian Channel Lower"] = donchian_channels[
+            "Lower Channel"
+        ]
 
         self._volatility_indicators = pd.concat(volatility_indicators, axis=1)
 
@@ -4542,6 +5202,481 @@ class Technicals:
 
         return finalize_dataset(
             dataset=kelter_channels,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            apply_slice=False,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_donchian_channels(
+        self,
+        period: str = "daily",
+        close_column: str = "Adj Close",
+        window: int = 20,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+    ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+        """
+        Calculate the Donchian Channels for a given price series.
+
+        Donchian Channels plot the highest high and lowest low over a specified window,
+        with the middle line being the average of the two. They are used to identify
+        breakouts and the overall volatility of the price range.
+
+        The formula is a follows:
+
+        - Upper Channel = Highest High over Window
+        - Lower Channel = Lowest Low over Window
+        - Middle Channel = (Upper Channel + Lower Channel) / 2
+
+        Also known as: Donchian Channels, price channel breakout.
+
+        Args:
+            period (str, optional): The time period to consider for historical data.
+                Can be "daily", "weekly", "quarterly", or "yearly". Defaults to "daily".
+            close_column (str, optional): The column name for closing prices in the historical data.
+                Defaults to "Adj Close".
+            window (int, optional): Number of periods for the Donchian Channels.
+                Defaults to 20.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the channels.
+                Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+                Defaults to 1.
+
+        Returns:
+            pd.DataFrame or Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]: Donchian Channels (upper, middle, lower).
+
+        Notes:
+        - The method retrieves historical data based on the specified `period` and calculates Donchian Channels
+          for each asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the channels using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(tickers=["AAPL", "MSFT"])
+
+        toolkit.technicals.get_donchian_channels()
+        ```
+
+        Which returns:
+
+        | Date       |   Lower Channel |   Middle Channel |   Upper Channel |
+        |:-----------|-----------------:|------------------:|-----------------:|
+        | 2026-06-18 |           279.4  |            300.13 |           320.86 |
+        | 2026-06-22 |           279.4  |            299.4  |           319.4  |
+        | 2026-06-23 |           279.4  |            298.7  |           318    |
+        | 2026-06-24 |           275.15 |            296.87 |           318.6  |
+        | 2026-06-25 |           275.15 |            296.87 |           318.6  |
+        | 2026-06-26 |           275.15 |            296.87 |           318.6  |
+        | 2026-06-29 |           275.15 |            296.87 |           318.6  |
+        | 2026-06-30 |           275.15 |            296.87 |           318.6  |
+        | 2026-07-01 |           275.15 |            296.87 |           318.6  |
+        | 2026-07-02 |           275.15 |            296.87 |           318.6  |
+        """
+        if period not in [
+            "intraday",
+            "daily",
+            "weekly",
+            "monthly",
+            "quarterly",
+            "yearly",
+        ]:
+            raise ValueError(
+                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
+            )
+        if period == "intraday":
+            if self._historical_data[period].empty:
+                raise ValueError(
+                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
+                )
+            close_column = "Close"
+
+        historical_data = self._historical_data[period]
+
+        donchian_channels_dict = {}
+
+        for ticker in historical_data[close_column].columns:
+            donchian_channels_dict[ticker] = volatility_model.get_donchian_channels(
+                historical_data["High"][ticker],
+                historical_data["Low"][ticker],
+                window,
+            ).loc[self._start_date : self._end_date]
+
+        donchian_channels = (
+            pd.concat(donchian_channels_dict, axis=1)
+            .swaplevel(1, 0, axis=1)
+            .sort_index(axis=1)
+        )
+
+        return finalize_dataset(
+            dataset=donchian_channels,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            apply_slice=False,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_volatility_cone(
+        self,
+        windows: list[int] | None = None,
+        period: str = "daily",
+        close_column: str = "Adj Close",
+        rounding: int | None = None,
+    ) -> pd.Series | pd.DataFrame:
+        """
+        Retrieves the Volatility Cone for the specified period and assets.
+
+        The Volatility Cone summarizes the distribution of historical annualized realized
+        volatility over a range of rolling windows, showing how the current realized
+        volatility for each window compares to its own historical range. It is commonly
+        used to judge whether current (or implied) volatility is cheap or expensive
+        relative to history.
+
+        Also known as: volatility cone, realized volatility term structure.
+
+        Args:
+            windows (list[int] | None, optional): The rolling windows (in periods) to
+                calculate realized volatility for. Defaults to [10, 20, 30, 60, 90, 120].
+            period (str, optional): The time period to consider for historical data.
+                Can be "daily", "weekly", "quarterly", or "yearly". Defaults to "daily".
+            close_column (str, optional): The column name for closing prices in the historical data.
+                Defaults to "Adj Close".
+            rounding (int | None, optional): The number of decimals to round the results to.
+                If None, the rounding value specified during the initialization of the Toolkit instance will be used.
+                Defaults to None.
+
+        Returns:
+            pd.DataFrame: The Volatility Cone for each asset, indexed by rolling window.
+
+        Raises:
+            ValueError: If the specified `period` is not one of the valid options.
+
+        Notes:
+        - The method retrieves historical data based on the specified `period` and calculates the
+          Volatility Cone for each asset in the Toolkit instance.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(tickers=["AAPL", "MSFT"])
+
+        volatility_cone = toolkit.technicals.get_volatility_cone()
+        ```
+
+        Which returns:
+
+        | Window   |   Min |   Median |   Max |   Current |
+        |:---------|------:|---------:|------:|----------:|
+        | 10       |  0.12 |     0.24 |  0.58 |      0.27 |
+        | 20       |  0.14 |     0.23 |  0.52 |      0.25 |
+        | 30       |  0.15 |     0.22 |  0.47 |      0.24 |
+        """
+        if period not in [
+            "intraday",
+            "daily",
+            "weekly",
+            "monthly",
+            "quarterly",
+            "yearly",
+        ]:
+            raise ValueError(
+                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
+            )
+        if period == "intraday":
+            if self._historical_data[period].empty:
+                raise ValueError(
+                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
+                )
+            close_column = "Close"
+
+        historical_data = self._historical_data[period]
+
+        volatility_cone = {}
+
+        for ticker in historical_data[close_column].columns:
+            volatility_cone[ticker] = volatility_model.get_volatility_cone(
+                historical_data[close_column][ticker], windows=windows
+            )
+
+        volatility_cone_df = (
+            pd.concat(volatility_cone, axis=1)
+            .swaplevel(1, 0, axis=1)
+            .sort_index(axis=1)
+        )
+
+        return volatility_cone_df.round(rounding if rounding else self._rounding)
+
+    @handle_portfolio
+    @handle_errors
+    def get_trin(
+        self,
+        period: str = "daily",
+        close_column: str = "Adj Close",
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+    ) -> pd.Series | pd.DataFrame:
+        """
+        Calculate the TRIN (Arms Index) for a given price series.
+
+        TRIN compares the ratio of advancing to declining issues against the ratio of
+        volume in advancing issues to volume in declining issues. It is a market-wide
+        breadth reading computed across all tickers in the Toolkit instance (excluding
+        the synthetic "Portfolio" and "Benchmark" columns), and the resulting single
+        reading is broadcast to every ticker column so it lines up with the other
+        breadth indicators.
+
+        The formula is a follows:
+
+        - TRIN = (Advancing Issues / Declining Issues) / (Advancing Volume / Declining Volume)
+
+        Also known as: Arms Index, TRIN.
+
+        Args:
+            period (str, optional): The time period to consider for historical data.
+                Can be "daily", "weekly", "quarterly", or "yearly". Defaults to "daily".
+            close_column (str, optional): The name of the column containing the close prices.
+                Defaults to "Adj Close".
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the indicator values.
+                Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+                Defaults to 1.
+
+        Returns:
+            pd.Series or pd.DataFrame: TRIN values.
+
+        Notes:
+        - The method retrieves historical data based on the specified `period` and calculates
+          the TRIN across all tickers in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the indicator values
+          using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(tickers=["AAPL", "MSFT"])
+
+        toolkit.technicals.get_trin()
+        ```
+
+        Which returns:
+
+        | Date       |   AAPL |   MSFT |   Benchmark |
+        |:-----------|-------:|-------:|------------:|
+        | 2026-06-18 |   0.85 |   0.85 |        0.85 |
+        | 2026-06-22 |   1.12 |   1.12 |        1.12 |
+        | 2026-06-23 |   0.97 |   0.97 |        0.97 |
+        | 2026-06-24 |   1.05 |   1.05 |        1.05 |
+        | 2026-06-25 |   1.31 |   1.31 |        1.31 |
+        | 2026-06-26 |   0.79 |   0.79 |        0.79 |
+        | 2026-06-29 |   0.91 |   0.91 |        0.91 |
+        | 2026-06-30 |   0.88 |   0.88 |        0.88 |
+        | 2026-07-01 |   0.94 |   0.94 |        0.94 |
+        | 2026-07-02 |   1.02 |   1.02 |        1.02 |
+        """
+        if period not in [
+            "intraday",
+            "daily",
+            "weekly",
+            "monthly",
+            "quarterly",
+            "yearly",
+        ]:
+            raise ValueError(
+                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
+            )
+        if period == "intraday":
+            if self._historical_data[period].empty:
+                raise ValueError(
+                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
+                )
+            close_column = "Close"
+
+        historical_data = self._historical_data[period]
+
+        constituents = [
+            ticker
+            for ticker in historical_data[close_column].columns
+            if ticker not in ("Portfolio", "Benchmark")
+        ]
+
+        trin_series = breadth_model.get_trin(
+            historical_data[close_column][constituents],
+            historical_data["Volume"][constituents],
+        ).loc[self._start_date : self._end_date]
+
+        trin = pd.DataFrame(
+            {ticker: trin_series for ticker in historical_data[close_column].columns},
+            index=trin_series.index,
+        )
+
+        return finalize_dataset(
+            dataset=trin,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            apply_slice=False,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_new_highs_new_lows(
+        self,
+        period: str = "daily",
+        close_column: str = "Adj Close",
+        window: int = 252,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+    ) -> pd.Series | pd.DataFrame:
+        """
+        Calculate the New Highs — New Lows for a given price series.
+
+        New Highs — New Lows measures the number of tickers reaching a new high over
+        the specified window minus the number of tickers reaching a new low over the
+        same window. It is a market-wide breadth reading computed across all tickers in
+        the Toolkit instance (excluding the synthetic "Portfolio" and "Benchmark"
+        columns), and the resulting single reading is broadcast to every ticker column
+        so it lines up with the other breadth indicators.
+
+        The formula is a follows:
+
+        - New Highs — New Lows = (Number of tickers at a window-period high) — (Number of tickers at a window-period low)
+
+        Also known as: new highs minus new lows, record high percent.
+
+        Args:
+            period (str, optional): The time period to consider for historical data.
+                Can be "daily", "weekly", "quarterly", or "yearly". Defaults to "daily".
+            close_column (str, optional): The name of the column containing the close prices.
+                Defaults to "Adj Close".
+            window (int, optional): Number of periods for the new high / new low lookback.
+                Defaults to 252.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the indicator values.
+                Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+                Defaults to 1.
+
+        Returns:
+            pd.Series or pd.DataFrame: New Highs — New Lows values.
+
+        Notes:
+        - The method retrieves historical data based on the specified `period` and calculates
+          the New Highs — New Lows across all tickers in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the indicator values
+          using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(tickers=["AAPL", "MSFT"])
+
+        toolkit.technicals.get_new_highs_new_lows()
+        ```
+
+        Which returns:
+
+        | Date       |   AAPL |   MSFT |   Benchmark |
+        |:-----------|-------:|-------:|------------:|
+        | 2026-06-18 |      0 |      0 |           0 |
+        | 2026-06-22 |      0 |      0 |           0 |
+        | 2026-06-23 |     -1 |     -1 |          -1 |
+        | 2026-06-24 |      0 |      0 |           0 |
+        | 2026-06-25 |     -1 |     -1 |          -1 |
+        | 2026-06-26 |      0 |      0 |           0 |
+        | 2026-06-29 |      0 |      0 |           0 |
+        | 2026-06-30 |      1 |      1 |           1 |
+        | 2026-07-01 |      1 |      1 |           1 |
+        | 2026-07-02 |      1 |      1 |           1 |
+        """
+        if period not in [
+            "intraday",
+            "daily",
+            "weekly",
+            "monthly",
+            "quarterly",
+            "yearly",
+        ]:
+            raise ValueError(
+                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
+            )
+        if period == "intraday":
+            if self._historical_data[period].empty:
+                raise ValueError(
+                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
+                )
+            close_column = "Close"
+
+        historical_data = self._historical_data[period]
+
+        constituents = [
+            ticker
+            for ticker in historical_data[close_column].columns
+            if ticker not in ("Portfolio", "Benchmark")
+        ]
+
+        new_highs_new_lows_series = breadth_model.get_new_highs_new_lows(
+            historical_data[close_column][constituents],
+            window,
+        ).loc[self._start_date : self._end_date]
+
+        new_highs_new_lows = pd.DataFrame(
+            {
+                ticker: new_highs_new_lows_series
+                for ticker in historical_data[close_column].columns
+            },
+            index=new_highs_new_lows_series.index,
+        )
+
+        return finalize_dataset(
+            dataset=new_highs_new_lows,
             start_date=self._start_date,
             end_date=self._end_date,
             default_rounding=self._rounding,

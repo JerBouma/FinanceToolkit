@@ -2,6 +2,7 @@
 
 __docformat__ = "google"
 
+import numpy as np
 import pandas as pd
 
 # pylint: disable=too-many-locals
@@ -135,3 +136,20 @@ def get_gorden_growth_model(
         float: the intrinsic value of the stock.
     """
     return (dividends_per_share * (1 + growth_rate)) / (rate_of_return - growth_rate)
+
+
+def get_graham_number(
+    earnings_per_share: pd.Series, book_value_per_share: pd.Series
+) -> pd.Series:
+    """
+    Calculate the Graham Number, a conservative estimate of a stock's fair value based
+    on its earnings and book value, as devised by Benjamin Graham.
+
+    Args:
+        earnings_per_share (float or pd.Series): Earnings per share of the company.
+        book_value_per_share (float or pd.Series): Book value per share of the company.
+
+    Returns:
+        float | pd.Series: The Graham Number value.
+    """
+    return np.sqrt(22.5 * earnings_per_share * book_value_per_share)

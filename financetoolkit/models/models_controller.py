@@ -1640,3 +1640,116 @@ class Models:
         pvgo = pvgo.dropna(how="all", axis=0)
 
         return pvgo.loc[self._start_date :]
+
+    @handle_errors
+    def get_graham_number(
+        self,
+        diluted: bool = True,
+        trailing: int | None = None,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+    ) -> pd.DataFrame:
+        """
+        Calculate the Graham Number, a conservative estimate of a stock's fair value
+        based on its earnings and book value, as devised by Benjamin Graham.
+
+        The Graham Number is intended as an upper bound on the price a defensive
+        investor should pay for a stock. It is most meaningful for stable,
+        profitable companies with positive book value — for companies with negative
+        earnings or negative book value the result is not meaningful (the square
+        root of a negative number is undefined and will show up as NaN).
+
+        The formula is as follows:
+
+        - Graham Number = √(22.5 × Earnings per Share × Book Value per Share)
+
+        Also known as: Graham fair value.
+
+        Args:
+            diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
+            trailing (int | None, optional): The trailing period to use for the calculation. Defaults to None.
+            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the values. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+
+        Returns:
+            pd.DataFrame: DataFrame containing the Graham Number values.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.models.get_graham_number()
+        ```
+
+        Which returns:
+
+        |      |    2021 |    2022 |    2023 |    2024 |    2025 |
+        |:-----|--------:|--------:|--------:|--------:|--------:|
+        | AAPL | 21.7378 | 20.662  | 23.2901 | 22.4927 | 28.7292 |
+        | TSLA | 18.1054 | 32.3757 | 41.7451 | 30.9185 | 23.7345 |
+        """
+        average_shares = (
+            self._income_statement.loc[:, "Weighted Average Shares Diluted", :]
+            if diluted
+            else self._income_statement.loc[:, "Weighted Average Shares", :]
+        )
+
+        net_income = (
+            self._income_statement.loc[:, "Net Income", :].T.rolling(trailing).sum().T
+            if trailing
+            else self._income_statement.loc[:, "Net Income", :]
+        )
+        avg_shares = (
+            average_shares.T.rolling(trailing).mean().T if trailing else average_shares
+        )
+
+        earnings_per_share = valuation_model.get_earnings_per_share(
+            net_income=net_income,
+            preferred_dividends=0,
+            average_outstanding_shares=avg_shares,
+        )
+
+        total_shareholder_equity = (
+            self._balance_sheet_statement.loc[:, "Total Shareholder Equity", :]
+            .T.rolling(trailing)
+            .mean()
+            .T
+            if trailing
+            else self._balance_sheet_statement.loc[:, "Total Shareholder Equity", :]
+        )
+        preferred_stock = (
+            self._balance_sheet_statement.loc[:, "Preferred Stock", :]
+            .T.rolling(trailing)
+            .mean()
+            .T
+            if trailing
+            else self._balance_sheet_statement.loc[:, "Preferred Stock", :]
+        )
+
+        book_value_per_share = valuation_model.get_book_value_per_share(
+            total_shareholder_equity=total_shareholder_equity,
+            preferred_equity=preferred_stock,
+            common_shares_outstanding=avg_shares,
+        )
+
+        graham_number = intrinsic_model.get_graham_number(
+            earnings_per_share=earnings_per_share,
+            book_value_per_share=book_value_per_share,
+        )
+
+        if growth:
+            return calculate_growth(
+                graham_number,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
+                axis="columns",
+            ).loc[:, self._start_date : self._end_date]
+
+        return graham_number.round(rounding if rounding else self._rounding).loc[
+            :, self._start_date : self._end_date
+        ]

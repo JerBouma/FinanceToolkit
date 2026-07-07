@@ -2,7 +2,7 @@
 AAPL,Earnings per Share,,0.714,0.0889,0.0034
 AAPL,Revenue per Share,,0.385,0.1135,0.0035
 AAPL,Price-to-Earnings,,-0.2144,-0.3241,0.1537
-AAPL,Price-to-Earnings-Growth,,-0.2144,-0.3241,0.1537
+AAPL,Price-to-Earnings-Growth,,-0.989,4.4281,9.2561
 AAPL,Book Value per Share,,0.0036,-0.1703,0.2663
 AAPL,Price-to-Book,,0.3417,-0.113,-0.905
 AAPL,Interest Debt per Share,,-0.2066,0.1054,0.55
@@ -21,10 +21,14 @@ AAPL,EV-to-EBITDA,,-0.1687,-0.3328,-0.9908
 AAPL,EV-to-Operating-Cash-Flow,,0.0021,-0.383,-0.9914
 AAPL,Tangible Asset Value,,-0.0344,-0.1968,0.2264
 AAPL,Net Current Asset Value,,-0.7559,-2.9858,-0.9062
+AAPL,EV-to-Free-Cash-Flow,,0.02,-0.3958,-88013581.9705
+AAPL,Buyback Yield,,-0.0857,0.4792,-40892018780.3427
+AAPL,Shareholder Yield,,-0.3462,0.4704,-35050301811.8652
+AAPL,SBC-Adjusted Free Cash Flow,,0.2782,0.2041,-0.1333
 MSFT,Earnings per Share,,0.3973,0.1979,0.0039
 MSFT,Revenue per Share,,0.1869,0.1902,0.0785
 MSFT,Price-to-Earnings,,0.0912,-0.3991,0.1619
-MSFT,Price-to-Earnings-Growth,,0.0912,-0.3991,0.1619
+MSFT,Price-to-Earnings-Growth,,-0.9725,0.2063,21.9943
 MSFT,Book Value per Share,,0.212,0.1835,0.2495
 MSFT,Price-to-Book,,0.2581,-0.3918,1.5888
 MSFT,Interest Debt per Share,,-0.0608,-0.036,-0.0341
@@ -43,3 +47,7 @@ MSFT,EV-to-EBITDA,,0.201,-0.4021,-0.9853
 MSFT,EV-to-Operating-Cash-Flow,,0.1785,-0.3821,-0.9866
 MSFT,Tangible Asset Value,,0.2311,0.0731,0.3971
 MSFT,Net Current Asset Value,,-0.1264,-0.2209,0.0738
+MSFT,EV-to-Free-Cash-Flow,,0.2014,-0.3825,2863065496.2516
+MSFT,Buyback Yield,,-0.2137,0.6893,4603908045976.012
+MSFT,Shareholder Yield,,-0.2412,0.6301,2840709219857.1562
+MSFT,SBC-Adjusted Free Cash Flow,,0.2517,0.1529,-0.135

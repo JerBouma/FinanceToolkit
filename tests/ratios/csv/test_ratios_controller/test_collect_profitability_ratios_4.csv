@@ -15,6 +15,8 @@ AAPL,Net Income per EBT,,,-0.0126,-0.0077
 AAPL,Free Cash Flow to Operating Cash Flow Ratio,,-0.0175,0.021,-0.0125
 AAPL,EBT to EBIT Ratio,,0.0663,0.0067,-0.0049
 AAPL,EBIT to Revenue,,0.1997,0.0121,-0.0081
+AAPL,Cash Tax Rate,,-0.2236,-0.0051,-0.1656
+AAPL,Tax Rate Divergence,,-0.7623,-0.1964,-0.8049
 MSFT,Gross Margin,,1.6834,0.0035,0.0004
 MSFT,Operating Margin,,0.5496,0.0592,0.0017
 MSFT,Net Profit Margin,,0.3311,0.0781,-0.0331
@@ -31,3 +33,5 @@ MSFT,Net Income per EBT,,2.3358,0.018,-0.0312
 MSFT,Free Cash Flow to Operating Cash Flow Ratio,,-0.019,0.0005,-0.0719
 MSFT,EBT to EBIT Ratio,,0.2901,0.0109,0.005
 MSFT,EBIT to Revenue,,0.1234,-0.0101,-0.0044
+MSFT,Cash Tax Rate,,-1.0,,
+MSFT,Tax Rate Divergence,,-1.3848,-0.1022,0.2009

@@ -38,6 +38,21 @@ AAPL,Asset Turnover Ratio,Lag 3,,,,
 AAPL,Operating Ratio,Lag 1,,-0.0749,-0.0061,0.0059
 AAPL,Operating Ratio,Lag 2,,,-0.0805,-0.0003
 AAPL,Operating Ratio,Lag 3,,,,-0.0751
+AAPL,R&D Intensity Ratio,Lag 1,,-0.123,0.1119,0.1712
+AAPL,R&D Intensity Ratio,Lag 2,,,-0.0249,0.3022
+AAPL,R&D Intensity Ratio,Lag 3,,,,0.142
+AAPL,S&M to Revenue Ratio,Lag 1,,,,
+AAPL,S&M to Revenue Ratio,Lag 2,,,,
+AAPL,S&M to Revenue Ratio,Lag 3,,,,
+AAPL,G&A to Revenue Ratio,Lag 1,,,,
+AAPL,G&A to Revenue Ratio,Lag 2,,,,
+AAPL,G&A to Revenue Ratio,Lag 3,,,,
+AAPL,SBC to Revenue Ratio,Lag 1,,-0.1325,0.0602,0.2358
+AAPL,SBC to Revenue Ratio,Lag 2,,,-0.0803,0.3102
+AAPL,SBC to Revenue Ratio,Lag 3,,,,0.1365
+AAPL,Deferred Revenue Ratio,Lag 1,,-0.1405,-0.0337,0.0448
+AAPL,Deferred Revenue Ratio,Lag 2,,,-0.1694,0.0096
+AAPL,Deferred Revenue Ratio,Lag 3,,,,-0.1322
 MSFT,Days of Inventory Outstanding,Lag 1,,,0.1736,-0.0691
 MSFT,Days of Inventory Outstanding,Lag 2,,,,0.0925
 MSFT,Days of Inventory Outstanding,Lag 3,,,,
@@ -77,3 +92,18 @@ MSFT,Asset Turnover Ratio,Lag 3,,,,
 MSFT,Operating Ratio,Lag 1,,-0.0724,-0.008,0.005
 MSFT,Operating Ratio,Lag 2,,,-0.0799,-0.0031
 MSFT,Operating Ratio,Lag 3,,,,-0.0753
+MSFT,R&D Intensity Ratio,Lag 1,,-0.0854,0.0032,0.038
+MSFT,R&D Intensity Ratio,Lag 2,,,-0.0824,0.0414
+MSFT,R&D Intensity Ratio,Lag 3,,,,-0.0475
+MSFT,S&M to Revenue Ratio,Lag 1,,-0.1263,-0.0802,-0.0245
+MSFT,S&M to Revenue Ratio,Lag 2,,,-0.1964,-0.1028
+MSFT,S&M to Revenue Ratio,Lag 3,,,,-0.2161
+MSFT,G&A to Revenue Ratio,Lag 1,,-0.1485,-0.0197,0.198
+MSFT,G&A to Revenue Ratio,Lag 2,,,-0.1653,0.1743
+MSFT,G&A to Revenue Ratio,Lag 3,,,,0.0
+MSFT,SBC to Revenue Ratio,Lag 1,,-0.0162,0.0385,0.2011
+MSFT,SBC to Revenue Ratio,Lag 2,,,0.0216,0.2473
+MSFT,SBC to Revenue Ratio,Lag 3,,,,0.227
+MSFT,Deferred Revenue Ratio,Lag 1,,-0.0187,-0.07,0.0457
+MSFT,Deferred Revenue Ratio,Lag 2,,,-0.0874,-0.0275
+MSFT,Deferred Revenue Ratio,Lag 3,,,,-0.0457

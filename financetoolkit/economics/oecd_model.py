@@ -7,8 +7,8 @@ from io import StringIO
 import pandas as pd
 import requests
 
-from financetoolkit.helpers import get_request
 from financetoolkit.utilities.logger_model import get_logger
+from financetoolkit.utilities.requests_model import get_request
 
 logger = get_logger()
 

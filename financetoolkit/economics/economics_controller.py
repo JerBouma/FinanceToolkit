@@ -9,9 +9,9 @@ from datetime import datetime, timedelta
 import pandas as pd
 
 from financetoolkit.economics import gmdb_model, oecd_model
-from financetoolkit.helpers import calculate_growth
 from financetoolkit.utilities.error_model import handle_errors
 from financetoolkit.utilities.logger_model import get_logger
+from financetoolkit.utilities.statistics_model import finalize_dataset
 
 logger = get_logger()
 
@@ -108,70 +108,6 @@ class Economics:
         self._quarterly: bool | None = quarterly
         self._rounding: int | None = rounding
 
-    def _finalize_economic_data(
-        self,
-        data: pd.DataFrame,
-        indicator_name: str,
-        countries: list[str] | str | None,
-        rolling: int | None,
-        trailing: int | None,
-        growth: bool,
-        lag: int,
-        rounding: int | None,
-    ) -> pd.DataFrame:
-        """
-        Shared post-processing for every economic indicator: optional rolling-window
-        smoothing, optional trailing-window summation, optional growth conversion, date
-        range slicing, country filtering and rounding.
-
-        Args:
-            data (pd.DataFrame): The raw indicator data, indexed by date and with countries
-            as columns.
-            indicator_name (str): The human-readable name of the indicator, used in the
-            missing-country warning message.
-            countries (list[str] | str | None): A list of countries or a single country to
-            include in the results.
-            rolling (int | None): The rolling window size to use for smoothing the data
-            (simple moving average).
-            trailing (int | None): The trailing window size to use for summing the data over
-            trailing periods (e.g. a trailing-4-quarter sum).
-            growth (bool): Whether to return the growth data or the actual data.
-            lag (int): The number of periods to lag the growth data.
-            rounding (int | None): The number of decimals to round the results to.
-
-        Returns:
-            pd.DataFrame: The processed indicator data.
-        """
-        if rolling:
-            data = data.rolling(window=rolling).mean()
-
-        if trailing:
-            data = data.rolling(window=trailing).sum()
-
-        if growth:
-            data = calculate_growth(
-                data,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-                axis="rows",
-            )
-
-        data = data.loc[self._start_date : self._end_date]
-
-        if countries:
-            if isinstance(countries, str):
-                countries = [countries]
-            missing_countries = [
-                country for country in countries if country not in data.columns
-            ]
-            if missing_countries:
-                logger.warning(
-                    f"The following countries are not available for {indicator_name}: {missing_countries}"
-                )
-            data = data[list(set(countries) - set(missing_countries))]
-
-        return data.round(rounding if rounding else self._rounding)
-
     @handle_errors
     def get_gross_domestic_product(
         self,
@@ -182,6 +118,7 @@ class Economics:
         trailing: int | None = None,
         growth: bool = False,
         lag: int = 1,
+        standardize: bool = False,
         rounding: int | None = None,
     ):
         """
@@ -210,6 +147,9 @@ class Economics:
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
             lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
 
         Returns:
@@ -263,15 +203,21 @@ class Economics:
         else:
             gross_domestic_product = oecd_model.get_annual_gross_domestic_product()
 
-        return self._finalize_economic_data(
-            gross_domestic_product,
-            "Gross Domestic Product",
-            countries,
-            rolling,
-            trailing,
-            growth,
-            lag,
-            rounding,
+        return finalize_dataset(
+            dataset=gross_domestic_product,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="Gross Domestic Product",
+            countries=countries,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
         )
 
     @handle_errors
@@ -282,6 +228,7 @@ class Economics:
         trailing: int | None = None,
         growth: bool = False,
         lag: int = 1,
+        standardize: bool = False,
         rounding: int | None = None,
     ):
         """
@@ -301,6 +248,9 @@ class Economics:
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
             lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
 
         Returns:
@@ -342,15 +292,21 @@ class Economics:
             )
         )
 
-        return self._finalize_economic_data(
-            gross_domestic_product_deflator,
-            "Gross Domestic Product Deflator",
-            countries,
-            rolling,
-            trailing,
-            growth,
-            lag,
-            rounding,
+        return finalize_dataset(
+            dataset=gross_domestic_product_deflator,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="Gross Domestic Product Deflator",
+            countries=countries,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
         )
 
     @handle_errors
@@ -362,6 +318,7 @@ class Economics:
         trailing: int | None = None,
         growth: bool = False,
         lag: int = 1,
+        standardize: bool = False,
         rounding: int | None = None,
     ):
         """
@@ -381,6 +338,9 @@ class Economics:
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
             lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
 
         Returns:
@@ -423,15 +383,21 @@ class Economics:
                 gmd_dataset=self._gmbd_dataset
             )
 
-        return self._finalize_economic_data(
-            total_consumption,
-            "Total Consumption",
-            countries,
-            rolling,
-            trailing,
-            growth,
-            lag,
-            rounding,
+        return finalize_dataset(
+            dataset=total_consumption,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="Total Consumption",
+            countries=countries,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
         )
 
     @handle_errors
@@ -442,6 +408,7 @@ class Economics:
         trailing: int | None = None,
         growth: bool = False,
         lag: int = 1,
+        standardize: bool = False,
         rounding: int | None = None,
     ):
         """
@@ -461,6 +428,9 @@ class Economics:
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
             lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
 
         Returns:
@@ -498,15 +468,21 @@ class Economics:
             gmd_dataset=self._gmbd_dataset
         )
 
-        return self._finalize_economic_data(
-            total_consumption_to_gdp_ratio,
-            "Total Consumption to GDP Ratio",
-            countries,
-            rolling,
-            trailing,
-            growth,
-            lag,
-            rounding,
+        return finalize_dataset(
+            dataset=total_consumption_to_gdp_ratio,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="Total Consumption to GDP Ratio",
+            countries=countries,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
         )
 
     @handle_errors
@@ -517,6 +493,7 @@ class Economics:
         trailing: int | None = None,
         growth: bool = False,
         lag: int = 1,
+        standardize: bool = False,
         rounding: int | None = None,
     ):
         """
@@ -535,6 +512,9 @@ class Economics:
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
             lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
 
         Returns:
@@ -574,15 +554,21 @@ class Economics:
 
         investment = gmdb_model.get_investment(gmd_dataset=self._gmbd_dataset)
 
-        return self._finalize_economic_data(
-            investment,
-            "Investment",
-            countries,
-            rolling,
-            trailing,
-            growth,
-            lag,
-            rounding,
+        return finalize_dataset(
+            dataset=investment,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="Investment",
+            countries=countries,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
         )
 
     @handle_errors
@@ -593,6 +579,7 @@ class Economics:
         trailing: int | None = None,
         growth: bool = False,
         lag: int = 1,
+        standardize: bool = False,
         rounding: int | None = None,
     ):
         """
@@ -611,6 +598,9 @@ class Economics:
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
             lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
 
         Returns:
@@ -648,15 +638,21 @@ class Economics:
             gmd_dataset=self._gmbd_dataset
         )
 
-        return self._finalize_economic_data(
-            investment_to_gdp_ratio,
-            "Investment to GDP Ratio",
-            countries,
-            rolling,
-            trailing,
-            growth,
-            lag,
-            rounding,
+        return finalize_dataset(
+            dataset=investment_to_gdp_ratio,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="Investment to GDP Ratio",
+            countries=countries,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
         )
 
     @handle_errors
@@ -667,6 +663,7 @@ class Economics:
         trailing: int | None = None,
         growth: bool = False,
         lag: int = 1,
+        standardize: bool = False,
         rounding: int | None = None,
     ):
         """
@@ -685,6 +682,9 @@ class Economics:
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
             lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
 
         Returns:
@@ -720,15 +720,21 @@ class Economics:
             gmd_dataset=self._gmbd_dataset
         )
 
-        return self._finalize_economic_data(
-            fixed_investment,
-            "Fixed Investment",
-            countries,
-            rolling,
-            trailing,
-            growth,
-            lag,
-            rounding,
+        return finalize_dataset(
+            dataset=fixed_investment,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="Fixed Investment",
+            countries=countries,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
         )
 
     @handle_errors
@@ -739,6 +745,7 @@ class Economics:
         trailing: int | None = None,
         growth: bool = False,
         lag: int = 1,
+        standardize: bool = False,
         rounding: int | None = None,
     ):
         """
@@ -758,6 +765,9 @@ class Economics:
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
             lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
 
         Returns:
@@ -813,15 +823,21 @@ class Economics:
             gmd_dataset=self._gmbd_dataset
         )
 
-        return self._finalize_economic_data(
-            fixed_investment_to_gdp_ratio,
-            "Fixed Investment to GDP Ratio",
-            countries,
-            rolling,
-            trailing,
-            growth,
-            lag,
-            rounding,
+        return finalize_dataset(
+            dataset=fixed_investment_to_gdp_ratio,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="Fixed Investment to GDP Ratio",
+            countries=countries,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
         )
 
     @handle_errors
@@ -832,6 +848,7 @@ class Economics:
         trailing: int | None = None,
         growth: bool = False,
         lag: int = 1,
+        standardize: bool = False,
         rounding: int | None = None,
     ):
         """
@@ -850,6 +867,9 @@ class Economics:
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
             lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
 
         Returns:
@@ -886,8 +906,21 @@ class Economics:
 
         exports = gmdb_model.get_exports(gmd_dataset=self._gmbd_dataset)
 
-        return self._finalize_economic_data(
-            exports, "Exports", countries, rolling, trailing, growth, lag, rounding
+        return finalize_dataset(
+            dataset=exports,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="Exports",
+            countries=countries,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
         )
 
     @handle_errors
@@ -898,6 +931,7 @@ class Economics:
         trailing: int | None = None,
         growth: bool = False,
         lag: int = 1,
+        standardize: bool = False,
         rounding: int | None = None,
     ):
         """
@@ -916,6 +950,9 @@ class Economics:
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
             lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
 
         Returns:
@@ -954,15 +991,21 @@ class Economics:
             gmd_dataset=self._gmbd_dataset
         )
 
-        return self._finalize_economic_data(
-            exports_to_gdp_ratio,
-            "Exports to GDP Ratio",
-            countries,
-            rolling,
-            trailing,
-            growth,
-            lag,
-            rounding,
+        return finalize_dataset(
+            dataset=exports_to_gdp_ratio,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="Exports to GDP Ratio",
+            countries=countries,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
         )
 
     @handle_errors
@@ -973,6 +1016,7 @@ class Economics:
         trailing: int | None = None,
         growth: bool = False,
         lag: int = 1,
+        standardize: bool = False,
         rounding: int | None = None,
     ):
         """
@@ -991,6 +1035,9 @@ class Economics:
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
             lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
 
         Returns:
@@ -1033,8 +1080,21 @@ class Economics:
 
         imports = gmdb_model.get_imports(gmd_dataset=self._gmbd_dataset)
 
-        return self._finalize_economic_data(
-            imports, "Imports", countries, rolling, trailing, growth, lag, rounding
+        return finalize_dataset(
+            dataset=imports,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="Imports",
+            countries=countries,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
         )
 
     @handle_errors
@@ -1045,6 +1105,7 @@ class Economics:
         trailing: int | None = None,
         growth: bool = False,
         lag: int = 1,
+        standardize: bool = False,
         rounding: int | None = None,
     ):
         """
@@ -1063,6 +1124,9 @@ class Economics:
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
             lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
 
         Returns:
@@ -1101,15 +1165,21 @@ class Economics:
             gmd_dataset=self._gmbd_dataset
         )
 
-        return self._finalize_economic_data(
-            imports_to_gdp_ratio,
-            "Imports to GDP Ratio",
-            countries,
-            rolling,
-            trailing,
-            growth,
-            lag,
-            rounding,
+        return finalize_dataset(
+            dataset=imports_to_gdp_ratio,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="Imports to GDP Ratio",
+            countries=countries,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
         )
 
     @handle_errors
@@ -1120,6 +1190,7 @@ class Economics:
         trailing: int | None = None,
         growth: bool = False,
         lag: int = 1,
+        standardize: bool = False,
         rounding: int | None = None,
     ):
         """
@@ -1138,6 +1209,9 @@ class Economics:
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
             lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
 
         Returns:
@@ -1176,15 +1250,21 @@ class Economics:
             gmd_dataset=self._gmbd_dataset
         )
 
-        return self._finalize_economic_data(
-            current_account_balance,
-            "Current Account Balance",
-            countries,
-            rolling,
-            trailing,
-            growth,
-            lag,
-            rounding,
+        return finalize_dataset(
+            dataset=current_account_balance,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="Current Account Balance",
+            countries=countries,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
         )
 
     @handle_errors
@@ -1195,6 +1275,7 @@ class Economics:
         trailing: int | None = None,
         growth: bool = False,
         lag: int = 1,
+        standardize: bool = False,
         rounding: int | None = None,
     ):
         """
@@ -1214,6 +1295,9 @@ class Economics:
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
             lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
 
         Returns:
@@ -1255,15 +1339,21 @@ class Economics:
             )
         )
 
-        return self._finalize_economic_data(
-            current_account_balance_to_gdp_ratio,
-            "Current Account Balance to GDP Ratio",
-            countries,
-            rolling,
-            trailing,
-            growth,
-            lag,
-            rounding,
+        return finalize_dataset(
+            dataset=current_account_balance_to_gdp_ratio,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="Current Account Balance to GDP Ratio",
+            countries=countries,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
         )
 
     @handle_errors
@@ -1274,6 +1364,7 @@ class Economics:
         trailing: int | None = None,
         growth: bool = False,
         lag: int = 1,
+        standardize: bool = False,
         rounding: int | None = None,
     ):
         """
@@ -1291,6 +1382,9 @@ class Economics:
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
             lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
 
         Returns:
@@ -1327,15 +1421,21 @@ class Economics:
 
         government_debt = gmdb_model.get_government_debt(gmd_dataset=self._gmbd_dataset)
 
-        return self._finalize_economic_data(
-            government_debt,
-            "Government Debt",
-            countries,
-            rolling,
-            trailing,
-            growth,
-            lag,
-            rounding,
+        return finalize_dataset(
+            dataset=government_debt,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="Government Debt",
+            countries=countries,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
         )
 
     @handle_errors
@@ -1346,6 +1446,7 @@ class Economics:
         trailing: int | None = None,
         growth: bool = False,
         lag: int = 1,
+        standardize: bool = False,
         rounding: int | None = None,
     ):
         """
@@ -1364,6 +1465,9 @@ class Economics:
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
             lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
 
         Returns:
@@ -1402,15 +1506,21 @@ class Economics:
             gmd_dataset=self._gmbd_dataset
         )
 
-        return self._finalize_economic_data(
-            government_debt_to_gdp_ratio,
-            "Government Debt to GDP Ratio",
-            countries,
-            rolling,
-            trailing,
-            growth,
-            lag,
-            rounding,
+        return finalize_dataset(
+            dataset=government_debt_to_gdp_ratio,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="Government Debt to GDP Ratio",
+            countries=countries,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
         )
 
     @handle_errors
@@ -1421,6 +1531,7 @@ class Economics:
         trailing: int | None = None,
         growth: bool = False,
         lag: int = 1,
+        standardize: bool = False,
         rounding: int | None = None,
     ):
         """
@@ -1438,6 +1549,9 @@ class Economics:
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
             lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
 
         Returns:
@@ -1472,15 +1586,21 @@ class Economics:
             gmd_dataset=self._gmbd_dataset
         )
 
-        return self._finalize_economic_data(
-            government_revenue,
-            "Government Revenue",
-            countries,
-            rolling,
-            trailing,
-            growth,
-            lag,
-            rounding,
+        return finalize_dataset(
+            dataset=government_revenue,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="Government Revenue",
+            countries=countries,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
         )
 
     @handle_errors
@@ -1491,6 +1611,7 @@ class Economics:
         trailing: int | None = None,
         growth: bool = False,
         lag: int = 1,
+        standardize: bool = False,
         rounding: int | None = None,
     ):
         """
@@ -1509,6 +1630,9 @@ class Economics:
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
             lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
 
         Returns:
@@ -1549,15 +1673,21 @@ class Economics:
             )
         )
 
-        return self._finalize_economic_data(
-            government_revenue_to_gdp_ratio,
-            "Government Revenue to GDP Ratio",
-            countries,
-            rolling,
-            trailing,
-            growth,
-            lag,
-            rounding,
+        return finalize_dataset(
+            dataset=government_revenue_to_gdp_ratio,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="Government Revenue to GDP Ratio",
+            countries=countries,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
         )
 
     @handle_errors
@@ -1568,6 +1698,7 @@ class Economics:
         trailing: int | None = None,
         growth: bool = False,
         lag: int = 1,
+        standardize: bool = False,
         rounding: int | None = None,
     ):
         """
@@ -1584,6 +1715,9 @@ class Economics:
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
             lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
 
         Returns:
@@ -1621,15 +1755,21 @@ class Economics:
             gmd_dataset=self._gmbd_dataset
         )
 
-        return self._finalize_economic_data(
-            government_tax_revenue,
-            "Government Tax Revenue",
-            countries,
-            rolling,
-            trailing,
-            growth,
-            lag,
-            rounding,
+        return finalize_dataset(
+            dataset=government_tax_revenue,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="Government Tax Revenue",
+            countries=countries,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
         )
 
     @handle_errors
@@ -1640,6 +1780,7 @@ class Economics:
         trailing: int | None = None,
         growth: bool = False,
         lag: int = 1,
+        standardize: bool = False,
         rounding: int | None = None,
     ):
         """
@@ -1658,6 +1799,9 @@ class Economics:
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
             lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
 
         Returns:
@@ -1697,15 +1841,21 @@ class Economics:
             )
         )
 
-        return self._finalize_economic_data(
-            government_tax_revenue_to_gdp_ratio,
-            "Government Tax Revenue to GDP Ratio",
-            countries,
-            rolling,
-            trailing,
-            growth,
-            lag,
-            rounding,
+        return finalize_dataset(
+            dataset=government_tax_revenue_to_gdp_ratio,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="Government Tax Revenue to GDP Ratio",
+            countries=countries,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
         )
 
     @handle_errors
@@ -1716,6 +1866,7 @@ class Economics:
         trailing: int | None = None,
         growth: bool = False,
         lag: int = 1,
+        standardize: bool = False,
         rounding: int | None = None,
     ):
         """
@@ -1733,6 +1884,9 @@ class Economics:
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
             lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
 
         Returns:
@@ -1771,15 +1925,21 @@ class Economics:
             gmd_dataset=self._gmbd_dataset
         )
 
-        return self._finalize_economic_data(
-            government_expenditure,
-            "Government Expenditure",
-            countries,
-            rolling,
-            trailing,
-            growth,
-            lag,
-            rounding,
+        return finalize_dataset(
+            dataset=government_expenditure,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="Government Expenditure",
+            countries=countries,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
         )
 
     @handle_errors
@@ -1790,6 +1950,7 @@ class Economics:
         trailing: int | None = None,
         growth: bool = False,
         lag: int = 1,
+        standardize: bool = False,
         rounding: int | None = None,
     ):
         """
@@ -1808,6 +1969,9 @@ class Economics:
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
             lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
 
         Returns:
@@ -1849,15 +2013,21 @@ class Economics:
             )
         )
 
-        return self._finalize_economic_data(
-            government_expenditure_to_gdp_ratio,
-            "Government Expenditure to GDP Ratio",
-            countries,
-            rolling,
-            trailing,
-            growth,
-            lag,
-            rounding,
+        return finalize_dataset(
+            dataset=government_expenditure_to_gdp_ratio,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="Government Expenditure to GDP Ratio",
+            countries=countries,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
         )
 
     @handle_errors
@@ -1868,6 +2038,7 @@ class Economics:
         trailing: int | None = None,
         growth: bool = False,
         lag: int = 1,
+        standardize: bool = False,
         rounding: int | None = None,
     ):
         """
@@ -1886,6 +2057,9 @@ class Economics:
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
             lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
 
         Returns:
@@ -1924,15 +2098,21 @@ class Economics:
             gmd_dataset=self._gmbd_dataset
         )
 
-        return self._finalize_economic_data(
-            government_deficit,
-            "Government Deficit",
-            countries,
-            rolling,
-            trailing,
-            growth,
-            lag,
-            rounding,
+        return finalize_dataset(
+            dataset=government_deficit,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="Government Deficit",
+            countries=countries,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
         )
 
     @handle_errors
@@ -1943,6 +2123,7 @@ class Economics:
         trailing: int | None = None,
         growth: bool = False,
         lag: int = 1,
+        standardize: bool = False,
         rounding: int | None = None,
     ):
         """
@@ -1962,6 +2143,9 @@ class Economics:
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
             lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
 
         Returns:
@@ -2004,15 +2188,21 @@ class Economics:
             )
         )
 
-        return self._finalize_economic_data(
-            government_deficit_to_gdp_ratio,
-            "Government Deficit to GDP Ratio",
-            countries,
-            rolling,
-            trailing,
-            growth,
-            lag,
-            rounding,
+        return finalize_dataset(
+            dataset=government_deficit_to_gdp_ratio,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="Government Deficit to GDP Ratio",
+            countries=countries,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
         )
 
     @handle_errors
@@ -2023,6 +2213,7 @@ class Economics:
         trailing: int | None = None,
         growth: bool = False,
         lag: int = 1,
+        standardize: bool = False,
         rounding: int | None = None,
     ):
         """
@@ -2048,6 +2239,9 @@ class Economics:
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data.
             lag (int, optional): The number of periods to lag the data by.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
 
         Returns:
@@ -2090,15 +2284,21 @@ class Economics:
         """
         trust_in_government = oecd_model.get_trust_in_goverment()
 
-        return self._finalize_economic_data(
-            trust_in_government,
-            "Trust in Government",
-            countries,
-            rolling,
-            trailing,
-            growth,
-            lag,
-            rounding,
+        return finalize_dataset(
+            dataset=trust_in_government,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="Trust in Government",
+            countries=countries,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
         )
 
     @handle_errors
@@ -2109,6 +2309,7 @@ class Economics:
         trailing: int | None = None,
         growth: bool = False,
         lag: int = 1,
+        standardize: bool = False,
         rounding: int | None = None,
     ):
         """
@@ -2127,6 +2328,9 @@ class Economics:
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data.
             lag (int, optional): The number of periods to lag the data by.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
 
         Returns:
@@ -2167,15 +2371,21 @@ class Economics:
             gmd_dataset=self._gmbd_dataset
         )
 
-        return self._finalize_economic_data(
-            consumer_price_index,
-            "Consumer Price Index",
-            countries,
-            rolling,
-            trailing,
-            growth,
-            lag,
-            rounding,
+        return finalize_dataset(
+            dataset=consumer_price_index,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="Consumer Price Index",
+            countries=countries,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
         )
 
     @handle_errors
@@ -2186,6 +2396,7 @@ class Economics:
         trailing: int | None = None,
         growth: bool = False,
         lag: int = 1,
+        standardize: bool = False,
         rounding: int | None = None,
     ):
         """
@@ -2203,6 +2414,9 @@ class Economics:
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data.
             lag (int, optional): The number of periods to lag the data by.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
 
         Returns:
@@ -2235,15 +2449,21 @@ class Economics:
 
         inflation_rate = gmdb_model.get_inflation_rate(gmd_dataset=self._gmbd_dataset)
 
-        return self._finalize_economic_data(
-            inflation_rate,
-            "Inflation Rate",
-            countries,
-            rolling,
-            trailing,
-            growth,
-            lag,
-            rounding,
+        return finalize_dataset(
+            dataset=inflation_rate,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="Inflation Rate",
+            countries=countries,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
         )
 
     @handle_errors
@@ -2254,6 +2474,7 @@ class Economics:
         trailing: int | None = None,
         growth: bool = False,
         lag: int = 1,
+        standardize: bool = False,
         rounding: int | None = None,
     ):
         """
@@ -2279,6 +2500,9 @@ class Economics:
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data.
             lag (int, optional): The number of periods to lag the data by.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
 
         Returns:
@@ -2308,15 +2532,21 @@ class Economics:
         """
         consumer_confidence_index = oecd_model.get_consumer_confidence_index()
 
-        return self._finalize_economic_data(
-            consumer_confidence_index,
-            "Consumer Confidence Index",
-            countries,
-            rolling,
-            trailing,
-            growth,
-            lag,
-            rounding,
+        return finalize_dataset(
+            dataset=consumer_confidence_index,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="Consumer Confidence Index",
+            countries=countries,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
         )
 
     @handle_errors
@@ -2327,6 +2557,7 @@ class Economics:
         trailing: int | None = None,
         growth: bool = False,
         lag: int = 1,
+        standardize: bool = False,
         rounding: int | None = None,
     ):
         """
@@ -2348,6 +2579,9 @@ class Economics:
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data.
             lag (int, optional): The number of periods to lag the data by.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
 
         Returns:
@@ -2377,15 +2611,21 @@ class Economics:
         """
         business_confidence_index = oecd_model.get_business_confidence_index()
 
-        return self._finalize_economic_data(
-            business_confidence_index,
-            "Business Confidence Index",
-            countries,
-            rolling,
-            trailing,
-            growth,
-            lag,
-            rounding,
+        return finalize_dataset(
+            dataset=business_confidence_index,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="Business Confidence Index",
+            countries=countries,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
         )
 
     @handle_errors
@@ -2396,6 +2636,7 @@ class Economics:
         trailing: int | None = None,
         growth: bool = False,
         lag: int = 1,
+        standardize: bool = False,
         rounding: int | None = None,
     ):
         """
@@ -2414,6 +2655,9 @@ class Economics:
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data.
             lag (int, optional): The number of periods to lag the data by.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
 
         Returns:
@@ -2441,15 +2685,21 @@ class Economics:
         """
         composite_leading_indicator = oecd_model.get_composite_leading_indicator()
 
-        return self._finalize_economic_data(
-            composite_leading_indicator,
-            "Composite Leading Indicator",
-            countries,
-            rolling,
-            trailing,
-            growth,
-            lag,
-            rounding,
+        return finalize_dataset(
+            dataset=composite_leading_indicator,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="Composite Leading Indicator",
+            countries=countries,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
         )
 
     @handle_errors
@@ -2463,6 +2713,7 @@ class Economics:
         trailing: int | None = None,
         growth: bool = False,
         lag: int = 1,
+        standardize: bool = False,
         rounding: int | None = None,
     ):
         """
@@ -2492,6 +2743,9 @@ class Economics:
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data.
             lag (int, optional): The number of periods to lag the data by.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
 
         Returns:
@@ -2540,15 +2794,21 @@ class Economics:
                 quarterly=quarterly, inflation_adjusted=inflation_adjusted
             )
 
-        return self._finalize_economic_data(
-            house_prices,
-            "House Prices",
-            countries,
-            rolling,
-            trailing,
-            growth,
-            lag,
-            rounding,
+        return finalize_dataset(
+            dataset=house_prices,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="House Prices",
+            countries=countries,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
         )
 
     @handle_errors
@@ -2560,6 +2820,7 @@ class Economics:
         trailing: int | None = None,
         growth: bool = False,
         lag: int = 1,
+        standardize: bool = False,
         rounding: int | None = None,
     ):
         """
@@ -2580,6 +2841,9 @@ class Economics:
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data.
             lag (int, optional): The number of periods to lag the data by.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
 
         Returns:
@@ -2615,15 +2879,21 @@ class Economics:
 
         rent_prices = oecd_model.get_rent_prices(quarterly=quarterly)
 
-        return self._finalize_economic_data(
-            rent_prices,
-            "Rent Prices",
-            countries,
-            rolling,
-            trailing,
-            growth,
-            lag,
-            rounding,
+        return finalize_dataset(
+            dataset=rent_prices,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="Rent Prices",
+            countries=countries,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
         )
 
     @handle_errors
@@ -2635,6 +2905,7 @@ class Economics:
         trailing: int | None = None,
         growth: bool = False,
         lag: int = 1,
+        standardize: bool = False,
         rounding: int | None = None,
     ):
         """
@@ -2665,6 +2936,9 @@ class Economics:
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data.
             lag (int, optional): The number of periods to lag the data by.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
 
         Returns:
@@ -2705,15 +2979,21 @@ class Economics:
 
         share_prices = oecd_model.get_share_prices(period=period)
 
-        return self._finalize_economic_data(
-            share_prices,
-            "Share Prices",
-            countries,
-            rolling,
-            trailing,
-            growth,
-            lag,
-            rounding,
+        return finalize_dataset(
+            dataset=share_prices,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="Share Prices",
+            countries=countries,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
         )
 
     @handle_errors
@@ -2726,6 +3006,7 @@ class Economics:
         trailing: int | None = None,
         growth: bool = False,
         lag: int = 1,
+        standardize: bool = False,
         rounding: int | None = None,
     ):
         """
@@ -2748,6 +3029,9 @@ class Economics:
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data.
             lag (int, optional): The number of periods to lag the data by.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
 
         Returns:
@@ -2796,15 +3080,21 @@ class Economics:
         else:
             exchange_rates = oecd_model.get_exchange_rates(period=period)
 
-        return self._finalize_economic_data(
-            exchange_rates,
-            "Exchange Rates",
-            countries,
-            rolling,
-            trailing,
-            growth,
-            lag,
-            rounding,
+        return finalize_dataset(
+            dataset=exchange_rates,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="Exchange Rates",
+            countries=countries,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
         )
 
     @handle_errors
@@ -2816,6 +3106,7 @@ class Economics:
         trailing: int | None = None,
         growth: bool = False,
         lag: int = 1,
+        standardize: bool = False,
         rounding: int | None = None,
     ):
         """
@@ -2843,6 +3134,9 @@ class Economics:
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
             lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
 
         Returns:
@@ -2882,21 +3176,20 @@ class Economics:
 
         money_supply = gmdb_model.get_money_supply(gmd_dataset=self._gmbd_dataset)
 
-        if rolling:
-            money_supply = money_supply.rolling(window=rolling).mean()
-
-        if trailing:
-            money_supply = money_supply.rolling(window=trailing).sum()
-
-        if growth:
-            money_supply = calculate_growth(
-                money_supply,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-                axis="rows",
-            )
-
-        money_supply = money_supply.loc[self._start_date : self._end_date]
+        money_supply = finalize_dataset(
+            dataset=money_supply,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+            rolling=rolling,
+            trailing=trailing,
+        )
 
         if measure:
             if measure not in money_supply.columns.get_level_values(0):
@@ -2945,6 +3238,7 @@ class Economics:
         trailing: int | None = None,
         growth: bool = False,
         lag: int = 1,
+        standardize: bool = False,
         rounding: int | None = None,
     ):
         """
@@ -2963,6 +3257,9 @@ class Economics:
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
             lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
 
         Returns:
@@ -2995,15 +3292,21 @@ class Economics:
             gmd_dataset=self._gmbd_dataset
         )
 
-        return self._finalize_economic_data(
-            central_bank_policy_rate,
-            "Central Bank Policy Rate",
-            countries,
-            rolling,
-            trailing,
-            growth,
-            lag,
-            rounding,
+        return finalize_dataset(
+            dataset=central_bank_policy_rate,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="Central Bank Policy Rate",
+            countries=countries,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
         )
 
     @handle_errors
@@ -3016,6 +3319,7 @@ class Economics:
         trailing: int | None = None,
         growth: bool = False,
         lag: int = 1,
+        standardize: bool = False,
         rounding: int | None = None,
     ):
         """
@@ -3042,6 +3346,9 @@ class Economics:
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data.
             lag (int, optional): The number of periods to lag the data by.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
 
         Returns:
@@ -3090,15 +3397,21 @@ class Economics:
                 period=period,
             )
 
-        return self._finalize_economic_data(
-            short_term_interest_rate,
-            "Short Term Interest Rate",
-            countries,
-            rolling,
-            trailing,
-            growth,
-            lag,
-            rounding,
+        return finalize_dataset(
+            dataset=short_term_interest_rate,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="Short Term Interest Rate",
+            countries=countries,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
         )
 
     @handle_errors
@@ -3111,6 +3424,7 @@ class Economics:
         trailing: int | None = None,
         growth: bool = False,
         lag: int = 1,
+        standardize: bool = False,
         rounding: int | None = None,
     ):
         """
@@ -3141,6 +3455,9 @@ class Economics:
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data.
             lag (int, optional): The number of periods to lag the data by.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
 
         Returns:
@@ -3190,15 +3507,21 @@ class Economics:
                 period=period,
             )
 
-        return self._finalize_economic_data(
-            long_term_interest_rate,
-            "Long Term Interest Rate",
-            countries,
-            rolling,
-            trailing,
-            growth,
-            lag,
-            rounding,
+        return finalize_dataset(
+            dataset=long_term_interest_rate,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="Long Term Interest Rate",
+            countries=countries,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
         )
 
     @handle_errors
@@ -3209,6 +3532,7 @@ class Economics:
         trailing: int | None = None,
         growth: bool = False,
         lag: int = 1,
+        standardize: bool = False,
         rounding: int | None = None,
     ):
         """
@@ -3237,6 +3561,9 @@ class Economics:
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data.
             lag (int, optional): The number of periods to lag the data by.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
 
         Returns:
@@ -3270,15 +3597,21 @@ class Economics:
         """
         renewable_energy = oecd_model.get_renewable_energy()
 
-        return self._finalize_economic_data(
-            renewable_energy,
-            "Renewable Energy",
-            countries,
-            rolling,
-            trailing,
-            growth,
-            lag,
-            rounding,
+        return finalize_dataset(
+            dataset=renewable_energy,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="Renewable Energy",
+            countries=countries,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
         )
 
     @handle_errors
@@ -3289,6 +3622,7 @@ class Economics:
         trailing: int | None = None,
         growth: bool = False,
         lag: int = 1,
+        standardize: bool = False,
         rounding: int | None = None,
     ):
         """
@@ -3311,6 +3645,9 @@ class Economics:
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data.
             lag (int, optional): The number of periods to lag the data by.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
 
         Returns:
@@ -3342,15 +3679,21 @@ class Economics:
         """
         carbon_footprint_df = oecd_model.get_carbon_footprint()
 
-        return self._finalize_economic_data(
-            carbon_footprint_df,
-            "Carbon Footprint",
-            countries,
-            rolling,
-            trailing,
-            growth,
-            lag,
-            rounding,
+        return finalize_dataset(
+            dataset=carbon_footprint_df,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="Carbon Footprint",
+            countries=countries,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
         )
 
     @handle_errors
@@ -3363,6 +3706,7 @@ class Economics:
         trailing: int | None = None,
         growth: bool = False,
         lag: int = 1,
+        standardize: bool = False,
         rounding: int | None = None,
     ):
         """
@@ -3395,6 +3739,9 @@ class Economics:
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data.
             lag (int, optional): The number of periods to lag the data by.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
 
         Returns:
@@ -3444,15 +3791,21 @@ class Economics:
         else:
             unemployment_rate = oecd_model.get_unemployment_rate(period=period)
 
-        return self._finalize_economic_data(
-            unemployment_rate,
-            "Unemployment Rate",
-            countries,
-            rolling,
-            trailing,
-            growth,
-            lag,
-            rounding,
+        return finalize_dataset(
+            dataset=unemployment_rate,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="Unemployment Rate",
+            countries=countries,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
         )
 
     @handle_errors
@@ -3463,6 +3816,7 @@ class Economics:
         trailing: int | None = None,
         growth: bool = False,
         lag: int = 1,
+        standardize: bool = False,
         rounding: int | None = None,
     ):
         """
@@ -3489,6 +3843,9 @@ class Economics:
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data.
             lag (int, optional): The number of periods to lag the data by.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
 
         Returns:
@@ -3521,15 +3878,21 @@ class Economics:
         """
         labour_productivity = oecd_model.get_labour_productivity()
 
-        return self._finalize_economic_data(
-            labour_productivity,
-            "Labour Productivity",
-            countries,
-            rolling,
-            trailing,
-            growth,
-            lag,
-            rounding,
+        return finalize_dataset(
+            dataset=labour_productivity,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="Labour Productivity",
+            countries=countries,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
         )
 
     @handle_errors
@@ -3540,6 +3903,7 @@ class Economics:
         trailing: int | None = None,
         growth: bool = False,
         lag: int = 1,
+        standardize: bool = False,
         rounding: int | None = None,
     ):
         """
@@ -3563,6 +3927,9 @@ class Economics:
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data.
             lag (int, optional): The number of periods to lag the data by.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
 
         Returns:
@@ -3594,15 +3961,21 @@ class Economics:
         """
         income_inequality = oecd_model.get_income_inequality()
 
-        return self._finalize_economic_data(
-            income_inequality,
-            "Income Inequality",
-            countries,
-            rolling,
-            trailing,
-            growth,
-            lag,
-            rounding,
+        return finalize_dataset(
+            dataset=income_inequality,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="Income Inequality",
+            countries=countries,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
         )
 
     @handle_errors
@@ -3614,6 +3987,7 @@ class Economics:
         trailing: int | None = None,
         growth: bool = False,
         lag: int = 1,
+        standardize: bool = False,
         rounding: int | None = None,
     ):
         """
@@ -3662,6 +4036,9 @@ class Economics:
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data.
             lag (int, optional): The number of periods to lag the data by.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
 
         Returns:
@@ -3712,15 +4089,21 @@ class Economics:
                 level=0
             )
 
-        return self._finalize_economic_data(
-            population_statistics_df,
-            "Population Statistics",
-            countries,
-            rolling,
-            trailing,
-            growth,
-            lag,
-            rounding,
+        return finalize_dataset(
+            dataset=population_statistics_df,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="Population Statistics",
+            countries=countries,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
         )
 
     @handle_errors
@@ -3731,6 +4114,7 @@ class Economics:
         trailing: int | None = None,
         growth: bool = False,
         lag: int = 1,
+        standardize: bool = False,
         rounding: int | None = None,
     ):
         """
@@ -3749,6 +4133,9 @@ class Economics:
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data.
             lag (int, optional): The number of periods to lag the data by.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
 
         Returns:
@@ -3780,13 +4167,19 @@ class Economics:
         """
         poverty_rate = oecd_model.get_poverty_rate()
 
-        return self._finalize_economic_data(
-            poverty_rate,
-            "Poverty Rate",
-            countries,
-            rolling,
-            trailing,
-            growth,
-            lag,
-            rounding,
+        return finalize_dataset(
+            dataset=poverty_rate,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="Poverty Rate",
+            countries=countries,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
         )

@@ -5,7 +5,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import numpy as np
 import pandas as pd
 
-from financetoolkit.helpers import get_request
+from financetoolkit.utilities.requests_model import get_request
 
 FRED_API_BASE_URL = "https://api.stlouisfed.org/fred/v2/series/observations"
 

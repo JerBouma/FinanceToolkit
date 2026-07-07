@@ -4,7 +4,6 @@ __docformat__ = "google"
 
 import pandas as pd
 
-from financetoolkit.helpers import calculate_growth, filter_columns
 from financetoolkit.models import (
     altman_model,
     dupont_model,
@@ -17,7 +16,13 @@ from financetoolkit.models import (
 )
 from financetoolkit.performance.performance_model import get_beta
 from financetoolkit.ratios import liquidity_model, valuation_model
+from financetoolkit.utilities.dataframe_model import filter_columns
 from financetoolkit.utilities.error_model import handle_errors
+from financetoolkit.utilities.statistics_model import (
+    calculate_growth,
+    calculate_standardization,
+    finalize_dataset,
+)
 
 # pylint: disable=too-many-instance-attributes,too-many-locals,too-many-lines
 
@@ -122,6 +127,7 @@ class Models:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
         trailing: int | None = None,
         show_columns: list[str] | None = None,
     ) -> pd.DataFrame:
@@ -145,6 +151,9 @@ class Models:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the values. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             trailing (int | None, optional): The trailing period to use for the calculation. Defaults to None.
 
         Returns:
@@ -210,7 +219,7 @@ class Models:
 
         if growth:
             self._dupont_analysis_growth = calculate_growth(
-                self._dupont_analysis,
+                dataset=self._dupont_analysis,
                 lag=lag,
                 rounding=rounding if rounding else self._rounding,
                 axis="index",
@@ -219,6 +228,21 @@ class Models:
         self._dupont_analysis = self._dupont_analysis.round(
             rounding if rounding else self._rounding
         )
+
+        if standardize:
+            standardize_rounding = rounding if rounding else self._rounding
+            if growth:
+                self._dupont_analysis_growth = calculate_standardization(
+                    dataset=self._dupont_analysis_growth,
+                    rounding=standardize_rounding,
+                    axis="columns",
+                )
+            else:
+                self._dupont_analysis = calculate_standardization(
+                    dataset=self._dupont_analysis,
+                    rounding=standardize_rounding,
+                    axis="columns",
+                )
 
         if len(self._tickers) == 1:
             result = (
@@ -241,6 +265,7 @@ class Models:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
         trailing: int | None = None,
         show_columns: list[str] | None = None,
     ) -> pd.DataFrame:
@@ -268,6 +293,9 @@ class Models:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the values. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             trailing (int | None, optional): The trailing period to use for the calculation. Defaults to None.
 
         Returns:
@@ -348,7 +376,7 @@ class Models:
 
         if growth:
             self._extended_dupont_analysis_growth = calculate_growth(
-                self._extended_dupont_analysis,
+                dataset=self._extended_dupont_analysis,
                 lag=lag,
                 rounding=rounding if rounding else self._rounding,
                 axis="columns",
@@ -357,6 +385,21 @@ class Models:
         self._extended_dupont_analysis = self._extended_dupont_analysis.round(
             rounding if rounding else self._rounding
         )
+
+        if standardize:
+            standardize_rounding = rounding if rounding else self._rounding
+            if growth:
+                self._extended_dupont_analysis_growth = calculate_standardization(
+                    dataset=self._extended_dupont_analysis_growth,
+                    rounding=standardize_rounding,
+                    axis="columns",
+                )
+            else:
+                self._extended_dupont_analysis = calculate_standardization(
+                    dataset=self._extended_dupont_analysis,
+                    rounding=standardize_rounding,
+                    axis="columns",
+                )
 
         if len(self._tickers) == 1:
             result = (
@@ -384,6 +427,7 @@ class Models:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
         show_columns: list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -411,6 +455,9 @@ class Models:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the values. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
 
         Returns:
             pd.DataFrame: DataFrame containing the Enterprise Value breakdown, including the calculated components.
@@ -478,7 +525,7 @@ class Models:
 
         if growth:
             self._enterprise_value_breakdown_growth = calculate_growth(
-                self._enterprise_value_breakdown,
+                dataset=self._enterprise_value_breakdown,
                 lag=lag,
                 rounding=rounding if rounding else self._rounding,
             )
@@ -486,6 +533,21 @@ class Models:
         self._enterprise_value_breakdown = self._enterprise_value_breakdown.round(
             rounding if rounding else self._rounding
         )
+
+        if standardize:
+            standardize_rounding = rounding if rounding else self._rounding
+            if growth:
+                self._enterprise_value_breakdown_growth = calculate_standardization(
+                    dataset=self._enterprise_value_breakdown_growth,
+                    rounding=standardize_rounding,
+                    axis="columns",
+                )
+            else:
+                self._enterprise_value_breakdown = calculate_standardization(
+                    dataset=self._enterprise_value_breakdown,
+                    rounding=standardize_rounding,
+                    axis="columns",
+                )
 
         if len(self._tickers) == 1:
             result = (
@@ -514,6 +576,7 @@ class Models:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
         trailing: int | None = None,
         show_columns: list[str] | None = None,
     ) -> pd.DataFrame:
@@ -567,6 +630,9 @@ class Models:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the values. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             trailing (int | None, optional): The trailing period to use for the calculation. Defaults to None.
 
         Returns:
@@ -686,7 +752,7 @@ class Models:
 
         if growth:
             self._weighted_average_cost_of_capital_growth = calculate_growth(
-                self._weighted_average_cost_of_capital,
+                dataset=self._weighted_average_cost_of_capital,
                 lag=lag,
                 rounding=rounding if rounding else self._rounding,
                 axis="columns",
@@ -697,6 +763,23 @@ class Models:
                 rounding if rounding else self._rounding
             )
         )
+
+        if standardize:
+            standardize_rounding = rounding if rounding else self._rounding
+            if growth:
+                self._weighted_average_cost_of_capital_growth = (
+                    calculate_standardization(
+                        dataset=self._weighted_average_cost_of_capital_growth,
+                        rounding=standardize_rounding,
+                        axis="columns",
+                    )
+                )
+            else:
+                self._weighted_average_cost_of_capital = calculate_standardization(
+                    dataset=self._weighted_average_cost_of_capital,
+                    rounding=standardize_rounding,
+                    axis="columns",
+                )
 
         if len(self._tickers) == 1:
             result = (
@@ -1047,6 +1130,7 @@ class Models:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
         trailing: int | None = None,
         show_columns: list[str] | None = None,
     ) -> pd.DataFrame:
@@ -1079,6 +1163,9 @@ class Models:
             rounding (int, optional): The number of decimals to round the results to. Defaults to None.
             growth (bool, optional): Whether to calculate the growth of the values. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             trailing (int | None, optional): The trailing period to use for the calculation. Defaults to None.
 
         Returns:
@@ -1263,22 +1350,19 @@ class Models:
             .reindex(self._tickers, level=0)
         )
 
-        if growth:
-            return filter_columns(
-                calculate_growth(
-                    altman_results,
-                    lag=lag,
-                    rounding=rounding if rounding else self._rounding,
-                    axis="columns",
-                ).loc[:, self._start_date : self._end_date],
-                show_columns,
-            )
-
-        altman_results = altman_results.round(rounding if rounding else self._rounding)
-
-        return filter_columns(
-            altman_results.loc[:, self._start_date : self._end_date], show_columns
+        altman_results = finalize_dataset(
+            dataset=altman_results,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="columns",
         )
+
+        return filter_columns(altman_results, show_columns)
 
     @handle_errors
     def get_piotroski_score(
@@ -1529,6 +1613,7 @@ class Models:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
     ) -> pd.DataFrame:
         """
         The Present Value of Growth Opportunities (PVGO) is a financial metric that represents the
@@ -1551,6 +1636,9 @@ class Models:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the values. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
 
         Returns:
             pd.DataFrame: DataFrame containing the PVGO values.
@@ -1627,14 +1715,28 @@ class Models:
         )
 
         if growth:
-            return calculate_growth(
-                pvgo,
+            pvgo = calculate_growth(
+                dataset=pvgo,
                 lag=lag,
                 rounding=rounding if rounding else self._rounding,
                 axis="index",
-            ).loc[self._start_date :]
+            )
+            if standardize:
+                pvgo = calculate_standardization(
+                    dataset=pvgo,
+                    rounding=rounding if rounding else self._rounding,
+                    axis="rows",
+                )
+            return pvgo.loc[self._start_date :]
 
         pvgo = pvgo.round(rounding if rounding else self._rounding)
+
+        if standardize:
+            pvgo = calculate_standardization(
+                dataset=pvgo,
+                rounding=rounding if rounding else self._rounding,
+                axis="rows",
+            )
 
         # When there is no data found for any ticker, drop the row
         pvgo = pvgo.dropna(how="all", axis=0)
@@ -1649,6 +1751,7 @@ class Models:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
     ) -> pd.DataFrame:
         """
         Calculate the Graham Number, a conservative estimate of a stock's fair value
@@ -1672,6 +1775,9 @@ class Models:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the values. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
 
         Returns:
             pd.DataFrame: DataFrame containing the Graham Number values.
@@ -1742,14 +1848,14 @@ class Models:
             book_value_per_share=book_value_per_share,
         )
 
-        if growth:
-            return calculate_growth(
-                graham_number,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-                axis="columns",
-            ).loc[:, self._start_date : self._end_date]
-
-        return graham_number.round(rounding if rounding else self._rounding).loc[
-            :, self._start_date : self._end_date
-        ]
+        return finalize_dataset(
+            dataset=graham_number,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="columns",
+        )

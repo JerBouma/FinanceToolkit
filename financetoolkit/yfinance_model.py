@@ -12,8 +12,8 @@ import pandas as pd
 import yfinance as yf
 
 from financetoolkit import helpers
-from financetoolkit.helpers import get_request
 from financetoolkit.utilities import logger_model
+from financetoolkit.utilities.requests_model import get_request
 
 logger = logger_model.get_logger()
 

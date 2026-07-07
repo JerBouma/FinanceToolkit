@@ -19,9 +19,9 @@ from financetoolkit.fixedincome import (
     fed_model,
     fred_model,
 )
-from financetoolkit.helpers import calculate_growth
 from financetoolkit.utilities import logger_model
 from financetoolkit.utilities.error_model import handle_errors
+from financetoolkit.utilities.statistics_model import finalize_dataset
 
 logger = logger_model.get_logger()
 
@@ -891,6 +891,7 @@ class FixedIncome:
         growth: bool = False,
         lag: int = 1,
         rounding: int | None = None,
+        standardize: bool = False,
     ):
         """
         Long-term interest rates refer to government bonds maturing in ten years.
@@ -926,6 +927,9 @@ class FixedIncome:
             growth (bool, optional): Whether to return the growth data or the actual data.
             lag (int, optional): The number of periods to lag the data by.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Long Term Interest Rate.
@@ -969,25 +973,25 @@ class FixedIncome:
                 period=period,
             )
 
-        if growth:
-            government_bond_yield = calculate_growth(
-                government_bond_yield,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-                axis="rows",
-            )
-
-        government_bond_yield = government_bond_yield.loc[
-            self._start_date : self._end_date
-        ]
-
-        return government_bond_yield.round(rounding if rounding else self._rounding)
+        return finalize_dataset(
+            dataset=government_bond_yield,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            rounding=rounding,
+            growth=growth,
+            lag=lag,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+        )
 
     @handle_errors
     def get_ice_bofa_option_adjusted_spread(
         self,
         maturity: bool = True,
         rounding: int | None = None,
+        standardize: bool = False,
     ):
         """
         The ICE BofA Option-Adjusted Spreads (OASs) are the calculated spreads between a computed OAS index
@@ -1007,6 +1011,7 @@ class FixedIncome:
         Args:
             maturity (bool, optional): Whether to return the maturity option adjusted spread or the rating option adjusted spread.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. Defaults to False.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Option Adjusted Spread
@@ -1057,17 +1062,23 @@ class FixedIncome:
             )
         )
 
-        option_adjusted_spread = option_adjusted_spread.round(
-            rounding if rounding else self._rounding
+        return finalize_dataset(
+            dataset=option_adjusted_spread,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
         )
-
-        return option_adjusted_spread
 
     @handle_errors
     def get_ice_bofa_effective_yield(
         self,
         maturity: bool = True,
         rounding: int | None = None,
+        standardize: bool = False,
     ):
         """
         This data represents the effective yield of the ICE BofA Indices, When the last calendar day of the month
@@ -1088,6 +1099,7 @@ class FixedIncome:
         Args:
             maturity (bool, optional): Whether to return the maturity effective yield or the rating effective yield.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. Defaults to False.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Gross Domestic Product
@@ -1138,17 +1150,23 @@ class FixedIncome:
             )
         )
 
-        effective_yield = effective_yield.round(
-            rounding if rounding else self._rounding
+        return finalize_dataset(
+            dataset=effective_yield,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
         )
-
-        return effective_yield
 
     @handle_errors
     def get_ice_bofa_total_return(
         self,
         maturity: bool = True,
         rounding: int | None = None,
+        standardize: bool = False,
     ):
         """
         This data represents the total return of the ICE BofA Indices, When the last calendar day of the month
@@ -1165,6 +1183,7 @@ class FixedIncome:
         Args:
             maturity (bool, optional): Whether to return the maturity total return or the rating total return.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. Defaults to False.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Gross Domestic Product
@@ -1215,15 +1234,23 @@ class FixedIncome:
             )
         )
 
-        total_return = total_return.round(rounding if rounding else self._rounding)
-
-        return total_return
+        return finalize_dataset(
+            dataset=total_return,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+        )
 
     @handle_errors
     def get_ice_bofa_yield_to_worst(
         self,
         maturity: bool = True,
         rounding: int | None = None,
+        standardize: bool = False,
     ):
         """
         This data represents the semi-annual yield to worst of the ICE BofA Indices, When the last calendar day of the month
@@ -1241,6 +1268,7 @@ class FixedIncome:
         Args:
             maturity (bool, optional): Whether to return the maturity yield to worst or the rating yield to worst.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. Defaults to False.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Gross Domestic Product
@@ -1291,9 +1319,16 @@ class FixedIncome:
             )
         )
 
-        yield_to_worst = yield_to_worst.round(rounding if rounding else self._rounding)
-
-        return yield_to_worst
+        return finalize_dataset(
+            dataset=yield_to_worst,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+        )
 
     @handle_errors
     def get_euribor_rates(
@@ -1301,6 +1336,7 @@ class FixedIncome:
         maturities: str | list | None = None,
         nominal: bool = True,
         rounding: int | None = None,
+        standardize: bool = False,
     ):
         """
         Euribor rates, short for Euro Interbank Offered Rate, are the interest rates at which a panel
@@ -1322,6 +1358,7 @@ class FixedIncome:
                 When set to None, it will retrieve rates for 1 month, 3 months, 6 months, and 12 months.
             nominal (bool, optional): Flag indicating whether to retrieve nominal rates. Defaults to True.
             rounding (int | None, optional): Rounding precision for the rates. Defaults to None.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. Defaults to False.
 
         Returns:
             pandas.DataFrame: DataFrame containing the Euribor rates for the specified maturities.
@@ -1378,14 +1415,22 @@ class FixedIncome:
                 nominal=nominal if not nominal and maturity == "3M" else True,
             )
 
-        euribor_rates = euribor_rates.loc[self._start_date : self._end_date]
-
-        euribor_rates = euribor_rates.round(rounding if rounding else self._rounding)
-
-        return euribor_rates
+        return finalize_dataset(
+            dataset=euribor_rates,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+        )
 
     def get_european_central_bank_rates(
-        self, rate: str | None = None, rounding: int | None = None
+        self,
+        rate: str | None = None,
+        rounding: int | None = None,
+        standardize: bool = False,
     ):
         """
         The Governing Council of the ECB sets the key interest rates for the
@@ -1414,6 +1459,8 @@ class FixedIncome:
         Args:
             rate (str, optional): The rate to return. Defaults to None, which returns all rates.
                 Choose between 'refinancing', 'lending' or 'deposit'.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. Defaults to False.
 
         Returns:
             pd.DataFrame: A DataFrame containing the ECB rates.
@@ -1465,14 +1512,22 @@ class FixedIncome:
         if not rate or rate == "deposit":
             ecb_rates["Deposit"] = ecb_model.get_deposit_facility()
 
-        ecb_rates = ecb_rates.loc[self._start_date : self._end_date]
-
-        ecb_rates = ecb_rates.round(rounding if rounding else self._rounding)
-
-        return ecb_rates
+        return finalize_dataset(
+            dataset=ecb_rates,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+        )
 
     def get_federal_reserve_rates(
-        self, rate: str = "EFFR", rounding: int | None = None
+        self,
+        rate: str = "EFFR",
+        rounding: int | None = None,
+        standardize: bool = False,
     ):
         """
         Get the Federal Reserve rates as published by the Federal Reserve Bank of New York.
@@ -1519,6 +1574,8 @@ class FixedIncome:
 
         Args:
             rate (str): The rate to return. Defaults to 'EFFR' (Effective Federal Funds Rate).
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. Defaults to False.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Federal Reserve rates including the rate,
@@ -1568,8 +1625,13 @@ class FixedIncome:
                 "Rate must be one of 'EFFR', 'OBFR', 'TGCR', 'BGCR' or 'SOFR'."
             )
 
-        fed_data = fed_data.loc[self._start_date : self._end_date]
-
-        fed_data = fed_data.round(rounding if rounding else self._rounding)
-
-        return fed_data
+        return finalize_dataset(
+            dataset=fed_data,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+        )

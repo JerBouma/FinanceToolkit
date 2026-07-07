@@ -10,7 +10,8 @@ from scipy.stats import linregress
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import mean_squared_error
 
-from financetoolkit.helpers import PERIOD_TRANSLATION, get_request
+from financetoolkit.utilities.requests_model import get_request
+from financetoolkit.utilities.statistics_model import PERIOD_TRANSLATION
 
 # This is meant for calculations in which a Multi Index exists. This is the case
 # when calculating a "within period" in which the first index represents the period
@@ -1307,3 +1308,47 @@ def get_excess_return(
         return (1 + excess_return).cumprod()
 
     return excess_return
+
+
+def get_correlation_matrix(returns: pd.DataFrame) -> pd.DataFrame:
+    """
+    Calculate the full pairwise correlation matrix across N assets.
+
+    Unlike `get_beta` or `get_covariance`, which relate a single asset to a single
+    benchmark, this computes the correlation between every pair of columns in the
+    provided returns DataFrame at once. This is a prerequisite for portfolio variance
+    calculations and any mean-variance optimization work.
+
+    Args:
+        returns (pd.DataFrame): A Dataframe of returns with one column per asset.
+
+    Returns:
+        pd.DataFrame: The N x N correlation matrix, with assets as both the index
+        and the columns.
+    """
+    if not isinstance(returns, pd.DataFrame):
+        raise TypeError("Expects pd.DataFrame, no other value.")
+
+    return returns.corr()
+
+
+def get_covariance_matrix(returns: pd.DataFrame) -> pd.DataFrame:
+    """
+    Calculate the full pairwise covariance matrix across N assets.
+
+    Unlike `get_beta` or `get_covariance`, which relate a single asset to a single
+    benchmark, this computes the covariance between every pair of columns in the
+    provided returns DataFrame at once. This is a prerequisite for portfolio variance
+    calculations and any mean-variance optimization work.
+
+    Args:
+        returns (pd.DataFrame): A Dataframe of returns with one column per asset.
+
+    Returns:
+        pd.DataFrame: The N x N covariance matrix, with assets as both the index
+        and the columns.
+    """
+    if not isinstance(returns, pd.DataFrame):
+        raise TypeError("Expects pd.DataFrame, no other value.")
+
+    return returns.cov()

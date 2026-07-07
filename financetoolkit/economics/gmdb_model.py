@@ -4,7 +4,7 @@ import io
 
 import pandas as pd
 
-from financetoolkit.helpers import get_request
+from financetoolkit.utilities.requests_model import get_request
 
 GMD_LOCATION = "https://github.com/KMueller-Lab/Global-Macro-Database/blob/main/data/final/data_final.dta?raw=True"
 

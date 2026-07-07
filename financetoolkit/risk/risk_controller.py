@@ -6,7 +6,7 @@ import warnings
 
 import pandas as pd
 
-from financetoolkit.helpers import calculate_growth, handle_portfolio
+from financetoolkit.helpers import handle_portfolio
 from financetoolkit.risk import (
     cvar_model,
     evar_model,
@@ -16,6 +16,7 @@ from financetoolkit.risk import (
 )
 from financetoolkit.risk.helpers import determine_within_historical_data
 from financetoolkit.utilities.error_model import handle_errors
+from financetoolkit.utilities.statistics_model import finalize_dataset
 
 # Runtime errors are ignored on purpose given the nature of the calculations
 # sometimes leading to division by zero or other mathematical errors. This is however
@@ -123,6 +124,7 @@ class Risk:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
     ):
         """
         Calculates and collects all risk metrics.
@@ -131,6 +133,9 @@ class Risk:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             trailing (int): Defines whether to select a trailing period.
             E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
@@ -176,55 +181,135 @@ class Risk:
 
         risk_metrics = {
             "Value at Risk": self.get_value_at_risk(
-                period=period, rounding=rounding, growth=growth, lag=lag
+                period=period,
+                rounding=rounding,
+                growth=growth,
+                lag=lag,
+                standardize=standardize,
             ),
             "Conditional Value at Risk": self.get_conditional_value_at_risk(
-                period=period, rounding=rounding, growth=growth, lag=lag
+                period=period,
+                rounding=rounding,
+                growth=growth,
+                lag=lag,
+                standardize=standardize,
             ),
             "Entropic Value at Risk": self.get_entropic_value_at_risk(
-                period=period, rounding=rounding, growth=growth, lag=lag
+                period=period,
+                rounding=rounding,
+                growth=growth,
+                lag=lag,
+                standardize=standardize,
             ),
             "Conditional Drawdown at Risk": self.get_conditional_drawdown_at_risk(
-                period=period, rounding=rounding, growth=growth, lag=lag
+                period=period,
+                rounding=rounding,
+                growth=growth,
+                lag=lag,
+                standardize=standardize,
             ),
             "Tail Ratio": self.get_tail_ratio(
-                period=period, rounding=rounding, growth=growth, lag=lag
+                period=period,
+                rounding=rounding,
+                growth=growth,
+                lag=lag,
+                standardize=standardize,
             ),
             "Maximum Drawdown": self.get_maximum_drawdown(
-                period=period, rounding=rounding, growth=growth, lag=lag
+                period=period,
+                rounding=rounding,
+                growth=growth,
+                lag=lag,
+                standardize=standardize,
             ),
             "Maximum Drawdown Duration": self.get_maximum_drawdown_duration(
-                period=period, rounding=rounding, growth=growth, lag=lag
+                period=period,
+                rounding=rounding,
+                growth=growth,
+                lag=lag,
+                standardize=standardize,
             ),
             "Maximum Drawdown Recovery Time": self.get_maximum_drawdown_recovery_time(
-                period=period, rounding=rounding, growth=growth, lag=lag
+                period=period,
+                rounding=rounding,
+                growth=growth,
+                lag=lag,
+                standardize=standardize,
             ),
             "Ulcer Index": self.get_ulcer_index(
-                period=period, rounding=rounding, growth=growth, lag=lag
+                period=period,
+                rounding=rounding,
+                growth=growth,
+                lag=lag,
+                standardize=standardize,
             ),
             "GARCH": self.get_garch(
-                period=period, rounding=rounding, growth=growth, lag=lag
+                period=period,
+                rounding=rounding,
+                growth=growth,
+                lag=lag,
+                standardize=standardize,
             ),
             "Skewness": self.get_skewness(
-                period=period, rounding=rounding, growth=growth, lag=lag
+                period=period,
+                rounding=rounding,
+                growth=growth,
+                lag=lag,
+                standardize=standardize,
             ),
             "Kurtosis": self.get_kurtosis(
-                period=period, rounding=rounding, growth=growth, lag=lag
+                period=period,
+                rounding=rounding,
+                growth=growth,
+                lag=lag,
+                standardize=standardize,
             ),
             "Downside Deviation": self.get_downside_deviation(
-                period=period, rounding=rounding, growth=growth, lag=lag
+                period=period,
+                rounding=rounding,
+                growth=growth,
+                lag=lag,
+                standardize=standardize,
             ),
         }
 
         if period != "daily":
             risk_metrics["Variance"] = self.get_variance(
-                period=period, rounding=rounding, growth=growth, lag=lag
+                period=period,
+                rounding=rounding,
+                growth=growth,
+                lag=lag,
+                standardize=standardize,
             )
             risk_metrics["Volatility"] = self.get_volatility(
-                period=period, rounding=rounding, growth=growth, lag=lag
+                period=period,
+                rounding=rounding,
+                growth=growth,
+                lag=lag,
+                standardize=standardize,
             )
             risk_metrics["Excess Volatility"] = self.get_excess_volatility(
-                period=period, rounding=rounding, growth=growth, lag=lag
+                period=period,
+                rounding=rounding,
+                growth=growth,
+                lag=lag,
+                standardize=standardize,
+            )
+            risk_metrics["Mean Absolute Deviation"] = self.get_mean_absolute_deviation(
+                period=period,
+                rounding=rounding,
+                growth=growth,
+                lag=lag,
+                standardize=standardize,
+            )
+            risk_metrics["Coefficient of Variation"] = (
+                self.get_coefficient_of_variation(
+                    period=period,
+                    rounding=rounding,
+                    growth=growth,
+                    lag=lag,
+                    standardize=standardize,
+                )
             )
 
         risk_metrics = pd.concat(risk_metrics, axis=1)
@@ -245,6 +330,7 @@ class Risk:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
         distribution: str = "historic",
         threshold_percentile: float = 0.95,
     ):
@@ -275,6 +361,9 @@ class Risk:
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the VaR values over time. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             distribution (str): The distribution to use for the VaR calculations (historic, gaussian, cf,
             studentt or evt). Defaults to "historic".
             threshold_percentile (float, optional): Only used when `distribution` is "evt". The percentile
@@ -354,15 +443,18 @@ class Risk:
         if rolling or within_period:
             value_at_risk = value_at_risk.loc[self._start_date : self._end_date]
 
-        if growth:
-            return calculate_growth(
-                value_at_risk,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-                axis="index",
-            )
-
-        return value_at_risk.round(rounding if rounding else self._rounding)
+        return finalize_dataset(
+            dataset=value_at_risk,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            apply_slice=False,
+        )
 
     @handle_portfolio
     @handle_errors
@@ -375,6 +467,7 @@ class Risk:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
         distribution: str = "historic",
     ):
         """
@@ -404,6 +497,9 @@ class Risk:
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the CVaR values over time. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             distribution (str): The distribution to use for the CVaR calculations (historic, gaussian, studentt, laplace
             or logistic). Defaults to "historic".
 
@@ -483,15 +579,18 @@ class Risk:
                 self._start_date : self._end_date
             ]
 
-        if growth:
-            return calculate_growth(
-                conditional_value_at_risk,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-                axis="index",
-            )
-
-        return conditional_value_at_risk.round(rounding if rounding else self._rounding)
+        return finalize_dataset(
+            dataset=conditional_value_at_risk,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            apply_slice=False,
+        )
 
     @handle_portfolio
     @handle_errors
@@ -503,6 +602,7 @@ class Risk:
         rounding: int | None = 4,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
     ):
         """
         Calculate the Entropic Value at Risk (EVaR) of an investment portfolio or asset's returns.
@@ -528,6 +628,9 @@ class Risk:
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the CVaR values over time. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
 
         Returns:
             pd.Series: EVaR values with time as the index.
@@ -586,15 +689,18 @@ class Risk:
                 self._start_date : self._end_date
             ]
 
-        if growth:
-            return calculate_growth(
-                entropic_value_at_risk,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-                axis="index",
-            )
-
-        return entropic_value_at_risk.round(rounding if rounding else self._rounding)
+        return finalize_dataset(
+            dataset=entropic_value_at_risk,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            apply_slice=False,
+        )
 
     @handle_portfolio
     @handle_errors
@@ -607,6 +713,7 @@ class Risk:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
     ):
         """
         Calculate the Conditional Drawdown at Risk (CDaR) of an investment portfolio or asset's returns.
@@ -633,6 +740,9 @@ class Risk:
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the CDaR values over time. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
 
         Returns:
             pd.Series: CDaR values with time as the index.
@@ -695,16 +805,17 @@ class Risk:
                 self._start_date : self._end_date
             ]
 
-        if growth:
-            return calculate_growth(
-                conditional_drawdown_at_risk,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-                axis="index",
-            )
-
-        return conditional_drawdown_at_risk.round(
-            rounding if rounding else self._rounding
+        return finalize_dataset(
+            dataset=conditional_drawdown_at_risk,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            apply_slice=False,
         )
 
     @handle_portfolio
@@ -718,6 +829,7 @@ class Risk:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
     ):
         """
         Calculate the Tail Ratio of an investment portfolio or asset's returns.
@@ -744,6 +856,9 @@ class Risk:
             growth (bool, optional): Whether to calculate the growth of the Tail Ratio values over time.
             Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
 
         Returns:
             pd.Series: Tail Ratio values with time as the index.
@@ -798,15 +913,18 @@ class Risk:
         if rolling or within_period:
             tail_ratio = tail_ratio.loc[self._start_date : self._end_date]
 
-        if growth:
-            return calculate_growth(
-                tail_ratio,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-                axis="index",
-            )
-
-        return tail_ratio.round(rounding if rounding else self._rounding)
+        return finalize_dataset(
+            dataset=tail_ratio,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            apply_slice=False,
+        )
 
     @handle_portfolio
     @handle_errors
@@ -817,6 +935,7 @@ class Risk:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
     ):
         """
         Calculate the Maximum Drawdown (MDD) of an investment portfolio or asset's returns.
@@ -839,6 +958,9 @@ class Risk:
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the CVaR values over time. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
 
         Returns:
             pd.Series: Maximum Drawdown values with time as the index.
@@ -895,15 +1017,18 @@ class Risk:
         if within_period:
             maximum_drawdown = maximum_drawdown.loc[self._start_date : self._end_date]
 
-        if growth:
-            return calculate_growth(
-                maximum_drawdown,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-                axis="index",
-            )
-
-        return maximum_drawdown.round(rounding if rounding else self._rounding)
+        return finalize_dataset(
+            dataset=maximum_drawdown,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            apply_slice=False,
+        )
 
     @handle_portfolio
     @handle_errors
@@ -914,6 +1039,7 @@ class Risk:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
     ):
         """
         Calculate the Maximum Drawdown Duration of an investment portfolio or asset's returns.
@@ -932,6 +1058,9 @@ class Risk:
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the duration values over time. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
 
         Returns:
             pd.Series: Maximum Drawdown Duration values, in number of periods, with time as the index.
@@ -984,15 +1113,18 @@ class Risk:
                 self._start_date : self._end_date
             ]
 
-        if growth:
-            return calculate_growth(
-                maximum_drawdown_duration,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-                axis="index",
-            )
-
-        return maximum_drawdown_duration.round(rounding if rounding else self._rounding)
+        return finalize_dataset(
+            dataset=maximum_drawdown_duration,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            apply_slice=False,
+        )
 
     @handle_portfolio
     @handle_errors
@@ -1003,6 +1135,7 @@ class Risk:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
     ):
         """
         Calculate the Maximum Drawdown Recovery Time of an investment portfolio or asset's returns.
@@ -1023,6 +1156,9 @@ class Risk:
             growth (bool, optional): Whether to calculate the growth of the recovery time values over time.
             Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
 
         Returns:
             pd.Series: Maximum Drawdown Recovery Time values, in number of periods, with time as the index.
@@ -1078,16 +1214,17 @@ class Risk:
                 self._start_date : self._end_date
             ]
 
-        if growth:
-            return calculate_growth(
-                maximum_drawdown_recovery_time,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-                axis="index",
-            )
-
-        return maximum_drawdown_recovery_time.round(
-            rounding if rounding else self._rounding
+        return finalize_dataset(
+            dataset=maximum_drawdown_recovery_time,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            apply_slice=False,
         )
 
     @handle_portfolio
@@ -1099,6 +1236,7 @@ class Risk:
         rounding: int | None = 4,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
     ):
         """
         The Ulcer Index is a financial metric used to assess the risk and volatility of an
@@ -1122,6 +1260,9 @@ class Risk:
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the UI values over time. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
 
         Returns:
             pd.Series: UI values with time as the index.
@@ -1173,15 +1314,18 @@ class Risk:
 
         ulcer_index = ulcer_index.loc[self._start_date : self._end_date]
 
-        if growth:
-            return calculate_growth(
-                ulcer_index,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-                axis="index",
-            )
-
-        return ulcer_index.round(rounding if rounding else self._rounding)
+        return finalize_dataset(
+            dataset=ulcer_index,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            apply_slice=False,
+        )
 
     @handle_portfolio
     @handle_errors
@@ -1194,6 +1338,7 @@ class Risk:
         rounding: int | None = 4,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
     ):
         """
         Calculates volatility forecasts based on the GARCH model.
@@ -1215,6 +1360,9 @@ class Risk:
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the GARCH values over time. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
 
         Returns:
             pd.DataFrame | pd.Series: GARCH values
@@ -1277,15 +1425,18 @@ class Risk:
 
         garch_sigma_2 = garch_sigma_2.loc[self._start_date : self._end_date]
 
-        if growth:
-            return calculate_growth(
-                garch_sigma_2,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-                axis="index",
-            )
-
-        return garch_sigma_2.round(rounding if rounding else self._rounding)
+        return finalize_dataset(
+            dataset=garch_sigma_2,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            apply_slice=False,
+        )
 
     @handle_portfolio
     @handle_errors
@@ -1297,6 +1448,7 @@ class Risk:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
     ):
         """
         Calculates sigma_2 forecasts.
@@ -1326,6 +1478,9 @@ class Risk:
             growth (bool, optional): Whether to calculate the growth of the GARCH values over time. Defaults to
             False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
 
         Returns:
             pd.DataFrame | pd.Series: sigma_2 forecast values
@@ -1401,15 +1556,18 @@ class Risk:
 
         sigma_2_forecast.index = period_index[1:]
 
-        if growth:
-            return calculate_growth(
-                sigma_2_forecast,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-                axis="index",
-            )
-
-        return sigma_2_forecast.round(rounding if rounding else self._rounding)
+        return finalize_dataset(
+            dataset=sigma_2_forecast,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            apply_slice=False,
+        )
 
     @handle_portfolio
     @handle_errors
@@ -1421,6 +1579,7 @@ class Risk:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
     ):
         """
         Calculate the Skewness of an investment portfolio or asset's returns.
@@ -1449,6 +1608,9 @@ class Risk:
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the CVaR values over time. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
 
         Returns:
             pd.Series: CVaR values with time as the index.
@@ -1502,15 +1664,18 @@ class Risk:
         if rolling or within_period:
             skewness = skewness.loc[self._start_date : self._end_date]
 
-        if growth:
-            return calculate_growth(
-                skewness,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-                axis="index",
-            )
-
-        return skewness.round(rounding if rounding else self._rounding)
+        return finalize_dataset(
+            dataset=skewness,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            apply_slice=False,
+        )
 
     @handle_portfolio
     @handle_errors
@@ -1523,6 +1688,7 @@ class Risk:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
     ):
         """
         Calculate the Kurtosis of an investment portfolio or asset's returns.
@@ -1555,6 +1721,9 @@ class Risk:
             growth (bool, optional): Whether to calculate the growth of the CVaR values over time.
             efaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
 
         Returns:
             pd.Series: CVaR values with time as the index.
@@ -1608,15 +1777,18 @@ class Risk:
         if rolling or within_period:
             kurtosis = kurtosis.loc[self._start_date : self._end_date]
 
-        if growth:
-            return calculate_growth(
-                kurtosis,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-                axis="index",
-            )
-
-        return kurtosis.round(rounding if rounding else self._rounding)
+        return finalize_dataset(
+            dataset=kurtosis,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            apply_slice=False,
+        )
 
     @handle_portfolio
     @handle_errors
@@ -1627,6 +1799,7 @@ class Risk:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
     ):
         """
         Calculate the Variance of an investment portfolio or asset's returns for a
@@ -1651,6 +1824,9 @@ class Risk:
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the Variance values over time. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
 
         Returns:
             pd.Series: Variance values with time as the index.
@@ -1695,15 +1871,18 @@ class Risk:
 
         variance = variance.loc[self._start_date : self._end_date]
 
-        if growth:
-            return calculate_growth(
-                variance,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-                axis="index",
-            )
-
-        return variance.round(rounding if rounding else self._rounding)
+        return finalize_dataset(
+            dataset=variance,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            apply_slice=False,
+        )
 
     @handle_portfolio
     @handle_errors
@@ -1714,6 +1893,7 @@ class Risk:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
     ):
         """
         Calculate the Volatility of an investment portfolio or asset's returns for a
@@ -1739,6 +1919,9 @@ class Risk:
             growth (bool, optional): Whether to calculate the growth of the Volatility values over time.
             Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
 
         Returns:
             pd.Series: Volatility values with time as the index.
@@ -1785,15 +1968,18 @@ class Risk:
 
         volatility = volatility.loc[self._start_date : self._end_date]
 
-        if growth:
-            return calculate_growth(
-                volatility,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-                axis="index",
-            )
-
-        return volatility.round(rounding if rounding else self._rounding)
+        return finalize_dataset(
+            dataset=volatility,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            apply_slice=False,
+        )
 
     @handle_portfolio
     @handle_errors
@@ -1804,6 +1990,7 @@ class Risk:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
     ):
         """
         Calculate the Excess Volatility of an investment portfolio or asset's returns for a
@@ -1825,6 +2012,9 @@ class Risk:
             growth (bool, optional): Whether to calculate the growth of the Excess Volatility values
             over time. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
 
         Returns:
             pd.Series: Excess Volatility values with time as the index.
@@ -1878,15 +2068,18 @@ class Risk:
 
         excess_volatility = excess_volatility.loc[self._start_date : self._end_date]
 
-        if growth:
-            return calculate_growth(
-                excess_volatility,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-                axis="index",
-            )
-
-        return excess_volatility.round(rounding if rounding else self._rounding)
+        return finalize_dataset(
+            dataset=excess_volatility,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            apply_slice=False,
+        )
 
     @handle_portfolio
     @handle_errors
@@ -1899,6 +2092,7 @@ class Risk:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
     ):
         """
         Calculate the Downside Deviation of an investment portfolio or asset's returns.
@@ -1925,6 +2119,9 @@ class Risk:
             growth (bool, optional): Whether to calculate the growth of the Downside Deviation values over
             time. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
 
         Returns:
             pd.Series: Downside Deviation values with time as the index.
@@ -1986,12 +2183,388 @@ class Risk:
                 self._start_date : self._end_date
             ]
 
-        if growth:
-            return calculate_growth(
-                downside_deviation,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-                axis="index",
-            )
+        return finalize_dataset(
+            dataset=downside_deviation,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            apply_slice=False,
+        )
 
-        return downside_deviation.round(rounding if rounding else self._rounding)
+    @handle_portfolio
+    @handle_errors
+    def get_mean_absolute_deviation(
+        self,
+        period: str | None = None,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+    ):
+        """
+        Calculate the Mean Absolute Deviation (MAD) of an investment portfolio or asset's
+        returns for a given period based on the daily historical returns.
+
+        MAD measures the average absolute distance of each return from the mean return. Unlike
+        Variance and Volatility, it does not square the deviations, making it less sensitive to
+        outliers.
+
+        Args:
+            period (str, optional): The data frequency for returns (weekly, monthly,
+            quarterly, or yearly). Defaults to "yearly".
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the MAD values over time. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+
+        Returns:
+            pd.Series: Mean Absolute Deviation values with time as the index.
+
+        Notes:
+        - The method retrieves the daily historical return data and calculates the MAD for
+        the specified `period` for each asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of MAD values using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AMZN", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.risk.get_mean_absolute_deviation(period="yearly")
+        ```
+
+        Which returns:
+
+        | Date   |   AMZN |   TSLA |   Benchmark |
+        |:-------|-------:|-------:|------------:|
+        | 2021   | 0.0114 | 0.0246 |      0.0062 |
+        | 2022   | 0.0235 | 0.032  |      0.0119 |
+        | 2023   | 0.0156 | 0.0255 |      0.0065 |
+        | 2024   | 0.0132 | 0.0286 |      0.0058 |
+        | 2025   | 0.015  | 0.0292 |      0.0074 |
+        | 2026   | 0.0157 | 0.0216 |      0.0067 |
+        """
+        period = period if period else "quarterly" if self._quarterly else "yearly"
+
+        if period not in ["weekly", "monthly", "quarterly", "yearly"]:
+            raise ValueError("Period must be weekly, monthly, quarterly, or yearly.")
+
+        returns = self._historical_data["daily"]["Return"]
+        mean_absolute_deviation = risk_model.get_mean_absolute_deviation(
+            returns, period
+        )
+
+        mean_absolute_deviation = mean_absolute_deviation.loc[
+            self._start_date : self._end_date
+        ]
+        mean_absolute_deviation = mean_absolute_deviation.dropna(how="all", axis=0)
+
+        return finalize_dataset(
+            dataset=mean_absolute_deviation,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            apply_slice=False,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_coefficient_of_variation(
+        self,
+        period: str | None = None,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+    ):
+        """
+        Calculate the Coefficient of Variation (CV) of an investment portfolio or asset's
+        returns for a given period based on the daily historical returns.
+
+        The Coefficient of Variation is the ratio of the standard deviation to the mean of
+        returns, which normalizes dispersion relative to the average return. This makes it
+        useful for comparing the relative volatility of assets with different average returns,
+        which a raw standard deviation cannot do.
+
+        Also known as: relative standard deviation.
+
+        Args:
+            period (str, optional): The data frequency for returns (weekly, monthly,
+            quarterly, or yearly). Defaults to "yearly".
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the CV values over time. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+
+        Returns:
+            pd.Series: Coefficient of Variation values with time as the index.
+
+        Notes:
+        - The method retrieves the daily historical return data and calculates the CV for
+        the specified `period` for each asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of CV values using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AMZN", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.risk.get_coefficient_of_variation(period="yearly")
+        ```
+
+        Which returns:
+
+        | Date   |     AMZN |      TSLA |   Benchmark |
+        |:-------|---------:|----------:|------------:|
+        | 2021   |  73.121  |   15.7477 |      8.3938 |
+        | 2022   | -14.1417 |  -12.7544 |    -20.4791 |
+        | 2023   |   8.0356 |   10.0506 |      9.1833 |
+        | 2024   |  10.9398 |   14.7623 |      9.1557 |
+        | 2025   |  49.9543 |   32.8037 |     18.0122 |
+        | 2026   |  31.132  | -163.952  |     11.047  |
+        """
+        period = period if period else "quarterly" if self._quarterly else "yearly"
+
+        if period not in ["weekly", "monthly", "quarterly", "yearly"]:
+            raise ValueError("Period must be weekly, monthly, quarterly, or yearly.")
+
+        returns = self._historical_data["daily"]["Return"]
+        coefficient_of_variation = risk_model.get_coefficient_of_variation(
+            returns, period
+        )
+
+        coefficient_of_variation = coefficient_of_variation.loc[
+            self._start_date : self._end_date
+        ]
+        coefficient_of_variation = coefficient_of_variation.dropna(how="all", axis=0)
+
+        return finalize_dataset(
+            dataset=coefficient_of_variation,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            apply_slice=False,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_ewma_volatility(
+        self,
+        lambda_: float = 0.94,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+    ):
+        """
+        Calculate the exponentially weighted moving average (EWMA) Volatility of an
+        investment portfolio or asset's daily returns, following the RiskMetrics
+        methodology.
+
+        Unlike a fixed-window rolling Volatility, EWMA Volatility weights recent
+        observations more heavily than older ones, so it reacts faster to changes in the
+        underlying volatility regime. It is a simpler, more interpretable alternative to a
+        full GARCH fit.
+
+        The formula is as follows:
+
+        - EWMA Variance(t) = lambda * EWMA Variance(t-1) + (1 - lambda) * Return(t-1) ** 2
+
+        Also known as: RiskMetrics volatility, exponentially weighted volatility.
+
+        Args:
+            lambda_ (float, optional): The decay factor. Higher values weight the past
+            more heavily (slower to react), lower values weight recent returns more
+            heavily (faster to react). RiskMetrics uses 0.94 for daily data. Defaults to 0.94.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the EWMA Volatility values over
+            time. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+
+        Returns:
+            pd.Series: Daily EWMA Volatility values with time as the index.
+
+        Notes:
+        - The method retrieves the daily historical return data and calculates the EWMA Volatility for
+        each asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the EWMA Volatility values using
+        the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AMZN", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.risk.get_ewma_volatility()
+        ```
+
+        Which returns:
+
+        | Date       |   AMZN |   TSLA |   Benchmark |
+        |:-----------|-------:|-------:|------------:|
+        | 2026-06-22 | 0.0229 | 0.0279 |      0.0099 |
+        | 2026-06-23 | 0.0223 | 0.0304 |      0.0103 |
+        | 2026-06-24 | 0.0216 | 0.0296 |      0.01   |
+        | 2026-06-25 | 0.022  | 0.0287 |      0.0097 |
+        | 2026-06-26 | 0.0225 | 0.0281 |      0.0096 |
+        | 2026-06-29 | 0.0234 | 0.0345 |      0.0101 |
+        | 2026-06-30 | 0.0228 | 0.0338 |      0.01   |
+        | 2026-07-01 | 0.0224 | 0.0328 |      0.0097 |
+        | 2026-07-02 | 0.0218 | 0.037  |      0.0094 |
+        | 2026-07-06 | 0.0211 | 0.0395 |      0.0093 |
+        """
+        returns = self._historical_data["daily"]["Return"]
+        ewma_volatility = risk_model.get_ewma_volatility(returns, lambda_)
+
+        ewma_volatility = ewma_volatility.loc[self._start_date : self._end_date]
+        ewma_volatility = ewma_volatility.dropna(how="all", axis=0)
+
+        return finalize_dataset(
+            dataset=ewma_volatility,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            apply_slice=False,
+        )
+
+    @handle_errors
+    def get_autocorrelation(
+        self,
+        lags: int = 10,
+        rounding: int | None = None,
+    ):
+        """
+        Calculate the Autocorrelation Function (ACF) of each asset's daily returns for a
+        range of lags.
+
+        The ACF measures the correlation between a return series and a lagged version of
+        itself. A significant ACF at a given lag indicates that returns are not fully
+        independent over time, which is relevant for assessing return predictability and
+        volatility clustering (as opposed to a trading-signal use case, which is why this
+        lives in the Risk module rather than Technicals).
+
+        Args:
+            lags (int, optional): The number of lags to calculate the ACF for. Defaults to 10.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to 4.
+
+        Returns:
+            pd.DataFrame: The ACF value for each lag (rows) and each asset (columns).
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AMZN", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.risk.get_autocorrelation()
+        ```
+
+        Which returns:
+
+        |    |    AMZN |    TSLA |   Benchmark |
+        |---:|--------:|--------:|------------:|
+        |  1 | -0.0109 | -0.0306 |     -0.0366 |
+        |  2 | -0.0013 |  0.0121 |      0.0066 |
+        |  3 | -0.0216 |  0.0006 |     -0.0571 |
+        |  4 |  0.01   |  0.0117 |     -0.0344 |
+        |  5 | -0.0063 | -0.0302 |      0.0002 |
+        |  6 |  0.0018 |  0.0298 |     -0.022  |
+        |  7 | -0.0451 |  0.0209 |     -0.0076 |
+        |  8 | -0.0281 |  0.0092 |     -0.013  |
+        |  9 |  0.0017 |  0.0675 |      0.0529 |
+        | 10 | -0.0162 | -0.0293 |     -0.0133 |
+        """
+        returns = self._historical_data["daily"]["Return"]
+
+        autocorrelation = returns.apply(
+            lambda column: risk_model.get_autocorrelation(column, lags=lags)
+        )
+
+        return autocorrelation.round(rounding if rounding else self._rounding)
+
+    @handle_errors
+    def get_hurst_exponent(
+        self,
+        max_lag: int = 20,
+        rounding: int | None = None,
+    ):
+        """
+        Calculate the Hurst Exponent of each asset's daily returns, a measure of
+        long-term memory that indicates whether a series is mean-reverting, trending,
+        or a random walk.
+
+        The Hurst Exponent (H) is interpreted as follows:
+
+        - H < 0.5: the series is mean-reverting (anti-persistent).
+        - H = 0.5: the series is a random walk (no memory).
+        - H > 0.5: the series is trending (persistent).
+
+        Args:
+            max_lag (int, optional): The maximum lag to use when estimating the exponent.
+                Defaults to 20.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to 4.
+
+        Returns:
+            pd.Series: The estimated Hurst Exponent for each asset.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AMZN", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.risk.get_hurst_exponent()
+        ```
+
+        Which returns:
+
+        |           |       0 |
+        |:----------|--------:|
+        | AMZN      | -0.0082 |
+        | TSLA      |  0.0099 |
+        | Benchmark | -0.0077 |
+        """
+        returns = self._historical_data["daily"]["Return"]
+
+        hurst_exponent = returns.apply(
+            lambda column: risk_model.get_hurst_exponent(column, max_lag=max_lag)
+        )
+
+        return hurst_exponent.round(rounding if rounding else self._rounding)

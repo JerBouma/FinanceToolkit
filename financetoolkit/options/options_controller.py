@@ -17,6 +17,7 @@ from financetoolkit.options import (
 from financetoolkit.ratios import valuation_model
 from financetoolkit.risk import risk_model
 from financetoolkit.utilities import logger_model
+from financetoolkit.utilities.statistics_model import calculate_standardization
 
 # pylint: disable=too-many-instance-attributes,too-few-public-methods,too-many-lines,too-many-locals,cell-var-from-loop
 # pylint: disable=line-too-long,too-many-public-methods
@@ -231,6 +232,7 @@ class Options:
         dividend_yield: float | None = None,
         show_input_info: bool = False,
         rounding: int | None = None,
+        standardize: bool = False,
     ):
         """
         Calculate the Black Scholes Model, a mathematical model used to estimate the price of European—style options.
@@ -285,6 +287,8 @@ class Options:
             means it will use the dividend yield as obtained through annual historical data.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result across the
+                time to expiration columns for each ticker and strike price. Defaults to False.
 
         Returns:
             pd.DataFrame: Black Scholes values containing the tickers and strike prices as the index and the
@@ -380,6 +384,13 @@ class Options:
             rounding if rounding else self._rounding
         )
 
+        if standardize:
+            black_scholes_df = calculate_standardization(
+                dataset=black_scholes_df,
+                rounding=rounding if rounding else self._rounding,
+                axis="columns",
+            )
+
         if show_input_info:
             helpers.show_input_info(
                 start_date=self._daily_historical.index[0],
@@ -401,6 +412,7 @@ class Options:
         show_expiration_dates: bool = False,
         show_input_info: bool = False,
         rounding: int | None = None,
+        standardize: bool = False,
     ):
         """
         Calculate the Implied Volatility (IV) based on the Black Scholes Model and the actual option prices for
@@ -447,6 +459,8 @@ class Options:
             show_expiration_dates (bool, optional): Whether to show the expiration dates. Defaults to False.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result across the
+                time to expiration columns for each ticker and strike price. Defaults to False.
 
         Returns:
             pd.Series | list[str]: Implied Volatility values containing the tickers as the index and the expiration
@@ -561,6 +575,12 @@ class Options:
             rounding if rounding else self._rounding
         )
 
+        if standardize:
+            implied_volatility_df = calculate_standardization(
+                dataset=implied_volatility_df,
+                rounding=rounding if rounding else self._rounding,
+            )
+
         # The Expiration date is used as the name of the DataFrame
         implied_volatility_df.name = option_chains.name
 
@@ -589,6 +609,7 @@ class Options:
         dividend_yield: float | None = None,
         show_input_info: bool = False,
         rounding: int | None = None,
+        standardize: bool = False,
     ):
         """
         Calculate the Binomial Option Pricing Model, a mathematical model used to estimate the price of European and
@@ -650,6 +671,8 @@ class Options:
             means it will use the dividend yield as obtained through annual historical data.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result across the
+                time to expiration columns for each ticker and strike price. Defaults to False.
 
         Returns:
             pd.DataFrame: Binomial Trees values containing the tickers, strike prices and movements as the index and the
@@ -769,6 +792,13 @@ class Options:
             rounding if rounding else self._rounding
         )
 
+        if standardize:
+            binomial_trees_df = calculate_standardization(
+                dataset=binomial_trees_df,
+                rounding=rounding if rounding else self._rounding,
+                axis="columns",
+            )
+
         if show_input_info:
             helpers.show_input_info(
                 start_date=self._daily_historical.index[0],
@@ -795,6 +825,7 @@ class Options:
         show_unique_combinations: bool = False,
         show_input_info: bool = False,
         rounding: int | None = None,
+        standardize: bool = False,
     ):
         """
         Simulate the Stock Price based on the Binomial Model, a mathematical model used to estimate the price of European
@@ -839,6 +870,8 @@ class Options:
             Defaults to False.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result across the
+                time to expiration columns for each ticker and strike price. Defaults to False.
 
         Returns:
             pd.DataFrame: Simulated Stock Price values containing the tickers and movements as the index and the
@@ -933,6 +966,13 @@ class Options:
             rounding if rounding else self._rounding
         )
 
+        if standardize:
+            stock_price_simulation_df = calculate_standardization(
+                dataset=stock_price_simulation_df,
+                rounding=rounding if rounding else self._rounding,
+                axis="columns",
+            )
+
         if show_input_info:
             helpers.show_input_info(
                 start_date=self._daily_historical.index[0],
@@ -959,6 +999,7 @@ class Options:
         put_option: bool = False,
         show_input_info: bool = False,
         rounding: int | None = None,
+        standardize: bool = False,
     ):
         """
         Calculate all Greeks of an option based on the Black Scholes Model. This will return the following Greeks
@@ -1028,6 +1069,8 @@ class Options:
             it will calculate the call option delta.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result across the
+                time to expiration columns for each ticker and strike price. Defaults to False.
 
         Returns:
             pd.DataFrame: the greeks values containing the tickers and strike prices as the index and the
@@ -1071,6 +1114,7 @@ class Options:
             put_option=put_option,
             show_input_info=False,
             rounding=rounding,
+            standardize=standardize,
         )
 
         second_order_greeks = self.collect_second_order_greeks(
@@ -1083,6 +1127,7 @@ class Options:
             put_option=put_option,
             show_input_info=False,
             rounding=rounding,
+            standardize=standardize,
         )
 
         third_order_greeks = self.collect_third_order_greeks(
@@ -1094,6 +1139,7 @@ class Options:
             dividend_yield=dividend_yield,
             show_input_info=show_input_info,
             rounding=rounding,
+            standardize=standardize,
         )
 
         all_greeks = pd.concat(
@@ -1113,6 +1159,7 @@ class Options:
         put_option: bool = False,
         show_input_info: bool = False,
         rounding: int | None = None,
+        standardize: bool = False,
     ):
         """
         Calculate the first order Greeks of an option based on the Black Scholes Model. This will return the following Greeks
@@ -1156,6 +1203,8 @@ class Options:
             it will calculate the call option delta.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result across the
+                time to expiration columns for each ticker and strike price. Defaults to False.
 
         Returns:
             pd.DataFrame: the first order greek values containing the tickers and strike prices as the index
@@ -1198,6 +1247,7 @@ class Options:
             put_option=put_option,
             show_input_info=False,
             rounding=rounding,
+            standardize=standardize,
         )
 
         greeks["Dual Delta"] = self.get_dual_delta(
@@ -1210,6 +1260,7 @@ class Options:
             put_option=put_option,
             show_input_info=False,
             rounding=rounding,
+            standardize=standardize,
         )
 
         greeks["Vega"] = self.get_vega(
@@ -1221,6 +1272,7 @@ class Options:
             dividend_yield=dividend_yield,
             show_input_info=False,
             rounding=rounding,
+            standardize=standardize,
         )
 
         greeks["Theta"] = self.get_theta(
@@ -1233,6 +1285,7 @@ class Options:
             put_option=put_option,
             show_input_info=False,
             rounding=rounding,
+            standardize=standardize,
         )
 
         greeks["Rho"] = self.get_rho(
@@ -1245,6 +1298,7 @@ class Options:
             put_option=put_option,
             show_input_info=False,
             rounding=rounding,
+            standardize=standardize,
         )
 
         greeks["Epsilon"] = self.get_epsilon(
@@ -1257,6 +1311,7 @@ class Options:
             put_option=put_option,
             show_input_info=show_input_info,
             rounding=rounding,
+            standardize=standardize,
         )
 
         greeks["Lambda"] = self.get_lambda(
@@ -1269,6 +1324,7 @@ class Options:
             put_option=put_option,
             show_input_info=show_input_info,
             rounding=rounding,
+            standardize=standardize,
         )
 
         greeks_df = (
@@ -1290,6 +1346,7 @@ class Options:
         put_option: bool = False,
         show_input_info: bool = False,
         rounding: int | None = None,
+        standardize: bool = False,
     ):
         """
         Calculate the delta of an option based on the Black Scholes Model. The Black Scholes Model
@@ -1337,6 +1394,8 @@ class Options:
             it will calculate the call option delta.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result across the
+                time to expiration columns for each ticker and strike price. Defaults to False.
 
         Returns:
             pd.DataFrame: the delta values containing the tickers and strike prices as the index and the
@@ -1426,6 +1485,13 @@ class Options:
 
         delta_df = delta_df.round(rounding if rounding else self._rounding)
 
+        if standardize:
+            delta_df = calculate_standardization(
+                dataset=delta_df,
+                rounding=rounding if rounding else self._rounding,
+                axis="columns",
+            )
+
         if show_input_info:
             helpers.show_input_info(
                 start_date=self._daily_historical.index[0],
@@ -1449,6 +1515,7 @@ class Options:
         put_option: bool = False,
         show_input_info: bool = False,
         rounding: int | None = None,
+        standardize: bool = False,
     ):
         """
         Calculate the dual delta of an option based on the Black Scholes Model. The Black Scholes Model
@@ -1492,6 +1559,8 @@ class Options:
             it will calculate the call option dual delta.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result across the
+                time to expiration columns for each ticker and strike price. Defaults to False.
 
         Returns:
             pd.DataFrame: the dual delta values containing the tickers and strike prices as the index and the
@@ -1581,6 +1650,13 @@ class Options:
 
         dual_delta_df = dual_delta_df.round(rounding if rounding else self._rounding)
 
+        if standardize:
+            dual_delta_df = calculate_standardization(
+                dataset=dual_delta_df,
+                rounding=rounding if rounding else self._rounding,
+                axis="columns",
+            )
+
         if show_input_info:
             helpers.show_input_info(
                 start_date=self._daily_historical.index[0],
@@ -1603,6 +1679,7 @@ class Options:
         dividend_yield: float | None = None,
         show_input_info: bool = False,
         rounding: int | None = None,
+        standardize: bool = False,
     ):
         """
         Calculate the vega of an option based on the Black Scholes Model. The Black Scholes Model
@@ -1648,6 +1725,8 @@ class Options:
             means it will use the dividend yield as obtained through annual historical data.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result across the
+                time to expiration columns for each ticker and strike price. Defaults to False.
 
         Returns:
             pd.DataFrame: the vega values containing the tickers and strike prices as the index and the
@@ -1736,6 +1815,13 @@ class Options:
 
         vega_df = vega_df.round(rounding if rounding else self._rounding)
 
+        if standardize:
+            vega_df = calculate_standardization(
+                dataset=vega_df,
+                rounding=rounding if rounding else self._rounding,
+                axis="columns",
+            )
+
         if show_input_info:
             helpers.show_input_info(
                 start_date=self._daily_historical.index[0],
@@ -1759,6 +1845,7 @@ class Options:
         put_option: bool = False,
         show_input_info: bool = False,
         rounding: int | None = None,
+        standardize: bool = False,
     ):
         """
         Calculate the theta of an option based on the Black Scholes Model. The Black Scholes Model
@@ -1808,6 +1895,8 @@ class Options:
             it will calculate the call option theta.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result across the
+                time to expiration columns for each ticker and strike price. Defaults to False.
 
         Returns:
             pd.DataFrame: the theta values containing the tickers and strike prices as the index and the
@@ -1897,6 +1986,13 @@ class Options:
 
         theta_df = theta_df.round(rounding if rounding else self._rounding)
 
+        if standardize:
+            theta_df = calculate_standardization(
+                dataset=theta_df,
+                rounding=rounding if rounding else self._rounding,
+                axis="columns",
+            )
+
         if show_input_info:
             helpers.show_input_info(
                 start_date=self._daily_historical.index[0],
@@ -1920,6 +2016,7 @@ class Options:
         put_option: bool = False,
         show_input_info: bool = False,
         rounding: int | None = None,
+        standardize: bool = False,
     ):
         """
         Calculate the rho of an option based on the Black Scholes Model. The Black Scholes Model
@@ -1970,6 +2067,8 @@ class Options:
             it will calculate the call option rho.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result across the
+                time to expiration columns for each ticker and strike price. Defaults to False.
 
         Returns:
             pd.DataFrame: the rho values containing the tickers and strike prices as the index and the
@@ -2059,6 +2158,13 @@ class Options:
 
         rho_df = rho_df.round(rounding if rounding else self._rounding)
 
+        if standardize:
+            rho_df = calculate_standardization(
+                dataset=rho_df,
+                rounding=rounding if rounding else self._rounding,
+                axis="columns",
+            )
+
         if show_input_info:
             helpers.show_input_info(
                 start_date=self._daily_historical.index[0],
@@ -2082,6 +2188,7 @@ class Options:
         put_option: bool = False,
         show_input_info: bool = False,
         rounding: int | None = None,
+        standardize: bool = False,
     ):
         """
         Calculate the epsilon of an option based on the Black Scholes Model. The Black Scholes Model
@@ -2128,6 +2235,8 @@ class Options:
             it will calculate the call option epsilon.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result across the
+                time to expiration columns for each ticker and strike price. Defaults to False.
 
         Returns:
             pd.DataFrame: the epsilon values containing the tickers and strike prices as the index and the
@@ -2217,6 +2326,13 @@ class Options:
 
         epsilon_df = epsilon_df.round(rounding if rounding else self._rounding)
 
+        if standardize:
+            epsilon_df = calculate_standardization(
+                dataset=epsilon_df,
+                rounding=rounding if rounding else self._rounding,
+                axis="columns",
+            )
+
         if show_input_info:
             helpers.show_input_info(
                 start_date=self._daily_historical.index[0],
@@ -2240,6 +2356,7 @@ class Options:
         put_option: bool = False,
         show_input_info: bool = False,
         rounding: int | None = None,
+        standardize: bool = False,
     ):
         """
         Calculate the lambda of an option based on the Black Scholes Model. The Black Scholes Model
@@ -2288,6 +2405,8 @@ class Options:
             it will calculate the call option lambda.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result across the
+                time to expiration columns for each ticker and strike price. Defaults to False.
 
         Returns:
             pd.DataFrame: the lambda values containing the tickers and strike prices as the index and the
@@ -2377,6 +2496,13 @@ class Options:
 
         lambda_df = lambda_df.round(rounding if rounding else self._rounding)
 
+        if standardize:
+            lambda_df = calculate_standardization(
+                dataset=lambda_df,
+                rounding=rounding if rounding else self._rounding,
+                axis="columns",
+            )
+
         if show_input_info:
             helpers.show_input_info(
                 start_date=self._daily_historical.index[0],
@@ -2400,6 +2526,7 @@ class Options:
         put_option: bool = False,
         show_input_info: bool = False,
         rounding: int | None = None,
+        standardize: bool = False,
     ):
         """
         Calculate the second order Greeks of an option based on the Black Scholes Model. This will return the following Greeks
@@ -2443,6 +2570,8 @@ class Options:
             it will calculate the call option delta.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result across the
+                time to expiration columns for each ticker and strike price. Defaults to False.
 
         Returns:
             pd.DataFrame: the second order greeks values containing the tickers and strike prices as the index and the
@@ -2484,6 +2613,7 @@ class Options:
             dividend_yield=dividend_yield,
             show_input_info=False,
             rounding=rounding,
+            standardize=standardize,
         )
 
         greeks["Dual Gamma"] = self.get_dual_gamma(
@@ -2495,6 +2625,7 @@ class Options:
             dividend_yield=dividend_yield,
             show_input_info=False,
             rounding=rounding,
+            standardize=standardize,
         )
 
         greeks["Vanna"] = self.get_vanna(
@@ -2506,6 +2637,7 @@ class Options:
             dividend_yield=dividend_yield,
             show_input_info=False,
             rounding=rounding,
+            standardize=standardize,
         )
 
         greeks["Charm"] = self.get_charm(
@@ -2518,6 +2650,7 @@ class Options:
             put_option=put_option,
             show_input_info=False,
             rounding=rounding,
+            standardize=standardize,
         )
 
         greeks["Vomma"] = self.get_vomma(
@@ -2529,6 +2662,7 @@ class Options:
             dividend_yield=dividend_yield,
             show_input_info=False,
             rounding=rounding,
+            standardize=standardize,
         )
 
         greeks["Vera"] = self.get_vera(
@@ -2540,6 +2674,7 @@ class Options:
             dividend_yield=dividend_yield,
             show_input_info=show_input_info,
             rounding=rounding,
+            standardize=standardize,
         )
 
         greeks["Veta"] = self.get_veta(
@@ -2551,6 +2686,7 @@ class Options:
             dividend_yield=dividend_yield,
             show_input_info=show_input_info,
             rounding=rounding,
+            standardize=standardize,
         )
 
         greeks["PD"] = self.get_partial_derivative(
@@ -2562,6 +2698,7 @@ class Options:
             dividend_yield=dividend_yield,
             show_input_info=show_input_info,
             rounding=rounding,
+            standardize=standardize,
         )
 
         greeks_df = (
@@ -2582,6 +2719,7 @@ class Options:
         dividend_yield: float | None = None,
         show_input_info: bool = False,
         rounding: int | None = None,
+        standardize: bool = False,
     ):
         """
         Calculate the gamma of an option based on the Black Scholes Model. The Black Scholes Model
@@ -2625,6 +2763,8 @@ class Options:
             means it will use the current risk free rate.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result across the
+                time to expiration columns for each ticker and strike price. Defaults to False.
 
         Returns:
             pd.DataFrame: the gamma values containing the tickers and strike prices as the index and the
@@ -2713,6 +2853,13 @@ class Options:
 
         gamma_df = gamma_df.round(rounding if rounding else self._rounding)
 
+        if standardize:
+            gamma_df = calculate_standardization(
+                dataset=gamma_df,
+                rounding=rounding if rounding else self._rounding,
+                axis="columns",
+            )
+
         if show_input_info:
             helpers.show_input_info(
                 start_date=self._daily_historical.index[0],
@@ -2735,6 +2882,7 @@ class Options:
         dividend_yield: float | None = None,
         show_input_info: bool = False,
         rounding: int | None = None,
+        standardize: bool = False,
     ):
         """
         Calculate the gamma of an option based on the Black Scholes Model. The Black Scholes Model
@@ -2774,6 +2922,8 @@ class Options:
             means it will use the current dividend yield.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result across the
+                time to expiration columns for each ticker and strike price. Defaults to False.
 
         Returns:
             pd.DataFrame: the dual gamma values containing the tickers and strike prices as the index and the
@@ -2862,6 +3012,13 @@ class Options:
 
         dual_gamma_df = dual_gamma_df.round(rounding if rounding else self._rounding)
 
+        if standardize:
+            dual_gamma_df = calculate_standardization(
+                dataset=dual_gamma_df,
+                rounding=rounding if rounding else self._rounding,
+                axis="columns",
+            )
+
         if show_input_info:
             helpers.show_input_info(
                 start_date=self._daily_historical.index[0],
@@ -2884,6 +3041,7 @@ class Options:
         dividend_yield: float | None = None,
         show_input_info: bool = False,
         rounding: int | None = None,
+        standardize: bool = False,
     ):
         """
         Calculate the vanna of an option based on the Black Scholes Model. The Black Scholes Model
@@ -2930,6 +3088,8 @@ class Options:
             means it will use the current dividend yield.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result across the
+                time to expiration columns for each ticker and strike price. Defaults to False.
 
         Returns:
             pd.DataFrame: the vanna values containing the tickers and strike prices as the index and the
@@ -3018,6 +3178,13 @@ class Options:
 
         vanna_df = vanna_df.round(rounding if rounding else self._rounding)
 
+        if standardize:
+            vanna_df = calculate_standardization(
+                dataset=vanna_df,
+                rounding=rounding if rounding else self._rounding,
+                axis="columns",
+            )
+
         if show_input_info:
             helpers.show_input_info(
                 start_date=self._daily_historical.index[0],
@@ -3041,6 +3208,7 @@ class Options:
         put_option: bool = False,
         show_input_info: bool = False,
         rounding: int | None = None,
+        standardize: bool = False,
     ):
         """
         Calculate the charm of an option based on the Black Scholes Model. The Black Scholes Model
@@ -3088,6 +3256,8 @@ class Options:
             it will calculate the call option charm.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result across the
+                time to expiration columns for each ticker and strike price. Defaults to False.
 
         Returns:
             pd.DataFrame: the charm values containing the tickers and strike prices as the index and the
@@ -3177,6 +3347,13 @@ class Options:
 
         charm_df = charm_df.round(rounding if rounding else self._rounding)
 
+        if standardize:
+            charm_df = calculate_standardization(
+                dataset=charm_df,
+                rounding=rounding if rounding else self._rounding,
+                axis="columns",
+            )
+
         if show_input_info:
             helpers.show_input_info(
                 start_date=self._daily_historical.index[0],
@@ -3199,6 +3376,7 @@ class Options:
         dividend_yield: float | None = None,
         show_input_info: bool = False,
         rounding: int | None = None,
+        standardize: bool = False,
     ):
         """
         Calculate the vomma of an option based on the Black Scholes Model. The Black Scholes Model
@@ -3244,6 +3422,8 @@ class Options:
             means it will use the current dividend yield.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result across the
+                time to expiration columns for each ticker and strike price. Defaults to False.
 
         Returns:
             pd.DataFrame: the vomma values containing the tickers and strike prices as the index and the
@@ -3332,6 +3512,13 @@ class Options:
 
         vomma_df = vomma_df.round(rounding if rounding else self._rounding)
 
+        if standardize:
+            vomma_df = calculate_standardization(
+                dataset=vomma_df,
+                rounding=rounding if rounding else self._rounding,
+                axis="columns",
+            )
+
         if show_input_info:
             helpers.show_input_info(
                 start_date=self._daily_historical.index[0],
@@ -3354,6 +3541,7 @@ class Options:
         dividend_yield: float | None = None,
         show_input_info: bool = False,
         rounding: int | None = None,
+        standardize: bool = False,
     ):
         """
         Calculate the vera of an option based on the Black Scholes Model. The Black Scholes Model
@@ -3400,6 +3588,8 @@ class Options:
             means it will use the current dividend yield.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result across the
+                time to expiration columns for each ticker and strike price. Defaults to False.
 
         Returns:
             pd.DataFrame: the vera values containing the tickers and strike prices as the index and the
@@ -3488,6 +3678,13 @@ class Options:
 
         vera_df = vera_df.round(rounding if rounding else self._rounding)
 
+        if standardize:
+            vera_df = calculate_standardization(
+                dataset=vera_df,
+                rounding=rounding if rounding else self._rounding,
+                axis="columns",
+            )
+
         if show_input_info:
             helpers.show_input_info(
                 start_date=self._daily_historical.index[0],
@@ -3510,6 +3707,7 @@ class Options:
         dividend_yield: float | None = None,
         show_input_info: bool = False,
         rounding: int | None = None,
+        standardize: bool = False,
     ):
         """
         Calculate the veta of an option based on the Black Scholes Model. The Black Scholes Model
@@ -3557,6 +3755,8 @@ class Options:
             means it will use the current dividend yield.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result across the
+                time to expiration columns for each ticker and strike price. Defaults to False.
 
         Returns:
             pd.DataFrame: the veta values containing the tickers and strike prices as the index and the
@@ -3645,6 +3845,13 @@ class Options:
 
         veta_df = veta_df.round(rounding if rounding else self._rounding)
 
+        if standardize:
+            veta_df = calculate_standardization(
+                dataset=veta_df,
+                rounding=rounding if rounding else self._rounding,
+                axis="columns",
+            )
+
         if show_input_info:
             helpers.show_input_info(
                 start_date=self._daily_historical.index[0],
@@ -3667,6 +3874,7 @@ class Options:
         dividend_yield: float | None = None,
         show_input_info: bool = False,
         rounding: int | None = None,
+        standardize: bool = False,
     ):
         """
         Calculate the partial derivative of an option based on the Black Scholes Model. The Black Scholes Model
@@ -3705,6 +3913,8 @@ class Options:
             means it will use the current dividend yield.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result across the
+                time to expiration columns for each ticker and strike price. Defaults to False.
 
         Returns:
             pd.DataFrame: the partial derivative values containing the tickers and strike prices as the index and the
@@ -3795,6 +4005,13 @@ class Options:
             rounding if rounding else self._rounding
         )
 
+        if standardize:
+            partial_derivative_df = calculate_standardization(
+                dataset=partial_derivative_df,
+                rounding=rounding if rounding else self._rounding,
+                axis="columns",
+            )
+
         if show_input_info:
             helpers.show_input_info(
                 start_date=self._daily_historical.index[0],
@@ -3817,6 +4034,7 @@ class Options:
         dividend_yield: float | None = None,
         show_input_info: bool = False,
         rounding: int | None = None,
+        standardize: bool = False,
     ):
         """
         Calculate the third order Greeks of an option based on the Black Scholes Model. This will return the following Greeks
@@ -3850,6 +4068,8 @@ class Options:
             means it will use the current dividend yield.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result across the
+                time to expiration columns for each ticker and strike price. Defaults to False.
 
         Returns:
             pd.DataFrame: the third order greeks values containing the tickers and strike prices as the index and the
@@ -3891,6 +4111,7 @@ class Options:
             dividend_yield=dividend_yield,
             show_input_info=False,
             rounding=rounding,
+            standardize=standardize,
         )
 
         greeks["Zomma"] = self.get_zomma(
@@ -3902,6 +4123,7 @@ class Options:
             dividend_yield=dividend_yield,
             show_input_info=False,
             rounding=rounding,
+            standardize=standardize,
         )
 
         greeks["Color"] = self.get_color(
@@ -3913,6 +4135,7 @@ class Options:
             dividend_yield=dividend_yield,
             show_input_info=False,
             rounding=rounding,
+            standardize=standardize,
         )
 
         greeks["Ultima"] = self.get_ultima(
@@ -3924,6 +4147,7 @@ class Options:
             dividend_yield=dividend_yield,
             show_input_info=show_input_info,
             rounding=rounding,
+            standardize=standardize,
         )
 
         greeks_df = (
@@ -3944,6 +4168,7 @@ class Options:
         dividend_yield: float | None = None,
         show_input_info: bool = False,
         rounding: int | None = None,
+        standardize: bool = False,
     ):
         """
         Calculate the speed of an option based on the Black Scholes Model. The Black Scholes Model
@@ -3989,6 +4214,8 @@ class Options:
             means it will use the current dividend yield.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result across the
+                time to expiration columns for each ticker and strike price. Defaults to False.
 
         Returns:
             pd.DataFrame: the speed values containing the tickers and strike prices as the index and the
@@ -4077,6 +4304,13 @@ class Options:
 
         speed_df = speed_df.round(rounding if rounding else self._rounding)
 
+        if standardize:
+            speed_df = calculate_standardization(
+                dataset=speed_df,
+                rounding=rounding if rounding else self._rounding,
+                axis="columns",
+            )
+
         if show_input_info:
             helpers.show_input_info(
                 start_date=self._daily_historical.index[0],
@@ -4099,6 +4333,7 @@ class Options:
         dividend_yield: float | None = None,
         show_input_info: bool = False,
         rounding: int | None = None,
+        standardize: bool = False,
     ):
         """
         Calculate the zomma of an option based on the Black Scholes Model. The Black Scholes Model
@@ -4145,6 +4380,8 @@ class Options:
             means it will use the current dividend yield.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result across the
+                time to expiration columns for each ticker and strike price. Defaults to False.
 
         Returns:
             pd.DataFrame: the zomma values containing the tickers and strike prices as the index and the
@@ -4233,6 +4470,13 @@ class Options:
 
         zomma_df = zomma_df.round(rounding if rounding else self._rounding)
 
+        if standardize:
+            zomma_df = calculate_standardization(
+                dataset=zomma_df,
+                rounding=rounding if rounding else self._rounding,
+                axis="columns",
+            )
+
         if show_input_info:
             helpers.show_input_info(
                 start_date=self._daily_historical.index[0],
@@ -4255,6 +4499,7 @@ class Options:
         dividend_yield: float | None = None,
         show_input_info: bool = False,
         rounding: int | None = None,
+        standardize: bool = False,
     ):
         """
         Calculate the color of an option based on the Black Scholes Model. The Black Scholes Model
@@ -4301,6 +4546,8 @@ class Options:
             means it will use the current dividend yield.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result across the
+                time to expiration columns for each ticker and strike price. Defaults to False.
 
         Returns:
             pd.DataFrame: the color values containing the tickers and strike prices as the index and the
@@ -4389,6 +4636,13 @@ class Options:
 
         color_df = color_df.round(rounding if rounding else self._rounding)
 
+        if standardize:
+            color_df = calculate_standardization(
+                dataset=color_df,
+                rounding=rounding if rounding else self._rounding,
+                axis="columns",
+            )
+
         if show_input_info:
             helpers.show_input_info(
                 start_date=self._daily_historical.index[0],
@@ -4411,6 +4665,7 @@ class Options:
         dividend_yield: float | None = None,
         show_input_info: bool = False,
         rounding: int | None = None,
+        standardize: bool = False,
     ):
         """
         Calculate the ultima of an option based on the Black Scholes Model. The Black Scholes Model
@@ -4457,6 +4712,8 @@ class Options:
             means it will use the current dividend yield.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result across the
+                time to expiration columns for each ticker and strike price. Defaults to False.
 
         Returns:
             pd.DataFrame: the ultima values containing the tickers and strike prices as the index and the
@@ -4544,6 +4801,13 @@ class Options:
         )
 
         ultima_df = ultima_df.round(rounding if rounding else self._rounding)
+
+        if standardize:
+            ultima_df = calculate_standardization(
+                dataset=ultima_df,
+                rounding=rounding if rounding else self._rounding,
+                axis="columns",
+            )
 
         if show_input_info:
             helpers.show_input_info(

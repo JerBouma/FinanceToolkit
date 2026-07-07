@@ -6,7 +6,7 @@ import io
 
 import pandas as pd
 
-from financetoolkit.helpers import get_request
+from financetoolkit.utilities.requests_model import get_request
 
 BASE_URL = "https://markets.newyorkfed.org/read"
 EXTENSIONS_1 = "?startDt=2000-12-01&eventCodes="

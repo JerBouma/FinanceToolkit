@@ -11,7 +11,7 @@ from datetime import datetime, timedelta
 
 import pandas as pd
 
-from financetoolkit import currencies_model, helpers
+from financetoolkit import currencies_model
 from financetoolkit.economics.economics_controller import Economics
 from financetoolkit.fixedincome.fixedincome_controller import FixedIncome
 from financetoolkit.fmp_model import (
@@ -42,6 +42,9 @@ from financetoolkit.ratios.ratios_controller import Ratios
 from financetoolkit.risk.risk_controller import Risk
 from financetoolkit.technicals.technicals_controller import Technicals
 from financetoolkit.utilities import cache_model, logger_model
+from financetoolkit.utilities.dataframe_model import filter_columns
+from financetoolkit.utilities.requests_model import convert_isin_to_ticker
+from financetoolkit.utilities.statistics_model import calculate_growth
 
 # Set up logger, this is meant to display useful messages, warnings or errors when
 # the Finance Toolkit runs into issues or does something that might not be entirely
@@ -353,7 +356,7 @@ class Toolkit:
 
         for ticker in tickers:
             # Check whether the ticker is in ISIN format and if say so convert it to a ticker
-            self._tickers.append(helpers.convert_isin_to_ticker(ticker))
+            self._tickers.append(convert_isin_to_ticker(ticker))
 
         # Take out duplicate tickers if applicable
         deduplicated_tickers = list(set(self._tickers))
@@ -1635,7 +1638,7 @@ class Toolkit:
             ]
 
         if growth:
-            self._analyst_estimates_growth = helpers.calculate_growth(
+            self._analyst_estimates_growth = calculate_growth(
                 self._analyst_estimates,
                 lag=lag,
                 rounding=rounding if rounding else self._rounding,
@@ -1647,10 +1650,10 @@ class Toolkit:
                 if growth
                 else self._analyst_estimates.loc[self._tickers[0]]
             )
-            return helpers.filter_columns(result, show_columns)
+            return filter_columns(result, show_columns)
 
         result = self._analyst_estimates_growth if growth else self._analyst_estimates
-        return helpers.filter_columns(result, show_columns)
+        return filter_columns(result, show_columns)
 
     def get_earnings_calendar(
         self,
@@ -1747,11 +1750,9 @@ class Toolkit:
             ]
 
         if len(self._tickers) == 1 and not self._earnings_calendar.empty:
-            return helpers.filter_columns(
-                earnings_calendar.loc[self._tickers[0]], show_columns
-            )
+            return filter_columns(earnings_calendar.loc[self._tickers[0]], show_columns)
 
-        return helpers.filter_columns(earnings_calendar, show_columns)
+        return filter_columns(earnings_calendar, show_columns)
 
     def get_revenue_geographic_segmentation(
         self,
@@ -1835,14 +1836,12 @@ class Toolkit:
             ]
 
         if len(self._tickers) == 1 and not self._revenue_geographic_segmentation.empty:
-            return helpers.filter_columns(
+            return filter_columns(
                 self._revenue_geographic_segmentation.loc[self._tickers[0]],
                 show_columns,
             )
 
-        return helpers.filter_columns(
-            self._revenue_geographic_segmentation, show_columns
-        )
+        return filter_columns(self._revenue_geographic_segmentation, show_columns)
 
     def get_revenue_product_segmentation(
         self,
@@ -1930,11 +1929,11 @@ class Toolkit:
             ]
 
         if len(self._tickers) == 1 and not self._revenue_product_segmentation.empty:
-            return helpers.filter_columns(
+            return filter_columns(
                 self._revenue_product_segmentation.loc[self._tickers[0]], show_columns
             )
 
-        return helpers.filter_columns(self._revenue_product_segmentation, show_columns)
+        return filter_columns(self._revenue_product_segmentation, show_columns)
 
     def get_historical_data(
         self,
@@ -2351,7 +2350,7 @@ class Toolkit:
         historical_data.loc[historical_data.index[0], "Return"] = 0
 
         if show_columns is not None:
-            historical_data = helpers.filter_columns(historical_data, show_columns)
+            historical_data = filter_columns(historical_data, show_columns)
 
         if len(self._tickers) == 1 and not self._benchmark_ticker:
             return historical_data.xs(self._tickers[0], level=1, axis="columns")
@@ -2458,9 +2457,7 @@ class Toolkit:
             ]
 
         if len(self._tickers) == 1 and not self._dividend_calendar.empty:
-            return helpers.filter_columns(
-                dividend_calendar.loc[self._tickers[0]], show_columns
-            )
+            return filter_columns(dividend_calendar.loc[self._tickers[0]], show_columns)
 
         if dividend_calendar.empty and self._fmp_plan == "Free":
             logger.warning(
@@ -2468,7 +2465,7 @@ class Toolkit:
                 "https://www.jeroenbouma.com/fmp"
             )
 
-        return helpers.filter_columns(dividend_calendar, show_columns)
+        return filter_columns(dividend_calendar, show_columns)
 
     def get_esg_scores(
         self,
@@ -2573,7 +2570,7 @@ class Toolkit:
             ]
 
         if show_columns is not None:
-            esg_scores = helpers.filter_columns(esg_scores, show_columns)
+            esg_scores = filter_columns(esg_scores, show_columns)
 
         if len(self._tickers) == 1 and not self._esg_scores.empty:
             return esg_scores.xs(self._tickers[0], axis=1, level=1)
@@ -3281,7 +3278,7 @@ class Toolkit:
         balance_sheet_statement = self._balance_sheet_statement
 
         if growth:
-            self._balance_sheet_statement_growth = helpers.calculate_growth(
+            self._balance_sheet_statement_growth = calculate_growth(
                 balance_sheet_statement,
                 lag=lag,
                 rounding=rounding if rounding else self._rounding,
@@ -3302,12 +3299,12 @@ class Toolkit:
                 if growth
                 else balance_sheet_statement.loc[self._tickers[0]]
             )
-            return helpers.filter_columns(result, show_columns)
+            return filter_columns(result, show_columns)
 
         result = (
             self._balance_sheet_statement_growth if growth else balance_sheet_statement
         )
-        return helpers.filter_columns(result, show_columns)
+        return filter_columns(result, show_columns)
 
     def get_income_statement(
         self,
@@ -3504,7 +3501,7 @@ class Toolkit:
             )
 
         if growth:
-            self._income_statement_growth = helpers.calculate_growth(
+            self._income_statement_growth = calculate_growth(
                 income_statement,
                 lag=lag,
                 rounding=rounding if rounding else self._rounding,
@@ -3523,10 +3520,10 @@ class Toolkit:
                 if growth
                 else income_statement.loc[self._tickers[0]]
             )
-            return helpers.filter_columns(result, show_columns)
+            return filter_columns(result, show_columns)
 
         result = self._income_statement_growth if growth else income_statement
-        return helpers.filter_columns(result, show_columns)
+        return filter_columns(result, show_columns)
 
     def get_cash_flow_statement(
         self,
@@ -3701,7 +3698,7 @@ class Toolkit:
             cash_flow_statement = self._cash_flow_statement.T.rolling(trailing).sum().T
 
         if growth:
-            self._cash_flow_statement_growth = helpers.calculate_growth(
+            self._cash_flow_statement_growth = calculate_growth(
                 cash_flow_statement,
                 lag=lag,
                 rounding=rounding if rounding else self._rounding,
@@ -3722,10 +3719,10 @@ class Toolkit:
                 if growth
                 else cash_flow_statement.loc[self._tickers[0]]
             )
-            return helpers.filter_columns(result, show_columns)
+            return filter_columns(result, show_columns)
 
         result = self._cash_flow_statement_growth if growth else cash_flow_statement
-        return helpers.filter_columns(result, show_columns)
+        return filter_columns(result, show_columns)
 
     def get_statistics_statement(
         self,
@@ -3838,11 +3835,11 @@ class Toolkit:
             ]
 
         if len(self._tickers) == 1 and not self._statistics_statement.empty:
-            return helpers.filter_columns(
+            return filter_columns(
                 self._statistics_statement.loc[self._tickers[0]], show_columns
             )
 
-        return helpers.filter_columns(self._statistics_statement, show_columns)
+        return filter_columns(self._statistics_statement, show_columns)
 
     def get_normalization_files(self, path: str = ""):
         """

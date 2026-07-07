@@ -3,7 +3,10 @@
 import numpy as np
 import pandas as pd
 
-from financetoolkit.helpers import PERIOD_TRANSLATION, VOLATILITY_WINDOW_TRANSLATION
+from financetoolkit.utilities.statistics_model import (
+    PERIOD_TRANSLATION,
+    VOLATILITY_WINDOW_TRANSLATION,
+)
 
 ALPHA_CONSTRAINT = 0.5
 
@@ -716,3 +719,179 @@ def get_rolling_excess_volatility(
     excess_returns = returns.sub(risk_free_rate, axis=0)
 
     return get_rolling_volatility(excess_returns, period, window_size)
+
+
+def get_mean_absolute_deviation(
+    returns: pd.Series | pd.DataFrame, period: str
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculates the Mean Absolute Deviation (MAD) of returns for a given period (weekly,
+    monthly, quarterly or yearly) based on daily historical returns.
+
+    MAD measures the average absolute distance of each return from the mean return. Unlike
+    Variance and Volatility, it does not square the deviations, making it less sensitive to
+    outliers.
+
+    Args:
+        returns (pd.Series | pd.DataFrame): A Series or Dataframe of daily returns.
+        period (str): The period to calculate the MAD for. Can be weekly,
+        monthly, quarterly or yearly.
+
+    Returns:
+        pd.Series | pd.DataFrame: MAD values with time as the index, resampled
+        to the given period.
+    """
+    if period not in PERIOD_TRANSLATION:
+        raise ValueError(
+            f"Period {period} is not valid. It should be either "
+            "weekly, monthly, quarterly or yearly."
+        )
+
+    if not isinstance(returns, pd.Series | pd.DataFrame):
+        raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
+
+    period_str = PERIOD_TRANSLATION[period]
+    dates = returns.index.asfreq(period_str)
+
+    return returns.groupby(dates).apply(lambda x: (x - x.mean()).abs().mean())
+
+
+def get_coefficient_of_variation(
+    returns: pd.Series | pd.DataFrame, period: str
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculates the Coefficient of Variation (CV) of returns for a given period (weekly,
+    monthly, quarterly or yearly) based on daily historical returns.
+
+    The Coefficient of Variation is the ratio of the standard deviation to the mean of
+    returns, which normalizes dispersion relative to the average return. This makes it
+    useful for comparing the relative volatility of assets with different average returns,
+    which a raw standard deviation cannot do.
+
+    Also known as: relative standard deviation.
+
+    Args:
+        returns (pd.Series | pd.DataFrame): A Series or Dataframe of daily returns.
+        period (str): The period to calculate the CV for. Can be weekly,
+        monthly, quarterly or yearly.
+
+    Returns:
+        pd.Series | pd.DataFrame: Coefficient of Variation values with time as the index,
+        resampled to the given period.
+    """
+    if period not in PERIOD_TRANSLATION:
+        raise ValueError(
+            f"Period {period} is not valid. It should be either "
+            "weekly, monthly, quarterly or yearly."
+        )
+
+    if not isinstance(returns, pd.Series | pd.DataFrame):
+        raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
+
+    period_str = PERIOD_TRANSLATION[period]
+    dates = returns.index.asfreq(period_str)
+
+    grouped = returns.groupby(dates)
+
+    return grouped.std() / grouped.mean()
+
+
+def get_ewma_volatility(
+    returns: pd.Series | pd.DataFrame, lambda_: float = 0.94
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculates the exponentially weighted moving average (EWMA) Volatility of daily
+    returns, following the RiskMetrics methodology.
+
+    Unlike a fixed-window rolling Volatility, EWMA Volatility weights recent observations
+    more heavily than older ones, so it reacts faster to changes in the underlying
+    volatility regime. It is a simpler, more interpretable alternative to a full GARCH fit.
+
+    The formula is as follows:
+
+    - EWMA Variance(t) = lambda * EWMA Variance(t-1) + (1 - lambda) * Return(t-1) ** 2
+
+    Also known as: RiskMetrics volatility, exponentially weighted volatility.
+
+    Args:
+        returns (pd.Series | pd.DataFrame): A Series or Dataframe of daily returns.
+        lambda_ (float, optional): The decay factor. Higher values weight the past more
+        heavily (slower to react), lower values weight recent returns more heavily
+        (faster to react). RiskMetrics uses 0.94 for daily data. Defaults to 0.94.
+
+    Returns:
+        pd.Series | pd.DataFrame: Daily EWMA Volatility values with time as the index.
+    """
+    if not isinstance(returns, pd.Series | pd.DataFrame):
+        raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
+
+    return returns.ewm(alpha=1 - lambda_).std()
+
+
+def get_autocorrelation(data: pd.Series, lags: int = 10) -> pd.Series:
+    """
+    Calculate the Autocorrelation Function (ACF) of a series for a range of lags.
+
+    The ACF measures the correlation between a series and a lagged version of itself.
+    It is a natural sibling to the AR/MA model-fitting utilities in this module, since
+    the ACF is typically the first diagnostic used to decide how many AR or MA terms
+    a series needs.
+
+    Args:
+        data (pd.Series): A Series of values (e.g. returns or prices) to calculate the
+        ACF for.
+        lags (int, optional): The number of lags to calculate the ACF for. Defaults to 10.
+
+    Returns:
+        pd.Series: The ACF value for each lag from 1 up to and including `lags`, indexed
+        by lag number.
+    """
+    if not isinstance(data, pd.Series):
+        raise TypeError("Expects pd.Series, no other value.")
+
+    values = data.dropna().to_numpy()
+    mean = values.mean()
+    variance = np.sum((values - mean) ** 2)
+
+    acf_values = {}
+    for lag in range(1, lags + 1):
+        covariance = np.sum((values[:-lag] - mean) * (values[lag:] - mean))
+        acf_values[lag] = covariance / variance
+
+    return pd.Series(acf_values, name="Autocorrelation")
+
+
+def get_hurst_exponent(data: pd.Series, max_lag: int = 20) -> float:
+    """
+    Calculate the Hurst Exponent of a series, a measure of long-term memory that
+    indicates whether a series is mean-reverting, trending, or a random walk.
+
+    The Hurst Exponent (H) is interpreted as follows:
+
+    - H < 0.5: the series is mean-reverting (anti-persistent).
+    - H = 0.5: the series is a random walk (no memory).
+    - H > 0.5: the series is trending (persistent).
+
+    It is estimated here via the rescaled range (R/S) method, regressing the log of
+    the rescaled range against the log of the lag.
+
+    Args:
+        data (pd.Series): A Series of values (e.g. prices) to calculate the Hurst
+        Exponent for.
+        max_lag (int, optional): The maximum lag to use when estimating the exponent.
+        Defaults to 20.
+
+    Returns:
+        float: The estimated Hurst Exponent.
+    """
+    if not isinstance(data, pd.Series):
+        raise TypeError("Expects pd.Series, no other value.")
+
+    values = data.dropna().to_numpy()
+    lags = range(2, max_lag)
+
+    tau = [np.std(np.subtract(values[lag:], values[:-lag])) for lag in lags]
+
+    poly = np.polyfit(np.log(list(lags)), np.log(tau), 1)
+
+    return poly[0] * 2.0

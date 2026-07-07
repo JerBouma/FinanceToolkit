@@ -5,7 +5,7 @@ __docformat__ = "google"
 
 import pandas as pd
 
-from financetoolkit.helpers import calculate_growth, handle_portfolio
+from financetoolkit.helpers import handle_portfolio
 from financetoolkit.technicals import (
     breadth_model,
     momentum_model,
@@ -13,6 +13,11 @@ from financetoolkit.technicals import (
     volatility_model,
 )
 from financetoolkit.technicals.helpers import handle_errors
+from financetoolkit.utilities.statistics_model import (
+    calculate_growth,
+    calculate_standardization,
+    finalize_dataset,
+)
 
 # pylint: disable=too-many-lines,too-many-instance-attributes,too-many-public-methods,too-many-locals,eval-used
 # pylint: disable=too-many-boolean-expressions
@@ -91,6 +96,7 @@ class Technicals:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
     ) -> pd.Series | pd.DataFrame:
         """
         Calculates all Technical Indicators based on the data provided.
@@ -102,6 +108,9 @@ class Technicals:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
 
         Returns:
             pd.Series or pd.DataFrame: Technical indicators calculated based on the specified parameters.
@@ -176,11 +185,26 @@ class Technicals:
 
         if growth:
             self._all_indicators_growth = calculate_growth(
-                self._all_indicators,
+                dataset=self._all_indicators,
                 lag=lag,
                 rounding=rounding if rounding else self._rounding,
                 axis="index",
             )
+
+        if standardize:
+            standardize_rounding = rounding if rounding else self._rounding
+            if growth:
+                self._all_indicators_growth = calculate_standardization(
+                    dataset=self._all_indicators_growth,
+                    rounding=standardize_rounding,
+                    axis="rows",
+                )
+            else:
+                self._all_indicators = calculate_standardization(
+                    dataset=self._all_indicators,
+                    rounding=standardize_rounding,
+                    axis="rows",
+                )
 
         return self._all_indicators_growth if growth else self._all_indicators
 
@@ -191,6 +215,7 @@ class Technicals:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
     ) -> pd.Series | pd.DataFrame:
         """
         Calculates and collects various breadth indicators based on the provided data.
@@ -205,6 +230,9 @@ class Technicals:
             growth (bool, optional): Whether to calculate the growth of the indicator values.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
                 Defaults to 1.
 
         Returns:
@@ -287,11 +315,26 @@ class Technicals:
 
         if growth:
             self._breadth_indicators_growth = calculate_growth(
-                self._breadth_indicators,
+                dataset=self._breadth_indicators,
                 lag=lag,
                 rounding=rounding if rounding else self._rounding,
                 axis="index",
             )
+
+        if standardize:
+            standardize_rounding = rounding if rounding else self._rounding
+            if growth:
+                self._breadth_indicators_growth = calculate_standardization(
+                    dataset=self._breadth_indicators_growth,
+                    rounding=standardize_rounding,
+                    axis="rows",
+                )
+            else:
+                self._breadth_indicators = calculate_standardization(
+                    dataset=self._breadth_indicators,
+                    rounding=standardize_rounding,
+                    axis="rows",
+                )
 
         if len(self._tickers) == 1:
             return (
@@ -317,6 +360,7 @@ class Technicals:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
     ) -> pd.Series | pd.DataFrame:
         """
         Calculate the McClellan Oscillator for a given price series.
@@ -345,6 +389,9 @@ class Technicals:
             growth (bool, optional): Whether to calculate the growth of the indicator values.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
                 Defaults to 1.
 
         Returns:
@@ -409,15 +456,18 @@ class Technicals:
                 historical_data[close_column][ticker], short_ema_window, long_ema_window
             ).loc[self._start_date : self._end_date]
 
-        if growth:
-            return calculate_growth(
-                mcclellan_oscillator,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-                axis="index",
-            )
-
-        return mcclellan_oscillator.round(rounding if rounding else self._rounding)
+        return finalize_dataset(
+            dataset=mcclellan_oscillator,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            apply_slice=False,
+        )
 
     @handle_portfolio
     @handle_errors
@@ -428,6 +478,7 @@ class Technicals:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
     ) -> pd.Series | pd.DataFrame:
         """
         Calculate the Advancers/Decliners ratio for a given price series.
@@ -452,6 +503,9 @@ class Technicals:
             growth (bool, optional): Whether to calculate the growth of the indicator values.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
                 Defaults to 1.
 
         Returns:
@@ -512,15 +566,18 @@ class Technicals:
             historical_data[close_column],
         ).loc[self._start_date : self._end_date]
 
-        if growth:
-            return calculate_growth(
-                advancers_decliners,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-                axis="index",
-            )
-
-        return advancers_decliners.round(rounding if rounding else self._rounding)
+        return finalize_dataset(
+            dataset=advancers_decliners,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            apply_slice=False,
+        )
 
     @handle_portfolio
     @handle_errors
@@ -531,6 +588,7 @@ class Technicals:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
     ) -> pd.Series | pd.DataFrame:
         """
         Calculate the On-Balance Volume (OBV) for a given price series.
@@ -555,6 +613,9 @@ class Technicals:
             growth (bool, optional): Whether to calculate the growth of the OBV.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
                 Defaults to 1.
 
         Returns:
@@ -615,15 +676,18 @@ class Technicals:
             historical_data["Volume"],
         ).loc[self._start_date : self._end_date]
 
-        if growth:
-            return calculate_growth(
-                on_balance_volume,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-                axis="index",
-            )
-
-        return on_balance_volume.round(rounding if rounding else self._rounding)
+        return finalize_dataset(
+            dataset=on_balance_volume,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            apply_slice=False,
+        )
 
     @handle_portfolio
     @handle_errors
@@ -634,6 +698,7 @@ class Technicals:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
     ) -> pd.Series | pd.DataFrame:
         """
         Calculate the Accumulation/Distribution Line for a given price series.
@@ -658,6 +723,9 @@ class Technicals:
             growth (bool, optional): Whether to calculate the growth of the Accumulation/Distribution Line.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
                 Defaults to 1.
 
         Returns:
@@ -727,16 +795,17 @@ class Technicals:
                 ).loc[self._start_date : self._end_date]
             )
 
-        if growth:
-            return calculate_growth(
-                accumulation_distribution_line,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-                axis="index",
-            )
-
-        return accumulation_distribution_line.round(
-            rounding if rounding else self._rounding
+        return finalize_dataset(
+            dataset=accumulation_distribution_line,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            apply_slice=False,
         )
 
     @handle_portfolio
@@ -750,6 +819,7 @@ class Technicals:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
     ) -> pd.Series | pd.DataFrame:
         """
         Calculate the Chaikin Oscillator for a given price series.
@@ -778,6 +848,9 @@ class Technicals:
             growth (bool, optional): Whether to calculate the growth of the Chaikin Oscillator.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
                 Defaults to 1.
 
         Returns:
@@ -843,15 +916,18 @@ class Technicals:
             long_window,
         ).loc[self._start_date : self._end_date]
 
-        if growth:
-            return calculate_growth(
-                chaikin_oscillator,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-                axis="index",
-            )
-
-        return chaikin_oscillator.round(rounding if rounding else self._rounding)
+        return finalize_dataset(
+            dataset=chaikin_oscillator,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            apply_slice=False,
+        )
 
     def collect_momentum_indicators(
         self,
@@ -861,6 +937,7 @@ class Technicals:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
     ) -> pd.Series | pd.DataFrame:
         """
         Calculates and collects various momentum indicators based on the provided data.
@@ -877,6 +954,9 @@ class Technicals:
             growth (bool, optional): Whether to calculate the growth of the indicator values.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
                 Defaults to 1.
 
         Returns:
@@ -1024,11 +1104,26 @@ class Technicals:
 
         if growth:
             self._momentum_indicators_growth = calculate_growth(
-                self._momentum_indicators,
+                dataset=self._momentum_indicators,
                 lag=lag,
                 rounding=rounding if rounding else self._rounding,
                 axis="index",
             )
+
+        if standardize:
+            standardize_rounding = rounding if rounding else self._rounding
+            if growth:
+                self._momentum_indicators_growth = calculate_standardization(
+                    dataset=self._momentum_indicators_growth,
+                    rounding=standardize_rounding,
+                    axis="rows",
+                )
+            else:
+                self._momentum_indicators = calculate_standardization(
+                    dataset=self._momentum_indicators,
+                    rounding=standardize_rounding,
+                    axis="rows",
+                )
 
         if len(self._tickers) == 1:
             return (
@@ -1053,6 +1148,7 @@ class Technicals:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
     ) -> pd.Series | pd.DataFrame:
         """
         Calculate the Money Flow Index (MFI) for a given price series.
@@ -1079,6 +1175,9 @@ class Technicals:
             growth (bool, optional): Whether to calculate the growth of the indicator values.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
                 Defaults to 1.
 
         Returns:
@@ -1143,15 +1242,18 @@ class Technicals:
             window,
         ).loc[self._start_date : self._end_date]
 
-        if growth:
-            return calculate_growth(
-                money_flow_index,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-                axis="index",
-            )
-
-        return money_flow_index.round(rounding if rounding else self._rounding)
+        return finalize_dataset(
+            dataset=money_flow_index,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            apply_slice=False,
+        )
 
     @handle_portfolio
     @handle_errors
@@ -1163,6 +1265,7 @@ class Technicals:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
     ) -> pd.Series | pd.DataFrame:
         """
         Calculate the Williams Percent R (Williams %R) for a given price series.
@@ -1188,6 +1291,9 @@ class Technicals:
             growth (bool, optional): Whether to calculate the growth of the indicator values.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
                 Defaults to 1.
 
         Returns:
@@ -1251,15 +1357,18 @@ class Technicals:
             window,
         ).loc[self._start_date : self._end_date]
 
-        if growth:
-            return calculate_growth(
-                williams_percent_r,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-                axis="index",
-            )
-
-        return williams_percent_r.round(rounding if rounding else self._rounding)
+        return finalize_dataset(
+            dataset=williams_percent_r,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            apply_slice=False,
+        )
 
     @handle_portfolio
     @handle_errors
@@ -1271,6 +1380,7 @@ class Technicals:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
     ) -> tuple[pd.Series, pd.Series] | tuple[pd.DataFrame, pd.DataFrame]:
         """
         Calculate the Aroon Indicator for a given price series.
@@ -1294,6 +1404,9 @@ class Technicals:
             growth (bool, optional): Whether to calculate the growth of the indicator values.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
                 Defaults to 1.
 
         Returns:
@@ -1364,17 +1477,18 @@ class Technicals:
             .sort_index(axis=1)
         ).loc[self._start_date : self._end_date]
 
-        if growth:
-            aroon_indicator_growth = calculate_growth(
-                aroon_indicator,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-                axis="index",
-            )
-
-            return aroon_indicator_growth
-
-        return aroon_indicator.round(rounding if rounding else self._rounding)
+        return finalize_dataset(
+            dataset=aroon_indicator,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            apply_slice=False,
+        )
 
     @handle_portfolio
     @handle_errors
@@ -1387,6 +1501,7 @@ class Technicals:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
     ) -> pd.Series | pd.DataFrame:
         """
         Calculate the Commodity Channel Index (CCI) for a given price series.
@@ -1414,6 +1529,9 @@ class Technicals:
             growth (bool, optional): Whether to calculate the growth of the indicator values.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
                 Defaults to 1.
 
         Returns:
@@ -1485,15 +1603,18 @@ class Technicals:
                 ).loc[self._start_date : self._end_date]
             )
 
-        if growth:
-            return calculate_growth(
-                commodity_channel_index,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-                axis="index",
-            )
-
-        return commodity_channel_index.round(rounding if rounding else self._rounding)
+        return finalize_dataset(
+            dataset=commodity_channel_index,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            apply_slice=False,
+        )
 
     @handle_portfolio
     @handle_errors
@@ -1505,6 +1626,7 @@ class Technicals:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
     ) -> pd.Series | pd.DataFrame:
         """
         Calculate the Relative Vigor Index (RVI) for a given price series.
@@ -1530,6 +1652,9 @@ class Technicals:
             growth (bool, optional): Whether to calculate the growth of the indicator values.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
                 Defaults to 1.
 
         Returns:
@@ -1593,15 +1718,18 @@ class Technicals:
             window,
         ).loc[self._start_date : self._end_date]
 
-        if growth:
-            return calculate_growth(
-                relative_vigor_index,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-                axis="index",
-            )
-
-        return relative_vigor_index.round(rounding if rounding else self._rounding)
+        return finalize_dataset(
+            dataset=relative_vigor_index,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            apply_slice=False,
+        )
 
     @handle_portfolio
     @handle_errors
@@ -1613,6 +1741,7 @@ class Technicals:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
     ) -> pd.Series | pd.DataFrame:
         """
         Calculate the Force Index for a given price series.
@@ -1637,6 +1766,9 @@ class Technicals:
             growth (bool, optional): Whether to calculate the growth of the indicator values.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
                 Defaults to 1.
 
         Returns:
@@ -1699,15 +1831,18 @@ class Technicals:
             window,
         ).loc[self._start_date : self._end_date]
 
-        if growth:
-            return calculate_growth(
-                force_index,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-                axis="index",
-            )
-
-        return force_index.round(rounding if rounding else self._rounding)
+        return finalize_dataset(
+            dataset=force_index,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            apply_slice=False,
+        )
 
     @handle_portfolio
     @handle_errors
@@ -1721,6 +1856,7 @@ class Technicals:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
     ) -> pd.Series | pd.DataFrame:
         """
         Calculate the Ultimate Oscillator for a given price series.
@@ -1750,6 +1886,9 @@ class Technicals:
             growth (bool, optional): Whether to calculate the growth of the indicator values.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
                 Defaults to 1.
 
         Returns:
@@ -1819,16 +1958,18 @@ class Technicals:
                 window_3,
             ).loc[self._start_date : self._end_date]
 
-        if growth:
-            ultimate_oscillator_growth = calculate_growth(
-                ultimate_oscillator,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-                axis="index",
-            )
-            return ultimate_oscillator_growth
-
-        return ultimate_oscillator.round(rounding if rounding else self._rounding)
+        return finalize_dataset(
+            dataset=ultimate_oscillator,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            apply_slice=False,
+        )
 
     @handle_portfolio
     @handle_errors
@@ -1841,6 +1982,7 @@ class Technicals:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
     ) -> pd.Series | pd.DataFrame:
         """
         Calculate the Percentage Price Oscillator (PPO) for a given price series.
@@ -1868,6 +2010,9 @@ class Technicals:
             growth (bool, optional): Whether to calculate the growth of the indicator values.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
                 Defaults to 1.
 
         Returns:
@@ -1930,17 +2075,17 @@ class Technicals:
             long_window,
         ).loc[self._start_date : self._end_date]
 
-        if growth:
-            ppo_growth = calculate_growth(
-                percentage_price_oscillator,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-                axis="index",
-            )
-            return ppo_growth
-
-        return percentage_price_oscillator.round(
-            rounding if rounding else self._rounding
+        return finalize_dataset(
+            dataset=percentage_price_oscillator,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            apply_slice=False,
         )
 
     @handle_portfolio
@@ -1953,6 +2098,7 @@ class Technicals:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
     ) -> pd.Series | pd.DataFrame:
         """
         Calculate the Detrended Price Oscillator (DPO) for a given price series.
@@ -1978,6 +2124,9 @@ class Technicals:
             growth (bool, optional): Whether to calculate the growth of the indicator values.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
                 Defaults to 1.
 
         Returns:
@@ -2038,17 +2187,17 @@ class Technicals:
             historical_data[close_column], window
         ).loc[self._start_date : self._end_date]
 
-        if growth:
-            dpo_growth = calculate_growth(
-                detrended_price_oscillator,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-                axis="index",
-            )
-            return dpo_growth
-
-        return detrended_price_oscillator.round(
-            rounding if rounding else self._rounding
+        return finalize_dataset(
+            dataset=detrended_price_oscillator,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            apply_slice=False,
         )
 
     @handle_portfolio
@@ -2061,6 +2210,7 @@ class Technicals:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
     ) -> pd.Series | pd.DataFrame:
         """
         Calculate the Average Directional Index (ADX) for a given price series.
@@ -2086,6 +2236,9 @@ class Technicals:
             growth (bool, optional): Whether to calculate the growth of the indicator values.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
                 Defaults to 1.
 
         Returns:
@@ -2155,16 +2308,18 @@ class Technicals:
                 ).loc[self._start_date : self._end_date]
             )
 
-        if growth:
-            adx_growth = calculate_growth(
-                average_directional_index,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-                axis="index",
-            )
-            return adx_growth
-
-        return average_directional_index.round(rounding if rounding else self._rounding)
+        return finalize_dataset(
+            dataset=average_directional_index,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            apply_slice=False,
+        )
 
     @handle_portfolio
     @handle_errors
@@ -2176,6 +2331,7 @@ class Technicals:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
     ) -> pd.Series | pd.DataFrame:
         """
         Calculate the Chande Momentum Oscillator (CMO) for a given price series.
@@ -2202,6 +2358,9 @@ class Technicals:
             growth (bool, optional): Whether to calculate the growth of the indicator values.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
                 Defaults to 1.
 
         Returns:
@@ -2262,17 +2421,17 @@ class Technicals:
             historical_data[close_column], window
         ).loc[self._start_date : self._end_date]
 
-        if growth:
-            cmo_growth = calculate_growth(
-                chande_momentum_oscillator,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-                axis="index",
-            )
-            return cmo_growth
-
-        return chande_momentum_oscillator.round(
-            rounding if rounding else self._rounding
+        return finalize_dataset(
+            dataset=chande_momentum_oscillator,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            apply_slice=False,
         )
 
     @handle_portfolio
@@ -2287,6 +2446,7 @@ class Technicals:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
     ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
         """
         Calculate the Ichimoku Cloud indicator for a given price series.
@@ -2315,6 +2475,9 @@ class Technicals:
             growth (bool, optional): Whether to calculate the growth of the indicator values.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
                 Defaults to 1.
 
         Returns:
@@ -2390,17 +2553,18 @@ class Technicals:
             .sort_index(axis=1)
         )
 
-        if growth:
-            ichimoku_cloud_growth = calculate_growth(
-                ichimoku_cloud,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-                axis="index",
-            )
-
-            return ichimoku_cloud_growth
-
-        return ichimoku_cloud.round(rounding if rounding else self._rounding)
+        return finalize_dataset(
+            dataset=ichimoku_cloud,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            apply_slice=False,
+        )
 
     @handle_portfolio
     @handle_errors
@@ -2413,6 +2577,7 @@ class Technicals:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
     ) -> tuple[pd.DataFrame, pd.DataFrame]:
         """
         Calculate the Stochastic Oscillator indicator for a given price series.
@@ -2442,6 +2607,9 @@ class Technicals:
             growth (bool, optional): Whether to calculate the growth of the %K and %D values.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
                 Defaults to 1.
 
         Returns:
@@ -2518,17 +2686,18 @@ class Technicals:
             .sort_index(axis=1)
         )
 
-        if growth:
-            stochastic_oscillator_growth = calculate_growth(
-                stochastic_oscillator,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-                axis="index",
-            )
-
-            return stochastic_oscillator_growth
-
-        return stochastic_oscillator.round(rounding if rounding else self._rounding)
+        return finalize_dataset(
+            dataset=stochastic_oscillator,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            apply_slice=False,
+        )
 
     @handle_portfolio
     @handle_errors
@@ -2542,6 +2711,7 @@ class Technicals:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
     ) -> tuple[pd.Series, pd.Series] | tuple[pd.DataFrame, pd.DataFrame]:
         """
         Calculate the Moving Average Convergence Divergence (MACD) indicator for a given price series.
@@ -2573,6 +2743,9 @@ class Technicals:
             growth (bool, optional): Whether to calculate the growth of the MACD and signal values.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
                 Defaults to 1.
 
         Returns:
@@ -2644,17 +2817,18 @@ class Technicals:
 
         macd = pd.concat(macd_dict, axis=1).swaplevel(1, 0, axis=1).sort_index(axis=1)
 
-        if growth:
-            macd_growth = calculate_growth(
-                macd,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-                axis="index",
-            )
-
-            return macd_growth
-
-        return macd.round(rounding if rounding else self._rounding)
+        return finalize_dataset(
+            dataset=macd,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            apply_slice=False,
+        )
 
     @handle_portfolio
     @handle_errors
@@ -2666,6 +2840,7 @@ class Technicals:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
     ) -> pd.Series | pd.DataFrame:
         """
         Calculate the Relative Strength Index (RSI) indicator for a given price series.
@@ -2691,6 +2866,9 @@ class Technicals:
             growth (bool, optional): Whether to calculate the growth of the RSI.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
                 Defaults to 1.
 
         Returns:
@@ -2752,15 +2930,18 @@ class Technicals:
             historical_data[close_column], window
         ).loc[self._start_date : self._end_date]
 
-        if growth:
-            return calculate_growth(
-                relative_strength_index,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-                axis="index",
-            )
-
-        return relative_strength_index.round(rounding if rounding else self._rounding)
+        return finalize_dataset(
+            dataset=relative_strength_index,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            apply_slice=False,
+        )
 
     @handle_portfolio
     @handle_errors
@@ -2771,6 +2952,7 @@ class Technicals:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
     ) -> pd.Series | pd.DataFrame:
         """
         Calculate the Balance of Power (BOP) indicator for a given price series.
@@ -2794,6 +2976,9 @@ class Technicals:
             growth (bool, optional): Whether to calculate the growth of the BOP.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
                 Defaults to 1.
 
         Returns:
@@ -2858,15 +3043,18 @@ class Technicals:
             historical_data[close_column],
         ).loc[self._start_date : self._end_date]
 
-        if growth:
-            return calculate_growth(
-                balance_of_power,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-                axis="index",
-            )
-
-        return balance_of_power.round(rounding if rounding else self._rounding)
+        return finalize_dataset(
+            dataset=balance_of_power,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            apply_slice=False,
+        )
 
     def collect_overlap_indicators(
         self,
@@ -2876,6 +3064,7 @@ class Technicals:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
     ) -> pd.Series | pd.DataFrame:
         """
         Calculates and collects various overlap-based indicators based on the provided data.
@@ -2892,6 +3081,9 @@ class Technicals:
             growth (bool, optional): Whether to calculate the growth of the indicator values.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
                 Defaults to 1.
 
         Returns:
@@ -2979,11 +3171,26 @@ class Technicals:
 
         if growth:
             self._overlap_indicators_growth = calculate_growth(
-                self._overlap_indicators,
+                dataset=self._overlap_indicators,
                 lag=lag,
                 rounding=rounding if rounding else self._rounding,
                 axis="index",
             )
+
+        if standardize:
+            standardize_rounding = rounding if rounding else self._rounding
+            if growth:
+                self._overlap_indicators_growth = calculate_standardization(
+                    dataset=self._overlap_indicators_growth,
+                    rounding=standardize_rounding,
+                    axis="rows",
+                )
+            else:
+                self._overlap_indicators = calculate_standardization(
+                    dataset=self._overlap_indicators,
+                    rounding=standardize_rounding,
+                    axis="rows",
+                )
 
         if len(self._tickers) == 1:
             return (
@@ -3006,6 +3213,7 @@ class Technicals:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
     ) -> pd.Series | pd.DataFrame:
         """
         Calculate the Moving Average (MA) for a given price series.
@@ -3031,6 +3239,9 @@ class Technicals:
             growth (bool, optional): Whether to calculate the growth of the MA.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
                 Defaults to 1.
 
         Returns:
@@ -3092,15 +3303,18 @@ class Technicals:
             historical_data[close_column], window
         ).loc[self._start_date : self._end_date]
 
-        if growth:
-            return calculate_growth(
-                moving_average,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-                axis="index",
-            )
-
-        return moving_average.round(rounding if rounding else self._rounding)
+        return finalize_dataset(
+            dataset=moving_average,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            apply_slice=False,
+        )
 
     @handle_portfolio
     @handle_errors
@@ -3112,6 +3326,7 @@ class Technicals:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
     ) -> pd.Series | pd.DataFrame:
         """
         Calculate the Exponential Moving Average (EMA) for a given price series.
@@ -3137,6 +3352,9 @@ class Technicals:
             growth (bool, optional): Whether to calculate the growth of the EMA.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
                 Defaults to 1.
 
         Returns:
@@ -3198,16 +3416,17 @@ class Technicals:
             historical_data[close_column], window
         ).loc[self._start_date : self._end_date]
 
-        if growth:
-            return calculate_growth(
-                exponential_moving_average,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-                axis="index",
-            )
-
-        return exponential_moving_average.round(
-            rounding if rounding else self._rounding
+        return finalize_dataset(
+            dataset=exponential_moving_average,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            apply_slice=False,
         )
 
     @handle_portfolio
@@ -3220,6 +3439,7 @@ class Technicals:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
     ) -> pd.Series | pd.DataFrame:
         """
         Calculate the Double Exponential Moving Average (DEMA) for a given price series.
@@ -3245,6 +3465,9 @@ class Technicals:
             growth (bool, optional): Whether to calculate the growth of the DEMA.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
                 Defaults to 1.
 
         Returns:
@@ -3308,16 +3531,17 @@ class Technicals:
             ).loc[self._start_date : self._end_date]
         )
 
-        if growth:
-            return calculate_growth(
-                double_exponential_moving_average,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-                axis="index",
-            )
-
-        return double_exponential_moving_average.round(
-            rounding if rounding else self._rounding
+        return finalize_dataset(
+            dataset=double_exponential_moving_average,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            apply_slice=False,
         )
 
     @handle_portfolio
@@ -3330,6 +3554,7 @@ class Technicals:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
     ) -> pd.Series | pd.DataFrame:
         """
         Calculate the Trix (Triple Exponential Moving Average) for a given price series.
@@ -3359,6 +3584,9 @@ class Technicals:
             growth (bool, optional): Whether to calculate the growth of the Trix.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
                 Defaults to 1.
 
         Returns:
@@ -3420,15 +3648,18 @@ class Technicals:
             self._start_date : self._end_date
         ]
 
-        if growth:
-            return calculate_growth(
-                trix,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-                axis="index",
-            )
-
-        return trix.round(rounding if rounding else self._rounding)
+        return finalize_dataset(
+            dataset=trix,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            apply_slice=False,
+        )
 
     @handle_portfolio
     @handle_errors
@@ -3441,6 +3672,7 @@ class Technicals:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
     ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
         """
         Calculate the Bollinger Bands for a given price series.
@@ -3472,6 +3704,9 @@ class Technicals:
             growth (bool, optional): Whether to calculate the growth of the bands.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
                 Defaults to 1.
 
         Returns:
@@ -3542,17 +3777,18 @@ class Technicals:
             .sort_index(axis=1)
         )
 
-        if growth:
-            bollinger_bands_growth = calculate_growth(
-                bollinger_bands,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-                axis="index",
-            )
-
-            return bollinger_bands_growth
-
-        return bollinger_bands.round(rounding if rounding else self._rounding)
+        return finalize_dataset(
+            dataset=bollinger_bands,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            apply_slice=False,
+        )
 
     @handle_portfolio
     @handle_errors
@@ -3564,6 +3800,7 @@ class Technicals:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
     ) -> pd.Series | pd.DataFrame:
         """
         Calculate the Triangular Moving Average (TMA) for a given price series.
@@ -3589,6 +3826,9 @@ class Technicals:
             growth (bool, optional): Whether to calculate the growth of the TMA.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
                 Defaults to 1.
 
         Returns:
@@ -3649,15 +3889,18 @@ class Technicals:
             historical_data[close_column], window
         ).loc[self._start_date : self._end_date]
 
-        if growth:
-            return calculate_growth(
-                triangular_moving_average,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-                axis="index",
-            )
-
-        return triangular_moving_average.round(rounding if rounding else self._rounding)
+        return finalize_dataset(
+            dataset=triangular_moving_average,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            apply_slice=False,
+        )
 
     @handle_portfolio
     @handle_errors
@@ -3788,6 +4031,7 @@ class Technicals:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
     ) -> pd.Series | pd.DataFrame:
         """
         Calculates and collects various volatility indicators based on the provided data.
@@ -3804,6 +4048,9 @@ class Technicals:
             growth (bool, optional): Whether to calculate the growth of the indicator values.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
                 Defaults to 1.
 
         Returns:
@@ -3891,11 +4138,26 @@ class Technicals:
 
         if growth:
             self._volatility_indicators_growth = calculate_growth(
-                self._volatility_indicators,
+                dataset=self._volatility_indicators,
                 lag=lag,
                 rounding=rounding if rounding else self._rounding,
                 axis="index",
             )
+
+        if standardize:
+            standardize_rounding = rounding if rounding else self._rounding
+            if growth:
+                self._volatility_indicators_growth = calculate_standardization(
+                    dataset=self._volatility_indicators_growth,
+                    rounding=standardize_rounding,
+                    axis="rows",
+                )
+            else:
+                self._volatility_indicators = calculate_standardization(
+                    dataset=self._volatility_indicators,
+                    rounding=standardize_rounding,
+                    axis="rows",
+                )
 
         if len(self._tickers) == 1:
             return (
@@ -3921,6 +4183,7 @@ class Technicals:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
     ) -> pd.Series | pd.DataFrame:
         """
         Calculate the True Range (TR) for a given price series.
@@ -3945,6 +4208,9 @@ class Technicals:
             growth (bool, optional): Whether to calculate the growth of the True Range.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
                 Defaults to 1.
 
         Returns:
@@ -4011,15 +4277,18 @@ class Technicals:
                 historical_data[close_column][ticker],
             ).loc[self._start_date : self._end_date]
 
-        if growth:
-            return calculate_growth(
-                true_range,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-                axis="index",
-            )
-
-        return true_range.round(rounding if rounding else self._rounding)
+        return finalize_dataset(
+            dataset=true_range,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            apply_slice=False,
+        )
 
     @handle_portfolio
     @handle_errors
@@ -4031,6 +4300,7 @@ class Technicals:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
     ) -> pd.Series:
         """
         Calculate the Average True Range (ATR) of a given price series.
@@ -4058,6 +4328,9 @@ class Technicals:
             lag (int | list[int]): Number of periods to lag the ATR values by.
                 If an integer is provided, all ATR values are lagged by the same number of periods.
                 If a list of integers is provided, each ATR value is lagged by the corresponding number of periods.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
 
         Returns:
             pd.Series: ATR values or ATR growth rate (if growth is True).
@@ -4130,15 +4403,18 @@ class Technicals:
                 window,
             ).loc[self._start_date : self._end_date]
 
-        if growth:
-            return calculate_growth(
-                average_true_range,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-                axis="index",
-            )
-
-        return average_true_range.round(rounding if rounding else self._rounding)
+        return finalize_dataset(
+            dataset=average_true_range,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            apply_slice=False,
+        )
 
     @handle_portfolio
     @handle_errors
@@ -4152,6 +4428,7 @@ class Technicals:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
     ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
         """
         Calculate the Keltner Channels for a given price series.
@@ -4187,6 +4464,9 @@ class Technicals:
             growth (bool, optional): Whether to calculate the growth of the channels.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
                 Defaults to 1.
 
         Returns:
@@ -4260,14 +4540,15 @@ class Technicals:
             .sort_index(axis=1)
         )
 
-        if growth:
-            kelter_channels_growth = calculate_growth(
-                kelter_channels,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-                axis="index",
-            )
-
-            return kelter_channels_growth
-
-        return kelter_channels.round(rounding if rounding else self._rounding)
+        return finalize_dataset(
+            dataset=kelter_channels,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            apply_slice=False,
+        )

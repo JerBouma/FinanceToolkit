@@ -20,7 +20,6 @@ from mcp.server.fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 from pydantic import Field as PydanticField
 
-from financetoolkit.helpers import filter_columns as _filter_columns
 from financetoolkit.mcp_server.coercion_model import (
     coerce_value,
     to_boolean,
@@ -29,6 +28,7 @@ from financetoolkit.mcp_server.coercion_model import (
 from financetoolkit.mcp_server.formatting_model import format_result
 from financetoolkit.mcp_server.inspection_controller import ControllerInspector
 from financetoolkit.mcp_server.provider_model import ToolkitProvider
+from financetoolkit.utilities.dataframe_model import filter_columns as _filter_columns
 from financetoolkit.utilities.logger_model import get_logger
 
 logger = get_logger()

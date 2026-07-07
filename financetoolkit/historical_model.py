@@ -9,8 +9,9 @@ import time
 import numpy as np
 import pandas as pd
 
-from financetoolkit import fmp_model, helpers, yfinance_model
+from financetoolkit import fmp_model, yfinance_model
 from financetoolkit.utilities import error_model, logger_model
+from financetoolkit.utilities.statistics_model import PERIOD_TRANSLATION
 
 logger = logger_model.get_logger()
 
@@ -325,7 +326,7 @@ def convert_daily_to_other_period(
             "weekly, monthly, quarterly or yearly."
         )
 
-    period_str = helpers.PERIOD_TRANSLATION[period]
+    period_str = PERIOD_TRANSLATION[period]
 
     daily_historical_data.index.name = "Date"
     dates = daily_historical_data.index.asfreq(period_str)

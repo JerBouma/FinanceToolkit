@@ -51,6 +51,12 @@ _PARAM_DESCRIPTIONS: dict[str, str] = {
     "benchmark_ticker": "Ticker used as the market benchmark, e.g. 'SPY' or '^GSPC'.",
     "growth": "Return period-over-period growth rates instead of absolute values.",
     "lag": "Number of periods to lag when computing growth rates.",
+    "standardize": (
+        "Return the Z-Score (standard score) instead of the raw values, i.e. how many "
+        "standard deviations each value is from the mean of its own series. When "
+        "combined with growth=True, the growth values are standardized instead of the "
+        "raw values."
+    ),
     "cumulative": (
         "Return the cumulative value compounded over time instead of the discrete "
         "value per period. Always rebased to start at 1 at the beginning of the "

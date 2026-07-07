@@ -513,18 +513,18 @@ class Ratios:
 
         Which returns:
 
-        |                                      |     2021 |     2022 |     2023 |     2024 |     2025 |
-        |:-------------------------------------|---------:|---------:|---------:|---------:|---------:|
-        | Days of Accounts Payable Outstanding |  83.1683 |  97.0504 | 108.003  | 114.15   | 114.657  |
-        | Cash Conversion Cycle                | -52.8985 | -62.435  | -70.9225 | -72.9716 | -71.8218 |
-        | Cash Conversion Efficiency           |   0.2844 |   0.3098 |   0.2884 |   0.3024 |   0.2679 |
-        | Receivables Turnover                 |   0.0579 |   0.0691 |   0.0753 |   0.0805 |   0.0879 |
-        | Inventory Turnover Ratio             |  40.0303 |  38.7899 |  37.9777 |  30.8955 |  33.9834 |
-        | Accounts Payable Turnover Ratio      |   4.3887 |   3.7609 |   3.3795 |   3.1975 |   3.1834 |
-        | SGA-to-Revenue Ratio                 |   0.0601 |   0.0636 |   0.065  |   0.0667 |   0.0663 |
-        | Fixed Asset Turnover                 |   1.846  |   1.8192 |   1.7979 |   1.8576 |   1.9664 |
-        | Asset Turnover Ratio                 |   1.0841 |   1.1206 |   1.0868 |   1.0899 |   1.1493 |
-        | Operating Ratio                      |   0.7022 |   0.6971 |   0.7018 |   0.6849 |   0.6803 |
+        |                                 |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:--------------------------------|-------:|-------:|-------:|-------:|-------:|
+        | Accounts Payable Turnover Ratio | 4.3887 | 3.7609 | 3.3795 | 3.1975 | 3.1834 |
+        | SGA-to-Revenue Ratio            | 0.0601 | 0.0636 | 0.065  | 0.0667 | 0.0663 |
+        | Fixed Asset Turnover            | 1.846  | 1.8192 | 1.7979 | 1.8576 | 1.9664 |
+        | Asset Turnover Ratio            | 1.0841 | 1.1206 | 1.0868 | 1.0899 | 1.1493 |
+        | Operating Ratio                 | 0.7022 | 0.6971 | 0.7018 | 0.6849 | 0.6803 |
+        | R&D Intensity Ratio             | 0.0599 | 0.0666 | 0.078  | 0.0802 | 0.083  |
+        | S&M to Revenue Ratio            | 0      | 0      | 0      | 0.0477 | 0      |
+        | G&A to Revenue Ratio            | 0      | 0      | 0      | 0.0191 | 0.0663 |
+        | SBC to Revenue Ratio            | 0.0216 | 0.0229 | 0.0283 | 0.0299 | 0.0309 |
+        | Deferred Revenue Ratio          | 0.0208 | 0.0201 | 0.021  | 0.0211 | 0.0218 |
         """
         if not days:
             days = 365 / 4 if self._quarterly else 365
@@ -568,6 +568,21 @@ class Ratios:
             trailing=trailing
         )
         efficiency_ratios["Operating Ratio"] = self.get_operating_ratio(
+            trailing=trailing
+        )
+        efficiency_ratios["R&D Intensity Ratio"] = (
+            self.get_research_and_development_ratio(trailing=trailing)
+        )
+        efficiency_ratios["S&M to Revenue Ratio"] = (
+            self.get_selling_and_marketing_ratio(trailing=trailing)
+        )
+        efficiency_ratios["G&A to Revenue Ratio"] = (
+            self.get_general_and_administrative_ratio(trailing=trailing)
+        )
+        efficiency_ratios["SBC to Revenue Ratio"] = (
+            self.get_stock_based_compensation_ratio(trailing=trailing)
+        )
+        efficiency_ratios["Deferred Revenue Ratio"] = self.get_deferred_revenue_ratio(
             trailing=trailing
         )
 
@@ -1862,6 +1877,422 @@ class Ratios:
             :, self._start_date : self._end_date
         ]
 
+    @handle_portfolio
+    @handle_errors
+    def get_research_and_development_ratio(
+        self,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        trailing: int | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the research and development (R&D) intensity ratio, an efficiency
+        ratio that measures how much a company reinvests in research and development
+        relative to its revenue.
+
+        This ratio is particularly relevant for comparing companies in technology,
+        pharmaceutical and other innovation-driven industries, where R&D spending is
+        a key driver of future growth.
+
+        The formula is as follows:
+
+        - R&D Intensity Ratio = Research and Development Expenses / Revenue
+
+        Also known as: R&D intensity, R&D to sales ratio.
+
+        Args:
+            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            trailing (int): Defines whether to select a trailing period.
+            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+
+        Returns:
+            pd.DataFrame: R&D intensity ratio values.
+
+        Notes:
+        - The method retrieves historical data and calculates the R&D intensity ratio for
+        each asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the ratio values
+        using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        rd_ratios = toolkit.ratios.get_research_and_development_ratio()
+        ```
+
+        Which returns:
+
+        |      |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:-----|-------:|-------:|-------:|-------:|-------:|
+        | AAPL | 0.0599 | 0.0666 |  0.078 | 0.0802 | 0.083  |
+        | TSLA | 0.0482 | 0.0377 |  0.041 | 0.0465 | 0.0676 |
+        """
+        if trailing:
+            rd_ratio = efficiency_model.get_research_and_development_ratio(
+                self._income_statement.loc[:, "Research and Development Expenses", :]
+                .T.rolling(trailing)
+                .sum()
+                .T,
+                self._income_statement.loc[:, "Revenue", :].T.rolling(trailing).sum().T,
+            )
+        else:
+            rd_ratio = efficiency_model.get_research_and_development_ratio(
+                self._income_statement.loc[:, "Research and Development Expenses", :],
+                self._income_statement.loc[:, "Revenue", :],
+            )
+
+        if growth:
+            return calculate_growth(
+                rd_ratio,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
+            ).loc[:, self._start_date : self._end_date]
+
+        return rd_ratio.round(rounding if rounding else self._rounding).loc[
+            :, self._start_date : self._end_date
+        ]
+
+    @handle_portfolio
+    @handle_errors
+    def get_selling_and_marketing_ratio(
+        self,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        trailing: int | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the selling and marketing (S&M) expenses to revenue ratio, an
+        efficiency ratio that measures the proportion of revenue spent on selling and
+        marketing activities.
+
+        This ratio isolates the selling and marketing component of the combined SG&A
+        expense line (see `get_sga_to_revenue_ratio`), which is useful for comparing
+        customer-acquisition efficiency independently of administrative overhead.
+
+        The formula is as follows:
+
+        - S&M to Revenue Ratio = Selling and Marketing Expenses / Revenue
+
+        Also known as: S&M ratio, sales and marketing intensity.
+
+        Args:
+            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            trailing (int): Defines whether to select a trailing period.
+            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+
+        Returns:
+            pd.DataFrame: S&M to revenue ratio values.
+
+        Notes:
+        - The method retrieves historical data and calculates the S&M to revenue ratio for
+        each asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the ratio values
+        using the specified `lag`.
+        - Not every company reports Selling and Marketing Expenses separately from General
+        and Administrative Expenses, in which case this ratio will be unavailable.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        sm_ratios = toolkit.ratios.get_selling_and_marketing_ratio()
+        ```
+
+        Which returns:
+
+        |      |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:-----|-------:|-------:|-------:|-------:|-------:|
+        | AAPL |      0 |      0 |      0 | 0.0477 |      0 |
+        | TSLA |      0 |      0 |      0 | 0      |      0 |
+        """
+        if trailing:
+            sm_ratio = efficiency_model.get_selling_and_marketing_ratio(
+                self._income_statement.loc[:, "Selling and Marketing Expenses", :]
+                .T.rolling(trailing)
+                .sum()
+                .T,
+                self._income_statement.loc[:, "Revenue", :].T.rolling(trailing).sum().T,
+            )
+        else:
+            sm_ratio = efficiency_model.get_selling_and_marketing_ratio(
+                self._income_statement.loc[:, "Selling and Marketing Expenses", :],
+                self._income_statement.loc[:, "Revenue", :],
+            )
+
+        if growth:
+            return calculate_growth(
+                sm_ratio,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
+            ).loc[:, self._start_date : self._end_date]
+
+        return sm_ratio.round(rounding if rounding else self._rounding).loc[
+            :, self._start_date : self._end_date
+        ]
+
+    @handle_portfolio
+    @handle_errors
+    def get_general_and_administrative_ratio(
+        self,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        trailing: int | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the general and administrative (G&A) expenses to revenue ratio, an
+        efficiency ratio that measures the proportion of revenue spent on general and
+        administrative overhead.
+
+        This ratio isolates the administrative component of the combined SG&A expense
+        line (see `get_sga_to_revenue_ratio`), which is useful for assessing overhead
+        efficiency independently of selling and marketing spend.
+
+        The formula is as follows:
+
+        - G&A to Revenue Ratio = General and Administrative Expenses / Revenue
+
+        Also known as: G&A ratio, overhead ratio.
+
+        Args:
+            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            trailing (int): Defines whether to select a trailing period.
+            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+
+        Returns:
+            pd.DataFrame: G&A to revenue ratio values.
+
+        Notes:
+        - The method retrieves historical data and calculates the G&A to revenue ratio for
+        each asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the ratio values
+        using the specified `lag`.
+        - Not every company reports General and Administrative Expenses separately from
+        Selling and Marketing Expenses, in which case this ratio will be unavailable.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        ga_ratios = toolkit.ratios.get_general_and_administrative_ratio()
+        ```
+
+        Which returns:
+
+        |      |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:-----|-------:|-------:|-------:|-------:|-------:|
+        | AAPL | 0      | 0      | 0      | 0.0191 | 0.0663 |
+        | TSLA | 0.0839 | 0.0484 | 0.0496 | 0.0527 | 0.0615 |
+        """
+        if trailing:
+            ga_ratio = efficiency_model.get_general_and_administrative_ratio(
+                self._income_statement.loc[:, "General and Administrative Expenses", :]
+                .T.rolling(trailing)
+                .sum()
+                .T,
+                self._income_statement.loc[:, "Revenue", :].T.rolling(trailing).sum().T,
+            )
+        else:
+            ga_ratio = efficiency_model.get_general_and_administrative_ratio(
+                self._income_statement.loc[:, "General and Administrative Expenses", :],
+                self._income_statement.loc[:, "Revenue", :],
+            )
+
+        if growth:
+            return calculate_growth(
+                ga_ratio,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
+            ).loc[:, self._start_date : self._end_date]
+
+        return ga_ratio.round(rounding if rounding else self._rounding).loc[
+            :, self._start_date : self._end_date
+        ]
+
+    @handle_portfolio
+    @handle_errors
+    def get_stock_based_compensation_ratio(
+        self,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        trailing: int | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the stock-based compensation (SBC) to revenue ratio, an efficiency
+        ratio that measures how much of a company's revenue is being used to
+        compensate employees through non-cash equity awards.
+
+        A high or rising SBC-to-revenue ratio is a common quality-of-earnings flag,
+        particularly for technology companies, since SBC is added back in cash flow
+        from operations but represents real economic dilution for shareholders.
+
+        The formula is as follows:
+
+        - SBC to Revenue Ratio = Stock Based Compensation / Revenue
+
+        Also known as: SBC intensity, equity compensation ratio.
+
+        Args:
+            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            trailing (int): Defines whether to select a trailing period.
+            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+
+        Returns:
+            pd.DataFrame: SBC to revenue ratio values.
+
+        Notes:
+        - The method retrieves historical data and calculates the SBC to revenue ratio for
+        each asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the ratio values
+        using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        sbc_ratios = toolkit.ratios.get_stock_based_compensation_ratio()
+        ```
+
+        Which returns:
+
+        |      |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:-----|-------:|-------:|-------:|-------:|-------:|
+        | AAPL | 0.0216 | 0.0229 | 0.0283 | 0.0299 | 0.0309 |
+        | TSLA | 0.0394 | 0.0192 | 0.0187 | 0.0205 | 0.0298 |
+        """
+        if trailing:
+            sbc_ratio = efficiency_model.get_stock_based_compensation_ratio(
+                self._cash_flow_statement.loc[:, "Stock Based Compensation", :]
+                .T.rolling(trailing)
+                .sum()
+                .T,
+                self._income_statement.loc[:, "Revenue", :].T.rolling(trailing).sum().T,
+            )
+        else:
+            sbc_ratio = efficiency_model.get_stock_based_compensation_ratio(
+                self._cash_flow_statement.loc[:, "Stock Based Compensation", :],
+                self._income_statement.loc[:, "Revenue", :],
+            )
+
+        if growth:
+            return calculate_growth(
+                sbc_ratio,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
+            ).loc[:, self._start_date : self._end_date]
+
+        return sbc_ratio.round(rounding if rounding else self._rounding).loc[
+            :, self._start_date : self._end_date
+        ]
+
+    @handle_portfolio
+    @handle_errors
+    def get_deferred_revenue_ratio(
+        self,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        trailing: int | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the deferred revenue ratio, an efficiency ratio that measures the
+        size of a company's deferred revenue (payments collected for goods or
+        services not yet delivered) relative to its revenue.
+
+        This ratio is a common leading indicator for subscription and SaaS
+        businesses, where a growing deferred revenue balance relative to revenue can
+        signal accelerating future revenue recognition.
+
+        The formula is as follows:
+
+        - Deferred Revenue Ratio = Deferred Revenue / Revenue
+
+        Also known as: deferred revenue intensity, unearned revenue ratio.
+
+        Args:
+            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            trailing (int): Defines whether to select a trailing period.
+            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+
+        Returns:
+            pd.DataFrame: Deferred revenue ratio values.
+
+        Notes:
+        - The method retrieves historical data and calculates the deferred revenue ratio for
+        each asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the ratio values
+        using the specified `lag`.
+        - Not every company reports Deferred Revenue on its Balance Sheet, in which case this
+        ratio will be unavailable.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        deferred_revenue_ratios = toolkit.ratios.get_deferred_revenue_ratio()
+        ```
+
+        Which returns:
+
+        |      |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:-----|-------:|-------:|-------:|-------:|-------:|
+        | AAPL | 0.0208 | 0.0201 | 0.021  | 0.0211 | 0.0218 |
+        | TSLA | 0.0441 | 0.0345 | 0.0386 | 0.0426 | 0.0361 |
+        """
+        if trailing:
+            deferred_revenue_ratio = efficiency_model.get_deferred_revenue_ratio(
+                self._balance_sheet_statement.loc[:, "Deferred Revenue", :]
+                .T.rolling(trailing)
+                .mean()
+                .T,
+                self._income_statement.loc[:, "Revenue", :].T.rolling(trailing).sum().T,
+            )
+        else:
+            deferred_revenue_ratio = efficiency_model.get_deferred_revenue_ratio(
+                self._balance_sheet_statement.loc[:, "Deferred Revenue", :],
+                self._income_statement.loc[:, "Revenue", :],
+            )
+
+        if growth:
+            return calculate_growth(
+                deferred_revenue_ratio,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
+            ).loc[:, self._start_date : self._end_date]
+
+        return deferred_revenue_ratio.round(
+            rounding if rounding else self._rounding
+        ).loc[:, self._start_date : self._end_date]
+
     def collect_liquidity_ratios(
         self,
         rounding: int | None = None,
@@ -2612,18 +3043,18 @@ class Ratios:
 
         Which returns:
 
-        |                                             |   2021 |   2022 |   2023 |   2024 |   2025 |
-        |:--------------------------------------------|-------:|-------:|-------:|-------:|-------:|
-        | Return on Assets                            | 0.2806 | 0.2836 | 0.275  | 0.2613 | 0.3093 |
-        | Return on Equity                            | 1.4744 | 1.7546 | 1.7195 | 1.5741 | 1.7142 |
-        | Return on Invested Capital                  | 0.5637 | 0.599  | 0.6068 | 0.6019 | 0.7038 |
-        | Return on Capital Employed                  | 0.496  | 0.6139 | 0.5677 | 0.6548 | 0.6855 |
-        | Return on Tangible Assets                   | 0.155  | 0.1543 | 0.1495 | 0.1425 | 0.17   |
-        | Income Quality Ratio                        | 1.0988 | 1.2239 | 1.1397 | 1.2616 | 0.9953 |
-        | Net Income per EBT                          | 0.867  | 0.838  | 0.8528 | 0.7591 | 0.8439 |
-        | Free Cash Flow to Operating Cash Flow Ratio | 0.8935 | 0.9123 | 0.9009 | 0.9201 | 0.8859 |
-        | EBT to EBIT Ratio                           | 0.9764 | 0.976  | 0.9666 | 1      | 1      |
-        | EBIT to Revenue                             | 0.3058 | 0.3095 | 0.307  | 0.3158 | 0.3189 |
+        |                                             |   2021 |   2022 |   2023 |    2024 |   2025 |
+        |:--------------------------------------------|-------:|-------:|-------:|--------:|-------:|
+        | Return on Invested Capital                  | 0.5637 | 0.599  | 0.6068 |  0.6019 | 0.7038 |
+        | Return on Capital Employed                  | 0.496  | 0.6139 | 0.5677 |  0.6548 | 0.6855 |
+        | Return on Tangible Assets                   | 0.155  | 0.1543 | 0.1495 |  0.1425 | 0.17   |
+        | Income Quality Ratio                        | 1.0988 | 1.2239 | 1.1397 |  1.2616 | 0.9953 |
+        | Net Income per EBT                          | 0.867  | 0.838  | 0.8528 |  0.7591 | 0.8439 |
+        | Free Cash Flow to Operating Cash Flow Ratio | 0.8935 | 0.9123 | 0.9009 |  0.9201 | 0.8859 |
+        | EBT to EBIT Ratio                           | 0.9764 | 0.976  | 0.9666 |  1      | 1      |
+        | EBIT to Revenue                             | 0.3058 | 0.3095 | 0.307  |  0.3158 | 0.3189 |
+        | Cash Tax Rate                               | 0.2324 | 0.1643 | 0.1642 |  0.2114 | 0.3267 |
+        | Tax Rate Divergence                         | 0.0994 | 0.0023 | 0.017  | -0.0295 | 0.1706 |
         """
         profitability_ratios: dict = {}
 
@@ -2671,6 +3102,12 @@ class Ratios:
             trailing=trailing
         )
         profitability_ratios["EBIT to Revenue"] = self.get_EBIT_to_revenue(
+            trailing=trailing
+        )
+        profitability_ratios["Cash Tax Rate"] = self.get_cash_tax_rate(
+            trailing=trailing
+        )
+        profitability_ratios["Tax Rate Divergence"] = self.get_tax_rate_divergence(
             trailing=trailing
         )
 
@@ -3006,7 +3443,7 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(["TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         interest_coverage_ratios = toolkit.ratios.get_interest_burden_ratio()
         ```
@@ -3015,7 +3452,6 @@ class Ratios:
 
         |      |    2021 |    2022 |    2023 |     2024 |     2025 |
         |:-----|--------:|--------:|--------:|---------:|---------:|
-        | AAPL | 41.1905 | 40.7496 | 29.062  | inf      | inf      |
         | TSLA | 17.5822 | 71.4974 | 56.9936 |  20.2171 |  12.8846 |
         """
         if trailing:
@@ -4247,6 +4683,161 @@ class Ratios:
             :, self._start_date : self._end_date
         ]
 
+    @handle_portfolio
+    @handle_errors
+    def get_cash_tax_rate(
+        self,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        trailing: int | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the cash tax rate, which measures the percentage of pretax income
+        that is actually paid out in cash taxes, as opposed to the accrual-based
+        effective tax rate.
+
+        The formula is as follows:
+
+        - Cash Tax Rate = Income Taxes Paid / Income Before Tax
+
+        Also known as: cash effective tax rate.
+
+        Args:
+            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            trailing (int): Defines whether to select a trailing period.
+            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+
+        Returns:
+            pd.DataFrame: Cash tax rate values.
+
+        Notes:
+        - The method retrieves historical data and calculates the cash tax rate for each
+        asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the ratio values
+        using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        cash_tax_rates = toolkit.ratios.get_cash_tax_rate()
+        ```
+
+        Which returns:
+
+        |      |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:-----|-------:|-------:|-------:|-------:|-------:|
+        | AAPL | 0.2324 | 0.1643 | 0.1642 | 0.2114 | 0.3267 |
+        | TSLA | 0.0884 | 0.0877 | 0.1122 | 0.1481 | 0      |
+        """
+        if trailing:
+            cash_tax_rate = profitability_model.get_cash_tax_rate(
+                self._cash_flow_statement.loc[:, "Income Taxes Paid", :]
+                .T.rolling(trailing)
+                .sum()
+                .T,
+                self._income_statement.loc[:, "Income Before Tax", :]
+                .T.rolling(trailing)
+                .sum()
+                .T,
+            )
+        else:
+            cash_tax_rate = profitability_model.get_cash_tax_rate(
+                self._cash_flow_statement.loc[:, "Income Taxes Paid", :],
+                self._income_statement.loc[:, "Income Before Tax", :],
+            )
+
+        if growth:
+            return calculate_growth(
+                cash_tax_rate,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
+            ).loc[:, self._start_date : self._end_date]
+
+        return cash_tax_rate.round(rounding if rounding else self._rounding).loc[
+            :, self._start_date : self._end_date
+        ]
+
+    @handle_portfolio
+    @handle_errors
+    def get_tax_rate_divergence(
+        self,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        trailing: int | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the tax rate divergence, which measures the difference between the
+        cash tax rate and the accrual-based effective tax rate.
+
+        A persistently positive divergence indicates the company is paying more in
+        cash taxes than it is recognizing as tax expense (e.g. due to the reversal of
+        deferred tax liabilities), while a persistently negative divergence indicates
+        the opposite and can be a quality-of-earnings red flag if it stems from
+        aggressive tax deferral rather than timing differences.
+
+        The formula is as follows:
+
+        - Tax Rate Divergence = Cash Tax Rate - Effective Tax Rate
+
+        Also known as: cash-accrual tax gap.
+
+        Args:
+            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            trailing (int): Defines whether to select a trailing period.
+            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+
+        Returns:
+            pd.DataFrame: Tax rate divergence values.
+
+        Notes:
+        - The method retrieves historical data and calculates the tax rate divergence for
+        each asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the ratio values
+        using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        tax_rate_divergences = toolkit.ratios.get_tax_rate_divergence()
+        ```
+
+        Which returns:
+
+        |      |    2021 |   2022 |   2023 |    2024 |    2025 |
+        |:-----|--------:|-------:|-------:|--------:|--------:|
+        | AAPL |  0.0994 | 0.0023 | 0.017  | -0.0295 |  0.1706 |
+        | TSLA | -0.0218 | 0.0052 | 0.6137 | -0.0562 | -0.2696 |
+        """
+        tax_rate_divergence = profitability_model.get_tax_rate_divergence(
+            self.get_cash_tax_rate(trailing=trailing),
+            self.get_effective_tax_rate(trailing=trailing),
+        )
+
+        if growth:
+            return calculate_growth(
+                tax_rate_divergence,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
+            ).loc[:, self._start_date : self._end_date]
+
+        return tax_rate_divergence.round(rounding if rounding else self._rounding).loc[
+            :, self._start_date : self._end_date
+        ]
+
     def collect_solvency_ratios(
         self,
         diluted: bool = True,
@@ -4286,17 +4877,16 @@ class Ratios:
 
         Which returns:
 
-        |                               |    2021 |     2022 |     2023 |     2024 |    2025 |
-        |:------------------------------|--------:|---------:|---------:|---------:|--------:|
-        | Debt-to-Assets Ratio          |  0.3889 |   0.3756 |   0.3515 |   0.3262 |  0.3128 |
-        | Debt-to-Equity Ratio          |  2.1639 |   2.6145 |   1.9942 |   2.0906 |  1.5241 |
-        | Debt Service Coverage Ratio   |  0.8683 |   0.7757 |   0.7866 |   0.6985 |  0.8033 |
-        | Equity Multiplier             |  5.255  |   6.1862 |   6.252  |   6.0251 |  5.5418 |
-        | Free Cash Flow Yield          |  0.031  |   0.0525 |   0.0327 |   0.0282 |  0.0242 |
-        | Net-Debt to EBITDA Ratio      |  0.8449 |   0.8337 |   0.7468 |   0.6618 |  0.5281 |
-        | Cash Flow Coverage Ratio      |  0.7621 |   0.922  |   0.892  |   0.9932 |  0.992  |
-        | CAPEX Coverage Ratio          | -9.3855 | -11.4075 | -10.087  | -12.5176 | -8.7678 |
-        | Dividend CAPEX Coverage Ratio | -4.0716 |  -4.781  |  -4.2543 |  -4.7913 | -3.9623 |
+        |                                   |     2021 |     2022 |     2023 |     2024 |     2025 |
+        |:----------------------------------|---------:|---------:|---------:|---------:|---------:|
+        | Debt Service Coverage Ratio       |   0.8683 |   0.7757 |   0.7866 |   0.6985 |   0.8033 |
+        | Equity Multiplier                 |   5.255  |   6.1862 |   6.252  |   6.0251 |   5.5418 |
+        | Free Cash Flow Yield              |   0.031  |   0.0525 |   0.0327 |   0.0282 |   0.0242 |
+        | Net-Debt to EBITDA Ratio          |   0.8449 |   0.8337 |   0.7468 |   0.6618 |   0.5281 |
+        | Cash Flow Coverage Ratio          |   0.7621 |   0.922  |   0.892  |   0.9932 |   0.992  |
+        | CAPEX Coverage Ratio              |  -9.3855 | -11.4075 | -10.087  | -12.5176 |  -8.7678 |
+        | Dividend CAPEX Coverage Ratio     |  -4.0716 |  -4.781  |  -4.2543 |  -4.7913 |  -3.9623 |
+        | Debt-to-Capital Ratio             |   0.6839 |   0.7233 |   0.666  |   0.6764 |   0.6038 |
         """
         solvency_ratios: dict = {}
 
@@ -4326,6 +4916,15 @@ class Ratios:
         )
         solvency_ratios["Dividend CAPEX Coverage Ratio"] = (
             self.get_capex_dividend_coverage_ratio(trailing=trailing)
+        )
+        solvency_ratios["Debt-to-Capital Ratio"] = self.get_debt_to_capital_ratio(
+            trailing=trailing
+        )
+        solvency_ratios["Preferred Dividend Coverage Ratio"] = (
+            self.get_preferred_dividend_coverage_ratio(trailing=trailing)
+        )
+        solvency_ratios["Interest Paid to Expense Ratio"] = (
+            self.get_interest_paid_to_expense_ratio(trailing=trailing)
         )
 
         self._solvency_ratios = (
@@ -4591,7 +5190,7 @@ class Ratios:
 
         |      |    2021 |    2022 |    2023 |     2024 |    2025 |
         |:-----|--------:|--------:|--------:|---------:|--------:|
-        | AAPL | 45.4567 | 44.538  | 31.9908 | inf      | inf     |
+        | AAPL | 45.4567 | 44.538  | 31.9908 | -        | -       |
         | TSLA | 25.4286 | 90.0471 | 86.9103 |  35.5543 |  31.074 |
         """
         if trailing:
@@ -5281,6 +5880,263 @@ class Ratios:
             rounding if rounding else self._rounding
         ).loc[:, self._start_date : self._end_date]
 
+    @handle_portfolio
+    @handle_errors
+    def get_debt_to_capital_ratio(
+        self,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        trailing: int | None = None,
+    ):
+        """
+        Calculate the debt to capital ratio, a solvency ratio that measures the
+        proportion of a company's total capital (debt plus equity) that is financed
+        by debt.
+
+        Unlike the debt to equity ratio, which can theoretically exceed one or become
+        negative with low or negative equity, the debt to capital ratio is bounded
+        between 0 and 1 under normal circumstances, making it easier to compare
+        across companies with very different capital structures.
+
+        The formula is as follows:
+
+        - Debt to Capital Ratio = Total Debt / (Total Debt + Total Equity)
+
+        Also known as: capitalization ratio.
+
+        Args:
+            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            trailing (int): Defines whether to select a trailing period.
+            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+
+        Returns:
+            pd.DataFrame: Debt to capital ratio values.
+
+        Notes:
+        - The method retrieves historical data and calculates the ratio for each asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the ratio values using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        debt_to_capital_ratios = toolkit.ratios.get_debt_to_capital_ratio()
+        ```
+
+        Which returns:
+
+        |      |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:-----|-------:|-------:|-------:|-------:|-------:|
+        | AAPL | 0.6839 | 0.7233 | 0.666  | 0.6764 | 0.6038 |
+        | TSLA | 0.2193 | 0.1113 | 0.1308 | 0.156  | 0.0918 |
+        """
+        if trailing:
+            debt_to_capital_ratio = solvency_model.get_debt_to_capital_ratio(
+                self._balance_sheet_statement.loc[:, "Total Debt", :]
+                .T.rolling(trailing)
+                .mean()
+                .T,
+                self._balance_sheet_statement.loc[:, "Total Equity", :]
+                .T.rolling(trailing)
+                .mean()
+                .T,
+            )
+        else:
+            debt_to_capital_ratio = solvency_model.get_debt_to_capital_ratio(
+                self._balance_sheet_statement.loc[:, "Total Debt", :],
+                self._balance_sheet_statement.loc[:, "Total Equity", :],
+            )
+
+        if growth:
+            return calculate_growth(
+                debt_to_capital_ratio,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
+            ).loc[:, self._start_date : self._end_date]
+
+        return debt_to_capital_ratio.round(
+            rounding if rounding else self._rounding
+        ).loc[:, self._start_date : self._end_date]
+
+    @handle_portfolio
+    @handle_errors
+    def get_preferred_dividend_coverage_ratio(
+        self,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        trailing: int | None = None,
+    ):
+        """
+        Calculate the preferred dividend coverage ratio, a solvency ratio that
+        measures a company's ability to pay dividends owed to preferred shareholders
+        out of its net income.
+
+        The formula is as follows:
+
+        - Preferred Dividend Coverage Ratio = Net Income / |Preferred Dividends Paid|
+
+        Also known as: preferred dividend cover.
+
+        Args:
+            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            trailing (int): Defines whether to select a trailing period.
+            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+
+        Returns:
+            pd.DataFrame: Preferred dividend coverage ratio values.
+
+        Notes:
+        - The method retrieves historical data and calculates the ratio for each asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the ratio values using the specified `lag`.
+        - This ratio is only meaningful for companies that have preferred stock outstanding;
+        it will be zero-division/NaN for companies without preferred dividends.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["WFC"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        preferred_dividend_coverage_ratios = toolkit.ratios.get_preferred_dividend_coverage_ratio()
+        ```
+
+        Which returns:
+
+        |     |     2021 |     2022 |     2023 |     2024 |     2025 |
+        |:----|---------:|---------:|---------:|---------:|---------:|
+        | WFC |  17.2763 |  11.2664 |  15.7599 |  16.9299 |  19.5543 |
+        """
+        if trailing:
+            preferred_dividend_coverage_ratio = (
+                solvency_model.get_preferred_dividend_coverage_ratio(
+                    self._income_statement.loc[:, "Net Income", :]
+                    .T.rolling(trailing)
+                    .sum()
+                    .T,
+                    self._cash_flow_statement.loc[:, "Preferred Dividends Paid", :]
+                    .T.rolling(trailing)
+                    .sum()
+                    .T,
+                )
+            )
+        else:
+            preferred_dividend_coverage_ratio = (
+                solvency_model.get_preferred_dividend_coverage_ratio(
+                    self._income_statement.loc[:, "Net Income", :],
+                    self._cash_flow_statement.loc[:, "Preferred Dividends Paid", :],
+                )
+            )
+
+        if growth:
+            return calculate_growth(
+                preferred_dividend_coverage_ratio,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
+            ).loc[:, self._start_date : self._end_date]
+
+        return preferred_dividend_coverage_ratio.round(
+            rounding if rounding else self._rounding
+        ).loc[:, self._start_date : self._end_date]
+
+    @handle_portfolio
+    @handle_errors
+    def get_interest_paid_to_expense_ratio(
+        self,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        trailing: int | None = None,
+    ):
+        """
+        Calculate the interest paid to interest expense ratio, which measures how
+        much of the accrual-based interest expense reported on the income statement
+        was actually paid out in cash during the period.
+
+        A ratio consistently below one can indicate that interest is being accrued
+        (e.g. on payment-in-kind debt) rather than paid, while a ratio well above one
+        can indicate the payment of previously accrued interest or a mismatch between
+        the cash and accrual reporting periods, both of which are relevant
+        quality-of-earnings signals.
+
+        The formula is as follows:
+
+        - Interest Paid to Expense Ratio = Interest Paid / Interest Expense
+
+        Also known as: cash interest coverage, interest cash conversion.
+
+        Args:
+            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            trailing (int): Defines whether to select a trailing period.
+            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+
+        Returns:
+            pd.DataFrame: Interest paid to interest expense ratio values.
+
+        Notes:
+        - The method retrieves historical data and calculates the ratio for each asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the ratio values using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        interest_paid_to_expense_ratios = toolkit.ratios.get_interest_paid_to_expense_ratio()
+        ```
+
+        Which returns:
+
+        |      |   2021 |   2022 |   2023 |     2024 |   2025 |
+        |:-----|-------:|-------:|-------:|---------:|-------:|
+        | AAPL | 1.0159 | 0.9775 | 0.9669 | -        | -      |
+        | TSLA | 0.717  | 0.7958 | 0.8077 |   0.7914 |      0 |
+        """
+        if trailing:
+            interest_paid_to_expense_ratio = (
+                solvency_model.get_interest_paid_to_expense_ratio(
+                    self._cash_flow_statement.loc[:, "Interest Paid", :]
+                    .T.rolling(trailing)
+                    .sum()
+                    .T,
+                    self._income_statement.loc[:, "Interest Expense", :]
+                    .T.rolling(trailing)
+                    .sum()
+                    .T,
+                )
+            )
+        else:
+            interest_paid_to_expense_ratio = (
+                solvency_model.get_interest_paid_to_expense_ratio(
+                    self._cash_flow_statement.loc[:, "Interest Paid", :],
+                    self._income_statement.loc[:, "Interest Expense", :],
+                )
+            )
+
+        if growth:
+            return calculate_growth(
+                interest_paid_to_expense_ratio,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
+            ).loc[:, self._start_date : self._end_date]
+
+        return interest_paid_to_expense_ratio.round(
+            rounding if rounding else self._rounding
+        ).loc[:, self._start_date : self._end_date]
+
     def collect_valuation_ratios(
         self,
         include_dividends: bool = False,
@@ -5322,18 +6178,18 @@ class Ratios:
 
         Which returns:
 
-        |                           |         2021 |         2022 |         2023 |         2024 |         2025 |
-        |:--------------------------|-------------:|-------------:|-------------:|-------------:|-------------:|
-        | Price-to-Cash-Flow        | 28.7847      | 17.3655      | 27.5403      | 32.6289      | 36.5905      |
-        | Price-to-Free-Cash-Flow   | 32.2174      | 19.0341      | 30.5711      | 35.4618      | 41.301       |
-        | Market Cap                |  2.9947e+12  |  2.12121e+12 |  3.04439e+12 |  3.8585e+12  |  4.07918e+12 |
-        | Enterprise Value          |  3.09629e+12 |  2.23005e+12 |  3.13835e+12 |  3.94761e+12 |  4.15562e+12 |
-        | EV-to-Sales               |  8.464       |  5.6553      |  8.188       | 10.0953      |  9.9856      |
-        | EV-to-EBIT                | 27.682       | 18.274       | 26.671       | 31.9683      | 31.3091      |
-        | EV-to-EBITDA              | 25.7524      | 17.0831      | 24.9432      | 29.3152      | 28.7093      |
-        | EV-to-Operating-Cash-Flow | 29.7611      | 18.2565      | 28.3904      | 33.3825      | 37.2762      |
-        | Tangible Asset Value      |  6.309e+10   |  5.0672e+10  |  6.2146e+10  |  5.695e+10   |  7.3733e+10  |
-        | Net Current Asset Value   |  9.355e+09   | -1.8577e+10  | -1.742e+09   | -2.3405e+10  | -1.7674e+10  |
+        |                             |        2021 |         2022 |        2023 |        2024 |        2025 |
+        |:----------------------------|------------:|-------------:|------------:|------------:|------------:|
+        | EV-to-EBIT                  | 27.682      | 18.274       | 26.671      | 31.9683     | 31.3091     |
+        | EV-to-EBITDA                | 25.7524     | 17.0831      | 24.9432     | 29.3152     | 28.7093     |
+        | EV-to-Operating-Cash-Flow   | 29.7611     | 18.2565      | 28.3904     | 33.3825     | 37.2762     |
+        | Tangible Asset Value        |  6.309e+10  |  5.0672e+10  |  6.2146e+10 |  5.695e+10  |  7.3733e+10 |
+        | Net Current Asset Value     |  9.355e+09  | -1.8577e+10  | -1.742e+09  | -2.3405e+10 | -1.7674e+10 |
+        | EV-to-Free-Cash-Flow        | 33.3102     | 20.0107      | 31.5146     | 36.2809     | 42.075      |
+        | Graham Number               | 21.7378     | 20.662       | 23.2902     | 22.4928     | 28.7292     |
+        | Buyback Yield               |  0.0283     |  0.0421      |  0.0255     |  0.0246     |  0.0222     |
+        | Shareholder Yield           |  0.0283     |  0.0421      |  0.0255     |  0.0246     |  0.0251     |
+        | SBC-Adjusted Free Cash Flow |  8.5047e+10 |  1.02405e+11 |  8.8751e+10 |  9.7119e+10 |  8.5904e+10 |
         """
         valuation_ratios: dict = {}
 
@@ -5412,6 +6268,18 @@ class Ratios:
         )
         valuation_ratios["Net Current Asset Value"] = self.get_net_current_asset_value(
             trailing=trailing
+        )
+        valuation_ratios["EV-to-Free-Cash-Flow"] = self.get_ev_to_free_cash_flow_ratio(
+            diluted=diluted, trailing=trailing
+        )
+        valuation_ratios["Buyback Yield"] = self.get_buyback_yield(
+            diluted=diluted, trailing=trailing
+        )
+        valuation_ratios["Shareholder Yield"] = self.get_shareholder_yield(
+            diluted=diluted, trailing=trailing
+        )
+        valuation_ratios["SBC-Adjusted Free Cash Flow"] = (
+            self.get_sbc_adjusted_free_cash_flow(trailing=trailing)
         )
 
         self._valuation_ratios = (
@@ -5811,12 +6679,12 @@ class Ratios:
 
         Which returns:
 
-        |      |   2021 |   2022 |   2023 |   2024 |    2025 |
-        |:-----|-------:|-------:|-------:|-------:|--------:|
-        | AAPL |    nan |    nan |    nan |    nan |  2.371  |
-        | TSLA |    nan |    nan |    nan |    nan | 62.6969 |
+        |      |   2021 |   2022 |    2023 |     2024 |    2025 |
+        |:-----|-------:|-------:|--------:|---------:|--------:|
+        | AAPL |  0.443 | 2.3908 | 92.3141 | -50.1989 |  1.6036 |
+        | TSLA |  0.322 | 0.2797 |  3.0479 |  -3.7616 | -8.8524 |
         """
-        trailing_metric = 5 * 4 if self._quarterly else 5
+        trailing_metric = 4 if self._quarterly else 1
 
         if use_ebitda_growth_rate:
             growth_rate = (
@@ -7730,3 +8598,363 @@ class Ratios:
         if show_daily:
             return ev_to_ebit.loc[self._start_date : self._end_date]
         return ev_to_ebit.loc[:, self._start_date : self._end_date]
+
+    @handle_portfolio
+    @handle_errors
+    def get_ev_to_free_cash_flow_ratio(
+        self,
+        show_daily: bool = False,
+        diluted: bool = True,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        trailing: int | None = None,
+    ):
+        """
+        Calculate the EV to free cash flow ratio, a valuation ratio that compares a
+        company's enterprise value (EV) to its free cash flow.
+
+        Unlike EV to Operating Cash Flow, this ratio nets out capital expenditures,
+        giving a valuation multiple based on the cash actually available to all
+        capital providers after reinvestment in the business.
+
+        The formula is as follows:
+
+        - EV to Free Cash Flow Ratio = Enterprise Value / Free Cash Flow
+
+        Also known as: EV/FCF.
+
+        Args:
+            show_daily (bool, optional): Whether to show daily data. Defaults to False.
+            diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
+            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            trailing (int): Defines whether to select a trailing period.
+            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+
+        Returns:
+            pd.DataFrame: EV to free cash flow ratio values.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        ev_to_fcf_ratio = toolkit.ratios.get_ev_to_free_cash_flow_ratio()
+        ```
+
+        Which returns:
+
+        |      |     2021 |    2022 |     2023 |     2024 |    2025 |
+        |:-----|---------:|--------:|---------:|---------:|--------:|
+        | AAPL |  33.3102 | 20.0107 |  31.5146 |  36.2809 |  42.075 |
+        | TSLA | 340.351  | 55.4475 | 197.279  | 393.991  | 253.891 |
+        """
+        enterprise_value = self.get_enterprise_value(
+            diluted=diluted,
+            trailing=trailing if trailing else None,
+            show_daily=show_daily,
+        )
+
+        free_cash_flow = self._cash_flow_statement.loc[:, "Free Cash Flow", :]
+
+        if show_daily:
+            free_cash_flow = map_period_data_to_daily_data(
+                period_data=free_cash_flow,
+                daily_dates=enterprise_value.index,
+                quarterly=self._quarterly,
+            )
+
+        if trailing:
+            ev_to_free_cash_flow_ratio = valuation_model.get_ev_to_free_cash_flow_ratio(
+                enterprise_value,
+                (
+                    free_cash_flow.rolling(trailing).sum()
+                    if show_daily
+                    else free_cash_flow.T.rolling(trailing).sum().T
+                ),
+            )
+        else:
+            ev_to_free_cash_flow_ratio = valuation_model.get_ev_to_free_cash_flow_ratio(
+                enterprise_value, free_cash_flow
+            )
+
+        if growth:
+            ev_to_free_cash_flow_ratio = calculate_growth(
+                ev_to_free_cash_flow_ratio,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
+            )
+        else:
+            ev_to_free_cash_flow_ratio = ev_to_free_cash_flow_ratio.round(
+                rounding if rounding else self._rounding
+            )
+
+        if show_daily:
+            return ev_to_free_cash_flow_ratio.loc[self._start_date : self._end_date]
+        return ev_to_free_cash_flow_ratio.loc[:, self._start_date : self._end_date]
+
+    @handle_portfolio
+    @handle_errors
+    def get_buyback_yield(
+        self,
+        diluted: bool = True,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        trailing: int | None = None,
+    ):
+        """
+        Calculate the buyback yield, a valuation ratio that measures the net amount
+        of common stock repurchased (net of new shares issued) relative to the
+        company's market capitalization.
+
+        A positive buyback yield means the company is a net repurchaser of its own
+        stock (shareholder-friendly), while a negative buyback yield means the
+        company is a net issuer of new shares (dilutive).
+
+        The formula is as follows:
+
+        - Buyback Yield = -(Common Stock Purchased + Common Stock Issued) / Market Capitalization
+
+        Also known as: net repurchase yield.
+
+        Args:
+            diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
+            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            trailing (int): Defines whether to select a trailing period.
+            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+
+        Returns:
+            pd.DataFrame: Buyback yield values.
+
+        Notes:
+        - The method retrieves historical data and calculates the buyback yield for each
+        asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the ratio values
+        using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        buyback_yields = toolkit.ratios.get_buyback_yield()
+        ```
+
+        Which returns:
+
+        |      |    2021 |    2022 |    2023 |    2024 |    2025 |
+        |:-----|--------:|--------:|--------:|--------:|--------:|
+        | AAPL |  0.0283 |  0.0421 |  0.0255 |  0.0246 |  0.0222 |
+        | TSLA | -0.0006 | -0.0013 | -0.0008 | -0.0009 | -0.0001 |
+        """
+        market_cap = self.get_market_cap(diluted=diluted, trailing=trailing)
+
+        if trailing:
+            buyback_yield = valuation_model.get_buyback_yield(
+                self._cash_flow_statement.loc[:, "Common Stock Purchased", :]
+                .T.rolling(trailing)
+                .sum()
+                .T,
+                self._cash_flow_statement.loc[:, "Common Stock Issued", :]
+                .T.rolling(trailing)
+                .sum()
+                .T,
+                market_cap,
+            )
+        else:
+            buyback_yield = valuation_model.get_buyback_yield(
+                self._cash_flow_statement.loc[:, "Common Stock Purchased", :],
+                self._cash_flow_statement.loc[:, "Common Stock Issued", :],
+                market_cap,
+            )
+
+        if growth:
+            return calculate_growth(
+                buyback_yield,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
+            ).loc[:, self._start_date : self._end_date]
+
+        return buyback_yield.round(rounding if rounding else self._rounding).loc[
+            :, self._start_date : self._end_date
+        ]
+
+    @handle_portfolio
+    @handle_errors
+    def get_shareholder_yield(
+        self,
+        diluted: bool = True,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        trailing: int | None = None,
+    ):
+        """
+        Calculate the total shareholder yield, a valuation ratio that combines the
+        dividend yield and the buyback yield to measure the total cash returned to
+        shareholders relative to the company's market capitalization.
+
+        The formula is as follows:
+
+        - Shareholder Yield = Dividend Yield + Buyback Yield
+
+        Also known as: total shareholder yield, total return of capital.
+
+        Args:
+            diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
+            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            trailing (int): Defines whether to select a trailing period.
+            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+
+        Returns:
+            pd.DataFrame: Shareholder yield values.
+
+        Notes:
+        - The method retrieves historical data and calculates the shareholder yield for each
+        asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the ratio values
+        using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        shareholder_yields = toolkit.ratios.get_shareholder_yield()
+        ```
+
+        Which returns:
+
+        |      |    2021 |    2022 |    2023 |    2024 |    2025 |
+        |:-----|--------:|--------:|--------:|--------:|--------:|
+        | AAPL |  0.0283 |  0.0421 |  0.0255 |  0.0246 |  0.0251 |
+        | TSLA | -0.0006 | -0.0013 | -0.0008 | -0.0009 | -0.0001 |
+        """
+        dividend_yield = self.get_dividend_yield(trailing=trailing)
+        buyback_yield = self.get_buyback_yield(diluted=diluted, trailing=trailing)
+
+        dividend_yield_columns = [
+            column
+            for column in dividend_yield.columns
+            if column in buyback_yield.columns
+        ]
+
+        shareholder_yield = valuation_model.get_shareholder_yield(
+            dividend_yield.loc[:, dividend_yield_columns],
+            buyback_yield.loc[:, dividend_yield_columns],
+        )
+
+        if growth:
+            return calculate_growth(
+                shareholder_yield,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
+            ).loc[:, self._start_date : self._end_date]
+
+        return shareholder_yield.round(rounding if rounding else self._rounding).loc[
+            :, self._start_date : self._end_date
+        ]
+
+    @handle_portfolio
+    @handle_errors
+    def get_sbc_adjusted_free_cash_flow(
+        self,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        trailing: int | None = None,
+    ):
+        """
+        Calculate the stock-based compensation (SBC) adjusted free cash flow, which
+        deducts non-cash SBC expenses from free cash flow to give a more conservative
+        view of the cash actually available to shareholders.
+
+        Free cash flow already excludes SBC as a cash expense (it is added back in
+        the cash flow from operations), which can overstate the cash available to
+        shareholders. Subtracting SBC treats it as if it were a real cash cost, which
+        is a common quality-of-earnings adjustment, especially for companies that
+        rely heavily on equity compensation.
+
+        The formula is as follows:
+
+        - SBC-Adjusted Free Cash Flow = Free Cash Flow - Stock Based Compensation
+
+        Also known as: SBC-adjusted FCF.
+
+        Args:
+            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            trailing (int): Defines whether to select a trailing period.
+            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+
+        Returns:
+            pd.DataFrame: SBC-adjusted free cash flow values.
+
+        Notes:
+        - The method retrieves historical data and calculates the SBC-adjusted free cash flow
+        for each asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the values
+        using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        sbc_adjusted_fcf = toolkit.ratios.get_sbc_adjusted_free_cash_flow()
+        ```
+
+        Which returns:
+
+        |      |       2021 |        2022 |       2023 |       2024 |       2025 |
+        |:-----|-----------:|------------:|-----------:|-----------:|-----------:|
+        | AAPL | 8.5047e+10 | 1.02405e+11 | 8.8751e+10 | 9.7119e+10 | 8.5904e+10 |
+        | TSLA | 1.362e+09  | 5.992e+09   | 2.545e+09  | 1.582e+09  | 3.395e+09  |
+        """
+        if trailing:
+            sbc_adjusted_free_cash_flow = (
+                valuation_model.get_sbc_adjusted_free_cash_flow(
+                    self._cash_flow_statement.loc[:, "Free Cash Flow", :]
+                    .T.rolling(trailing)
+                    .sum()
+                    .T,
+                    self._cash_flow_statement.loc[:, "Stock Based Compensation", :]
+                    .T.rolling(trailing)
+                    .sum()
+                    .T,
+                )
+            )
+        else:
+            sbc_adjusted_free_cash_flow = (
+                valuation_model.get_sbc_adjusted_free_cash_flow(
+                    self._cash_flow_statement.loc[:, "Free Cash Flow", :],
+                    self._cash_flow_statement.loc[:, "Stock Based Compensation", :],
+                )
+            )
+
+        if growth:
+            return calculate_growth(
+                sbc_adjusted_free_cash_flow,
+                lag=lag,
+                rounding=rounding if rounding else self._rounding,
+            ).loc[:, self._start_date : self._end_date]
+
+        return sbc_adjusted_free_cash_flow.round(
+            rounding if rounding else self._rounding
+        ).loc[:, self._start_date : self._end_date]

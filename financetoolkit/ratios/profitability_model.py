@@ -345,3 +345,46 @@ def get_EBIT_to_revenue(
         float | pd.Series: The EBITperRevenue value.
     """
     return earnings_before_interest_and_taxes / revenue
+
+
+def get_cash_tax_rate(
+    income_taxes_paid: pd.Series, income_before_tax: pd.Series
+) -> pd.Series:
+    """
+    Calculate the cash tax rate, which measures the percentage of pretax income that
+    is actually paid out in cash taxes, as opposed to the accrual-based effective tax
+    rate.
+
+    Args:
+        income_taxes_paid (float or pd.Series): Income taxes paid by the company, as
+            reported in the Cash Flow Statement.
+        income_before_tax (float or pd.Series): The company's income before taxes.
+
+    Returns:
+        float | pd.Series: The cash tax rate value.
+    """
+    return income_taxes_paid / income_before_tax
+
+
+def get_tax_rate_divergence(
+    cash_tax_rate: pd.Series, effective_tax_rate: pd.Series
+) -> pd.Series:
+    """
+    Calculate the tax rate divergence, which measures the difference between the cash
+    tax rate and the accrual-based effective tax rate.
+
+    A persistently positive divergence indicates the company is paying more in cash
+    taxes than it is recognizing as tax expense (e.g. due to the reversal of deferred
+    tax liabilities), while a persistently negative divergence indicates the opposite
+    and can be a quality-of-earnings red flag if it stems from aggressive tax
+    deferral rather than timing differences.
+
+    Args:
+        cash_tax_rate (float or pd.Series): The cash tax rate of the company.
+        effective_tax_rate (float or pd.Series): The effective (accrual-based) tax rate
+            of the company.
+
+    Returns:
+        float | pd.Series: The tax rate divergence value.
+    """
+    return cash_tax_rate - effective_tax_rate

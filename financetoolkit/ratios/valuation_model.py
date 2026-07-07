@@ -441,3 +441,92 @@ def get_ev_to_ebit(
         float | pd.Series: The enterprise value multiplier value.
     """
     return enterprise_value / earnings_before_interest_and_taxes
+
+
+def get_ev_to_free_cash_flow_ratio(
+    enterprise_value: pd.Series, free_cash_flow: pd.Series
+) -> pd.Series:
+    """
+    Calculate the EV to free cash flow ratio, a valuation ratio that compares a company's
+    enterprise value (EV) to its free cash flow.
+
+    Args:
+        enterprise_value (float or pd.Series): Enterprise value of the company.
+        free_cash_flow (float or pd.Series): Free cash flow of the company.
+
+    Returns:
+        float | pd.Series: The EV to free cash flow ratio value.
+    """
+    return enterprise_value / free_cash_flow
+
+
+def get_buyback_yield(
+    repurchase_of_common_stock: pd.Series,
+    issuance_of_common_stock: pd.Series,
+    market_capitalization: pd.Series,
+) -> pd.Series:
+    """
+    Calculate the buyback yield, a valuation ratio that measures the net amount of
+    common stock repurchased (net of new shares issued) relative to the company's
+    market capitalization.
+
+    Repurchases are typically reported as a cash outflow (negative) and issuances as a
+    cash inflow (positive) on the cash flow statement, so netting and negating the two
+    yields a positive value when the company is a net repurchaser of its own stock and
+    a negative value when it is a net issuer (i.e. diluting shareholders).
+
+    Args:
+        repurchase_of_common_stock (float or pd.Series): Common stock repurchased by the company,
+            as reported in the Cash Flow Statement.
+        issuance_of_common_stock (float or pd.Series): Common stock issued by the company,
+            as reported in the Cash Flow Statement.
+        market_capitalization (float or pd.Series): Market capitalization of the company.
+
+    Returns:
+        float | pd.Series: The buyback yield value.
+    """
+    return -(repurchase_of_common_stock + issuance_of_common_stock) / (
+        market_capitalization
+    )
+
+
+def get_shareholder_yield(
+    dividend_yield: pd.Series, buyback_yield: pd.Series
+) -> pd.Series:
+    """
+    Calculate the total shareholder yield, a valuation ratio that combines the dividend
+    yield and the buyback yield to measure the total cash returned to shareholders
+    relative to the company's market capitalization.
+
+    Args:
+        dividend_yield (float or pd.Series): Dividend yield of the company.
+        buyback_yield (float or pd.Series): Buyback yield of the company.
+
+    Returns:
+        float | pd.Series: The total shareholder yield value.
+    """
+    return dividend_yield + buyback_yield
+
+
+def get_sbc_adjusted_free_cash_flow(
+    free_cash_flow: pd.Series, stock_based_compensation: pd.Series
+) -> pd.Series:
+    """
+    Calculate the stock-based compensation (SBC) adjusted free cash flow, which
+    deducts non-cash SBC expenses from free cash flow to give a more conservative
+    view of the cash actually available to shareholders.
+
+    Free cash flow already excludes SBC as a cash expense (it is added back in the
+    cash flow from operations), which can overstate the cash available to
+    shareholders. Subtracting SBC treats it as if it were a real cash cost, which is
+    a common quality-of-earnings adjustment, especially for companies that rely
+    heavily on equity compensation.
+
+    Args:
+        free_cash_flow (float or pd.Series): Free cash flow of the company.
+        stock_based_compensation (float or pd.Series): Stock-based compensation of the company.
+
+    Returns:
+        float | pd.Series: The SBC-adjusted free cash flow value.
+    """
+    return free_cash_flow - stock_based_compensation

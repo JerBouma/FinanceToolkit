@@ -192,3 +192,69 @@ def get_dividend_capex_coverage_ratio(
         float | pd.Series: The dividend paid and capex coverage ratio value.
     """
     return cash_flow_from_operations / (capital_expenditure + dividends)
+
+
+def get_debt_to_capital_ratio(
+    total_debt: float | pd.Series, total_equity: float | pd.Series
+) -> pd.Series:
+    """
+    Calculate the debt to capital ratio, a solvency ratio that measures the proportion
+    of a company's total capital (debt plus equity) that is financed by debt.
+
+    Unlike the debt to equity ratio, which can theoretically exceed one or become
+    negative with low or negative equity, the debt to capital ratio is bounded
+    between 0 and 1 under normal circumstances, making it easier to compare across
+    companies with very different capital structures.
+
+    Args:
+        total_debt (float or pd.Series): Total debt of the company.
+        total_equity (float or pd.Series): Total equity of the company.
+
+    Returns:
+        float | pd.Series: The debt to capital ratio value.
+    """
+    return total_debt / (total_debt + total_equity)
+
+
+def get_preferred_dividend_coverage_ratio(
+    net_income: float | pd.Series, preferred_dividends: float | pd.Series
+) -> pd.Series:
+    """
+    Calculate the preferred dividend coverage ratio, a solvency ratio that measures a
+    company's ability to pay dividends owed to preferred shareholders out of its net
+    income.
+
+    Args:
+        net_income (float or pd.Series): Net income of the company.
+        preferred_dividends (float or pd.Series): Preferred dividends paid by the company,
+            as reported in the Cash Flow Statement.
+
+    Returns:
+        float | pd.Series: The preferred dividend coverage ratio value.
+    """
+    return net_income / abs(preferred_dividends)
+
+
+def get_interest_paid_to_expense_ratio(
+    interest_paid: float | pd.Series, interest_expense: float | pd.Series
+) -> pd.Series:
+    """
+    Calculate the interest paid to interest expense ratio, which measures how much of
+    the accrual-based interest expense reported on the income statement was actually
+    paid out in cash during the period.
+
+    A ratio consistently below one can indicate that interest is being accrued
+    (e.g. on payment-in-kind debt) rather than paid, while a ratio well above one can
+    indicate the payment of previously accrued interest or a mismatch between the cash
+    and accrual reporting periods, both of which are relevant quality-of-earnings signals.
+
+    Args:
+        interest_paid (float or pd.Series): Interest paid by the company, as reported
+            in the Cash Flow Statement.
+        interest_expense (float or pd.Series): Interest expense of the company, as reported
+            in the Income Statement.
+
+    Returns:
+        float | pd.Series: The interest paid to interest expense ratio value.
+    """
+    return interest_paid / interest_expense

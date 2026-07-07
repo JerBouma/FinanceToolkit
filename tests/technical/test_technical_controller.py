@@ -271,3 +271,64 @@ def test_get_chaikin_oscillator(recorder, technical_module):
     recorder.capture(
         technical_module.get_chaikin_oscillator(growth=True, lag=[1, 2, 3]).round(0)
     )
+
+
+def test_get_trin(recorder, technical_module):
+    recorder.capture(technical_module.get_trin())
+    recorder.capture(technical_module.get_trin(growth=True))
+    recorder.capture(technical_module.get_trin(growth=True, lag=[1, 2, 3]))
+
+
+def test_get_new_highs_new_lows(recorder, technical_module):
+    recorder.capture(technical_module.get_new_highs_new_lows())
+    recorder.capture(technical_module.get_new_highs_new_lows(growth=True))
+    recorder.capture(
+        technical_module.get_new_highs_new_lows(growth=True, lag=[1, 2, 3])
+    )
+
+
+def test_get_weighted_moving_average(recorder, technical_module):
+    recorder.capture(technical_module.get_weighted_moving_average())
+    recorder.capture(technical_module.get_weighted_moving_average(growth=True))
+    recorder.capture(
+        technical_module.get_weighted_moving_average(growth=True, lag=[1, 2, 3])
+    )
+
+
+def test_get_hull_moving_average(recorder, technical_module):
+    recorder.capture(technical_module.get_hull_moving_average())
+    recorder.capture(technical_module.get_hull_moving_average(growth=True))
+    recorder.capture(
+        technical_module.get_hull_moving_average(growth=True, lag=[1, 2, 3])
+    )
+
+
+def test_get_volume_weighted_average_price(recorder, technical_module):
+    recorder.capture(technical_module.get_volume_weighted_average_price())
+    recorder.capture(technical_module.get_volume_weighted_average_price(growth=True))
+    recorder.capture(
+        technical_module.get_volume_weighted_average_price(growth=True, lag=[1, 2, 3])
+    )
+
+
+def test_get_parabolic_sar(recorder, technical_module):
+    recorder.capture(technical_module.get_parabolic_sar())
+    recorder.capture(technical_module.get_parabolic_sar(growth=True))
+    recorder.capture(technical_module.get_parabolic_sar(growth=True, lag=[1, 2, 3]))
+
+
+def test_get_pivot_points(recorder, technical_module):
+    recorder.capture(technical_module.get_pivot_points())
+    recorder.capture(technical_module.get_pivot_points(growth=True))
+    recorder.capture(technical_module.get_pivot_points(growth=True, lag=[1, 2, 3]))
+
+
+def test_get_donchian_channels(recorder, technical_module):
+    recorder.capture(technical_module.get_donchian_channels())
+    recorder.capture(technical_module.get_donchian_channels(growth=True))
+    recorder.capture(technical_module.get_donchian_channels(growth=True, lag=[1, 2, 3]))
+
+
+def test_get_volatility_cone(recorder, technical_module):
+    recorder.capture(technical_module.get_volatility_cone())
+    recorder.capture(technical_module.get_volatility_cone(windows=[5, 10, 20]))

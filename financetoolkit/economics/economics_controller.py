@@ -190,11 +190,50 @@ class Economics:
         )
 
         if not release_calendar.empty:
-            release_calendar = release_calendar.loc[
-                self._start_date : self._end_date
-            ]
+            release_calendar = release_calendar.loc[self._start_date : self._end_date]
 
         return release_calendar
+
+    @handle_errors
+    def get_fxmacrodata_dataset(
+        self,
+        dataset: str,
+        currency: str = "usd",
+        indicator: str | None = None,
+        base: str | None = None,
+        quote: str | None = None,
+        limit: int = 100,
+        api_key: str | None = None,
+        **kwargs,
+    ) -> pd.DataFrame:
+        """
+        Get any public FXMacroData read dataset as a DataFrame.
+
+        Supported datasets include data_catalogue, announcements,
+        latest_announcements, announcement_changes, predictions, calendar,
+        forex, cot, commodity, commodities_latest, curves, curve_proxies,
+        forward_curves, rate_differentials, forward_differentials,
+        market_sessions, risk_sentiment, news, and press_releases.
+        """
+        params = {
+            "currency": currency,
+            "indicator": indicator,
+            "base": base,
+            "quote": quote,
+            "limit": limit,
+            **kwargs,
+        }
+        params = {key: value for key, value in params.items() if value is not None}
+        dataset_frame = fxmacrodata_model.get_fxmacrodata_dataset(
+            dataset,
+            api_key=api_key,
+            **params,
+        )
+        if not dataset_frame.empty and isinstance(
+            dataset_frame.index, pd.DatetimeIndex
+        ):
+            dataset_frame = dataset_frame.loc[self._start_date : self._end_date]
+        return dataset_frame
 
     @handle_errors
     def get_gross_domestic_product(
@@ -3875,7 +3914,9 @@ class Economics:
         period = (
             period
             if period is not None
-            else "quarterly" if self._quarterly else "yearly"
+            else "quarterly"
+            if self._quarterly
+            else "yearly"
         )
 
         share_prices = oecd_model.get_share_prices(
@@ -3975,7 +4016,9 @@ class Economics:
         period = (
             period
             if period is not None
-            else "quarterly" if self._quarterly else "yearly"
+            else "quarterly"
+            if self._quarterly
+            else "yearly"
         )
         gmdb_source = gmdb_source if gmdb_source is not None else self._gmdb_source
 
@@ -4413,7 +4456,9 @@ class Economics:
         period = (
             period
             if period is not None
-            else "quarterly" if self._quarterly else "yearly"
+            else "quarterly"
+            if self._quarterly
+            else "yearly"
         )
 
         gmdb_source = gmdb_source if gmdb_source is not None else self._gmdb_source
@@ -4537,7 +4582,9 @@ class Economics:
         period = (
             period
             if period is not None
-            else "quarterly" if self._quarterly else "yearly"
+            else "quarterly"
+            if self._quarterly
+            else "yearly"
         )
 
         gmdb_source = gmdb_source if gmdb_source is not None else self._gmdb_source
@@ -5111,7 +5158,9 @@ class Economics:
         period = (
             period
             if period is not None
-            else "quarterly" if self._quarterly else "yearly"
+            else "quarterly"
+            if self._quarterly
+            else "yearly"
         )
         gmdb_source = gmdb_source if gmdb_source is not None else self._gmdb_source
 

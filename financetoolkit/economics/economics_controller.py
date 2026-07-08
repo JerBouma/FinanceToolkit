@@ -10,7 +10,13 @@ from datetime import datetime, timedelta
 import pandas as pd
 
 from financetoolkit.cache.cache_controller import Cache, set_active_cache
-from financetoolkit.economics import fred_model, gmdb_model, oecd_model, yfinance_model
+from financetoolkit.economics import (
+    fred_model,
+    fxmacrodata_model,
+    gmdb_model,
+    oecd_model,
+    yfinance_model,
+)
 from financetoolkit.utilities.error_model import handle_errors
 from financetoolkit.utilities.logger_model import get_logger
 from financetoolkit.utilities.statistics_model import finalize_dataset
@@ -149,6 +155,46 @@ class Economics:
                 "https://fred.stlouisfed.org/docs/api/api_key.html and pass it via the "
                 "fred_api_key argument or set the FRED_API_KEY environment variable."
             )
+
+    @handle_errors
+    def get_fxmacrodata_release_calendar(
+        self,
+        currency: str = "usd",
+        limit: int = 100,
+        min_tier: int | None = None,
+        api_key: str | None = None,
+    ) -> pd.DataFrame:
+        """
+        Get the FXMacroData economic release calendar for a currency.
+
+        FXMacroData provides point-in-time macroeconomic and central-bank
+        release events that can be joined to price, factor, or portfolio
+        data when analyzing event risk.
+
+        Args:
+            currency (str, optional): Three-letter FX currency code. Defaults to "usd".
+            limit (int, optional): Maximum number of events to return. Defaults to 100.
+            min_tier (int | None, optional): Optional maximum market tier to keep.
+                For example, 2 keeps tier 1 and tier 2 market-moving events.
+            api_key (str | None, optional): FXMacroData API key. Defaults to the
+                FXMACRODATA_API_KEY environment variable when available.
+
+        Returns:
+            pd.DataFrame: FXMacroData release calendar indexed by release date.
+        """
+        release_calendar = fxmacrodata_model.get_release_calendar(
+            currency=currency,
+            limit=limit,
+            min_tier=min_tier,
+            api_key=api_key,
+        )
+
+        if not release_calendar.empty:
+            release_calendar = release_calendar.loc[
+                self._start_date : self._end_date
+            ]
+
+        return release_calendar
 
     @handle_errors
     def get_gross_domestic_product(

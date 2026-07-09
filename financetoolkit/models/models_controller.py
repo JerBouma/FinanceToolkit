@@ -6,8 +6,10 @@ import pandas as pd
 
 from financetoolkit.models import (
     altman_model,
+    beneish_model,
     dupont_model,
     enterprise_model,
+    eva_model,
     growth_model,
     helpers,
     intrinsic_model,
@@ -15,7 +17,7 @@ from financetoolkit.models import (
     wacc_model,
 )
 from financetoolkit.performance.performance_model import get_beta
-from financetoolkit.ratios import liquidity_model, valuation_model
+from financetoolkit.ratios import liquidity_model, profitability_model, valuation_model
 from financetoolkit.utilities.dataframe_model import filter_columns
 from financetoolkit.utilities.error_model import handle_errors
 from financetoolkit.utilities.statistics_model import (
@@ -222,7 +224,7 @@ class Models:
                 dataset=self._dupont_analysis,
                 lag=lag,
                 rounding=rounding if rounding else self._rounding,
-                axis="index",
+                axis="columns",
             )
 
         self._dupont_analysis = self._dupont_analysis.round(
@@ -813,6 +815,177 @@ class Models:
         return filter_columns(
             result.loc[:, self._start_date : self._end_date], show_columns
         )
+
+    @handle_errors
+    def get_economic_value_added(
+        self,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+        trailing: int | None = None,
+        show_columns: list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Economic Value Added (EVA) is a measure of a company's financial performance that
+        represents the value created in excess of the required return of the company's capital
+        providers. It captures whether a company is generating returns above its true cost of
+        capital, which distinguishes it from purely accounting-based measures such as Net Income.
+
+        The formula is as follows:
+
+            - NOPAT = EBIT * (1 - Effective Tax Rate)
+            - Invested Capital = Total Equity + Total Debt
+            - EVA = NOPAT - (Weighted Average Cost of Capital * Invested Capital)
+
+        Also known as: EVA, economic profit.
+
+        Args:
+            rounding (int, optional): The number of decimals to round the results to. Defaults to None.
+            growth (bool, optional): Whether to calculate the growth of the values. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            trailing (int | None, optional): The trailing period to use for the calculation. Defaults to None.
+            show_columns (list[str] | None, optional): List of columns to show in the results. If None, all
+                columns will be shown. Defaults to None.
+
+        Returns:
+            pd.DataFrame: DataFrame containing the EVA and its components.
+
+        Notes:
+        - A positive EVA indicates that the company is generating returns in excess of its cost of
+        capital, i.e. it is creating value for its capital providers. A negative EVA indicates the
+        company is destroying value.
+        - EBIT is approximated as Net Income + Income Tax Expense + Interest Expense, consistent
+        with the Altman Z-Score calculation elsewhere in this module.
+        - Invested Capital is approximated as the average of Total Equity and Total Debt, consistent
+        with the Return on Invested Capital calculation in the Ratios module.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "MSFT"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.models.get_economic_value_added().loc["AAPL"]
+        ```
+
+        Which returns:
+
+        |                                   |        2021 |          2022 |
+        |:----------------------------------|-------------:|-------------:|
+        | Net Operating Profit After Taxes  |  9.69732e+10 |  1.02259e+11 |
+        | Invested Capital                  |  1.93614e+11 |  1.91382e+11 |
+        | Weighted Average Cost of Capital  |       0.3598 |      -0.2326 |
+        | Economic Value Added              |  2.73107e+10 |  1.46775e+11 |
+        """
+        eva = {}
+
+        net_income = (
+            self._income_statement.loc[:, "Net Income", :].T.rolling(trailing).sum().T
+            if trailing
+            else self._income_statement.loc[:, "Net Income", :]
+        )
+        income_tax_expense = (
+            self._income_statement.loc[:, "Income Tax Expense", :]
+            .T.rolling(trailing)
+            .sum()
+            .T
+            if trailing
+            else self._income_statement.loc[:, "Income Tax Expense", :]
+        )
+        interest_expense = (
+            self._income_statement.loc[:, "Interest Expense", :]
+            .T.rolling(trailing)
+            .sum()
+            .T
+            if trailing
+            else self._income_statement.loc[:, "Interest Expense", :]
+        )
+        income_before_tax = (
+            self._income_statement.loc[:, "Income Before Tax", :]
+            .T.rolling(trailing)
+            .sum()
+            .T
+            if trailing
+            else self._income_statement.loc[:, "Income Before Tax", :]
+        )
+        total_equity = (
+            self._balance_sheet_statement.loc[:, "Total Equity", :]
+            .T.rolling(trailing)
+            .mean()
+            .T
+            if trailing
+            else self._balance_sheet_statement.loc[:, "Total Equity", :]
+            .T.rolling(2)
+            .mean()
+            .T
+        )
+        total_debt = (
+            self._balance_sheet_statement.loc[:, "Total Debt", :]
+            .T.rolling(trailing)
+            .mean()
+            .T
+            if trailing
+            else self._balance_sheet_statement.loc[:, "Total Debt", :]
+            .T.rolling(2)
+            .mean()
+            .T
+        )
+
+        ebit = net_income + income_tax_expense + interest_expense
+        effective_tax_rate = profitability_model.get_effective_tax_rate(
+            income_tax_expense=income_tax_expense,
+            income_before_tax=income_before_tax,
+        )
+
+        eva["Net Operating Profit After Taxes"] = (
+            eva_model.get_net_operating_profit_after_taxes(
+                ebit=ebit,
+                effective_tax_rate=effective_tax_rate,
+            )
+        )
+
+        eva["Invested Capital"] = eva_model.get_invested_capital(
+            total_equity=total_equity,
+            total_debt=total_debt,
+        )
+
+        eva["Weighted Average Cost of Capital"] = (
+            self.get_weighted_average_cost_of_capital(
+                show_full_results=False, trailing=trailing
+            )
+        )
+
+        eva["Economic Value Added"] = eva_model.get_economic_value_added(
+            net_operating_profit_after_taxes=eva["Net Operating Profit After Taxes"],
+            weighted_average_cost_of_capital=eva["Weighted Average Cost of Capital"],
+            invested_capital=eva["Invested Capital"],
+        )
+
+        eva_results = (
+            pd.concat(eva)
+            .dropna(axis=1, how="all")
+            .swaplevel(0, 1)
+            .reindex(self._tickers, level=0)
+        )
+
+        eva_results = finalize_dataset(
+            dataset=eva_results,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="columns",
+        )
+
+        return filter_columns(eva_results, show_columns)
 
     def get_intrinsic_valuation(
         self,
@@ -1604,6 +1777,277 @@ class Models:
         )
 
     @handle_errors
+    def get_beneish_m_score(
+        self,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+        trailing: int | None = None,
+        show_columns: list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        The Beneish M-Score is a probabilistic model, developed by Messod Beneish, that uses eight
+        financial ratios derived from a company's financial statements to identify whether a company
+        has manipulated its earnings. It is a natural companion to the Altman Z-Score and Piotroski
+        F-Score, using the same normalized financial statements as its input.
+
+        The formula is as follows:
+
+            M-Score = -4.84 + 0.92 * DSRI + 0.528 * GMI + 0.404 * AQI + 0.892 * SGI + 0.115 * DEPI
+            - 0.172 * SGAI + 4.679 * TATA - 0.327 * LVGI
+
+        The eight variables are:
+
+            - DSRI: Days Sales in Receivables Index
+            - GMI: Gross Margin Index
+            - AQI: Asset Quality Index
+            - SGI: Sales Growth Index
+            - DEPI: Depreciation Index
+            - SGAI: Selling, General and Administrative Expenses Index
+            - TATA: Total Accruals to Total Assets
+            - LVGI: Leverage Index
+
+        Also known as: Beneish M-Score, earnings manipulation score.
+
+        Args:
+            rounding (int, optional): The number of decimals to round the results to. Defaults to None.
+            growth (bool, optional): Whether to calculate the growth of the values. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            trailing (int | None, optional): The trailing period to use for the calculation. Defaults to None.
+            show_columns (list[str] | None, optional): List of columns to show in the results. If None, all
+                columns will be shown. Defaults to None.
+
+        Returns:
+            pd.DataFrame: DataFrame containing the Beneish M-Score and its components.
+
+        Notes:
+        - A M-Score greater than -1.78 suggests that the company is likely to be an earnings
+        manipulator. A M-Score lower than -1.78 suggests the company is unlikely to be a manipulator.
+        - As with the Altman Z-Score and Piotroski F-Score, this is a probabilistic, not a
+        definitive, indicator and should be combined with further fundamental analysis.
+        - Every component compares the current period to the prior period, so the very first
+        period in the results will always be NaN.
+
+        References:
+        - Beneish, Messod D. "The Detection of Earnings Manipulation." Financial Analysts Journal,
+        Vol. 55, No. 5, 1999, pp. 24-36.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "MSFT"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.models.get_beneish_m_score().loc["AAPL"]
+        ```
+
+        Which returns:
+
+        |                                  |    2021 |    2022 |    2023 |
+        |:---------------------------------|--------:|--------:|--------:|
+        | Days Sales in Receivables Index  |  1.0322 |  1.0975 |  1.0297 |
+        | Gross Margin Index               |  0.9151 |  0.9647 |  0.9814 |
+        | Asset Quality Index              |  1.1404 |  0.9841 |  0.9387 |
+        | Sales Growth Index               |  1.3326 |  1.0779 |  0.972  |
+        | Depreciation Index               |  1.0566 |  1.0635 |  0.9982 |
+        | SGA Expenses Index               |  0.8279 |  1.0595 |  1.0222 |
+        | Leverage Index                   |  1.0608 |  1.0729 |  0.9516 |
+        | Total Accruals to Total Assets   | -0.0267 | -0.0634 | -0.0384 |
+        | Beneish M-Score                  | -2.2503 | -2.6691 | -2.6802 |
+        """
+        beneish_m_score = {}
+
+        net_receivables = (
+            self._balance_sheet_statement.loc[:, "Net Receivables", :]
+            .T.rolling(trailing)
+            .mean()
+            .T
+            if trailing
+            else self._balance_sheet_statement.loc[:, "Net Receivables", :]
+        )
+        revenue = (
+            self._income_statement.loc[:, "Revenue", :].T.rolling(trailing).sum().T
+            if trailing
+            else self._income_statement.loc[:, "Revenue", :]
+        )
+        cost_of_goods_sold = (
+            self._income_statement.loc[:, "Cost of Goods Sold", :]
+            .T.rolling(trailing)
+            .sum()
+            .T
+            if trailing
+            else self._income_statement.loc[:, "Cost of Goods Sold", :]
+        )
+        total_current_assets = (
+            self._balance_sheet_statement.loc[:, "Total Current Assets", :]
+            .T.rolling(trailing)
+            .mean()
+            .T
+            if trailing
+            else self._balance_sheet_statement.loc[:, "Total Current Assets", :]
+        )
+        property_plant_and_equipment = (
+            self._balance_sheet_statement.loc[:, "Property, Plant and Equipment", :]
+            .T.rolling(trailing)
+            .mean()
+            .T
+            if trailing
+            else self._balance_sheet_statement.loc[
+                :, "Property, Plant and Equipment", :
+            ]
+        )
+        total_assets = (
+            self._balance_sheet_statement.loc[:, "Total Assets", :]
+            .T.rolling(trailing)
+            .mean()
+            .T
+            if trailing
+            else self._balance_sheet_statement.loc[:, "Total Assets", :]
+        )
+        depreciation_and_amortization = (
+            self._income_statement.loc[:, "Depreciation and Amortization", :]
+            .T.rolling(trailing)
+            .sum()
+            .T
+            if trailing
+            else self._income_statement.loc[:, "Depreciation and Amortization", :]
+        )
+        selling_general_and_administrative_expenses = (
+            self._income_statement.loc[
+                :, "Selling, General and Administrative Expenses", :
+            ]
+            .T.rolling(trailing)
+            .sum()
+            .T
+            if trailing
+            else self._income_statement.loc[
+                :, "Selling, General and Administrative Expenses", :
+            ]
+        )
+        total_current_liabilities = (
+            self._balance_sheet_statement.loc[:, "Total Current Liabilities", :]
+            .T.rolling(trailing)
+            .mean()
+            .T
+            if trailing
+            else self._balance_sheet_statement.loc[:, "Total Current Liabilities", :]
+        )
+        long_term_debt = (
+            self._balance_sheet_statement.loc[:, "Long Term Debt", :]
+            .T.rolling(trailing)
+            .mean()
+            .T
+            if trailing
+            else self._balance_sheet_statement.loc[:, "Long Term Debt", :]
+        )
+        net_income = (
+            self._income_statement.loc[:, "Net Income", :].T.rolling(trailing).sum().T
+            if trailing
+            else self._income_statement.loc[:, "Net Income", :]
+        )
+        cash_flow_from_operations = (
+            self._cash_flow_statement.loc[:, "Operating Cash Flow", :]
+            .T.rolling(trailing)
+            .sum()
+            .T
+            if trailing
+            else self._cash_flow_statement.loc[:, "Operating Cash Flow", :]
+        )
+
+        beneish_m_score["Days Sales in Receivables Index"] = (
+            beneish_model.get_days_sales_in_receivables_index(
+                net_receivables=net_receivables,
+                revenue=revenue,
+            )
+        )
+
+        beneish_m_score["Gross Margin Index"] = beneish_model.get_gross_margin_index(
+            revenue=revenue,
+            cost_of_goods_sold=cost_of_goods_sold,
+        )
+
+        beneish_m_score["Asset Quality Index"] = beneish_model.get_asset_quality_index(
+            total_current_assets=total_current_assets,
+            property_plant_and_equipment=property_plant_and_equipment,
+            total_assets=total_assets,
+        )
+
+        beneish_m_score["Sales Growth Index"] = beneish_model.get_sales_growth_index(
+            revenue=revenue,
+        )
+
+        beneish_m_score["Depreciation Index"] = beneish_model.get_depreciation_index(
+            depreciation_and_amortization=depreciation_and_amortization,
+            property_plant_and_equipment=property_plant_and_equipment,
+        )
+
+        beneish_m_score["SGA Expenses Index"] = (
+            beneish_model.get_selling_general_and_administrative_expenses_index(
+                selling_general_and_administrative_expenses=(
+                    selling_general_and_administrative_expenses
+                ),
+                revenue=revenue,
+            )
+        )
+
+        beneish_m_score["Leverage Index"] = beneish_model.get_leverage_index(
+            total_current_liabilities=total_current_liabilities,
+            long_term_debt=long_term_debt,
+            total_assets=total_assets,
+        )
+
+        beneish_m_score["Total Accruals to Total Assets"] = (
+            beneish_model.get_total_accruals_to_total_assets(
+                net_income=net_income,
+                cash_flow_from_operations=cash_flow_from_operations,
+                total_assets=total_assets,
+            )
+        )
+
+        beneish_m_score["Beneish M-Score"] = beneish_model.get_beneish_m_score(
+            days_sales_in_receivables_index=beneish_m_score[
+                "Days Sales in Receivables Index"
+            ],
+            gross_margin_index=beneish_m_score["Gross Margin Index"],
+            asset_quality_index=beneish_m_score["Asset Quality Index"],
+            sales_growth_index=beneish_m_score["Sales Growth Index"],
+            depreciation_index=beneish_m_score["Depreciation Index"],
+            selling_general_and_administrative_expenses_index=beneish_m_score[
+                "SGA Expenses Index"
+            ],
+            leverage_index=beneish_m_score["Leverage Index"],
+            total_accruals_to_total_assets=beneish_m_score[
+                "Total Accruals to Total Assets"
+            ],
+        )
+
+        beneish_results = (
+            pd.concat(beneish_m_score)
+            .dropna(axis=1, how="all")
+            .swaplevel(0, 1)
+            .reindex(self._tickers, level=0)
+        )
+
+        beneish_results = finalize_dataset(
+            dataset=beneish_results,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="columns",
+        )
+
+        return filter_columns(beneish_results, show_columns)
+
+    @handle_errors
     def get_present_value_of_growth_opportunities(
         self,
         calculate_daily: bool = False,
@@ -1744,6 +2188,223 @@ class Models:
         return pvgo.loc[self._start_date :]
 
     @handle_errors
+    def get_sustainable_growth_rate(
+        self,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+        trailing: int | None = None,
+    ) -> pd.DataFrame:
+        """
+        The Sustainable Growth Rate (SGR) is the maximum rate at which a company can grow its
+        revenue, using internally generated funds only, without having to raise additional equity
+        or increase its financial leverage.
+
+        The formula is as follows:
+
+            - Retention Ratio = 1 - Dividend Payout Ratio
+            - SGR = Return on Equity * Retention Ratio
+
+        Also known as: SGR, self-sustainable growth rate.
+
+        Args:
+            rounding (int, optional): The number of decimals to round the results to. Defaults to None.
+            growth (bool, optional): Whether to calculate the growth of the values. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            trailing (int | None, optional): The trailing period to use for the calculation. Defaults to None.
+
+        Returns:
+            pd.DataFrame: DataFrame containing the Sustainable Growth Rate.
+
+        Notes:
+        - Growing faster than the SGR without external financing typically requires either
+        improving profitability, reducing the dividend payout, or increasing leverage.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "MSFT"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.models.get_sustainable_growth_rate()
+        ```
+
+        Which returns:
+
+        |      |   2021 |   2022 |   2023 |
+        |:-----|-------:|-------:|-------:|
+        | AAPL | 1.2491 | 1.4937 | 1.4531 |
+        | MSFT | 0.3438 | 0.354  | 0.282  |
+        """
+        net_income = (
+            self._income_statement.loc[:, "Net Income", :].T.rolling(trailing).sum().T
+            if trailing
+            else self._income_statement.loc[:, "Net Income", :]
+        )
+        average_total_equity = (
+            self._balance_sheet_statement.loc[:, "Total Equity", :]
+            .T.rolling(trailing)
+            .mean()
+            .T
+            if trailing
+            else self._balance_sheet_statement.loc[:, "Total Equity", :]
+            .T.rolling(2)
+            .mean()
+            .T
+        )
+        dividends = (
+            self._cash_flow_statement.loc[:, "Dividends Paid", :]
+            .T.rolling(trailing)
+            .sum()
+            .T
+            if trailing
+            else self._cash_flow_statement.loc[:, "Dividends Paid", :]
+        )
+
+        return_on_equity = profitability_model.get_return_on_equity(
+            net_income=net_income,
+            average_total_equity=average_total_equity,
+        )
+        dividend_payout_ratio = valuation_model.get_dividend_payout_ratio(
+            dividends=dividends,
+            net_income=net_income,
+        )
+        retention_ratio = valuation_model.get_reinvestment_ratio(
+            dividend_payout_ratio=dividend_payout_ratio,
+        )
+
+        sustainable_growth_rate = growth_model.get_sustainable_growth_rate(
+            return_on_equity=return_on_equity,
+            retention_ratio=retention_ratio,
+        )
+
+        return finalize_dataset(
+            dataset=sustainable_growth_rate,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="columns",
+        )
+
+    @handle_errors
+    def get_internal_growth_rate(
+        self,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+        trailing: int | None = None,
+    ) -> pd.DataFrame:
+        """
+        The Internal Growth Rate (IGR) is the maximum rate at which a company can grow its
+        revenue using only its retained earnings, without raising any external financing
+        (neither debt nor equity).
+
+        The formula is as follows:
+
+            - Retention Ratio = 1 - Dividend Payout Ratio
+            - IGR = (Return on Assets * Retention Ratio) / (1 - (Return on Assets * Retention Ratio))
+
+        Also known as: IGR.
+
+        Args:
+            rounding (int, optional): The number of decimals to round the results to. Defaults to None.
+            growth (bool, optional): Whether to calculate the growth of the values. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            trailing (int | None, optional): The trailing period to use for the calculation. Defaults to None.
+
+        Returns:
+            pd.DataFrame: DataFrame containing the Internal Growth Rate.
+
+        Notes:
+        - The IGR is more conservative than the Sustainable Growth Rate (SGR) since it assumes
+        no additional debt is raised to fund growth, whereas the SGR assumes the company
+        maintains its current level of financial leverage.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "MSFT"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.models.get_internal_growth_rate()
+        ```
+
+        Which returns:
+
+        |      |   2021 |   2022 |   2023 |
+        |:-----|-------:|-------:|-------:|
+        | AAPL | 0.3118 | 0.3183 | 0.3028 |
+        | MSFT | 0.164  | 0.1853 | 0.1565 |
+        """
+        net_income = (
+            self._income_statement.loc[:, "Net Income", :].T.rolling(trailing).sum().T
+            if trailing
+            else self._income_statement.loc[:, "Net Income", :]
+        )
+        average_total_assets = (
+            self._balance_sheet_statement.loc[:, "Total Assets", :]
+            .T.rolling(trailing)
+            .mean()
+            .T
+            if trailing
+            else self._balance_sheet_statement.loc[:, "Total Assets", :]
+            .T.rolling(2)
+            .mean()
+            .T
+        )
+        dividends = (
+            self._cash_flow_statement.loc[:, "Dividends Paid", :]
+            .T.rolling(trailing)
+            .sum()
+            .T
+            if trailing
+            else self._cash_flow_statement.loc[:, "Dividends Paid", :]
+        )
+
+        return_on_assets = profitability_model.get_return_on_assets(
+            net_income=net_income,
+            average_total_assets=average_total_assets,
+        )
+        dividend_payout_ratio = valuation_model.get_dividend_payout_ratio(
+            dividends=dividends,
+            net_income=net_income,
+        )
+        retention_ratio = valuation_model.get_reinvestment_ratio(
+            dividend_payout_ratio=dividend_payout_ratio,
+        )
+
+        internal_growth_rate = growth_model.get_internal_growth_rate(
+            return_on_assets=return_on_assets,
+            retention_ratio=retention_ratio,
+        )
+
+        return finalize_dataset(
+            dataset=internal_growth_rate,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="columns",
+        )
+
+    @handle_errors
     def get_graham_number(
         self,
         diluted: bool = True,
@@ -1765,7 +2426,7 @@ class Models:
 
         The formula is as follows:
 
-        - Graham Number = √(22.5 × Earnings per Share × Book Value per Share)
+        - Graham Number = √(22.5 x Earnings per Share x Book Value per Share)
 
         Also known as: Graham fair value.
 

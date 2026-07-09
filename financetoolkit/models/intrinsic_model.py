@@ -19,41 +19,44 @@ def get_intrinsic_value(
     periods: int = 5,
 ) -> pd.DataFrame:
     """
-    The Weighted Average Cost of Capital (WACC) is a financial metric used to estimate the
-    cost of capital for a company. It represents the average rate of return a company must
-    pay to its investors for using their capital. WACC takes into account the cost of both
-    equity and debt, weighted by their respective proportions in the company's capital
-    structure.
+    Intrinsic value is a fundamental concept in finance and investing that represents the true
+    worth of an asset, independent of its current market price. This function estimates the
+    intrinsic value of a company using a Discounted Cash Flow (DCF) model: it projects a base
+    cash flow forward at a constant growth rate, discounts a terminal value off the final
+    projection, and discounts every projected cash flow back to the present at the weighted
+    average cost of capital.
 
     The formula is as follows:
 
-        WACC = (Market Value of Equity / Total Market Value) * Cost of Equity +
-        (Market Value of Debt / Total Market Value) * Cost of Debt * (1 — Corporate Tax Rate)
+        - Cash Flow Projection_t = Cash Flow_t-1 * (1 + Growth Rate)
+        - Terminal Value = Last Cash Flow Projection * (1 + Perpetual Growth Rate) /
+        (Weighted Average Cost of Capital — Perpetual Growth Rate)
+        - Enterprise Value = Sum of Present Value of Cash Flow Projections + Terminal Value
+        - Equity Value = Enterprise Value — Total Debt + Cash and Cash Equivalents
+        - Intrinsic Value = Equity Value / Total Shares Outstanding
 
     Args:
-        share_price (float or pd.Series): The price of a single share of a company's stock.
-        total_shares_outstanding (float or pd.Series): The total number of shares of a company's stock.
-        interest_expense (float or pd.Series): Interest expense of the company.
-        total_debt (float or pd.Series): Total debt of the company.
-        risk_free_rate (float or pd.Series): The risk-free rate is the rate of return of a
-        hypothetical investment with no risk of financial loss.
-        beta (float or pd.Series): Beta is a measure of the volatility, or systematic risk,
-        of a security or portfolio compared to the market as a whole.
-        benchmark_returns (float or pd.Series): The benchmark return is the return of a
-        chosen benchmark, such as the S&P 500 or the Russell 2000.
-        income_tax_expense (float or pd.Series): Income tax expense of the company.
-        income_before_tax (float or pd.Series): Income before taxes of the company.
+        cash_flow (float): The base cash flow (e.g. the most recent period's Free Cash Flow)
+        used as the starting point for the cash flow projections.
+        growth_rate (float): The growth rate used to project the cash flow forward each period.
+        perpetual_growth_rate (float): The perpetual (terminal) growth rate used to calculate
+        the Terminal Value from the final cash flow projection.
+        weighted_average_cost_of_capital (float): The discount rate used to discount the
+        projected cash flows and the Terminal Value back to their present value.
+        cash_and_cash_equivalents (float): The cash and cash equivalents of the company.
+        total_debt (float): The total debt of the company.
+        shares_outstanding (float): The total shares outstanding of the company.
+        periods (int, optional): The number of periods to project the cash flow for. Defaults to 5.
 
     Returns:
-        pd.DataFrame: A DataFrame containing the Dupont analysis components.
+        pd.DataFrame: A DataFrame containing the Terminal Value, Cash Flow Projection, Enterprise
+        Value, Equity Value and Intrinsic Value.
 
     Notes:
-    - The market value of equity is calculated as the share price multiplied by the total shares outstanding.
-    - The market value of debt is calculated as the total debt. This is a simplification, as the market value of debt
-    should be calculated as the present value of all future cash flows of the debt.
-    - The cost of equity is calculated using the Capital Asset Pricing Model (CAPM).
-    - The cost of debt is calculated as the interest expense divided by the total debt.
-    - The corporate tax rate is calculated as the income tax expense divided by the income before taxes.
+    - The results are highly dependent on the input. Therefore, think carefully about each input
+    parameter to ensure the results are accurate (given your beliefs).
+    - The Weighted Average Cost of Capital must be greater than the Perpetual Growth Rate,
+    otherwise the Terminal Value formula divides by a non-positive number.
     """
     components = {}
 

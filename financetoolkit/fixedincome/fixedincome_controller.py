@@ -686,6 +686,8 @@ class FixedIncome:
         years_to_maturity: float | list | range | None = None,
         risk_free_rate: float | None = None,
         notional: float = 10_000_000,
+        tenor: float | None = None,
+        payment_frequency: int = 2,
         is_receiver: bool = True,
         include_payoff: bool = False,
         show_input_info: bool = True,
@@ -708,7 +710,17 @@ class FixedIncome:
         provide lists of values for the fixed rate, strike rate, volatility, and years to maturity to calculate the derivative price
         for multiple scenarios outside of the standard sample.
 
-        Also known as: bond derivative pricing, fixed income derivative.
+        Exercising a swaption is not a single payment at expiration — it is the right to enter a swap that exchanges
+        cash flows at every payment date over the underlying swap's tenor. The price therefore discounts the option
+        payoff by the swap's annuity (present value of a basis point) rather than a single discount factor to
+        expiration, which is why the tenor and payment frequency of the underlying swap matter.
+
+        Note that a swaption's price scales with the tenor of the underlying swap (a right to enter a
+        longer-dated swap is worth more, since it exchanges cash flows over more payment dates) — pass
+        `tenor` explicitly to price a swaption whose underlying swap tenor differs from its years to
+        maturity, e.g. a 1-year option into a 5-year swap: `tenor=5, years_to_maturity=1`.
+
+        Also known as: bond derivative pricing, fixed income derivative, swaption pricing.
 
         Args:
             model (str, optional): The type of model to use for calculating the derivative price. Defaults to "black".
@@ -720,13 +732,17 @@ class FixedIncome:
                 the derivative price for the next 10 years. Can also be a list of years to maturity (e.g. [1, 2.3, 2.5, 3])
             risk_free_rate (float, optional): The risk-free interest rate. Defaults to None which means it is equal to the fixed rate.
             notional (float, optional): The notional amount of the derivative. Defaults to 10_000_000.
+            tenor (float | None, optional): The tenor (length in years) of the underlying swap. Defaults to None,
+                which means it is equal to years_to_maturity for each scenario.
+            payment_frequency (int, optional): Number of fixed-leg payments per year on the underlying swap
+                (e.g. 1 for annual, 2 for semi-annual, 4 for quarterly). Defaults to 2 (semi-annual).
             is_receiver (bool, optional): True if the holder is the receiver of the derivative, False if the holder is the payer. Defaults to True.
             include_payoff (bool, optional): True to include the payoff in the output, False otherwise. Defaults to False.
             show_input_info (bool, optional): True to display input information, False otherwise. Defaults to True.
 
         Returns:
-            pandas.DataFrame: The Black derivative prices rounded to the specified decimal places.
-            pandas.DataFrame (optional): The Black derivative payoffs rounded to the specified decimal places if include_payoff is True.
+            pandas.DataFrame: The derivative prices rounded to the specified decimal places.
+            pandas.DataFrame (optional): The derivative payoffs rounded to the specified decimal places if include_payoff is True.
 
         As an example:
 
@@ -735,42 +751,23 @@ class FixedIncome:
 
         fixedincome = FixedIncome()
 
-        # You can also provide lists of values for the strike rate and years to maturity
-        # to define your own strike rates and years to maturity to display in the DataFrame
-        fixedincome.get_derivative_price(model_type='black', forward_rate=0.0325)
+        fixedincome.get_derivative_price(model='black', forward_rate=0.0325)
         ```
 
         Which returns:
 
-        |   Strike Rate |   2025-04-21 |   2026-04-21 |   2027-04-21 |   2028-04-20 |   2029-04-20 |   2030-04-20 |   2031-04-20 |   2032-04-19 |   2033-04-19 |   2034-04-19 |
-        |--------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|
-        |         0.005 |          0   |          0   |          0   |         0    |         0    |          0   |          0   |         0    |         0    |         0    |
-        |         0.01  |          0   |          0   |          0   |         0    |         0    |          0   |          0   |         0    |         0    |         0    |
-        |         0.015 |          0   |          0   |          0   |         0    |         0    |          0   |          0   |         0    |         0    |         0    |
-        |         0.02  |          0   |          0   |          0   |         0    |         0    |          0   |          0   |         0    |         0    |         0    |
-        |         0.025 |          0   |          0   |          0   |         0    |         0    |          0   |          0   |         0    |         0    |         0    |
-        |         0.03  |          0   |          0   |          0   |         0.04 |         0.25 |          0.9 |          2.3 |         4.68 |         8.22 |        12.98 |
-        |         0.035 |      24200.6 |      23426.7 |      22677.6 |     21952.5  |     21251.2  |      20573.2 |      19918.5 |     19286.4  |     18676.5  |     18088    |
-        |         0.04  |      72601.7 |      70280.1 |      68032.7 |     65857.2  |     63751.2  |      61712.6 |      59739.2 |     57828.9  |     55979.6  |     54189.6  |
-        |         0.045 |     121003   |     117133   |     113388   |    109762    |    106252    |     102854   |      99565.3 |     96381.4  |     93299.4  |     90315.9  |
-        |         0.05  |     169404   |     163987   |     158743   |    153667    |    148753    |     143996   |     139391   |    134934    |    130619    |    126442    |
-        |         0.055 |     217805   |     210840   |     204098   |    197571    |    191254    |     185138   |     179218   |    173487    |    167939    |    162569    |
-        |         0.06  |     266206   |     257694   |     249453   |    241476    |    233754    |     226280   |     219044   |    212039    |    205259    |    198695    |
-        |         0.065 |     314607   |     304547   |     294808   |    285381    |    276255    |     267421   |     258870   |    250592    |    242578    |    234821    |
-        |         0.07  |     363008   |     351400   |     340163   |    329286    |    318756    |     308563   |     298696   |    289144    |    279898    |    270948    |
-        |         0.075 |     411410   |     398254   |     385518   |    373191    |    361257    |     349705   |     338522   |    327697    |    317218    |    307074    |
-        |         0.08  |     459811   |     445107   |     430874   |    417095    |    403758    |     390846   |     378348   |    366250    |    354538    |    343200    |
-        |         0.085 |     508212   |     491960   |     476229   |    461000    |    446258    |     431988   |     418174   |    404802    |    391858    |    379327    |
-        |         0.09  |     556613   |     538814   |     521584   |    504905    |    488759    |     473130   |     458000   |    443355    |    429177    |    415453    |
-        |         0.095 |     605014   |     585667   |     566939   |    548810    |    531260    |     514272   |     497827   |    481907    |    466497    |    451580    |
-        |         0.1   |     653415   |     632521   |     612294   |    592714    |    573761    |     555413   |     537653   |    520460    |    503817    |    487706    |
-        |         0.105 |     701816   |     679374   |     657649   |    636619    |    616262    |     596555   |     577479   |    559012    |    541137    |    523832    |
-        |         0.11  |     750217   |     726227   |     703004   |    680524    |    658762    |     637697   |     617305   |    597565    |    578456    |    559959    |
-        |         0.115 |     798619   |     773081   |     748359   |    724429    |    701263    |     678839   |     657131   |    636118    |    615776    |    596085    |
-        |         0.12  |     847020   |     819934   |     793715   |    768334    |    743764    |     719980   |     696957   |    674670    |    653096    |    632211    |
-        |         0.125 |     895421   |     866787   |     839070   |    812238    |    786265    |     761122   |     736783   |    713223    |    690416    |    668338    |
-        |         0.13  |     943822   |     913641   |     884425   |    856143    |    828766    |     802264   |     776609   |    751775    |    727735    |    704464    |
-
+        |   Strike Rate |   +1Y |    +2Y |    +3Y |    +4Y |    +5Y |     +6Y |     +7Y |     +8Y |     +9Y |    +10Y |
+        |--------------:|------:|-------:|-------:|-------:|-------:|--------:|--------:|--------:|--------:|--------:|
+        |        0.0075 |     0 |      0 |      0 |      0 |      0 |       0 |       0 |       0 |       0 |       0 |
+        |        0.0125 |     0 |      0 |      0 |      0 |      0 |       0 |       0 |       0 |       0 |       0 |
+        |        0.0175 |     0 |      0 |      0 |      0 |      0 |       0 |       0 |       0 |       0 |       0 |
+        |        0.0225 |     0 |      0 |      0 |      0 |      0 |       0 |       0 |       0 |       0 |       0 |
+        |        0.0275 |     0 |      0 |      0 |      0 |      0 |       0 |       0 |       0 |       0 |       0 |
+        |        0.0325 |  1225 |   3300 |   5776 |   8472 |  11280 |   14130 |   16968 |   19757 |   22470 |   25086 |
+        |        0.0375 | 47237 |  89991 | 128592 | 163348 | 194547 |  222456 |  247325 |  269386 |  288855 |  305934 |
+        |        0.0425 | 94474 | 179982 | 257184 | 326697 | 389094 |  444912 |  494650 |  538771 |  577709 |  611868 |
+        |        0.0475 |141712 | 269973 | 385776 | 490045 | 583642 |  667369 |  741975 |  808157 |  866564 |  917802 |
+        |        0.0525 |188949 | 359964 | 514368 | 653394 | 778189 |  889825 |  989299 | 1077540 | 1155420 | 1223740 |
         """
         model_lower = model.lower()
 
@@ -833,6 +830,8 @@ class FixedIncome:
                         years_to_maturity=maturity,
                         risk_free_rate=risk_free_rate,
                         notional=notional,
+                        tenor=tenor,
+                        payment_frequency=payment_frequency,
                         is_receiver=is_receiver,
                     )
                 elif model_lower == "bachelier":
@@ -846,6 +845,8 @@ class FixedIncome:
                         years_to_maturity=maturity,
                         risk_free_rate=risk_free_rate,
                         notional=notional,
+                        tenor=tenor,
+                        payment_frequency=payment_frequency,
                         is_receiver=is_receiver,
                     )
                 else:
@@ -861,12 +862,13 @@ class FixedIncome:
         if show_input_info:
             logger.info(
                 "Forward Rate: %s%%, Volatility: %s%%, Risk Free Rate: %s%%, "
-                "Holder: %s, Notional: %s, Model: %s Model",
+                "Holder: %s, Notional: %s, Payment Frequency: %sx/year, Model: %s Model",
                 f"{forward_rate * 100}",
                 f"{volatility * 100}",
                 f"{risk_free_rate * 100}",
                 "Receiver" if is_receiver else "Payer",
                 f"{notional:,}",
+                payment_frequency,
                 model_lower.title(),
             )
 

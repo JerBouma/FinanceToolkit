@@ -1160,6 +1160,54 @@ Which returns:
 | ASPAU    | Abri SPAC I, Inc.                            | NASDAQ     | 2021-08-10 | 2023-11-02      |
 | AVID     | Avid Technology, Inc.                        | NASDAQ     | 1993-03-12 | 2023-11-07      |
 
+> **General News**
+
+Returns the latest general news articles, spanning macroeconomic and broad market coverage rather than a specific ticker. Also known as general market news or macro news feed. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/discovery#get_general_news).
+
+> **Stock News**
+
+Returns the latest stock market news articles. This includes the ticker symbol (when applicable), publisher, title, a short snippet, and the article URL. Also known as stock news feed or market news headlines. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/discovery#get_stock_news).
+
+> **Press Releases**
+
+Returns the latest official company press releases, such as earnings announcements, mergers, and other corporate communications. Also known as corporate announcements. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/discovery#get_press_releases).
+
+> **Industry P/E**
+
+Returns industry price-to-earnings (P/E) ratios. Provide exactly one of `date` (a snapshot across all industries on that date) or `industry` (the historical time series for one industry). Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/discovery#get_industry_pe).
+
+> **Sector P/E**
+
+Returns sector price-to-earnings (P/E) ratios. Provide exactly one of `date` (a snapshot across all sectors on that date) or `sector` (the historical time series for one sector). Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/discovery#get_sector_pe).
+
+> **Industry Performance**
+
+Returns industry performance — the average price change per industry. Provide exactly one of `date` (a snapshot across all industries on that date) or `industry` (the historical time series for one industry). Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/discovery#get_industry_performance).
+
+> **Sector Performance**
+
+Returns sector performance — the average price change per sector. Provide exactly one of `date` (a snapshot across all sectors on that date) or `sector` (the historical time series for one sector). Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/discovery#get_sector_performance).
+
+> **IPO Calendar**
+
+Returns the calendar of upcoming and recent initial public offerings (IPOs), including expected pricing, exchange, and share count. This is distinct from the "IPO Date" field on a company's profile, which only shows a single past date. Note that the date range is limited to a maximum of 90 days. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/discovery#get_ipo_calendar).
+
+> **IPO Disclosures**
+
+Returns IPO disclosure filings — the regulatory filings made ahead of an IPO, including filing dates, effectiveness dates, and CIK numbers, with direct links to the official SEC documents. Also known as pre-IPO SEC filings. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/discovery#get_ipo_disclosures).
+
+> **IPO Prospectuses**
+
+Returns IPO prospectus filings, including public offering price, discounts and commissions, and proceeds before expenses, with links to the official SEC prospectus documents. Also known as IPO pricing details or S-1/424B4 filings. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/discovery#get_ipo_prospectuses).
+
+> **Mergers & Acquisitions**
+
+Returns the most recent mergers and acquisitions deal announcements, including the acquirer and target companies and a link to the underlying SEC filing. Also known as an M&A feed or deal announcements. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/discovery#get_mergers_acquisitions_latest).
+
+> **Stock Splits Calendar**
+
+Returns the calendar of upcoming and recent stock splits across all companies, including the split date and ratio. Note that the date range is limited to a maximum of 90 days. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/discovery#get_stock_splits_calendar).
+
 </details>
 
 <details>
@@ -1198,6 +1246,10 @@ Which returns:
 | 0XGASUSD     | 0xGasless USD                        | USD        | CCC        |
 | 0XMRUSD      | 0xMonero USD                         | USD        | CCC        |
 
+> **Crypto News**
+
+Returns the latest cryptocurrency news articles. Also known as crypto news feed or digital asset news. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/discovery#get_crypto_news).
+
 </details>
 
 <details>
@@ -1235,6 +1287,10 @@ Which returns:
 | AEDILS   | AED/ILS | ILS        | CCY        |
 | AEDINR   | AED/INR | INR        | CCY        |
 | AEDJOD   | AED/JOD | JOD        | CCY        |
+
+> **Forex News**
+
+Returns the latest forex news articles. Also known as forex news feed or currency market news. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/discovery#get_forex_news).
 
 </details>
 
@@ -1424,6 +1480,26 @@ The Fixed Asset Turnover ratio is calculated by dividing the company’s net sal
 
 The operating ratio is calculated by dividing the company’s operating expenses by its net sales and multiplying by 100 to express it as a percentage. It provides insight into how efficiently a company is managing its operations. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_operating_ratio).
 
+> **Deferred Revenue Ratio**
+
+The deferred revenue ratio measures the size of a company’s deferred revenue (payments collected for goods or services not yet delivered) relative to its revenue. This is a common leading indicator for subscription and SaaS businesses, where a growing deferred revenue balance relative to revenue can signal accelerating future revenue recognition. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_deferred_revenue_ratio).
+
+> **Research and Development Ratio**
+
+The research and development (R&D) intensity ratio measures how much a company reinvests in research and development relative to its revenue. It is particularly relevant for comparing companies in technology, pharmaceutical and other innovation-driven industries, where R&D spending is a key driver of future growth. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_research_and_development_ratio).
+
+> **Selling and Marketing Ratio**
+
+The selling and marketing (S&M) expenses to revenue ratio measures the proportion of revenue spent on selling and marketing activities. It isolates the selling and marketing component of the combined SG&A expense line, which is useful for comparing customer-acquisition efficiency between companies with different administrative overhead structures. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_selling_and_marketing_ratio).
+
+> **General and Administrative Ratio**
+
+The general and administrative (G&A) expenses to revenue ratio measures the proportion of revenue spent on general and administrative overhead. It isolates the administrative component of the combined SG&A expense line, which is useful for assessing overhead efficiency independently of selling and marketing spend. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_general_and_administrative_ratio).
+
+> **Stock-Based Compensation Ratio**
+
+The stock-based compensation (SBC) to revenue ratio measures how much of a company’s revenue is being used to compensate employees through non-cash equity awards. A high or rising SBC-to-revenue ratio is a common quality-of-earnings flag, particularly for technology companies, since SBC is added back in cash flow from operations but represents real economic dilution for shareholders. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_stock_based_compensation_ratio).
+
 </details>
 <details>
   <summary><b>Liquidity Ratios 💧</b></summary>
@@ -1561,6 +1637,14 @@ The EBT to EBIT ratio measures the proportion of a company’s earnings that is 
 
 The EBIT to Revenue ratio measures the company’s ability to generate profit from its core operations relative to its revenue. It provides insights into the operational efficiency and profitability of the company, as it excludes the impact of interest expenses and taxes on its earnings. A higher ratio indicates that a larger portion of the company’s revenue is converted into operating profit. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_ebit_to_revenue).
 
+> **Cash Tax Rate**
+
+The cash tax rate measures the percentage of pretax income that is actually paid out in cash taxes, as opposed to the accrual-based effective tax rate. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_cash_tax_rate).
+
+> **Tax Rate Divergence**
+
+The tax rate divergence measures the difference between the cash tax rate and the accrual-based effective tax rate. A persistently positive divergence indicates the company is paying more in cash taxes than it is recognizing as tax expense (e.g. due to the reversal of deferred tax liabilities), while a persistently negative divergence indicates the opposite and can be a quality-of-earnings red flag if it stems from aggressive tax deferral rather than timing differences. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_tax_rate_divergence).
+
 </details>
 
 <details>
@@ -1621,6 +1705,18 @@ The capex coverage ratio evaluates a company’s ability to fund its capital exp
 > **CAPEX Dividend Coverage Ratio**
 
 The capex dividend coverage ratio assesses whether a company’s cash flow from operations is sufficient to cover both its capital expenditures (which are essential for maintaining and growing its business) and its dividend payments to shareholders. A higher ratio indicates a stronger ability to fund both capex and dividends from operating cash flow. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_capex_dividend_coverage_ratio).
+
+> **Debt to Capital Ratio**
+
+The debt to capital ratio measures the proportion of a company’s total capital (debt plus equity) that is financed by debt. Unlike the debt to equity ratio, which can theoretically exceed one or become negative with low or negative equity, the debt to capital ratio is bounded between 0 and 1 under normal circumstances, making it easier to compare across companies with very different capital structures. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_debt_to_capital_ratio).
+
+> **Preferred Dividend Coverage Ratio**
+
+The preferred dividend coverage ratio measures a company’s ability to pay dividends owed to preferred shareholders out of its net income. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_preferred_dividend_coverage_ratio).
+
+> **Interest Paid to Interest Expense Ratio**
+
+The interest paid to interest expense ratio measures how much of the accrual-based interest expense reported on the income statement was actually paid out in cash during the period. A ratio consistently below one can indicate that interest is being accrued (e.g. on payment-in-kind debt) rather than paid, while a ratio well above one can indicate the payment of previously accrued interest or a mismatch between the cash and accrual reporting periods, both of which are relevant quality-of-earnings signals. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_interest_paid_to_expense_ratio).
 
 </details>
 
@@ -1737,6 +1833,26 @@ The tangible asset value is a financial metric that represents the total value o
 
 The net current asset value is a financial metric that represents the total value of a company’s current assets minus its current liabilities. It indicates the extent to which a company’s short-term assets exceed its short-term liabilities. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_net_current_asset_value).
 
+> **Price to Earnings Ratio (P/E)**
+
+The price earnings ratio (P/E) is a valuation ratio that compares a company’s stock price to its earnings per share. It is one of the most widely used valuation metrics, indicating how much investors are willing to pay for each dollar of a company’s earnings. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_price_to_earnings_ratio).
+
+> **EV to Free Cash Flow Ratio**
+
+The EV to free cash flow ratio compares a company’s enterprise value (EV) to its free cash flow, providing an alternative to earnings-based multiples that is less sensitive to non-cash accounting items. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_ev_to_free_cash_flow_ratio).
+
+> **Buyback Yield**
+
+The buyback yield measures the net amount of common stock repurchased (net of new shares issued) relative to the company’s market capitalization. Repurchases are typically reported as a cash outflow and issuances as a cash inflow on the cash flow statement, so netting and negating the two yields a positive value when the company is a net repurchaser of its own stock and a negative value when it is a net issuer (i.e. diluting shareholders). Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_buyback_yield).
+
+> **Shareholder Yield**
+
+The total shareholder yield combines the dividend yield and the buyback yield to measure the total cash returned to shareholders relative to the company’s market capitalization. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_shareholder_yield).
+
+> **SBC-Adjusted Free Cash Flow**
+
+The stock-based compensation (SBC) adjusted free cash flow deducts non-cash SBC expenses from free cash flow to give a more conservative view of the cash actually available to shareholders. Free cash flow already excludes SBC as a cash expense (it is added back in the cash flow from operations), which can overstate the cash available to shareholders — subtracting SBC treats it as if it were a real cash cost, which is a common quality-of-earnings adjustment, especially for companies that rely heavily on equity compensation. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_sbc_adjusted_free_cash_flow).
+
 </details>
 
 ## Financial Models
@@ -1796,6 +1912,22 @@ The Piotroski Score is a comprehensive financial assessment tool that helps inve
 > **Present Value of Growth Opportunities (PVGO)**
 
 The Present Value of Growth Opportunities (PVGO) is a financial metric that represents the present value of a company’s future growth opportunities. It is calculated as the difference between the company’s current stock price and the discounted value of its future cash flows. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/models#get_present_value_of_growth_opportunities).
+
+> **Economic Value Added (EVA)**
+
+Economic Value Added (EVA) is a measure of a company’s financial performance that represents the value created in excess of the required return of the company’s capital providers. It is calculated as the Net Operating Profit After Taxes (NOPAT) minus the Weighted Average Cost of Capital multiplied by the Invested Capital, capturing whether a company is generating returns above its true cost of capital. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/models#get_economic_value_added).
+
+> **Beneish M-Score**
+
+The Beneish M-Score is a probabilistic model, developed by Messod Beneish, that uses eight financial ratios derived from a company’s financial statements to identify whether a company has manipulated its earnings. It is a natural companion to the Altman Z-Score and Piotroski F-Score, using the same normalized financial statements as its input. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/models#get_beneish_m_score).
+
+> **Sustainable Growth Rate**
+
+The Sustainable Growth Rate (SGR) is the maximum rate at which a company can grow its revenue, using internally generated funds only, without having to raise additional equity or increase its financial leverage. It is calculated as the Return on Equity multiplied by the retention ratio. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/models#get_sustainable_growth_rate).
+
+> **Internal Growth Rate**
+
+The Internal Growth Rate (IGR) is the maximum rate at which a company can grow its revenue using only its retained earnings, without raising any external financing (neither debt nor equity). It is more conservative than the Sustainable Growth Rate since it assumes no additional debt is raised to fund growth. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/models#get_internal_growth_rate).
 
 </details>
 
@@ -2172,6 +2304,58 @@ The Information Ratio (IR), also known as the Information Coefficient, is a fina
 
 The Compound Annual Growth Rate is a measure that provides the mean growth rate of an investment over a specified period of time. It is a useful measure for comparing the performance of investments over different time periods or across different asset classes. The CGR is calculated by taking the ratio of the final value to the initial value, raising it to the inverse of the number of periods, and then subtracting one. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/performance#get_compound_growth_rate).
 
+> **Returns**
+
+The period Return is obtained by compounding the daily returns within each period (weekly, monthly, quarterly or yearly), following the formula Period Return = ((1 + Return 1) * (1 + Return 2) * ... * (1 + Return N)) - 1. Optionally, `cumulative=True` compounds the period returns further into a cumulative return, useful for plotting a growth-of-$1 chart. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/performance#get_returns).
+
+> **Excess Return**
+
+The Excess Return is the return minus the risk free rate. Optionally, `cumulative=True` compounds the excess returns into a cumulative excess return. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/performance#get_excess_return).
+
+> **Correlation Matrix**
+
+The Correlation Matrix computes the full pairwise correlation between every pair of assets at once, unlike Beta or Covariance which relate a single asset to a single benchmark. This is a prerequisite for portfolio variance calculations and any mean-variance optimization work. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/performance#get_correlation_matrix).
+
+> **Covariance Matrix**
+
+The Covariance Matrix computes the full pairwise covariance between every pair of assets at once, unlike Beta or Covariance which relate a single asset to a single benchmark. This is a prerequisite for portfolio variance calculations and any mean-variance optimization work. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/performance#get_covariance_matrix).
+
+> **Calmar Ratio**
+
+The Calmar Ratio is a risk-adjusted return metric that divides the (annualized) return of an investment portfolio or asset by its Maximum Drawdown, providing insight into the return achieved per unit of the worst historical loss of value. Also known as the Drawdown ratio. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/performance#get_calmar_ratio).
+
+> **Sterling Ratio**
+
+The Sterling Ratio is a risk-adjusted return metric that divides the (annualized) return of an investment portfolio or asset by its Average Drawdown plus a fixed adjustment (conventionally 10%), providing insight into the return achieved relative to the typical depth of its drawdowns rather than only the single worst one (as with the Calmar Ratio). Also known as the Sterling-Calmar ratio. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/performance#get_sterling_ratio).
+
+> **Burke Ratio**
+
+The Burke Ratio is a risk-adjusted return metric that divides the excess return (return minus the risk-free rate) of an investment portfolio or asset by the square root of the sum of its squared drawdowns, penalizing both the frequency and depth of drawdowns more heavily than the Calmar or Sterling Ratios. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/performance#get_burke_ratio).
+
+> **Kappa Ratio**
+
+The Kappa Ratio is a generalization of the Sortino Ratio that penalizes downside risk using a higher-order lower partial moment. The Sortino Ratio is the special case of the Kappa Ratio with order=2. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/performance#get_kappa_ratio).
+
+> **Omega Ratio**
+
+The Omega Ratio is the sum of gains above the minimum acceptable return (MAR) divided by the sum of losses below the MAR, capturing the full shape of the return distribution rather than just its first two moments. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/performance#get_omega_ratio).
+
+> **Gain-to-Pain Ratio**
+
+The Gain-to-Pain Ratio is the sum of all returns divided by the sum of the absolute value of all losses, summarizing an investment's return per unit of downside pain endured over the period. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/performance#get_gain_to_pain_ratio).
+
+> **Upside Capture Ratio**
+
+The Upside Capture Ratio is the ratio of the asset's average return to the benchmark's average return during periods in which the benchmark's return is positive, showing how much of the benchmark's gains the asset captured. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/performance#get_upside_capture_ratio).
+
+> **Downside Capture Ratio**
+
+The Downside Capture Ratio is the ratio of the asset's average return to the benchmark's average return during periods in which the benchmark's return is negative, showing how much of the benchmark's losses the asset also incurred. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/performance#get_downside_capture_ratio).
+
+> **Win Rate**
+
+The Win Rate is the percentage of periods in which the asset's return exceeds the benchmark's return. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/performance#get_win_rate).
+
 </details>
 
 ## Risk Metrics
@@ -2226,6 +2410,62 @@ Skewness is a statistical measure used in finance to assess the asymmetry in the
 
 Kurtosis is a statistical measure used in finance to evaluate the shape of the probability distribution of returns for an investment portfolio or asset over a defined time period. It assesses the “tailedness” of the return distribution, indicating whether returns have fatter or thinner tails compared to a normal distribution. Kurtosis plays a critical role in risk assessment by revealing the potential presence of extreme outliers or the likelihood of heavy tails in the return data. This information aids investors and analysts in understanding the degree of risk associated with an investment and assists in making more informed decisions regarding risk tolerance. In essence, kurtosis serves as a valuable tool for comprehending the distribution characteristics of returns, offering insights into the potential for rare but significant events in the financial markets. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/risk#get_kurtosis).
 
+> **Volatility**
+
+Volatility measures the dispersion of returns for a given period (weekly, monthly, quarterly or yearly) based on daily historical returns. The daily Volatility is scaled to the given period by multiplying it with the square root of the number of trading days within that period (e.g. SQRT(252/52) for weekly). Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/risk#get_volatility).
+
+> **Excess Volatility**
+
+The Excess Volatility is the Volatility of the Excess Return, i.e. the daily return minus the risk free rate, scaled to the given period in the same way as the regular Volatility. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/risk#get_excess_volatility).
+
+> **Variance**
+
+Variance measures the dispersion of returns for a given period (weekly, monthly, quarterly or yearly) based on daily historical returns. The daily Variance is scaled to the given period by multiplying it with the number of trading days within that period (e.g. 252/52 for weekly). Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/risk#get_variance).
+
+> **EWMA Volatility**
+
+The exponentially weighted moving average (EWMA) Volatility, following the RiskMetrics methodology, weights recent observations more heavily than older ones so it reacts faster to changes in the underlying volatility regime than a fixed-window rolling Volatility. It is a simpler, more interpretable alternative to a full GARCH fit. Also known as RiskMetrics volatility. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/risk#get_ewma_volatility).
+
+> **Mean Absolute Deviation (MAD)**
+
+Mean Absolute Deviation measures the average absolute distance of each return from the mean return for a given period (weekly, monthly, quarterly or yearly) based on daily historical returns. Unlike Variance and Volatility, it does not square the deviations, making it less sensitive to outliers. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/risk#get_mean_absolute_deviation).
+
+> **Coefficient of Variation (CV)**
+
+The Coefficient of Variation is the ratio of the standard deviation to the mean of returns for a given period (weekly, monthly, quarterly or yearly), which normalizes dispersion relative to the average return. This makes it useful for comparing the relative volatility of assets with different average returns, which a raw standard deviation cannot do. Also known as relative standard deviation. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/risk#get_coefficient_of_variation).
+
+> **Downside Deviation**
+
+The Downside Deviation is the standard deviation of only the returns that fall below a minimum acceptable return (MAR). Also known as semi-deviation or downside risk. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/risk#get_downside_deviation).
+
+> **Tail Ratio**
+
+The Tail Ratio compares the size of the right (gain) tail to the left (loss) tail of the return distribution. It is calculated as the absolute value of the (1 - alpha)-th percentile of returns divided by the absolute value of the alpha-th percentile of returns. A Tail Ratio above 1 indicates that best-case gains outsize worst-case losses. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/risk#get_tail_ratio).
+
+> **Conditional Drawdown at Risk (CDaR)**
+
+Conditional Drawdown at Risk extends the concept of Value at Risk and Conditional Value at Risk to the drawdown series instead of the return series. The Drawdown at Risk (DaR) is the alpha-quantile of the drawdown distribution and CDaR is the average of the drawdowns that are at least as severe as the DaR. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/risk#get_conditional_drawdown_at_risk).
+
+> **Maximum Drawdown Duration**
+
+The Maximum Drawdown Duration is the number of periods between the peak and the lowest point of the largest drawdown, giving insight into how long the worst loss of value took to unfold. Also known as drawdown length. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/risk#get_maximum_drawdown_duration).
+
+> **Maximum Drawdown Recovery Time**
+
+The Maximum Drawdown Recovery Time is the number of periods it takes for the cumulative return to reach a new high after the lowest point of the largest drawdown. If the drawdown has not yet been recovered from within the selected period, this returns NaN. Also known as time to recovery. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/risk#get_maximum_drawdown_recovery_time).
+
+> **Autocorrelation (ACF)**
+
+The Autocorrelation Function (ACF) measures the correlation between a series and a lagged version of itself, over a range of lags. It is typically the first diagnostic used to decide how many AR or MA terms a series needs when fitting a GARCH-family model. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/risk#get_autocorrelation).
+
+> **Hurst Exponent**
+
+The Hurst Exponent is a measure of long-term memory that indicates whether a series is mean-reverting, trending, or a random walk. A value below 0.5 indicates a mean-reverting (anti-persistent) series, a value of 0.5 indicates a random walk with no memory, and a value above 0.5 indicates a trending (persistent) series. It is estimated here via the rescaled range (R/S) method. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/risk#get_hurst_exponent).
+
+> **GARCH Forecast**
+
+The GARCH Forecast projects future volatility (sigma-squared) using a fitted GARCH model, based on the formula sigma_l² + (sigma_t² - sigma_l²) * (alpha + beta)^(t-1), where sigma_l is the long-run variance. It is used to obtain forward-looking volatility estimates rather than the in-sample GARCH fit alone. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/risk#get_garch_forecast).
+
 </details>
 
 ## Technical Indicators
@@ -2270,6 +2510,14 @@ The Accumulation/Distribution Line is a technical indicator that evaluates the f
 > **Chaikin Oscillator**
 
 The Chaikin Oscillator is a momentum-based indicator that combines price and volume to help identify potential trends and reversals in the market. It is calculated as the difference between the 3-day and 10-day Accumulation/Distribution Line. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals#get_chaikin_oscillator).
+
+> **New Highs — New Lows**
+
+New Highs — New Lows measures the number of tickers reaching a new high over a specified window minus the number of tickers reaching a new low over the same window. It is a cross-sectional market breadth indicator, meaning it is calculated across the universe of tickers rather than per ticker over time. Also known as new highs minus new lows or record high percent. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals#get_new_highs_new_lows).
+
+> **TRIN (Arms Index)**
+
+TRIN compares the ratio of advancing to declining issues against the ratio of volume in advancing issues to volume in declining issues. It is a cross-sectional market breadth indicator, meaning it is calculated across the universe of tickers rather than per ticker over time. Also known as the Arms Index. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals#get_trin).
 
 </details>
 
@@ -2397,6 +2645,30 @@ Trix is a momentum oscillator that calculates the percentage rate of change of a
 
 The Triangular Moving Average (TMA) is a smoothed version of the Simple Moving Average (SMA) that uses multiple SMAs to reduce noise and provide a smoother trendline. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals#get_triangular_moving_average).
 
+> **Weighted Moving Average (WMA)**
+
+The Weighted Moving Average assigns a linearly increasing weight to more recent prices within the window, making it more responsive to recent price changes than a Simple Moving Average while remaining smoother than an Exponential Moving Average. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals#get_weighted_moving_average).
+
+> **Hull Moving Average (HMA)**
+
+The Hull Moving Average reduces the lag typically associated with moving averages while improving smoothing, by combining a WMA of half the window length, a WMA of the full window length, and a further WMA over the square root of the window length. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals#get_hull_moving_average).
+
+> **Volume Weighted Average Price (VWAP)**
+
+VWAP weighs the typical price of each period by its traded volume over a rolling window, giving a more volume-informed view of the average price than a plain moving average. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals#get_volume_weighted_average_price).
+
+> **Parabolic SAR**
+
+The Parabolic Stop and Reverse (SAR) is a trend-following indicator that trails price action, flipping from below to above price (and vice versa) whenever the trend reverses. The acceleration factor increases as the trend extends, causing the SAR to converge towards price over time. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals#get_parabolic_sar).
+
+> **Pivot Points**
+
+Pivot Points are calculated from the previous period's high, low and close prices and are used to identify potential support and resistance levels for the current period. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals#get_pivot_points).
+
+> **Support and Resistance Levels**
+
+Support and Resistance Levels are derived from local maxima and minima in historical closing prices, identifying price levels at which an asset has historically struggled to break above (resistance) or below (support). Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals#get_support_resistance_levels).
+
 </details>
 
 <details>
@@ -2433,6 +2705,14 @@ The Keltner Channels are a technical indicator that uses volatility to identify 
 > **Bollinger Bands**
 
 Bollinger Bands are a volatility indicator that consists of three lines: an upper band, a middle band (simple moving average), and a lower band. The upper and lower bands are calculated as the moving average plus and minus a specified number of standard deviations, respectively. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals#get_bollinger_bands).
+
+> **Donchian Channels**
+
+Donchian Channels plot the highest high and lowest low over a specified window, with the middle line being the average of the two. They are used to identify breakouts and the overall volatility of the price range. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals#get_donchian_channels).
+
+> **Volatility Cone**
+
+The Volatility Cone summarizes the distribution of historical annualized realized volatility over a range of rolling windows, showing how the current realized volatility for each window compares to its own historical range. It is commonly used to judge whether current (or implied) volatility is cheap or expensive relative to history. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals#get_volatility_cone).
 
 </details>
 
@@ -2524,8 +2804,15 @@ from financetoolkit import FixedIncome
 
 fixedincome = FixedIncome()
 
-fixedincome.get_derivative_price(model_type="black")
+fixedincome.get_derivative_price(model="black")
 ```
+
+Exercising a swaption is not a single payment at expiration — it is the right to enter a swap that
+exchanges cash flows at every payment date over the underlying swap's tenor. The price is therefore
+discounted by the swap's annuity (present value of a basis point) rather than a single discount factor
+to expiration, so `tenor` (defaults to `years_to_maturity`) and `payment_frequency` (defaults to 2,
+semi-annual) both meaningfully affect the price — a longer-tenor underlying swap is worth more, since
+the option holder gains the right to exchange cash flows over more payment dates.
 
 > **Black Model**
 

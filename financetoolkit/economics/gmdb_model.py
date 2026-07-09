@@ -122,11 +122,6 @@ def get_current_account_balance_to_gdp(gmd_dataset: pd.DataFrame) -> pd.DataFram
     return gmd_dataset["CA_GDP"].dropna(axis="rows", how="all")
 
 
-def get_real_effective_exchange_rate(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
-    """Retrieves real effective exchange rate ('REER'), removing rows with all NaNs."""
-    return gmd_dataset["REER"].dropna(axis="rows", how="all")
-
-
 def get_usd_exchange_rate(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
     """Retrieves the USD exchange rate ('USDfx'), removing rows with all NaNs."""
     return gmd_dataset["USDfx"].dropna(axis="rows", how="all")

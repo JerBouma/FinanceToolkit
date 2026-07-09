@@ -282,7 +282,7 @@ tool_groups:
   # ── Single-module ticker tools ───────────────────────────────────────────
   - tool_name:    "models"
     display_name: "Financial Models"
-    description:  "Pre-computed financial models (WACC, DuPont analysis, Altman Z-Score, Piotroski F-Score, intrinsic value/DCF). Requires tickers='AAPL' — use comma-separated values for multiple tickers. Supports quarterly=true and start_date/end_date."
+    description:  "Pre-computed financial models (WACC, DuPont analysis, Extended DuPont analysis, Enterprise value breakdown, intrinsic value/DCF, Gordon Growth Model, Altman Z-Score, Piotroski F-Score, Beneish M-Score, Economic Value Added (EVA), Present Value of Growth Opportunities, Sustainable Growth Rate, Internal Growth Rate, Graham Number). Requires tickers='AAPL' — use comma-separated values for multiple tickers. Supports quarterly=true and start_date/end_date."
     module_name:  "models"
     category:     "ticker"
 

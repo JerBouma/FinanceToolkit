@@ -1,9 +1,9 @@
 ,,2020,2021,2022,2023
-AAPL,Net Profit Margin,,,,
-AAPL,Asset Turnover,0.0,3.1886,3.4277,3.2946
-AAPL,Equity Multiplier,0.0,3.8474,4.5203,4.7526
-AAPL,Return on Equity,0.0,-0.7194,-0.7164,-0.725
-MSFT,Net Profit Margin,0.4805,-0.7528,-0.7909,-0.8014
-MSFT,Asset Turnover,0.0,0.4522,0.5472,0.5978
-MSFT,Equity Multiplier,0.0,3.6094,2.9893,2.8195
-MSFT,Return on Equity,0.0,-0.807,-0.7918,-0.8137
+AAPL,Net Profit Margin,,0.2376,-0.0221,-0.0001
+AAPL,Asset Turnover,,4.1836,0.0337,-0.0302
+AAPL,Equity Multiplier,,24.127,0.1772,0.0106
+AAPL,Return on Equity,,6.0501,0.19,-0.02
+MSFT,Net Profit Margin,,0.1773,0.0064,-0.0692
+MSFT,Asset Turnover,,0.7096,0.0723,-0.0388
+MSFT,Equity Multiplier,,6.8802,-0.072,-0.0797
+MSFT,Return on Equity,,0.5205,0.0015,-0.1766

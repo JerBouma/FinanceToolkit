@@ -1,10 +1,25 @@
-,,2020,2020,2020,2021,2021,2021,2022,2022,2022,2023,2023,2023
-,,Lag 1,Lag 2,Lag 3,Lag 1,Lag 2,Lag 3,Lag 1,Lag 2,Lag 3,Lag 1,Lag 2,Lag 3
-AAPL,Net Profit Margin,,,,,,,,,,,,
-AAPL,Asset Turnover,0.0,,,3.1886,,,3.4277,,,3.2946,,
-AAPL,Equity Multiplier,0.0,0.0,,3.8474,19.3037,,4.5203,23.4422,,4.7526,23.7054,
-AAPL,Return on Equity,0.0,0.0,0.0,-0.7194,0.3601,4.6968,-0.7164,0.5657,5.9325,-0.725,0.5821,5.7947
-MSFT,Net Profit Margin,0.4805,0.4805,0.4805,-0.7528,-0.9306,-0.6638,-0.7909,-0.9407,-0.6726,-0.8014,-0.9454,-0.6858
-MSFT,Asset Turnover,0.0,0.4805,0.4805,0.4522,-0.641,-0.8993,0.5472,-0.6765,-0.9082,0.5978,-0.6827,-0.9127
-MSFT,Equity Multiplier,0.0,0.0,0.4805,3.6094,5.6935,0.6548,2.9893,5.1722,0.2905,2.8195,5.103,0.2119
-MSFT,Return on Equity,0.0,0.0,0.0,-0.807,-0.1106,0.2915,-0.7918,-0.1693,0.2853,-0.8137,-0.2884,0.137
+,,,2020,2021,2022,2023
+AAPL,Net Profit Margin,Lag 1,,0.2376,-0.0221,-0.0001
+AAPL,Net Profit Margin,Lag 2,,,0.2102,-0.0222
+AAPL,Net Profit Margin,Lag 3,,,,0.21
+AAPL,Asset Turnover,Lag 1,,,0.0337,-0.0302
+AAPL,Asset Turnover,Lag 2,,,,0.0025
+AAPL,Asset Turnover,Lag 3,,,,
+AAPL,Equity Multiplier,Lag 1,,,0.1772,0.0106
+AAPL,Equity Multiplier,Lag 2,,,,0.1897
+AAPL,Equity Multiplier,Lag 3,,,,
+AAPL,Return on Equity,Lag 1,,,0.19,-0.02
+AAPL,Return on Equity,Lag 2,,,,0.1662
+AAPL,Return on Equity,Lag 3,,,,
+MSFT,Net Profit Margin,Lag 1,,0.1773,0.0064,-0.0692
+MSFT,Net Profit Margin,Lag 2,,,0.1849,-0.0632
+MSFT,Net Profit Margin,Lag 3,,,,0.1028
+MSFT,Asset Turnover,Lag 1,,,0.0723,-0.0388
+MSFT,Asset Turnover,Lag 2,,,,0.0307
+MSFT,Asset Turnover,Lag 3,,,,
+MSFT,Equity Multiplier,Lag 1,,,-0.072,-0.0797
+MSFT,Equity Multiplier,Lag 2,,,,-0.1459
+MSFT,Equity Multiplier,Lag 3,,,,
+MSFT,Return on Equity,Lag 1,,,0.0015,-0.1766
+MSFT,Return on Equity,Lag 2,,,,-0.1753
+MSFT,Return on Equity,Lag 3,,,,

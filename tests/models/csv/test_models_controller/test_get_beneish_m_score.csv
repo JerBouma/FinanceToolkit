@@ -1,0 +1,19 @@
+,,2020,2021,2022,2023
+AAPL,Days Sales in Receivables Index,,1.0322,1.0975,1.0297
+AAPL,Gross Margin Index,,0.9151,0.9647,0.9814
+AAPL,Asset Quality Index,,1.1404,0.9841,0.9387
+AAPL,Sales Growth Index,,1.3326,1.0779,0.972
+AAPL,Depreciation Index,,1.0566,1.0635,0.9982
+AAPL,SGA Expenses Index,,0.8279,1.0595,1.0222
+AAPL,Leverage Index,,1.0608,1.0729,0.9516
+AAPL,Total Accruals to Total Assets,-0.0718,-0.0267,-0.0634,-0.0384
+AAPL,Beneish M-Score,,-2.2503,-2.6691,-2.6802
+MSFT,Days Sales in Receivables Index,,1.0112,0.9863,1.0292
+MSFT,Gross Margin Index,,0.9834,1.0077,0.9925
+MSFT,Asset Quality Index,,1.0667,1.253,0.9689
+MSFT,Sales Growth Index,,1.1753,1.1796,1.0688
+MSFT,Depreciation Index,,1.3748,0.9994,1.2666
+MSFT,SGA Expenses Index,,0.8686,0.9318,1.0237
+MSFT,Leverage Index,,0.9496,0.9372,0.9107
+MSFT,Total Accruals to Total Assets,-0.0544,-0.0463,-0.0447,-0.0369
+MSFT,Beneish M-Score,,-2.4298,-2.4029,-2.5254

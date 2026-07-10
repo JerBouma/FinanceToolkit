@@ -720,6 +720,12 @@ def register_auth_routes(mcp: Any) -> None:
             return Response(status_code=404)
         return Response(content=_icon_path.read_bytes(), media_type="image/png")
 
+    @mcp.custom_route("/favicon.ico", methods=["GET"])
+    async def favicon(request: Request) -> Response:
+        if not _icon_path.exists():
+            return Response(status_code=404)
+        return Response(content=_icon_path.read_bytes(), media_type="image/png")
+
     @mcp.custom_route("/.well-known/oauth-protected-resource", methods=["GET"])
     async def oauth_protected_resource(request: Request) -> JSONResponse:
         base_url = str(request.base_url).rstrip("/")

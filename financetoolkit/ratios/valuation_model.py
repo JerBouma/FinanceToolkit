@@ -80,6 +80,36 @@ def get_price_to_earnings_growth_ratio(
     return price_earnings / growth_rate
 
 
+def get_estimated_eps_growth_rate(
+    estimated_eps: float | pd.Series | pd.DataFrame,
+    trailing_eps: float | pd.Series | pd.DataFrame,
+) -> float | pd.Series | pd.DataFrame:
+    """
+    Calculate the estimated EPS growth rate, i.e. the growth implied by the analyst
+    consensus (average) EPS estimate for a future period relative to the company's
+    most recently reported actual (trailing) EPS.
+
+    Unlike the generic `growth=True` parameter available on every ratio and model
+    method — which compares two already-reported historical periods — this bridges an
+    actual reported figure to a forward-looking analyst estimate, which is what a
+    forward-looking metric such as the PEG ratio needs.
+
+    The formula is as follows:
+
+        Estimated EPS Growth Rate = (Estimated EPS - Trailing EPS) / |Trailing EPS|
+
+    Args:
+        estimated_eps (float | pd.Series | pd.DataFrame): The analyst consensus
+        (average) EPS estimate for a future period.
+        trailing_eps (float | pd.Series | pd.DataFrame): The company's most recently
+        reported actual EPS.
+
+    Returns:
+        float | pd.Series | pd.DataFrame: The estimated EPS growth rate.
+    """
+    return (estimated_eps - trailing_eps) / abs(trailing_eps)
+
+
 def get_book_value_per_share(
     total_shareholder_equity: pd.Series,
     preferred_equity: pd.Series,

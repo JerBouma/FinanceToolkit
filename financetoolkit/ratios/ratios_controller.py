@@ -8,6 +8,7 @@ import warnings
 import numpy as np
 import pandas as pd
 
+from financetoolkit.fmp_model import get_analyst_estimates as _get_analyst_estimates
 from financetoolkit.helpers import handle_portfolio
 from financetoolkit.ratios import (
     efficiency_model,
@@ -54,6 +55,10 @@ class Ratios:
         rounding: int | None = 4,
         start_date: str | None = None,
         end_date: str | None = None,
+        api_key: str = "",
+        sleep_timer: bool = False,
+        user_subscription: str = "Free",
+        analyst_estimates_cache: dict | None = None,
     ):
         """
         Initializes the Ratios Controller Class.
@@ -68,6 +73,23 @@ class Ratios:
             an optional parameter given that you can also define the custom ratios through the Toolkit initialization.
             quarterly (bool, optional): Whether to use quarterly data. Defaults to False.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            api_key (str, optional): FinancialModelingPrep API key, used only by
+                `get_forward_price_earnings_ratio` and `get_forward_price_earnings_growth_ratio` to
+                lazily fetch (and cache) analyst estimates the first time either method is called —
+                not on initialization or on any other ratio. Defaults to "", which means those two
+                methods will report that the data is unavailable (requires a Premium FMP
+                subscription).
+            sleep_timer (bool, optional): Whether to set a sleep timer when the rate limit is
+                reached while fetching analyst estimates. Only works with a Premium subscription.
+                Defaults to False.
+            user_subscription (str, optional): The FMP subscription plan, used only for the analyst
+                estimates fetch. Defaults to "Free".
+            analyst_estimates_cache (dict, optional): A mutable dict used to cache the fetched
+                analyst estimates. The Toolkit passes the same dict instance in every time this
+                class is (re)constructed (each access to `toolkit.ratios` builds a fresh Ratios
+                instance), so this is what makes the fetch-once behaviour survive across separate
+                `toolkit.ratios.<method>()` calls rather than resetting every time. Defaults to
+                None, which uses a private dict scoped to this instance only.
 
         As an example:
 
@@ -109,6 +131,12 @@ class Ratios:
         self._balance_sheet_statement: pd.DataFrame = balance
         self._income_statement: pd.DataFrame = income
         self._cash_flow_statement: pd.DataFrame = cash
+        self._api_key: str = api_key
+        self._sleep_timer: bool = sleep_timer
+        self._user_subscription: str = user_subscription
+        self._analyst_estimates_cache: dict = (
+            analyst_estimates_cache if analyst_estimates_cache is not None else {}
+        )
         self._available_custom_ratios_options: list[str] = []
         self._custom_ratios: pd.DataFrame = pd.DataFrame()
         self._custom_ratios_growth: pd.DataFrame = pd.DataFrame()
@@ -7118,6 +7146,239 @@ class Ratios:
             dataset=price_to_earnings_growth_ratio,
             start_date=self._start_date,
             end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+        )
+
+    def _get_or_fetch_analyst_estimates(self) -> pd.DataFrame:
+        """
+        Return the cached analyst estimates, fetching them on first use only.
+
+        Used exclusively by `get_forward_price_earnings_ratio` and
+        `get_forward_price_earnings_growth_ratio` — no other ratio touches analyst estimates,
+        so initializing or using the rest of the Ratios module never triggers this fetch.
+
+        The cache lives in `self._analyst_estimates_cache`, a dict the Toolkit passes in by
+        reference (see `analyst_estimates_cache` on `__init__`). Every access to `toolkit.ratios`
+        constructs a brand new Ratios instance, so caching the DataFrame directly on `self` would
+        not survive across separate `toolkit.ratios.<method>()` calls — the shared dict is what
+        makes the fetch-once behaviour actually hold.
+
+        Returns:
+            pd.DataFrame: The analyst estimates, or an empty DataFrame if no `api_key` was
+            provided or the fetch failed (e.g. no Premium FMP subscription).
+        """
+        if "data" not in self._analyst_estimates_cache and self._api_key:
+            fetched_analyst_estimates, _ = _get_analyst_estimates(
+                tickers=self._tickers_without_portfolio,
+                api_key=self._api_key,
+                quarter=self._quarterly,
+                start_date=self._start_date,
+                rounding=self._rounding,
+                sleep_timer=self._sleep_timer,
+                user_subscription=self._user_subscription,
+            )
+            self._analyst_estimates_cache["data"] = fetched_analyst_estimates
+
+        return self._analyst_estimates_cache.get("data", pd.DataFrame())
+
+    @handle_portfolio
+    @handle_errors
+    def get_forward_price_earnings_ratio(
+        self,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+    ):
+        """
+        Calculate the forward price earnings ratio (forward P/E), a valuation ratio that compares
+        the current stock price to the analyst consensus (average) EPS estimate for a future period,
+        instead of the trailing EPS used by the regular P/E ratio.
+
+        The formula is as follows:
+
+            Forward P/E = Stock Price / Estimated EPS Average
+
+        Note that this requires an `api_key` to be set on the Toolkit and a Premium FMP
+        subscription. Analyst estimates are fetched once per Toolkit instance and cached
+        across calls to this (or the other forward-looking ratio) method — never on
+        initialization or on any other ratio.
+
+        Also known as: forward P/E, projected P/E.
+
+        Args:
+            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+
+        Returns:
+            pd.DataFrame: Forward P/E ratio for each period covered by the analyst estimates.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "MSFT"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.ratios.get_forward_price_earnings_ratio()
+        ```
+
+        Which returns:
+
+        |      |    2021 |    2022 |    2023 |    2024 |    2025 |
+        |:-----|--------:|--------:|--------:|--------:|--------:|
+        | AAPL | 56.1094 | 51.5965 | 48.7491 | 46.9062 | 42.6259 |
+        | MSFT | 49.0076 | 41.0618 | 39.5875 | 31.2615 | 28.3729 |
+        """
+        analyst_estimates = self._get_or_fetch_analyst_estimates()
+
+        if analyst_estimates.empty:
+            logger.error(
+                "No analyst estimates available. This requires an api_key to be set and a "
+                "Premium FMP subscription."
+            )
+            return None
+
+        estimated_eps = analyst_estimates.loc[:, "Estimated EPS Average", :]
+
+        stock_price = (
+            self._daily_historical_data["Adj Close"]
+            .ffill()
+            .iloc[-1][self._tickers_without_portfolio]
+            .reindex(estimated_eps.index)
+        )
+        stock_price_broadcast = pd.DataFrame(
+            {period: stock_price for period in estimated_eps.columns},
+            index=estimated_eps.index,
+        )
+
+        forward_price_earnings_ratio = valuation_model.get_price_to_earnings_ratio(
+            stock_price=stock_price_broadcast, earnings_per_share=estimated_eps
+        )
+
+        return finalize_dataset(
+            dataset=forward_price_earnings_ratio,
+            start_date=self._start_date,
+            end_date=None,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_forward_price_earnings_growth_ratio(
+        self,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+    ):
+        """
+        Calculate the forward price earnings to growth (forward PEG) ratio, a valuation metric
+        that measures the forward P/E ratio relative to the growth implied by the analyst
+        consensus (average) EPS estimate versus the company's most recently reported actual EPS.
+
+        The formula is as follows:
+
+            - Estimated EPS Growth Rate = (Estimated EPS - Trailing EPS) / |Trailing EPS|
+            - Forward PEG = Forward P/E / (Estimated EPS Growth Rate * 100)
+
+        Note that this requires an `api_key` to be set on the Toolkit and a Premium FMP
+        subscription. Analyst estimates are fetched once per Toolkit instance and cached
+        across calls to this (or the other forward-looking ratio) method — never on
+        initialization or on any other ratio.
+
+        Also known as: forward PEG, PEG on forward growth.
+
+        Args:
+            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+
+        Returns:
+            pd.DataFrame: Forward PEG ratio for each period covered by the analyst estimates.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "MSFT"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.ratios.get_forward_price_earnings_growth_ratio()
+        ```
+
+        Which returns:
+
+        |      |    2021 |    2022 |    2023 |    2024 |     2025 |
+        |:-----|--------:|--------:|--------:|--------:|---------:|
+        | AAPL | -2.26   | -2.8269 | -3.6172 | -4.6544 | -40.6636 |
+        | MSFT | -1.1385 | -1.2822 | -1.3423 | -2.918  | -17.48   |
+        """
+        analyst_estimates = self._get_or_fetch_analyst_estimates()
+
+        if analyst_estimates.empty:
+            logger.error(
+                "No analyst estimates available. This requires an api_key to be set and a "
+                "Premium FMP subscription."
+            )
+            return None
+
+        estimated_eps = analyst_estimates.loc[:, "Estimated EPS Average", :]
+
+        trailing_eps = (
+            self._income_statement.loc[:, "EPS Diluted", :]
+            .ffill(axis=1)
+            .iloc[:, -1]
+            .reindex(estimated_eps.index)
+        )
+        trailing_eps_broadcast = pd.DataFrame(
+            {period: trailing_eps for period in estimated_eps.columns},
+            index=estimated_eps.index,
+        )
+
+        estimated_eps_growth_rate = valuation_model.get_estimated_eps_growth_rate(
+            estimated_eps=estimated_eps, trailing_eps=trailing_eps_broadcast
+        )
+
+        stock_price = (
+            self._daily_historical_data["Adj Close"]
+            .ffill()
+            .iloc[-1][self._tickers_without_portfolio]
+            .reindex(estimated_eps.index)
+        )
+        stock_price_broadcast = pd.DataFrame(
+            {period: stock_price for period in estimated_eps.columns},
+            index=estimated_eps.index,
+        )
+        forward_price_earnings_ratio = valuation_model.get_price_to_earnings_ratio(
+            stock_price=stock_price_broadcast, earnings_per_share=estimated_eps
+        )
+
+        forward_price_earnings_growth_ratio = (
+            valuation_model.get_price_to_earnings_growth_ratio(
+                forward_price_earnings_ratio, estimated_eps_growth_rate * 100
+            )
+        )
+
+        return finalize_dataset(
+            dataset=forward_price_earnings_growth_ratio,
+            start_date=self._start_date,
+            end_date=None,
             default_rounding=self._rounding,
             growth=growth,
             lag=lag,

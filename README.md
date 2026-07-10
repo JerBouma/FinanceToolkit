@@ -98,9 +98,10 @@ companies = Toolkit(["AAPL", "MSFT"], api_key=API_KEY, start_date="2017-12-31")
 
 Each ratio, indicator and metric has a corresponding function that can be called directly, for example `ratios.get_return_on_equity` or `technicals.get_relative_strength_index`. Every module also has one or more `collect_` functions that return a whole category at once, e.g. `ratios.collect_profitability_ratios`, useful when you want everything in one call instead of assembling it metric by metric.
 
-Two capabilities cut across nearly the whole toolkit:
+Three capabilities cut across nearly the whole toolkit:
 
 - **`rolling` and `trailing` windows.** Many metrics return one value per reporting period by default. Pass `rolling=<n>` to compute the metric over a sliding window instead, or `trailing=<n>` for a trailing sum/average (e.g. a trailing 4-quarter sum to annualize a quarterly flow) — turning a snapshot into a proper time series.
+- **`growth` and `lag`.** Pass `growth=True` on almost any `get_` or `collect_` function to return the period-over-period growth instead of the raw value. `lag` (an `int` or list of `int`s, default `1`) controls how many periods back that growth is measured against, e.g. `lag=4` for year-over-year growth on quarterly data. Combine with `trailing` (e.g. `trailing=4, growth=True`) to get TTM growth.
 - **`standardize` (Z-Score).** Most `get_*` methods across Economics, Ratios, Technicals, Risk, Performance, Models, Options and Fixed Income accept `standardize=True`, converting raw values into standard deviations from their own historical mean/std. Useful for ranking, scoring, or spotting an unusual reading across metrics that otherwise live on incompatible scales.
 
 Every module below also has a **How-To Guide notebook** and full **code documentation** (formulas, parameters, worked examples) linked in its own section, see the [documentation hub](https://www.jeroenbouma.com/projects/financetoolkit) for the complete index.

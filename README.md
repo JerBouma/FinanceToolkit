@@ -1853,6 +1853,30 @@ The total shareholder yield combines the dividend yield and the buyback yield to
 
 The stock-based compensation (SBC) adjusted free cash flow deducts non-cash SBC expenses from free cash flow to give a more conservative view of the cash actually available to shareholders. Free cash flow already excludes SBC as a cash expense (it is added back in the cash flow from operations), which can overstate the cash available to shareholders — subtracting SBC treats it as if it were a real cash cost, which is a common quality-of-earnings adjustment, especially for companies that rely heavily on equity compensation. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_sbc_adjusted_free_cash_flow).
 
+> **Forward P/E**
+
+The forward price earnings ratio compares the current stock price to the analyst consensus (average) EPS estimate for a future period, instead of the trailing EPS used by the regular P/E ratio. This combines [Analyst Estimates](https://www.jeroenbouma.com/projects/financetoolkit/docs#get_analyst_estimates) with the company's stock price, and requires a Premium FMP subscription — the estimates are fetched (and cached) automatically the first time this method is called, no need to call `get_analyst_estimates()` beforehand. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_forward_price_earnings_ratio).
+
+```python
+from financetoolkit import Toolkit
+
+toolkit = Toolkit(["AAPL", "MSFT"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+toolkit.ratios.get_forward_price_earnings_ratio()
+```
+
+> **Forward PEG**
+
+The forward price earnings to growth ratio measures the forward P/E ratio relative to the growth implied by the analyst consensus EPS estimate versus the company's most recently reported actual EPS. Requires a Premium FMP subscription — fetched (and cached) automatically the first time this method is called. Find the documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#get_forward_price_earnings_growth_ratio).
+
+```python
+from financetoolkit import Toolkit
+
+toolkit = Toolkit(["AAPL", "MSFT"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+toolkit.ratios.get_forward_price_earnings_growth_ratio()
+```
+
 </details>
 
 ## Financial Models

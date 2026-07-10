@@ -43,6 +43,15 @@ def test_get_price_to_earnings_growth_ratio(recorder):
     )
 
 
+def test_get_estimated_eps_growth_rate(recorder):
+    recorder.capture(
+        valuation_model.get_estimated_eps_growth_rate(
+            estimated_eps=pd.Series([7.3, 12.8]),
+            trailing_eps=pd.Series([6.6, 11.2]),
+        )
+    )
+
+
 def test_get_book_value_per_share(recorder):
     recorder.capture(
         valuation_model.get_book_value_per_share(

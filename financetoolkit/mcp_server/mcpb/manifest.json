@@ -2,7 +2,7 @@
   "manifest_version": "0.4",
   "name": "finance-toolkit",
   "display_name": "Finance Toolkit",
-  "version": "2.1.3",
+  "version": "2.1.4",
   "description": "Give AI assistants access to 200+ financial metrics calculated transparently from raw financial statements, not pulled from third-party endpoints.",
   "long_description": "The Finance Toolkit gives AI assistants access to 200+ financial metrics calculated transparently from raw financial statements. This includes financial statements, historical prices, analyst estimates, 80+ fundamental ratios, 30+ technical indicators, 20+ risk and performance metrics, and 50+ macro and fixed income indicators.\n\nA Financial Modeling Prep API key is required to access 30+ years of financial data. Obtain one at [jeroenbouma.com/fmp](https://jeroenbouma.com/fmp). Authenticate once via OAuth, no key is stored on the server. Rate limit fallback to Yahoo Finance is built in, and macro databases from OECD and GMDB are accessed independently.",
   "author": {
@@ -79,7 +79,7 @@
     },
     {
       "name": "valuation",
-      "description": "Pre-computed valuation ratios (P/E, EPS, EV/EBITDA, EV/EBIT, P/B, P/S, PEG, dividend yield, FCF yield, market cap). Requires tickers='AAPL' \u2014 use comma-separated values for multiple tickers. Use instead of raw financial statements. Supports quarterly=true and start_date/end_date."
+      "description": "Pre-computed valuation ratios (P/E, EPS, EV/EBITDA, EV/EBIT, P/B, P/S, PEG, dividend yield, FCF yield, market cap, forward P/E, forward PEG). Requires tickers='AAPL' \u2014 use comma-separated values for multiple tickers. Use instead of raw financial statements. Supports quarterly=true and start_date/end_date. get_forward_price_earnings_ratio and get_forward_price_earnings_growth_ratio additionally require a Premium FMP subscription and are fetched on first use only."
     },
     {
       "name": "breadth",
@@ -99,7 +99,7 @@
     },
     {
       "name": "models",
-      "description": "Pre-computed financial models (WACC, DuPont analysis, Altman Z-Score, Piotroski F-Score, intrinsic value/DCF). Requires tickers='AAPL' \u2014 use comma-separated values for multiple tickers. Supports quarterly=true and start_date/end_date."
+      "description": "Pre-computed financial models (WACC, DuPont analysis, Extended DuPont analysis, Enterprise value breakdown, intrinsic value/DCF, Gordon Growth Model, Altman Z-Score, Piotroski F-Score, Beneish M-Score, Economic Value Added (EVA), Present Value of Growth Opportunities, Sustainable Growth Rate, Internal Growth Rate, Graham Number). Requires tickers='AAPL' \u2014 use comma-separated values for multiple tickers. Supports quarterly=true and start_date/end_date."
     },
     {
       "name": "performance",

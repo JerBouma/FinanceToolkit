@@ -137,7 +137,7 @@ class ToolkitProvider:
             **{
                 k: v
                 for k, v in method_kwargs.items()
-                if isinstance(v, (str, int, float, bool, type(None)))
+                if isinstance(v, str | int | float | bool | type(None))
             },
         }
 

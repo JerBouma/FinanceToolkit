@@ -56,7 +56,7 @@ def _idx_key(index: pd.Index) -> str:
     """Infer a sensible key name for a flat index."""
     if index.name:
         return str(index.name)
-    if isinstance(index, (pd.DatetimeIndex, pd.PeriodIndex)):
+    if isinstance(index, pd.DatetimeIndex | pd.PeriodIndex):
         return "date"
     with contextlib.suppress(Exception):
         sample = str(index[0])
@@ -65,7 +65,7 @@ def _idx_key(index: pd.Index) -> str:
     return "index"
 
 
-def _df_to_records(df: pd.DataFrame) -> list[dict]:
+def _df_to_records(dataframe: pd.DataFrame) -> list[dict]:
     """Convert a FinanceToolkit DataFrame to a flat list of JSON-serializable dicts.
 
     Three cases handled by DataFrame shape:
@@ -83,11 +83,11 @@ def _df_to_records(df: pd.DataFrame) -> list[dict]:
        columns become the remaining keys.
     """
     # ── Case 1: MultiIndex columns (metric, ticker) ───────────────────────────
-    if isinstance(df.columns, pd.MultiIndex):
-        orig_name = _idx_key(df.index)
-        ticker_name = df.columns.names[-1] or "ticker"
+    if isinstance(dataframe.columns, pd.MultiIndex):
+        orig_name = _idx_key(dataframe.index)
+        ticker_name = dataframe.columns.names[-1] or "ticker"
 
-        stacked = df.stack(level=-1)
+        stacked = dataframe.stack(level=-1)
         stacked.index.names = [orig_name, ticker_name]
 
         flat = stacked.reset_index()
@@ -97,15 +97,15 @@ def _df_to_records(df: pd.DataFrame) -> list[dict]:
         ]
 
     # ── Case 2: MultiIndex index (ticker, metric) — multi-ticker financials ───
-    if isinstance(df.index, pd.MultiIndex):
+    if isinstance(dataframe.index, pd.MultiIndex):
         level_names: list[str] = []
-        for i, name in enumerate(df.index.names):
+        for i, name in enumerate(dataframe.index.names):
             if name:
                 level_names.append(str(name))
                 continue
-            vals = df.index.get_level_values(i)
+            vals = dataframe.index.get_level_values(i)
             sample = str(vals[0]) if len(vals) else ""
-            last = i == len(df.index.names) - 1
+            last = i == len(dataframe.index.names) - 1
             if not last and len(sample) <= _MAX_TICKER_LEN and sample.isupper():
                 level_names.append("ticker")
             elif last:
@@ -113,9 +113,9 @@ def _df_to_records(df: pd.DataFrame) -> list[dict]:
             else:
                 level_names.append(f"level_{i}")
 
-        df = df.copy()
-        df.index.names = level_names
-        flat = df.reset_index()
+        dataframe = dataframe.copy()
+        dataframe.index.names = level_names
+        flat = dataframe.reset_index()
 
         # When show_columns narrows to one metric the last-level column repeats
         # the same value in every row — drop it so records stay concise.
@@ -129,13 +129,13 @@ def _df_to_records(df: pd.DataFrame) -> list[dict]:
         ]
 
     # ── Case 3: Flat index, flat columns ──────────────────────────────────────
-    df = df.copy()
-    if df.index.name:
-        idx_name = str(df.index.name)
-    elif isinstance(df.columns, (pd.DatetimeIndex, pd.PeriodIndex)):
+    dataframe = dataframe.copy()
+    if dataframe.index.name:
+        idx_name = str(dataframe.index.name)
+    elif isinstance(dataframe.columns, pd.DatetimeIndex | pd.PeriodIndex):
         # Columns are time periods → rows are either tickers or metric names
         try:
-            sample = str(df.index[0])
+            sample = str(dataframe.index[0])
             idx_name = (
                 "ticker"
                 if (len(sample) <= _MAX_TICKER_LEN and sample.isupper())
@@ -144,9 +144,9 @@ def _df_to_records(df: pd.DataFrame) -> list[dict]:
         except Exception:
             idx_name = "metric"
     else:
-        idx_name = _idx_key(df.index)
-    df.index.name = idx_name
-    flat = df.reset_index()
+        idx_name = _idx_key(dataframe.index)
+    dataframe.index.name = idx_name
+    flat = dataframe.reset_index()
     return [
         {_clean_key(k): _clean(v) for k, v in row.items()} for _, row in flat.iterrows()
     ]
@@ -205,7 +205,7 @@ def format_result(
                 out[str(key)] = _clean(value)
         return json.dumps(_inject(out), default=str)
 
-    if isinstance(dataset, (int, float, str)):
+    if isinstance(dataset, int | float | str):
         return json.dumps(_inject({"value": _clean(dataset)}))
 
     logger.warning("Unexpected result type: %s. Returning raw string.", type(dataset))

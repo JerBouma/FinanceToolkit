@@ -178,7 +178,7 @@ class Performance:
 
         toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
-        toolkit.performance.collect_all_metrics()
+        toolkit.performance.collect_all_metrics().xs("AAPL", level=1, axis=1)
         ```
 
         Which returns:

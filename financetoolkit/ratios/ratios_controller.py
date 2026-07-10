@@ -208,7 +208,7 @@ class Ratios:
 
         toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
-        toolkit.ratios.collect_all_ratios()
+        toolkit.ratios.collect_all_ratios().loc['AAPL']
         ```
 
         Which returns:
@@ -585,7 +585,7 @@ class Ratios:
 
         toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
-        toolkit.ratios.collect_efficiency_ratios()
+        toolkit.ratios.collect_efficiency_ratios().loc['AAPL']
         ```
 
         Which returns:
@@ -2497,6 +2497,8 @@ class Ratios:
         toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         liquidity_ratios = toolkit.ratios.collect_liquidity_ratios()
+
+        liquidity_ratios.loc['AAPL']
         ```
 
         Which returns:
@@ -3264,6 +3266,8 @@ class Ratios:
         toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         profitability_ratios = toolkit.ratios.collect_profitability_ratios()
+
+        profitability_ratios.loc['AAPL']
         ```
 
         Which returns:
@@ -5200,6 +5204,8 @@ class Ratios:
         toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         solvency_ratios = toolkit.ratios.collect_solvency_ratios()
+
+        solvency_ratios.loc['AAPL']
         ```
 
         Which returns:
@@ -6572,6 +6578,8 @@ class Ratios:
         toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         valuation_ratios = toolkit.ratios.collect_valuation_ratios()
+
+        valuation_ratios.loc['AAPL']
         ```
 
         Which returns:

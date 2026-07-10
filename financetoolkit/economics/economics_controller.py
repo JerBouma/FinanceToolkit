@@ -3849,7 +3849,7 @@ class Economics:
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
 
         Returns:
-            pd.DataFrame: A DataFrame containing the Exchange Rates.
+            pd.DataFrame: A DataFrame containing the Labour Productivity.
 
         As an example:
 
@@ -3858,7 +3858,7 @@ class Economics:
 
         economics = Economics()
 
-        economics.get_exchange_rates(countries=['Bulgaria', 'Croatia', 'Spain'])
+        economics.get_labour_productivity(countries=['Bulgaria', 'Croatia', 'Spain'])
         ```
 
         Which returns:

@@ -178,6 +178,8 @@ class Models:
         toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         dupont_analysis = toolkit.models.get_dupont_analysis()
+
+        dupont_analysis.loc["AAPL"]
         ```
 
         Which returns:
@@ -323,6 +325,8 @@ class Models:
         toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         extended_dupont_analysis = toolkit.models.get_extended_dupont_analysis()
+
+        extended_dupont_analysis.loc["AAPL"]
         ```
 
         Which returns:
@@ -480,6 +484,8 @@ class Models:
         toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         enterprise_value_breakdown = toolkit.models.get_enterprise_value_breakdown()
+
+        enterprise_value_breakdown.loc["AAPL"]
         ```
 
         Which returns:
@@ -651,7 +657,7 @@ class Models:
 
         toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
-        toolkit.models.get_weighted_average_cost_of_capital()
+        toolkit.models.get_weighted_average_cost_of_capital().loc["AAPL"]
         ```
 
         Which returns:
@@ -1053,7 +1059,7 @@ class Models:
 
         toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
-        toolkit.models.get_intrinsic_valuation(0.05, 0.025, 0.094)
+        toolkit.models.get_intrinsic_valuation(0.05, 0.025, 0.094).loc["AAPL"]
         ```
 
         Which returns:
@@ -1362,6 +1368,8 @@ class Models:
         toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         altman_z_score = toolkit.models.get_altman_z_score()
+
+        altman_z_score.loc["AAPL"]
         ```
 
         Which returns:
@@ -1597,7 +1605,7 @@ class Models:
 
         toolkit = Toolkit(["AAPL", "TSLA", "MSFT"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
-        toolkit.models.get_piotroski_score()
+        toolkit.models.get_piotroski_score().loc["AAPL"]
         ```
 
         Which returns:

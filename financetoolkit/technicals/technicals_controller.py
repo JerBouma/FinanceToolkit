@@ -127,7 +127,7 @@ class Technicals:
 
         toolkit = Toolkit(tickers=["AAPL", "MSFT"])
 
-        toolkit.technicals.collect_all_indicators()
+        toolkit.technicals.collect_all_indicators().xs("AAPL", level=1, axis="columns")
         ```
 
         Which returns:
@@ -250,7 +250,7 @@ class Technicals:
 
         toolkit = Toolkit(tickers=["AAPL", "MSFT"])
 
-        toolkit.technicals.collect_breadth_indicators()
+        toolkit.technicals.collect_breadth_indicators().xs("AAPL", level=1, axis="columns")
         ```
 
         Which returns:
@@ -982,7 +982,7 @@ class Technicals:
 
         toolkit = Toolkit(tickers=["AAPL", "MSFT"])
 
-        toolkit.technicals.collect_momentum_indicators()
+        toolkit.technicals.collect_momentum_indicators().xs("AAPL", level=1, axis="columns")
         ```
 
         Which returns:
@@ -1434,7 +1434,7 @@ class Technicals:
 
         toolkit = Toolkit(tickers=["AAPL", "MSFT"])
 
-        toolkit.technicals.get_aroon_indicator()
+        toolkit.technicals.get_aroon_indicator().xs("AAPL", level=1, axis="columns")
         ```
 
         Which returns:
@@ -2506,7 +2506,7 @@ class Technicals:
 
         toolkit = Toolkit(tickers=["AAPL", "MSFT"])
 
-        toolkit.technicals.get_ichimoku_cloud()
+        toolkit.technicals.get_ichimoku_cloud().xs("AAPL", level=1, axis="columns")
         ```
 
         Which returns:
@@ -2637,7 +2637,7 @@ class Technicals:
 
         toolkit = Toolkit(tickers=["AAPL", "MSFT"])
 
-        toolkit.technicals.get_stochastic_oscillator()
+        toolkit.technicals.get_stochastic_oscillator().xs("AAPL", level=1, axis="columns")
         ```
 
         Which returns:
@@ -2773,7 +2773,7 @@ class Technicals:
 
         toolkit = Toolkit(tickers=["AAPL", "MSFT"])
 
-        toolkit.technicals.get_moving_average_convergence_divergence()
+        toolkit.technicals.get_moving_average_convergence_divergence().xs("AAPL", level=1, axis="columns")
         ```
 
         Which returns:
@@ -3109,7 +3109,7 @@ class Technicals:
 
         toolkit = Toolkit(tickers=["AAPL", "MSFT"])
 
-        toolkit.technicals.collect_overlap_indicators()
+        toolkit.technicals.collect_overlap_indicators().xs("AAPL", level=1, axis="columns")
         ```
 
         Which returns:
@@ -3760,7 +3760,7 @@ class Technicals:
 
         toolkit = Toolkit(tickers=["AAPL", "MSFT"])
 
-        toolkit.technicals.get_bollinger_bands()
+        toolkit.technicals.get_bollinger_bands().xs("AAPL", level=1, axis="columns")
         ```
 
         Which returns:
@@ -4482,7 +4482,7 @@ class Technicals:
 
         toolkit = Toolkit(tickers=["AAPL", "MSFT"])
 
-        toolkit.technicals.get_pivot_points()
+        toolkit.technicals.get_pivot_points().xs("AAPL", level=1, axis="columns")
         ```
 
         Which returns:
@@ -4614,6 +4614,8 @@ class Technicals:
         toolkit = Toolkit(tickers=["AAPL", "MSFT"])
 
         support_resistance_levels = toolkit.technicals.get_support_resistance_levels()
+
+        support_resistance_levels.xs("AAPL", level=1, axis="columns")
         ```
 
         Which returns:
@@ -4714,7 +4716,7 @@ class Technicals:
 
         toolkit = Toolkit(tickers=["AAPL", "MSFT"])
 
-        toolkit.technicals.collect_volatility_indicators()
+        toolkit.technicals.collect_volatility_indicators().xs("AAPL", level=1, axis="columns")
         ```
 
         Which returns:
@@ -5144,7 +5146,7 @@ class Technicals:
 
         toolkit = Toolkit(tickers=["AAPL", "MSFT"])
 
-        toolkit.technicals.get_keltner_channels()
+        toolkit.technicals.get_keltner_channels().xs("AAPL", level=1, axis="columns")
         ```
 
         Which returns:
@@ -5272,7 +5274,7 @@ class Technicals:
 
         toolkit = Toolkit(tickers=["AAPL", "MSFT"])
 
-        toolkit.technicals.get_donchian_channels()
+        toolkit.technicals.get_donchian_channels().xs("AAPL", level=1, axis="columns")
         ```
 
         Which returns:
@@ -5387,6 +5389,8 @@ class Technicals:
         toolkit = Toolkit(tickers=["AAPL", "MSFT"])
 
         volatility_cone = toolkit.technicals.get_volatility_cone()
+
+        volatility_cone.xs("AAPL", level=1, axis="columns")
         ```
 
         Which returns:

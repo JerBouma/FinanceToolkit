@@ -1217,7 +1217,7 @@ class Options:
 
         toolkit = Toolkit(["AAPL", "ASML"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
-        toolkit.options.collect_first_order_greeks()
+        toolkit.options.collect_first_order_greeks().loc["AAPL"]
         ```
 
         Which returns:
@@ -1408,7 +1408,7 @@ class Options:
 
         toolkit = Toolkit(["AAPL", "ASML"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
-        toolkit.options.get_delta()
+        toolkit.options.get_delta().loc["AAPL"]
         ```
 
         Which returns:
@@ -1573,7 +1573,7 @@ class Options:
 
         toolkit = Toolkit(["AAPL", "ASML"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
-        toolkit.options.get_dual_delta()
+        toolkit.options.get_dual_delta().loc["AAPL"]
         ```
 
         Which returns:
@@ -1739,7 +1739,7 @@ class Options:
 
         toolkit = Toolkit(["AAPL", "ASML"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
-        toolkit.options.get_vega()
+        toolkit.options.get_vega().loc["AAPL"]
         ```
 
         Which returns:
@@ -1909,7 +1909,7 @@ class Options:
 
         toolkit = Toolkit(["AAPL", "ASML"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
-        toolkit.options.get_theta()
+        toolkit.options.get_theta().loc["AAPL"]
         ```
 
         Which returns:
@@ -2081,7 +2081,7 @@ class Options:
 
         toolkit = Toolkit(["AAPL", "ASML"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
-        toolkit.options.get_rho()
+        toolkit.options.get_rho().loc["AAPL"]
         ```
 
         Which returns:
@@ -2249,7 +2249,7 @@ class Options:
 
         toolkit = Toolkit(["AAPL", "ASML"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
-        toolkit.options.get_epsilon()
+        toolkit.options.get_epsilon().loc["AAPL"]
         ```
 
         Which returns:
@@ -2419,7 +2419,7 @@ class Options:
 
         toolkit = Toolkit(["AAPL", "ASML"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
-        toolkit.options.get_lambda()
+        toolkit.options.get_lambda().loc["AAPL"]
         ```
 
         Which returns:
@@ -2584,7 +2584,7 @@ class Options:
 
         toolkit = Toolkit(["AAPL", "MSFT"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
-        toolkit.options.collect_second_order_greeks()
+        toolkit.options.collect_second_order_greeks().loc["AAPL"]
         ```
 
         Which returns:
@@ -2777,7 +2777,7 @@ class Options:
 
         toolkit = Toolkit(["AAPL", "ASML"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
-        toolkit.options.get_gamma()
+        toolkit.options.get_gamma().loc["AAPL"]
         ```
 
         Which returns:
@@ -2936,7 +2936,7 @@ class Options:
 
         toolkit = Toolkit(["AAPL", "ASML"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
-        toolkit.options.get_dual_gamma()
+        toolkit.options.get_dual_gamma().loc["AAPL"]
         ```
 
         Which returns:
@@ -3102,7 +3102,7 @@ class Options:
 
         toolkit = Toolkit(["AAPL", "ASML"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
-        toolkit.options.get_vanna()
+        toolkit.options.get_vanna().loc["AAPL"]
         ```
 
         Which returns:
@@ -3270,7 +3270,7 @@ class Options:
 
         toolkit = Toolkit(["AAPL", "ASML"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
-        toolkit.options.get_charm()
+        toolkit.options.get_charm().loc["AAPL"]
         ```
 
         Which returns:
@@ -3436,7 +3436,7 @@ class Options:
 
         toolkit = Toolkit(["AAPL", "ASML"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
-        toolkit.options.get_vomma()
+        toolkit.options.get_vomma().loc["AAPL"]
         ```
 
         Which returns:
@@ -3602,7 +3602,7 @@ class Options:
 
         toolkit = Toolkit(["AAPL", "ASML"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
-        toolkit.options.get_vera()
+        toolkit.options.get_vera().loc["AAPL"]
         ```
 
         Which returns:
@@ -3769,7 +3769,7 @@ class Options:
 
         toolkit = Toolkit(["AAPL", "ASML"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
-        toolkit.options.get_veta()
+        toolkit.options.get_veta().loc["AAPL"]
         ```
 
         Which returns:
@@ -3927,7 +3927,7 @@ class Options:
 
         toolkit = Toolkit(["AAPL", "ASML"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
-        toolkit.options.get_partial_derivative()
+        toolkit.options.get_partial_derivative().loc["AAPL"]
         ```
 
         Which returns:
@@ -4082,7 +4082,7 @@ class Options:
 
         toolkit = Toolkit(["MU", "AMZN"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
-        toolkit.options.collect_third_order_greeks()
+        toolkit.options.collect_third_order_greeks().loc["MU"]
         ```
 
         Which returns:
@@ -4228,7 +4228,7 @@ class Options:
 
         toolkit = Toolkit(["AAPL", "ASML"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
-        toolkit.options.get_speed()
+        toolkit.options.get_speed().loc["AAPL"]
         ```
 
         Which returns:
@@ -4394,7 +4394,7 @@ class Options:
 
         toolkit = Toolkit(["AAPL", "ASML"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
-        toolkit.options.get_zomma()
+        toolkit.options.get_zomma().loc["AAPL"]
         ```
 
         Which returns:
@@ -4560,7 +4560,7 @@ class Options:
 
         toolkit = Toolkit(["AAPL", "ASML"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
-        toolkit.options.get_color()
+        toolkit.options.get_color().loc["AAPL"]
         ```
 
         Which returns:
@@ -4726,7 +4726,7 @@ class Options:
 
         toolkit = Toolkit(["AAPL", "ASML"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
-        toolkit.options.get_ultima()
+        toolkit.options.get_ultima().loc["AAPL"]
         ```
 
         Which returns:

@@ -1028,7 +1028,7 @@ class FixedIncome:
             end_date='2024-01-15',
         )
 
-        fixedincome.get_option_adjusted_spread()
+        fixedincome.get_ice_bofa_option_adjusted_spread()
         ```
 
         Which returns:
@@ -1104,7 +1104,7 @@ class FixedIncome:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. Defaults to False.
 
         Returns:
-            pd.DataFrame: A DataFrame containing the Gross Domestic Product
+            pd.DataFrame: A DataFrame containing the ICE BofA Effective Yield
 
         As an example:
 
@@ -1116,7 +1116,7 @@ class FixedIncome:
             end_date='2024-01-15',
         )
 
-        fixedincome.get_effective_yield(maturity=False)
+        fixedincome.get_ice_bofa_effective_yield(maturity=False)
         ```
 
         Which returns:
@@ -1188,7 +1188,7 @@ class FixedIncome:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. Defaults to False.
 
         Returns:
-            pd.DataFrame: A DataFrame containing the Gross Domestic Product
+            pd.DataFrame: A DataFrame containing the ICE BofA Total Return
 
         As an example:
 
@@ -1200,7 +1200,7 @@ class FixedIncome:
             end_date='2024-01-15',
         )
 
-        fixedincome.get_total_return(maturity=True)
+        fixedincome.get_ice_bofa_total_return(maturity=True)
         ```
 
         Which returns:

@@ -154,7 +154,7 @@ class Risk:
 
         toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
-        toolkit.risk.collect_all_metrics()
+        toolkit.risk.collect_all_metrics().xs("AAPL", level=1, axis=1)
         ```
 
         Which returns:

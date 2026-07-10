@@ -146,7 +146,7 @@ Obtain [historical data](https://www.jeroenbouma.com/projects/financetoolkit/doc
 historical_data = companies.get_historical_data()
 
 # Select the results for Apple
-historical_data.loc['AAPL']
+historical_data.xs('AAPL', axis=1, level=1)
 ```
 
 For example, a portion of the historical data for Apple is shown below.
@@ -285,7 +285,7 @@ Get the correlations with the [factors as defined by Fama-and-French](https://ww
 factor_asset_correlations = companies.performance.get_factor_asset_correlations(period="quarterly")
 
 # Select the results for Apple
-factor_asset_correlations.loc['AAPL']
+factor_asset_correlations['AAPL']
 ```
 
 For example, this shows the quarterly correlations for Apple:
@@ -336,7 +336,7 @@ Get the [Ichimoku Cloud](https://www.jeroenbouma.com/projects/financetoolkit/doc
 ichimoku_cloud = companies.technicals.get_ichimoku_cloud()
 
 # Select the results for Apple
-ichimoku_cloud.loc['AAPL']
+ichimoku_cloud.xs('AAPL', axis=1, level=1)
 ```
 
 For example, see some of the parameters for Apple below:
@@ -361,7 +361,7 @@ Get access to the [ICE BofA Corporate Bond](https://www.jeroenbouma.com/projects
 
 ```python
 # Get the ICE BofA Effective Yield for each Credit Rating
-companies.fixedincome.get_ice_bofa_effective_yield()
+companies.fixedincome.get_ice_bofa_effective_yield(maturity=False)
 ```
 
 For example, see the Effective Yield for the ICE BofA Corporate Bond Index below for each Credit Rating:
@@ -418,7 +418,7 @@ ___
 from financetoolkit import Portfolio
 
 # Initialize the Portfolio module with your own dataset
-portfolio = Portfolio(portfolio_dataset="portfolio.xlsx", api_key="FINANCIAL_MODELING_PREP_KEY")
+portfolio = Portfolio(example=True, api_key="FINANCIAL_MODELING_PREP_KEY")
 
 # Get an overview of all positions
 portfolio.get_positions_overview()

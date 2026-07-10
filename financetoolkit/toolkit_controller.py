@@ -587,6 +587,11 @@ class Toolkit:
         # Initialization of the Portfolio Variables
         self._portfolio_weights: dict | None = None
 
+        # Shared across every `toolkit.ratios` access (each access constructs a fresh Ratios
+        # instance) so that analyst estimates used by the forward-looking ratios are only
+        # ever fetched once per Toolkit instance instead of once per method call.
+        self._analyst_estimates_cache: dict = {}
+
         pd.set_option("display.float_format", str)
 
     @property
@@ -723,6 +728,10 @@ class Toolkit:
             rounding=self._rounding,
             start_date=self._start_date,
             end_date=self._end_date,
+            api_key=self._api_key,
+            sleep_timer=self._sleep_timer,
+            user_subscription=self._fmp_plan,
+            analyst_estimates_cache=self._analyst_estimates_cache,
         )
 
         if self._portfolio_weights:

@@ -245,10 +245,45 @@ tool_groups:
 
   - tool_name:      "valuation"
     display_name:   "Valuation Ratios"
-    description:    "Pre-computed valuation ratios (P/E, EPS, EV/EBITDA, EV/EBIT, P/B, P/S, PEG, dividend yield, FCF yield, market cap). Requires tickers='AAPL' — use comma-separated values for multiple tickers. Use instead of raw financial statements. Supports quarterly=true and start_date/end_date."
+    description:    "Pre-computed valuation ratios (P/E, EPS, EV/EBITDA, EV/EBIT, P/B, P/S, PEG, dividend yield, FCF yield, market cap, forward P/E, forward PEG). Requires tickers='AAPL' — use comma-separated values for multiple tickers. Use instead of raw financial statements. Supports quarterly=true and start_date/end_date. get_forward_price_earnings_ratio and get_forward_price_earnings_growth_ratio additionally require a Premium FMP subscription and are fetched on first use only."
     module_name:    "ratios"
     category:       "ticker"
     collect_method: "collect_valuation_ratios"
+    # get_forward_price_earnings_ratio/get_forward_price_earnings_growth_ratio are deliberately
+    # NOT called from collect_valuation_ratios (that would force a Premium-only analyst-estimates
+    # fetch attempt on every bulk valuation-ratios call, even for free-tier users), so the
+    # collect_method source-scan above can't discover them. Listed explicitly here instead —
+    # method_override replaces the discovered list wholesale, so if new valuation ratios are
+    # added to collect_valuation_ratios in the future, add them here too.
+    method_override:
+      - "get_earnings_per_share"
+      - "get_revenue_per_share"
+      - "get_price_to_earnings_ratio"
+      - "get_price_to_earnings_growth_ratio"
+      - "get_forward_price_earnings_ratio"
+      - "get_forward_price_earnings_growth_ratio"
+      - "get_book_value_per_share"
+      - "get_price_to_book_ratio"
+      - "get_interest_debt_per_share"
+      - "get_capex_per_share"
+      - "get_earnings_yield"
+      - "get_dividend_payout_ratio"
+      - "get_dividend_yield"
+      - "get_weighted_dividend_yield"
+      - "get_price_to_cash_flow_ratio"
+      - "get_price_to_free_cash_flow_ratio"
+      - "get_market_cap"
+      - "get_enterprise_value"
+      - "get_ev_to_sales_ratio"
+      - "get_ev_to_ebit"
+      - "get_ev_to_ebitda_ratio"
+      - "get_ev_to_operating_cashflow_ratio"
+      - "get_tangible_asset_value"
+      - "get_net_current_asset_value"
+      - "get_ev_to_free_cash_flow_ratio"
+      - "get_buyback_yield"
+      - "get_shareholder_yield"
+      - "get_sbc_adjusted_free_cash_flow"
 
   # ── Technicals (4 sub-groups) ────────────────────────────────────────────
   - tool_name:      "breadth"

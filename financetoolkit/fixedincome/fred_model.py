@@ -7,7 +7,7 @@ import pandas as pd
 
 from financetoolkit.utilities.requests_model import get_request
 
-FRED_API_BASE_URL = "https://api.stlouisfed.org/fred/v2/series/observations"
+FRED_API_BASE_URL = "https://api.stlouisfed.org/fred/series/observations"
 
 
 def fetch_single_series(
@@ -20,7 +20,7 @@ def fetch_single_series(
         series_id (str): The FRED series identifier (e.g. "DGS10" for the 10-Year Treasury yield).
         start_date (str): Start date of the observation range in YYYY-MM-DD format.
         end_date (str): End date of the observation range in YYYY-MM-DD format.
-        api_key (str): FRED API key used for Bearer token authentication.
+        api_key (str): FRED API key, sent as the `api_key` query parameter.
 
     Returns:
         pd.DataFrame: A DataFrame indexed by a daily PeriodIndex with the series ID as the column name.
@@ -35,12 +35,12 @@ def fetch_single_series(
         f"?series_id={series_id}"
         f"&observation_start={start_date}"
         f"&observation_end={end_date}"
+        f"&api_key={api_key}"
+        "&file_type=json"
     )
 
     try:
-        response = get_request(
-            url, timeout=30, extra_headers={"Authorization": f"Bearer {api_key}"}
-        )
+        response = get_request(url, timeout=30)
         payload = response.json()
     except Exception as e:
         raise RuntimeError(f"Error fetching data from FRED: {e}") from e
@@ -68,7 +68,7 @@ def get_fred_data(
     """
     Retrieves data from the Federal Reserve Economic Data (FRED) API for the specified series ID(s).
 
-    Uses the FRED API v2 (https://fred.stlouisfed.org/docs/api/fred/v2/index.html).
+    Uses the FRED API (https://fred.stlouisfed.org/docs/api/fred/series_observations.html).
     Requires a free FRED API key. Register at https://fred.stlouisfed.org/docs/api/api_key.html
     and pass the key via the `fred_api_key` argument or set the `FRED_API_KEY` environment variable.
 
@@ -76,7 +76,7 @@ def get_fred_data(
         fred_series_id (str or list): The series ID(s) of the data to retrieve.
         start_date (str): Start date in YYYY-MM-DD format.
         end_date (str): End date in YYYY-MM-DD format.
-        api_key (str): FRED API key. Sent as a Bearer token per the v2 authentication scheme.
+        api_key (str): FRED API key, sent as the `api_key` query parameter.
 
     Returns:
         fred_data (pandas.DataFrame): The retrieved data as a pandas DataFrame, with the date as the index.

@@ -131,7 +131,12 @@ def handle_portfolio(func):
             if isinstance(result.columns, pd.PeriodIndex) and not isinstance(
                 result.columns, pd.MultiIndex
             ):
-                weights = weights.loc[result_without_benchmark.columns, :].T
+                # A period can be missing from weights when the price history used to
+                # derive them doesn't reach as far back as the period covered by result
+                # (e.g. financial statement data can predate available price data).
+                # reindex fills these with NaN instead of raising, so the weighted
+                # average for that period simply comes out as NaN.
+                weights = weights.reindex(result_without_benchmark.columns).T
 
                 weighted_averages = round(
                     (result_without_benchmark * weights).sum(axis=0)
@@ -144,7 +149,7 @@ def handle_portfolio(func):
             elif isinstance(result.index, pd.PeriodIndex) and not isinstance(
                 result.columns, pd.MultiIndex
             ):
-                weights = weights.loc[result.index, :]
+                weights = weights.reindex(result.index)
 
                 weighted_averages = round(
                     (result_without_benchmark * weights).sum(axis=1)

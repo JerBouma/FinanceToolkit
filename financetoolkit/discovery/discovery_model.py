@@ -173,42 +173,6 @@ def get_stock_list(api_key: str, user_subscription: str = "Free") -> pd.DataFram
     return stock_list
 
 
-def get_stock_quotes(api_key: str, user_subscription: str = "Free") -> pd.DataFrame:
-    """
-    Get the quotes for all stocks.
-
-    Args:
-        api_key (str): the API key from Financial Modeling Prep.
-        user_subscription (str, optional): The user subscription level. Defaults to "Free".
-
-    Returns:
-        pd.DataFrame: DataFrame of stock quotes.
-    """
-    url = f"https://financialmodelingprep.com/stable/stock/full/real-time-price?apikey={api_key}"
-
-    stock_quotes = get_financial_data(url=url, user_subscription=user_subscription)
-
-    stock_quotes = stock_quotes.rename(
-        columns={
-            "symbol": "Symbol",
-            "bidSize": "Bid Size",
-            "askPrice": "Ask Price",
-            "volume": "Volume",
-            "askSize": "Ask Size",
-            "bidPrice": "Bid Price",
-            "lastSalePrice": "Last Sale Price",
-            "lastSaleSize": "Last Sale Size",
-            "lastSaleTime": "Last Sale Time",
-        }
-    )
-
-    stock_quotes = stock_quotes.drop(columns=["fmpLast", "lastUpdated"])
-
-    stock_quotes = stock_quotes.set_index("Symbol").sort_index()
-
-    return stock_quotes
-
-
 def get_stock_shares_float(
     api_key: str, user_subscription: str = "Free"
 ) -> pd.DataFrame:

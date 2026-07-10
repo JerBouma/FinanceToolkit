@@ -355,8 +355,19 @@ def create_transactions_performance(
     last_benchmark_prices = []
 
     for period, _ in period_performance_grouped.iterrows():
-        last_prices.append(period_prices.loc[period[0], period[1]])
-        last_benchmark_prices.append(benchmark_period_prices.loc[period[0]])
+        # A period/ticker combination can be missing from period_prices when the price
+        # history available for that ticker doesn't reach back as far as the transaction
+        # (e.g. a demo dataset with a transaction dated before the ticker's actual price
+        # history starts). Treat this as unknown rather than raising, since the Return
+        # and Alpha for that period are simply not computable.
+        try:
+            last_prices.append(period_prices.loc[period[0], period[1]])
+        except KeyError:
+            last_prices.append(np.nan)
+        try:
+            last_benchmark_prices.append(benchmark_period_prices.loc[period[0]])
+        except KeyError:
+            last_benchmark_prices.append(np.nan)
 
     period_performance_grouped["Current Value"] = (
         period_performance_grouped[volume_column] * last_prices

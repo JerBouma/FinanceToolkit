@@ -18,3 +18,16 @@ This directory contains the source for `financetoolkit.mcpb`, an [MCP Bundle](ht
 3. Build the MCP bundle with `bash financetoolkit/mcp_server/mcpb/build-mcpb.sh`
 4. Find the generated `financetoolkit.mcpb` in the `dist/` directory
 5. Double-click it to install it into Claude Desktop.
+
+By default the bundle depends on the published PyPI package (pinned to the
+current version), so it won't reflect uncommitted local changes. Pass
+`--local` to bundle against this checkout instead:
+
+```bash
+bash financetoolkit/mcp_server/mcpb/build-mcpb.sh --local
+```
+
+This produces `dist/financetoolkit-local.mcpb`, with the dependency pointed
+at your local checkout (editable, via `uv`'s `[tool.uv.sources]`) instead of
+the pinned PyPI release. Use it to test uncommitted changes end-to-end in
+Claude Desktop before cutting a release. Don't publish this build.

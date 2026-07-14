@@ -789,7 +789,7 @@ class Models:
                     axis="columns",
                 )
 
-        if len(self._tickers) == 1:
+        if len(self._tickers) == 1 and show_full_results:
             result = (
                 self._weighted_average_cost_of_capital_growth.droplevel(level=0)
                 if growth

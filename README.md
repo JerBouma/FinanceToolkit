@@ -574,4 +574,10 @@ If you have any questions about the Finance Toolkit or would like to share with 
 
 If you'd like to support my efforts, either help me out by contributing to the package or [Sponsor Me](https://github.com/sponsors/JerBouma).
 
-[![Star History Chart](https://api.star-history.com/svg?repos=JerBouma/FinanceToolkit&type=Date)](https://star-history.com/#JerBouma/FinanceToolkit&Date)
+<a href="https://www.star-history.com/?type=date&repos=JerBouma%2FFinanceToolkit">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=JerBouma/FinanceToolkit&type=date&theme=dark&legend=top-left&sealed_token=R4_fXwQ_uqTiS2P70MJ5ShMB5Pi7K8cY0AV697aqOyv6y_HKv63Z35Ax0B9uAlOgqvOOSm8c_N0NDF0bdVq-gJU0Fuzi1ZqQiMMg1YNbcC-PZ-EtWTE7WlYSgRLEk_8o6gUHxqKx32iYIZZ82pDDkDTImGG6ZTBmlt47QqF9aTp4Yd5FTtJ7tD9bbxxz" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=JerBouma/FinanceToolkit&type=date&legend=top-left&sealed_token=R4_fXwQ_uqTiS2P70MJ5ShMB5Pi7K8cY0AV697aqOyv6y_HKv63Z35Ax0B9uAlOgqvOOSm8c_N0NDF0bdVq-gJU0Fuzi1ZqQiMMg1YNbcC-PZ-EtWTE7WlYSgRLEk_8o6gUHxqKx32iYIZZ82pDDkDTImGG6ZTBmlt47QqF9aTp4Yd5FTtJ7tD9bbxxz" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=JerBouma/FinanceToolkit&type=date&legend=top-left&sealed_token=R4_fXwQ_uqTiS2P70MJ5ShMB5Pi7K8cY0AV697aqOyv6y_HKv63Z35Ax0B9uAlOgqvOOSm8c_N0NDF0bdVq-gJU0Fuzi1ZqQiMMg1YNbcC-PZ-EtWTE7WlYSgRLEk_8o6gUHxqKx32iYIZZ82pDDkDTImGG6ZTBmlt47QqF9aTp4Yd5FTtJ7tD9bbxxz" />
+ </picture>
+</a>

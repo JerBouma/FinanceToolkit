@@ -12,8 +12,8 @@ import pandas as pd
 import yfinance as yf
 
 from financetoolkit import helpers
-from financetoolkit.helpers import get_request
 from financetoolkit.utilities import logger_model
+from financetoolkit.utilities.requests_model import get_request
 
 logger = logger_model.get_logger()
 
@@ -138,7 +138,6 @@ def get_historical_data(
     end: str | None = None,
     interval: str = "1d",
     return_column: str = "Adj Close",
-    risk_free_rate: pd.DataFrame = pd.DataFrame(),
     divide_ohlc_by: int | float | None = None,
     fallback: bool = False,
 ):
@@ -154,10 +153,6 @@ def get_historical_data(
             in 'YYYY-MM-DD' format. Defaults to None.
         interval (str, optional): A string representing the interval to retrieve data for.
         return_column (str, optional): A string representing the column to use for return calculations.
-        risk_free_rate (pd.Series, optional): A pandas Series object containing the risk free rate data.
-        include_dividends (bool, optional): A boolean representing whether to include dividends in the
-        historical data. Defaults to True.
-        This is used to calculate the excess return and excess volatility. Defaults to pd.Series().
         divide_ohlc_by (int or float, optional): A number to divide the OHLC data by. Defaults to None.
 
     Raises:
@@ -264,7 +259,6 @@ def get_historical_data(
         start=start,
         end=end,
         return_column=return_column,
-        risk_free_rate=risk_free_rate,
     )
 
     return historical_data

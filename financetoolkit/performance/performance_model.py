@@ -10,7 +10,8 @@ from scipy.stats import linregress
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import mean_squared_error
 
-from financetoolkit.helpers import get_request
+from financetoolkit.utilities.requests_model import get_request
+from financetoolkit.utilities.statistics_model import PERIOD_TRANSLATION
 
 # This is meant for calculations in which a Multi Index exists. This is the case
 # when calculating a "within period" in which the first index represents the period
@@ -414,6 +415,27 @@ def get_alpha(
     return alpha
 
 
+def get_rolling_alpha(
+    asset_returns: pd.Series | pd.DataFrame,
+    benchmark_returns: pd.Series,
+    window_size: int,
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate the rolling Alpha of returns.
+
+    Args:
+        asset_returns (pd.Series | pd.DataFrame): Asset returns.
+        benchmark_returns (pd.Series): Benchmark returns.
+        window_size (int): The size of the rolling window.
+
+    Returns:
+        pd.Series | pd.DataFrame: Rolling Alpha values with time as index.
+    """
+    return (
+        asset_returns.sub(benchmark_returns, axis=0).rolling(window=window_size).mean()
+    )
+
+
 def get_jensens_alpha(
     asset_returns: pd.Series | float,
     risk_free_rate: pd.Series | float,
@@ -570,6 +592,33 @@ def get_sortino_ratio(excess_returns: pd.Series | pd.DataFrame) -> pd.Series:
     raise TypeError("Expects pd.DataFrame, pd.Series inputs, no other value.")
 
 
+def get_rolling_sortino_ratio(
+    excess_returns: pd.Series | pd.DataFrame, window_size: int
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate the rolling Sortino ratio of returns.
+
+    Args:
+        excess_returns (pd.Series | pd.DataFrame): A Series or DataFrame of returns with risk-free rate subtracted.
+        window_size (int): The size of the rolling window.
+
+    Returns:
+        pd.Series | pd.DataFrame: Rolling Sortino ratio values with time as index.
+    """
+
+    def _downside_volatility(window):
+        downside_returns = window[window < 0]
+
+        return downside_returns.std() if len(downside_returns) > 1 else np.nan
+
+    rolling_mean = excess_returns.rolling(window=window_size).mean()
+    rolling_downside_volatility = excess_returns.rolling(window=window_size).apply(
+        _downside_volatility, raw=True
+    )
+
+    return rolling_mean / rolling_downside_volatility
+
+
 def get_ulcer_performance_index(
     excess_returns: pd.Series | pd.DataFrame, ulcer_index: pd.Series | pd.DataFrame
 ) -> pd.Series:
@@ -624,6 +673,30 @@ def get_m2_ratio(
     return m2_ratio
 
 
+def get_rolling_m2_ratio(
+    asset_returns: pd.Series | pd.DataFrame,
+    risk_free_rate: pd.Series,
+    window_size: int,
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate the rolling M2 Ratio (Modigliani-Modigliani Measure) of returns.
+
+    Args:
+        asset_returns (pd.Series | pd.DataFrame): Asset returns.
+        risk_free_rate (pd.Series): The risk free rate, aligned to the same period as the returns.
+        window_size (int): The size of the rolling window.
+
+    Returns:
+        pd.Series | pd.DataFrame: Rolling M2 Ratio values with time as index.
+    """
+    excess_returns = asset_returns.sub(risk_free_rate, axis=0)
+
+    rolling_mean = excess_returns.rolling(window=window_size).mean()
+    rolling_std = asset_returns.rolling(window=window_size).std()
+
+    return rolling_mean / rolling_std
+
+
 def get_tracking_error(
     asset_returns: pd.Series | pd.DataFrame, benchmark_returns: pd.Series
 ) -> pd.Series:
@@ -655,6 +728,27 @@ def get_tracking_error(
         tracking_error = (asset_returns - benchmark_returns).std()
 
     return tracking_error
+
+
+def get_rolling_tracking_error(
+    asset_returns: pd.Series | pd.DataFrame,
+    benchmark_returns: pd.Series,
+    window_size: int,
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate the rolling Tracking Error of returns.
+
+    Args:
+        asset_returns (pd.Series | pd.DataFrame): Asset returns.
+        benchmark_returns (pd.Series): Benchmark returns.
+        window_size (int): The size of the rolling window.
+
+    Returns:
+        pd.Series | pd.DataFrame: Rolling Tracking Error values with time as index.
+    """
+    return (
+        asset_returns.sub(benchmark_returns, axis=0).rolling(window=window_size).std()
+    )
 
 
 def get_information_ratio(
@@ -695,6 +789,428 @@ def get_information_ratio(
     return information_ratio
 
 
+def get_rolling_information_ratio(
+    asset_returns: pd.Series | pd.DataFrame,
+    benchmark_returns: pd.Series,
+    window_size: int,
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate the rolling Information Ratio of returns.
+
+    Args:
+        asset_returns (pd.Series | pd.DataFrame): Asset returns.
+        benchmark_returns (pd.Series): Benchmark returns.
+        window_size (int): The size of the rolling window.
+
+    Returns:
+        pd.Series | pd.DataFrame: Rolling Information Ratio values with time as index.
+    """
+    difference = asset_returns.sub(benchmark_returns, axis=0)
+
+    rolling_mean = difference.rolling(window=window_size).mean()
+    rolling_std = difference.rolling(window=window_size).std()
+
+    return rolling_mean / rolling_std
+
+
+def get_calmar_ratio(
+    returns: pd.Series | pd.DataFrame, maximum_drawdown: pd.Series | pd.DataFrame
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate the Calmar Ratio of returns.
+
+    Args:
+        returns (pd.Series | pd.DataFrame): A Series or DataFrame of period returns.
+        maximum_drawdown (pd.Series | pd.DataFrame): The corresponding Maximum Drawdown values.
+
+    Returns:
+        pd.Series | pd.DataFrame: A Series or DataFrame of Calmar ratios with time as index
+        and assets as columns.
+    """
+    return (returns / maximum_drawdown.abs()).dropna()
+
+
+def get_average_drawdown(
+    returns: pd.Series | pd.DataFrame,
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate the Average Drawdown of returns, i.e. the mean of all pointwise negative
+    drawdowns in the cumulative return series.
+
+    Args:
+        returns (pd.Series | pd.DataFrame): A Series or Dataframe of returns.
+
+    Returns:
+        pd.Series | pd.DataFrame: Average Drawdown values as float if returns is a
+        pd.Series, otherwise as pd.Series or pd.DataFrame with time as index.
+    """
+    if (
+        isinstance(returns, pd.DataFrame)
+        and returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS
+    ):
+        periods = returns.index.get_level_values(0).unique()
+        period_data_list = []
+
+        for sub_period in periods:
+            period_data = get_average_drawdown(returns.loc[sub_period])
+            period_data.name = sub_period
+
+            if not period_data.empty:
+                period_data_list.append(period_data)
+
+        average_drawdown = pd.concat(period_data_list, axis=1)
+
+        return average_drawdown.T
+
+    cum_returns = (1 + returns.fillna(0)).cumprod()
+    drawdowns = cum_returns / cum_returns.cummax() - 1
+
+    return drawdowns[drawdowns < 0].mean()
+
+
+def get_sterling_ratio(
+    returns: pd.Series | pd.DataFrame,
+    average_drawdown: pd.Series | pd.DataFrame,
+    adjustment: float = 0.1,
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate the Sterling Ratio of returns.
+
+    Args:
+        returns (pd.Series | pd.DataFrame): A Series or DataFrame of period returns.
+        average_drawdown (pd.Series | pd.DataFrame): The corresponding Average Drawdown values.
+        adjustment (float, optional): The fixed adjustment added to the average drawdown,
+        conventionally 0.1 (10%). Defaults to 0.1.
+
+    Returns:
+        pd.Series | pd.DataFrame: A Series or DataFrame of Sterling ratios with time as index
+        and assets as columns.
+    """
+    return (returns / (average_drawdown.abs() + adjustment)).dropna()
+
+
+def get_burke_drawdown_measure(
+    returns: pd.Series | pd.DataFrame,
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate the Burke Drawdown Measure of returns, i.e. the square root of the sum of
+    squared pointwise negative drawdowns in the cumulative return series.
+
+    Args:
+        returns (pd.Series | pd.DataFrame): A Series or Dataframe of returns.
+
+    Returns:
+        pd.Series | pd.DataFrame: Burke Drawdown Measure values as float if returns is a
+        pd.Series, otherwise as pd.Series or pd.DataFrame with time as index.
+    """
+    if (
+        isinstance(returns, pd.DataFrame)
+        and returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS
+    ):
+        periods = returns.index.get_level_values(0).unique()
+        period_data_list = []
+
+        for sub_period in periods:
+            period_data = get_burke_drawdown_measure(returns.loc[sub_period])
+            period_data.name = sub_period
+
+            if not period_data.empty:
+                period_data_list.append(period_data)
+
+        burke_drawdown_measure = pd.concat(period_data_list, axis=1)
+
+        return burke_drawdown_measure.T
+
+    cum_returns = (1 + returns.fillna(0)).cumprod()
+    drawdowns = cum_returns / cum_returns.cummax() - 1
+
+    return np.sqrt((drawdowns[drawdowns < 0] ** 2).sum())
+
+
+def get_burke_ratio(
+    excess_returns: pd.Series | pd.DataFrame,
+    burke_drawdown_measure: pd.Series | pd.DataFrame,
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate the Burke Ratio of returns.
+
+    Args:
+        excess_returns (pd.Series | pd.DataFrame): A Series or DataFrame of returns with
+        risk-free rate subtracted.
+        burke_drawdown_measure (pd.Series | pd.DataFrame): The corresponding Burke Drawdown
+        Measure values.
+
+    Returns:
+        pd.Series | pd.DataFrame: A Series or DataFrame of Burke ratios with time as index
+        and assets as columns.
+    """
+    return (excess_returns / burke_drawdown_measure).dropna()
+
+
+def _get_capture_ratio(
+    asset_returns: pd.Series | pd.DataFrame,
+    benchmark_returns: pd.Series,
+    upside: bool,
+) -> pd.Series | pd.DataFrame:
+    """
+    Shared implementation for the Upside and Downside Capture Ratios.
+
+    Args:
+        asset_returns (pd.Series | pd.DataFrame): Asset returns.
+        benchmark_returns (pd.Series): Benchmark returns.
+        upside (bool): Whether to compute the Upside (True) or Downside (False) Capture Ratio.
+
+    Returns:
+        pd.Series | pd.DataFrame: Capture Ratio values.
+    """
+    if isinstance(asset_returns, pd.DataFrame):
+        if asset_returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS:
+            combination = pd.concat([asset_returns, benchmark_returns], axis=1)
+
+            def _capture(frame):
+                mask = (
+                    frame[benchmark_returns.name] > 0
+                    if upside
+                    else frame[benchmark_returns.name] < 0
+                )
+                return (
+                    frame[asset_returns.columns][mask].mean()
+                    / frame[benchmark_returns.name][mask].mean()
+                )
+
+            return combination.groupby(level=0).apply(_capture)
+
+        mask = benchmark_returns > 0 if upside else benchmark_returns < 0
+
+        return asset_returns[mask].mean() / benchmark_returns[mask].mean()
+
+    if isinstance(asset_returns, pd.Series):
+        mask = benchmark_returns > 0 if upside else benchmark_returns < 0
+
+        return asset_returns[mask].mean() / benchmark_returns[mask].mean()
+
+    raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
+
+
+def get_upside_capture_ratio(
+    asset_returns: pd.Series | pd.DataFrame, benchmark_returns: pd.Series
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate the Upside Capture Ratio, i.e. the ratio of the asset's average return to the
+    benchmark's average return during periods in which the benchmark's return is positive.
+
+    Args:
+        asset_returns (pd.Series | pd.DataFrame): Asset returns.
+        benchmark_returns (pd.Series): Benchmark returns.
+
+    Returns:
+        pd.Series | pd.DataFrame: Upside Capture Ratio values.
+    """
+    return _get_capture_ratio(asset_returns, benchmark_returns, upside=True)
+
+
+def get_downside_capture_ratio(
+    asset_returns: pd.Series | pd.DataFrame, benchmark_returns: pd.Series
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate the Downside Capture Ratio, i.e. the ratio of the asset's average return to the
+    benchmark's average return during periods in which the benchmark's return is negative.
+
+    Args:
+        asset_returns (pd.Series | pd.DataFrame): Asset returns.
+        benchmark_returns (pd.Series): Benchmark returns.
+
+    Returns:
+        pd.Series | pd.DataFrame: Downside Capture Ratio values.
+    """
+    return _get_capture_ratio(asset_returns, benchmark_returns, upside=False)
+
+
+def get_win_rate(
+    asset_returns: pd.Series | pd.DataFrame, benchmark_returns: pd.Series
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate the Win Rate, i.e. the percentage of periods in which the asset's return
+    exceeds the benchmark's return.
+
+    Args:
+        asset_returns (pd.Series | pd.DataFrame): Asset returns.
+        benchmark_returns (pd.Series): Benchmark returns.
+
+    Returns:
+        pd.Series | pd.DataFrame: Win Rate values.
+    """
+    if isinstance(asset_returns, pd.DataFrame):
+        if asset_returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS:
+            combination = pd.concat([asset_returns, benchmark_returns], axis=1)
+
+            return combination.groupby(level=0).apply(
+                lambda x: x[asset_returns.columns]
+                .gt(x[benchmark_returns.name], axis=0)
+                .mean()
+            )
+
+        return asset_returns.gt(benchmark_returns, axis=0).mean()
+
+    if isinstance(asset_returns, pd.Series):
+        return (asset_returns > benchmark_returns).mean()
+
+    raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
+
+
+def get_kappa_ratio(
+    excess_returns: pd.Series | pd.DataFrame, order: int = 3
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate the Kappa Ratio of returns. The Sortino Ratio is the special case of the Kappa
+    Ratio with order=2.
+
+    Args:
+        excess_returns (pd.Series | pd.DataFrame): A Series or DataFrame of returns with
+        risk-free rate subtracted.
+        order (int, optional): The order of the lower partial moment used in the denominator.
+        Defaults to 3.
+
+    Returns:
+        pd.Series | pd.DataFrame: A Series or DataFrame of Kappa ratios with time as index
+        and assets as columns.
+    """
+    if isinstance(excess_returns, pd.DataFrame):
+        if excess_returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS:
+            return excess_returns.groupby(level=0).apply(
+                lambda x: x.mean() / (x[x < 0].abs() ** order).mean() ** (1 / order)
+            )
+
+        downside_returns = excess_returns[excess_returns < 0]
+        lower_partial_moment = (downside_returns.abs() ** order).mean()
+
+        return excess_returns.mean() / lower_partial_moment ** (1 / order)
+
+    if isinstance(excess_returns, pd.Series):
+        downside_returns = excess_returns[excess_returns < 0]
+        lower_partial_moment = (downside_returns.abs() ** order).mean()
+
+        return excess_returns.mean() / lower_partial_moment ** (1 / order)
+
+    raise TypeError("Expects pd.DataFrame, pd.Series inputs, no other value.")
+
+
+def get_omega_ratio(
+    returns: pd.Series | pd.DataFrame, minimum_acceptable_return: float = 0.0
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate the Omega Ratio of returns, i.e. the sum of gains above the minimum acceptable
+    return (MAR) divided by the sum of losses below the MAR.
+
+    Args:
+        returns (pd.Series | pd.DataFrame): A Series or Dataframe of returns.
+        minimum_acceptable_return (float, optional): The minimum acceptable return (MAR) used
+        as the threshold between gains and losses. Defaults to 0.0.
+
+    Returns:
+        pd.Series | pd.DataFrame: Omega Ratio values as float if returns is a pd.Series,
+        otherwise as pd.Series or pd.DataFrame with time as index.
+    """
+    if isinstance(returns, pd.DataFrame):
+        if returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS:
+            periods = returns.index.get_level_values(0).unique()
+            period_data_list = []
+
+            for sub_period in periods:
+                period_data = returns.loc[sub_period].aggregate(
+                    get_omega_ratio, minimum_acceptable_return=minimum_acceptable_return
+                )
+                period_data.name = sub_period
+
+                if not period_data.empty:
+                    period_data_list.append(period_data)
+
+            omega_ratio = pd.concat(period_data_list, axis=1)
+
+            return omega_ratio.T
+
+        return returns.aggregate(
+            get_omega_ratio, minimum_acceptable_return=minimum_acceptable_return
+        )
+
+    if isinstance(returns, pd.Series):
+        excess_returns = returns - minimum_acceptable_return
+        gains = excess_returns[excess_returns > 0].sum()
+        losses = -excess_returns[excess_returns < 0].sum()
+
+        return gains / losses
+
+    raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
+
+
+def get_rolling_omega_ratio(
+    returns: pd.Series | pd.DataFrame,
+    window_size: int,
+    minimum_acceptable_return: float = 0.0,
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate the rolling Omega Ratio of returns.
+
+    Args:
+        returns (pd.Series | pd.DataFrame): A Series or Dataframe of returns.
+        window_size (int): The size of the rolling window.
+        minimum_acceptable_return (float, optional): The minimum acceptable return (MAR) used
+        as the threshold between gains and losses. Defaults to 0.0.
+
+    Returns:
+        pd.Series | pd.DataFrame: Rolling Omega Ratio values with time as index.
+    """
+
+    def _omega(window):
+        excess_returns = window - minimum_acceptable_return
+        gains = excess_returns[excess_returns > 0].sum()
+        losses = -excess_returns[excess_returns < 0].sum()
+
+        return gains / losses if losses else np.nan
+
+    return returns.rolling(window=window_size).apply(_omega, raw=True)
+
+
+def get_gain_to_pain_ratio(
+    returns: pd.Series | pd.DataFrame,
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate the Gain-to-Pain Ratio of returns, i.e. the sum of all returns divided by the
+    sum of the absolute value of all losses.
+
+    Args:
+        returns (pd.Series | pd.DataFrame): A Series or Dataframe of returns.
+
+    Returns:
+        pd.Series | pd.DataFrame: Gain-to-Pain Ratio values as float if returns is a
+        pd.Series, otherwise as pd.Series or pd.DataFrame with time as index.
+    """
+    if isinstance(returns, pd.DataFrame):
+        if returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS:
+            periods = returns.index.get_level_values(0).unique()
+            period_data_list = []
+
+            for sub_period in periods:
+                period_data = returns.loc[sub_period].aggregate(get_gain_to_pain_ratio)
+                period_data.name = sub_period
+
+                if not period_data.empty:
+                    period_data_list.append(period_data)
+
+            gain_to_pain_ratio = pd.concat(period_data_list, axis=1)
+
+            return gain_to_pain_ratio.T
+
+        return returns.aggregate(get_gain_to_pain_ratio)
+
+    if isinstance(returns, pd.Series):
+        losses = returns[returns < 0].abs().sum()
+
+        return returns.sum() / losses
+
+    raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
+
+
 def get_compound_growth_rate(
     prices: pd.Series | pd.DataFrame, periods: int
 ) -> float | pd.Series:
@@ -711,3 +1227,128 @@ def get_compound_growth_rate(
         float: CGR value.
     """
     return (prices.iloc[-1] / prices.iloc[0]) ** (1 / periods) - 1
+
+
+def get_returns(
+    returns: pd.Series | pd.DataFrame, period: str, cumulative: bool = False
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculates the Return for a given period (weekly, monthly, quarterly or
+    yearly) based on daily historical returns.
+
+    The period Return is obtained by compounding the daily returns within each
+    period, following the formula:
+
+        - Period Return = ((1 + Return 1) * (1 + Return 2) * ... * (1 + Return N)) - 1
+
+    If cumulative is set to True, the period returns are compounded further into
+    a cumulative return, following the formula:
+
+        - Cumulative Return = (1 + Period Return 1) * (1 + Period Return 2) * ... * (1 + Period Return N)
+
+    Args:
+        returns (pd.Series | pd.DataFrame): A Series or Dataframe of daily returns.
+        period (str): The period to calculate the Return for. Can be weekly,
+        monthly, quarterly or yearly.
+        cumulative (bool, optional): Whether to return the cumulative return over
+        time instead of the discrete return per period. Defaults to False.
+
+    Returns:
+        pd.Series | pd.DataFrame: Return values with time as the index, resampled
+        to the given period. If cumulative is True, the cumulative return is
+        returned instead.
+    """
+    if period not in PERIOD_TRANSLATION:
+        raise ValueError(
+            f"Period {period} is not valid. It should be either "
+            "weekly, monthly, quarterly or yearly."
+        )
+
+    if not isinstance(returns, pd.Series | pd.DataFrame):
+        raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
+
+    period_str = PERIOD_TRANSLATION[period]
+    dates = returns.index.asfreq(period_str)
+
+    period_returns = (1 + returns).groupby(dates).prod() - 1
+
+    if cumulative:
+        return (1 + period_returns).cumprod()
+
+    return period_returns
+
+
+def get_excess_return(
+    returns: pd.Series | pd.DataFrame,
+    risk_free_rate: pd.Series,
+    cumulative: bool = False,
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculates the Excess Return, i.e. the return minus the risk free rate.
+
+    If cumulative is set to True, the excess returns are compounded into a
+    cumulative excess return, following the formula:
+
+        - Cumulative Excess Return = (1 + Excess Return 1) * (1 + Excess Return 2) * ... * (1 + Excess Return N)
+
+    Args:
+        returns (pd.Series | pd.DataFrame): A Series or Dataframe of returns.
+        risk_free_rate (pd.Series): A Series of the risk free rate, aligned to the
+        same period as the returns.
+        cumulative (bool, optional): Whether to return the cumulative excess return
+        over time instead of the discrete excess return per period. Defaults to False.
+
+    Returns:
+        pd.Series | pd.DataFrame: Excess Return values with time as the index. If
+        cumulative is True, the cumulative excess return is returned instead.
+    """
+    excess_return = returns.sub(risk_free_rate, axis=0)
+
+    if cumulative:
+        return (1 + excess_return).cumprod()
+
+    return excess_return
+
+
+def get_correlation_matrix(returns: pd.DataFrame) -> pd.DataFrame:
+    """
+    Calculate the full pairwise correlation matrix across N assets.
+
+    Unlike `get_beta` or `get_covariance`, which relate a single asset to a single
+    benchmark, this computes the correlation between every pair of columns in the
+    provided returns DataFrame at once. This is a prerequisite for portfolio variance
+    calculations and any mean-variance optimization work.
+
+    Args:
+        returns (pd.DataFrame): A Dataframe of returns with one column per asset.
+
+    Returns:
+        pd.DataFrame: The N x N correlation matrix, with assets as both the index
+        and the columns.
+    """
+    if not isinstance(returns, pd.DataFrame):
+        raise TypeError("Expects pd.DataFrame, no other value.")
+
+    return returns.corr()
+
+
+def get_covariance_matrix(returns: pd.DataFrame) -> pd.DataFrame:
+    """
+    Calculate the full pairwise covariance matrix across N assets.
+
+    Unlike `get_beta` or `get_covariance`, which relate a single asset to a single
+    benchmark, this computes the covariance between every pair of columns in the
+    provided returns DataFrame at once. This is a prerequisite for portfolio variance
+    calculations and any mean-variance optimization work.
+
+    Args:
+        returns (pd.DataFrame): A Dataframe of returns with one column per asset.
+
+    Returns:
+        pd.DataFrame: The N x N covariance matrix, with assets as both the index
+        and the columns.
+    """
+    if not isinstance(returns, pd.DataFrame):
+        raise TypeError("Expects pd.DataFrame, no other value.")
+
+    return returns.cov()

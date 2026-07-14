@@ -4,11 +4,12 @@ __docformat__ = "google"
 
 import pandas as pd
 
-from financetoolkit.helpers import calculate_growth, filter_columns
 from financetoolkit.models import (
     altman_model,
+    beneish_model,
     dupont_model,
     enterprise_model,
+    eva_model,
     growth_model,
     helpers,
     intrinsic_model,
@@ -16,8 +17,14 @@ from financetoolkit.models import (
     wacc_model,
 )
 from financetoolkit.performance.performance_model import get_beta
-from financetoolkit.ratios import liquidity_model, valuation_model
+from financetoolkit.ratios import liquidity_model, profitability_model, valuation_model
+from financetoolkit.utilities.dataframe_model import filter_columns
 from financetoolkit.utilities.error_model import handle_errors
+from financetoolkit.utilities.statistics_model import (
+    calculate_growth,
+    calculate_standardization,
+    finalize_dataset,
+)
 
 # pylint: disable=too-many-instance-attributes,too-many-locals,too-many-lines
 
@@ -122,6 +129,7 @@ class Models:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
         trailing: int | None = None,
         show_columns: list[str] | None = None,
     ) -> pd.DataFrame:
@@ -145,6 +153,9 @@ class Models:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the values. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             trailing (int | None, optional): The trailing period to use for the calculation. Defaults to None.
 
         Returns:
@@ -167,7 +178,18 @@ class Models:
         toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         dupont_analysis = toolkit.models.get_dupont_analysis()
+
+        dupont_analysis.loc["AAPL"]
         ```
+
+        Which returns:
+
+        |                   |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:------------------|-------:|-------:|-------:|-------:|-------:|
+        | Net Profit Margin | 0.2588 | 0.2531 | 0.2531 | 0.2397 | 0.2692 |
+        | Asset Turnover    | 1.0841 | 1.1206 | 1.0868 | 1.0899 | 1.1493 |
+        | Equity Multiplier | 5.255  | 6.1862 | 6.252  | 6.0251 | 5.5418 |
+        | Return on Equity  | 1.4744 | 1.7546 | 1.7195 | 1.5741 | 1.7142 |
         """
         if trailing:
             self._dupont_analysis = dupont_model.get_dupont_analysis(
@@ -201,15 +223,30 @@ class Models:
 
         if growth:
             self._dupont_analysis_growth = calculate_growth(
-                self._dupont_analysis,
+                dataset=self._dupont_analysis,
                 lag=lag,
                 rounding=rounding if rounding else self._rounding,
-                axis="index",
+                axis="columns",
             )
 
         self._dupont_analysis = self._dupont_analysis.round(
             rounding if rounding else self._rounding
         )
+
+        if standardize:
+            standardize_rounding = rounding if rounding else self._rounding
+            if growth:
+                self._dupont_analysis_growth = calculate_standardization(
+                    dataset=self._dupont_analysis_growth,
+                    rounding=standardize_rounding,
+                    axis="columns",
+                )
+            else:
+                self._dupont_analysis = calculate_standardization(
+                    dataset=self._dupont_analysis,
+                    rounding=standardize_rounding,
+                    axis="columns",
+                )
 
         if len(self._tickers) == 1:
             result = (
@@ -232,6 +269,7 @@ class Models:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
         trailing: int | None = None,
         show_columns: list[str] | None = None,
     ) -> pd.DataFrame:
@@ -259,6 +297,9 @@ class Models:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the values. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             trailing (int | None, optional): The trailing period to use for the calculation. Defaults to None.
 
         Returns:
@@ -284,7 +325,20 @@ class Models:
         toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         extended_dupont_analysis = toolkit.models.get_extended_dupont_analysis()
+
+        extended_dupont_analysis.loc["AAPL"]
         ```
+
+        Which returns:
+
+        |                         |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:------------------------|-------:|-------:|-------:|-------:|-------:|
+        | Interest Burden Ratio   | 0.9976 | 1.0028 | 1.005  | 0.9978 | 1.0024 |
+        | Tax Burden Ratio        | 0.869  | 0.8356 | 0.8486 | 0.7607 | 0.8419 |
+        | Operating Profit Margin | 0.2985 | 0.302  | 0.2967 | 0.3158 | 0.3189 |
+        | Asset Turnover          | 1.0841 | 1.1206 | 1.0868 | 1.0899 | 1.1493 |
+        | Equity Multiplier       | 5.255  | 6.1862 | 6.252  | 6.0251 | 5.5418 |
+        | Return on Equity        | 1.4744 | 1.7546 | 1.7195 | 1.5741 | 1.7142 |
         """
         if trailing:
             self._extended_dupont_analysis = dupont_model.get_extended_dupont_analysis(
@@ -328,7 +382,7 @@ class Models:
 
         if growth:
             self._extended_dupont_analysis_growth = calculate_growth(
-                self._extended_dupont_analysis,
+                dataset=self._extended_dupont_analysis,
                 lag=lag,
                 rounding=rounding if rounding else self._rounding,
                 axis="columns",
@@ -337,6 +391,21 @@ class Models:
         self._extended_dupont_analysis = self._extended_dupont_analysis.round(
             rounding if rounding else self._rounding
         )
+
+        if standardize:
+            standardize_rounding = rounding if rounding else self._rounding
+            if growth:
+                self._extended_dupont_analysis_growth = calculate_standardization(
+                    dataset=self._extended_dupont_analysis_growth,
+                    rounding=standardize_rounding,
+                    axis="columns",
+                )
+            else:
+                self._extended_dupont_analysis = calculate_standardization(
+                    dataset=self._extended_dupont_analysis,
+                    rounding=standardize_rounding,
+                    axis="columns",
+                )
 
         if len(self._tickers) == 1:
             result = (
@@ -364,6 +433,7 @@ class Models:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
         show_columns: list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -391,6 +461,9 @@ class Models:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the values. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
 
         Returns:
             pd.DataFrame: DataFrame containing the Enterprise Value breakdown, including the calculated components.
@@ -411,7 +484,21 @@ class Models:
         toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         enterprise_value_breakdown = toolkit.models.get_enterprise_value_breakdown()
+
+        enterprise_value_breakdown.loc["AAPL"]
         ```
+
+        Which returns:
+
+        |                           |          2021 |          2022 |          2023 |          2024 |          2025 |
+        |:--------------------------|--------------:|--------------:|--------------:|--------------:|--------------:|
+        | Share Price               | 177.57        | 129.93        | 192.53        | 250.42        | 271.86        |
+        | Market Capitalization     |   2.9947e+12  |   2.12121e+12 |   3.04439e+12 |   3.8585e+12  |   4.07918e+12 |
+        | Total Debt                |   1.36522e+11 |   1.3248e+11  |   1.2393e+11  |   1.19059e+11 |   1.12377e+11 |
+        | Minority Interest         |   0           |   0           |   0           |   0           |   0           |
+        | Preferred Equity          |   0           |   0           |   0           |   0           |   0           |
+        | Cash and Cash Equivalents |   3.494e+10   |   2.3646e+10  |   2.9965e+10  |   2.9943e+10  |   3.5934e+10  |
+        | Enterprise Value          |   3.09629e+12 |   2.23005e+12 |   3.13835e+12 |   3.94761e+12 |   4.15562e+12 |
         """
         average_shares = (
             self._income_statement.loc[:, "Weighted Average Shares Diluted", :]
@@ -446,7 +533,7 @@ class Models:
 
         if growth:
             self._enterprise_value_breakdown_growth = calculate_growth(
-                self._enterprise_value_breakdown,
+                dataset=self._enterprise_value_breakdown,
                 lag=lag,
                 rounding=rounding if rounding else self._rounding,
             )
@@ -454,6 +541,21 @@ class Models:
         self._enterprise_value_breakdown = self._enterprise_value_breakdown.round(
             rounding if rounding else self._rounding
         )
+
+        if standardize:
+            standardize_rounding = rounding if rounding else self._rounding
+            if growth:
+                self._enterprise_value_breakdown_growth = calculate_standardization(
+                    dataset=self._enterprise_value_breakdown_growth,
+                    rounding=standardize_rounding,
+                    axis="columns",
+                )
+            else:
+                self._enterprise_value_breakdown = calculate_standardization(
+                    dataset=self._enterprise_value_breakdown,
+                    rounding=standardize_rounding,
+                    axis="columns",
+                )
 
         if len(self._tickers) == 1:
             result = (
@@ -482,6 +584,7 @@ class Models:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
         trailing: int | None = None,
         show_columns: list[str] | None = None,
     ) -> pd.DataFrame:
@@ -535,6 +638,9 @@ class Models:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the values. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             trailing (int | None, optional): The trailing period to use for the calculation. Defaults to None.
 
         Returns:
@@ -551,8 +657,19 @@ class Models:
 
         toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
-        toolkit.models.get_weighted_average_cost_of_capital()
+        toolkit.models.get_weighted_average_cost_of_capital().loc["AAPL"]
         ```
+
+        Which returns:
+
+        |                                  |        2021 |         2022 |        2023 |        2024 |        2025 |
+        |:---------------------------------|------------:|-------------:|------------:|------------:|------------:|
+        | Market Value Equity              | 2.9947e+12  |  2.12121e+12 | 3.04439e+12 | 3.8585e+12  | 4.07918e+12 |
+        | Market Value Debt                | 1.36522e+11 |  1.3248e+11  | 1.2393e+11  | 1.19059e+11 | 1.12377e+11 |
+        | Cost of Equity                   | 0.3494      | -0.2646      | 0.2633      | 0.2266      | 0.1938      |
+        | Cost of Debt                     | 0.0194      |  0.0221      | 0.0317      | 0           | 0           |
+        | Corporate Tax Rate               | 0.133       |  0.162       | 0.1472      | 0.2409      | 0.1561      |
+        | Weighted Average Cost of Capital | 0.3349      | -0.248       | 0.2541      | 0.2198      | 0.1886      |
         """
         average_shares = (
             self._income_statement.loc[:, "Weighted Average Shares Diluted", :]
@@ -643,7 +760,7 @@ class Models:
 
         if growth:
             self._weighted_average_cost_of_capital_growth = calculate_growth(
-                self._weighted_average_cost_of_capital,
+                dataset=self._weighted_average_cost_of_capital,
                 lag=lag,
                 rounding=rounding if rounding else self._rounding,
                 axis="columns",
@@ -655,7 +772,24 @@ class Models:
             )
         )
 
-        if len(self._tickers) == 1:
+        if standardize:
+            standardize_rounding = rounding if rounding else self._rounding
+            if growth:
+                self._weighted_average_cost_of_capital_growth = (
+                    calculate_standardization(
+                        dataset=self._weighted_average_cost_of_capital_growth,
+                        rounding=standardize_rounding,
+                        axis="columns",
+                    )
+                )
+            else:
+                self._weighted_average_cost_of_capital = calculate_standardization(
+                    dataset=self._weighted_average_cost_of_capital,
+                    rounding=standardize_rounding,
+                    axis="columns",
+                )
+
+        if len(self._tickers) == 1 and show_full_results:
             result = (
                 self._weighted_average_cost_of_capital_growth.droplevel(level=0)
                 if growth
@@ -687,6 +821,177 @@ class Models:
         return filter_columns(
             result.loc[:, self._start_date : self._end_date], show_columns
         )
+
+    @handle_errors
+    def get_economic_value_added(
+        self,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+        trailing: int | None = None,
+        show_columns: list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Economic Value Added (EVA) is a measure of a company's financial performance that
+        represents the value created in excess of the required return of the company's capital
+        providers. It captures whether a company is generating returns above its true cost of
+        capital, which distinguishes it from purely accounting-based measures such as Net Income.
+
+        The formula is as follows:
+
+            - NOPAT = EBIT * (1 - Effective Tax Rate)
+            - Invested Capital = Total Equity + Total Debt
+            - EVA = NOPAT - (Weighted Average Cost of Capital * Invested Capital)
+
+        Also known as: EVA, economic profit.
+
+        Args:
+            rounding (int, optional): The number of decimals to round the results to. Defaults to None.
+            growth (bool, optional): Whether to calculate the growth of the values. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            trailing (int | None, optional): The trailing period to use for the calculation. Defaults to None.
+            show_columns (list[str] | None, optional): List of columns to show in the results. If None, all
+                columns will be shown. Defaults to None.
+
+        Returns:
+            pd.DataFrame: DataFrame containing the EVA and its components.
+
+        Notes:
+        - A positive EVA indicates that the company is generating returns in excess of its cost of
+        capital, i.e. it is creating value for its capital providers. A negative EVA indicates the
+        company is destroying value.
+        - EBIT is approximated as Net Income + Income Tax Expense + Interest Expense, consistent
+        with the Altman Z-Score calculation elsewhere in this module.
+        - Invested Capital is approximated as the average of Total Equity and Total Debt, consistent
+        with the Return on Invested Capital calculation in the Ratios module.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "MSFT"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.models.get_economic_value_added().loc["AAPL"]
+        ```
+
+        Which returns:
+
+        |                                   |        2021 |          2022 |
+        |:----------------------------------|-------------:|-------------:|
+        | Net Operating Profit After Taxes  |  9.69732e+10 |  1.02259e+11 |
+        | Invested Capital                  |  1.93614e+11 |  1.91382e+11 |
+        | Weighted Average Cost of Capital  |       0.3598 |      -0.2326 |
+        | Economic Value Added              |  2.73107e+10 |  1.46775e+11 |
+        """
+        eva = {}
+
+        net_income = (
+            self._income_statement.loc[:, "Net Income", :].T.rolling(trailing).sum().T
+            if trailing
+            else self._income_statement.loc[:, "Net Income", :]
+        )
+        income_tax_expense = (
+            self._income_statement.loc[:, "Income Tax Expense", :]
+            .T.rolling(trailing)
+            .sum()
+            .T
+            if trailing
+            else self._income_statement.loc[:, "Income Tax Expense", :]
+        )
+        interest_expense = (
+            self._income_statement.loc[:, "Interest Expense", :]
+            .T.rolling(trailing)
+            .sum()
+            .T
+            if trailing
+            else self._income_statement.loc[:, "Interest Expense", :]
+        )
+        income_before_tax = (
+            self._income_statement.loc[:, "Income Before Tax", :]
+            .T.rolling(trailing)
+            .sum()
+            .T
+            if trailing
+            else self._income_statement.loc[:, "Income Before Tax", :]
+        )
+        total_equity = (
+            self._balance_sheet_statement.loc[:, "Total Equity", :]
+            .T.rolling(trailing)
+            .mean()
+            .T
+            if trailing
+            else self._balance_sheet_statement.loc[:, "Total Equity", :]
+            .T.rolling(2)
+            .mean()
+            .T
+        )
+        total_debt = (
+            self._balance_sheet_statement.loc[:, "Total Debt", :]
+            .T.rolling(trailing)
+            .mean()
+            .T
+            if trailing
+            else self._balance_sheet_statement.loc[:, "Total Debt", :]
+            .T.rolling(2)
+            .mean()
+            .T
+        )
+
+        ebit = net_income + income_tax_expense + interest_expense
+        effective_tax_rate = profitability_model.get_effective_tax_rate(
+            income_tax_expense=income_tax_expense,
+            income_before_tax=income_before_tax,
+        )
+
+        eva["Net Operating Profit After Taxes"] = (
+            eva_model.get_net_operating_profit_after_taxes(
+                ebit=ebit,
+                effective_tax_rate=effective_tax_rate,
+            )
+        )
+
+        eva["Invested Capital"] = eva_model.get_invested_capital(
+            total_equity=total_equity,
+            total_debt=total_debt,
+        )
+
+        eva["Weighted Average Cost of Capital"] = (
+            self.get_weighted_average_cost_of_capital(
+                show_full_results=False, trailing=trailing
+            )
+        )
+
+        eva["Economic Value Added"] = eva_model.get_economic_value_added(
+            net_operating_profit_after_taxes=eva["Net Operating Profit After Taxes"],
+            weighted_average_cost_of_capital=eva["Weighted Average Cost of Capital"],
+            invested_capital=eva["Invested Capital"],
+        )
+
+        eva_results = (
+            pd.concat(eva)
+            .dropna(axis=1, how="all")
+            .swaplevel(0, 1)
+            .reindex(self._tickers, level=0)
+        )
+
+        eva_results = finalize_dataset(
+            dataset=eva_results,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="columns",
+        )
+
+        return filter_columns(eva_results, show_columns)
 
     def get_intrinsic_valuation(
         self,
@@ -754,8 +1059,18 @@ class Models:
 
         toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
-        toolkit.models.get_intrinsic_valuation(0.05, 0.025, 0.094)
+        toolkit.models.get_intrinsic_valuation(0.05, 0.025, 0.094).loc["AAPL"]
         ```
+
+        Which returns:
+
+        |                      |   Periods = 5 |
+        |:---------------------|--------------:|
+        | Terminal Value       |   1.87255e+12 |
+        | Cash Flow Projection |   1.9986e+12  |
+        | Enterprise Value     |   1.58232e+12 |
+        | Equity Value         |   1.50588e+12 |
+        | Intrinsic Value      | 100.36        |
         """
         if cash_flow_type not in [
             "Free Cash Flow",
@@ -923,6 +1238,21 @@ class Models:
 
         toolkit.models.get_gorden_growth_model(0.20, 0.05)
         ```
+
+        Which returns:
+
+        |      |   AAPL |    MSFT |
+        |:-----|-------:|--------:|
+        | 2022 | 0      |  0      |
+        | 2023 | 0      |  0      |
+        | 2024 | 0      |  0      |
+        | 2025 | 5.46   | 12.18   |
+        | 2026 | 5.733  | 12.789  |
+        | 2027 | 6.0196 | 13.4284 |
+        | 2028 | 6.3206 | 14.0999 |
+        | 2029 | 6.6367 | 14.8049 |
+        | 2030 | 6.9685 | 15.5451 |
+        | 2031 | 7.3169 | 16.3224 |
         """
         dividends_per_share = self._historical_data[
             "quarterly" if self._quarterly else "yearly"
@@ -979,6 +1309,7 @@ class Models:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
         trailing: int | None = None,
         show_columns: list[str] | None = None,
     ) -> pd.DataFrame:
@@ -1011,6 +1342,9 @@ class Models:
             rounding (int, optional): The number of decimals to round the results to. Defaults to None.
             growth (bool, optional): Whether to calculate the growth of the values. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             trailing (int | None, optional): The trailing period to use for the calculation. Defaults to None.
 
         Returns:
@@ -1034,7 +1368,20 @@ class Models:
         toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         altman_z_score = toolkit.models.get_altman_z_score()
+
+        altman_z_score.loc["AAPL"]
         ```
+
+        Which returns:
+
+        |                                   |    2021 |    2022 |    2023 |    2024 |    2025 |
+        |:----------------------------------|--------:|--------:|--------:|--------:|--------:|
+        | Working Capital to Total Assets   |  0.0267 | -0.0527 | -0.0049 | -0.0641 | -0.0492 |
+        | Retained Earnings to Total Assets |  0.0158 | -0.0087 | -0.0006 | -0.0525 | -0.0397 |
+        | EBIT to Total Assets              |  0.3187 |  0.3459 |  0.3337 |  0.3383 |  0.3695 |
+        | Market Value to Total Liabilities | 10.4015 |  7.022  | 10.4821 | 12.5264 | 14.2874 |
+        | Sales to Total Assets             |  1.0422 |  1.1179 |  1.0871 |  1.0714 |  1.1584 |
+        | Altman Z-Score                    |  8.3888 |  6.3973 |  8.4709 |  9.5533 | 10.8355 |
         """
         altman_z_score = {}
 
@@ -1184,22 +1531,19 @@ class Models:
             .reindex(self._tickers, level=0)
         )
 
-        if growth:
-            return filter_columns(
-                calculate_growth(
-                    altman_results,
-                    lag=lag,
-                    rounding=rounding if rounding else self._rounding,
-                    axis="columns",
-                ).loc[:, self._start_date : self._end_date],
-                show_columns,
-            )
-
-        altman_results = altman_results.round(rounding if rounding else self._rounding)
-
-        return filter_columns(
-            altman_results.loc[:, self._start_date : self._end_date], show_columns
+        altman_results = finalize_dataset(
+            dataset=altman_results,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="columns",
         )
+
+        return filter_columns(altman_results, show_columns)
 
     @handle_errors
     def get_piotroski_score(
@@ -1261,8 +1605,23 @@ class Models:
 
         toolkit = Toolkit(["AAPL", "TSLA", "MSFT"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
-        toolkit.models.get_piotroski_score()
+        toolkit.models.get_piotroski_score().loc["AAPL"]
         ```
+
+        Which returns:
+
+        |                                     |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:------------------------------------|-------:|-------:|-------:|-------:|-------:|
+        | Return on Assets Criteria           |      1 |      1 |      1 |      1 |      1 |
+        | Operating Cashflow Criteria         |      1 |      1 |      1 |      1 |      1 |
+        | Change in Return on Assets Criteria |      0 |      0 |      0 |      0 |      1 |
+        | Accruals Criteria                   |      1 |      1 |      1 |      1 |      1 |
+        | Change in Leverage Criteria         |      0 |      1 |      1 |      1 |      1 |
+        | Change in Current Ratio Criteria    |      0 |      0 |      1 |      0 |      1 |
+        | Number of Shares Criteria           |      0 |      1 |      1 |      1 |      1 |
+        | Gross Margin Criteria               |      1 |      1 |      1 |      1 |      1 |
+        | Asset Turnover Criteria             |      0 |      1 |      0 |      1 |      1 |
+        | Piotroski Score                     |      4 |      7 |      7 |      7 |      9 |
         """
         piotroski_score = {}
 
@@ -1426,6 +1785,277 @@ class Models:
         )
 
     @handle_errors
+    def get_beneish_m_score(
+        self,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+        trailing: int | None = None,
+        show_columns: list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        The Beneish M-Score is a probabilistic model, developed by Messod Beneish, that uses eight
+        financial ratios derived from a company's financial statements to identify whether a company
+        has manipulated its earnings. It is a natural companion to the Altman Z-Score and Piotroski
+        F-Score, using the same normalized financial statements as its input.
+
+        The formula is as follows:
+
+            M-Score = -4.84 + 0.92 * DSRI + 0.528 * GMI + 0.404 * AQI + 0.892 * SGI + 0.115 * DEPI
+            - 0.172 * SGAI + 4.679 * TATA - 0.327 * LVGI
+
+        The eight variables are:
+
+            - DSRI: Days Sales in Receivables Index
+            - GMI: Gross Margin Index
+            - AQI: Asset Quality Index
+            - SGI: Sales Growth Index
+            - DEPI: Depreciation Index
+            - SGAI: Selling, General and Administrative Expenses Index
+            - TATA: Total Accruals to Total Assets
+            - LVGI: Leverage Index
+
+        Also known as: Beneish M-Score, earnings manipulation score.
+
+        Args:
+            rounding (int, optional): The number of decimals to round the results to. Defaults to None.
+            growth (bool, optional): Whether to calculate the growth of the values. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            trailing (int | None, optional): The trailing period to use for the calculation. Defaults to None.
+            show_columns (list[str] | None, optional): List of columns to show in the results. If None, all
+                columns will be shown. Defaults to None.
+
+        Returns:
+            pd.DataFrame: DataFrame containing the Beneish M-Score and its components.
+
+        Notes:
+        - A M-Score greater than -1.78 suggests that the company is likely to be an earnings
+        manipulator. A M-Score lower than -1.78 suggests the company is unlikely to be a manipulator.
+        - As with the Altman Z-Score and Piotroski F-Score, this is a probabilistic, not a
+        definitive, indicator and should be combined with further fundamental analysis.
+        - Every component compares the current period to the prior period, so the very first
+        period in the results will always be NaN.
+
+        References:
+        - Beneish, Messod D. "The Detection of Earnings Manipulation." Financial Analysts Journal,
+        Vol. 55, No. 5, 1999, pp. 24-36.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "MSFT"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.models.get_beneish_m_score().loc["AAPL"]
+        ```
+
+        Which returns:
+
+        |                                  |    2021 |    2022 |    2023 |
+        |:---------------------------------|--------:|--------:|--------:|
+        | Days Sales in Receivables Index  |  1.0322 |  1.0975 |  1.0297 |
+        | Gross Margin Index               |  0.9151 |  0.9647 |  0.9814 |
+        | Asset Quality Index              |  1.1404 |  0.9841 |  0.9387 |
+        | Sales Growth Index               |  1.3326 |  1.0779 |  0.972  |
+        | Depreciation Index               |  1.0566 |  1.0635 |  0.9982 |
+        | SGA Expenses Index               |  0.8279 |  1.0595 |  1.0222 |
+        | Leverage Index                   |  1.0608 |  1.0729 |  0.9516 |
+        | Total Accruals to Total Assets   | -0.0267 | -0.0634 | -0.0384 |
+        | Beneish M-Score                  | -2.2503 | -2.6691 | -2.6802 |
+        """
+        beneish_m_score = {}
+
+        net_receivables = (
+            self._balance_sheet_statement.loc[:, "Net Receivables", :]
+            .T.rolling(trailing)
+            .mean()
+            .T
+            if trailing
+            else self._balance_sheet_statement.loc[:, "Net Receivables", :]
+        )
+        revenue = (
+            self._income_statement.loc[:, "Revenue", :].T.rolling(trailing).sum().T
+            if trailing
+            else self._income_statement.loc[:, "Revenue", :]
+        )
+        cost_of_goods_sold = (
+            self._income_statement.loc[:, "Cost of Goods Sold", :]
+            .T.rolling(trailing)
+            .sum()
+            .T
+            if trailing
+            else self._income_statement.loc[:, "Cost of Goods Sold", :]
+        )
+        total_current_assets = (
+            self._balance_sheet_statement.loc[:, "Total Current Assets", :]
+            .T.rolling(trailing)
+            .mean()
+            .T
+            if trailing
+            else self._balance_sheet_statement.loc[:, "Total Current Assets", :]
+        )
+        property_plant_and_equipment = (
+            self._balance_sheet_statement.loc[:, "Property, Plant and Equipment", :]
+            .T.rolling(trailing)
+            .mean()
+            .T
+            if trailing
+            else self._balance_sheet_statement.loc[
+                :, "Property, Plant and Equipment", :
+            ]
+        )
+        total_assets = (
+            self._balance_sheet_statement.loc[:, "Total Assets", :]
+            .T.rolling(trailing)
+            .mean()
+            .T
+            if trailing
+            else self._balance_sheet_statement.loc[:, "Total Assets", :]
+        )
+        depreciation_and_amortization = (
+            self._income_statement.loc[:, "Depreciation and Amortization", :]
+            .T.rolling(trailing)
+            .sum()
+            .T
+            if trailing
+            else self._income_statement.loc[:, "Depreciation and Amortization", :]
+        )
+        selling_general_and_administrative_expenses = (
+            self._income_statement.loc[
+                :, "Selling, General and Administrative Expenses", :
+            ]
+            .T.rolling(trailing)
+            .sum()
+            .T
+            if trailing
+            else self._income_statement.loc[
+                :, "Selling, General and Administrative Expenses", :
+            ]
+        )
+        total_current_liabilities = (
+            self._balance_sheet_statement.loc[:, "Total Current Liabilities", :]
+            .T.rolling(trailing)
+            .mean()
+            .T
+            if trailing
+            else self._balance_sheet_statement.loc[:, "Total Current Liabilities", :]
+        )
+        long_term_debt = (
+            self._balance_sheet_statement.loc[:, "Long Term Debt", :]
+            .T.rolling(trailing)
+            .mean()
+            .T
+            if trailing
+            else self._balance_sheet_statement.loc[:, "Long Term Debt", :]
+        )
+        net_income = (
+            self._income_statement.loc[:, "Net Income", :].T.rolling(trailing).sum().T
+            if trailing
+            else self._income_statement.loc[:, "Net Income", :]
+        )
+        cash_flow_from_operations = (
+            self._cash_flow_statement.loc[:, "Operating Cash Flow", :]
+            .T.rolling(trailing)
+            .sum()
+            .T
+            if trailing
+            else self._cash_flow_statement.loc[:, "Operating Cash Flow", :]
+        )
+
+        beneish_m_score["Days Sales in Receivables Index"] = (
+            beneish_model.get_days_sales_in_receivables_index(
+                net_receivables=net_receivables,
+                revenue=revenue,
+            )
+        )
+
+        beneish_m_score["Gross Margin Index"] = beneish_model.get_gross_margin_index(
+            revenue=revenue,
+            cost_of_goods_sold=cost_of_goods_sold,
+        )
+
+        beneish_m_score["Asset Quality Index"] = beneish_model.get_asset_quality_index(
+            total_current_assets=total_current_assets,
+            property_plant_and_equipment=property_plant_and_equipment,
+            total_assets=total_assets,
+        )
+
+        beneish_m_score["Sales Growth Index"] = beneish_model.get_sales_growth_index(
+            revenue=revenue,
+        )
+
+        beneish_m_score["Depreciation Index"] = beneish_model.get_depreciation_index(
+            depreciation_and_amortization=depreciation_and_amortization,
+            property_plant_and_equipment=property_plant_and_equipment,
+        )
+
+        beneish_m_score["SGA Expenses Index"] = (
+            beneish_model.get_selling_general_and_administrative_expenses_index(
+                selling_general_and_administrative_expenses=(
+                    selling_general_and_administrative_expenses
+                ),
+                revenue=revenue,
+            )
+        )
+
+        beneish_m_score["Leverage Index"] = beneish_model.get_leverage_index(
+            total_current_liabilities=total_current_liabilities,
+            long_term_debt=long_term_debt,
+            total_assets=total_assets,
+        )
+
+        beneish_m_score["Total Accruals to Total Assets"] = (
+            beneish_model.get_total_accruals_to_total_assets(
+                net_income=net_income,
+                cash_flow_from_operations=cash_flow_from_operations,
+                total_assets=total_assets,
+            )
+        )
+
+        beneish_m_score["Beneish M-Score"] = beneish_model.get_beneish_m_score(
+            days_sales_in_receivables_index=beneish_m_score[
+                "Days Sales in Receivables Index"
+            ],
+            gross_margin_index=beneish_m_score["Gross Margin Index"],
+            asset_quality_index=beneish_m_score["Asset Quality Index"],
+            sales_growth_index=beneish_m_score["Sales Growth Index"],
+            depreciation_index=beneish_m_score["Depreciation Index"],
+            selling_general_and_administrative_expenses_index=beneish_m_score[
+                "SGA Expenses Index"
+            ],
+            leverage_index=beneish_m_score["Leverage Index"],
+            total_accruals_to_total_assets=beneish_m_score[
+                "Total Accruals to Total Assets"
+            ],
+        )
+
+        beneish_results = (
+            pd.concat(beneish_m_score)
+            .dropna(axis=1, how="all")
+            .swaplevel(0, 1)
+            .reindex(self._tickers, level=0)
+        )
+
+        beneish_results = finalize_dataset(
+            dataset=beneish_results,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="columns",
+        )
+
+        return filter_columns(beneish_results, show_columns)
+
+    @handle_errors
     def get_present_value_of_growth_opportunities(
         self,
         calculate_daily: bool = False,
@@ -1435,6 +2065,7 @@ class Models:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
     ) -> pd.DataFrame:
         """
         The Present Value of Growth Opportunities (PVGO) is a financial metric that represents the
@@ -1457,6 +2088,9 @@ class Models:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the values. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
 
         Returns:
             pd.DataFrame: DataFrame containing the PVGO values.
@@ -1470,6 +2104,16 @@ class Models:
 
         toolkit.models.get_present_value_of_growth_opportunities()
         ```
+
+        Which returns:
+
+        |      |    AAPL |    TSLA |
+        |:-----|--------:|--------:|
+        | 2021 | 160.807 | 348.912 |
+        | 2022 | 154.58  | 133.203 |
+        | 2023 | 168.39  | 239.608 |
+        | 2024 | 222.742 | 399.662 |
+        | 2025 | 232.279 | 446.273 |
         """
         wacc = self.get_weighted_average_cost_of_capital(
             show_full_results=False, trailing=trailing
@@ -1523,16 +2167,364 @@ class Models:
         )
 
         if growth:
-            return calculate_growth(
-                pvgo,
+            pvgo = calculate_growth(
+                dataset=pvgo,
                 lag=lag,
                 rounding=rounding if rounding else self._rounding,
                 axis="index",
-            ).loc[self._start_date :]
+            )
+            if standardize:
+                pvgo = calculate_standardization(
+                    dataset=pvgo,
+                    rounding=rounding if rounding else self._rounding,
+                    axis="rows",
+                )
+            return pvgo.loc[self._start_date :]
 
         pvgo = pvgo.round(rounding if rounding else self._rounding)
+
+        if standardize:
+            pvgo = calculate_standardization(
+                dataset=pvgo,
+                rounding=rounding if rounding else self._rounding,
+                axis="rows",
+            )
 
         # When there is no data found for any ticker, drop the row
         pvgo = pvgo.dropna(how="all", axis=0)
 
         return pvgo.loc[self._start_date :]
+
+    @handle_errors
+    def get_sustainable_growth_rate(
+        self,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+        trailing: int | None = None,
+    ) -> pd.DataFrame:
+        """
+        The Sustainable Growth Rate (SGR) is the maximum rate at which a company can grow its
+        revenue, using internally generated funds only, without having to raise additional equity
+        or increase its financial leverage.
+
+        The formula is as follows:
+
+            - Retention Ratio = 1 - Dividend Payout Ratio
+            - SGR = Return on Equity * Retention Ratio
+
+        Also known as: SGR, self-sustainable growth rate.
+
+        Args:
+            rounding (int, optional): The number of decimals to round the results to. Defaults to None.
+            growth (bool, optional): Whether to calculate the growth of the values. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            trailing (int | None, optional): The trailing period to use for the calculation. Defaults to None.
+
+        Returns:
+            pd.DataFrame: DataFrame containing the Sustainable Growth Rate.
+
+        Notes:
+        - Growing faster than the SGR without external financing typically requires either
+        improving profitability, reducing the dividend payout, or increasing leverage.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "MSFT"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.models.get_sustainable_growth_rate()
+        ```
+
+        Which returns:
+
+        |      |   2021 |   2022 |   2023 |
+        |:-----|-------:|-------:|-------:|
+        | AAPL | 1.2491 | 1.4937 | 1.4531 |
+        | MSFT | 0.3438 | 0.354  | 0.282  |
+        """
+        net_income = (
+            self._income_statement.loc[:, "Net Income", :].T.rolling(trailing).sum().T
+            if trailing
+            else self._income_statement.loc[:, "Net Income", :]
+        )
+        average_total_equity = (
+            self._balance_sheet_statement.loc[:, "Total Equity", :]
+            .T.rolling(trailing)
+            .mean()
+            .T
+            if trailing
+            else self._balance_sheet_statement.loc[:, "Total Equity", :]
+            .T.rolling(2)
+            .mean()
+            .T
+        )
+        dividends = (
+            self._cash_flow_statement.loc[:, "Dividends Paid", :]
+            .T.rolling(trailing)
+            .sum()
+            .T
+            if trailing
+            else self._cash_flow_statement.loc[:, "Dividends Paid", :]
+        )
+
+        return_on_equity = profitability_model.get_return_on_equity(
+            net_income=net_income,
+            average_total_equity=average_total_equity,
+        )
+        dividend_payout_ratio = valuation_model.get_dividend_payout_ratio(
+            dividends=dividends,
+            net_income=net_income,
+        )
+        retention_ratio = valuation_model.get_reinvestment_ratio(
+            dividend_payout_ratio=dividend_payout_ratio,
+        )
+
+        sustainable_growth_rate = growth_model.get_sustainable_growth_rate(
+            return_on_equity=return_on_equity,
+            retention_ratio=retention_ratio,
+        )
+
+        return finalize_dataset(
+            dataset=sustainable_growth_rate,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="columns",
+        )
+
+    @handle_errors
+    def get_internal_growth_rate(
+        self,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+        trailing: int | None = None,
+    ) -> pd.DataFrame:
+        """
+        The Internal Growth Rate (IGR) is the maximum rate at which a company can grow its
+        revenue using only its retained earnings, without raising any external financing
+        (neither debt nor equity).
+
+        The formula is as follows:
+
+            - Retention Ratio = 1 - Dividend Payout Ratio
+            - IGR = (Return on Assets * Retention Ratio) / (1 - (Return on Assets * Retention Ratio))
+
+        Also known as: IGR.
+
+        Args:
+            rounding (int, optional): The number of decimals to round the results to. Defaults to None.
+            growth (bool, optional): Whether to calculate the growth of the values. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            trailing (int | None, optional): The trailing period to use for the calculation. Defaults to None.
+
+        Returns:
+            pd.DataFrame: DataFrame containing the Internal Growth Rate.
+
+        Notes:
+        - The IGR is more conservative than the Sustainable Growth Rate (SGR) since it assumes
+        no additional debt is raised to fund growth, whereas the SGR assumes the company
+        maintains its current level of financial leverage.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "MSFT"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.models.get_internal_growth_rate()
+        ```
+
+        Which returns:
+
+        |      |   2021 |   2022 |   2023 |
+        |:-----|-------:|-------:|-------:|
+        | AAPL | 0.3118 | 0.3183 | 0.3028 |
+        | MSFT | 0.164  | 0.1853 | 0.1565 |
+        """
+        net_income = (
+            self._income_statement.loc[:, "Net Income", :].T.rolling(trailing).sum().T
+            if trailing
+            else self._income_statement.loc[:, "Net Income", :]
+        )
+        average_total_assets = (
+            self._balance_sheet_statement.loc[:, "Total Assets", :]
+            .T.rolling(trailing)
+            .mean()
+            .T
+            if trailing
+            else self._balance_sheet_statement.loc[:, "Total Assets", :]
+            .T.rolling(2)
+            .mean()
+            .T
+        )
+        dividends = (
+            self._cash_flow_statement.loc[:, "Dividends Paid", :]
+            .T.rolling(trailing)
+            .sum()
+            .T
+            if trailing
+            else self._cash_flow_statement.loc[:, "Dividends Paid", :]
+        )
+
+        return_on_assets = profitability_model.get_return_on_assets(
+            net_income=net_income,
+            average_total_assets=average_total_assets,
+        )
+        dividend_payout_ratio = valuation_model.get_dividend_payout_ratio(
+            dividends=dividends,
+            net_income=net_income,
+        )
+        retention_ratio = valuation_model.get_reinvestment_ratio(
+            dividend_payout_ratio=dividend_payout_ratio,
+        )
+
+        internal_growth_rate = growth_model.get_internal_growth_rate(
+            return_on_assets=return_on_assets,
+            retention_ratio=retention_ratio,
+        )
+
+        return finalize_dataset(
+            dataset=internal_growth_rate,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="columns",
+        )
+
+    @handle_errors
+    def get_graham_number(
+        self,
+        diluted: bool = True,
+        trailing: int | None = None,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+    ) -> pd.DataFrame:
+        """
+        Calculate the Graham Number, a conservative estimate of a stock's fair value
+        based on its earnings and book value, as devised by Benjamin Graham.
+
+        The Graham Number is intended as an upper bound on the price a defensive
+        investor should pay for a stock. It is most meaningful for stable,
+        profitable companies with positive book value — for companies with negative
+        earnings or negative book value the result is not meaningful (the square
+        root of a negative number is undefined and will show up as NaN).
+
+        The formula is as follows:
+
+        - Graham Number = √(22.5 x Earnings per Share x Book Value per Share)
+
+        Also known as: Graham fair value.
+
+        Args:
+            diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
+            trailing (int | None, optional): The trailing period to use for the calculation. Defaults to None.
+            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the values. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+
+        Returns:
+            pd.DataFrame: DataFrame containing the Graham Number values.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.models.get_graham_number()
+        ```
+
+        Which returns:
+
+        |      |    2021 |    2022 |    2023 |    2024 |    2025 |
+        |:-----|--------:|--------:|--------:|--------:|--------:|
+        | AAPL | 21.7378 | 20.662  | 23.2901 | 22.4927 | 28.7292 |
+        | TSLA | 18.1054 | 32.3757 | 41.7451 | 30.9185 | 23.7345 |
+        """
+        average_shares = (
+            self._income_statement.loc[:, "Weighted Average Shares Diluted", :]
+            if diluted
+            else self._income_statement.loc[:, "Weighted Average Shares", :]
+        )
+
+        net_income = (
+            self._income_statement.loc[:, "Net Income", :].T.rolling(trailing).sum().T
+            if trailing
+            else self._income_statement.loc[:, "Net Income", :]
+        )
+        avg_shares = (
+            average_shares.T.rolling(trailing).mean().T if trailing else average_shares
+        )
+
+        earnings_per_share = valuation_model.get_earnings_per_share(
+            net_income=net_income,
+            preferred_dividends=0,
+            average_outstanding_shares=avg_shares,
+        )
+
+        total_shareholder_equity = (
+            self._balance_sheet_statement.loc[:, "Total Shareholder Equity", :]
+            .T.rolling(trailing)
+            .mean()
+            .T
+            if trailing
+            else self._balance_sheet_statement.loc[:, "Total Shareholder Equity", :]
+        )
+        preferred_stock = (
+            self._balance_sheet_statement.loc[:, "Preferred Stock", :]
+            .T.rolling(trailing)
+            .mean()
+            .T
+            if trailing
+            else self._balance_sheet_statement.loc[:, "Preferred Stock", :]
+        )
+
+        book_value_per_share = valuation_model.get_book_value_per_share(
+            total_shareholder_equity=total_shareholder_equity,
+            preferred_equity=preferred_stock,
+            common_shares_outstanding=avg_shares,
+        )
+
+        graham_number = intrinsic_model.get_graham_number(
+            earnings_per_share=earnings_per_share,
+            book_value_per_share=book_value_per_share,
+        )
+
+        return finalize_dataset(
+            dataset=graham_number,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="columns",
+        )

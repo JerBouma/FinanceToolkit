@@ -9,9 +9,9 @@ from datetime import datetime, timedelta
 import pandas as pd
 
 from financetoolkit.economics import gmdb_model, oecd_model
-from financetoolkit.helpers import calculate_growth
 from financetoolkit.utilities.error_model import handle_errors
 from financetoolkit.utilities.logger_model import get_logger
+from financetoolkit.utilities.statistics_model import finalize_dataset
 
 logger = get_logger()
 
@@ -114,8 +114,11 @@ class Economics:
         countries: list[str] | str | None = None,
         inflation_adjusted: bool = False,
         gmdb_source: bool | None = None,
+        rolling: int | None = None,
+        trailing: int | None = None,
         growth: bool = False,
         lag: int = 1,
+        standardize: bool = False,
         rounding: int | None = None,
     ):
         """
@@ -140,8 +143,13 @@ class Economics:
             countries (list[str] | str | None, optional): A list of countries or a single country to include in the results. Defaults to None.
             inflation_adjusted (bool, optional): Whether to return the inflation adjusted data. Defaults to False.
             gmdb_source (bool | None, optional): If True, retrieves data from the GMDB source. Defaults to None.
+            rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
+            trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
             lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
 
         Returns:
@@ -195,42 +203,32 @@ class Economics:
         else:
             gross_domestic_product = oecd_model.get_annual_gross_domestic_product()
 
-        if growth:
-            gross_domestic_product = calculate_growth(
-                gross_domestic_product,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-                axis="rows",
-            )
-
-        gross_domestic_product = gross_domestic_product.loc[
-            self._start_date : self._end_date
-        ]
-
-        if countries:
-            if isinstance(countries, str):
-                countries = [countries]
-            missing_countries = [
-                country
-                for country in countries
-                if country not in gross_domestic_product.columns
-            ]
-            if missing_countries:
-                logger.warning(
-                    f"The following countries are not available for Gross Domestic Product: {missing_countries}"
-                )
-            gross_domestic_product = gross_domestic_product[
-                list(set(countries) - set(missing_countries))
-            ]
-
-        return gross_domestic_product.round(rounding if rounding else self._rounding)
+        return finalize_dataset(
+            dataset=gross_domestic_product,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="Gross Domestic Product",
+            countries=countries,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+        )
 
     @handle_errors
     def get_gross_domestic_product_deflator(
         self,
         countries: list[str] | str | None = None,
+        rolling: int | None = None,
+        trailing: int | None = None,
         growth: bool = False,
         lag: int = 1,
+        standardize: bool = False,
         rounding: int | None = None,
     ):
         """
@@ -246,8 +244,13 @@ class Economics:
 
         Args:
             countries (list[str] | str | None, optional): A list of countries or a single country to include in the results. Defaults to None.
+            rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
+            trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
             lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
 
         Returns:
@@ -289,36 +292,21 @@ class Economics:
             )
         )
 
-        if growth:
-            gross_domestic_product_deflator = calculate_growth(
-                gross_domestic_product_deflator,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-                axis="rows",
-            )
-
-        gross_domestic_product_deflator = gross_domestic_product_deflator.loc[
-            self._start_date : self._end_date
-        ]
-
-        if countries:
-            if isinstance(countries, str):
-                countries = [countries]
-            missing_countries = [
-                country
-                for country in countries
-                if country not in gross_domestic_product_deflator.columns
-            ]
-            if missing_countries:
-                logger.warning(
-                    f"The following countries are not available for Gross Domestic Product Deflator: {missing_countries}"
-                )
-            gross_domestic_product_deflator = gross_domestic_product_deflator[
-                list(set(countries) - set(missing_countries))
-            ]
-
-        return gross_domestic_product_deflator.round(
-            rounding if rounding else self._rounding
+        return finalize_dataset(
+            dataset=gross_domestic_product_deflator,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="Gross Domestic Product Deflator",
+            countries=countries,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
         )
 
     @handle_errors
@@ -326,8 +314,11 @@ class Economics:
         self,
         countries: list[str] | str | None = None,
         inflation_adjusted: bool = False,
+        rolling: int | None = None,
+        trailing: int | None = None,
         growth: bool = False,
         lag: int = 1,
+        standardize: bool = False,
         rounding: int | None = None,
     ):
         """
@@ -343,8 +334,13 @@ class Economics:
         Args:
             countries (list[str] | str | None, optional): A list of countries or a single country to include in the results. Defaults to None.
             inflation_adjusted (bool, optional): Whether to return the inflation adjusted data. Defaults to False.
+            rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
+            trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
             lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
 
         Returns:
@@ -387,40 +383,32 @@ class Economics:
                 gmd_dataset=self._gmbd_dataset
             )
 
-        if growth:
-            total_consumption = calculate_growth(
-                total_consumption,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-                axis="rows",
-            )
-
-        total_consumption = total_consumption.loc[self._start_date : self._end_date]
-
-        if countries:
-            if isinstance(countries, str):
-                countries = [countries]
-            missing_countries = [
-                country
-                for country in countries
-                if country not in total_consumption.columns
-            ]
-            if missing_countries:
-                logger.warning(
-                    f"The following countries are not available for Total Consumption: {missing_countries}"
-                )
-            total_consumption = total_consumption[
-                list(set(countries) - set(missing_countries))
-            ]
-
-        return total_consumption.round(rounding if rounding else self._rounding)
+        return finalize_dataset(
+            dataset=total_consumption,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="Total Consumption",
+            countries=countries,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+        )
 
     @handle_errors
     def get_total_consumption_to_gdp_ratio(
         self,
         countries: list[str] | str | None = None,
+        rolling: int | None = None,
+        trailing: int | None = None,
         growth: bool = False,
         lag: int = 1,
+        standardize: bool = False,
         rounding: int | None = None,
     ):
         """
@@ -436,8 +424,13 @@ class Economics:
 
         Args:
             countries (list[str] | str | None, optional): A list of countries or a single country to include in the results. Defaults to None.
+            rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
+            trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
             lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
 
         Returns:
@@ -475,44 +468,32 @@ class Economics:
             gmd_dataset=self._gmbd_dataset
         )
 
-        if growth:
-            total_consumption_to_gdp_ratio = calculate_growth(
-                total_consumption_to_gdp_ratio,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-                axis="rows",
-            )
-
-        total_consumption_to_gdp_ratio = total_consumption_to_gdp_ratio.loc[
-            self._start_date : self._end_date
-        ]
-
-        if countries:
-            if isinstance(countries, str):
-                countries = [countries]
-            missing_countries = [
-                country
-                for country in countries
-                if country not in total_consumption_to_gdp_ratio.columns
-            ]
-            if missing_countries:
-                logger.warning(
-                    f"The following countries are not available for Total Consumption to GDP Ratio: {missing_countries}"
-                )
-            total_consumption_to_gdp_ratio = total_consumption_to_gdp_ratio[
-                list(set(countries) - set(missing_countries))
-            ]
-
-        return total_consumption_to_gdp_ratio.round(
-            rounding if rounding else self._rounding
+        return finalize_dataset(
+            dataset=total_consumption_to_gdp_ratio,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="Total Consumption to GDP Ratio",
+            countries=countries,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
         )
 
     @handle_errors
     def get_investment(
         self,
         countries: list[str] | str | None = None,
+        rolling: int | None = None,
+        trailing: int | None = None,
         growth: bool = False,
         lag: int = 1,
+        standardize: bool = False,
         rounding: int | None = None,
     ):
         """
@@ -527,8 +508,13 @@ class Economics:
 
         Args:
             countries (list[str] | str | None, optional): A list of countries or a single country to include in the results. Defaults to None.
+            rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
+            trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
             lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
 
         Returns:
@@ -568,36 +554,32 @@ class Economics:
 
         investment = gmdb_model.get_investment(gmd_dataset=self._gmbd_dataset)
 
-        if growth:
-            investment = calculate_growth(
-                investment,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-                axis="rows",
-            )
-
-        investment = investment.loc[self._start_date : self._end_date]
-
-        if countries:
-            if isinstance(countries, str):
-                countries = [countries]
-            missing_countries = [
-                country for country in countries if country not in investment.columns
-            ]
-            if missing_countries:
-                logger.warning(
-                    f"The following countries are not available for Investment: {missing_countries}"
-                )
-            investment = investment[list(set(countries) - set(missing_countries))]
-
-        return investment.round(rounding if rounding else self._rounding)
+        return finalize_dataset(
+            dataset=investment,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="Investment",
+            countries=countries,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+        )
 
     @handle_errors
     def get_investment_to_gdp_ratio(
         self,
         countries: list[str] | str | None = None,
+        rolling: int | None = None,
+        trailing: int | None = None,
         growth: bool = False,
         lag: int = 1,
+        standardize: bool = False,
         rounding: int | None = None,
     ):
         """
@@ -612,8 +594,13 @@ class Economics:
 
         Args:
             countries (list[str] | str | None, optional): A list of countries or a single country to include in the results. Defaults to None.
+            rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
+            trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
             lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
 
         Returns:
@@ -651,42 +638,32 @@ class Economics:
             gmd_dataset=self._gmbd_dataset
         )
 
-        if growth:
-            investment_to_gdp_ratio = calculate_growth(
-                investment_to_gdp_ratio,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-                axis="rows",
-            )
-
-        investment_to_gdp_ratio = investment_to_gdp_ratio.loc[
-            self._start_date : self._end_date
-        ]
-
-        if countries:
-            if isinstance(countries, str):
-                countries = [countries]
-            missing_countries = [
-                country
-                for country in countries
-                if country not in investment_to_gdp_ratio.columns
-            ]
-            if missing_countries:
-                logger.warning(
-                    f"The following countries are not available for Investment to GDP Ratio: {missing_countries}"
-                )
-            investment_to_gdp_ratio = investment_to_gdp_ratio[
-                list(set(countries) - set(missing_countries))
-            ]
-
-        return investment_to_gdp_ratio.round(rounding if rounding else self._rounding)
+        return finalize_dataset(
+            dataset=investment_to_gdp_ratio,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="Investment to GDP Ratio",
+            countries=countries,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+        )
 
     @handle_errors
     def get_fixed_investment(
         self,
         countries: list[str] | str | None = None,
+        rolling: int | None = None,
+        trailing: int | None = None,
         growth: bool = False,
         lag: int = 1,
+        standardize: bool = False,
         rounding: int | None = None,
     ):
         """
@@ -701,8 +678,13 @@ class Economics:
 
         Args:
             countries (list[str] | str | None, optional): A list of countries or a single country to include in the results. Defaults to None.
+            rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
+            trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
             lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
 
         Returns:
@@ -738,40 +720,32 @@ class Economics:
             gmd_dataset=self._gmbd_dataset
         )
 
-        if growth:
-            fixed_investment = calculate_growth(
-                fixed_investment,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-                axis="rows",
-            )
-
-        fixed_investment = fixed_investment.loc[self._start_date : self._end_date]
-
-        if countries:
-            if isinstance(countries, str):
-                countries = [countries]
-            missing_countries = [
-                country
-                for country in countries
-                if country not in fixed_investment.columns
-            ]
-            if missing_countries:
-                logger.warning(
-                    f"The following countries are not available for Fixed Investment: {missing_countries}"
-                )
-            fixed_investment = fixed_investment[
-                list(set(countries) - set(missing_countries))
-            ]
-
-        return fixed_investment.round(rounding if rounding else self._rounding)
+        return finalize_dataset(
+            dataset=fixed_investment,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="Fixed Investment",
+            countries=countries,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+        )
 
     @handle_errors
     def get_fixed_investment_to_gdp_ratio(
         self,
         countries: list[str] | str | None = None,
+        rolling: int | None = None,
+        trailing: int | None = None,
         growth: bool = False,
         lag: int = 1,
+        standardize: bool = False,
         rounding: int | None = None,
     ):
         """
@@ -787,8 +761,13 @@ class Economics:
 
         Args:
             countries (list[str] | str | None, optional): A list of countries or a single country to include in the results. Defaults to None.
+            rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
+            trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
             lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
 
         Returns:
@@ -844,44 +823,32 @@ class Economics:
             gmd_dataset=self._gmbd_dataset
         )
 
-        if growth:
-            fixed_investment_to_gdp_ratio = calculate_growth(
-                fixed_investment_to_gdp_ratio,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-                axis="rows",
-            )
-
-        fixed_investment_to_gdp_ratio = fixed_investment_to_gdp_ratio.loc[
-            self._start_date : self._end_date
-        ]
-
-        if countries:
-            if isinstance(countries, str):
-                countries = [countries]
-            missing_countries = [
-                country
-                for country in countries
-                if country not in fixed_investment_to_gdp_ratio.columns
-            ]
-            if missing_countries:
-                logger.warning(
-                    f"The following countries are not available for Fixed Investment to GDP Ratio: {missing_countries}"
-                )
-            fixed_investment_to_gdp_ratio = fixed_investment_to_gdp_ratio[
-                list(set(countries) - set(missing_countries))
-            ]
-
-        return fixed_investment_to_gdp_ratio.round(
-            rounding if rounding else self._rounding
+        return finalize_dataset(
+            dataset=fixed_investment_to_gdp_ratio,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="Fixed Investment to GDP Ratio",
+            countries=countries,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
         )
 
     @handle_errors
     def get_exports(
         self,
         countries: list[str] | str | None = None,
+        rolling: int | None = None,
+        trailing: int | None = None,
         growth: bool = False,
         lag: int = 1,
+        standardize: bool = False,
         rounding: int | None = None,
     ):
         """
@@ -896,8 +863,13 @@ class Economics:
 
         Args:
             countries (list[str] | str | None, optional): A list of countries or a single country to include in the results. Defaults to None.
+            rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
+            trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
             lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
 
         Returns:
@@ -934,36 +906,32 @@ class Economics:
 
         exports = gmdb_model.get_exports(gmd_dataset=self._gmbd_dataset)
 
-        if growth:
-            exports = calculate_growth(
-                exports,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-                axis="rows",
-            )
-
-        exports = exports.loc[self._start_date : self._end_date]
-
-        if countries:
-            if isinstance(countries, str):
-                countries = [countries]
-            missing_countries = [
-                country for country in countries if country not in exports.columns
-            ]
-            if missing_countries:
-                logger.warning(
-                    f"The following countries are not available for Exports: {missing_countries}"
-                )
-            exports = exports[list(set(countries) - set(missing_countries))]
-
-        return exports.round(rounding if rounding else self._rounding)
+        return finalize_dataset(
+            dataset=exports,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="Exports",
+            countries=countries,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+        )
 
     @handle_errors
     def get_exports_to_gdp_ratio(
         self,
         countries: list[str] | str | None = None,
+        rolling: int | None = None,
+        trailing: int | None = None,
         growth: bool = False,
         lag: int = 1,
+        standardize: bool = False,
         rounding: int | None = None,
     ):
         """
@@ -978,8 +946,13 @@ class Economics:
 
         Args:
             countries (list[str] | str | None, optional): A list of countries or a single country to include in the results. Defaults to None.
+            rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
+            trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
             lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
 
         Returns:
@@ -1018,42 +991,32 @@ class Economics:
             gmd_dataset=self._gmbd_dataset
         )
 
-        if growth:
-            exports_to_gdp_ratio = calculate_growth(
-                exports_to_gdp_ratio,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-                axis="rows",
-            )
-
-        exports_to_gdp_ratio = exports_to_gdp_ratio.loc[
-            self._start_date : self._end_date
-        ]
-
-        if countries:
-            if isinstance(countries, str):
-                countries = [countries]
-            missing_countries = [
-                country
-                for country in countries
-                if country not in exports_to_gdp_ratio.columns
-            ]
-            if missing_countries:
-                logger.warning(
-                    f"The following countries are not available for Exports to GDP Ratio: {missing_countries}"
-                )
-            exports_to_gdp_ratio = exports_to_gdp_ratio[
-                list(set(countries) - set(missing_countries))
-            ]
-
-        return exports_to_gdp_ratio.round(rounding if rounding else self._rounding)
+        return finalize_dataset(
+            dataset=exports_to_gdp_ratio,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="Exports to GDP Ratio",
+            countries=countries,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+        )
 
     @handle_errors
     def get_imports(
         self,
         countries: list[str] | str | None = None,
+        rolling: int | None = None,
+        trailing: int | None = None,
         growth: bool = False,
         lag: int = 1,
+        standardize: bool = False,
         rounding: int | None = None,
     ):
         """
@@ -1068,8 +1031,13 @@ class Economics:
 
         Args:
             countries (list[str] | str | None, optional): A list of countries or a single country to include in the results. Defaults to None.
+            rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
+            trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
             lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
 
         Returns:
@@ -1112,36 +1080,32 @@ class Economics:
 
         imports = gmdb_model.get_imports(gmd_dataset=self._gmbd_dataset)
 
-        if growth:
-            imports = calculate_growth(
-                imports,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-                axis="rows",
-            )
-
-        imports = imports.loc[self._start_date : self._end_date]
-
-        if countries:
-            if isinstance(countries, str):
-                countries = [countries]
-            missing_countries = [
-                country for country in countries if country not in imports.columns
-            ]
-            if missing_countries:
-                logger.warning(
-                    f"The following countries are not available for Imports: {missing_countries}"
-                )
-            imports = imports[list(set(countries) - set(missing_countries))]
-
-        return imports.round(rounding if rounding else self._rounding)
+        return finalize_dataset(
+            dataset=imports,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="Imports",
+            countries=countries,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+        )
 
     @handle_errors
     def get_imports_to_gdp_ratio(
         self,
         countries: list[str] | str | None = None,
+        rolling: int | None = None,
+        trailing: int | None = None,
         growth: bool = False,
         lag: int = 1,
+        standardize: bool = False,
         rounding: int | None = None,
     ):
         """
@@ -1156,8 +1120,13 @@ class Economics:
 
         Args:
             countries (list[str] | str | None, optional): A list of countries or a single country to include in the results. Defaults to None.
+            rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
+            trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
             lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
 
         Returns:
@@ -1196,42 +1165,32 @@ class Economics:
             gmd_dataset=self._gmbd_dataset
         )
 
-        if growth:
-            imports_to_gdp_ratio = calculate_growth(
-                imports_to_gdp_ratio,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-                axis="rows",
-            )
-
-        imports_to_gdp_ratio = imports_to_gdp_ratio.loc[
-            self._start_date : self._end_date
-        ]
-
-        if countries:
-            if isinstance(countries, str):
-                countries = [countries]
-            missing_countries = [
-                country
-                for country in countries
-                if country not in imports_to_gdp_ratio.columns
-            ]
-            if missing_countries:
-                logger.warning(
-                    f"The following countries are not available for Imports to GDP Ratio: {missing_countries}"
-                )
-            imports_to_gdp_ratio = imports_to_gdp_ratio[
-                list(set(countries) - set(missing_countries))
-            ]
-
-        return imports_to_gdp_ratio.round(rounding if rounding else self._rounding)
+        return finalize_dataset(
+            dataset=imports_to_gdp_ratio,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="Imports to GDP Ratio",
+            countries=countries,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+        )
 
     @handle_errors
     def get_current_account_balance(
         self,
         countries: list[str] | str | None = None,
+        rolling: int | None = None,
+        trailing: int | None = None,
         growth: bool = False,
         lag: int = 1,
+        standardize: bool = False,
         rounding: int | None = None,
     ):
         """
@@ -1246,8 +1205,13 @@ class Economics:
 
         Args:
             countries (list[str] | str | None, optional): A list of countries or a single country to include in the results. Defaults to None.
+            rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
+            trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
             lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
 
         Returns:
@@ -1286,42 +1250,32 @@ class Economics:
             gmd_dataset=self._gmbd_dataset
         )
 
-        if growth:
-            current_account_balance = calculate_growth(
-                current_account_balance,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-                axis="rows",
-            )
-
-        current_account_balance = current_account_balance.loc[
-            self._start_date : self._end_date
-        ]
-
-        if countries:
-            if isinstance(countries, str):
-                countries = [countries]
-            missing_countries = [
-                country
-                for country in countries
-                if country not in current_account_balance.columns
-            ]
-            if missing_countries:
-                logger.warning(
-                    f"The following countries are not available for Current Account Balance: {missing_countries}"
-                )
-            current_account_balance = current_account_balance[
-                list(set(countries) - set(missing_countries))
-            ]
-
-        return current_account_balance.round(rounding if rounding else self._rounding)
+        return finalize_dataset(
+            dataset=current_account_balance,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="Current Account Balance",
+            countries=countries,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+        )
 
     @handle_errors
     def get_current_account_balance_to_gdp_ratio(
         self,
         countries: list[str] | str | None = None,
+        rolling: int | None = None,
+        trailing: int | None = None,
         growth: bool = False,
         lag: int = 1,
+        standardize: bool = False,
         rounding: int | None = None,
     ):
         """
@@ -1337,8 +1291,13 @@ class Economics:
 
         Args:
             countries (list[str] | str | None, optional): A list of countries or a single country to include in the results. Defaults to None.
+            rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
+            trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
             lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
 
         Returns:
@@ -1380,44 +1339,32 @@ class Economics:
             )
         )
 
-        if growth:
-            current_account_balance_to_gdp_ratio = calculate_growth(
-                current_account_balance_to_gdp_ratio,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-                axis="rows",
-            )
-
-        current_account_balance_to_gdp_ratio = current_account_balance_to_gdp_ratio.loc[
-            self._start_date : self._end_date
-        ]
-
-        if countries:
-            if isinstance(countries, str):
-                countries = [countries]
-            missing_countries = [
-                country
-                for country in countries
-                if country not in current_account_balance_to_gdp_ratio.columns
-            ]
-            if missing_countries:
-                logger.warning(
-                    f"The following countries are not available for Current Account Balance to GDP Ratio: {missing_countries}"
-                )
-            current_account_balance_to_gdp_ratio = current_account_balance_to_gdp_ratio[
-                list(set(countries) - set(missing_countries))
-            ]
-
-        return current_account_balance_to_gdp_ratio.round(
-            rounding if rounding else self._rounding
+        return finalize_dataset(
+            dataset=current_account_balance_to_gdp_ratio,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="Current Account Balance to GDP Ratio",
+            countries=countries,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
         )
 
     @handle_errors
     def get_government_debt(
         self,
         countries: list[str] | str | None = None,
+        rolling: int | None = None,
+        trailing: int | None = None,
         growth: bool = False,
         lag: int = 1,
+        standardize: bool = False,
         rounding: int | None = None,
     ):
         """
@@ -1431,8 +1378,13 @@ class Economics:
 
         Args:
             countries (list[str] | str | None, optional): A list of countries or a single country to include in the results. Defaults to None.
+            rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
+            trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
             lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
 
         Returns:
@@ -1469,40 +1421,32 @@ class Economics:
 
         government_debt = gmdb_model.get_government_debt(gmd_dataset=self._gmbd_dataset)
 
-        if growth:
-            government_debt = calculate_growth(
-                government_debt,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-                axis="rows",
-            )
-
-        government_debt = government_debt.loc[self._start_date : self._end_date]
-
-        if countries:
-            if isinstance(countries, str):
-                countries = [countries]
-            missing_countries = [
-                country
-                for country in countries
-                if country not in government_debt.columns
-            ]
-            if missing_countries:
-                logger.warning(
-                    f"The following countries are not available for Government Debt: {missing_countries}"
-                )
-            government_debt = government_debt[
-                list(set(countries) - set(missing_countries))
-            ]
-
-        return government_debt.round(rounding if rounding else self._rounding)
+        return finalize_dataset(
+            dataset=government_debt,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="Government Debt",
+            countries=countries,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+        )
 
     @handle_errors
     def get_government_debt_to_gdp_ratio(
         self,
         countries: list[str] | str | None = None,
+        rolling: int | None = None,
+        trailing: int | None = None,
         growth: bool = False,
         lag: int = 1,
+        standardize: bool = False,
         rounding: int | None = None,
     ):
         """
@@ -1517,8 +1461,13 @@ class Economics:
 
         Args:
             countries (list[str] | str | None, optional): A list of countries or a single country to include in the results. Defaults to None.
+            rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
+            trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
             lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
 
         Returns:
@@ -1557,44 +1506,32 @@ class Economics:
             gmd_dataset=self._gmbd_dataset
         )
 
-        if growth:
-            government_debt_to_gdp_ratio = calculate_growth(
-                government_debt_to_gdp_ratio,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-                axis="rows",
-            )
-
-        government_debt_to_gdp_ratio = government_debt_to_gdp_ratio.loc[
-            self._start_date : self._end_date
-        ]
-
-        if countries:
-            if isinstance(countries, str):
-                countries = [countries]
-            missing_countries = [
-                country
-                for country in countries
-                if country not in government_debt_to_gdp_ratio.columns
-            ]
-            if missing_countries:
-                logger.warning(
-                    f"The following countries are not available for Government Debt to GDP Ratio: {missing_countries}"
-                )
-            government_debt_to_gdp_ratio = government_debt_to_gdp_ratio[
-                list(set(countries) - set(missing_countries))
-            ]
-
-        return government_debt_to_gdp_ratio.round(
-            rounding if rounding else self._rounding
+        return finalize_dataset(
+            dataset=government_debt_to_gdp_ratio,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="Government Debt to GDP Ratio",
+            countries=countries,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
         )
 
     @handle_errors
     def get_government_revenue(
         self,
         countries: list[str] | str | None = None,
+        rolling: int | None = None,
+        trailing: int | None = None,
         growth: bool = False,
         lag: int = 1,
+        standardize: bool = False,
         rounding: int | None = None,
     ):
         """
@@ -1608,8 +1545,13 @@ class Economics:
 
         Args:
             countries (list[str] | str | None, optional): A list of countries or a single country to include in the results. Defaults to None.
+            rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
+            trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
             lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
 
         Returns:
@@ -1644,40 +1586,32 @@ class Economics:
             gmd_dataset=self._gmbd_dataset
         )
 
-        if growth:
-            government_revenue = calculate_growth(
-                government_revenue,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-                axis="rows",
-            )
-
-        government_revenue = government_revenue.loc[self._start_date : self._end_date]
-
-        if countries:
-            if isinstance(countries, str):
-                countries = [countries]
-            missing_countries = [
-                country
-                for country in countries
-                if country not in government_revenue.columns
-            ]
-            if missing_countries:
-                logger.warning(
-                    f"The following countries are not available for Government Revenue: {missing_countries}"
-                )
-            government_revenue = government_revenue[
-                list(set(countries) - set(missing_countries))
-            ]
-
-        return government_revenue.round(rounding if rounding else self._rounding)
+        return finalize_dataset(
+            dataset=government_revenue,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="Government Revenue",
+            countries=countries,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+        )
 
     @handle_errors
     def get_government_revenue_to_gdp_ratio(
         self,
         countries: list[str] | str | None = None,
+        rolling: int | None = None,
+        trailing: int | None = None,
         growth: bool = False,
         lag: int = 1,
+        standardize: bool = False,
         rounding: int | None = None,
     ):
         """
@@ -1692,8 +1626,13 @@ class Economics:
 
         Args:
             countries (list[str] | str | None, optional): A list of countries or a single country to include in the results. Defaults to None.
+            rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
+            trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
             lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
 
         Returns:
@@ -1734,44 +1673,32 @@ class Economics:
             )
         )
 
-        if growth:
-            government_revenue_to_gdp_ratio = calculate_growth(
-                government_revenue_to_gdp_ratio,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-                axis="rows",
-            )
-
-        government_revenue_to_gdp_ratio = government_revenue_to_gdp_ratio.loc[
-            self._start_date : self._end_date
-        ]
-
-        if countries:
-            if isinstance(countries, str):
-                countries = [countries]
-            missing_countries = [
-                country
-                for country in countries
-                if country not in government_revenue_to_gdp_ratio.columns
-            ]
-            if missing_countries:
-                logger.warning(
-                    f"The following countries are not available for Government Revenue to GDP Ratio: {missing_countries}"
-                )
-            government_revenue_to_gdp_ratio = government_revenue_to_gdp_ratio[
-                list(set(countries) - set(missing_countries))
-            ]
-
-        return government_revenue_to_gdp_ratio.round(
-            rounding if rounding else self._rounding
+        return finalize_dataset(
+            dataset=government_revenue_to_gdp_ratio,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="Government Revenue to GDP Ratio",
+            countries=countries,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
         )
 
     @handle_errors
     def get_government_tax_revenue(
         self,
         countries: list[str] | str | None = None,
+        rolling: int | None = None,
+        trailing: int | None = None,
         growth: bool = False,
         lag: int = 1,
+        standardize: bool = False,
         rounding: int | None = None,
     ):
         """
@@ -1784,8 +1711,13 @@ class Economics:
         Also known as: tax revenue, fiscal revenue.
 
         Args:
+            rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
+            trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
             lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
 
         Returns:
@@ -1823,42 +1755,32 @@ class Economics:
             gmd_dataset=self._gmbd_dataset
         )
 
-        if growth:
-            government_tax_revenue = calculate_growth(
-                government_tax_revenue,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-                axis="rows",
-            )
-
-        government_tax_revenue = government_tax_revenue.loc[
-            self._start_date : self._end_date
-        ]
-
-        if countries:
-            if isinstance(countries, str):
-                countries = [countries]
-            missing_countries = [
-                country
-                for country in countries
-                if country not in government_tax_revenue.columns
-            ]
-            if missing_countries:
-                logger.warning(
-                    f"The following countries are not available for Government Tax Revenue: {missing_countries}"
-                )
-            government_tax_revenue = government_tax_revenue[
-                list(set(countries) - set(missing_countries))
-            ]
-
-        return government_tax_revenue.round(rounding if rounding else self._rounding)
+        return finalize_dataset(
+            dataset=government_tax_revenue,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="Government Tax Revenue",
+            countries=countries,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+        )
 
     @handle_errors
     def get_government_tax_revenue_to_gdp_ratio(
         self,
         countries: list[str] | str | None = None,
+        rolling: int | None = None,
+        trailing: int | None = None,
         growth: bool = False,
         lag: int = 1,
+        standardize: bool = False,
         rounding: int | None = None,
     ):
         """
@@ -1873,8 +1795,13 @@ class Economics:
 
         Args:
             countries (list[str] | str | None, optional): The countries to include in the data. Defaults to None.
+            rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
+            trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
             lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
 
         Returns:
@@ -1914,44 +1841,32 @@ class Economics:
             )
         )
 
-        if growth:
-            government_tax_revenue_to_gdp_ratio = calculate_growth(
-                government_tax_revenue_to_gdp_ratio,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-                axis="rows",
-            )
-
-        government_tax_revenue_to_gdp_ratio = government_tax_revenue_to_gdp_ratio.loc[
-            self._start_date : self._end_date
-        ]
-
-        if countries:
-            if isinstance(countries, str):
-                countries = [countries]
-            missing_countries = [
-                country
-                for country in countries
-                if country not in government_tax_revenue_to_gdp_ratio.columns
-            ]
-            if missing_countries:
-                logger.warning(
-                    f"The following countries are not available for Government Tax Revenue to GDP Ratio: {missing_countries}"
-                )
-            government_tax_revenue_to_gdp_ratio = government_tax_revenue_to_gdp_ratio[
-                list(set(countries) - set(missing_countries))
-            ]
-
-        return government_tax_revenue_to_gdp_ratio.round(
-            rounding if rounding else self._rounding
+        return finalize_dataset(
+            dataset=government_tax_revenue_to_gdp_ratio,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="Government Tax Revenue to GDP Ratio",
+            countries=countries,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
         )
 
     @handle_errors
     def get_government_expenditure(
         self,
         countries: list[str] | str | None = None,
+        rolling: int | None = None,
+        trailing: int | None = None,
         growth: bool = False,
         lag: int = 1,
+        standardize: bool = False,
         rounding: int | None = None,
     ):
         """
@@ -1965,8 +1880,13 @@ class Economics:
 
         Args:
             countries (list[str] | str | None, optional): A list of countries or a single country to include in the results. Defaults to None.
+            rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
+            trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
             lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
 
         Returns:
@@ -2005,42 +1925,32 @@ class Economics:
             gmd_dataset=self._gmbd_dataset
         )
 
-        if growth:
-            government_expenditure = calculate_growth(
-                government_expenditure,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-                axis="rows",
-            )
-
-        government_expenditure = government_expenditure.loc[
-            self._start_date : self._end_date
-        ]
-
-        if countries:
-            if isinstance(countries, str):
-                countries = [countries]
-            missing_countries = [
-                country
-                for country in countries
-                if country not in government_expenditure.columns
-            ]
-            if missing_countries:
-                logger.warning(
-                    f"The following countries are not available for Government Expenditure: {missing_countries}"
-                )
-            government_expenditure = government_expenditure[
-                list(set(countries) - set(missing_countries))
-            ]
-
-        return government_expenditure.round(rounding if rounding else self._rounding)
+        return finalize_dataset(
+            dataset=government_expenditure,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="Government Expenditure",
+            countries=countries,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+        )
 
     @handle_errors
     def get_government_expenditure_to_gdp_ratio(
         self,
         countries: list[str] | str | None = None,
+        rolling: int | None = None,
+        trailing: int | None = None,
         growth: bool = False,
         lag: int = 1,
+        standardize: bool = False,
         rounding: int | None = None,
     ):
         """
@@ -2055,8 +1965,13 @@ class Economics:
 
         Args:
             countries (list[str] | str | None, optional): A list of countries or a single country to include in the results. Defaults to None.
+            rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
+            trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
             lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
 
         Returns:
@@ -2098,44 +2013,32 @@ class Economics:
             )
         )
 
-        if growth:
-            government_expenditure_to_gdp_ratio = calculate_growth(
-                government_expenditure_to_gdp_ratio,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-                axis="rows",
-            )
-
-        government_expenditure_to_gdp_ratio = government_expenditure_to_gdp_ratio.loc[
-            self._start_date : self._end_date
-        ]
-
-        if countries:
-            if isinstance(countries, str):
-                countries = [countries]
-            missing_countries = [
-                country
-                for country in countries
-                if country not in government_expenditure_to_gdp_ratio.columns
-            ]
-            if missing_countries:
-                logger.warning(
-                    f"The following countries are not available for Government Expenditure to GDP Ratio: {missing_countries}"
-                )
-            government_expenditure_to_gdp_ratio = government_expenditure_to_gdp_ratio[
-                list(set(countries) - set(missing_countries))
-            ]
-
-        return government_expenditure_to_gdp_ratio.round(
-            rounding if rounding else self._rounding
+        return finalize_dataset(
+            dataset=government_expenditure_to_gdp_ratio,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="Government Expenditure to GDP Ratio",
+            countries=countries,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
         )
 
     @handle_errors
     def get_government_deficit(
         self,
         countries: list[str] | str | None = None,
+        rolling: int | None = None,
+        trailing: int | None = None,
         growth: bool = False,
         lag: int = 1,
+        standardize: bool = False,
         rounding: int | None = None,
     ):
         """
@@ -2150,8 +2053,13 @@ class Economics:
 
         Args:
             countries (list[str] | str | None, optional): A list of countries or a single country to include in the results. Defaults to None.
+            rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
+            trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
             lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
 
         Returns:
@@ -2190,39 +2098,32 @@ class Economics:
             gmd_dataset=self._gmbd_dataset
         )
 
-        if growth:
-            government_deficit = calculate_growth(
-                government_deficit,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-                axis="rows",
-            )
-
-        government_deficit = government_deficit.loc[self._start_date : self._end_date]
-
-        if countries:
-            if isinstance(countries, str):
-                countries = [countries]
-            missing_countries = [
-                country
-                for country in countries
-                if country not in government_deficit.columns
-            ]
-            if missing_countries:
-                logger.warning(
-                    f"The following countries are not available for Government Deficit: {missing_countries}"
-                )
-            government_deficit = government_deficit[
-                list(set(countries) - set(missing_countries))
-            ]
-
-        return government_deficit.round(rounding if rounding else self._rounding)
+        return finalize_dataset(
+            dataset=government_deficit,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="Government Deficit",
+            countries=countries,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+        )
 
     @handle_errors
     def get_government_deficit_to_gdp_ratio(
         self,
+        countries: list[str] | str | None = None,
+        rolling: int | None = None,
+        trailing: int | None = None,
         growth: bool = False,
         lag: int = 1,
+        standardize: bool = False,
         rounding: int | None = None,
     ):
         """
@@ -2237,8 +2138,14 @@ class Economics:
         Also known as: deficit-to-GDP, fiscal balance.
 
         Args:
+            countries (list[str] | str | None, optional): A list of countries or a single country to include in the results. Defaults to None.
+            rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
+            trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
             lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
 
         Returns:
@@ -2281,28 +2188,32 @@ class Economics:
             )
         )
 
-        if growth:
-            government_deficit_to_gdp_ratio = calculate_growth(
-                government_deficit_to_gdp_ratio,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-                axis="rows",
-            )
-
-        government_deficit_to_gdp_ratio = government_deficit_to_gdp_ratio.loc[
-            self._start_date : self._end_date
-        ]
-
-        return government_deficit_to_gdp_ratio.round(
-            rounding if rounding else self._rounding
+        return finalize_dataset(
+            dataset=government_deficit_to_gdp_ratio,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="Government Deficit to GDP Ratio",
+            countries=countries,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
         )
 
     @handle_errors
     def get_trust_in_government(
         self,
         countries: list[str] | str | None = None,
+        rolling: int | None = None,
+        trailing: int | None = None,
         growth: bool = False,
         lag: int = 1,
+        standardize: bool = False,
         rounding: int | None = None,
     ):
         """
@@ -2324,8 +2235,13 @@ class Economics:
 
         Args:
             countries (list[str] | str | None, optional): The countries to include in the data. Defaults to None.
+            rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
+            trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data.
             lag (int, optional): The number of periods to lag the data by.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
 
         Returns:
@@ -2368,40 +2284,32 @@ class Economics:
         """
         trust_in_government = oecd_model.get_trust_in_goverment()
 
-        if growth:
-            trust_in_government = calculate_growth(
-                trust_in_government,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-                axis="rows",
-            )
-
-        trust_in_government = trust_in_government.loc[self._start_date : self._end_date]
-
-        if countries:
-            if isinstance(countries, str):
-                countries = [countries]
-            missing_countries = [
-                country
-                for country in countries
-                if country not in trust_in_government.columns
-            ]
-            if missing_countries:
-                logger.warning(
-                    f"The following countries are not available for Trust in Government: {missing_countries}"
-                )
-            trust_in_government = trust_in_government[
-                list(set(countries) - set(missing_countries))
-            ]
-
-        return trust_in_government.round(rounding if rounding else self._rounding)
+        return finalize_dataset(
+            dataset=trust_in_government,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="Trust in Government",
+            countries=countries,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+        )
 
     @handle_errors
     def get_consumer_price_index(
         self,
         countries: list[str] | str | None = None,
+        rolling: int | None = None,
+        trailing: int | None = None,
         growth: bool = False,
         lag: int = 1,
+        standardize: bool = False,
         rounding: int | None = None,
     ):
         """
@@ -2416,8 +2324,13 @@ class Economics:
 
         Args:
             countries (list[str] | str | None, optional): The countries to include in the data. Defaults to None.
+            rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
+            trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data.
             lag (int, optional): The number of periods to lag the data by.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
 
         Returns:
@@ -2458,42 +2371,32 @@ class Economics:
             gmd_dataset=self._gmbd_dataset
         )
 
-        if growth:
-            consumer_price_index = calculate_growth(
-                consumer_price_index,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-                axis="rows",
-            )
-
-        consumer_price_index = consumer_price_index.loc[
-            self._start_date : self._end_date
-        ]
-
-        if countries:
-            if isinstance(countries, str):
-                countries = [countries]
-            missing_countries = [
-                country
-                for country in countries
-                if country not in consumer_price_index.columns
-            ]
-            if missing_countries:
-                logger.warning(
-                    f"The following countries are not available for Consumer Price Index: {missing_countries}"
-                )
-            consumer_price_index = consumer_price_index[
-                list(set(countries) - set(missing_countries))
-            ]
-
-        return consumer_price_index.round(rounding if rounding else self._rounding)
+        return finalize_dataset(
+            dataset=consumer_price_index,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="Consumer Price Index",
+            countries=countries,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+        )
 
     @handle_errors
     def get_inflation_rate(
         self,
         countries: list[str] | str | None = None,
+        rolling: int | None = None,
+        trailing: int | None = None,
         growth: bool = False,
         lag: int = 1,
+        standardize: bool = False,
         rounding: int | None = None,
     ):
         """
@@ -2507,8 +2410,13 @@ class Economics:
 
         Args:
             countries (list[str] | str | None, optional): The countries to include in the data. Defaults to None.
+            rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
+            trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data.
             lag (int, optional): The number of periods to lag the data by.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
 
         Returns:
@@ -2541,40 +2449,32 @@ class Economics:
 
         inflation_rate = gmdb_model.get_inflation_rate(gmd_dataset=self._gmbd_dataset)
 
-        if growth:
-            inflation_rate = calculate_growth(
-                inflation_rate,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-                axis="rows",
-            )
-
-        inflation_rate = inflation_rate.loc[self._start_date : self._end_date]
-
-        if countries:
-            if isinstance(countries, str):
-                countries = [countries]
-            missing_countries = [
-                country
-                for country in countries
-                if country not in inflation_rate.columns
-            ]
-            if missing_countries:
-                logger.warning(
-                    f"The following countries are not available for Inflation Rate: {missing_countries}"
-                )
-            inflation_rate = inflation_rate[
-                list(set(countries) - set(missing_countries))
-            ]
-
-        return inflation_rate.round(rounding if rounding else self._rounding)
+        return finalize_dataset(
+            dataset=inflation_rate,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="Inflation Rate",
+            countries=countries,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+        )
 
     @handle_errors
     def get_consumer_confidence_index(
         self,
         countries: list[str] | str | None = None,
+        rolling: int | None = None,
+        trailing: int | None = None,
         growth: bool = False,
         lag: int = 1,
+        standardize: bool = False,
         rounding: int | None = None,
     ):
         """
@@ -2596,8 +2496,13 @@ class Economics:
 
         Args:
             countries (list[str] | str | None, optional): The countries to include in the data. Defaults to None.
+            rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
+            trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data.
             lag (int, optional): The number of periods to lag the data by.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
 
         Returns:
@@ -2627,42 +2532,32 @@ class Economics:
         """
         consumer_confidence_index = oecd_model.get_consumer_confidence_index()
 
-        if growth:
-            consumer_confidence_index = calculate_growth(
-                consumer_confidence_index,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-                axis="rows",
-            )
-
-        consumer_confidence_index = consumer_confidence_index.loc[
-            self._start_date : self._end_date
-        ]
-
-        if countries:
-            if isinstance(countries, str):
-                countries = [countries]
-            missing_countries = [
-                country
-                for country in countries
-                if country not in consumer_confidence_index.columns
-            ]
-            if missing_countries:
-                logger.warning(
-                    f"The following countries are not available for Consumer Confidence Index: {missing_countries}"
-                )
-            consumer_confidence_index = consumer_confidence_index[
-                list(set(countries) - set(missing_countries))
-            ]
-
-        return consumer_confidence_index.round(rounding if rounding else self._rounding)
+        return finalize_dataset(
+            dataset=consumer_confidence_index,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="Consumer Confidence Index",
+            countries=countries,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+        )
 
     @handle_errors
     def get_business_confidence_index(
         self,
         countries: list[str] | str | None = None,
+        rolling: int | None = None,
+        trailing: int | None = None,
         growth: bool = False,
         lag: int = 1,
+        standardize: bool = False,
         rounding: int | None = None,
     ):
         """
@@ -2680,8 +2575,13 @@ class Economics:
 
         Args:
             countries (list[str] | str | None, optional): The countries to include in the data. Defaults to None.
+            rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
+            trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data.
             lag (int, optional): The number of periods to lag the data by.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
 
         Returns:
@@ -2711,42 +2611,32 @@ class Economics:
         """
         business_confidence_index = oecd_model.get_business_confidence_index()
 
-        if growth:
-            business_confidence_index = calculate_growth(
-                business_confidence_index,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-                axis="rows",
-            )
-
-        business_confidence_index = business_confidence_index.loc[
-            self._start_date : self._end_date
-        ]
-
-        if countries:
-            if isinstance(countries, str):
-                countries = [countries]
-            missing_countries = [
-                country
-                for country in countries
-                if country not in business_confidence_index.columns
-            ]
-            if missing_countries:
-                logger.warning(
-                    f"The following countries are not available for Business Confidence Index: {missing_countries}"
-                )
-            business_confidence_index = business_confidence_index[
-                list(set(countries) - set(missing_countries))
-            ]
-
-        return business_confidence_index.round(rounding if rounding else self._rounding)
+        return finalize_dataset(
+            dataset=business_confidence_index,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="Business Confidence Index",
+            countries=countries,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+        )
 
     @handle_errors
     def get_composite_leading_indicator(
         self,
         countries: list[str] | str | None = None,
+        rolling: int | None = None,
+        trailing: int | None = None,
         growth: bool = False,
         lag: int = 1,
+        standardize: bool = False,
         rounding: int | None = None,
     ):
         """
@@ -2761,8 +2651,13 @@ class Economics:
 
         Args:
             countries (list[str] | str | None, optional): The countries to include in the data. Defaults to None.
+            rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
+            trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data.
             lag (int, optional): The number of periods to lag the data by.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
 
         Returns:
@@ -2790,36 +2685,21 @@ class Economics:
         """
         composite_leading_indicator = oecd_model.get_composite_leading_indicator()
 
-        if growth:
-            composite_leading_indicator = calculate_growth(
-                composite_leading_indicator,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-                axis="rows",
-            )
-
-        composite_leading_indicator = composite_leading_indicator.loc[
-            self._start_date : self._end_date
-        ]
-
-        if countries:
-            if isinstance(countries, str):
-                countries = [countries]
-            missing_countries = [
-                country
-                for country in countries
-                if country not in composite_leading_indicator.columns
-            ]
-            if missing_countries:
-                logger.warning(
-                    f"The following countries are not available for Composite Leading Indicator: {missing_countries}"
-                )
-            composite_leading_indicator = composite_leading_indicator[
-                list(set(countries) - set(missing_countries))
-            ]
-
-        return composite_leading_indicator.round(
-            rounding if rounding else self._rounding
+        return finalize_dataset(
+            dataset=composite_leading_indicator,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="Composite Leading Indicator",
+            countries=countries,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
         )
 
     @handle_errors
@@ -2829,8 +2709,11 @@ class Economics:
         quarterly: bool | None = None,
         inflation_adjusted: bool = False,
         gmdb_source: bool | None = None,
+        rolling: int | None = None,
+        trailing: int | None = None,
         growth: bool = False,
         lag: int = 1,
+        standardize: bool = False,
         rounding: int | None = None,
     ):
         """
@@ -2856,8 +2739,13 @@ class Economics:
             quarterly (bool | None, optional): Whether to return the quarterly data or the annual data.
             inflation_adjusted (bool, optional): Whether to return the inflation adjusted data or the nominal data.
             gmdb_source (bool | None, optional): Whether to get the data from the Global Macro Database (GMDB).
+            rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
+            trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data.
             lag (int, optional): The number of periods to lag the data by.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
 
         Returns:
@@ -2906,37 +2794,33 @@ class Economics:
                 quarterly=quarterly, inflation_adjusted=inflation_adjusted
             )
 
-        if growth:
-            house_prices = calculate_growth(
-                house_prices,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-                axis="rows",
-            )
-
-        house_prices = house_prices.loc[self._start_date : self._end_date]
-
-        if countries:
-            if isinstance(countries, str):
-                countries = [countries]
-            missing_countries = [
-                country for country in countries if country not in house_prices.columns
-            ]
-            if missing_countries:
-                logger.warning(
-                    f"The following countries are not available for House Prices: {missing_countries}"
-                )
-            house_prices = house_prices[list(set(countries) - set(missing_countries))]
-
-        return house_prices.round(rounding if rounding else self._rounding)
+        return finalize_dataset(
+            dataset=house_prices,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="House Prices",
+            countries=countries,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+        )
 
     @handle_errors
     def get_rent_prices(
         self,
         countries: list[str] | str | None = None,
         quarterly: bool | None = None,
+        rolling: int | None = None,
+        trailing: int | None = None,
         growth: bool = False,
         lag: int = 1,
+        standardize: bool = False,
         rounding: int | None = None,
     ):
         """
@@ -2953,8 +2837,13 @@ class Economics:
         Args:
             countries (list[str] | str | None, optional): The countries to include in the data. Defaults to None.
             quarterly (bool | None, optional): Whether to return the quarterly data or the annual data.
+            rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
+            trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data.
             lag (int, optional): The number of periods to lag the data by.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
 
         Returns:
@@ -2990,37 +2879,33 @@ class Economics:
 
         rent_prices = oecd_model.get_rent_prices(quarterly=quarterly)
 
-        if growth:
-            rent_prices = calculate_growth(
-                rent_prices,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-                axis="rows",
-            )
-
-        rent_prices = rent_prices.loc[self._start_date : self._end_date]
-
-        if countries:
-            if isinstance(countries, str):
-                countries = [countries]
-            missing_countries = [
-                country for country in countries if country not in rent_prices.columns
-            ]
-            if missing_countries:
-                logger.warning(
-                    f"The following countries are not available for Rent Prices: {missing_countries}"
-                )
-            rent_prices = rent_prices[list(set(countries) - set(missing_countries))]
-
-        return rent_prices.round(rounding if rounding else self._rounding)
+        return finalize_dataset(
+            dataset=rent_prices,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="Rent Prices",
+            countries=countries,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+        )
 
     @handle_errors
     def get_share_prices(
         self,
         countries: list[str] | str | None = None,
         period: str | None = None,
+        rolling: int | None = None,
+        trailing: int | None = None,
         growth: bool = False,
         lag: int = 1,
+        standardize: bool = False,
         rounding: int | None = None,
     ):
         """
@@ -3047,8 +2932,13 @@ class Economics:
         Args:
             countries (list[str] | str | None, optional): The countries to include in the data. Defaults to None.
             period (str | None, optional): Whether to return the monthly, quarterly or the annual data.
+            rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
+            trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data.
             lag (int, optional): The number of periods to lag the data by.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
 
         Returns:
@@ -3089,29 +2979,22 @@ class Economics:
 
         share_prices = oecd_model.get_share_prices(period=period)
 
-        if growth:
-            share_prices = calculate_growth(
-                share_prices,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-                axis="rows",
-            )
-
-        share_prices = share_prices.loc[self._start_date : self._end_date]
-
-        if countries:
-            if isinstance(countries, str):
-                countries = [countries]
-            missing_countries = [
-                country for country in countries if country not in share_prices.columns
-            ]
-            if missing_countries:
-                logger.warning(
-                    f"The following countries are not available for Share Prices: {missing_countries}"
-                )
-            share_prices = share_prices[list(set(countries) - set(missing_countries))]
-
-        return share_prices.round(rounding if rounding else self._rounding)
+        return finalize_dataset(
+            dataset=share_prices,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="Share Prices",
+            countries=countries,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+        )
 
     @handle_errors
     def get_exchange_rates(
@@ -3119,8 +3002,11 @@ class Economics:
         countries: list[str] | str | None = None,
         period: str | None = None,
         gmdb_source: bool | None = None,
+        rolling: int | None = None,
+        trailing: int | None = None,
         growth: bool = False,
         lag: int = 1,
+        standardize: bool = False,
         rounding: int | None = None,
     ):
         """
@@ -3139,8 +3025,13 @@ class Economics:
             countries (list[str] | str | None, optional): The countries to include in the data. Defaults to None.
             period (str | None, optional): Whether to return the monthly, quarterly or the annual data.
             gmdb_source (bool | None, optional): Whether to get the data from the Global Macro Database (GMDB).
+            rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
+            trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data.
             lag (int, optional): The number of periods to lag the data by.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
 
         Returns:
@@ -3189,41 +3080,33 @@ class Economics:
         else:
             exchange_rates = oecd_model.get_exchange_rates(period=period)
 
-        if growth:
-            exchange_rates = calculate_growth(
-                exchange_rates,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-                axis="rows",
-            )
-
-        exchange_rates = exchange_rates.loc[self._start_date : self._end_date]
-
-        if countries:
-            if isinstance(countries, str):
-                countries = [countries]
-            missing_countries = [
-                country
-                for country in countries
-                if country not in exchange_rates.columns
-            ]
-            if missing_countries:
-                logger.warning(
-                    f"The following countries are not available for Exchange Rates: {missing_countries}"
-                )
-            exchange_rates = exchange_rates[
-                list(set(countries) - set(missing_countries))
-            ]
-
-        return exchange_rates.round(rounding if rounding else self._rounding)
+        return finalize_dataset(
+            dataset=exchange_rates,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="Exchange Rates",
+            countries=countries,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+        )
 
     @handle_errors
     def get_money_supply(
         self,
         countries: list[str] | str | None = None,
         measure: str | None = None,
+        rolling: int | None = None,
+        trailing: int | None = None,
         growth: bool = False,
         lag: int = 1,
+        standardize: bool = False,
         rounding: int | None = None,
     ):
         """
@@ -3247,8 +3130,13 @@ class Economics:
         Args:
             countries (list[str] | str | None, optional): The countries to include in the data. Defaults to None.
             measure (str | None, optional): The measure of money supply to include in the data. Defaults to None.
+            rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
+            trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
             lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
 
         Returns:
@@ -3288,15 +3176,20 @@ class Economics:
 
         money_supply = gmdb_model.get_money_supply(gmd_dataset=self._gmbd_dataset)
 
-        if growth:
-            money_supply = calculate_growth(
-                money_supply,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-                axis="rows",
-            )
-
-        money_supply = money_supply.loc[self._start_date : self._end_date]
+        money_supply = finalize_dataset(
+            dataset=money_supply,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+            rolling=rolling,
+            trailing=trailing,
+        )
 
         if measure:
             if measure not in money_supply.columns.get_level_values(0):
@@ -3341,8 +3234,11 @@ class Economics:
     def get_central_bank_policy_rate(
         self,
         countries: list[str] | str | None = None,
+        rolling: int | None = None,
+        trailing: int | None = None,
         growth: bool = False,
         lag: int = 1,
+        standardize: bool = False,
         rounding: int | None = None,
     ):
         """
@@ -3357,8 +3253,13 @@ class Economics:
 
         Args:
             countries (list[str] | str | None, optional): The countries to include in the data. Defaults to None.
+            rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
+            trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
             lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
 
         Returns:
@@ -3391,35 +3292,22 @@ class Economics:
             gmd_dataset=self._gmbd_dataset
         )
 
-        if growth:
-            central_bank_policy_rate = calculate_growth(
-                central_bank_policy_rate,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-                axis="rows",
-            )
-
-        central_bank_policy_rate = central_bank_policy_rate.loc[
-            self._start_date : self._end_date
-        ]
-
-        if countries:
-            if isinstance(countries, str):
-                countries = [countries]
-            missing_countries = [
-                country
-                for country in countries
-                if country not in central_bank_policy_rate.columns
-            ]
-            if missing_countries:
-                logger.warning(
-                    f"The following countries are not available for Central Bank Policy Rate: {missing_countries}"
-                )
-            central_bank_policy_rate = central_bank_policy_rate[
-                list(set(countries) - set(missing_countries))
-            ]
-
-        return central_bank_policy_rate.round(rounding if rounding else self._rounding)
+        return finalize_dataset(
+            dataset=central_bank_policy_rate,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="Central Bank Policy Rate",
+            countries=countries,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+        )
 
     @handle_errors
     def get_short_term_interest_rate(
@@ -3427,8 +3315,11 @@ class Economics:
         countries: list[str] | str | None = None,
         period: str | None = None,
         gmdb_source: bool | None = None,
+        rolling: int | None = None,
+        trailing: int | None = None,
         growth: bool = False,
         lag: int = 1,
+        standardize: bool = False,
         rounding: int | None = None,
     ):
         """
@@ -3451,8 +3342,13 @@ class Economics:
             countries (list[str] | str | None, optional): The countries to include in the data. Defaults to None.
             period (str | None, optional): Whether to return the monthly, quarterly or the annual data.
             gmdb_source (bool | None, optional): Whether to get the data from the Global Macro Database (GMDB).
+            rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
+            trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data.
             lag (int, optional): The number of periods to lag the data by.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
 
         Returns:
@@ -3501,35 +3397,22 @@ class Economics:
                 period=period,
             )
 
-        if growth:
-            short_term_interest_rate = calculate_growth(
-                short_term_interest_rate,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-                axis="rows",
-            )
-
-        short_term_interest_rate = short_term_interest_rate.loc[
-            self._start_date : self._end_date
-        ]
-
-        if countries:
-            if isinstance(countries, str):
-                countries = [countries]
-            missing_countries = [
-                country
-                for country in countries
-                if country not in short_term_interest_rate.columns
-            ]
-            if missing_countries:
-                logger.warning(
-                    f"The following countries are not available for Short Term Interest Rate: {missing_countries}"
-                )
-            short_term_interest_rate = short_term_interest_rate[
-                list(set(countries) - set(missing_countries))
-            ]
-
-        return short_term_interest_rate.round(rounding if rounding else self._rounding)
+        return finalize_dataset(
+            dataset=short_term_interest_rate,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="Short Term Interest Rate",
+            countries=countries,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+        )
 
     @handle_errors
     def get_long_term_interest_rate(
@@ -3537,8 +3420,11 @@ class Economics:
         countries: list[str] | str | None = None,
         period: str | None = None,
         gmdb_source: bool | None = None,
+        rolling: int | None = None,
+        trailing: int | None = None,
         growth: bool = False,
         lag: int = 1,
+        standardize: bool = False,
         rounding: int | None = None,
     ):
         """
@@ -3565,8 +3451,13 @@ class Economics:
             countries (list[str] | str | None, optional): The countries to include in the data. Defaults to None.
             period (str | None, optional): Whether to return the monthly, quarterly or the annual data.
             gmdb_source (bool | None, optional): Whether to get the data from the Global Macro Database (GMDB).
+            rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
+            trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data.
             lag (int, optional): The number of periods to lag the data by.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
 
         Returns:
@@ -3616,42 +3507,32 @@ class Economics:
                 period=period,
             )
 
-        if growth:
-            long_term_interest_rate = calculate_growth(
-                long_term_interest_rate,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-                axis="rows",
-            )
-
-        long_term_interest_rate = long_term_interest_rate.loc[
-            self._start_date : self._end_date
-        ]
-
-        if countries:
-            if isinstance(countries, str):
-                countries = [countries]
-            missing_countries = [
-                country
-                for country in countries
-                if country not in long_term_interest_rate.columns
-            ]
-            if missing_countries:
-                logger.warning(
-                    f"The following countries are not available for Long Term Interest Rate: {missing_countries}"
-                )
-            long_term_interest_rate = long_term_interest_rate[
-                list(set(countries) - set(missing_countries))
-            ]
-
-        return long_term_interest_rate.round(rounding if rounding else self._rounding)
+        return finalize_dataset(
+            dataset=long_term_interest_rate,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="Long Term Interest Rate",
+            countries=countries,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+        )
 
     @handle_errors
     def get_renewable_energy(
         self,
         countries: list[str] | str | None = None,
+        rolling: int | None = None,
+        trailing: int | None = None,
         growth: bool = False,
         lag: int = 1,
+        standardize: bool = False,
         rounding: int | None = None,
     ):
         """
@@ -3676,8 +3557,13 @@ class Economics:
 
         Args:
             countries (list[str] | str | None, optional): The countries to include in the data. Defaults to None.
+            rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
+            trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data.
             lag (int, optional): The number of periods to lag the data by.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
 
         Returns:
@@ -3711,40 +3597,32 @@ class Economics:
         """
         renewable_energy = oecd_model.get_renewable_energy()
 
-        if growth:
-            renewable_energy = calculate_growth(
-                renewable_energy,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-                axis="rows",
-            )
-
-        renewable_energy = renewable_energy.loc[self._start_date : self._end_date]
-
-        if countries:
-            if isinstance(countries, str):
-                countries = [countries]
-            missing_countries = [
-                country
-                for country in countries
-                if country not in renewable_energy.columns
-            ]
-            if missing_countries:
-                logger.warning(
-                    f"The following countries are not available for Renewable Energy: {missing_countries}"
-                )
-            renewable_energy = renewable_energy[
-                list(set(countries) - set(missing_countries))
-            ]
-
-        return renewable_energy.round(rounding if rounding else self._rounding)
+        return finalize_dataset(
+            dataset=renewable_energy,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="Renewable Energy",
+            countries=countries,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+        )
 
     @handle_errors
     def get_carbon_footprint(
         self,
         countries: list[str] | str | None = None,
+        rolling: int | None = None,
+        trailing: int | None = None,
         growth: bool = False,
         lag: int = 1,
+        standardize: bool = False,
         rounding: int | None = None,
     ):
         """
@@ -3763,8 +3641,13 @@ class Economics:
 
         Args:
             countries (list[str] | str | None, optional): The countries to include in the data. Defaults to None.
+            rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
+            trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data.
             lag (int, optional): The number of periods to lag the data by.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
 
         Returns:
@@ -3796,33 +3679,22 @@ class Economics:
         """
         carbon_footprint_df = oecd_model.get_carbon_footprint()
 
-        if growth:
-            carbon_footprint_df = calculate_growth(
-                carbon_footprint_df,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-                axis="rows",
-            )
-
-        carbon_footprint_df = carbon_footprint_df.loc[self._start_date : self._end_date]
-
-        if countries:
-            if isinstance(countries, str):
-                countries = [countries]
-            missing_countries = [
-                country
-                for country in countries
-                if country not in carbon_footprint_df.columns
-            ]
-            if missing_countries:
-                logger.warning(
-                    f"The following countries are not available for Carbon Footprint: {missing_countries}"
-                )
-            carbon_footprint_df = carbon_footprint_df[
-                list(set(countries) - set(missing_countries))
-            ]
-
-        return carbon_footprint_df.round(rounding if rounding else self._rounding)
+        return finalize_dataset(
+            dataset=carbon_footprint_df,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="Carbon Footprint",
+            countries=countries,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+        )
 
     @handle_errors
     def get_unemployment_rate(
@@ -3830,8 +3702,11 @@ class Economics:
         countries: list[str] | str | None = None,
         period: str | None = None,
         gmdb_source: bool | None = None,
+        rolling: int | None = None,
+        trailing: int | None = None,
         growth: bool = False,
         lag: int = 1,
+        standardize: bool = False,
         rounding: int | None = None,
     ):
         """
@@ -3860,8 +3735,13 @@ class Economics:
             countries (list[str] | str | None, optional): The countries to include in the data. Defaults to None.
             period (str | None, optional): Whether to return the monthly, quarterly or the annual data.
             gmdb_source (bool | None, optional): Whether to get the data from the Global Macro Database (GMDB).
+            rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
+            trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data.
             lag (int, optional): The number of periods to lag the data by.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
 
         Returns:
@@ -3911,40 +3791,32 @@ class Economics:
         else:
             unemployment_rate = oecd_model.get_unemployment_rate(period=period)
 
-        if growth:
-            unemployment_rate = calculate_growth(
-                unemployment_rate,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-                axis="rows",
-            )
-
-        unemployment_rate = unemployment_rate.loc[self._start_date : self._end_date]
-
-        if countries:
-            if isinstance(countries, str):
-                countries = [countries]
-            missing_countries = [
-                country
-                for country in countries
-                if country not in unemployment_rate.columns
-            ]
-            if missing_countries:
-                logger.warning(
-                    f"The following countries are not available for Unemployment Rate: {missing_countries}"
-                )
-            unemployment_rate = unemployment_rate[
-                list(set(countries) - set(missing_countries))
-            ]
-
-        return unemployment_rate.round(rounding if rounding else self._rounding)
+        return finalize_dataset(
+            dataset=unemployment_rate,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="Unemployment Rate",
+            countries=countries,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+        )
 
     @handle_errors
     def get_labour_productivity(
         self,
         countries: list[str] | str | None = None,
+        rolling: int | None = None,
+        trailing: int | None = None,
         growth: bool = False,
         lag: int = 1,
+        standardize: bool = False,
         rounding: int | None = None,
     ):
         """
@@ -3967,12 +3839,17 @@ class Economics:
 
         Args:
             countries (list[str] | str | None, optional): The countries to include in the data. Defaults to None.
+            rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
+            trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data.
             lag (int, optional): The number of periods to lag the data by.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
 
         Returns:
-            pd.DataFrame: A DataFrame containing the Exchange Rates.
+            pd.DataFrame: A DataFrame containing the Labour Productivity.
 
         As an example:
 
@@ -3981,7 +3858,7 @@ class Economics:
 
         economics = Economics()
 
-        economics.get_exchange_rates(countries=['Bulgaria', 'Croatia', 'Spain'])
+        economics.get_labour_productivity(countries=['Bulgaria', 'Croatia', 'Spain'])
         ```
 
         Which returns:
@@ -4001,40 +3878,32 @@ class Economics:
         """
         labour_productivity = oecd_model.get_labour_productivity()
 
-        if growth:
-            labour_productivity = calculate_growth(
-                labour_productivity,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-                axis="rows",
-            )
-
-        labour_productivity = labour_productivity.loc[self._start_date : self._end_date]
-
-        if countries:
-            if isinstance(countries, str):
-                countries = [countries]
-            missing_countries = [
-                country
-                for country in countries
-                if country not in labour_productivity.columns
-            ]
-            if missing_countries:
-                logger.warning(
-                    f"The following countries are not available for Labour Productivity: {missing_countries}"
-                )
-            labour_productivity = labour_productivity[
-                list(set(countries) - set(missing_countries))
-            ]
-
-        return labour_productivity.round(rounding if rounding else self._rounding)
+        return finalize_dataset(
+            dataset=labour_productivity,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="Labour Productivity",
+            countries=countries,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+        )
 
     @handle_errors
     def get_income_inequality(
         self,
         countries: list[str] | str | None = None,
+        rolling: int | None = None,
+        trailing: int | None = None,
         growth: bool = False,
         lag: int = 1,
+        standardize: bool = False,
         rounding: int | None = None,
     ):
         """
@@ -4054,8 +3923,13 @@ class Economics:
 
         Args:
             countries (list[str] | str | None, optional): The countries to include in the data. Defaults to None.
+            rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
+            trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data.
             lag (int, optional): The number of periods to lag the data by.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
 
         Returns:
@@ -4087,25 +3961,33 @@ class Economics:
         """
         income_inequality = oecd_model.get_income_inequality()
 
-        if growth:
-            income_inequality = calculate_growth(
-                income_inequality,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-                axis="rows",
-            )
-
-        income_inequality = income_inequality.loc[self._start_date : self._end_date]
-
-        return income_inequality.round(rounding if rounding else self._rounding)
+        return finalize_dataset(
+            dataset=income_inequality,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="Income Inequality",
+            countries=countries,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+        )
 
     @handle_errors
     def get_population_statistics(
         self,
         countries: list[str] | str | None = None,
         gmdb_source: bool | None = None,
+        rolling: int | None = None,
+        trailing: int | None = None,
         growth: bool = False,
         lag: int = 1,
+        standardize: bool = False,
         rounding: int | None = None,
     ):
         """
@@ -4150,8 +4032,13 @@ class Economics:
         Args:
             countries (list[str] | str | None, optional): The countries to include in the data. Defaults to None.
             gmdb_source (bool | None, optional): Whether to get the data from the Global Macro Database (GMDB).
+            rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
+            trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data.
             lag (int, optional): The number of periods to lag the data by.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
 
         Returns:
@@ -4202,42 +4089,32 @@ class Economics:
                 level=0
             )
 
-        if growth:
-            population_statistics_df = calculate_growth(
-                population_statistics_df,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-                axis="rows",
-            )
-
-        population_statistics_df = population_statistics_df.loc[
-            self._start_date : self._end_date
-        ]
-
-        if countries:
-            if isinstance(countries, str):
-                countries = [countries]
-            missing_countries = [
-                country
-                for country in countries
-                if country not in population_statistics_df.columns
-            ]
-            if missing_countries:
-                logger.warning(
-                    f"The following countries are not available for Population Statistics: {missing_countries}"
-                )
-            population_statistics_df = population_statistics_df[
-                list(set(countries) - set(missing_countries))
-            ]
-
-        return population_statistics_df.round(rounding if rounding else self._rounding)
+        return finalize_dataset(
+            dataset=population_statistics_df,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="Population Statistics",
+            countries=countries,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+        )
 
     @handle_errors
     def get_poverty_rate(
         self,
         countries: list[str] | str | None = None,
+        rolling: int | None = None,
+        trailing: int | None = None,
         growth: bool = False,
         lag: int = 1,
+        standardize: bool = False,
         rounding: int | None = None,
     ):
         """
@@ -4252,8 +4129,13 @@ class Economics:
 
         Args:
             countries (list[str] | str | None, optional): The countries to include in the data. Defaults to None.
+            rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
+            trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data.
             lag (int, optional): The number of periods to lag the data by.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
 
         Returns:
@@ -4285,26 +4167,19 @@ class Economics:
         """
         poverty_rate = oecd_model.get_poverty_rate()
 
-        if growth:
-            poverty_rate = calculate_growth(
-                poverty_rate,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-                axis="rows",
-            )
-
-        poverty_rate = poverty_rate.loc[self._start_date : self._end_date]
-
-        if countries:
-            if isinstance(countries, str):
-                countries = [countries]
-            missing_countries = [
-                country for country in countries if country not in poverty_rate.columns
-            ]
-            if missing_countries:
-                logger.warning(
-                    f"The following countries are not available for Poverty Rate: {missing_countries}"
-                )
-            poverty_rate = poverty_rate[list(set(countries) - set(missing_countries))]
-
-        return poverty_rate.round(rounding if rounding else self._rounding)
+        return finalize_dataset(
+            dataset=poverty_rate,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="Poverty Rate",
+            countries=countries,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+        )

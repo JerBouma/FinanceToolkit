@@ -1,8 +1,8 @@
 [project]
 name = "finance-toolkit-mcp"
-version = "2.1.3"
+version = "2.1.4"
 description = "Finance Toolkit MCP Server"
 requires-python = ">=3.10"
 dependencies = [
-    "financetoolkit[mcp]==2.1.3",
+    "financetoolkit[mcp]==2.1.4",
 ]

@@ -6,15 +6,17 @@ import warnings
 
 import pandas as pd
 
-from financetoolkit.helpers import calculate_growth, filter_columns, handle_portfolio
+from financetoolkit.helpers import handle_portfolio
 from financetoolkit.performance import performance_model
 from financetoolkit.performance.helpers import (
     determine_within_dataset,
     determine_within_historical_data,
     handle_errors,
 )
-from financetoolkit.risk.risk_model import get_ui
+from financetoolkit.risk.risk_model import get_max_drawdown, get_ui, get_volatility
+from financetoolkit.utilities.dataframe_model import filter_columns
 from financetoolkit.utilities.logger_model import get_logger
+from financetoolkit.utilities.statistics_model import finalize_dataset
 
 # Runtime errors are ignored on purpose given the nature of the calculations
 # sometimes leading to division by zero or other mathematical errors. This is however
@@ -105,6 +107,17 @@ class Performance:
 
         # Within Period Calculations
         daily_historical_data = self._historical_data["daily"].copy()
+
+        excess_return = performance_model.get_excess_return(
+            daily_historical_data["Return"], self._risk_free_rate_data["daily"]
+        )
+        excess_return.columns = pd.MultiIndex.from_product(
+            [["Excess Return"], excess_return.columns]
+        )
+        daily_historical_data = pd.concat(
+            [daily_historical_data, excess_return], axis=1
+        )
+
         intraday_historical_data = self._historical_data["intraday"].copy()
 
         daily_historical_data.index = pd.DatetimeIndex(
@@ -135,6 +148,7 @@ class Performance:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
     ):
         """
         Calculates and collects all performance metrics.
@@ -143,6 +157,9 @@ class Performance:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             trailing (int): Defines whether to select a trailing period.
             E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
@@ -161,47 +178,181 @@ class Performance:
 
         toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
-        toolkit.performance.collect_all_metrics()
+        toolkit.performance.collect_all_metrics().xs("AAPL", level=1, axis=1)
         ```
+
+        Which returns:
+
+        |      |   Win Rate |   Upside Capture Ratio |   Downside Capture Ratio |   M2 Ratio |   Tracking Error |
+        |:-----|-----------:|-----------------------:|-------------------------:|-----------:|-----------------:|
+        | 2021 |     0.4921 |                 1.3754 |                   1.4016 |     1.2868 |           0.0118 |
+        | 2022 |     0.4821 |                 1.3044 |                   1.3043 |    -0.8603 |           0.0115 |
+        | 2023 |     0.576  |                 1.1783 |                   0.9486 |     2.1832 |           0.009  |
+        | 2024 |     0.504  |                 1.1158 |                   1.0337 |     1.1242 |           0.0121 |
+        | 2025 |     0.472  |                 1.0162 |                   1.0842 |     0.1354 |           0.0139 |
+        | 2026 |     0.504  |                 0.766  |                   0.5691 |     0.3377 |           0.0154 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
         rounding = rounding if rounding else self._rounding
 
         performance_metrics = {
             "Alpha": self.get_alpha(
-                period=period, rounding=rounding, growth=growth, lag=lag
+                period=period,
+                rounding=rounding,
+                growth=growth,
+                lag=lag,
+                standardize=standardize,
             ),
             "Beta": self.get_beta(
-                period=period, rounding=rounding, growth=growth, lag=lag
+                period=period,
+                rounding=rounding,
+                growth=growth,
+                lag=lag,
+                standardize=standardize,
             ),
             "CAPM": self.get_capital_asset_pricing_model(
-                period=period, rounding=rounding, growth=growth, lag=lag
+                period=period,
+                rounding=rounding,
+                growth=growth,
+                lag=lag,
+                standardize=standardize,
             ),
             "Jensen's Alpha": self.get_jensens_alpha(
-                period=period, rounding=rounding, growth=growth, lag=lag
+                period=period,
+                rounding=rounding,
+                growth=growth,
+                lag=lag,
+                standardize=standardize,
             ),
             "Treynor Ratio": self.get_treynor_ratio(
-                period=period, rounding=rounding, growth=growth, lag=lag
+                period=period,
+                rounding=rounding,
+                growth=growth,
+                lag=lag,
+                standardize=standardize,
             ),
             "Sharpe Ratio": self.get_sharpe_ratio(
-                period=period, rounding=rounding, growth=growth, lag=lag
+                period=period,
+                rounding=rounding,
+                growth=growth,
+                lag=lag,
+                standardize=standardize,
             ),
             "Sortino Ratio": self.get_sortino_ratio(
-                period=period, rounding=rounding, growth=growth, lag=lag
+                period=period,
+                rounding=rounding,
+                growth=growth,
+                lag=lag,
+                standardize=standardize,
             ),
             "Ulcer Index": self.get_ulcer_performance_index(
-                period=period, rounding=rounding, growth=growth, lag=lag
+                period=period,
+                rounding=rounding,
+                growth=growth,
+                lag=lag,
+                standardize=standardize,
+            ),
+            "Calmar Ratio": self.get_calmar_ratio(
+                period=period,
+                rounding=rounding,
+                growth=growth,
+                lag=lag,
+                standardize=standardize,
+            ),
+            "Sterling Ratio": self.get_sterling_ratio(
+                period=period,
+                rounding=rounding,
+                growth=growth,
+                lag=lag,
+                standardize=standardize,
+            ),
+            "Burke Ratio": self.get_burke_ratio(
+                period=period,
+                rounding=rounding,
+                growth=growth,
+                lag=lag,
+                standardize=standardize,
+            ),
+            "Omega Ratio": self.get_omega_ratio(
+                period=period,
+                rounding=rounding,
+                growth=growth,
+                lag=lag,
+                standardize=standardize,
+            ),
+            "Kappa Ratio": self.get_kappa_ratio(
+                period=period,
+                rounding=rounding,
+                growth=growth,
+                lag=lag,
+                standardize=standardize,
+            ),
+            "Gain to Pain Ratio": self.get_gain_to_pain_ratio(
+                period=period,
+                rounding=rounding,
+                growth=growth,
+                lag=lag,
+                standardize=standardize,
+            ),
+            "Win Rate": self.get_win_rate(
+                period=period,
+                rounding=rounding,
+                growth=growth,
+                lag=lag,
+                standardize=standardize,
+            ),
+            "Upside Capture Ratio": self.get_upside_capture_ratio(
+                period=period,
+                rounding=rounding,
+                growth=growth,
+                lag=lag,
+                standardize=standardize,
+            ),
+            "Downside Capture Ratio": self.get_downside_capture_ratio(
+                period=period,
+                rounding=rounding,
+                growth=growth,
+                lag=lag,
+                standardize=standardize,
             ),
             "M2 Ratio": self.get_m2_ratio(
-                period=period, rounding=rounding, growth=growth, lag=lag
+                period=period,
+                rounding=rounding,
+                growth=growth,
+                lag=lag,
+                standardize=standardize,
             ),
             "Tracking Error": self.get_tracking_error(
-                period=period, rounding=rounding, growth=growth, lag=lag
+                period=period,
+                rounding=rounding,
+                growth=growth,
+                lag=lag,
+                standardize=standardize,
             ),
             "Information Ratio": self.get_information_ratio(
-                period=period, rounding=rounding, growth=growth, lag=lag
+                period=period,
+                rounding=rounding,
+                growth=growth,
+                lag=lag,
+                standardize=standardize,
             ),
         }
+
+        if period != "daily":
+            performance_metrics["Returns"] = self.get_returns(
+                period=period,
+                rounding=rounding,
+                growth=growth,
+                lag=lag,
+                standardize=standardize,
+            )
+            performance_metrics["Excess Return"] = self.get_excess_return(
+                period=period,
+                rounding=rounding,
+                growth=growth,
+                lag=lag,
+                standardize=standardize,
+            )
 
         performance_metrics = pd.concat(performance_metrics, axis=1)
 
@@ -221,6 +372,7 @@ class Performance:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
     ):
         """
         Calculate the Beta, a measurement that assess the systematic risk of a stock or investment.
@@ -252,6 +404,9 @@ class Performance:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
 
         Returns:
             pd.DataFrame: Beta values.
@@ -272,6 +427,17 @@ class Performance:
 
         toolkit.performance.get_beta()
         ```
+
+        Which returns:
+
+        | Date   |   AAPL |   AMZN |
+        |:-------|-------:|-------:|
+        | 2021   | 1.3093 | 1.0276 |
+        | 2022   | 1.2989 | 1.6292 |
+        | 2023   | 1.1    | 1.5133 |
+        | 2024   | 0.9656 | 1.5442 |
+        | 2025   | 1.2485 | 1.3264 |
+        | 2026   | 0.7887 | 1.281  |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
@@ -291,30 +457,30 @@ class Performance:
         else:
             beta = performance_model.get_beta(returns, benchmark_returns)
 
-        beta = beta.round(rounding if rounding else self._rounding).loc[
-            self._start_date : self._end_date
-        ]
-
-        beta = beta.dropna(how="all", axis=0)
-
-        if growth:
-            return calculate_growth(
-                beta,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-                axis="index",
-            )
-
-        return beta
+        return finalize_dataset(
+            dataset=beta,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+            dropna=True,
+        )
 
     @handle_portfolio
     @handle_errors
     def get_capital_asset_pricing_model(
         self,
         period: str | None = None,
+        rolling: int | None = None,
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
     ):
         """
         CAPM, or the Capital Asset Pricing Model, is a financial model used to estimate the expected return
@@ -350,9 +516,15 @@ class Performance:
         Args:
             period (str, optional): The period to use for the calculation. Defaults to None which
             results in basing it off the quarterly parameter as defined in the class instance.
+            rolling (int, optional): The rolling window size to use for the Beta component of the
+            calculation. If set, Beta is estimated over a rolling window of this many periods across
+            the full return history instead of per `period`. Defaults to None.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
 
         Returns:
             pd.DataFrame: CAPM values.
@@ -373,14 +545,34 @@ class Performance:
 
         toolkit.performance.get_capital_asset_pricing_model()
         ```
+
+        Which returns:
+
+        | Date   |    AAPL |    TSLA |
+        |:-------|--------:|--------:|
+        | 2021   |  0.3494 |  0.4914 |
+        | 2022   | -0.2646 | -0.3666 |
+        | 2023   |  0.2633 |  0.4905 |
+        | 2024   |  0.2266 |  0.4924 |
+        | 2025   |  0.1938 |  0.3135 |
+        | 2026   |  0.0822 |  0.1364 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
-        historical_data = self._within_historical_data[period]
-        returns = historical_data.loc[:, "Return"][self._tickers_without_portfolio]
-        benchmark_returns = historical_data.loc[:, "Return"][self._benchmark_name]
+        if rolling:
+            historical_data = self._historical_data[period]
+            returns = historical_data.loc[:, "Return"][self._tickers_without_portfolio]
+            benchmark_returns = historical_data.loc[:, "Return"][self._benchmark_name]
 
-        beta = performance_model.get_beta(returns, benchmark_returns)
+            beta = performance_model.get_rolling_beta(
+                returns, benchmark_returns, rolling
+            )
+        else:
+            historical_data = self._within_historical_data[period]
+            returns = historical_data.loc[:, "Return"][self._tickers_without_portfolio]
+            benchmark_returns = historical_data.loc[:, "Return"][self._benchmark_name]
+
+            beta = performance_model.get_beta(returns, benchmark_returns)
 
         risk_free_rate = self._risk_free_rate_data[period]
         benchmark_returns = self._historical_data[period].loc[:, "Return"][
@@ -391,21 +583,19 @@ class Performance:
             risk_free_rate, beta, benchmark_returns
         )
 
-        capm = capm.round(rounding if rounding else self._rounding).loc[
-            self._start_date : self._end_date
-        ]
-
-        capm = capm.dropna(how="all", axis=0)
-
-        if growth:
-            return calculate_growth(
-                capm,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-                axis="index",
-            )
-
-        return capm
+        return finalize_dataset(
+            dataset=capm,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+            dropna=True,
+        )
 
     @handle_errors
     def get_factor_asset_correlations(
@@ -451,6 +641,17 @@ class Performance:
 
         toolkit.performance.get_factor_asset_correlations()
         ```
+
+        Which returns:
+
+        |      |   AAPL |   TSLA |
+        |:-----|-------:|-------:|
+        | 2021 | 0.6688 | 0.5063 |
+        | 2022 | 0.8365 | 0.6432 |
+        | 2023 | 0.6986 | 0.5615 |
+        | 2024 | 0.518  | 0.4874 |
+        | 2025 | 0.7403 | 0.6978 |
+        | 2026 | 0.4834 | 0.6055 |
         """
 
         factors_to_calculate = (
@@ -572,6 +773,16 @@ class Performance:
 
         toolkit.performance.get_factor_correlations()
         ```
+
+        Which returns:
+
+        |        |   Mkt-RF |     SMB |     HML |     RMW |     CMA |
+        |:-------|---------:|--------:|--------:|--------:|--------:|
+        | Mkt-RF |   1      | -0.4121 |  0.332  |  0.014  | -0.4682 |
+        | SMB    |  -0.4121 |  1      | -0.1718 | -0.2326 |  0.1379 |
+        | HML    |   0.332  | -0.1718 |  1      | -0.4551 |  0.184  |
+        | RMW    |   0.014  | -0.2326 | -0.4551 |  1      | -0.4106 |
+        | CMA    |  -0.4682 |  0.1379 |  0.184  | -0.4106 |  1      |
         """
         factors_to_calculate = (
             factors_to_calculate
@@ -620,6 +831,7 @@ class Performance:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
         show_columns: list[str] | None = None,
     ):
         """
@@ -676,6 +888,9 @@ class Performance:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratio values. Defaults to False.
             lag (int or list of int, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
 
         Returns:
             pd.DataFrame: Fama and French 5 Factor model scores for the specified assets.
@@ -699,6 +914,17 @@ class Performance:
         # Calculate Fama and French 5 Factor model scores
         toolkit.performance.get_fama_and_french_model()
         ```
+
+        Which returns:
+
+        |      |    AAPL |    TSLA |
+        |:-----|--------:|--------:|
+        | 2021 | -0.0051 | -0.0195 |
+        | 2022 | -0.0196 | -0.02   |
+        | 2023 | -0.013  |  0.0045 |
+        | 2024 |  0.0022 | -0.0059 |
+        | 2025 | -0.0191 | -0.0191 |
+        | 2026 | -0.0204 | -0.0153 |
         """
         if method not in ["simple", "multi"]:
             raise ValueError(
@@ -909,18 +1135,21 @@ class Performance:
                 self._fama_and_french_residuals,
             )
 
-        if growth:
-            return filter_columns(
-                calculate_growth(
-                    self._fama_and_french_model,
-                    lag=lag,
-                    rounding=rounding if rounding else self._rounding,
-                    axis="index",
-                ),
-                show_columns,
-            )
-
-        return filter_columns(self._fama_and_french_model, show_columns)
+        return filter_columns(
+            finalize_dataset(
+                dataset=self._fama_and_french_model,
+                start_date=self._start_date,
+                end_date=self._end_date,
+                default_rounding=self._rounding,
+                growth=growth,
+                lag=lag,
+                rounding=rounding,
+                standardize=standardize,
+                axis="rows",
+                row_slice=True,
+            ),
+            show_columns,
+        )
 
     @handle_portfolio
     @handle_errors
@@ -928,9 +1157,11 @@ class Performance:
         self,
         period: str | None = None,
         show_full_results: bool = False,
+        rolling: int | None = None,
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
     ):
         """
         Alpha, in a general sense, represents the excess return an investment generates relative to
@@ -943,14 +1174,20 @@ class Performance:
 
         See definition: https://en.wikipedia.org/wiki/Alpha_(finance)
 
-        Also known as: excess return, outperformance.
+        Also known as: excess return, outperformance, active return.
 
         Args:
             period (str, optional): The period to use for the calculation. Defaults to None which
             results in basing it off the quarterly parameter as defined in the class instance.
+            rolling (int, optional): The rolling window size to use for the calculation. If set,
+            Alpha is calculated as the rolling mean excess return over this many periods across
+            the full return history instead of per `period`. Defaults to None.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
 
         Returns:
             pd.DataFrame: Alpha values.
@@ -968,6 +1205,17 @@ class Performance:
 
         toolkit.performance.get_alpha()
         ```
+
+        Which returns:
+
+        | Date   |    AAPL |    TSLA |
+        |:-------|--------:|--------:|
+        | 2021   |  0.0678 |  0.2272 |
+        | 2022   | -0.0735 | -0.4555 |
+        | 2023   |  0.2389 |  0.7743 |
+        | 2024   |  0.0677 |  0.3922 |
+        | 2025   | -0.0779 | -0.0499 |
+        | 2026   |  0.0431 | -0.2173 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
@@ -975,7 +1223,12 @@ class Performance:
         returns = historical_data.loc[:, "Return"][self._tickers_without_portfolio]
         benchmark_returns = historical_data.loc[:, "Return"][self._benchmark_name]
 
-        alpha = performance_model.get_alpha(returns, benchmark_returns)
+        if rolling:
+            alpha = performance_model.get_rolling_alpha(
+                returns, benchmark_returns, rolling
+            )
+        else:
+            alpha = performance_model.get_alpha(returns, benchmark_returns)
 
         alpha = alpha.round(rounding if rounding else self._rounding).loc[
             self._start_date : self._end_date
@@ -998,24 +1251,29 @@ class Performance:
 
             return full_results
 
-        if growth:
-            return calculate_growth(
-                alpha,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-                axis="index",
-            )
-
-        return alpha
+        return finalize_dataset(
+            dataset=alpha,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+        )
 
     @handle_portfolio
     @handle_errors
     def get_jensens_alpha(
         self,
         period: str | None = None,
+        rolling: int | None = None,
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
     ):
         """
         Calculate Jensen's Alpha, a measure of an asset's performance relative to its expected return
@@ -1035,9 +1293,15 @@ class Performance:
         Args:
             period (str, optional): The period to use for the calculation. Defaults to None which
             results in basing it off the quarterly parameter as defined in the class instance.
+            rolling (int, optional): The rolling window size to use for the Beta component of the
+            calculation. If set, Beta is estimated over a rolling window of this many periods across
+            the full return history instead of per `period`. Defaults to None.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
 
         Returns:
             pd.DataFrame: Jensen's Alpha values.
@@ -1058,18 +1322,38 @@ class Performance:
 
         toolkit.performance.get_jensens_alpha()
         ```
+
+        Which returns:
+
+        | Date   |    AAPL |    TSLA |
+        |:-------|--------:|--------:|
+        | 2021   | -0.0112 |  0.0062 |
+        | 2022   | -0.0037 | -0.2837 |
+        | 2023   |  0.2185 |  0.5267 |
+        | 2024   |  0.0741 |  0.1328 |
+        | 2025   | -0.1082 | -0.1999 |
+        | 2026   |  0.0531 | -0.2615 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
-        historical_within_data = self._within_historical_data[period]
-        returns = historical_within_data.loc[:, "Return"][
-            self._tickers_without_portfolio
-        ]
-        benchmark_returns = historical_within_data.loc[:, "Return"][
-            self._benchmark_name
-        ]
+        if rolling:
+            historical_data = self._historical_data[period]
+            returns = historical_data.loc[:, "Return"][self._tickers_without_portfolio]
+            benchmark_returns = historical_data.loc[:, "Return"][self._benchmark_name]
 
-        beta = performance_model.get_beta(returns, benchmark_returns)
+            beta = performance_model.get_rolling_beta(
+                returns, benchmark_returns, rolling
+            )
+        else:
+            historical_within_data = self._within_historical_data[period]
+            returns = historical_within_data.loc[:, "Return"][
+                self._tickers_without_portfolio
+            ]
+            benchmark_returns = historical_within_data.loc[:, "Return"][
+                self._benchmark_name
+            ]
+
+            beta = performance_model.get_beta(returns, benchmark_returns)
 
         historical_data = self._historical_data[period]
 
@@ -1084,30 +1368,30 @@ class Performance:
             period_returns, risk_free_rate, beta, benchmark_returns
         )
 
-        jensens_alpha = jensens_alpha.round(
-            rounding if rounding else self._rounding
-        ).loc[self._start_date : self._end_date]
-
-        jensens_alpha = jensens_alpha.dropna(how="all", axis=0)
-
-        if growth:
-            return calculate_growth(
-                jensens_alpha,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-                axis="index",
-            )
-
-        return jensens_alpha
+        return finalize_dataset(
+            dataset=jensens_alpha,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+            dropna=True,
+        )
 
     @handle_portfolio
     @handle_errors
     def get_treynor_ratio(
         self,
         period: str | None = None,
+        rolling: int | None = None,
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
     ):
         """
         The Treynor Ratio, also known as Treynor's Measure or the Reward-to-Variability Ratio, is a
@@ -1127,9 +1411,15 @@ class Performance:
         Args:
             period (str, optional): The period to use for the calculation. Defaults to None which
             results in basing it off the quarterly parameter as defined in the class instance.
+            rolling (int, optional): The rolling window size to use for the Beta component of the
+            calculation. If set, Beta is estimated over a rolling window of this many periods across
+            the full return history instead of per `period`. Defaults to None.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
 
         Returns:
             pd.DataFrame: Treynor Ratio values.
@@ -1150,18 +1440,38 @@ class Performance:
 
         toolkit.performance.get_treynor_ratio()
         ```
+
+        Which returns:
+
+        | Date   |    AAPL |    TSLA |
+        |:-------|--------:|--------:|
+        | 2021   |  0.2468 |  0.2586 |
+        | 2022   | -0.2364 | -0.3971 |
+        | 2023   |  0.4028 |  0.4422 |
+        | 2024   |  0.2641 |  0.243  |
+        | 2025   |  0.0352 |  0.0323 |
+        | 2026   |  0.1146 | -0.0879 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
-        historical_within_data = self._within_historical_data[period]
-        returns = historical_within_data.loc[:, "Return"][
-            self._tickers_without_portfolio
-        ]
-        benchmark_returns = historical_within_data.loc[:, "Return"][
-            self._benchmark_name
-        ]
+        if rolling:
+            historical_data = self._historical_data[period]
+            returns = historical_data.loc[:, "Return"][self._tickers_without_portfolio]
+            benchmark_returns = historical_data.loc[:, "Return"][self._benchmark_name]
 
-        beta = performance_model.get_beta(returns, benchmark_returns)
+            beta = performance_model.get_rolling_beta(
+                returns, benchmark_returns, rolling
+            )
+        else:
+            historical_within_data = self._within_historical_data[period]
+            returns = historical_within_data.loc[:, "Return"][
+                self._tickers_without_portfolio
+            ]
+            benchmark_returns = historical_within_data.loc[:, "Return"][
+                self._benchmark_name
+            ]
+
+            beta = performance_model.get_beta(returns, benchmark_returns)
 
         historical_data = self._historical_data[period]
 
@@ -1174,21 +1484,19 @@ class Performance:
             period_returns, risk_free_rate, beta
         )
 
-        treynor_ratio = treynor_ratio.round(
-            rounding if rounding else self._rounding
-        ).loc[self._start_date : self._end_date]
-
-        treynor_ratio = treynor_ratio.dropna(how="all", axis=0)
-
-        if growth:
-            return calculate_growth(
-                treynor_ratio,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-                axis="index",
-            )
-
-        return treynor_ratio
+        return finalize_dataset(
+            dataset=treynor_ratio,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+            dropna=True,
+        )
 
     @handle_portfolio
     @handle_errors
@@ -1199,6 +1507,7 @@ class Performance:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
     ):
         """
         Calculate the Sharpe ratio, a measure of risk-adjusted return that evaluates the excess return
@@ -1235,6 +1544,9 @@ class Performance:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
 
         Returns:
             pd.DataFrame: Sharpe ratio values.
@@ -1255,49 +1567,60 @@ class Performance:
 
         toolkit.performance.get_sharpe_ratio()
         ```
+
+        Which returns:
+
+        | Date   |    AAPL |    TSLA |
+        |:-------|--------:|--------:|
+        | 2021   | -0.8286 | -0.3537 |
+        | 2022   | -1.2859 | -0.7606 |
+        | 2023   | -2.7296 | -1.0402 |
+        | 2024   | -2.8575 | -0.9845 |
+        | 2025   | -2.0637 | -1.0411 |
+        | 2026   | -2.4952 | -1.6057 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
-        historical_data = (
-            self._within_historical_data[period]
-            if not rolling
-            else self._historical_data[period]
-        )
-        excess_return = historical_data.loc[:, "Excess Return"][
-            self._tickers_without_portfolio
-        ]
-
         if rolling:
+            period_returns = self._historical_data[period].loc[:, "Return"][
+                self._tickers_without_portfolio
+            ]
+            excess_return = performance_model.get_excess_return(
+                period_returns, self._risk_free_rate_data[period]
+            )
             sharpe_ratio = performance_model.get_rolling_sharpe_ratio(
                 excess_return, rolling
             )
         else:
+            excess_return = self._within_historical_data[period].loc[
+                :, "Excess Return"
+            ][self._tickers_without_portfolio]
             sharpe_ratio = performance_model.get_sharpe_ratio(excess_return)
 
-        sharpe_ratio = sharpe_ratio.round(rounding if rounding else self._rounding).loc[
-            self._start_date : self._end_date
-        ]
-
-        sharpe_ratio = sharpe_ratio.dropna(how="all", axis=0)
-
-        if growth:
-            return calculate_growth(
-                sharpe_ratio,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-                axis="index",
-            )
-
-        return sharpe_ratio
+        return finalize_dataset(
+            dataset=sharpe_ratio,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+            dropna=True,
+        )
 
     @handle_portfolio
     @handle_errors
     def get_sortino_ratio(
         self,
         period: str | None = None,
+        rolling: int | None = None,
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
     ):
         """
 
@@ -1326,9 +1649,15 @@ class Performance:
         Args:
             period (str, optional): The period to use for the calculation. Defaults to None which
             results in basing it off the quarterly parameter as defined in the class instance.
+            rolling (int, optional): The rolling window size to use for the calculation. If set,
+            the Sortino ratio is calculated over a rolling window of this many periods across the
+            full return history instead of per `period`. Defaults to None.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
 
         Returns:
             pd.DataFrame: Sortino ratio values.
@@ -1349,31 +1678,51 @@ class Performance:
 
         toolkit.performance.get_sortino_ratio()
         ```
+
+        Which returns:
+
+        | Date   |    AAPL |    TSLA |
+        |:-------|--------:|--------:|
+        | 2021   | -1.0988 | -0.5282 |
+        | 2022   | -1.5168 | -0.9959 |
+        | 2023   | -2.8934 | -1.3591 |
+        | 2024   | -3.097  | -1.3744 |
+        | 2025   | -2.4472 | -1.3183 |
+        | 2026   | -2.5624 | -1.7784 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
-        historical_data = self._within_historical_data[period]
-        excess_return = historical_data.loc[:, "Excess Return"][
-            self._tickers_without_portfolio
-        ]
-
-        sortino_ratio = performance_model.get_sortino_ratio(excess_return)
-
-        sortino_ratio = sortino_ratio.round(
-            rounding if rounding else self._rounding
-        ).loc[self._start_date : self._end_date]
-
-        sortino_ratio = sortino_ratio.dropna(how="all", axis=0)
-
-        if growth:
-            return calculate_growth(
-                sortino_ratio,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-                axis="index",
+        if rolling:
+            period_returns = self._historical_data[period].loc[:, "Return"][
+                self._tickers_without_portfolio
+            ]
+            excess_return = performance_model.get_excess_return(
+                period_returns, self._risk_free_rate_data[period]
             )
+            sortino_ratio = performance_model.get_rolling_sortino_ratio(
+                excess_return, rolling
+            )
+        else:
+            historical_data = self._within_historical_data[period]
+            excess_return = historical_data.loc[:, "Excess Return"][
+                self._tickers_without_portfolio
+            ]
 
-        return sortino_ratio
+            sortino_ratio = performance_model.get_sortino_ratio(excess_return)
+
+        return finalize_dataset(
+            dataset=sortino_ratio,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+            dropna=True,
+        )
 
     @handle_portfolio
     @handle_errors
@@ -1384,6 +1733,7 @@ class Performance:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
     ):
         """
         Calculate the Ulcer Performance Index (UPI), alternatively called Martin ratio, a measure of risk-adjusted
@@ -1402,6 +1752,9 @@ class Performance:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
 
         Returns:
             pd.DataFrame: Ulcer Performance Index values.
@@ -1420,47 +1773,374 @@ class Performance:
 
         toolkit.performance.get_ulcer_performance_index()
         ```
+
+        Which returns:
+
+        | Date   |    AAPL |    TSLA |
+        |:-------|--------:|--------:|
+        | 2021   |  8.5991 |  5.6729 |
+        | 2022   | -4.5711 | -5.0182 |
+        | 2023   | 13.3465 | 11.6618 |
+        | 2024   |  7.4872 |  6.3795 |
+        | 2025   |  0.8946 |  0.7159 |
+        | 2026   |  2.3126 | -2.6591 |
         """
 
         period = period if period else "quarterly" if self._quarterly else "yearly"
-        return_column = "Return" if period == "intraday" else "Excess Return"
 
         historical_data = self._within_historical_data[period]
         returns = historical_data.loc[:, "Return"][self._tickers_without_portfolio]
-        historical_data_within_period = self._historical_data[period]
-        excess_return = historical_data_within_period.loc[:, return_column][
+
+        period_returns = self._historical_data[period].loc[:, "Return"][
             self._tickers_without_portfolio
         ]
+        excess_return = (
+            period_returns
+            if period == "intraday"
+            else performance_model.get_excess_return(
+                period_returns, self._risk_free_rate_data[period]
+            )
+        )
 
         ulcer_index = get_ui(returns, rolling)
 
         ulcer_performance_index = performance_model.get_ulcer_performance_index(
             excess_return, ulcer_index
         )
-        ulcer_performance_index = ulcer_performance_index.round(
-            rounding if rounding else self._rounding
-        ).loc[self._start_date : self._end_date]
 
-        ulcer_performance_index = ulcer_performance_index.dropna(how="all", axis=0)
+        return finalize_dataset(
+            dataset=ulcer_performance_index,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+            dropna=True,
+        )
 
-        if growth:
-            return calculate_growth(
-                ulcer_performance_index,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-                axis="index",
-            )
+    @handle_portfolio
+    @handle_errors
+    def get_calmar_ratio(
+        self,
+        period: str | None = None,
+        within_period: bool = True,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+    ):
+        """
+        Calculate the Calmar Ratio of an investment portfolio or asset's returns.
 
-        return ulcer_performance_index
+        The Calmar Ratio is a risk-adjusted return metric that divides the (annualized) return
+        of an investment portfolio or asset by its Maximum Drawdown, providing insight into the
+        return achieved per unit of the worst historical loss of value.
+
+        The formula is as follows:
+
+        - Calmar Ratio = Return / |Maximum Drawdown|
+
+        See definition: https://en.wikipedia.org/wiki/Calmar_ratio
+
+        Also known as: Drawdown ratio.
+
+        Args:
+            period (str, optional): The period to use for the calculation. Defaults to None which
+            results in basing it off the quarterly parameter as defined in the class instance.
+            within_period (bool, optional): Whether to calculate the Maximum Drawdown within the
+            specified period or for the entire period. Thus whether to look at the Maximum Drawdown
+            within a specific year (if period = 'yearly') or look at the entirety of all years.
+            Defaults to True.
+            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+
+        Returns:
+            pd.DataFrame: Calmar Ratio values.
+
+        Notes:
+        - The method retrieves historical data and calculates the Calmar Ratio for each asset in
+        the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the ratio values using
+        the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.performance.get_calmar_ratio()
+        ```
+
+        Which returns:
+
+        | Date   |    AAPL |    TSLA |
+        |:-------|--------:|--------:|
+        | 2021   |  1.8052 |  1.3727 |
+        | 2022   | -0.8734 | -0.8942 |
+        | 2023   |  3.1929 |  3.1074 |
+        | 2024   |  1.9404 |  1.461  |
+        | 2025   |  0.2834 |  0.2356 |
+        | 2026   |  1.0648 | -0.5212 |
+        """
+        period = period if period else "quarterly" if self._quarterly else "yearly"
+
+        returns = (
+            self._within_historical_data[period]
+            if within_period
+            else self._historical_data[period]
+        ).loc[:, "Return"][self._tickers_without_portfolio]
+
+        maximum_drawdown = get_max_drawdown(returns)
+
+        period_returns = self._historical_data[period].loc[:, "Return"][
+            self._tickers_without_portfolio
+        ]
+
+        calmar_ratio = performance_model.get_calmar_ratio(
+            period_returns, maximum_drawdown
+        )
+
+        return finalize_dataset(
+            dataset=calmar_ratio,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+            dropna=True,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_sterling_ratio(
+        self,
+        period: str | None = None,
+        within_period: bool = True,
+        adjustment: float = 0.1,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+    ):
+        """
+        Calculate the Sterling Ratio of an investment portfolio or asset's returns.
+
+        The Sterling Ratio is a risk-adjusted return metric that divides the (annualized) return
+        of an investment portfolio or asset by its Average Drawdown plus a fixed adjustment
+        (conventionally 10%), providing insight into the return achieved relative to the typical
+        depth of its drawdowns rather than only the single worst one (as with the Calmar Ratio).
+
+        The formula is as follows:
+
+        - Sterling Ratio = Return / (|Average Drawdown| + Adjustment)
+
+        Also known as: Sterling-Calmar ratio.
+
+        Args:
+            period (str, optional): The period to use for the calculation. Defaults to None which
+            results in basing it off the quarterly parameter as defined in the class instance.
+            within_period (bool, optional): Whether to calculate the Average Drawdown within the
+            specified period or for the entire period. Thus whether to look at the Average Drawdown
+            within a specific year (if period = 'yearly') or look at the entirety of all years.
+            Defaults to True.
+            adjustment (float, optional): The fixed adjustment added to the Average Drawdown,
+            conventionally 0.1 (10%). Defaults to 0.1.
+            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+
+        Returns:
+            pd.DataFrame: Sterling Ratio values.
+
+        Notes:
+        - The method retrieves historical data and calculates the Sterling Ratio for each asset in
+        the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the ratio values using
+        the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.performance.get_sterling_ratio()
+        ```
+
+        Which returns:
+
+        | Date   |    AAPL |    TSLA |
+        |:-------|--------:|--------:|
+        | 2021   |  2.0094 |  1.7258 |
+        | 2022   | -1.074  | -1.4667 |
+        | 2023   |  3.2891 |  4.193  |
+        | 2024   |  1.9286 |  2.1544 |
+        | 2025   |  0.4371 |  0.3785 |
+        | 2026   |  0.886  | -0.6097 |
+        """
+        period = period if period else "quarterly" if self._quarterly else "yearly"
+
+        returns = (
+            self._within_historical_data[period]
+            if within_period
+            else self._historical_data[period]
+        ).loc[:, "Return"][self._tickers_without_portfolio]
+
+        average_drawdown = performance_model.get_average_drawdown(returns)
+
+        period_returns = self._historical_data[period].loc[:, "Return"][
+            self._tickers_without_portfolio
+        ]
+
+        sterling_ratio = performance_model.get_sterling_ratio(
+            period_returns, average_drawdown, adjustment
+        )
+
+        return finalize_dataset(
+            dataset=sterling_ratio,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+            dropna=True,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_burke_ratio(
+        self,
+        period: str | None = None,
+        within_period: bool = True,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+    ):
+        """
+        Calculate the Burke Ratio of an investment portfolio or asset's returns.
+
+        The Burke Ratio is a risk-adjusted return metric that divides the excess return (return
+        minus the risk-free rate) of an investment portfolio or asset by the square root of the
+        sum of its squared drawdowns, penalizing both the frequency and depth of drawdowns more
+        heavily than the Calmar or Sterling Ratios.
+
+        The formula is as follows:
+
+        - Burke Ratio = (Return — Risk-Free Rate) / SQRT(SUM(Drawdowns^2))
+
+        Args:
+            period (str, optional): The period to use for the calculation. Defaults to None which
+            results in basing it off the quarterly parameter as defined in the class instance.
+            within_period (bool, optional): Whether to calculate the drawdowns within the specified
+            period or for the entire period. Thus whether to look at the drawdowns within a specific
+            year (if period = 'yearly') or look at the entirety of all years. Defaults to True.
+            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+
+        Returns:
+            pd.DataFrame: Burke Ratio values.
+
+        Notes:
+        - The method retrieves historical data and calculates the Burke Ratio for each asset in
+        the Toolkit instance.
+        - The risk-free rate is often represented by the return of a risk-free investment, such as
+        a Treasury bond.
+        - If `growth` is set to True, the method calculates the growth of the ratio values using
+        the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.performance.get_burke_ratio()
+        ```
+
+        Which returns:
+
+        | Date   |    AAPL |    TSLA |
+        |:-------|--------:|--------:|
+        | 2021   |  0.2606 |  0.1513 |
+        | 2022   | -0.1172 | -0.1172 |
+        | 2023   |  0.502  |  0.4155 |
+        | 2024   |  0.2519 |  0.1765 |
+        | 2025   |  0.0246 |  0.0195 |
+        | 2026   |  0.1417 | -0.1284 |
+        """
+        period = period if period else "quarterly" if self._quarterly else "yearly"
+
+        returns = (
+            self._within_historical_data[period]
+            if within_period
+            else self._historical_data[period]
+        ).loc[:, "Return"][self._tickers_without_portfolio]
+
+        burke_drawdown_measure = performance_model.get_burke_drawdown_measure(returns)
+
+        period_returns = self._historical_data[period].loc[:, "Return"][
+            self._tickers_without_portfolio
+        ]
+        excess_return = performance_model.get_excess_return(
+            period_returns, self._risk_free_rate_data[period]
+        )
+
+        burke_ratio = performance_model.get_burke_ratio(
+            excess_return, burke_drawdown_measure
+        )
+
+        return finalize_dataset(
+            dataset=burke_ratio,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+            dropna=True,
+        )
 
     @handle_portfolio
     @handle_errors
     def get_m2_ratio(
         self,
         period: str | None = None,
+        rolling: int | None = None,
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
     ):
         """
         The M2 Ratio, also known as the Modigliani-Modigliani Measure, is a financial
@@ -1481,9 +2161,15 @@ class Performance:
         Args:
             period (str, optional): The period to use for the calculation. Defaults to None which
             results in basing it off the quarterly parameter as defined in the class instance.
+            rolling (int, optional): The rolling window size to use for the calculation. If set,
+            the M2 ratio is calculated over a rolling window of this many periods across the full
+            return history instead of per `period`. Defaults to None.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
 
         Returns:
             pd.DataFrame: M2 ratio values.
@@ -1504,6 +2190,17 @@ class Performance:
 
         toolkit.performance.get_m2_ratio()
         ```
+
+        Which returns:
+
+        | Date   |    AAPL |    TSLA |
+        |:-------|--------:|--------:|
+        | 2021   |  1.2868 |  0.8811 |
+        | 2022   | -0.8603 | -1.0335 |
+        | 2023   |  2.1832 |  1.8102 |
+        | 2024   |  1.1242 |  0.9127 |
+        | 2025   |  0.1354 |  0.1134 |
+        | 2026   |  0.3377 | -0.3943 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
@@ -1511,39 +2208,46 @@ class Performance:
         period_returns = historical_period_data.loc[:, "Return"][
             self._tickers_without_portfolio
         ]
-        period_standard_deviation = historical_period_data.loc[:, "Volatility"][
-            self._tickers_without_portfolio
-        ]
         risk_free_rate = self._risk_free_rate_data[period]
 
-        m2_ratio = performance_model.get_m2_ratio(
-            period_returns, risk_free_rate, period_standard_deviation
-        )
+        if rolling:
+            m2_ratio = performance_model.get_rolling_m2_ratio(
+                period_returns, risk_free_rate, rolling
+            )
+        else:
+            daily_returns = self._historical_data["daily"].loc[:, "Return"][
+                self._tickers_without_portfolio
+            ]
+            period_standard_deviation = get_volatility(daily_returns, period)
 
-        m2_ratio = m2_ratio.round(rounding if rounding else self._rounding).loc[
-            self._start_date : self._end_date
-        ]
-
-        m2_ratio = m2_ratio.dropna(how="all", axis=0)
-
-        if growth:
-            return calculate_growth(
-                m2_ratio,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-                axis="index",
+            m2_ratio = performance_model.get_m2_ratio(
+                period_returns, risk_free_rate, period_standard_deviation
             )
 
-        return m2_ratio
+        return finalize_dataset(
+            dataset=m2_ratio,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+            dropna=True,
+        )
 
     @handle_portfolio
     @handle_errors
     def get_tracking_error(
         self,
         period: str | None = None,
+        rolling: int | None = None,
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
     ):
         """
         Tracking Error is a financial metric that quantifies the volatility or dispersion of the
@@ -1564,9 +2268,15 @@ class Performance:
         Args:
             period (str, optional): The period to use for the calculation. Defaults to None which
             results in basing it off the quarterly parameter as defined in the class instance.
+            rolling (int, optional): The rolling window size to use for the calculation. If set,
+            Tracking Error is calculated over a rolling window of this many periods across the
+            full return history instead of per `period`. Defaults to None.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
 
         Returns:
             pd.DataFrame: Tracking error values.
@@ -1587,41 +2297,61 @@ class Performance:
 
         toolkit.performance.get_tracking_error()
         ```
+
+        Which returns:
+
+        | Date   |   AAPL |   TSLA |
+        |:-------|-------:|-------:|
+        | 2021   | 0.0118 | 0.0317 |
+        | 2022   | 0.0115 | 0.0344 |
+        | 2023   | 0.009  | 0.0304 |
+        | 2024   | 0.0121 | 0.0369 |
+        | 2025   | 0.0139 | 0.0328 |
+        | 2026   | 0.0154 | 0.0226 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
-        historical_data = self._within_historical_data[period]
-        returns = historical_data.loc[:, "Return"][self._tickers_without_portfolio]
-        benchmark_returns = historical_data.loc[:, "Return"][self._benchmark_name]
+        if rolling:
+            historical_data = self._historical_data[period]
+            returns = historical_data.loc[:, "Return"][self._tickers_without_portfolio]
+            benchmark_returns = historical_data.loc[:, "Return"][self._benchmark_name]
 
-        tracking_error = performance_model.get_tracking_error(
-            returns, benchmark_returns
-        )
+            tracking_error = performance_model.get_rolling_tracking_error(
+                returns, benchmark_returns, rolling
+            )
+        else:
+            historical_data = self._within_historical_data[period]
+            returns = historical_data.loc[:, "Return"][self._tickers_without_portfolio]
+            benchmark_returns = historical_data.loc[:, "Return"][self._benchmark_name]
 
-        tracking_error = tracking_error.round(
-            rounding if rounding else self._rounding
-        ).loc[self._start_date : self._end_date]
-
-        tracking_error = tracking_error.dropna(how="all", axis=0)
-
-        if growth:
-            return calculate_growth(
-                tracking_error,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-                axis="index",
+            tracking_error = performance_model.get_tracking_error(
+                returns, benchmark_returns
             )
 
-        return tracking_error
+        return finalize_dataset(
+            dataset=tracking_error,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+            dropna=True,
+        )
 
     @handle_portfolio
     @handle_errors
     def get_information_ratio(
         self,
         period: str | None = None,
+        rolling: int | None = None,
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
     ):
         """
         The Information Ratio (IR), also known as the Information Coefficient, is a financial
@@ -1651,9 +2381,15 @@ class Performance:
         Args:
             period (str, optional): The period to use for the calculation. Defaults to None which
             results in basing it off the quarterly parameter as defined in the class instance.
+            rolling (int, optional): The rolling window size to use for the calculation. If set,
+            the Information Ratio is calculated over a rolling window of this many periods across
+            the full return history instead of per `period`. Defaults to None.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
 
         Returns:
             pd.DataFrame: Information ratio values.
@@ -1674,6 +2410,111 @@ class Performance:
 
         toolkit.performance.get_information_ratio()
         ```
+
+        Which returns:
+
+        | Date   |    AAPL |    TSLA |
+        |:-------|--------:|--------:|
+        | 2021   |  0.0253 |  0.0381 |
+        | 2022   | -0.0212 | -0.0739 |
+        | 2023   |  0.0833 |  0.0817 |
+        | 2024   |  0.0231 |  0.0499 |
+        | 2025   | -0.0106 |  0.0164 |
+        | 2026   |  0.0269 | -0.0641 |
+        """
+        period = period if period else "quarterly" if self._quarterly else "yearly"
+
+        if rolling:
+            historical_data = self._historical_data[period]
+            returns = historical_data.loc[:, "Return"][self._tickers_without_portfolio]
+            benchmark_returns = historical_data.loc[:, "Return"][self._benchmark_name]
+
+            information_ratio = performance_model.get_rolling_information_ratio(
+                returns, benchmark_returns, rolling
+            )
+        else:
+            historical_data = self._within_historical_data[period]
+            returns = historical_data.loc[:, "Return"][self._tickers_without_portfolio]
+            benchmark_returns = historical_data.loc[:, "Return"][self._benchmark_name]
+
+            information_ratio = performance_model.get_information_ratio(
+                returns, benchmark_returns
+            )
+
+        return finalize_dataset(
+            dataset=information_ratio,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_upside_capture_ratio(
+        self,
+        period: str | None = None,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+    ):
+        """
+        Calculate the Upside Capture Ratio of an investment portfolio or asset's returns.
+
+        The Upside Capture Ratio measures how well an investment portfolio or asset performs
+        relative to a benchmark during periods in which the benchmark's return is positive. A
+        ratio above 1 (or 100%) indicates the asset captured more of the benchmark's gains than
+        the benchmark itself.
+
+        The formula is as follows:
+
+        - Upside Capture Ratio = Average Return in Up Periods / Average Benchmark Return in Up Periods
+
+        Args:
+            period (str, optional): The period to use for the calculation. Defaults to None which
+            results in basing it off the quarterly parameter as defined in the class instance.
+            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+
+        Returns:
+            pd.DataFrame: Upside Capture Ratio values.
+
+        Notes:
+        - The method retrieves historical data and calculates the Upside Capture Ratio for each
+        asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the ratio values using
+        the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.performance.get_upside_capture_ratio()
+        ```
+
+        Which returns:
+
+        | Date   |   AAPL |   TSLA |
+        |:-------|-------:|-------:|
+        | 2021   | 1.3754 | 2.1079 |
+        | 2022   | 1.3044 | 1.7261 |
+        | 2023   | 1.1783 | 2.3099 |
+        | 2024   | 1.1158 | 2.5976 |
+        | 2025   | 1.0162 | 2.2065 |
+        | 2026   | 0.766  | 1.593  |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
@@ -1681,23 +2522,471 @@ class Performance:
         returns = historical_data.loc[:, "Return"][self._tickers_without_portfolio]
         benchmark_returns = historical_data.loc[:, "Return"][self._benchmark_name]
 
-        information_ratio = performance_model.get_information_ratio(
+        upside_capture_ratio = performance_model.get_upside_capture_ratio(
             returns, benchmark_returns
         )
 
-        information_ratio = information_ratio.round(
-            rounding if rounding else self._rounding
-        ).loc[self._start_date : self._end_date]
+        return finalize_dataset(
+            dataset=upside_capture_ratio,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+        )
 
-        if growth:
-            return calculate_growth(
-                information_ratio,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-                axis="index",
+    @handle_portfolio
+    @handle_errors
+    def get_downside_capture_ratio(
+        self,
+        period: str | None = None,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+    ):
+        """
+        Calculate the Downside Capture Ratio of an investment portfolio or asset's returns.
+
+        The Downside Capture Ratio measures how well an investment portfolio or asset performs
+        relative to a benchmark during periods in which the benchmark's return is negative. A
+        ratio below 1 (or 100%) indicates the asset lost less than the benchmark during those
+        periods.
+
+        The formula is as follows:
+
+        - Downside Capture Ratio = Average Return in Down Periods / Average Benchmark Return in Down Periods
+
+        Args:
+            period (str, optional): The period to use for the calculation. Defaults to None which
+            results in basing it off the quarterly parameter as defined in the class instance.
+            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+
+        Returns:
+            pd.DataFrame: Downside Capture Ratio values.
+
+        Notes:
+        - The method retrieves historical data and calculates the Downside Capture Ratio for each
+        asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the ratio values using
+        the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.performance.get_downside_capture_ratio()
+        ```
+
+        Which returns:
+
+        | Date   |   AAPL |   TSLA |
+        |:-------|-------:|-------:|
+        | 2021   | 1.4016 | 2.0639 |
+        | 2022   | 1.3043 | 2.0238 |
+        | 2023   | 0.9486 | 1.8386 |
+        | 2024   | 1.0337 | 2.4414 |
+        | 2025   | 1.0842 | 2.2603 |
+        | 2026   | 0.5691 | 2.2236 |
+        """
+        period = period if period else "quarterly" if self._quarterly else "yearly"
+
+        historical_data = self._within_historical_data[period]
+        returns = historical_data.loc[:, "Return"][self._tickers_without_portfolio]
+        benchmark_returns = historical_data.loc[:, "Return"][self._benchmark_name]
+
+        downside_capture_ratio = performance_model.get_downside_capture_ratio(
+            returns, benchmark_returns
+        )
+
+        return finalize_dataset(
+            dataset=downside_capture_ratio,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_win_rate(
+        self,
+        period: str | None = None,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+    ):
+        """
+        Calculate the Win Rate of an investment portfolio or asset's returns.
+
+        The Win Rate is the percentage of periods in which the asset's return exceeds the
+        benchmark's return.
+
+        Also known as: batting average.
+
+        Args:
+            period (str, optional): The period to use for the calculation. Defaults to None which
+            results in basing it off the quarterly parameter as defined in the class instance.
+            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+
+        Returns:
+            pd.DataFrame: Win Rate values.
+
+        Notes:
+        - The method retrieves historical data and calculates the Win Rate for each asset in the
+        Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the ratio values using
+        the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.performance.get_win_rate()
+        ```
+
+        Which returns:
+
+        | Date   |   AAPL |   TSLA |
+        |:-------|-------:|-------:|
+        | 2021   | 0.4921 | 0.5    |
+        | 2022   | 0.4821 | 0.498  |
+        | 2023   | 0.576  | 0.532  |
+        | 2024   | 0.504  | 0.4683 |
+        | 2025   | 0.472  | 0.468  |
+        | 2026   | 0.504  | 0.472  |
+        """
+        period = period if period else "quarterly" if self._quarterly else "yearly"
+
+        historical_data = self._within_historical_data[period]
+        returns = historical_data.loc[:, "Return"][self._tickers_without_portfolio]
+        benchmark_returns = historical_data.loc[:, "Return"][self._benchmark_name]
+
+        win_rate = performance_model.get_win_rate(returns, benchmark_returns)
+
+        return finalize_dataset(
+            dataset=win_rate,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_kappa_ratio(
+        self,
+        period: str | None = None,
+        order: int = 3,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+    ):
+        """
+        Calculate the Kappa Ratio of an investment portfolio or asset's returns.
+
+        The Kappa Ratio is a generalization of the Sortino Ratio that penalizes downside risk
+        using a higher-order lower partial moment. The Sortino Ratio is the special case of the
+        Kappa Ratio with order=2.
+
+        Note that this already subtracts the Risk Free Rate.
+
+        Args:
+            period (str, optional): The period to use for the calculation. Defaults to None which
+            results in basing it off the quarterly parameter as defined in the class instance.
+            order (int, optional): The order of the lower partial moment used in the denominator.
+            Defaults to 3.
+            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+
+        Returns:
+            pd.DataFrame: Kappa Ratio values.
+
+        Notes:
+        - Daily Kappa Ratio is not an option as the standard deviation for 1 day is close to zero.
+        Therefore, it does not give any useful insights.
+        - The method retrieves historical data and calculates the Kappa Ratio for each asset in
+        the Toolkit instance.
+        - The risk-free rate is often represented by the return of a risk-free investment, such as
+        a Treasury bond.
+        - If `growth` is set to True, the method calculates the growth of the ratio values using
+        the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.performance.get_kappa_ratio()
+        ```
+
+        Which returns:
+
+        | Date   |    AAPL |    TSLA |
+        |:-------|--------:|--------:|
+        | 2021   | -0.5191 | -0.2779 |
+        | 2022   | -0.6896 | -0.4956 |
+        | 2023   | -0.8901 | -0.6046 |
+        | 2024   | -0.9024 | -0.6129 |
+        | 2025   | -0.8423 | -0.6148 |
+        | 2026   | -0.8718 | -0.7635 |
+        """
+        period = period if period else "quarterly" if self._quarterly else "yearly"
+
+        historical_data = self._within_historical_data[period]
+        excess_return = historical_data.loc[:, "Excess Return"][
+            self._tickers_without_portfolio
+        ]
+
+        kappa_ratio = performance_model.get_kappa_ratio(excess_return, order)
+
+        return finalize_dataset(
+            dataset=kappa_ratio,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+            dropna=True,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_omega_ratio(
+        self,
+        period: str | None = None,
+        within_period: bool = True,
+        rolling: int | None = None,
+        minimum_acceptable_return: float = 0.0,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+    ):
+        """
+        Calculate the Omega Ratio of an investment portfolio or asset's returns.
+
+        The Omega Ratio is a risk-return measure that divides the sum of gains above a minimum
+        acceptable return (MAR) by the sum of losses below it, capturing the full shape of the
+        return distribution rather than only its first two moments (unlike the Sharpe Ratio).
+
+        The formula is as follows:
+
+        - Omega Ratio = SUM(Gains above MAR) / SUM(Losses below MAR)
+
+        See definition: https://en.wikipedia.org/wiki/Omega_ratio
+
+        Args:
+            period (str, optional): The period to use for the calculation. Defaults to None which
+            results in basing it off the quarterly parameter as defined in the class instance.
+            within_period (bool, optional): Whether to calculate the Omega Ratio within the specified
+            period or for the entire period. Thus whether to look at the Omega Ratio within a specific
+            year (if period = 'yearly') or look at the entirety of all years. Defaults to True.
+            rolling (int, optional): The rolling window size to use for the calculation. If set, the
+            Omega Ratio is calculated over a rolling window of this many periods across the full
+            return history instead of per `period`. Defaults to None.
+            minimum_acceptable_return (float, optional): The minimum acceptable return (MAR) used as
+            the threshold between gains and losses. Defaults to 0.0.
+            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+
+        Returns:
+            pd.DataFrame: Omega Ratio values.
+
+        Notes:
+        - The method retrieves historical data and calculates the Omega Ratio for each asset in
+        the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the ratio values using
+        the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.performance.get_omega_ratio()
+        ```
+
+        Which returns:
+
+        |      |   AAPL |   TSLA |
+        |:-----|-------:|-------:|
+        | 2021 | 1.2354 | 1.1945 |
+        | 2022 | 0.892  | 0.8129 |
+        | 2023 | 1.4034 | 1.3043 |
+        | 2024 | 1.2462 | 1.2098 |
+        | 2025 | 1.0873 | 1.0871 |
+        | 2026 | 1.2062 | 0.9358 |
+        """
+        period = period if period else "quarterly" if self._quarterly else "yearly"
+
+        if rolling:
+            returns = self._historical_data[period].loc[:, "Return"][
+                self._tickers_without_portfolio
+            ]
+            omega_ratio = performance_model.get_rolling_omega_ratio(
+                returns, rolling, minimum_acceptable_return
+            )
+        else:
+            returns = (
+                self._within_historical_data[period]
+                if within_period
+                else self._historical_data[period]
+            ).loc[:, "Return"][self._tickers_without_portfolio]
+
+            omega_ratio = performance_model.get_omega_ratio(
+                returns, minimum_acceptable_return
             )
 
-        return information_ratio
+        return finalize_dataset(
+            dataset=omega_ratio,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_gain_to_pain_ratio(
+        self,
+        period: str | None = None,
+        within_period: bool = True,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+    ):
+        """
+        Calculate the Gain-to-Pain Ratio of an investment portfolio or asset's returns.
+
+        The Gain-to-Pain Ratio, popularized by Jack Schwager, divides the sum of all returns by
+        the sum of the absolute value of all losses, summarizing the entire return history into
+        a single measure of return earned per unit of pain endured.
+
+        The formula is as follows:
+
+        - Gain-to-Pain Ratio = SUM(Returns) / SUM(|Losses|)
+
+        Args:
+            period (str, optional): The period to use for the calculation. Defaults to None which
+            results in basing it off the quarterly parameter as defined in the class instance.
+            within_period (bool, optional): Whether to calculate the Gain-to-Pain Ratio within the
+            specified period or for the entire period. Thus whether to look at the Gain-to-Pain Ratio
+            within a specific year (if period = 'yearly') or look at the entirety of all years.
+            Defaults to True.
+            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+
+        Returns:
+            pd.DataFrame: Gain-to-Pain Ratio values.
+
+        Notes:
+        - The method retrieves historical data and calculates the Gain-to-Pain Ratio for each asset
+        in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the ratio values using
+        the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.performance.get_gain_to_pain_ratio()
+        ```
+
+        Which returns:
+
+        |      |    AAPL |    TSLA |
+        |:-----|--------:|--------:|
+        | 2021 |  0.2354 |  0.1945 |
+        | 2022 | -0.108  | -0.1871 |
+        | 2023 |  0.4034 |  0.3043 |
+        | 2024 |  0.2462 |  0.2098 |
+        | 2025 |  0.0873 |  0.0871 |
+        | 2026 |  0.2062 | -0.0642 |
+        """
+        period = period if period else "quarterly" if self._quarterly else "yearly"
+
+        returns = (
+            self._within_historical_data[period]
+            if within_period
+            else self._historical_data[period]
+        ).loc[:, "Return"][self._tickers_without_portfolio]
+
+        gain_to_pain_ratio = performance_model.get_gain_to_pain_ratio(returns)
+
+        return finalize_dataset(
+            dataset=gain_to_pain_ratio,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+        )
 
     @handle_portfolio
     @handle_errors
@@ -1742,6 +3031,16 @@ class Performance:
 
         toolkit.performance.get_compound_growth_rate()
         ```
+
+        Which returns:
+
+        |                                       |   AAPL |   TSLA |   Benchmark |
+        |:--------------------------------------|-------:|-------:|------------:|
+        | Compound Annual Growth Rate (CAGR)    | 0.0965 | 0.0186 |      0.0779 |
+        | Compound Quarterly Growth Rate (CQGR) | 0.0124 | 0.0089 |      0.0087 |
+        | Compound Monthly Growth Rate (CMGR)   | 0.0124 | 0.0089 |      0.0087 |
+        | Compound Weekly Growth Rate (CWGR)    | 0.0029 | 0.0022 |      0.0021 |
+        | Compound Daily Growth Rate (CDGR)     | 0.0006 | 0.0005 |      0.0004 |
         """
         prices = (
             self._historical_data["yearly"]
@@ -1799,3 +3098,298 @@ class Performance:
         )
 
         return compound_growth_rate
+
+    @handle_portfolio
+    @handle_errors
+    def get_returns(
+        self,
+        period: str | None = None,
+        cumulative: bool = False,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+    ):
+        """
+        Calculate the Return of an investment portfolio or asset for a given period
+        based on the daily historical returns.
+
+        The period Return is obtained by compounding the daily returns within each
+        period, following the formula:
+
+            - Period Return = ((1 + Return 1) * (1 + Return 2) * ... * (1 + Return N)) - 1
+
+        If cumulative is set to True, the period returns are compounded further into
+        a cumulative return over time instead. The cumulative return is always rebased
+        to start at 1 at the beginning of the selected date range.
+
+        Also known as: periodic return.
+
+        Args:
+            period (str, optional): The data frequency for returns (weekly, monthly,
+            quarterly, or yearly). Defaults to "yearly".
+            cumulative (bool, optional): Whether to return the cumulative return over time
+            instead of the discrete return per period. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the Return values over time. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+
+        Returns:
+            pd.Series: Return values with time as the index.
+
+        Notes:
+        - The method retrieves the daily historical return data and calculates the Return for
+        the specified `period` for each asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of Return values using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AMZN", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.performance.get_returns(period="yearly")
+        ```
+
+        Which returns:
+
+        | Date   |    AMZN |    TSLA |   Benchmark |
+        |:-------|--------:|--------:|------------:|
+        | 2021   |  0.0236 |  0.4983 |      0.2701 |
+        | 2022   | -0.496  | -0.6503 |     -0.1949 |
+        | 2023   |  0.8089 |  1.0174 |      0.2429 |
+        | 2024   |  0.4449 |  0.6255 |      0.2339 |
+        | 2025   |  0.0516 |  0.1129 |      0.1638 |
+        | 2026   |  0.0508 | -0.1254 |      0.0918 |
+        """
+        period = period if period else "quarterly" if self._quarterly else "yearly"
+
+        if period not in ["weekly", "monthly", "quarterly", "yearly"]:
+            raise ValueError("Period must be weekly, monthly, quarterly, or yearly.")
+
+        returns = self._historical_data["daily"]["Return"]
+
+        period_returns = performance_model.get_returns(
+            returns, period, cumulative=cumulative
+        ).loc[self._start_date : self._end_date]
+
+        if cumulative:
+            period_returns = period_returns / period_returns.iloc[0]
+
+        return finalize_dataset(
+            dataset=period_returns,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+            dropna=True,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_excess_return(
+        self,
+        period: str | None = None,
+        cumulative: bool = False,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+    ):
+        """
+        Calculate the Excess Return of an investment portfolio or asset for a given period
+        based on the daily historical returns.
+
+        The Excess Return is defined as the period Return minus the risk free rate.
+
+        If cumulative is set to True, the excess returns are compounded further into
+        a cumulative excess return over time instead. The cumulative excess return is
+        always rebased to start at 1 at the beginning of the selected date range.
+
+        Also known as: return minus the risk-free rate.
+
+        Args:
+            period (str, optional): The data frequency for returns (weekly, monthly,
+            quarterly, or yearly). Defaults to "yearly".
+            cumulative (bool, optional): Whether to return the cumulative excess return over time
+            instead of the discrete excess return per period. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the Excess Return values over time.
+            Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+
+        Returns:
+            pd.Series: Excess Return values with time as the index.
+
+        Notes:
+        - The method retrieves the daily historical return data and calculates the Excess Return for
+        the specified `period` for each asset in the Toolkit instance.
+        - The risk-free rate is often represented by the return of a risk-free investment, such as a Treasury bond.
+        - If `growth` is set to True, the method calculates the growth of Excess Return values using the
+        specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AMZN", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.performance.get_excess_return(period="yearly")
+        ```
+
+        Which returns:
+
+        | Date   |    AMZN |    TSLA |   Benchmark |
+        |:-------|--------:|--------:|------------:|
+        | 2021   |  0.0085 |  0.4832 |      0.255  |
+        | 2022   | -0.5348 | -0.6891 |     -0.2337 |
+        | 2023   |  0.7702 |  0.9787 |      0.2042 |
+        | 2024   |  0.3992 |  0.5798 |      0.1882 |
+        | 2025   |  0.01   |  0.0713 |      0.1222 |
+        | 2026   |  0.0059 | -0.1703 |      0.0469 |
+        """
+        period = period if period else "quarterly" if self._quarterly else "yearly"
+
+        if period not in ["weekly", "monthly", "quarterly", "yearly"]:
+            raise ValueError("Period must be weekly, monthly, quarterly, or yearly.")
+
+        returns = self._historical_data["daily"]["Return"]
+        period_returns = performance_model.get_returns(returns, period)
+        risk_free_rate = self._risk_free_rate_data[period]
+
+        excess_return = performance_model.get_excess_return(
+            period_returns, risk_free_rate, cumulative=cumulative
+        ).loc[self._start_date : self._end_date]
+
+        if cumulative:
+            excess_return = excess_return / excess_return.iloc[0]
+
+        return finalize_dataset(
+            dataset=excess_return,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+            dropna=True,
+        )
+
+    @handle_errors
+    def get_correlation_matrix(
+        self,
+        period: str | None = None,
+        rounding: int | None = None,
+    ):
+        """
+        Calculate the full pairwise Correlation Matrix across all assets (and the
+        benchmark) in the Toolkit instance, based on the daily historical returns.
+
+        Unlike `get_beta`, which relates a single asset to the benchmark, this computes
+        the correlation between every pair of assets at once. This is a prerequisite for
+        portfolio variance calculations and any mean-variance optimization work.
+
+        Args:
+            period (str, optional): The data frequency for returns (weekly, monthly,
+            quarterly, or yearly). Defaults to "yearly".
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+
+        Returns:
+            pd.DataFrame: The N x N Correlation Matrix, with assets as both the index and
+            the columns.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AMZN", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.performance.get_correlation_matrix()
+        ```
+
+        Which returns:
+
+        |           |   AMZN |   TSLA |   Benchmark |
+        |:----------|-------:|-------:|------------:|
+        | AMZN      | 1      | 0.935  |      0.7751 |
+        | TSLA      | 0.935  | 1      |      0.8982 |
+        | Benchmark | 0.7751 | 0.8982 |      1      |
+        """
+        period = period if period else "quarterly" if self._quarterly else "yearly"
+
+        returns = self._historical_data[period]["Return"].loc[
+            self._start_date : self._end_date
+        ]
+
+        correlation_matrix = performance_model.get_correlation_matrix(returns)
+
+        return correlation_matrix.round(rounding if rounding else self._rounding)
+
+    @handle_errors
+    def get_covariance_matrix(
+        self,
+        period: str | None = None,
+        rounding: int | None = None,
+    ):
+        """
+        Calculate the full pairwise Covariance Matrix across all assets (and the
+        benchmark) in the Toolkit instance, based on the daily historical returns.
+
+        Unlike `get_covariance`, which relates a single asset to the benchmark, this
+        computes the covariance between every pair of assets at once. This is a
+        prerequisite for portfolio variance calculations and any mean-variance
+        optimization work.
+
+        Args:
+            period (str, optional): The data frequency for returns (weekly, monthly,
+            quarterly, or yearly). Defaults to "yearly".
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+
+        Returns:
+            pd.DataFrame: The N x N Covariance Matrix, with assets as both the index and
+            the columns.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AMZN", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.performance.get_covariance_matrix()
+        ```
+
+        Which returns:
+
+        |           |   AMZN |   TSLA |   Benchmark |
+        |:----------|-------:|-------:|------------:|
+        | AMZN      | 0.1944 | 0.2418 |      0.0592 |
+        | TSLA      | 0.2418 | 0.344  |      0.0913 |
+        | Benchmark | 0.0592 | 0.0913 |      0.0301 |
+        """
+        period = period if period else "quarterly" if self._quarterly else "yearly"
+
+        returns = self._historical_data[period]["Return"].loc[
+            self._start_date : self._end_date
+        ]
+
+        covariance_matrix = performance_model.get_covariance_matrix(returns)
+
+        return covariance_matrix.round(rounding if rounding else self._rounding)

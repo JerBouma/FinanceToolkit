@@ -7,8 +7,8 @@ from io import StringIO
 import pandas as pd
 import requests
 
-from financetoolkit.helpers import get_request
 from financetoolkit.utilities.logger_model import get_logger
+from financetoolkit.utilities.requests_model import get_request
 
 logger = get_logger()
 
@@ -260,70 +260,6 @@ def get_annual_gross_domestic_product() -> pd.DataFrame:
     )
 
     gross_domestic_product = collect_oecd_data(oecd_data_string, "Y")
-
-    return gross_domestic_product
-
-
-def get_quarterly_gross_domestic_product(year_on_year: bool = True) -> pd.DataFrame:
-    """
-    Get the Quarterly Gross Domestic Product for a variety of countries over
-    time from the OECD. The Gross Domestic Product is the total value
-    of goods produced and services provided in a country during one year.
-
-    The data is available in two forms: compared to the previous year's value or
-    compared to the previous period. The year on year data is the GDP compared to
-    the same quarter in the previous year. The quarter on quarter data is the GDP
-    compared to the previous quarter.
-
-    Args:
-        year_on_year (bool): Whether to return the year on year data or the quarter
-            on quarter data.
-
-    Returns:
-       pd.DataFrame: A DataFrame containing the Quarterly Gross Domestic Product
-       for a variety of countries over time.
-    """
-    if year_on_year:
-        oecd_data_string = "OECD.SDD.NAD,DSD_NAMAIN1@DF_QNA_EXPENDITURE_GROWTH_OECD,1.0/Q.....B1GQ......GY+G1."
-    else:
-        oecd_data_string = "OECD.SDD.NAD,DSD_NAMAIN1@DF_QNA_EXPENDITURE_GROWTH_OECD,1.0/Q.....B1GQ......G1."
-
-    gross_domestic_product = collect_oecd_data(oecd_data_string, "Q")
-
-    # Division by 100 due to both metrics are in percentages
-    gross_domestic_product = gross_domestic_product / 100
-
-    return gross_domestic_product
-
-
-def get_gross_domestic_product_forecast_short_term(
-    quarterly: bool | None = False,
-) -> pd.DataFrame:
-    """
-    Get the Gross Domestic Product Forecast for a variety of countries over
-    time from the OECD. The Gross Domestic Product is the total value
-    of goods produced and services provided in a country during one year.
-
-    The data represents the annual growth rate which is the percentage change
-    in GDP from one year to the next. When using quarterly data, the annual
-    growth rate is the percentage change in GDP from the same quarter in the
-    previous year.
-
-    Args:
-        quarterly (bool): Whether to return the quarterly data or the yearly data.
-
-    Returns:
-       pd.DataFrame: A DataFrame containing the Gross Domestic Product for a variety
-       of countries over time.
-    """
-    oecd_data_string = f"OECD.ECO.MAD,DSD_EO@DF_EO,/.CBGDPR.{'Q' if quarterly else 'A'}"
-
-    gross_domestic_product = collect_oecd_data(
-        oecd_data_string, "Q" if quarterly else "Y"
-    )
-
-    # Division by 100 due to both metrics are in percentages
-    gross_domestic_product = gross_domestic_product / 100
 
     return gross_domestic_product
 

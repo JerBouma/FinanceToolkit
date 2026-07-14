@@ -8,7 +8,8 @@ import warnings
 import numpy as np
 import pandas as pd
 
-from financetoolkit.helpers import calculate_growth, handle_portfolio
+from financetoolkit.fmp_model import get_analyst_estimates as _get_analyst_estimates
+from financetoolkit.helpers import handle_portfolio
 from financetoolkit.ratios import (
     efficiency_model,
     liquidity_model,
@@ -19,6 +20,11 @@ from financetoolkit.ratios import (
 from financetoolkit.ratios.helpers import map_period_data_to_daily_data
 from financetoolkit.utilities import logger_model
 from financetoolkit.utilities.error_model import handle_errors
+from financetoolkit.utilities.statistics_model import (
+    calculate_growth,
+    calculate_standardization,
+    finalize_dataset,
+)
 
 logger = logger_model.get_logger()
 
@@ -49,6 +55,10 @@ class Ratios:
         rounding: int | None = 4,
         start_date: str | None = None,
         end_date: str | None = None,
+        api_key: str = "",
+        sleep_timer: bool = False,
+        user_subscription: str = "Free",
+        analyst_estimates_cache: dict | None = None,
     ):
         """
         Initializes the Ratios Controller Class.
@@ -63,6 +73,23 @@ class Ratios:
             an optional parameter given that you can also define the custom ratios through the Toolkit initialization.
             quarterly (bool, optional): Whether to use quarterly data. Defaults to False.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            api_key (str, optional): FinancialModelingPrep API key, used only by
+                `get_forward_price_earnings_ratio` and `get_forward_price_earnings_growth_ratio` to
+                lazily fetch (and cache) analyst estimates the first time either method is called —
+                not on initialization or on any other ratio. Defaults to "", which means those two
+                methods will report that the data is unavailable (requires a Premium FMP
+                subscription).
+            sleep_timer (bool, optional): Whether to set a sleep timer when the rate limit is
+                reached while fetching analyst estimates. Only works with a Premium subscription.
+                Defaults to False.
+            user_subscription (str, optional): The FMP subscription plan, used only for the analyst
+                estimates fetch. Defaults to "Free".
+            analyst_estimates_cache (dict, optional): A mutable dict used to cache the fetched
+                analyst estimates. The Toolkit passes the same dict instance in every time this
+                class is (re)constructed (each access to `toolkit.ratios` builds a fresh Ratios
+                instance), so this is what makes the fetch-once behaviour survive across separate
+                `toolkit.ratios.<method>()` calls rather than resetting every time. Defaults to
+                None, which uses a private dict scoped to this instance only.
 
         As an example:
 
@@ -104,6 +131,12 @@ class Ratios:
         self._balance_sheet_statement: pd.DataFrame = balance
         self._income_statement: pd.DataFrame = income
         self._cash_flow_statement: pd.DataFrame = cash
+        self._api_key: str = api_key
+        self._sleep_timer: bool = sleep_timer
+        self._user_subscription: str = user_subscription
+        self._analyst_estimates_cache: dict = (
+            analyst_estimates_cache if analyst_estimates_cache is not None else {}
+        )
         self._available_custom_ratios_options: list[str] = []
         self._custom_ratios: pd.DataFrame = pd.DataFrame()
         self._custom_ratios_growth: pd.DataFrame = pd.DataFrame()
@@ -139,6 +172,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
         trailing: int | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
@@ -153,6 +187,9 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             trailing (int): Defines whether to select a trailing period.
             E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
@@ -171,8 +208,23 @@ class Ratios:
 
         toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
-        toolkit.ratios.collect_all_ratios()
+        toolkit.ratios.collect_all_ratios().loc['AAPL']
         ```
+
+        Which returns:
+
+        |                           |         2021 |         2022 |         2023 |         2024 |         2025 |
+        |:--------------------------|-------------:|-------------:|-------------:|-------------:|-------------:|
+        | Price-to-Cash-Flow        | 28.7847      | 17.3655      | 27.5403      | 32.6289      | 36.5905      |
+        | Price-to-Free-Cash-Flow   | 32.2174      | 19.0341      | 30.5711      | 35.4618      | 41.301       |
+        | Market Cap                |  2.9947e+12  |  2.12121e+12 |  3.04439e+12 |  3.8585e+12  |  4.07918e+12 |
+        | Enterprise Value          |  3.09629e+12 |  2.23005e+12 |  3.13835e+12 |  3.94761e+12 |  4.15562e+12 |
+        | EV-to-Sales               |  8.464       |  5.6553      |  8.188       | 10.0953      |  9.9856      |
+        | EV-to-EBIT                | 27.682       | 18.274       | 26.671       | 31.9683      | 31.3091      |
+        | EV-to-EBITDA              | 25.7524      | 17.0831      | 24.9432      | 29.3152      | 28.7093      |
+        | EV-to-Operating-Cash-Flow | 29.7611      | 18.2565      | 28.3904      | 33.3825      | 37.2762      |
+        | Tangible Asset Value      |  6.309e+10   |  5.0672e+10  |  6.2146e+10  |  5.695e+10   |  7.3733e+10  |
+        | Net Current Asset Value   |  9.355e+09   | -1.8577e+10  | -1.742e+09   | -2.3405e+10  | -1.7674e+10  |
         """
         if not days:
             days = 365 / 4 if self._quarterly else 365
@@ -215,20 +267,36 @@ class Ratios:
 
         if growth:
             self._all_ratios_growth = calculate_growth(
-                self._all_ratios,
+                dataset=self._all_ratios,
                 lag=lag,
                 rounding=rounding if rounding else self._rounding,
                 axis="columns",
             )
 
+        all_ratios = self._all_ratios
+        all_ratios_growth = self._all_ratios_growth
+
+        if standardize:
+            standardize_rounding = rounding if rounding else self._rounding
+            if growth:
+                all_ratios_growth = calculate_standardization(
+                    dataset=all_ratios_growth,
+                    rounding=standardize_rounding,
+                    axis="columns",
+                )
+            else:
+                all_ratios = calculate_standardization(
+                    dataset=all_ratios, rounding=standardize_rounding, axis="columns"
+                )
+
         if len(self._tickers) == 1:
             return (
-                self._all_ratios_growth.loc[self._tickers[0]]
+                all_ratios_growth.loc[self._tickers[0]]
                 if growth
-                else self._all_ratios.loc[self._tickers[0]]
+                else all_ratios.loc[self._tickers[0]]
             ).loc[:, self._start_date : self._end_date]
 
-        return (self._all_ratios_growth if growth else self._all_ratios).loc[
+        return (all_ratios_growth if growth else all_ratios).loc[
             :, self._start_date : self._end_date
         ]
 
@@ -239,6 +307,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
     ):
         """
         Calculates all Custom Ratios based on the data provided.
@@ -253,6 +322,9 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             trailing (int): Defines whether to select a trailing period.
             E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
@@ -441,20 +513,36 @@ class Ratios:
 
         if growth:
             self._custom_ratios_growth = calculate_growth(
-                self._custom_ratios,
+                dataset=self._custom_ratios,
                 lag=lag,
                 rounding=rounding if rounding else self._rounding,
                 axis="columns",
             )
 
+        custom_ratios = self._custom_ratios
+        custom_ratios_growth = self._custom_ratios_growth
+
+        if standardize:
+            standardize_rounding = rounding if rounding else self._rounding
+            if growth:
+                custom_ratios_growth = calculate_standardization(
+                    dataset=custom_ratios_growth,
+                    rounding=standardize_rounding,
+                    axis="columns",
+                )
+            else:
+                custom_ratios = calculate_standardization(
+                    dataset=custom_ratios, rounding=standardize_rounding, axis="columns"
+                )
+
         if len(self._tickers) == 1:
             return (
-                self._custom_ratios_growth[self._tickers[0]]
+                custom_ratios_growth[self._tickers[0]]
                 if growth
-                else self._custom_ratios.loc[self._tickers[0]]
+                else custom_ratios.loc[self._tickers[0]]
             ).loc[:, self._start_date : self._end_date]
 
-        return (self._custom_ratios_growth if growth else self._custom_ratios).loc[
+        return (custom_ratios_growth if growth else custom_ratios).loc[
             :, self._start_date : self._end_date
         ]
 
@@ -465,6 +553,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
         trailing: int | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
@@ -475,6 +564,9 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             trailing (int): Defines whether to select a trailing period.
             E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
@@ -493,8 +585,23 @@ class Ratios:
 
         toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
-        toolkit.ratios.collect_efficiency_ratios()
+        toolkit.ratios.collect_efficiency_ratios().loc['AAPL']
         ```
+
+        Which returns:
+
+        |                                 |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:--------------------------------|-------:|-------:|-------:|-------:|-------:|
+        | Accounts Payable Turnover Ratio | 4.3887 | 3.7609 | 3.3795 | 3.1975 | 3.1834 |
+        | SGA-to-Revenue Ratio            | 0.0601 | 0.0636 | 0.065  | 0.0667 | 0.0663 |
+        | Fixed Asset Turnover            | 1.846  | 1.8192 | 1.7979 | 1.8576 | 1.9664 |
+        | Asset Turnover Ratio            | 1.0841 | 1.1206 | 1.0868 | 1.0899 | 1.1493 |
+        | Operating Ratio                 | 0.7022 | 0.6971 | 0.7018 | 0.6849 | 0.6803 |
+        | R&D Intensity Ratio             | 0.0599 | 0.0666 | 0.078  | 0.0802 | 0.083  |
+        | S&M to Revenue Ratio            | 0      | 0      | 0      | 0.0477 | 0      |
+        | G&A to Revenue Ratio            | 0      | 0      | 0      | 0.0191 | 0.0663 |
+        | SBC to Revenue Ratio            | 0.0216 | 0.0229 | 0.0283 | 0.0299 | 0.0309 |
+        | Deferred Revenue Ratio          | 0.0208 | 0.0201 | 0.021  | 0.0211 | 0.0218 |
         """
         if not days:
             days = 365 / 4 if self._quarterly else 365
@@ -540,6 +647,21 @@ class Ratios:
         efficiency_ratios["Operating Ratio"] = self.get_operating_ratio(
             trailing=trailing
         )
+        efficiency_ratios["R&D Intensity Ratio"] = (
+            self.get_research_and_development_ratio(trailing=trailing)
+        )
+        efficiency_ratios["S&M to Revenue Ratio"] = (
+            self.get_selling_and_marketing_ratio(trailing=trailing)
+        )
+        efficiency_ratios["G&A to Revenue Ratio"] = (
+            self.get_general_and_administrative_ratio(trailing=trailing)
+        )
+        efficiency_ratios["SBC to Revenue Ratio"] = (
+            self.get_stock_based_compensation_ratio(trailing=trailing)
+        )
+        efficiency_ratios["Deferred Revenue Ratio"] = self.get_deferred_revenue_ratio(
+            trailing=trailing
+        )
 
         self._efficiency_ratios = (
             pd.concat(efficiency_ratios)
@@ -568,22 +690,40 @@ class Ratios:
 
         if growth:
             self._efficiency_ratios_growth = calculate_growth(
-                self._efficiency_ratios,
+                dataset=self._efficiency_ratios,
                 lag=lag,
                 rounding=rounding if rounding else self._rounding,
                 axis="columns",
             )
 
+        efficiency_ratios = self._efficiency_ratios
+        efficiency_ratios_growth = self._efficiency_ratios_growth
+
+        if standardize:
+            standardize_rounding = rounding if rounding else self._rounding
+            if growth:
+                efficiency_ratios_growth = calculate_standardization(
+                    dataset=efficiency_ratios_growth,
+                    rounding=standardize_rounding,
+                    axis="columns",
+                )
+            else:
+                efficiency_ratios = calculate_standardization(
+                    dataset=efficiency_ratios,
+                    rounding=standardize_rounding,
+                    axis="columns",
+                )
+
         if len(self._tickers) == 1:
             return (
-                self._efficiency_ratios_growth[self._tickers[0]]
+                efficiency_ratios_growth[self._tickers[0]]
                 if growth
-                else self._efficiency_ratios.loc[self._tickers[0]]
+                else efficiency_ratios.loc[self._tickers[0]]
             ).loc[:, self._start_date : self._end_date]
 
-        return (
-            self._efficiency_ratios_growth if growth else self._efficiency_ratios
-        ).loc[:, self._start_date : self._end_date]
+        return (efficiency_ratios_growth if growth else efficiency_ratios).loc[
+            :, self._start_date : self._end_date
+        ]
 
     @handle_portfolio
     @handle_errors
@@ -592,6 +732,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
         trailing: int | None = None,
     ) -> pd.DataFrame:
         """
@@ -614,6 +755,9 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             trailing (int): Defines whether to select a trailing period.
             E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
@@ -635,6 +779,13 @@ class Ratios:
 
         asset_turnover_ratios = toolkit.ratios.get_asset_turnover_ratio()
         ```
+
+        Which returns:
+
+        |      |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:-----|-------:|-------:|-------:|-------:|-------:|
+        | AAPL | 1.0841 | 1.1206 | 1.0868 | 1.0899 | 1.1493 |
+        | TSLA | 0.942  | 1.1277 | 1.0243 | 0.8544 | 0.7298 |
         """
         if trailing:
             asset_turnover_ratio = efficiency_model.get_asset_turnover_ratio(
@@ -653,16 +804,16 @@ class Ratios:
                 .T,
             )
 
-        if growth:
-            return calculate_growth(
-                asset_turnover_ratio,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-            ).loc[:, self._start_date : self._end_date]
-
-        return asset_turnover_ratio.round(rounding if rounding else self._rounding).loc[
-            :, self._start_date : self._end_date
-        ]
+        return finalize_dataset(
+            dataset=asset_turnover_ratio,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+        )
 
     @handle_portfolio
     @handle_errors
@@ -671,6 +822,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
         trailing: int | None = None,
     ) -> pd.DataFrame:
         """
@@ -693,6 +845,9 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             trailing (int): Defines whether to select a trailing period.
             E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
@@ -714,6 +869,13 @@ class Ratios:
 
         inventory_turnover_ratios = toolkit.ratios.get_inventory_turnover_ratio()
         ```
+
+        Which returns:
+
+        |      |    2021 |    2022 |    2023 |    2024 |    2025 |
+        |:-----|--------:|--------:|--------:|--------:|--------:|
+        | AAPL | 40.0303 | 38.7899 | 37.9777 | 30.8955 | 33.9834 |
+        | TSLA |  8.1593 |  6.5185 |  5.9787 |  6.2582 |  6.3692 |
         """
         if trailing:
             inventory_turnover_ratio = efficiency_model.get_inventory_turnover_ratio(
@@ -735,16 +897,16 @@ class Ratios:
                 .T,
             )
 
-        if growth:
-            return calculate_growth(
-                inventory_turnover_ratio,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-            ).loc[:, self._start_date : self._end_date]
-
-        return inventory_turnover_ratio.round(
-            rounding if rounding else self._rounding
-        ).loc[:, self._start_date : self._end_date]
+        return finalize_dataset(
+            dataset=inventory_turnover_ratio,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+        )
 
     @handle_portfolio
     @handle_errors
@@ -754,6 +916,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
         trailing: int | None = None,
     ) -> pd.DataFrame:
         """
@@ -777,6 +940,9 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             trailing (int): Defines whether to select a trailing period.
             E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
@@ -798,6 +964,13 @@ class Ratios:
 
         toolkit.ratios.get_days_of_inventory_outstanding()
         ```
+
+        Which returns:
+
+        |      |    2021 |    2022 |    2023 |    2024 |    2025 |
+        |:-----|--------:|--------:|--------:|--------:|--------:|
+        | AAPL |  9.1181 |  9.4097 |  9.6109 | 11.814  | 10.7405 |
+        | TSLA | 44.7344 | 55.9945 | 61.0502 | 58.3231 | 57.307  |
         """
         if not days:
             days = 365 / 4 if self._quarterly else 365
@@ -827,16 +1000,16 @@ class Ratios:
                 )
             )
 
-        if growth:
-            return calculate_growth(
-                days_of_inventory_outstanding,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-            ).loc[:, self._start_date : self._end_date]
-
-        return days_of_inventory_outstanding.round(
-            rounding if rounding else self._rounding
-        ).loc[:, self._start_date : self._end_date]
+        return finalize_dataset(
+            dataset=days_of_inventory_outstanding,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+        )
 
     @handle_portfolio
     @handle_errors
@@ -846,6 +1019,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
         trailing: int | None = None,
     ) -> pd.DataFrame:
         """
@@ -870,6 +1044,9 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             trailing (int): Defines whether to select a trailing period.
             E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
@@ -891,6 +1068,13 @@ class Ratios:
 
         dso_ratios = toolkit.ratios.get_days_of_sales_outstanding()
         ```
+
+        Which returns:
+
+        |      |    2021 |    2022 |    2023 |    2024 |    2025 |
+        |:-----|--------:|--------:|--------:|--------:|--------:|
+        | AAPL | 21.1517 | 25.2057 | 27.4699 | 29.3645 | 32.0949 |
+        | TSLA | 12.8814 | 10.8991 | 12.1826 | 14.807  | 17.3095 |
         """
         if not days:
             days = 365 / 4 if self._quarterly else 365
@@ -913,16 +1097,16 @@ class Ratios:
                 days,
             )
 
-        if growth:
-            return calculate_growth(
-                days_of_sales_outstanding,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-            ).loc[:, self._start_date : self._end_date]
-
-        return days_of_sales_outstanding.round(
-            rounding if rounding else self._rounding
-        ).loc[:, self._start_date : self._end_date]
+        return finalize_dataset(
+            dataset=days_of_sales_outstanding,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+        )
 
     @handle_portfolio
     @handle_errors
@@ -932,6 +1116,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
         trailing: int | None = None,
     ) -> pd.DataFrame:
         """
@@ -954,6 +1139,9 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             trailing (int): Defines whether to select a trailing period.
             E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
@@ -975,6 +1163,13 @@ class Ratios:
 
         operating_cycle_ratios = toolkit.ratios.get_operating_cycle()
         ```
+
+        Which returns:
+
+        |      |    2021 |    2022 |    2023 |    2024 |    2025 |
+        |:-----|--------:|--------:|--------:|--------:|--------:|
+        | AAPL | 30.2698 | 34.6154 | 37.0808 | 41.1785 | 42.8354 |
+        | TSLA | 57.6159 | 66.8936 | 73.2328 | 73.1301 | 74.6164 |
         """
         if not days:
             days = 365 / 4 if self._quarterly else 365
@@ -1023,16 +1218,16 @@ class Ratios:
             days_of_inventory, days_of_sales
         )
 
-        if growth:
-            return calculate_growth(
-                operating_cycle,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-            ).loc[:, self._start_date : self._end_date]
-
-        return operating_cycle.round(rounding if rounding else self._rounding).loc[
-            :, self._start_date : self._end_date
-        ]
+        return finalize_dataset(
+            dataset=operating_cycle,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+        )
 
     @handle_portfolio
     @handle_errors
@@ -1041,6 +1236,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
         trailing: int | None = None,
     ) -> pd.DataFrame:
         """
@@ -1062,6 +1258,9 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             trailing (int): Defines whether to select a trailing period.
             E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
@@ -1083,6 +1282,13 @@ class Ratios:
 
         ap_turnover_ratios = toolkit.ratios.get_accounts_payables_turnover_ratio()
         ```
+
+        Which returns:
+
+        |      |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:-----|-------:|-------:|-------:|-------:|-------:|
+        | AAPL | 4.3887 | 3.7609 | 3.3795 | 3.1975 | 3.1834 |
+        | TSLA | 5.0034 | 4.795  | 5.33   | 5.9647 | 6.0153 |
         """
         if trailing:
             accounts_payables_turnover_ratio = (
@@ -1108,16 +1314,16 @@ class Ratios:
                 )
             )
 
-        if growth:
-            return calculate_growth(
-                accounts_payables_turnover_ratio,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-            ).loc[:, self._start_date : self._end_date]
-
-        return accounts_payables_turnover_ratio.round(
-            rounding if rounding else self._rounding
-        ).loc[:, self._start_date : self._end_date]
+        return finalize_dataset(
+            dataset=accounts_payables_turnover_ratio,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+        )
 
     @handle_portfolio
     @handle_errors
@@ -1127,6 +1333,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
         trailing: int | None = None,
     ) -> pd.DataFrame:
         """
@@ -1150,6 +1357,9 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             trailing (int): Defines whether to select a trailing period.
             E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
@@ -1171,6 +1381,13 @@ class Ratios:
 
         dpo_ratios = toolkit.ratios.get_days_of_accounts_payable_outstanding()
         ```
+
+        Which returns:
+
+        |      |    2021 |    2022 |     2023 |     2024 |     2025 |
+        |:-----|--------:|--------:|---------:|---------:|---------:|
+        | AAPL | 83.1683 | 97.0504 | 108.003  | 114.15   | 114.657  |
+        | TSLA | 72.951  | 76.1207 |  68.4805 |  61.1935 |  60.6784 |
         """
         if not days:
             days = 365 / 4 if self._quarterly else 365
@@ -1200,16 +1417,16 @@ class Ratios:
                 )
             )
 
-        if growth:
-            return calculate_growth(
-                days_of_accounts_payable_outstanding,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-            ).loc[:, self._start_date : self._end_date]
-
-        return days_of_accounts_payable_outstanding.round(
-            rounding if rounding else self._rounding
-        ).loc[:, self._start_date : self._end_date]
+        return finalize_dataset(
+            dataset=days_of_accounts_payable_outstanding,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+        )
 
     @handle_portfolio
     @handle_errors
@@ -1219,6 +1436,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
         trailing: int | None = None,
     ) -> pd.DataFrame:
         """
@@ -1243,6 +1461,9 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             trailing (int): Defines whether to select a trailing period.
             E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
@@ -1262,6 +1483,13 @@ class Ratios:
 
         ccc_values = toolkit.ratios.get_cash_conversion_cycle()
         ```
+
+        Which returns:
+
+        |      |     2021 |     2022 |     2023 |     2024 |     2025 |
+        |:-----|---------:|---------:|---------:|---------:|---------:|
+        | AAPL | -52.8985 | -62.435  | -70.9225 | -72.9716 | -71.8218 |
+        | TSLA | -15.3351 |  -9.2271 |   4.7523 |  11.9367 |  13.9381 |
         """
         if not days:
             days = 365 / 4 if self._quarterly else 365
@@ -1334,16 +1562,16 @@ class Ratios:
             days_of_inventory, days_of_sales, days_of_payables
         )
 
-        if growth:
-            return calculate_growth(
-                cash_conversion_cycle,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-            ).loc[:, self._start_date : self._end_date]
-
-        return cash_conversion_cycle.round(
-            rounding if rounding else self._rounding
-        ).loc[:, self._start_date : self._end_date]
+        return finalize_dataset(
+            dataset=cash_conversion_cycle,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+        )
 
     @handle_portfolio
     @handle_errors
@@ -1352,6 +1580,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
         trailing: int | None = None,
     ) -> pd.DataFrame:
         """
@@ -1374,6 +1603,9 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             trailing (int): Defines whether to select a trailing period.
             E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
@@ -1395,6 +1627,13 @@ class Ratios:
 
         toolkit.ratios.get_cash_conversion_efficiency()
         ```
+
+        Which returns:
+
+        |      |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:-----|-------:|-------:|-------:|-------:|-------:|
+        | AAPL | 0.2844 | 0.3098 | 0.2884 | 0.3024 | 0.2679 |
+        | TSLA | 0.2136 | 0.1807 | 0.137  | 0.1528 | 0.1555 |
         """
         if trailing:
             cash_conversion_efficiency = (
@@ -1417,16 +1656,16 @@ class Ratios:
                 )
             )
 
-        if growth:
-            return calculate_growth(
-                cash_conversion_efficiency,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-            ).loc[:, self._start_date : self._end_date]
-
-        return cash_conversion_efficiency.round(
-            rounding if rounding else self._rounding
-        ).loc[:, self._start_date : self._end_date]
+        return finalize_dataset(
+            dataset=cash_conversion_efficiency,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+        )
 
     @handle_portfolio
     @handle_errors
@@ -1435,6 +1674,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
         trailing: int | None = None,
     ) -> pd.DataFrame:
         """
@@ -1457,6 +1697,9 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             trailing (int): Defines whether to select a trailing period.
             E.g. when selecting 4 with quarterly data, the TTM is calculated.
         Returns:
@@ -1476,6 +1719,13 @@ class Ratios:
 
         receivables_turnover = toolkit.ratios.get_receivables_turnover()
         ```
+
+        Which returns:
+
+        |      |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:-----|-------:|-------:|-------:|-------:|-------:|
+        | AAPL | 0.0579 | 0.0691 | 0.0753 | 0.0805 | 0.0879 |
+        | TSLA | 0.0353 | 0.0299 | 0.0334 | 0.0406 | 0.0474 |
         """
         if trailing:
             receivables_turnover = efficiency_model.get_receivables_turnover(
@@ -1494,16 +1744,16 @@ class Ratios:
                 self._income_statement.loc[:, "Revenue", :],
             )
 
-        if growth:
-            return calculate_growth(
-                receivables_turnover,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-            ).loc[:, self._start_date : self._end_date]
-
-        return receivables_turnover.round(rounding if rounding else self._rounding).loc[
-            :, self._start_date : self._end_date
-        ]
+        return finalize_dataset(
+            dataset=receivables_turnover,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+        )
 
     @handle_portfolio
     @handle_errors
@@ -1512,6 +1762,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
         trailing: int | None = None,
     ) -> pd.DataFrame:
         """
@@ -1533,6 +1784,9 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             trailing (int): Defines whether to select a trailing period.
             E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
@@ -1554,6 +1808,13 @@ class Ratios:
 
         sga_to_revenue_ratios = toolkit.ratios.get_sga_to_revenue_ratio()
         ```
+
+        Which returns:
+
+        |      |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:-----|-------:|-------:|-------:|-------:|-------:|
+        | AAPL | 0.0601 | 0.0636 | 0.065  | 0.0667 | 0.0663 |
+        | TSLA | 0.0839 | 0.0484 | 0.0496 | 0.0527 | 0.0615 |
         """
         if trailing:
             sga_to_revenue_ratio = efficiency_model.get_sga_to_revenue_ratio(
@@ -1573,16 +1834,16 @@ class Ratios:
                 self._income_statement.loc[:, "Revenue", :],
             )
 
-        if growth:
-            return calculate_growth(
-                sga_to_revenue_ratio,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-            ).loc[:, self._start_date : self._end_date]
-
-        return sga_to_revenue_ratio.round(rounding if rounding else self._rounding).loc[
-            :, self._start_date : self._end_date
-        ]
+        return finalize_dataset(
+            dataset=sga_to_revenue_ratio,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+        )
 
     @handle_portfolio
     @handle_errors
@@ -1591,6 +1852,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
         trailing: int | None = None,
     ) -> pd.DataFrame:
         """
@@ -1612,6 +1874,9 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             trailing (int): Defines whether to select a trailing period.
             E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
@@ -1633,6 +1898,13 @@ class Ratios:
 
         fixed_asset_turnover_ratios = toolkit.ratios.get_fixed_asset_turnover()
         ```
+
+        Which returns:
+
+        |      |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:-----|-------:|-------:|-------:|-------:|-------:|
+        | AAPL | 1.846  | 1.8192 | 1.7979 | 1.8576 | 1.9664 |
+        | TSLA | 1.7804 | 2.1312 | 1.9665 | 1.6185 | 1.4273 |
         """
         if trailing:
             fixed_asset_turnover = efficiency_model.get_fixed_asset_turnover(
@@ -1651,16 +1923,16 @@ class Ratios:
                 .T,
             )
 
-        if growth:
-            return calculate_growth(
-                fixed_asset_turnover,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-            ).loc[:, self._start_date : self._end_date]
-
-        return fixed_asset_turnover.round(rounding if rounding else self._rounding).loc[
-            :, self._start_date : self._end_date
-        ]
+        return finalize_dataset(
+            dataset=fixed_asset_turnover,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+        )
 
     @handle_portfolio
     @handle_errors
@@ -1669,6 +1941,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
         trailing: int | None = None,
     ) -> pd.DataFrame:
         """
@@ -1689,6 +1962,9 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             trailing (int): Defines whether to select a trailing period.
             E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
@@ -1710,6 +1986,13 @@ class Ratios:
 
         operating_ratios = toolkit.ratios.get_operating_ratio()
         ```
+
+        Which returns:
+
+        |      |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:-----|-------:|-------:|-------:|-------:|-------:|
+        | AAPL | 0.7022 | 0.6971 | 0.7018 | 0.6849 | 0.6803 |
+        | TSLA | 0.8793 | 0.8324 | 0.9081 | 0.9276 | 0.9541 |
         """
         if trailing:
             operating_ratio = efficiency_model.get_operating_ratio(
@@ -1730,22 +2013,459 @@ class Ratios:
                 self._income_statement.loc[:, "Revenue", :],
             )
 
-        if growth:
-            return calculate_growth(
-                operating_ratio,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-            ).loc[:, self._start_date : self._end_date]
+        return finalize_dataset(
+            dataset=operating_ratio,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+        )
 
-        return operating_ratio.round(rounding if rounding else self._rounding).loc[
-            :, self._start_date : self._end_date
-        ]
+    @handle_portfolio
+    @handle_errors
+    def get_research_and_development_ratio(
+        self,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+        trailing: int | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the research and development (R&D) intensity ratio, an efficiency
+        ratio that measures how much a company reinvests in research and development
+        relative to its revenue.
+
+        This ratio is particularly relevant for comparing companies in technology,
+        pharmaceutical and other innovation-driven industries, where R&D spending is
+        a key driver of future growth.
+
+        The formula is as follows:
+
+        - R&D Intensity Ratio = Research and Development Expenses / Revenue
+
+        Also known as: R&D intensity, R&D to sales ratio.
+
+        Args:
+            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            trailing (int): Defines whether to select a trailing period.
+            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+
+        Returns:
+            pd.DataFrame: R&D intensity ratio values.
+
+        Notes:
+        - The method retrieves historical data and calculates the R&D intensity ratio for
+        each asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the ratio values
+        using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        rd_ratios = toolkit.ratios.get_research_and_development_ratio()
+        ```
+
+        Which returns:
+
+        |      |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:-----|-------:|-------:|-------:|-------:|-------:|
+        | AAPL | 0.0599 | 0.0666 |  0.078 | 0.0802 | 0.083  |
+        | TSLA | 0.0482 | 0.0377 |  0.041 | 0.0465 | 0.0676 |
+        """
+        if trailing:
+            rd_ratio = efficiency_model.get_research_and_development_ratio(
+                self._income_statement.loc[:, "Research and Development Expenses", :]
+                .T.rolling(trailing)
+                .sum()
+                .T,
+                self._income_statement.loc[:, "Revenue", :].T.rolling(trailing).sum().T,
+            )
+        else:
+            rd_ratio = efficiency_model.get_research_and_development_ratio(
+                self._income_statement.loc[:, "Research and Development Expenses", :],
+                self._income_statement.loc[:, "Revenue", :],
+            )
+
+        return finalize_dataset(
+            dataset=rd_ratio,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_selling_and_marketing_ratio(
+        self,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+        trailing: int | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the selling and marketing (S&M) expenses to revenue ratio, an
+        efficiency ratio that measures the proportion of revenue spent on selling and
+        marketing activities.
+
+        This ratio isolates the selling and marketing component of the combined SG&A
+        expense line (see `get_sga_to_revenue_ratio`), which is useful for comparing
+        customer-acquisition efficiency independently of administrative overhead.
+
+        The formula is as follows:
+
+        - S&M to Revenue Ratio = Selling and Marketing Expenses / Revenue
+
+        Also known as: S&M ratio, sales and marketing intensity.
+
+        Args:
+            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            trailing (int): Defines whether to select a trailing period.
+            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+
+        Returns:
+            pd.DataFrame: S&M to revenue ratio values.
+
+        Notes:
+        - The method retrieves historical data and calculates the S&M to revenue ratio for
+        each asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the ratio values
+        using the specified `lag`.
+        - Not every company reports Selling and Marketing Expenses separately from General
+        and Administrative Expenses, in which case this ratio will be unavailable.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        sm_ratios = toolkit.ratios.get_selling_and_marketing_ratio()
+        ```
+
+        Which returns:
+
+        |      |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:-----|-------:|-------:|-------:|-------:|-------:|
+        | AAPL |      0 |      0 |      0 | 0.0477 |      0 |
+        | TSLA |      0 |      0 |      0 | 0      |      0 |
+        """
+        if trailing:
+            sm_ratio = efficiency_model.get_selling_and_marketing_ratio(
+                self._income_statement.loc[:, "Selling and Marketing Expenses", :]
+                .T.rolling(trailing)
+                .sum()
+                .T,
+                self._income_statement.loc[:, "Revenue", :].T.rolling(trailing).sum().T,
+            )
+        else:
+            sm_ratio = efficiency_model.get_selling_and_marketing_ratio(
+                self._income_statement.loc[:, "Selling and Marketing Expenses", :],
+                self._income_statement.loc[:, "Revenue", :],
+            )
+
+        return finalize_dataset(
+            dataset=sm_ratio,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_general_and_administrative_ratio(
+        self,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+        trailing: int | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the general and administrative (G&A) expenses to revenue ratio, an
+        efficiency ratio that measures the proportion of revenue spent on general and
+        administrative overhead.
+
+        This ratio isolates the administrative component of the combined SG&A expense
+        line (see `get_sga_to_revenue_ratio`), which is useful for assessing overhead
+        efficiency independently of selling and marketing spend.
+
+        The formula is as follows:
+
+        - G&A to Revenue Ratio = General and Administrative Expenses / Revenue
+
+        Also known as: G&A ratio, overhead ratio.
+
+        Args:
+            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            trailing (int): Defines whether to select a trailing period.
+            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+
+        Returns:
+            pd.DataFrame: G&A to revenue ratio values.
+
+        Notes:
+        - The method retrieves historical data and calculates the G&A to revenue ratio for
+        each asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the ratio values
+        using the specified `lag`.
+        - Not every company reports General and Administrative Expenses separately from
+        Selling and Marketing Expenses, in which case this ratio will be unavailable.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        ga_ratios = toolkit.ratios.get_general_and_administrative_ratio()
+        ```
+
+        Which returns:
+
+        |      |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:-----|-------:|-------:|-------:|-------:|-------:|
+        | AAPL | 0      | 0      | 0      | 0.0191 | 0.0663 |
+        | TSLA | 0.0839 | 0.0484 | 0.0496 | 0.0527 | 0.0615 |
+        """
+        if trailing:
+            ga_ratio = efficiency_model.get_general_and_administrative_ratio(
+                self._income_statement.loc[:, "General and Administrative Expenses", :]
+                .T.rolling(trailing)
+                .sum()
+                .T,
+                self._income_statement.loc[:, "Revenue", :].T.rolling(trailing).sum().T,
+            )
+        else:
+            ga_ratio = efficiency_model.get_general_and_administrative_ratio(
+                self._income_statement.loc[:, "General and Administrative Expenses", :],
+                self._income_statement.loc[:, "Revenue", :],
+            )
+
+        return finalize_dataset(
+            dataset=ga_ratio,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_stock_based_compensation_ratio(
+        self,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+        trailing: int | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the stock-based compensation (SBC) to revenue ratio, an efficiency
+        ratio that measures how much of a company's revenue is being used to
+        compensate employees through non-cash equity awards.
+
+        A high or rising SBC-to-revenue ratio is a common quality-of-earnings flag,
+        particularly for technology companies, since SBC is added back in cash flow
+        from operations but represents real economic dilution for shareholders.
+
+        The formula is as follows:
+
+        - SBC to Revenue Ratio = Stock Based Compensation / Revenue
+
+        Also known as: SBC intensity, equity compensation ratio.
+
+        Args:
+            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            trailing (int): Defines whether to select a trailing period.
+            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+
+        Returns:
+            pd.DataFrame: SBC to revenue ratio values.
+
+        Notes:
+        - The method retrieves historical data and calculates the SBC to revenue ratio for
+        each asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the ratio values
+        using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        sbc_ratios = toolkit.ratios.get_stock_based_compensation_ratio()
+        ```
+
+        Which returns:
+
+        |      |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:-----|-------:|-------:|-------:|-------:|-------:|
+        | AAPL | 0.0216 | 0.0229 | 0.0283 | 0.0299 | 0.0309 |
+        | TSLA | 0.0394 | 0.0192 | 0.0187 | 0.0205 | 0.0298 |
+        """
+        if trailing:
+            sbc_ratio = efficiency_model.get_stock_based_compensation_ratio(
+                self._cash_flow_statement.loc[:, "Stock Based Compensation", :]
+                .T.rolling(trailing)
+                .sum()
+                .T,
+                self._income_statement.loc[:, "Revenue", :].T.rolling(trailing).sum().T,
+            )
+        else:
+            sbc_ratio = efficiency_model.get_stock_based_compensation_ratio(
+                self._cash_flow_statement.loc[:, "Stock Based Compensation", :],
+                self._income_statement.loc[:, "Revenue", :],
+            )
+
+        return finalize_dataset(
+            dataset=sbc_ratio,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_deferred_revenue_ratio(
+        self,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+        trailing: int | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the deferred revenue ratio, an efficiency ratio that measures the
+        size of a company's deferred revenue (payments collected for goods or
+        services not yet delivered) relative to its revenue.
+
+        This ratio is a common leading indicator for subscription and SaaS
+        businesses, where a growing deferred revenue balance relative to revenue can
+        signal accelerating future revenue recognition.
+
+        The formula is as follows:
+
+        - Deferred Revenue Ratio = Deferred Revenue / Revenue
+
+        Also known as: deferred revenue intensity, unearned revenue ratio.
+
+        Args:
+            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            trailing (int): Defines whether to select a trailing period.
+            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+
+        Returns:
+            pd.DataFrame: Deferred revenue ratio values.
+
+        Notes:
+        - The method retrieves historical data and calculates the deferred revenue ratio for
+        each asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the ratio values
+        using the specified `lag`.
+        - Not every company reports Deferred Revenue on its Balance Sheet, in which case this
+        ratio will be unavailable.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        deferred_revenue_ratios = toolkit.ratios.get_deferred_revenue_ratio()
+        ```
+
+        Which returns:
+
+        |      |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:-----|-------:|-------:|-------:|-------:|-------:|
+        | AAPL | 0.0208 | 0.0201 | 0.021  | 0.0211 | 0.0218 |
+        | TSLA | 0.0441 | 0.0345 | 0.0386 | 0.0426 | 0.0361 |
+        """
+        if trailing:
+            deferred_revenue_ratio = efficiency_model.get_deferred_revenue_ratio(
+                self._balance_sheet_statement.loc[:, "Deferred Revenue", :]
+                .T.rolling(trailing)
+                .mean()
+                .T,
+                self._income_statement.loc[:, "Revenue", :].T.rolling(trailing).sum().T,
+            )
+        else:
+            deferred_revenue_ratio = efficiency_model.get_deferred_revenue_ratio(
+                self._balance_sheet_statement.loc[:, "Deferred Revenue", :],
+                self._income_statement.loc[:, "Revenue", :],
+            )
+
+        return finalize_dataset(
+            dataset=deferred_revenue_ratio,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+        )
 
     def collect_liquidity_ratios(
         self,
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
         trailing: int | None = None,
     ) -> pd.DataFrame:
         """
@@ -1755,6 +2475,9 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             trailing (int): Defines whether to select a trailing period.
             E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
@@ -1774,7 +2497,21 @@ class Ratios:
         toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         liquidity_ratios = toolkit.ratios.collect_liquidity_ratios()
+
+        liquidity_ratios.loc['AAPL']
         ```
+
+        Which returns:
+
+        |                                    |       2021 |        2022 |       2023 |        2024 |        2025 |
+        |:-----------------------------------|-----------:|------------:|-----------:|------------:|------------:|
+        | Current Ratio                      |  1.0746    |  0.8794     |  0.988     |  0.8673     |  0.8933     |
+        | Quick Ratio                        |  0.7086    |  0.4967     |  0.6267    |  0.5589     |  0.5704     |
+        | Cash Ratio                         |  0.4992    |  0.3137     |  0.4236    |  0.3695     |  0.3302     |
+        | Working Capital                    |  9.355e+09 | -1.8577e+10 | -1.742e+09 | -2.3405e+10 | -1.7674e+10 |
+        | Operating Cash Flow Ratio          |  0.8291    |  0.7933     |  0.7607    |  0.6704     |  0.6731     |
+        | Operating Cash Flow to Sales Ratio |  0.2844    |  0.3098     |  0.2884    |  0.3024     |  0.2679     |
+        | Short Term Coverage Ratio          | -4.7495    | -3.9423     | -4.1291    | -4.1839     | -4.5755     |
         """
         liquidity_ratios: dict = {}
 
@@ -1820,22 +2557,40 @@ class Ratios:
 
         if growth:
             self._liquidity_ratios_growth = calculate_growth(
-                self._liquidity_ratios,
+                dataset=self._liquidity_ratios,
                 lag=lag,
                 rounding=rounding if rounding else self._rounding,
                 axis="columns",
             )
 
+        liquidity_ratios = self._liquidity_ratios
+        liquidity_ratios_growth = self._liquidity_ratios_growth
+
+        if standardize:
+            standardize_rounding = rounding if rounding else self._rounding
+            if growth:
+                liquidity_ratios_growth = calculate_standardization(
+                    dataset=liquidity_ratios_growth,
+                    rounding=standardize_rounding,
+                    axis="columns",
+                )
+            else:
+                liquidity_ratios = calculate_standardization(
+                    dataset=liquidity_ratios,
+                    rounding=standardize_rounding,
+                    axis="columns",
+                )
+
         if len(self._tickers) == 1:
             return (
-                self._liquidity_ratios_growth[self._tickers[0]]
+                liquidity_ratios_growth[self._tickers[0]]
                 if growth
-                else self._liquidity_ratios.loc[self._tickers[0]]
+                else liquidity_ratios.loc[self._tickers[0]]
             ).loc[:, self._start_date : self._end_date]
 
-        return (
-            self._liquidity_ratios_growth if growth else self._liquidity_ratios
-        ).loc[:, self._start_date : self._end_date]
+        return (liquidity_ratios_growth if growth else liquidity_ratios).loc[
+            :, self._start_date : self._end_date
+        ]
 
     @handle_portfolio
     @handle_errors
@@ -1844,6 +2599,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
         trailing: int | None = None,
     ) -> pd.DataFrame:
         """
@@ -1864,6 +2620,9 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             trailing (int): Defines whether to select a trailing period.
             E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
@@ -1885,6 +2644,13 @@ class Ratios:
 
         current_ratios = toolkit.ratios.get_current_ratio()
         ```
+
+        Which returns:
+
+        |      |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:-----|-------:|-------:|-------:|-------:|-------:|
+        | AAPL | 1.0746 | 0.8794 | 0.988  | 0.8673 | 0.8933 |
+        | TSLA | 1.3753 | 1.532  | 1.7259 | 2.0249 | 2.1644 |
         """
         if trailing:
             current_ratio = liquidity_model.get_current_ratio(
@@ -1903,16 +2669,16 @@ class Ratios:
                 self._balance_sheet_statement.loc[:, "Total Current Liabilities", :],
             )
 
-        if growth:
-            return calculate_growth(
-                current_ratio,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-            ).loc[:, self._start_date : self._end_date]
-
-        return current_ratio.round(rounding if rounding else self._rounding).loc[
-            :, self._start_date : self._end_date
-        ]
+        return finalize_dataset(
+            dataset=current_ratio,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+        )
 
     @handle_portfolio
     @handle_errors
@@ -1921,6 +2687,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
         trailing: int | None = None,
     ) -> pd.DataFrame:
         """
@@ -1944,6 +2711,9 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             trailing (int): Defines whether to select a trailing period.
             E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
@@ -1964,6 +2734,13 @@ class Ratios:
 
         quick_ratios = toolkit.ratios.get_quick_ratio()
         ```
+
+        Which returns:
+
+        |      |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:-----|-------:|-------:|-------:|-------:|-------:|
+        | AAPL | 0.7086 | 0.4967 | 0.6267 | 0.5589 | 0.5704 |
+        | TSLA | 0.9957 | 0.9411 | 1.1341 | 1.4219 | 1.5335 |
         """
         if trailing:
             quick_ratio = liquidity_model.get_quick_ratio(
@@ -1992,14 +2769,16 @@ class Ratios:
                 self._balance_sheet_statement.loc[:, "Total Current Liabilities", :],
             )
 
-        if growth:
-            return calculate_growth(
-                quick_ratio, lag=lag, rounding=rounding if rounding else self._rounding
-            ).loc[:, self._start_date : self._end_date]
-
-        return quick_ratio.round(rounding if rounding else self._rounding).loc[
-            :, self._start_date : self._end_date
-        ]
+        return finalize_dataset(
+            dataset=quick_ratio,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+        )
 
     @handle_portfolio
     @handle_errors
@@ -2008,6 +2787,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
         trailing: int | None = None,
     ) -> pd.DataFrame:
         """
@@ -2028,6 +2808,9 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             trailing (int): Defines whether to select a trailing period.
             E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
@@ -2049,6 +2832,13 @@ class Ratios:
 
         cash_ratios = toolkit.ratios.get_cash_ratio()
         ```
+
+        Which returns:
+
+        |      |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:-----|-------:|-------:|-------:|-------:|-------:|
+        | AAPL | 0.4992 | 0.3137 | 0.4236 | 0.3695 | 0.3302 |
+        | TSLA | 0.8986 | 0.8306 | 1.012  | 1.2686 | 1.3893 |
         """
         if trailing:
             cash_ratio = liquidity_model.get_cash_ratio(
@@ -2072,14 +2862,16 @@ class Ratios:
                 self._balance_sheet_statement.loc[:, "Total Current Liabilities", :],
             )
 
-        if growth:
-            return calculate_growth(
-                cash_ratio, lag=lag, rounding=rounding if rounding else self._rounding
-            ).loc[:, self._start_date : self._end_date]
-
-        return cash_ratio.round(rounding if rounding else self._rounding).loc[
-            :, self._start_date : self._end_date
-        ]
+        return finalize_dataset(
+            dataset=cash_ratio,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+        )
 
     @handle_portfolio
     @handle_errors
@@ -2088,6 +2880,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
         trailing: int | None = None,
     ) -> pd.DataFrame:
         """
@@ -2108,6 +2901,9 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             trailing (int): Defines whether to select a trailing period.
             E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
@@ -2129,6 +2925,13 @@ class Ratios:
 
         working_capitals = toolkit.ratios.get_working_capital()
         ```
+
+        Which returns:
+
+        |      |      2021 |        2022 |        2023 |        2024 |        2025 |
+        |:-----|----------:|------------:|------------:|------------:|------------:|
+        | AAPL | 9.355e+09 | -1.8577e+10 | -1.742e+09  | -2.3405e+10 | -1.7674e+10 |
+        | TSLA | 7.395e+09 |  1.4208e+10 |  2.0868e+10 |  2.9539e+10 |  3.6928e+10 |
         """
         if trailing:
             working_capital = liquidity_model.get_working_capital(
@@ -2147,16 +2950,16 @@ class Ratios:
                 self._balance_sheet_statement.loc[:, "Total Current Liabilities", :],
             )
 
-        if growth:
-            return calculate_growth(
-                working_capital,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-            ).loc[:, self._start_date : self._end_date]
-
-        return working_capital.round(rounding if rounding else self._rounding).loc[
-            :, self._start_date : self._end_date
-        ]
+        return finalize_dataset(
+            dataset=working_capital,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+        )
 
     @handle_portfolio
     @handle_errors
@@ -2165,6 +2968,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
         trailing: int | None = None,
     ) -> pd.DataFrame:
         """
@@ -2185,6 +2989,9 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             trailing (int): Defines whether to select a trailing period.
             E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
@@ -2206,6 +3013,13 @@ class Ratios:
 
         operating_cash_flow_ratios = toolkit.ratios.get_operating_cash_flow_ratio()
         ```
+
+        Which returns:
+
+        |      |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:-----|-------:|-------:|-------:|-------:|-------:|
+        | AAPL | 0.8291 | 0.7933 | 0.7607 | 0.6704 | 0.6731 |
+        | TSLA | 0.5835 | 0.5513 | 0.4611 | 0.5178 | 0.465  |
         """
         if trailing:
             operating_cash_flow_ratio = liquidity_model.get_operating_cash_flow_ratio(
@@ -2224,16 +3038,16 @@ class Ratios:
                 self._balance_sheet_statement.loc[:, "Total Current Liabilities", :],
             )
 
-        if growth:
-            return calculate_growth(
-                operating_cash_flow_ratio,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-            ).loc[:, self._start_date : self._end_date]
-
-        return operating_cash_flow_ratio.round(
-            rounding if rounding else self._rounding
-        ).loc[:, self._start_date : self._end_date]
+        return finalize_dataset(
+            dataset=operating_cash_flow_ratio,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+        )
 
     @handle_portfolio
     @handle_errors
@@ -2242,6 +3056,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
         trailing: int | None = None,
     ) -> pd.DataFrame:
         """
@@ -2262,6 +3077,9 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             trailing (int): Defines whether to select a trailing period.
             E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
@@ -2283,6 +3101,13 @@ class Ratios:
 
         operating_cash_flow_sales_ratios = toolkit.ratios.get_operating_cash_flow_sales_ratio()
         ```
+
+        Which returns:
+
+        |      |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:-----|-------:|-------:|-------:|-------:|-------:|
+        | AAPL | 0.2844 | 0.3098 | 0.2884 | 0.3024 | 0.2679 |
+        | TSLA | 0.2136 | 0.1807 | 0.137  | 0.1528 | 0.1555 |
         """
         if trailing:
             operating_cash_flow_sales_ratio = (
@@ -2305,16 +3130,16 @@ class Ratios:
                 )
             )
 
-        if growth:
-            return calculate_growth(
-                operating_cash_flow_sales_ratio,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-            ).loc[:, self._start_date : self._end_date]
-
-        return operating_cash_flow_sales_ratio.round(
-            rounding if rounding else self._rounding
-        ).loc[:, self._start_date : self._end_date]
+        return finalize_dataset(
+            dataset=operating_cash_flow_sales_ratio,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+        )
 
     @handle_portfolio
     @handle_errors
@@ -2323,6 +3148,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
         trailing: int | None = None,
     ):
         """
@@ -2342,6 +3168,9 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             trailing (int): Defines whether to select a trailing period.
             E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
@@ -2354,6 +3183,13 @@ class Ratios:
 
         toolkit.ratios.get_short_term_coverage_ratio()
         ```
+
+        Which returns:
+
+        |      |    2021 |    2022 |    2023 |    2024 |    2025 |
+        |:-----|--------:|--------:|--------:|--------:|--------:|
+        | AAPL | -4.7495 | -3.9423 | -4.1291 | -4.1839 | -4.5755 |
+        | TSLA | -4.882  | 27.4701 |  4.9042 |  3.7675 |  4.0998 |
         """
         if trailing:
             short_term_coverage_ratio = liquidity_model.get_short_term_coverage_ratio(
@@ -2382,22 +3218,23 @@ class Ratios:
                 self._balance_sheet_statement.loc[:, "Accounts Payable", :],
             )
 
-        if growth:
-            return calculate_growth(
-                short_term_coverage_ratio,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-            ).loc[:, self._start_date : self._end_date]
-
-        return short_term_coverage_ratio.round(
-            rounding if rounding else self._rounding
-        ).loc[:, self._start_date : self._end_date]
+        return finalize_dataset(
+            dataset=short_term_coverage_ratio,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+        )
 
     def collect_profitability_ratios(
         self,
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
         trailing: int | None = None,
     ) -> pd.DataFrame:
         """
@@ -2407,6 +3244,9 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             trailing (int): Defines whether to select a trailing period.
             E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
@@ -2426,7 +3266,24 @@ class Ratios:
         toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         profitability_ratios = toolkit.ratios.collect_profitability_ratios()
+
+        profitability_ratios.loc['AAPL']
         ```
+
+        Which returns:
+
+        |                                             |   2021 |   2022 |   2023 |    2024 |   2025 |
+        |:--------------------------------------------|-------:|-------:|-------:|--------:|-------:|
+        | Return on Invested Capital                  | 0.5637 | 0.599  | 0.6068 |  0.6019 | 0.7038 |
+        | Return on Capital Employed                  | 0.496  | 0.6139 | 0.5677 |  0.6548 | 0.6855 |
+        | Return on Tangible Assets                   | 0.155  | 0.1543 | 0.1495 |  0.1425 | 0.17   |
+        | Income Quality Ratio                        | 1.0988 | 1.2239 | 1.1397 |  1.2616 | 0.9953 |
+        | Net Income per EBT                          | 0.867  | 0.838  | 0.8528 |  0.7591 | 0.8439 |
+        | Free Cash Flow to Operating Cash Flow Ratio | 0.8935 | 0.9123 | 0.9009 |  0.9201 | 0.8859 |
+        | EBT to EBIT Ratio                           | 0.9764 | 0.976  | 0.9666 |  1      | 1      |
+        | EBIT to Revenue                             | 0.3058 | 0.3095 | 0.307  |  0.3158 | 0.3189 |
+        | Cash Tax Rate                               | 0.2324 | 0.1643 | 0.1642 |  0.2114 | 0.3267 |
+        | Tax Rate Divergence                         | 0.0994 | 0.0023 | 0.017  | -0.0295 | 0.1706 |
         """
         profitability_ratios: dict = {}
 
@@ -2476,6 +3333,12 @@ class Ratios:
         profitability_ratios["EBIT to Revenue"] = self.get_EBIT_to_revenue(
             trailing=trailing
         )
+        profitability_ratios["Cash Tax Rate"] = self.get_cash_tax_rate(
+            trailing=trailing
+        )
+        profitability_ratios["Tax Rate Divergence"] = self.get_tax_rate_divergence(
+            trailing=trailing
+        )
 
         self._profitability_ratios = (
             pd.concat(profitability_ratios)
@@ -2503,22 +3366,40 @@ class Ratios:
 
         if growth:
             self._profitability_ratios_growth = calculate_growth(
-                self._profitability_ratios,
+                dataset=self._profitability_ratios,
                 lag=lag,
                 rounding=rounding if rounding else self._rounding,
                 axis="columns",
             )
 
+        profitability_ratios = self._profitability_ratios
+        profitability_ratios_growth = self._profitability_ratios_growth
+
+        if standardize:
+            standardize_rounding = rounding if rounding else self._rounding
+            if growth:
+                profitability_ratios_growth = calculate_standardization(
+                    dataset=profitability_ratios_growth,
+                    rounding=standardize_rounding,
+                    axis="columns",
+                )
+            else:
+                profitability_ratios = calculate_standardization(
+                    dataset=profitability_ratios,
+                    rounding=standardize_rounding,
+                    axis="columns",
+                )
+
         if len(self._tickers) == 1:
             return (
-                self._profitability_ratios_growth[self._tickers[0]]
+                profitability_ratios_growth[self._tickers[0]]
                 if growth
-                else self._profitability_ratios.loc[self._tickers[0]]
+                else profitability_ratios.loc[self._tickers[0]]
             ).loc[:, self._start_date : self._end_date]
 
-        return (
-            self._profitability_ratios_growth if growth else self._profitability_ratios
-        ).loc[:, self._start_date : self._end_date]
+        return (profitability_ratios_growth if growth else profitability_ratios).loc[
+            :, self._start_date : self._end_date
+        ]
 
     @handle_portfolio
     @handle_errors
@@ -2527,6 +3408,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
         trailing: int | None = None,
     ) -> pd.DataFrame:
         """
@@ -2547,6 +3429,9 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             trailing (int): Defines whether to select a trailing period.
             E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
@@ -2568,6 +3453,13 @@ class Ratios:
 
         gross_margin_ratios = toolkit.ratios.get_gross_margin()
         ```
+
+        Which returns:
+
+        |      |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:-----|-------:|-------:|-------:|-------:|-------:|
+        | AAPL | 0.4178 | 0.4331 | 0.4413 | 0.4621 | 0.4691 |
+        | TSLA | 0.2528 | 0.256  | 0.1825 | 0.1786 | 0.1803 |
         """
         if trailing:
             gross_margin = profitability_model.get_gross_margin(
@@ -2583,14 +3475,16 @@ class Ratios:
                 self._income_statement.loc[:, "Cost of Goods Sold", :],
             )
 
-        if growth:
-            return calculate_growth(
-                gross_margin, lag=lag, rounding=rounding if rounding else self._rounding
-            ).loc[:, self._start_date : self._end_date]
-
-        return gross_margin.round(rounding if rounding else self._rounding).loc[
-            :, self._start_date : self._end_date
-        ]
+        return finalize_dataset(
+            dataset=gross_margin,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+        )
 
     @handle_portfolio
     @handle_errors
@@ -2599,6 +3493,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
         trailing: int | None = None,
     ) -> pd.DataFrame:
         """
@@ -2619,6 +3514,9 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             trailing (int): Defines whether to select a trailing period.
             E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
@@ -2640,6 +3538,13 @@ class Ratios:
 
         operating_margin_ratios = toolkit.ratios.get_operating_margin()
         ```
+
+        Which returns:
+
+        |      |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:-----|-------:|-------:|-------:|-------:|-------:|
+        | AAPL | 0.2978 | 0.3029 | 0.2982 | 0.3151 | 0.3197 |
+        | TSLA | 0.1212 | 0.1676 | 0.0919 | 0.0724 | 0.0459 |
         """
         if trailing:
             operating_margin = profitability_model.get_operating_margin(
@@ -2655,16 +3560,16 @@ class Ratios:
                 self._income_statement.loc[:, "Revenue", :],
             )
 
-        if growth:
-            return calculate_growth(
-                operating_margin,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-            ).loc[:, self._start_date : self._end_date]
-
-        return operating_margin.round(rounding if rounding else self._rounding).loc[
-            :, self._start_date : self._end_date
-        ]
+        return finalize_dataset(
+            dataset=operating_margin,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+        )
 
     @handle_portfolio
     @handle_errors
@@ -2673,6 +3578,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
         trailing: int | None = None,
     ) -> pd.DataFrame:
         """
@@ -2693,6 +3599,9 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             trailing (int): Defines whether to select a trailing period.
             E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
@@ -2714,6 +3623,13 @@ class Ratios:
 
         net_profit_margin_ratios = toolkit.ratios.get_net_profit_margin()
         ```
+
+        Which returns:
+
+        |      |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:-----|-------:|-------:|-------:|-------:|-------:|
+        | AAPL | 0.2588 | 0.2531 | 0.2531 | 0.2397 | 0.2692 |
+        | TSLA | 0.1028 | 0.1545 | 0.155  | 0.073  | 0.04   |
         """
         if trailing:
             net_profit_margin = profitability_model.get_net_profit_margin(
@@ -2729,16 +3645,16 @@ class Ratios:
                 self._income_statement.loc[:, "Revenue", :],
             )
 
-        if growth:
-            return calculate_growth(
-                net_profit_margin,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-            ).loc[:, self._start_date : self._end_date]
-
-        return net_profit_margin.round(rounding if rounding else self._rounding).loc[
-            :, self._start_date : self._end_date
-        ]
+        return finalize_dataset(
+            dataset=net_profit_margin,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+        )
 
     @handle_portfolio
     @handle_errors
@@ -2747,6 +3663,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
         trailing: int | None = None,
     ) -> pd.DataFrame:
         """
@@ -2771,6 +3688,9 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             trailing (int): Defines whether to select a trailing period.
             E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
@@ -2788,10 +3708,16 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(["TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         interest_coverage_ratios = toolkit.ratios.get_interest_burden_ratio()
         ```
+
+        Which returns:
+
+        |      |    2021 |    2022 |    2023 |     2024 |     2025 |
+        |:-----|--------:|--------:|--------:|---------:|---------:|
+        | TSLA | 17.5822 | 71.4974 | 56.9936 |  20.2171 |  12.8846 |
         """
         if trailing:
             interest_burden_ratio = profitability_model.get_interest_coverage_ratio(
@@ -2810,16 +3736,16 @@ class Ratios:
                 self._income_statement.loc[:, "Interest Expense", :],
             )
 
-        if growth:
-            return calculate_growth(
-                interest_burden_ratio,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-            ).loc[:, self._start_date : self._end_date]
-
-        return interest_burden_ratio.round(
-            rounding if rounding else self._rounding
-        ).loc[:, self._start_date : self._end_date]
+        return finalize_dataset(
+            dataset=interest_burden_ratio,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+        )
 
     @handle_portfolio
     @handle_errors
@@ -2828,6 +3754,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
         trailing: int | None = None,
     ) -> pd.DataFrame:
         """
@@ -2847,6 +3774,9 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             trailing (int): Defines whether to select a trailing period.
             E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
@@ -2868,6 +3798,13 @@ class Ratios:
 
         pretax_profit_margin = toolkit.ratios.get_income_before_tax_profit_margin()
         ```
+
+        Which returns:
+
+        |      |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:-----|-------:|-------:|-------:|-------:|-------:|
+        | AAPL | 0.2985 | 0.302  | 0.2967 | 0.3158 | 0.3189 |
+        | TSLA | 0.1178 | 0.1684 | 0.1031 | 0.092  | 0.0557 |
         """
         if trailing:
             income_before_tax_profit_margin = (
@@ -2890,16 +3827,16 @@ class Ratios:
                 )
             )
 
-        if growth:
-            return calculate_growth(
-                income_before_tax_profit_margin,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-            ).loc[:, self._start_date : self._end_date]
-
-        return income_before_tax_profit_margin.round(
-            rounding if rounding else self._rounding
-        ).loc[:, self._start_date : self._end_date]
+        return finalize_dataset(
+            dataset=income_before_tax_profit_margin,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+        )
 
     @handle_portfolio
     @handle_errors
@@ -2908,6 +3845,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
         trailing: int | None = None,
     ) -> pd.DataFrame:
         """
@@ -2927,6 +3865,9 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             trailing (int): Defines whether to select a trailing period.
             E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
@@ -2948,6 +3889,13 @@ class Ratios:
 
         effective_tax_rate = toolkit.ratios.get_effective_tax_rate()
         ```
+
+        Which returns:
+
+        |      |   2021 |   2022 |    2023 |   2024 |   2025 |
+        |:-----|-------:|-------:|--------:|-------:|-------:|
+        | AAPL | 0.133  | 0.162  |  0.1472 | 0.2409 | 0.1561 |
+        | TSLA | 0.1102 | 0.0825 | -0.5015 | 0.2043 | 0.2696 |
         """
         if trailing:
             effective_tax_rate = profitability_model.get_effective_tax_rate(
@@ -2966,16 +3914,16 @@ class Ratios:
                 self._income_statement.loc[:, "Income Before Tax", :],
             )
 
-        if growth:
-            return calculate_growth(
-                effective_tax_rate,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-            ).loc[:, self._start_date : self._end_date]
-
-        return effective_tax_rate.round(rounding if rounding else self._rounding).loc[
-            :, self._start_date : self._end_date
-        ]
+        return finalize_dataset(
+            dataset=effective_tax_rate,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+        )
 
     @handle_portfolio
     @handle_errors
@@ -2984,6 +3932,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
         trailing: int | None = None,
     ) -> pd.DataFrame:
         """
@@ -3004,6 +3953,9 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             trailing (int): Defines whether to select a trailing period.
             E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
@@ -3025,6 +3977,13 @@ class Ratios:
 
         roa_ratios = toolkit.ratios.get_return_on_assets()
         ```
+
+        Which returns:
+
+        |      |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:-----|-------:|-------:|-------:|-------:|-------:|
+        | AAPL | 0.2806 | 0.2836 | 0.275  | 0.2613 | 0.3093 |
+        | TSLA | 0.0968 | 0.1742 | 0.1588 | 0.0624 | 0.0292 |
         """
         if trailing:
             return_on_assets = profitability_model.get_return_on_assets(
@@ -3046,16 +4005,16 @@ class Ratios:
                 .T,
             )
 
-        if growth:
-            return calculate_growth(
-                return_on_assets,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-            ).loc[:, self._start_date : self._end_date]
-
-        return return_on_assets.round(rounding if rounding else self._rounding).loc[
-            :, self._start_date : self._end_date
-        ]
+        return finalize_dataset(
+            dataset=return_on_assets,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+        )
 
     @handle_portfolio
     @handle_errors
@@ -3064,6 +4023,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
         trailing: int | None = None,
     ) -> pd.DataFrame:
         """
@@ -3089,6 +4049,9 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             trailing (int): Defines whether to select a trailing period.
             E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
@@ -3108,6 +4071,13 @@ class Ratios:
 
         roe_ratios = toolkit.ratios.get_return_on_equity()
         ```
+
+        Which returns:
+
+        |      |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:-----|-------:|-------:|-------:|-------:|-------:|
+        | AAPL | 1.4744 | 1.7546 | 1.7195 | 1.5741 | 1.7142 |
+        | TSLA | 0.2002 | 0.3248 | 0.2739 | 0.1039 | 0.0485 |
         """
         if trailing:
             return_on_equity = profitability_model.get_return_on_equity(
@@ -3130,16 +4100,16 @@ class Ratios:
                 .T,
             )
 
-        if growth:
-            return calculate_growth(
-                return_on_equity,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-            ).loc[:, self._start_date : self._end_date]
-
-        return return_on_equity.round(rounding if rounding else self._rounding).loc[
-            :, self._start_date : self._end_date
-        ]
+        return finalize_dataset(
+            dataset=return_on_equity,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+        )
 
     @handle_portfolio
     @handle_errors
@@ -3149,6 +4119,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
         trailing: int | None = None,
     ):
         """
@@ -3171,6 +4142,9 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             trailing (int): Defines whether to select a trailing period.
             E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
@@ -3190,6 +4164,13 @@ class Ratios:
 
         roic_ratios = toolkit.ratios.get_return_on_invested_capital()
         ```
+
+        Which returns:
+
+        |      |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:-----|-------:|-------:|-------:|-------:|-------:|
+        | AAPL | 0.5637 | 0.599  | 0.6068 | 0.6019 | 0.7038 |
+        | TSLA | 0.1429 | 0.2733 | 0.2403 | 0.0889 | 0.0425 |
         """
         if trailing:
             return_on_invested_capital = (
@@ -3236,16 +4217,16 @@ class Ratios:
                 )
             )
 
-        if growth:
-            return calculate_growth(
-                return_on_invested_capital,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-            ).loc[:, self._start_date : self._end_date]
-
-        return return_on_invested_capital.round(
-            rounding if rounding else self._rounding
-        ).loc[:, self._start_date : self._end_date]
+        return finalize_dataset(
+            dataset=return_on_invested_capital,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+        )
 
     @handle_portfolio
     @handle_errors
@@ -3254,6 +4235,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
         trailing: int | None = None,
     ):
         """
@@ -3275,6 +4257,9 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             trailing (int): Defines whether to select a trailing period.
             E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
@@ -3295,6 +4280,13 @@ class Ratios:
 
         income_quality_ratios = toolkit.ratios.get_income_quality_ratio()
         ```
+
+        Which returns:
+
+        |      |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:-----|-------:|-------:|-------:|-------:|-------:|
+        | AAPL | 1.0988 | 1.2239 | 1.1397 | 1.2616 | 0.9953 |
+        | TSLA | 2.0779 | 1.1701 | 0.8838 | 2.093  | 3.8869 |
         """
         if trailing:
             income_quality_ratio = profitability_model.get_income_quality_ratio(
@@ -3313,16 +4305,16 @@ class Ratios:
                 self._income_statement.loc[:, "Net Income", :],
             )
 
-        if growth:
-            return calculate_growth(
-                income_quality_ratio,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-            ).loc[:, self._start_date : self._end_date]
-
-        return income_quality_ratio.round(rounding if rounding else self._rounding).loc[
-            :, self._start_date : self._end_date
-        ]
+        return finalize_dataset(
+            dataset=income_quality_ratio,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+        )
 
     @handle_portfolio
     @handle_errors
@@ -3331,6 +4323,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
         trailing: int | None = None,
     ):
         """
@@ -3352,6 +4345,9 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             trailing (int): Defines whether to select a trailing period.
             E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
@@ -3371,6 +4367,13 @@ class Ratios:
 
         rota_ratios = toolkit.ratios.get_return_on_tangible_assets()
         ```
+
+        Which returns:
+
+        |      |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:-----|-------:|-------:|-------:|-------:|-------:|
+        | AAPL | 0.155  | 0.1543 | 0.1495 | 0.1425 | 0.17   |
+        | TSLA | 0.0632 | 0.118  | 0.1114 | 0.0443 | 0.0208 |
         """
         if trailing:
             return_on_tangible_assets = (
@@ -3412,16 +4415,16 @@ class Ratios:
                 )
             )
 
-        if growth:
-            return calculate_growth(
-                return_on_tangible_assets,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-            ).loc[:, self._start_date : self._end_date]
-
-        return return_on_tangible_assets.round(
-            rounding if rounding else self._rounding
-        ).loc[:, self._start_date : self._end_date]
+        return finalize_dataset(
+            dataset=return_on_tangible_assets,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+        )
 
     @handle_portfolio
     @handle_errors
@@ -3430,6 +4433,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
         trailing: int | None = None,
     ):
         """
@@ -3450,6 +4454,9 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             trailing (int): Defines whether to select a trailing period.
             E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
@@ -3469,6 +4476,13 @@ class Ratios:
 
         roce_ratios = toolkit.ratios.get_return_on_capital_employed()
         ```
+
+        Which returns:
+
+        |      |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:-----|-------:|-------:|-------:|-------:|-------:|
+        | AAPL | 0.496  | 0.6139 | 0.5677 | 0.6548 | 0.6855 |
+        | TSLA | 0.1556 | 0.25   | 0.1304 | 0.0999 | 0.0524 |
         """
         if trailing:
             return_on_capital_employed = (
@@ -3508,16 +4522,16 @@ class Ratios:
                 )
             )
 
-        if growth:
-            return calculate_growth(
-                return_on_capital_employed,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-            ).loc[:, self._start_date : self._end_date]
-
-        return return_on_capital_employed.round(
-            rounding if rounding else self._rounding
-        ).loc[:, self._start_date : self._end_date]
+        return finalize_dataset(
+            dataset=return_on_capital_employed,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+        )
 
     @handle_portfolio
     @handle_errors
@@ -3526,6 +4540,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
         trailing: int | None = None,
     ):
         """
@@ -3546,6 +4561,9 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             trailing (int): Defines whether to select a trailing period.
             E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
@@ -3567,6 +4585,13 @@ class Ratios:
 
         net_income_per_ebt_ratios = toolkit.ratios.get_net_income_per_ebt()
         ```
+
+        Which returns:
+
+        |      |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:-----|-------:|-------:|-------:|-------:|-------:|
+        | AAPL | 0.867  | 0.838  | 0.8528 | 0.7591 | 0.8439 |
+        | TSLA | 0.8878 | 0.9175 | 1.5002 | 0.7951 | 0.7272 |
         """
         if trailing:
             net_income_per_ebt = profitability_model.get_net_income_per_ebt(
@@ -3585,16 +4610,16 @@ class Ratios:
                 self._income_statement.loc[:, "Income Tax Expense", :],
             )
 
-        if growth:
-            return calculate_growth(
-                net_income_per_ebt,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-            ).loc[:, self._start_date : self._end_date]
-
-        return net_income_per_ebt.round(rounding if rounding else self._rounding).loc[
-            :, self._start_date : self._end_date
-        ]
+        return finalize_dataset(
+            dataset=net_income_per_ebt,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+        )
 
     @handle_portfolio
     @handle_errors
@@ -3603,6 +4628,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
         trailing: int | None = None,
     ):
         """
@@ -3624,6 +4650,9 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             trailing (int): Defines whether to select a trailing period.
             E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
@@ -3643,6 +4672,13 @@ class Ratios:
 
         fcf_to_ocf_ratios = toolkit.ratios.get_free_cash_flow_operating_cash_flow_ratio()
         ```
+
+        Which returns:
+
+        |      |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:-----|-------:|-------:|-------:|-------:|-------:|
+        | AAPL | 0.8935 | 0.9123 | 0.9009 | 0.9201 | 0.8859 |
+        | TSLA | 0.3029 | 0.5129 | 0.3287 | 0.24   | 0.4218 |
         """
         if trailing:
             free_cash_flow_operating_cash_flow_ratio = (
@@ -3665,16 +4701,16 @@ class Ratios:
                 )
             )
 
-        if growth:
-            return calculate_growth(
-                free_cash_flow_operating_cash_flow_ratio,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-            ).loc[:, self._start_date : self._end_date]
-
-        return free_cash_flow_operating_cash_flow_ratio.round(
-            rounding if rounding else self._rounding
-        ).loc[:, self._start_date : self._end_date]
+        return finalize_dataset(
+            dataset=free_cash_flow_operating_cash_flow_ratio,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+        )
 
     @handle_portfolio
     @handle_errors
@@ -3683,6 +4719,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
         trailing: int | None = None,
     ):
         """
@@ -3706,6 +4743,9 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             trailing (int): Defines whether to select a trailing period.
             E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
@@ -3725,6 +4765,13 @@ class Ratios:
 
         tax_burden_ratios = toolkit.ratios.get_tax_burden_ratio()
         ```
+
+        Which returns:
+
+        |      |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:-----|-------:|-------:|-------:|-------:|-------:|
+        | AAPL | 0.867  | 0.838  | 0.8528 | 0.7591 | 0.8439 |
+        | TSLA | 0.8723 | 0.9173 | 1.504  | 0.7931 | 0.7188 |
         """
         if trailing:
             tax_burden_ratio = profitability_model.get_tax_burden_ratio(
@@ -3743,16 +4790,16 @@ class Ratios:
                 self._income_statement.loc[:, "Income Before Tax", :],
             )
 
-        if growth:
-            return calculate_growth(
-                tax_burden_ratio,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-            ).loc[:, self._start_date : self._end_date]
-
-        return tax_burden_ratio.round(rounding if rounding else self._rounding).loc[
-            :, self._start_date : self._end_date
-        ]
+        return finalize_dataset(
+            dataset=tax_burden_ratio,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+        )
 
     @handle_portfolio
     @handle_errors
@@ -3761,6 +4808,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
         trailing: int | None = None,
     ):
         """
@@ -3784,6 +4832,9 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             trailing (int): Defines whether to select a trailing period.
             E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
@@ -3803,6 +4854,13 @@ class Ratios:
 
         ebt_to_ebit_ratios = toolkit.ratios.get_EBT_to_EBIT()
         ```
+
+        Which returns:
+
+        |      |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:-----|-------:|-------:|-------:|-------:|-------:|
+        | AAPL | 0.9764 | 0.976  | 0.9666 | 1      | 1      |
+        | TSLA | 0.9438 | 0.9863 | 0.9846 | 0.9624 | 0.9392 |
         """
         if trailing:
             EBT_to_EBIT = profitability_model.get_EBT_to_EBIT(
@@ -3836,14 +4894,16 @@ class Ratios:
                 + self._income_statement.loc[:, "Interest Expense", :],
             )
 
-        if growth:
-            return calculate_growth(
-                EBT_to_EBIT, lag=lag, rounding=rounding if rounding else self._rounding
-            ).loc[:, self._start_date : self._end_date]
-
-        return EBT_to_EBIT.round(rounding if rounding else self._rounding).loc[
-            :, self._start_date : self._end_date
-        ]
+        return finalize_dataset(
+            dataset=EBT_to_EBIT,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+        )
 
     @handle_portfolio
     @handle_errors
@@ -3852,6 +4912,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
         trailing: int | None = None,
     ):
         """
@@ -3877,6 +4938,9 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             trailing (int): Defines whether to select a trailing period.
             E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
@@ -3896,6 +4960,13 @@ class Ratios:
 
         ebit_to_revenue_ratios = toolkit.ratios.get_EBIT_to_revenue()
         ```
+
+        Which returns:
+
+        |      |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:-----|-------:|-------:|-------:|-------:|-------:|
+        | AAPL | 0.3058 | 0.3095 | 0.307  | 0.3158 | 0.3189 |
+        | TSLA | 0.1227 | 0.1707 | 0.1049 | 0.0954 | 0.0586 |
         """
         if trailing:
             EBIT_to_revenue = profitability_model.get_EBIT_to_revenue(
@@ -3920,16 +4991,179 @@ class Ratios:
             self._income_statement.loc[:, "Revenue", :],
         )
 
-        if growth:
-            return calculate_growth(
-                EBIT_to_revenue,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-            ).loc[:, self._start_date : self._end_date]
+        return finalize_dataset(
+            dataset=EBIT_to_revenue,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+        )
 
-        return EBIT_to_revenue.round(rounding if rounding else self._rounding).loc[
-            :, self._start_date : self._end_date
-        ]
+    @handle_portfolio
+    @handle_errors
+    def get_cash_tax_rate(
+        self,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+        trailing: int | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the cash tax rate, which measures the percentage of pretax income
+        that is actually paid out in cash taxes, as opposed to the accrual-based
+        effective tax rate.
+
+        The formula is as follows:
+
+        - Cash Tax Rate = Income Taxes Paid / Income Before Tax
+
+        Also known as: cash effective tax rate.
+
+        Args:
+            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            trailing (int): Defines whether to select a trailing period.
+            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+
+        Returns:
+            pd.DataFrame: Cash tax rate values.
+
+        Notes:
+        - The method retrieves historical data and calculates the cash tax rate for each
+        asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the ratio values
+        using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        cash_tax_rates = toolkit.ratios.get_cash_tax_rate()
+        ```
+
+        Which returns:
+
+        |      |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:-----|-------:|-------:|-------:|-------:|-------:|
+        | AAPL | 0.2324 | 0.1643 | 0.1642 | 0.2114 | 0.3267 |
+        | TSLA | 0.0884 | 0.0877 | 0.1122 | 0.1481 | 0      |
+        """
+        if trailing:
+            cash_tax_rate = profitability_model.get_cash_tax_rate(
+                self._cash_flow_statement.loc[:, "Income Taxes Paid", :]
+                .T.rolling(trailing)
+                .sum()
+                .T,
+                self._income_statement.loc[:, "Income Before Tax", :]
+                .T.rolling(trailing)
+                .sum()
+                .T,
+            )
+        else:
+            cash_tax_rate = profitability_model.get_cash_tax_rate(
+                self._cash_flow_statement.loc[:, "Income Taxes Paid", :],
+                self._income_statement.loc[:, "Income Before Tax", :],
+            )
+
+        return finalize_dataset(
+            dataset=cash_tax_rate,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_tax_rate_divergence(
+        self,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+        trailing: int | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the tax rate divergence, which measures the difference between the
+        cash tax rate and the accrual-based effective tax rate.
+
+        A persistently positive divergence indicates the company is paying more in
+        cash taxes than it is recognizing as tax expense (e.g. due to the reversal of
+        deferred tax liabilities), while a persistently negative divergence indicates
+        the opposite and can be a quality-of-earnings red flag if it stems from
+        aggressive tax deferral rather than timing differences.
+
+        The formula is as follows:
+
+        - Tax Rate Divergence = Cash Tax Rate - Effective Tax Rate
+
+        Also known as: cash-accrual tax gap.
+
+        Args:
+            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            trailing (int): Defines whether to select a trailing period.
+            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+
+        Returns:
+            pd.DataFrame: Tax rate divergence values.
+
+        Notes:
+        - The method retrieves historical data and calculates the tax rate divergence for
+        each asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the ratio values
+        using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        tax_rate_divergences = toolkit.ratios.get_tax_rate_divergence()
+        ```
+
+        Which returns:
+
+        |      |    2021 |   2022 |   2023 |    2024 |    2025 |
+        |:-----|--------:|-------:|-------:|--------:|--------:|
+        | AAPL |  0.0994 | 0.0023 | 0.017  | -0.0295 |  0.1706 |
+        | TSLA | -0.0218 | 0.0052 | 0.6137 | -0.0562 | -0.2696 |
+        """
+        tax_rate_divergence = profitability_model.get_tax_rate_divergence(
+            self.get_cash_tax_rate(trailing=trailing),
+            self.get_effective_tax_rate(trailing=trailing),
+        )
+
+        return finalize_dataset(
+            dataset=tax_rate_divergence,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+        )
 
     def collect_solvency_ratios(
         self,
@@ -3937,6 +5171,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
         trailing: int | None = None,
     ) -> pd.DataFrame:
         """
@@ -3947,6 +5182,9 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             trailing (int): Defines whether to select a trailing period.
             E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
@@ -3966,7 +5204,22 @@ class Ratios:
         toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         solvency_ratios = toolkit.ratios.collect_solvency_ratios()
+
+        solvency_ratios.loc['AAPL']
         ```
+
+        Which returns:
+
+        |                                   |     2021 |     2022 |     2023 |     2024 |     2025 |
+        |:----------------------------------|---------:|---------:|---------:|---------:|---------:|
+        | Debt Service Coverage Ratio       |   0.8683 |   0.7757 |   0.7866 |   0.6985 |   0.8033 |
+        | Equity Multiplier                 |   5.255  |   6.1862 |   6.252  |   6.0251 |   5.5418 |
+        | Free Cash Flow Yield              |   0.031  |   0.0525 |   0.0327 |   0.0282 |   0.0242 |
+        | Net-Debt to EBITDA Ratio          |   0.8449 |   0.8337 |   0.7468 |   0.6618 |   0.5281 |
+        | Cash Flow Coverage Ratio          |   0.7621 |   0.922  |   0.892  |   0.9932 |   0.992  |
+        | CAPEX Coverage Ratio              |  -9.3855 | -11.4075 | -10.087  | -12.5176 |  -8.7678 |
+        | Dividend CAPEX Coverage Ratio     |  -4.0716 |  -4.781  |  -4.2543 |  -4.7913 |  -3.9623 |
+        | Debt-to-Capital Ratio             |   0.6839 |   0.7233 |   0.666  |   0.6764 |   0.6038 |
         """
         solvency_ratios: dict = {}
 
@@ -3997,6 +5250,15 @@ class Ratios:
         solvency_ratios["Dividend CAPEX Coverage Ratio"] = (
             self.get_capex_dividend_coverage_ratio(trailing=trailing)
         )
+        solvency_ratios["Debt-to-Capital Ratio"] = self.get_debt_to_capital_ratio(
+            trailing=trailing
+        )
+        solvency_ratios["Preferred Dividend Coverage Ratio"] = (
+            self.get_preferred_dividend_coverage_ratio(trailing=trailing)
+        )
+        solvency_ratios["Interest Paid to Expense Ratio"] = (
+            self.get_interest_paid_to_expense_ratio(trailing=trailing)
+        )
 
         self._solvency_ratios = (
             pd.concat(solvency_ratios)
@@ -4022,20 +5284,38 @@ class Ratios:
 
         if growth:
             self._solvency_ratios_growth = calculate_growth(
-                self._solvency_ratios,
+                dataset=self._solvency_ratios,
                 lag=lag,
                 rounding=rounding if rounding else self._rounding,
                 axis="columns",
             )
 
+        solvency_ratios = self._solvency_ratios
+        solvency_ratios_growth = self._solvency_ratios_growth
+
+        if standardize:
+            standardize_rounding = rounding if rounding else self._rounding
+            if growth:
+                solvency_ratios_growth = calculate_standardization(
+                    dataset=solvency_ratios_growth,
+                    rounding=standardize_rounding,
+                    axis="columns",
+                )
+            else:
+                solvency_ratios = calculate_standardization(
+                    dataset=solvency_ratios,
+                    rounding=standardize_rounding,
+                    axis="columns",
+                )
+
         if len(self._tickers) == 1:
             return (
-                self._solvency_ratios_growth[self._tickers[0]]
+                solvency_ratios_growth[self._tickers[0]]
                 if growth
-                else self._solvency_ratios.loc[self._tickers[0]]
+                else solvency_ratios.loc[self._tickers[0]]
             ).loc[:, self._start_date : self._end_date]
 
-        return (self._solvency_ratios_growth if growth else self._solvency_ratios).loc[
+        return (solvency_ratios_growth if growth else solvency_ratios).loc[
             :, self._start_date : self._end_date
         ]
 
@@ -4046,6 +5326,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
         trailing: int | None = None,
     ):
         """
@@ -4068,6 +5349,9 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             trailing (int): Defines whether to select a trailing period.
             E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
@@ -4087,6 +5371,13 @@ class Ratios:
 
         debt_to_assets_ratios = toolkit.ratios.get_debt_to_assets_ratio()
         ```
+
+        Which returns:
+
+        |      |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:-----|-------:|-------:|-------:|-------:|-------:|
+        | AAPL | 0.3889 | 0.3756 | 0.3515 | 0.3262 | 0.3128 |
+        | TSLA | 0.1428 | 0.0698 | 0.0898 | 0.1116 | 0.0608 |
         """
         if trailing:
             debt_to_assets_ratio = solvency_model.get_debt_to_assets_ratio(
@@ -4105,16 +5396,16 @@ class Ratios:
                 self._balance_sheet_statement.loc[:, "Total Assets", :],
             )
 
-        if growth:
-            return calculate_growth(
-                debt_to_assets_ratio,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-            ).loc[:, self._start_date : self._end_date]
-
-        return debt_to_assets_ratio.round(rounding if rounding else self._rounding).loc[
-            :, self._start_date : self._end_date
-        ]
+        return finalize_dataset(
+            dataset=debt_to_assets_ratio,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+        )
 
     @handle_portfolio
     @handle_errors
@@ -4123,6 +5414,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
         trailing: int | None = None,
     ):
         """
@@ -4146,6 +5438,9 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             trailing (int): Defines whether to select a trailing period.
             E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
@@ -4165,6 +5460,13 @@ class Ratios:
 
         debt_to_equity_ratios = toolkit.ratios.get_debt_to_equity_ratio()
         ```
+
+        Which returns:
+
+        |      |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:-----|-------:|-------:|-------:|-------:|-------:|
+        | AAPL | 2.1639 | 2.6145 | 1.9942 | 2.0906 | 1.5241 |
+        | TSLA | 0.2809 | 0.1252 | 0.1505 | 0.1849 | 0.1011 |
         """
         if trailing:
             debt_to_equity_ratio = solvency_model.get_debt_to_equity_ratio(
@@ -4183,16 +5485,16 @@ class Ratios:
                 self._balance_sheet_statement.loc[:, "Total Equity", :],
             )
 
-        if growth:
-            return calculate_growth(
-                debt_to_equity_ratio,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-            ).loc[:, self._start_date : self._end_date]
-
-        return debt_to_equity_ratio.round(rounding if rounding else self._rounding).loc[
-            :, self._start_date : self._end_date
-        ]
+        return finalize_dataset(
+            dataset=debt_to_equity_ratio,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+        )
 
     @handle_portfolio
     @handle_errors
@@ -4201,6 +5503,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
         trailing: int | None = None,
     ):
         """
@@ -4223,6 +5526,9 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             trailing (int): Defines whether to select a trailing period.
             E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
@@ -4242,6 +5548,13 @@ class Ratios:
 
         interest_coverage_ratios = toolkit.ratios.get_interest_coverage_ratio()
         ```
+
+        Which returns:
+
+        |      |    2021 |    2022 |    2023 |     2024 |    2025 |
+        |:-----|--------:|--------:|--------:|---------:|--------:|
+        | AAPL | 45.4567 | 44.538  | 31.9908 | -        | -       |
+        | TSLA | 25.4286 | 90.0471 | 86.9103 |  35.5543 |  31.074 |
         """
         if trailing:
             interest_coverage_ratio = solvency_model.get_interest_coverage_ratio(
@@ -4265,16 +5578,16 @@ class Ratios:
                 self._income_statement.loc[:, "Interest Expense", :],
             )
 
-        if growth:
-            return calculate_growth(
-                interest_coverage_ratio,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-            ).loc[:, self._start_date : self._end_date]
-
-        return interest_coverage_ratio.round(
-            rounding if rounding else self._rounding
-        ).loc[:, self._start_date : self._end_date]
+        return finalize_dataset(
+            dataset=interest_coverage_ratio,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+        )
 
     @handle_portfolio
     @handle_errors
@@ -4283,6 +5596,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
         trailing: int | None = None,
     ):
         """
@@ -4305,6 +5619,9 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             trailing (int): Defines whether to select a trailing period.
             E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
@@ -4324,6 +5641,13 @@ class Ratios:
 
         equity_multipliers = toolkit.ratios.get_equity_multiplier()
         ```
+
+        Which returns:
+
+        |      |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:-----|-------:|-------:|-------:|-------:|-------:|
+        | AAPL | 5.255  | 6.1862 | 6.252  | 6.0251 | 5.5418 |
+        | TSLA | 2.0679 | 1.8646 | 1.7255 | 1.6657 | 1.6601 |
         """
         if trailing:
             equity_multiplier = solvency_model.get_equity_multiplier(
@@ -4348,16 +5672,16 @@ class Ratios:
                 .T,
             )
 
-        if growth:
-            return calculate_growth(
-                equity_multiplier,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-            ).loc[:, self._start_date : self._end_date]
-
-        return equity_multiplier.round(rounding if rounding else self._rounding).loc[
-            :, self._start_date : self._end_date
-        ]
+        return finalize_dataset(
+            dataset=equity_multiplier,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+        )
 
     @handle_portfolio
     @handle_errors
@@ -4366,6 +5690,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
         trailing: int | None = None,
     ):
         """
@@ -4387,6 +5712,9 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             trailing (int): Defines whether to select a trailing period.
             E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
@@ -4406,6 +5734,13 @@ class Ratios:
 
         debt_service_coverage_ratios = toolkit.ratios.get_debt_service_coverage_ratio()
         ```
+
+        Which returns:
+
+        |      |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:-----|-------:|-------:|-------:|-------:|-------:|
+        | AAPL | 0.8683 | 0.7757 | 0.7866 | 0.6985 | 0.8033 |
+        | TSLA | 0.331  | 0.5113 | 0.3093 | 0.2455 | 0.1373 |
         """
         if trailing:
             debt_service_coverage_ratio = (
@@ -4430,16 +5765,16 @@ class Ratios:
                 )
             )
 
-        if growth:
-            return calculate_growth(
-                debt_service_coverage_ratio,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-            ).loc[:, self._start_date : self._end_date]
-
-        return debt_service_coverage_ratio.round(
-            rounding if rounding else self._rounding
-        ).loc[:, self._start_date : self._end_date]
+        return finalize_dataset(
+            dataset=debt_service_coverage_ratio,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+        )
 
     @handle_portfolio
     @handle_errors
@@ -4450,6 +5785,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
         trailing: int | None = None,
     ):
         """
@@ -4472,6 +5808,9 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             trailing (int): Defines whether to select a trailing period.
             E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
@@ -4491,6 +5830,13 @@ class Ratios:
 
         free_cash_flow_yield_ratios = toolkit.ratios.get_free_cash_flow_yield()
         ```
+
+        Which returns:
+
+        |      |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:-----|-------:|-------:|-------:|-------:|-------:|
+        | AAPL | 0.031  | 0.0525 | 0.0327 | 0.0282 | 0.0242 |
+        | TSLA | 0.0029 | 0.0176 | 0.005  | 0.0025 | 0.0039 |
         """
         average_shares = (
             self._income_statement.loc[:, "Weighted Average Shares Diluted", :]
@@ -4550,20 +5896,17 @@ class Ratios:
                 market_cap,
             )
 
-        if growth:
-            free_cash_flow_yield = calculate_growth(
-                free_cash_flow_yield,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-            )
-        else:
-            free_cash_flow_yield = free_cash_flow_yield.round(
-                rounding if rounding else self._rounding
-            )
-
-        if show_daily:
-            return free_cash_flow_yield.loc[self._start_date : self._end_date]
-        return free_cash_flow_yield.loc[:, self._start_date : self._end_date]
+        return finalize_dataset(
+            dataset=free_cash_flow_yield,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            row_slice=show_daily,
+        )
 
     @handle_portfolio
     @handle_errors
@@ -4572,6 +5915,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
         trailing: int | None = None,
     ):
         """
@@ -4590,6 +5934,9 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             trailing (int): Defines whether to select a trailing period.
             E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
@@ -4609,6 +5956,13 @@ class Ratios:
 
         net_debt_to_ebitda_ratios = toolkit.ratios.get_net_debt_to_ebitda_ratio()
         ```
+
+        Which returns:
+
+        |      |    2021 |    2022 |    2023 |    2024 |    2025 |
+        |:-----|--------:|--------:|--------:|--------:|--------:|
+        | AAPL |  0.8449 |  0.8337 |  0.7468 |  0.6618 |  0.5281 |
+        | TSLA | -0.9225 | -0.6108 | -0.5034 | -0.2022 | -0.7747 |
         """
         if trailing:
             net_debt_to_ebitda_ratio = solvency_model.get_net_debt_to_ebitda_ratio(
@@ -4632,16 +5986,16 @@ class Ratios:
                 self._balance_sheet_statement.loc[:, "Net Debt", :],
             )
 
-        if growth:
-            return calculate_growth(
-                net_debt_to_ebitda_ratio,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-            ).loc[:, self._start_date : self._end_date]
-
-        return net_debt_to_ebitda_ratio.round(
-            rounding if rounding else self._rounding
-        ).loc[:, self._start_date : self._end_date]
+        return finalize_dataset(
+            dataset=net_debt_to_ebitda_ratio,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+        )
 
     @handle_portfolio
     @handle_errors
@@ -4650,6 +6004,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
         trailing: int | None = None,
     ):
         """
@@ -4668,6 +6023,9 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             trailing (int): Defines whether to select a trailing period.
             E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
@@ -4687,6 +6045,13 @@ class Ratios:
 
         cash_flow_coverage_ratios = toolkit.ratios.get_cash_flow_coverage_ratio()
         ```
+
+        Which returns:
+
+        |      |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:-----|-------:|-------:|-------:|-------:|-------:|
+        | AAPL | 0.7621 | 0.922  | 0.892  | 0.9932 | 0.992  |
+        | TSLA | 1.2957 | 2.5616 | 1.3847 | 1.0954 | 1.7606 |
         """
         if trailing:
             cash_flow_coverage_ratio = solvency_model.get_cash_flow_coverage_ratio(
@@ -4705,16 +6070,16 @@ class Ratios:
                 self._balance_sheet_statement.loc[:, "Total Debt", :],
             )
 
-        if growth:
-            return calculate_growth(
-                cash_flow_coverage_ratio,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-            ).loc[:, self._start_date : self._end_date]
-
-        return cash_flow_coverage_ratio.round(
-            rounding if rounding else self._rounding
-        ).loc[:, self._start_date : self._end_date]
+        return finalize_dataset(
+            dataset=cash_flow_coverage_ratio,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+        )
 
     @handle_portfolio
     @handle_errors
@@ -4723,6 +6088,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
         trailing: int | None = None,
     ):
         """
@@ -4745,6 +6111,9 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             trailing (int): Defines whether to select a trailing period.
             E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
@@ -4764,6 +6133,13 @@ class Ratios:
 
         capex_coverage_ratios = toolkit.ratios.get_capex_coverage_ratio()
         ```
+
+        Which returns:
+
+        |      |    2021 |     2022 |     2023 |     2024 |    2025 |
+        |:-----|--------:|---------:|---------:|---------:|--------:|
+        | AAPL | -9.3855 | -11.4075 | -10.087  | -12.5176 | -8.7678 |
+        | TSLA | -1.4346 |  -2.053  |  -1.4896 |  -1.3157 | -1.7294 |
         """
         if trailing:
             capex_coverage_ratio = solvency_model.get_capex_coverage_ratio(
@@ -4782,16 +6158,16 @@ class Ratios:
                 self._cash_flow_statement.loc[:, "Capital Expenditure", :],
             )
 
-        if growth:
-            return calculate_growth(
-                capex_coverage_ratio,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-            ).loc[:, self._start_date : self._end_date]
-
-        return capex_coverage_ratio.round(rounding if rounding else self._rounding).loc[
-            :, self._start_date : self._end_date
-        ]
+        return finalize_dataset(
+            dataset=capex_coverage_ratio,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+        )
 
     @handle_portfolio
     @handle_errors
@@ -4800,6 +6176,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
         trailing: int | None = None,
     ):
         """
@@ -4824,6 +6201,9 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             trailing (int): Defines whether to select a trailing period.
             E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
@@ -4843,6 +6223,13 @@ class Ratios:
 
         capex_dividend_coverage_ratios = toolkit.ratios.get_capex_dividend_coverage_ratio()
         ```
+
+        Which returns:
+
+        |      |    2021 |   2022 |    2023 |    2024 |    2025 |
+        |:-----|--------:|-------:|--------:|--------:|--------:|
+        | AAPL | -4.0716 | -4.781 | -4.2543 | -4.7913 | -3.9623 |
+        | TSLA | -1.4346 | -2.053 | -1.4896 | -1.3157 | -1.7294 |
         """
         if trailing:
             dividend_capex_coverage_ratio = (
@@ -4870,16 +6257,285 @@ class Ratios:
                 )
             )
 
-        if growth:
-            return calculate_growth(
-                dividend_capex_coverage_ratio,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-            ).loc[:, self._start_date : self._end_date]
+        return finalize_dataset(
+            dataset=dividend_capex_coverage_ratio,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+        )
 
-        return dividend_capex_coverage_ratio.round(
-            rounding if rounding else self._rounding
-        ).loc[:, self._start_date : self._end_date]
+    @handle_portfolio
+    @handle_errors
+    def get_debt_to_capital_ratio(
+        self,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+        trailing: int | None = None,
+    ):
+        """
+        Calculate the debt to capital ratio, a solvency ratio that measures the
+        proportion of a company's total capital (debt plus equity) that is financed
+        by debt.
+
+        Unlike the debt to equity ratio, which can theoretically exceed one or become
+        negative with low or negative equity, the debt to capital ratio is bounded
+        between 0 and 1 under normal circumstances, making it easier to compare
+        across companies with very different capital structures.
+
+        The formula is as follows:
+
+        - Debt to Capital Ratio = Total Debt / (Total Debt + Total Equity)
+
+        Also known as: capitalization ratio.
+
+        Args:
+            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            trailing (int): Defines whether to select a trailing period.
+            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+
+        Returns:
+            pd.DataFrame: Debt to capital ratio values.
+
+        Notes:
+        - The method retrieves historical data and calculates the ratio for each asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the ratio values using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        debt_to_capital_ratios = toolkit.ratios.get_debt_to_capital_ratio()
+        ```
+
+        Which returns:
+
+        |      |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:-----|-------:|-------:|-------:|-------:|-------:|
+        | AAPL | 0.6839 | 0.7233 | 0.666  | 0.6764 | 0.6038 |
+        | TSLA | 0.2193 | 0.1113 | 0.1308 | 0.156  | 0.0918 |
+        """
+        if trailing:
+            debt_to_capital_ratio = solvency_model.get_debt_to_capital_ratio(
+                self._balance_sheet_statement.loc[:, "Total Debt", :]
+                .T.rolling(trailing)
+                .mean()
+                .T,
+                self._balance_sheet_statement.loc[:, "Total Equity", :]
+                .T.rolling(trailing)
+                .mean()
+                .T,
+            )
+        else:
+            debt_to_capital_ratio = solvency_model.get_debt_to_capital_ratio(
+                self._balance_sheet_statement.loc[:, "Total Debt", :],
+                self._balance_sheet_statement.loc[:, "Total Equity", :],
+            )
+
+        return finalize_dataset(
+            dataset=debt_to_capital_ratio,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_preferred_dividend_coverage_ratio(
+        self,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+        trailing: int | None = None,
+    ):
+        """
+        Calculate the preferred dividend coverage ratio, a solvency ratio that
+        measures a company's ability to pay dividends owed to preferred shareholders
+        out of its net income.
+
+        The formula is as follows:
+
+        - Preferred Dividend Coverage Ratio = Net Income / |Preferred Dividends Paid|
+
+        Also known as: preferred dividend cover.
+
+        Args:
+            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            trailing (int): Defines whether to select a trailing period.
+            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+
+        Returns:
+            pd.DataFrame: Preferred dividend coverage ratio values.
+
+        Notes:
+        - The method retrieves historical data and calculates the ratio for each asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the ratio values using the specified `lag`.
+        - This ratio is only meaningful for companies that have preferred stock outstanding;
+        it will be zero-division/NaN for companies without preferred dividends.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["WFC"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        preferred_dividend_coverage_ratios = toolkit.ratios.get_preferred_dividend_coverage_ratio()
+        ```
+
+        Which returns:
+
+        |     |     2021 |     2022 |     2023 |     2024 |     2025 |
+        |:----|---------:|---------:|---------:|---------:|---------:|
+        | WFC |  17.2763 |  11.2664 |  15.7599 |  16.9299 |  19.5543 |
+        """
+        if trailing:
+            preferred_dividend_coverage_ratio = (
+                solvency_model.get_preferred_dividend_coverage_ratio(
+                    self._income_statement.loc[:, "Net Income", :]
+                    .T.rolling(trailing)
+                    .sum()
+                    .T,
+                    self._cash_flow_statement.loc[:, "Preferred Dividends Paid", :]
+                    .T.rolling(trailing)
+                    .sum()
+                    .T,
+                )
+            )
+        else:
+            preferred_dividend_coverage_ratio = (
+                solvency_model.get_preferred_dividend_coverage_ratio(
+                    self._income_statement.loc[:, "Net Income", :],
+                    self._cash_flow_statement.loc[:, "Preferred Dividends Paid", :],
+                )
+            )
+
+        return finalize_dataset(
+            dataset=preferred_dividend_coverage_ratio,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_interest_paid_to_expense_ratio(
+        self,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+        trailing: int | None = None,
+    ):
+        """
+        Calculate the interest paid to interest expense ratio, which measures how
+        much of the accrual-based interest expense reported on the income statement
+        was actually paid out in cash during the period.
+
+        A ratio consistently below one can indicate that interest is being accrued
+        (e.g. on payment-in-kind debt) rather than paid, while a ratio well above one
+        can indicate the payment of previously accrued interest or a mismatch between
+        the cash and accrual reporting periods, both of which are relevant
+        quality-of-earnings signals.
+
+        The formula is as follows:
+
+        - Interest Paid to Expense Ratio = Interest Paid / Interest Expense
+
+        Also known as: cash interest coverage, interest cash conversion.
+
+        Args:
+            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            trailing (int): Defines whether to select a trailing period.
+            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+
+        Returns:
+            pd.DataFrame: Interest paid to interest expense ratio values.
+
+        Notes:
+        - The method retrieves historical data and calculates the ratio for each asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the ratio values using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        interest_paid_to_expense_ratios = toolkit.ratios.get_interest_paid_to_expense_ratio()
+        ```
+
+        Which returns:
+
+        |      |   2021 |   2022 |   2023 |     2024 |   2025 |
+        |:-----|-------:|-------:|-------:|---------:|-------:|
+        | AAPL | 1.0159 | 0.9775 | 0.9669 | -        | -      |
+        | TSLA | 0.717  | 0.7958 | 0.8077 |   0.7914 |      0 |
+        """
+        if trailing:
+            interest_paid_to_expense_ratio = (
+                solvency_model.get_interest_paid_to_expense_ratio(
+                    self._cash_flow_statement.loc[:, "Interest Paid", :]
+                    .T.rolling(trailing)
+                    .sum()
+                    .T,
+                    self._income_statement.loc[:, "Interest Expense", :]
+                    .T.rolling(trailing)
+                    .sum()
+                    .T,
+                )
+            )
+        else:
+            interest_paid_to_expense_ratio = (
+                solvency_model.get_interest_paid_to_expense_ratio(
+                    self._cash_flow_statement.loc[:, "Interest Paid", :],
+                    self._income_statement.loc[:, "Interest Expense", :],
+                )
+            )
+
+        return finalize_dataset(
+            dataset=interest_paid_to_expense_ratio,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+        )
 
     def collect_valuation_ratios(
         self,
@@ -4888,6 +6544,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
         trailing: int | None = None,
     ) -> pd.DataFrame:
         """
@@ -4899,6 +6556,9 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             trailing (int): Defines whether to select a trailing period.
             E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
@@ -4918,7 +6578,24 @@ class Ratios:
         toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         valuation_ratios = toolkit.ratios.collect_valuation_ratios()
+
+        valuation_ratios.loc['AAPL']
         ```
+
+        Which returns:
+
+        |                             |        2021 |         2022 |        2023 |        2024 |        2025 |
+        |:----------------------------|------------:|-------------:|------------:|------------:|------------:|
+        | EV-to-EBIT                  | 27.682      | 18.274       | 26.671      | 31.9683     | 31.3091     |
+        | EV-to-EBITDA                | 25.7524     | 17.0831      | 24.9432     | 29.3152     | 28.7093     |
+        | EV-to-Operating-Cash-Flow   | 29.7611     | 18.2565      | 28.3904     | 33.3825     | 37.2762     |
+        | Tangible Asset Value        |  6.309e+10  |  5.0672e+10  |  6.2146e+10 |  5.695e+10  |  7.3733e+10 |
+        | Net Current Asset Value     |  9.355e+09  | -1.8577e+10  | -1.742e+09  | -2.3405e+10 | -1.7674e+10 |
+        | EV-to-Free-Cash-Flow        | 33.3102     | 20.0107      | 31.5146     | 36.2809     | 42.075      |
+        | Graham Number               | 21.7378     | 20.662       | 23.2902     | 22.4928     | 28.7292     |
+        | Buyback Yield               |  0.0283     |  0.0421      |  0.0255     |  0.0246     |  0.0222     |
+        | Shareholder Yield           |  0.0283     |  0.0421      |  0.0255     |  0.0246     |  0.0251     |
+        | SBC-Adjusted Free Cash Flow |  8.5047e+10 |  1.02405e+11 |  8.8751e+10 |  9.7119e+10 |  8.5904e+10 |
         """
         valuation_ratios: dict = {}
 
@@ -4998,6 +6675,18 @@ class Ratios:
         valuation_ratios["Net Current Asset Value"] = self.get_net_current_asset_value(
             trailing=trailing
         )
+        valuation_ratios["EV-to-Free-Cash-Flow"] = self.get_ev_to_free_cash_flow_ratio(
+            diluted=diluted, trailing=trailing
+        )
+        valuation_ratios["Buyback Yield"] = self.get_buyback_yield(
+            diluted=diluted, trailing=trailing
+        )
+        valuation_ratios["Shareholder Yield"] = self.get_shareholder_yield(
+            diluted=diluted, trailing=trailing
+        )
+        valuation_ratios["SBC-Adjusted Free Cash Flow"] = (
+            self.get_sbc_adjusted_free_cash_flow(trailing=trailing)
+        )
 
         self._valuation_ratios = (
             pd.concat(valuation_ratios)
@@ -5025,22 +6714,40 @@ class Ratios:
 
         if growth:
             self._valuation_ratios_growth = calculate_growth(
-                self._valuation_ratios,
+                dataset=self._valuation_ratios,
                 lag=lag,
                 rounding=rounding if rounding else self._rounding,
                 axis="columns",
             )
 
+        valuation_ratios = self._valuation_ratios
+        valuation_ratios_growth = self._valuation_ratios_growth
+
+        if standardize:
+            standardize_rounding = rounding if rounding else self._rounding
+            if growth:
+                valuation_ratios_growth = calculate_standardization(
+                    dataset=valuation_ratios_growth,
+                    rounding=standardize_rounding,
+                    axis="columns",
+                )
+            else:
+                valuation_ratios = calculate_standardization(
+                    dataset=valuation_ratios,
+                    rounding=standardize_rounding,
+                    axis="columns",
+                )
+
         if len(self._tickers) == 1:
             return (
-                self._valuation_ratios_growth[self._tickers[0]]
+                valuation_ratios_growth[self._tickers[0]]
                 if growth
-                else self._valuation_ratios.loc[self._tickers[0]]
+                else valuation_ratios.loc[self._tickers[0]]
             ).loc[:, self._start_date : self._end_date]
 
-        return (
-            self._valuation_ratios_growth if growth else self._valuation_ratios
-        ).loc[:, self._start_date : self._end_date]
+        return (valuation_ratios_growth if growth else valuation_ratios).loc[
+            :, self._start_date : self._end_date
+        ]
 
     @handle_portfolio
     @handle_errors
@@ -5051,6 +6758,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
         trailing: int | None = None,
     ):
         """
@@ -5075,6 +6783,9 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             trailing (int): Defines whether to select a trailing period.
             E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
@@ -5094,6 +6805,13 @@ class Ratios:
 
         eps_ratios = toolkit.ratios.get_earnings_per_share()
         ```
+
+        Which returns:
+
+        |      |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:-----|-------:|-------:|-------:|-------:|-------:|
+        | AAPL | 5.614  | 6.1132 | 6.1341 | 6.0836 | 7.465  |
+        | TSLA | 1.6341 | 3.6213 | 4.3067 | 2.0383 | 1.0754 |
         """
         average_shares = (
             self._income_statement.loc[:, "Weighted Average Shares Diluted", :]
@@ -5132,16 +6850,16 @@ class Ratios:
                 average_shares,
             )
 
-        if growth:
-            return calculate_growth(
-                earnings_per_share,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-            ).loc[:, self._start_date : self._end_date]
-
-        return earnings_per_share.round(rounding if rounding else self._rounding).loc[
-            :, self._start_date : self._end_date
-        ]
+        return finalize_dataset(
+            dataset=earnings_per_share,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+        )
 
     @handle_portfolio
     @handle_errors
@@ -5151,6 +6869,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
         trailing: int | None = None,
     ):
         """
@@ -5172,6 +6891,9 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             trailing (int): Defines whether to select a trailing period.
             E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
@@ -5193,6 +6915,13 @@ class Ratios:
 
         revenue_per_share = toolkit.ratios.get_revenue_per_share()
         ```
+
+        Which returns:
+
+        |      |    2021 |    2022 |    2023 |    2024 |    2025 |
+        |:-----|--------:|--------:|--------:|--------:|--------:|
+        | AAPL | 21.691  | 24.1536 | 24.2393 | 25.3785 | 27.7354 |
+        | TSLA | 15.8957 | 23.4423 | 27.7864 | 27.9274 | 26.8784 |
         """
         average_shares = (
             self._income_statement.loc[:, "Weighted Average Shares Diluted", :]
@@ -5210,16 +6939,16 @@ class Ratios:
                 self._income_statement.loc[:, "Revenue", :], average_shares
             )
 
-        if growth:
-            return calculate_growth(
-                revenue_per_share,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-            ).loc[:, self._start_date : self._end_date]
-
-        return revenue_per_share.round(rounding if rounding else self._rounding).loc[
-            :, self._start_date : self._end_date
-        ]
+        return finalize_dataset(
+            dataset=revenue_per_share,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+        )
 
     @handle_portfolio
     @handle_errors
@@ -5231,6 +6960,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
         trailing: int | None = None,
     ):
         """
@@ -5254,6 +6984,9 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             trailing (int, optional): Defines whether to select a trailing period.
             E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
@@ -5273,6 +7006,13 @@ class Ratios:
 
         pe_ratio = toolkit.ratios.get_price_to_earnings_ratio()
         ```
+
+        Which returns:
+
+        |      |     2021 |    2022 |    2023 |     2024 |    2025 |
+        |:-----|---------:|--------:|--------:|---------:|--------:|
+        | AAPL |  31.6299 | 21.254  | 31.3868 |  41.1631 |  36.418 |
+        | TSLA | 215.568  | 34.0154 | 57.6961 | 198.126  | 418.189 |
         """
         eps = self.get_earnings_per_share(
             include_dividends,
@@ -5304,20 +7044,17 @@ class Ratios:
             share_prices, eps
         )
 
-        if growth:
-            price_to_earnings_ratio = calculate_growth(
-                price_to_earnings_ratio,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-            )
-        else:
-            price_to_earnings_ratio = price_to_earnings_ratio.round(
-                rounding if rounding else self._rounding
-            )
-
-        if show_daily:
-            return price_to_earnings_ratio.loc[self._start_date : self._end_date]
-        return price_to_earnings_ratio.loc[:, self._start_date : self._end_date]
+        return finalize_dataset(
+            dataset=price_to_earnings_ratio,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            row_slice=show_daily,
+        )
 
     @handle_portfolio
     @handle_errors
@@ -5329,6 +7066,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
     ):
         """
         Calculate the price earnings to growth (PEG) ratio, a valuation metric that
@@ -5353,6 +7091,9 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             trailing (int): Defines whether to select a trailing period.
             E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
@@ -5372,8 +7113,15 @@ class Ratios:
 
         peg_ratio = toolkit.ratios.get_price_to_earnings_growth_ratio()
         ```
+
+        Which returns:
+
+        |      |   2021 |   2022 |    2023 |     2024 |    2025 |
+        |:-----|-------:|-------:|--------:|---------:|--------:|
+        | AAPL |  0.443 | 2.3908 | 92.3141 | -50.1989 |  1.6036 |
+        | TSLA |  0.322 | 0.2797 |  3.0479 |  -3.7616 | -8.8524 |
         """
-        trailing_metric = 5 * 4 if self._quarterly else 5
+        trailing_metric = 4 if self._quarterly else 1
 
         if use_ebitda_growth_rate:
             growth_rate = (
@@ -5383,7 +7131,7 @@ class Ratios:
                 .T
             )
 
-            growth_rate = calculate_growth(growth_rate)
+            growth_rate = calculate_growth(dataset=growth_rate)
         else:
             growth_rate = self.get_earnings_per_share(
                 include_dividends,
@@ -5402,16 +7150,249 @@ class Ratios:
             )
         )
 
-        if growth:
-            return calculate_growth(
-                price_to_earnings_growth_ratio,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-            ).loc[:, self._start_date : self._end_date]
+        return finalize_dataset(
+            dataset=price_to_earnings_growth_ratio,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+        )
 
-        return price_to_earnings_growth_ratio.round(
-            rounding if rounding else self._rounding
-        ).loc[:, self._start_date : self._end_date]
+    def _get_or_fetch_analyst_estimates(self) -> pd.DataFrame:
+        """
+        Return the cached analyst estimates, fetching them on first use only.
+
+        Used exclusively by `get_forward_price_earnings_ratio` and
+        `get_forward_price_earnings_growth_ratio` — no other ratio touches analyst estimates,
+        so initializing or using the rest of the Ratios module never triggers this fetch.
+
+        The cache lives in `self._analyst_estimates_cache`, a dict the Toolkit passes in by
+        reference (see `analyst_estimates_cache` on `__init__`). Every access to `toolkit.ratios`
+        constructs a brand new Ratios instance, so caching the DataFrame directly on `self` would
+        not survive across separate `toolkit.ratios.<method>()` calls — the shared dict is what
+        makes the fetch-once behaviour actually hold.
+
+        Returns:
+            pd.DataFrame: The analyst estimates, or an empty DataFrame if no `api_key` was
+            provided or the fetch failed (e.g. no Premium FMP subscription).
+        """
+        if "data" not in self._analyst_estimates_cache and self._api_key:
+            fetched_analyst_estimates, _ = _get_analyst_estimates(
+                tickers=self._tickers_without_portfolio,
+                api_key=self._api_key,
+                quarter=self._quarterly,
+                start_date=self._start_date,
+                rounding=self._rounding,
+                sleep_timer=self._sleep_timer,
+                user_subscription=self._user_subscription,
+            )
+            self._analyst_estimates_cache["data"] = fetched_analyst_estimates
+
+        return self._analyst_estimates_cache.get("data", pd.DataFrame())
+
+    @handle_portfolio
+    @handle_errors
+    def get_forward_price_earnings_ratio(
+        self,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+    ):
+        """
+        Calculate the forward price earnings ratio (forward P/E), a valuation ratio that compares
+        the current stock price to the analyst consensus (average) EPS estimate for a future period,
+        instead of the trailing EPS used by the regular P/E ratio.
+
+        The formula is as follows:
+
+            Forward P/E = Stock Price / Estimated EPS Average
+
+        Note that this requires an `api_key` to be set on the Toolkit and a Premium FMP
+        subscription. Analyst estimates are fetched once per Toolkit instance and cached
+        across calls to this (or the other forward-looking ratio) method — never on
+        initialization or on any other ratio.
+
+        Also known as: forward P/E, projected P/E.
+
+        Args:
+            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+
+        Returns:
+            pd.DataFrame: Forward P/E ratio for each period covered by the analyst estimates.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "MSFT"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.ratios.get_forward_price_earnings_ratio()
+        ```
+
+        Which returns:
+
+        |      |    2021 |    2022 |    2023 |    2024 |    2025 |
+        |:-----|--------:|--------:|--------:|--------:|--------:|
+        | AAPL | 56.1094 | 51.5965 | 48.7491 | 46.9062 | 42.6259 |
+        | MSFT | 49.0076 | 41.0618 | 39.5875 | 31.2615 | 28.3729 |
+        """
+        analyst_estimates = self._get_or_fetch_analyst_estimates()
+
+        if analyst_estimates.empty:
+            logger.error(
+                "No analyst estimates available. This requires an api_key to be set and a "
+                "Premium FMP subscription."
+            )
+            return None
+
+        estimated_eps = analyst_estimates.loc[:, "Estimated EPS Average", :]
+
+        stock_price = (
+            self._daily_historical_data["Adj Close"]
+            .ffill()
+            .iloc[-1][self._tickers_without_portfolio]
+            .reindex(estimated_eps.index)
+        )
+        stock_price_broadcast = pd.DataFrame(
+            {period: stock_price for period in estimated_eps.columns},
+            index=estimated_eps.index,
+        )
+
+        forward_price_earnings_ratio = valuation_model.get_price_to_earnings_ratio(
+            stock_price=stock_price_broadcast, earnings_per_share=estimated_eps
+        )
+
+        return finalize_dataset(
+            dataset=forward_price_earnings_ratio,
+            start_date=self._start_date,
+            end_date=None,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_forward_price_earnings_growth_ratio(
+        self,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+    ):
+        """
+        Calculate the forward price earnings to growth (forward PEG) ratio, a valuation metric
+        that measures the forward P/E ratio relative to the growth implied by the analyst
+        consensus (average) EPS estimate versus the company's most recently reported actual EPS.
+
+        The formula is as follows:
+
+            - Estimated EPS Growth Rate = (Estimated EPS - Trailing EPS) / |Trailing EPS|
+            - Forward PEG = Forward P/E / (Estimated EPS Growth Rate * 100)
+
+        Note that this requires an `api_key` to be set on the Toolkit and a Premium FMP
+        subscription. Analyst estimates are fetched once per Toolkit instance and cached
+        across calls to this (or the other forward-looking ratio) method — never on
+        initialization or on any other ratio.
+
+        Also known as: forward PEG, PEG on forward growth.
+
+        Args:
+            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+
+        Returns:
+            pd.DataFrame: Forward PEG ratio for each period covered by the analyst estimates.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "MSFT"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.ratios.get_forward_price_earnings_growth_ratio()
+        ```
+
+        Which returns:
+
+        |      |    2021 |    2022 |    2023 |    2024 |     2025 |
+        |:-----|--------:|--------:|--------:|--------:|---------:|
+        | AAPL | -2.26   | -2.8269 | -3.6172 | -4.6544 | -40.6636 |
+        | MSFT | -1.1385 | -1.2822 | -1.3423 | -2.918  | -17.48   |
+        """
+        analyst_estimates = self._get_or_fetch_analyst_estimates()
+
+        if analyst_estimates.empty:
+            logger.error(
+                "No analyst estimates available. This requires an api_key to be set and a "
+                "Premium FMP subscription."
+            )
+            return None
+
+        estimated_eps = analyst_estimates.loc[:, "Estimated EPS Average", :]
+
+        trailing_eps = (
+            self._income_statement.loc[:, "EPS Diluted", :]
+            .ffill(axis=1)
+            .iloc[:, -1]
+            .reindex(estimated_eps.index)
+        )
+        trailing_eps_broadcast = pd.DataFrame(
+            {period: trailing_eps for period in estimated_eps.columns},
+            index=estimated_eps.index,
+        )
+
+        estimated_eps_growth_rate = valuation_model.get_estimated_eps_growth_rate(
+            estimated_eps=estimated_eps, trailing_eps=trailing_eps_broadcast
+        )
+
+        stock_price = (
+            self._daily_historical_data["Adj Close"]
+            .ffill()
+            .iloc[-1][self._tickers_without_portfolio]
+            .reindex(estimated_eps.index)
+        )
+        stock_price_broadcast = pd.DataFrame(
+            {period: stock_price for period in estimated_eps.columns},
+            index=estimated_eps.index,
+        )
+        forward_price_earnings_ratio = valuation_model.get_price_to_earnings_ratio(
+            stock_price=stock_price_broadcast, earnings_per_share=estimated_eps
+        )
+
+        forward_price_earnings_growth_ratio = (
+            valuation_model.get_price_to_earnings_growth_ratio(
+                forward_price_earnings_ratio, estimated_eps_growth_rate * 100
+            )
+        )
+
+        return finalize_dataset(
+            dataset=forward_price_earnings_growth_ratio,
+            start_date=self._start_date,
+            end_date=None,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+        )
 
     @handle_portfolio
     @handle_errors
@@ -5421,6 +7402,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
         trailing: int | None = None,
     ):
         """
@@ -5441,6 +7423,9 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             trailing (int): Defines whether to select a trailing period.
             E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
@@ -5462,6 +7447,13 @@ class Ratios:
 
         book_value_per_share = toolkit.ratios.get_book_value_per_share()
         ```
+
+        Which returns:
+
+        |      |   2021 |    2022 |    2023 |    2024 |    2025 |
+        |:-----|-------:|--------:|--------:|--------:|--------:|
+        | AAPL | 3.7409 |  3.1038 |  3.9302 |  3.6961 |  4.914  |
+        | TSLA | 8.9158 | 12.8645 | 17.9841 | 20.8442 | 23.2815 |
         """
         average_shares = (
             self._income_statement.loc[:, "Weighted Average Shares Diluted", :]
@@ -5488,16 +7480,16 @@ class Ratios:
                 average_shares,
             )
 
-        if growth:
-            return calculate_growth(
-                book_value_per_share,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-            ).loc[:, self._start_date : self._end_date]
-
-        return book_value_per_share.round(rounding if rounding else self._rounding).loc[
-            :, self._start_date : self._end_date
-        ]
+        return finalize_dataset(
+            dataset=book_value_per_share,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+        )
 
     @handle_portfolio
     @handle_errors
@@ -5508,6 +7500,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
         trailing: int | None = None,
     ):
         """
@@ -5529,6 +7522,9 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             trailing (int): Defines whether to select a trailing period.
             E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
@@ -5550,6 +7546,13 @@ class Ratios:
 
         price_to_book_ratio = toolkit.ratios.get_price_to_book_ratio()
         ```
+
+        Which returns:
+
+        |      |    2021 |    2022 |    2023 |    2024 |    2025 |
+        |:-----|--------:|--------:|--------:|--------:|--------:|
+        | AAPL | 47.4672 | 41.8616 | 48.9873 | 67.7525 | 55.3236 |
+        | TSLA | 39.5096 |  9.5752 | 13.8166 | 19.3742 | 19.3166 |
         """
         book_value_per_share = self.get_book_value_per_share(
             diluted, trailing=trailing if trailing else None
@@ -5577,20 +7580,17 @@ class Ratios:
             share_prices, book_value_per_share
         )
 
-        if growth:
-            price_to_book_ratio = calculate_growth(
-                price_to_book_ratio,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-            )
-        else:
-            price_to_book_ratio = price_to_book_ratio.round(
-                rounding if rounding else self._rounding
-            )
-
-        if show_daily:
-            return price_to_book_ratio.loc[self._start_date : self._end_date]
-        return price_to_book_ratio.loc[:, self._start_date : self._end_date]
+        return finalize_dataset(
+            dataset=price_to_book_ratio,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            row_slice=show_daily,
+        )
 
     @handle_portfolio
     @handle_errors
@@ -5600,6 +7600,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
         trailing: int | None = None,
     ):
         """
@@ -5619,6 +7620,9 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             trailing (int): Defines whether to select a trailing period.
             E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
@@ -5640,6 +7644,13 @@ class Ratios:
 
         interest_debt_per_share = toolkit.ratios.get_interest_debt_per_share()
         ```
+
+        Which returns:
+
+        |      |        2021 |        2022 |        2023 |        2024 |        2025 |
+        |:-----|------------:|------------:|------------:|------------:|------------:|
+        | AAPL | 3.26744e+08 | 3.61194e+08 | 5.01822e+08 | 0           | 0           |
+        | TSLA | 1.41576e+08 | 1.15471e+08 | 5.67543e+07 | 8.98701e+07 | 1.42367e+08 |
         """
         average_shares = (
             self._income_statement.loc[:, "Weighted Average Shares Diluted", :]
@@ -5666,16 +7677,16 @@ class Ratios:
                 average_shares,
             )
 
-        if growth:
-            return calculate_growth(
-                interest_debt_per_share,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-            ).loc[:, self._start_date : self._end_date]
-
-        return interest_debt_per_share.round(
-            rounding if rounding else self._rounding
-        ).loc[:, self._start_date : self._end_date]
+        return finalize_dataset(
+            dataset=interest_debt_per_share,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+        )
 
     @handle_portfolio
     @handle_errors
@@ -5685,6 +7696,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
         trailing: int | None = None,
     ):
         """
@@ -5706,6 +7718,9 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             trailing (int): Defines whether to select a trailing period.
             E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
@@ -5727,6 +7742,13 @@ class Ratios:
 
         capex_per_share = toolkit.ratios.get_capex_per_share()
         ```
+
+        Which returns:
+
+        |      |    2021 |    2022 |    2023 |    2024 |    2025 |
+        |:-----|--------:|--------:|--------:|--------:|--------:|
+        | AAPL | -0.6573 | -0.6559 | -0.6931 | -0.6131 | -0.8474 |
+        | TSLA | -2.3668 | -2.0639 | -2.5552 | -3.2424 | -2.417  |
         """
         average_shares = (
             self._income_statement.loc[:, "Weighted Average Shares Diluted", :]
@@ -5748,16 +7770,16 @@ class Ratios:
                 average_shares,
             )
 
-        if growth:
-            return calculate_growth(
-                capex_per_share,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-            ).loc[:, self._start_date : self._end_date]
-
-        return capex_per_share.round(rounding if rounding else self._rounding).loc[
-            :, self._start_date : self._end_date
-        ]
+        return finalize_dataset(
+            dataset=capex_per_share,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+        )
 
     @handle_portfolio
     @handle_errors
@@ -5767,6 +7789,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
         trailing: int | None = None,
     ):
         """
@@ -5788,6 +7811,9 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             trailing (int): Defines whether to select a trailing period.
             E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
@@ -5809,6 +7835,13 @@ class Ratios:
 
         dividend_yield = toolkit.ratios.get_dividend_yield()
         ```
+
+        Which returns:
+
+        |      |   2021 |   2022 |   2023 |   2024 |   2025 |   2026 |
+        |:-----|-------:|-------:|-------:|-------:|-------:|-------:|
+        | AAPL |      0 |      0 |      0 |      0 | 0.0029 | 0.0017 |
+        | TSLA |      0 |      0 |      0 |      0 | 0      | 0      |
         """
         if show_daily:
             share_prices = self._daily_historical_data.loc[:, "Adj Close"][
@@ -5838,20 +7871,17 @@ class Ratios:
             share_prices,
         )
 
-        if growth:
-            dividend_yield = calculate_growth(
-                dividend_yield,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-            )
-        else:
-            dividend_yield = dividend_yield.round(
-                rounding if rounding else self._rounding
-            )
-
-        if show_daily:
-            return dividend_yield.loc[self._start_date : self._end_date]
-        return dividend_yield.loc[:, self._start_date : self._end_date]
+        return finalize_dataset(
+            dataset=dividend_yield,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            row_slice=show_daily,
+        )
 
     @handle_portfolio
     @handle_errors
@@ -5862,6 +7892,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
         trailing: int | None = None,
     ):
         """
@@ -5884,6 +7915,9 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             trailing (int): Defines whether to select a trailing period.
             E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
@@ -5905,6 +7939,13 @@ class Ratios:
 
         weighted_dividend_yield = toolkit.ratios.get_weighted_dividend_yield()
         ```
+
+        Which returns:
+
+        |      |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:-----|-------:|-------:|-------:|-------:|-------:|
+        | AAPL | 0.0048 |  0.007 | 0.0049 | 0.0039 | 0.0038 |
+        | TSLA | 0      |  0     | 0      | 0      | 0      |
         """
         average_shares = (
             self._income_statement.loc[:, "Weighted Average Shares Diluted", :]
@@ -5955,20 +7996,17 @@ class Ratios:
                 share_prices,
             )
 
-        if growth:
-            weighted_dividend_yield = calculate_growth(
-                weighted_dividend_yield,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-            )
-        else:
-            weighted_dividend_yield = weighted_dividend_yield.round(
-                rounding if rounding else self._rounding
-            )
-
-        if show_daily:
-            return weighted_dividend_yield.loc[self._start_date : self._end_date]
-        return weighted_dividend_yield.loc[:, self._start_date : self._end_date]
+        return finalize_dataset(
+            dataset=weighted_dividend_yield,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            row_slice=show_daily,
+        )
 
     @handle_portfolio
     @handle_errors
@@ -5979,6 +8017,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
         trailing: int | None = None,
     ):
         """
@@ -6001,6 +8040,9 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             trailing (int): Defines whether to select a trailing period.
             E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
@@ -6022,6 +8064,13 @@ class Ratios:
 
         price_to_cash_flow_ratio = toolkit.ratios.get_price_to_cash_flow_ratio()
         ```
+
+        Which returns:
+
+        |      |     2021 |    2022 |    2023 |    2024 |     2025 |
+        |:-----|---------:|--------:|--------:|--------:|---------:|
+        | AAPL |  28.7847 | 17.3655 | 27.5403 | 32.6289 |  36.5905 |
+        | TSLA | 103.745  | 29.0716 | 65.2832 | 94.6614 | 107.589  |
         """
         average_shares = (
             self._income_statement.loc[:, "Weighted Average Shares Diluted", :]
@@ -6073,20 +8122,17 @@ class Ratios:
                 market_cap, cash_flow_from_operations
             )
 
-        if growth:
-            price_to_cash_flow_ratio = calculate_growth(
-                price_to_cash_flow_ratio,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-            )
-        else:
-            price_to_cash_flow_ratio = price_to_cash_flow_ratio.round(
-                rounding if rounding else self._rounding
-            )
-
-        if show_daily:
-            return price_to_cash_flow_ratio.loc[self._start_date : self._end_date]
-        return price_to_cash_flow_ratio.loc[:, self._start_date : self._end_date]
+        return finalize_dataset(
+            dataset=price_to_cash_flow_ratio,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            row_slice=show_daily,
+        )
 
     @handle_portfolio
     @handle_errors
@@ -6097,6 +8143,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
         trailing: int | None = None,
     ):
         """
@@ -6117,6 +8164,9 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             trailing (int): Defines whether to select a trailing period.
             E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
@@ -6138,6 +8188,13 @@ class Ratios:
 
         price_to_free_cash_flow_ratio = toolkit.ratios.get_price_to_free_cash_flow_ratio()
         ```
+
+        Which returns:
+
+        |      |     2021 |    2022 |     2023 |     2024 |    2025 |
+        |:-----|---------:|--------:|---------:|---------:|--------:|
+        | AAPL |  32.2174 | 19.0341 |  30.5711 |  35.4618 |  41.301 |
+        | TSLA | 342.45   | 56.6804 | 198.621  | 394.48   | 255.082 |
         """
         market_cap = self.get_market_cap(
             diluted=diluted,
@@ -6172,20 +8229,17 @@ class Ratios:
                 )
             )
 
-        if growth:
-            price_to_free_cash_flow_ratio = calculate_growth(
-                price_to_free_cash_flow_ratio,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-            )
-        else:
-            price_to_free_cash_flow_ratio = price_to_free_cash_flow_ratio.round(
-                rounding if rounding else self._rounding
-            )
-
-        if show_daily:
-            return price_to_free_cash_flow_ratio.loc[self._start_date : self._end_date]
-        return price_to_free_cash_flow_ratio.loc[:, self._start_date : self._end_date]
+        return finalize_dataset(
+            dataset=price_to_free_cash_flow_ratio,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            row_slice=show_daily,
+        )
 
     @handle_portfolio
     @handle_errors
@@ -6196,6 +8250,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
         trailing: int | None = None,
     ):
         """
@@ -6217,6 +8272,9 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             trailing (int): Defines whether to select a trailing period.
             E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
@@ -6232,6 +8290,13 @@ class Ratios:
 
         market_cap = toolkit.ratios.get_market_cap()
         ```
+
+        Which returns:
+
+        |      |        2021 |        2022 |        2023 |        2024 |        2025 |
+        |:-----|------------:|------------:|------------:|------------:|------------:|
+        | AAPL | 2.9947e+12  | 2.12121e+12 | 3.04439e+12 | 3.8585e+12  | 4.07918e+12 |
+        | TSLA | 1.19275e+12 | 4.2805e+11  | 8.65394e+11 | 1.41263e+12 | 1.58661e+12 |
         """
         average_shares = (
             self._income_statement.loc[:, "Weighted Average Shares Diluted", :]
@@ -6269,16 +8334,17 @@ class Ratios:
         else:
             market_cap = valuation_model.get_market_cap(share_prices, average_shares)
 
-        if growth:
-            market_cap = calculate_growth(
-                market_cap, lag=lag, rounding=rounding if rounding else self._rounding
-            )
-        else:
-            market_cap = market_cap.round(rounding if rounding else self._rounding)
-
-        if show_daily:
-            return market_cap.loc[self._start_date : self._end_date]
-        return market_cap.loc[:, self._start_date : self._end_date]
+        return finalize_dataset(
+            dataset=market_cap,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            row_slice=show_daily,
+        )
 
     @handle_portfolio
     @handle_errors
@@ -6289,6 +8355,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
         trailing: int | None = None,
     ):
         """
@@ -6311,6 +8378,9 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             trailing (int): Defines whether to select a trailing period.
             E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
@@ -6326,6 +8396,13 @@ class Ratios:
 
         enterprise_value = toolkit.ratios.get_enterprise_value()
         ```
+
+        Which returns:
+
+        |      |        2021 |        2022 |        2023 |        2024 |        2025 |
+        |:-----|------------:|------------:|------------:|------------:|------------:|
+        | AAPL | 3.09629e+12 | 2.23005e+12 | 3.13835e+12 | 3.94761e+12 | 4.15562e+12 |
+        | TSLA | 1.18544e+12 | 4.1874e+11  | 8.59544e+11 | 1.41088e+12 | 1.5792e+12  |
         """
         total_debt = self._balance_sheet_statement.loc[:, "Total Debt", :]
         minority_interest = self._balance_sheet_statement.loc[:, "Minority Interest", :]
@@ -6398,20 +8475,17 @@ class Ratios:
                 cash_and_cash_equivalents,
             )
 
-        if growth:
-            enterprise_value = calculate_growth(
-                enterprise_value,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-            )
-        else:
-            enterprise_value = enterprise_value.round(
-                rounding if rounding else self._rounding
-            )
-
-        if show_daily:
-            return enterprise_value.loc[self._start_date : self._end_date]
-        return enterprise_value.loc[:, self._start_date : self._end_date]
+        return finalize_dataset(
+            dataset=enterprise_value,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            row_slice=show_daily,
+        )
 
     @handle_portfolio
     @handle_errors
@@ -6422,6 +8496,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
         trailing: int | None = None,
     ):
         """
@@ -6444,6 +8519,9 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             trailing (int): Defines whether to select a trailing period.
             E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
@@ -6459,6 +8537,13 @@ class Ratios:
 
         ev_to_sales_ratio = toolkit.ratios.get_ev_to_sales_ratio()
         ```
+
+        Which returns:
+
+        |      |    2021 |   2022 |   2023 |    2024 |    2025 |
+        |:-----|--------:|-------:|-------:|--------:|--------:|
+        | AAPL |  8.464  | 5.6553 | 8.188  | 10.0953 |  9.9856 |
+        | TSLA | 22.0248 | 5.1403 | 8.8821 | 14.4425 | 16.6535 |
         """
         enterprise_value = self.get_enterprise_value(
             diluted=diluted,
@@ -6489,20 +8574,17 @@ class Ratios:
                 enterprise_value, revenue
             )
 
-        if growth:
-            ev_to_sales_ratio = calculate_growth(
-                ev_to_sales_ratio,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-            )
-        else:
-            ev_to_sales_ratio = ev_to_sales_ratio.round(
-                rounding if rounding else self._rounding
-            )
-
-        if show_daily:
-            return ev_to_sales_ratio.loc[self._start_date : self._end_date]
-        return ev_to_sales_ratio.loc[:, self._start_date : self._end_date]
+        return finalize_dataset(
+            dataset=ev_to_sales_ratio,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            row_slice=show_daily,
+        )
 
     @handle_portfolio
     @handle_errors
@@ -6513,6 +8595,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
         trailing: int | None = None,
     ):
         """
@@ -6533,6 +8616,9 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             trailing (int): Defines whether to select a trailing period.
             E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
@@ -6548,6 +8634,13 @@ class Ratios:
 
         ev_to_ebitda_ratio = toolkit.ratios.get_ev_to_ebitda_ratio()
         ```
+
+        Which returns:
+
+        |      |     2021 |    2022 |    2023 |     2024 |     2025 |
+        |:-----|---------:|--------:|--------:|---------:|---------:|
+        | AAPL |  25.7524 | 17.0831 | 24.9432 |  29.3152 |  28.7093 |
+        | TSLA | 125.656  | 24.3467 | 63.3975 | 113.379  | 150.357  |
         """
         enterprise_value = self.get_enterprise_value(
             diluted=diluted,
@@ -6592,20 +8685,17 @@ class Ratios:
                 enterprise_value, operating_income, depreciation_and_amortization
             )
 
-        if growth:
-            ev_to_ebitda_ratio = calculate_growth(
-                ev_to_ebitda_ratio,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-            )
-        else:
-            ev_to_ebitda_ratio = ev_to_ebitda_ratio.round(
-                rounding if rounding else self._rounding
-            )
-
-        if show_daily:
-            return ev_to_ebitda_ratio.loc[self._start_date : self._end_date]
-        return ev_to_ebitda_ratio.loc[:, self._start_date : self._end_date]
+        return finalize_dataset(
+            dataset=ev_to_ebitda_ratio,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            row_slice=show_daily,
+        )
 
     @handle_portfolio
     @handle_errors
@@ -6616,6 +8706,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
         trailing: int | None = None,
     ):
         """
@@ -6637,6 +8728,9 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             trailing (int): Defines whether to select a trailing period.
             E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
@@ -6652,6 +8746,13 @@ class Ratios:
 
         ev_to_operating_cashflow_ratio = toolkit.ratios.get_ev_to_operating_cashflow_ratio()
         ```
+
+        Which returns:
+
+        |      |     2021 |    2022 |    2023 |    2024 |     2025 |
+        |:-----|---------:|--------:|--------:|--------:|---------:|
+        | AAPL |  29.7611 | 18.2565 | 28.3904 | 33.3825 |  37.2762 |
+        | TSLA | 103.109  | 28.4392 | 64.8419 | 94.5442 | 107.086  |
         """
         enterprise_value = self.get_enterprise_value(
             diluted=diluted,
@@ -6688,20 +8789,17 @@ class Ratios:
                 )
             )
 
-        if growth:
-            ev_to_operating_cashflow_ratio = calculate_growth(
-                ev_to_operating_cashflow_ratio,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-            )
-        else:
-            ev_to_operating_cashflow_ratio = ev_to_operating_cashflow_ratio.round(
-                rounding if rounding else self._rounding
-            )
-
-        if show_daily:
-            return ev_to_operating_cashflow_ratio.loc[self._start_date : self._end_date]
-        return ev_to_operating_cashflow_ratio.loc[:, self._start_date : self._end_date]
+        return finalize_dataset(
+            dataset=ev_to_operating_cashflow_ratio,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            row_slice=show_daily,
+        )
 
     @handle_portfolio
     @handle_errors
@@ -6713,6 +8811,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
         trailing: int | None = None,
     ):
         """
@@ -6737,6 +8836,9 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             trailing (int): Defines whether to select a trailing period.
             E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
@@ -6752,6 +8854,13 @@ class Ratios:
 
         earnings_yield_ratio = toolkit.ratios.get_earnings_yield()
         ```
+
+        Which returns:
+
+        |      |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:-----|-------:|-------:|-------:|-------:|-------:|
+        | AAPL | 0.0316 | 0.047  | 0.0319 | 0.0243 | 0.0275 |
+        | TSLA | 0.0046 | 0.0294 | 0.0173 | 0.005  | 0.0024 |
         """
         eps = self.get_earnings_per_share(
             include_dividends, diluted=diluted, trailing=trailing if trailing else None
@@ -6777,20 +8886,17 @@ class Ratios:
 
         earnings_yield = valuation_model.get_earnings_yield(eps, share_prices)
 
-        if growth:
-            earnings_yield = calculate_growth(
-                earnings_yield,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-            )
-        else:
-            earnings_yield = earnings_yield.round(
-                rounding if rounding else self._rounding
-            )
-
-        if show_daily:
-            return earnings_yield.loc[self._start_date : self._end_date]
-        return earnings_yield.loc[:, self._start_date : self._end_date]
+        return finalize_dataset(
+            dataset=earnings_yield,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            row_slice=show_daily,
+        )
 
     @handle_portfolio
     @handle_errors
@@ -6799,6 +8905,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
         trailing: int | None = None,
     ):
         """
@@ -6821,6 +8928,9 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             trailing (int): Defines whether to select a trailing period.
             E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
@@ -6836,6 +8946,13 @@ class Ratios:
 
         toolkit.ratios.get_dividend_payout_ratio()
         ```
+
+        Which returns:
+
+        |      |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:-----|-------:|-------:|-------:|-------:|-------:|
+        | AAPL | 0.1528 | 0.1487 | 0.1549 | 0.1625 | 0.1377 |
+        | TSLA | 0      | 0      | 0      | 0      | 0      |
         """
         if trailing:
             payout_ratio = valuation_model.get_dividend_payout_ratio(
@@ -6854,14 +8971,16 @@ class Ratios:
                 self._income_statement.loc[:, "Net Income", :],
             )
 
-        if growth:
-            return calculate_growth(
-                payout_ratio, lag=lag, rounding=rounding if rounding else self._rounding
-            ).loc[:, self._start_date : self._end_date]
-
-        return payout_ratio.round(rounding if rounding else self._rounding).loc[
-            :, self._start_date : self._end_date
-        ]
+        return finalize_dataset(
+            dataset=payout_ratio,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+        )
 
     @handle_portfolio
     @handle_errors
@@ -6870,6 +8989,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
         trailing: int | None = None,
     ):
         """
@@ -6892,6 +9012,9 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             trailing (int): Defines whether to select a trailing period.
             E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
@@ -6907,6 +9030,13 @@ class Ratios:
 
         toolkit.ratios.get_reinvestment_rate()
         ```
+
+        Which returns:
+
+        |      |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:-----|-------:|-------:|-------:|-------:|-------:|
+        | AAPL | 0.8472 | 0.8513 | 0.8451 | 0.8375 | 0.8623 |
+        | TSLA | 1      | 1      | 1      | 1      | 1      |
         """
         if trailing:
             dividend_payout_ratio = self.get_dividend_payout_ratio(trailing=trailing)
@@ -6919,16 +9049,16 @@ class Ratios:
                 dividend_payout_ratio=dividend_payout_ratio,
             )
 
-        if growth:
-            return calculate_growth(
-                reinvestment_ratio,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-            ).loc[:, self._start_date : self._end_date]
-
-        return reinvestment_ratio.round(rounding if rounding else self._rounding).loc[
-            :, self._start_date : self._end_date
-        ]
+        return finalize_dataset(
+            dataset=reinvestment_ratio,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+        )
 
     @handle_portfolio
     @handle_errors
@@ -6937,6 +9067,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
         trailing: int | None = None,
     ):
         """
@@ -6954,6 +9085,9 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             trailing (int): Defines whether to select a trailing period.
             E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
@@ -6969,6 +9103,13 @@ class Ratios:
 
         tangible_asset_value = toolkit.ratios.get_tangible_asset_value()
         ```
+
+        Which returns:
+
+        |      |       2021 |       2022 |       2023 |       2024 |       2025 |
+        |:-----|-----------:|-----------:|-----------:|-----------:|-----------:|
+        | AAPL | 6.309e+10  | 5.0672e+10 | 6.2146e+10 | 5.695e+10  | 7.3733e+10 |
+        | TSLA | 3.1383e+10 | 4.5704e+10 | 6.3356e+10 | 7.3436e+10 | 8.2608e+10 |
         """
         if trailing:
             tangible_asset_value = valuation_model.get_tangible_asset_value(
@@ -6992,16 +9133,16 @@ class Ratios:
                 self._balance_sheet_statement.loc[:, "Goodwill", :],
             )
 
-        if growth:
-            return calculate_growth(
-                tangible_asset_value,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-            ).loc[:, self._start_date : self._end_date]
-
-        return tangible_asset_value.round(rounding if rounding else self._rounding).loc[
-            :, self._start_date : self._end_date
-        ]
+        return finalize_dataset(
+            dataset=tangible_asset_value,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+        )
 
     @handle_portfolio
     @handle_errors
@@ -7010,6 +9151,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
         trailing: int | None = None,
     ):
         """
@@ -7027,6 +9169,9 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             trailing (int): Defines whether to select a trailing period.
             E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
@@ -7042,6 +9187,13 @@ class Ratios:
 
         net_current_asset_value = toolkit.ratios.get_net_current_asset_value()
         ```
+
+        Which returns:
+
+        |      |      2021 |        2022 |        2023 |        2024 |        2025 |
+        |:-----|----------:|------------:|------------:|------------:|------------:|
+        | AAPL | 9.355e+09 | -1.8577e+10 | -1.742e+09  | -2.3405e+10 | -1.7674e+10 |
+        | TSLA | 7.395e+09 |  1.4208e+10 |  2.0868e+10 |  2.9539e+10 |  3.6928e+10 |
         """
         if trailing:
             net_current_asset_value = valuation_model.get_net_current_asset_value(
@@ -7060,16 +9212,16 @@ class Ratios:
                 self._balance_sheet_statement.loc[:, "Total Current Liabilities", :],
             )
 
-        if growth:
-            return calculate_growth(
-                net_current_asset_value,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-            ).loc[:, self._start_date : self._end_date]
-
-        return net_current_asset_value.round(
-            rounding if rounding else self._rounding
-        ).loc[:, self._start_date : self._end_date]
+        return finalize_dataset(
+            dataset=net_current_asset_value,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+        )
 
     @handle_portfolio
     @handle_errors
@@ -7080,6 +9232,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        standardize: bool = False,
         trailing: int | None = None,
     ):
         """
@@ -7097,6 +9250,9 @@ class Ratios:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
             trailing (int): Defines whether to select a trailing period.
             E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
@@ -7112,6 +9268,13 @@ class Ratios:
 
         ev_to_ebit_ratio = toolkit.ratios.get_ev_to_ebit()
         ```
+
+        Which returns:
+
+        |      |    2021 |   2022 |    2023 |     2024 |     2025 |
+        |:-----|--------:|-------:|--------:|---------:|---------:|
+        | AAPL |  27.682 | 18.274 | 26.671  |  31.9683 |  31.3091 |
+        | TSLA | 179.531 | 30.11  | 84.6508 | 151.431  | 284.285  |
         """
         enterprise_value = self.get_enterprise_value(
             diluted=diluted,
@@ -7144,13 +9307,387 @@ class Ratios:
         else:
             ev_to_ebit = valuation_model.get_ev_to_ebit(enterprise_value, ebit)
 
-        if growth:
-            ev_to_ebit = calculate_growth(
-                ev_to_ebit, lag=lag, rounding=rounding if rounding else self._rounding
-            )
-        else:
-            ev_to_ebit = ev_to_ebit.round(rounding if rounding else self._rounding)
+        return finalize_dataset(
+            dataset=ev_to_ebit,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            row_slice=show_daily,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_ev_to_free_cash_flow_ratio(
+        self,
+        show_daily: bool = False,
+        diluted: bool = True,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+        trailing: int | None = None,
+    ):
+        """
+        Calculate the EV to free cash flow ratio, a valuation ratio that compares a
+        company's enterprise value (EV) to its free cash flow.
+
+        Unlike EV to Operating Cash Flow, this ratio nets out capital expenditures,
+        giving a valuation multiple based on the cash actually available to all
+        capital providers after reinvestment in the business.
+
+        The formula is as follows:
+
+        - EV to Free Cash Flow Ratio = Enterprise Value / Free Cash Flow
+
+        Also known as: EV/FCF.
+
+        Args:
+            show_daily (bool, optional): Whether to show daily data. Defaults to False.
+            diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
+            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            trailing (int): Defines whether to select a trailing period.
+            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+
+        Returns:
+            pd.DataFrame: EV to free cash flow ratio values.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        ev_to_fcf_ratio = toolkit.ratios.get_ev_to_free_cash_flow_ratio()
+        ```
+
+        Which returns:
+
+        |      |     2021 |    2022 |     2023 |     2024 |    2025 |
+        |:-----|---------:|--------:|---------:|---------:|--------:|
+        | AAPL |  33.3102 | 20.0107 |  31.5146 |  36.2809 |  42.075 |
+        | TSLA | 340.351  | 55.4475 | 197.279  | 393.991  | 253.891 |
+        """
+        enterprise_value = self.get_enterprise_value(
+            diluted=diluted,
+            trailing=trailing if trailing else None,
+            show_daily=show_daily,
+        )
+
+        free_cash_flow = self._cash_flow_statement.loc[:, "Free Cash Flow", :]
 
         if show_daily:
-            return ev_to_ebit.loc[self._start_date : self._end_date]
-        return ev_to_ebit.loc[:, self._start_date : self._end_date]
+            free_cash_flow = map_period_data_to_daily_data(
+                period_data=free_cash_flow,
+                daily_dates=enterprise_value.index,
+                quarterly=self._quarterly,
+            )
+
+        if trailing:
+            ev_to_free_cash_flow_ratio = valuation_model.get_ev_to_free_cash_flow_ratio(
+                enterprise_value,
+                (
+                    free_cash_flow.rolling(trailing).sum()
+                    if show_daily
+                    else free_cash_flow.T.rolling(trailing).sum().T
+                ),
+            )
+        else:
+            ev_to_free_cash_flow_ratio = valuation_model.get_ev_to_free_cash_flow_ratio(
+                enterprise_value, free_cash_flow
+            )
+
+        return finalize_dataset(
+            dataset=ev_to_free_cash_flow_ratio,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            row_slice=show_daily,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_buyback_yield(
+        self,
+        diluted: bool = True,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+        trailing: int | None = None,
+    ):
+        """
+        Calculate the buyback yield, a valuation ratio that measures the net amount
+        of common stock repurchased (net of new shares issued) relative to the
+        company's market capitalization.
+
+        A positive buyback yield means the company is a net repurchaser of its own
+        stock (shareholder-friendly), while a negative buyback yield means the
+        company is a net issuer of new shares (dilutive).
+
+        The formula is as follows:
+
+        - Buyback Yield = -(Common Stock Purchased + Common Stock Issued) / Market Capitalization
+
+        Also known as: net repurchase yield.
+
+        Args:
+            diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
+            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            trailing (int): Defines whether to select a trailing period.
+            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+
+        Returns:
+            pd.DataFrame: Buyback yield values.
+
+        Notes:
+        - The method retrieves historical data and calculates the buyback yield for each
+        asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the ratio values
+        using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        buyback_yields = toolkit.ratios.get_buyback_yield()
+        ```
+
+        Which returns:
+
+        |      |    2021 |    2022 |    2023 |    2024 |    2025 |
+        |:-----|--------:|--------:|--------:|--------:|--------:|
+        | AAPL |  0.0283 |  0.0421 |  0.0255 |  0.0246 |  0.0222 |
+        | TSLA | -0.0006 | -0.0013 | -0.0008 | -0.0009 | -0.0001 |
+        """
+        market_cap = self.get_market_cap(diluted=diluted, trailing=trailing)
+
+        if trailing:
+            buyback_yield = valuation_model.get_buyback_yield(
+                self._cash_flow_statement.loc[:, "Common Stock Purchased", :]
+                .T.rolling(trailing)
+                .sum()
+                .T,
+                self._cash_flow_statement.loc[:, "Common Stock Issued", :]
+                .T.rolling(trailing)
+                .sum()
+                .T,
+                market_cap,
+            )
+        else:
+            buyback_yield = valuation_model.get_buyback_yield(
+                self._cash_flow_statement.loc[:, "Common Stock Purchased", :],
+                self._cash_flow_statement.loc[:, "Common Stock Issued", :],
+                market_cap,
+            )
+
+        return finalize_dataset(
+            dataset=buyback_yield,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_shareholder_yield(
+        self,
+        diluted: bool = True,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+        trailing: int | None = None,
+    ):
+        """
+        Calculate the total shareholder yield, a valuation ratio that combines the
+        dividend yield and the buyback yield to measure the total cash returned to
+        shareholders relative to the company's market capitalization.
+
+        The formula is as follows:
+
+        - Shareholder Yield = Dividend Yield + Buyback Yield
+
+        Also known as: total shareholder yield, total return of capital.
+
+        Args:
+            diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
+            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            trailing (int): Defines whether to select a trailing period.
+            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+
+        Returns:
+            pd.DataFrame: Shareholder yield values.
+
+        Notes:
+        - The method retrieves historical data and calculates the shareholder yield for each
+        asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the ratio values
+        using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        shareholder_yields = toolkit.ratios.get_shareholder_yield()
+        ```
+
+        Which returns:
+
+        |      |    2021 |    2022 |    2023 |    2024 |    2025 |
+        |:-----|--------:|--------:|--------:|--------:|--------:|
+        | AAPL |  0.0283 |  0.0421 |  0.0255 |  0.0246 |  0.0251 |
+        | TSLA | -0.0006 | -0.0013 | -0.0008 | -0.0009 | -0.0001 |
+        """
+        dividend_yield = self.get_dividend_yield(trailing=trailing)
+        buyback_yield = self.get_buyback_yield(diluted=diluted, trailing=trailing)
+
+        dividend_yield_columns = [
+            column
+            for column in dividend_yield.columns
+            if column in buyback_yield.columns
+        ]
+
+        shareholder_yield = valuation_model.get_shareholder_yield(
+            dividend_yield.loc[:, dividend_yield_columns],
+            buyback_yield.loc[:, dividend_yield_columns],
+        )
+
+        return finalize_dataset(
+            dataset=shareholder_yield,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_sbc_adjusted_free_cash_flow(
+        self,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+        trailing: int | None = None,
+    ):
+        """
+        Calculate the stock-based compensation (SBC) adjusted free cash flow, which
+        deducts non-cash SBC expenses from free cash flow to give a more conservative
+        view of the cash actually available to shareholders.
+
+        Free cash flow already excludes SBC as a cash expense (it is added back in
+        the cash flow from operations), which can overstate the cash available to
+        shareholders. Subtracting SBC treats it as if it were a real cash cost, which
+        is a common quality-of-earnings adjustment, especially for companies that
+        rely heavily on equity compensation.
+
+        The formula is as follows:
+
+        - SBC-Adjusted Free Cash Flow = Free Cash Flow - Stock Based Compensation
+
+        Also known as: SBC-adjusted FCF.
+
+        Args:
+            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            trailing (int): Defines whether to select a trailing period.
+            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+
+        Returns:
+            pd.DataFrame: SBC-adjusted free cash flow values.
+
+        Notes:
+        - The method retrieves historical data and calculates the SBC-adjusted free cash flow
+        for each asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the values
+        using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        sbc_adjusted_fcf = toolkit.ratios.get_sbc_adjusted_free_cash_flow()
+        ```
+
+        Which returns:
+
+        |      |       2021 |        2022 |       2023 |       2024 |       2025 |
+        |:-----|-----------:|------------:|-----------:|-----------:|-----------:|
+        | AAPL | 8.5047e+10 | 1.02405e+11 | 8.8751e+10 | 9.7119e+10 | 8.5904e+10 |
+        | TSLA | 1.362e+09  | 5.992e+09   | 2.545e+09  | 1.582e+09  | 3.395e+09  |
+        """
+        if trailing:
+            sbc_adjusted_free_cash_flow = (
+                valuation_model.get_sbc_adjusted_free_cash_flow(
+                    self._cash_flow_statement.loc[:, "Free Cash Flow", :]
+                    .T.rolling(trailing)
+                    .sum()
+                    .T,
+                    self._cash_flow_statement.loc[:, "Stock Based Compensation", :]
+                    .T.rolling(trailing)
+                    .sum()
+                    .T,
+                )
+            )
+        else:
+            sbc_adjusted_free_cash_flow = (
+                valuation_model.get_sbc_adjusted_free_cash_flow(
+                    self._cash_flow_statement.loc[:, "Free Cash Flow", :],
+                    self._cash_flow_statement.loc[:, "Stock Based Compensation", :],
+                )
+            )
+
+        return finalize_dataset(
+            dataset=sbc_adjusted_free_cash_flow,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+        )

@@ -57,14 +57,14 @@ def _deserialize_df(value_json: str) -> pd.DataFrame:
         wrapper = {}
 
     if isinstance(wrapper, dict) and _CACHE_ENVELOPE_KEY in wrapper:
-        df = pd.read_json(StringIO(wrapper["data"]), dtype=False)
+        dataframe = pd.read_json(StringIO(wrapper["data"]), dtype=False)
         if wrapper.get("index_name") is not None:
-            df.index.name = wrapper["index_name"]
+            dataframe.index.name = wrapper["index_name"]
     else:
         # Legacy format: plain df.to_json() string stored directly.
-        df = pd.read_json(StringIO(value_json), dtype=False)
+        dataframe = pd.read_json(StringIO(value_json), dtype=False)
 
-    return _restore_multiindex_columns(df)
+    return _restore_multiindex_columns(dataframe)
 
 
 class SQLiteCache:

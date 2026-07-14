@@ -1,6 +1,17 @@
 #!/usr/bin/env bash
 # Builds financetoolkit.mcpb and places it in dist/.
+#
+# --local: point the bundle's dependency at this local checkout (unpinned,
+# editable via uv) instead of the published PyPI package, so uncommitted
+# changes can be tested inside the bundle without cutting a release first.
 set -euo pipefail
+
+LOCAL=false
+for arg in "$@"; do
+  case "$arg" in
+    --local) LOCAL=true ;;
+  esac
+done
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BUNDLE_DIR="$SCRIPT_DIR"
@@ -16,14 +27,33 @@ with open('$REPO_ROOT/pyproject.toml', 'rb') as f:
 echo "Version: $VERSION"
 
 OUTPUT_FILE="$OUTPUT_DIR/financetoolkit.mcpb"
+if [ "$LOCAL" = true ]; then
+  OUTPUT_FILE="$OUTPUT_DIR/financetoolkit-local.mcpb"
+  echo "Local mode: bundling against local checkout ($REPO_ROOT), unpinned + editable"
+fi
 
 # Stamp version into pyproject.toml (package version + pinned dependency).
-python3 -c "
-import re, pathlib
+# In --local mode, point the dependency at the local checkout instead
+# (via [tool.uv.sources], editable) so the bundle runs uncommitted code.
+LOCAL="$LOCAL" REPO_ROOT="$REPO_ROOT" VERSION="$VERSION" python3 -c "
+import os, re, pathlib
+
 p = pathlib.Path('$BUNDLE_DIR/pyproject.toml')
 content = p.read_text()
-content = re.sub(r'(?m)^version = \".*\"', 'version = \"$VERSION\"', content)
-content = re.sub(r'\"financetoolkit\[mcp\]==.*\"', '\"financetoolkit[mcp]==$VERSION\"', content)
+content = re.sub(r'(?m)^version = \".*\"', 'version = \"' + os.environ['VERSION'] + '\"', content)
+
+# Strip any leftover [tool.uv.sources] block from a previous --local build.
+content = re.sub(r'\n\[tool\.uv\.sources\]\n.*?(?=\n\[|\Z)', '\n', content, flags=re.S)
+
+if os.environ['LOCAL'] == 'true':
+    content = re.sub(r'\"financetoolkit\[mcp\](==.*)?\"', '\"financetoolkit[mcp]\"', content)
+    content = content.rstrip('\n') + (
+        '\n\n[tool.uv.sources]\n'
+        'financetoolkit = { path = \"' + os.environ['REPO_ROOT'] + '\", editable = true }\n'
+    )
+else:
+    content = re.sub(r'\"financetoolkit\[mcp\](==.*)?\"', '\"financetoolkit[mcp]==' + os.environ['VERSION'] + '\"', content)
+
 p.write_text(content)
 "
 
@@ -66,4 +96,8 @@ echo ""
 echo "Bundle written to $OUTPUT_FILE"
 echo ""
 echo "To install: open $OUTPUT_FILE with Claude Desktop."
-echo "To publish: attach $OUTPUT_FILE to a GitHub release."
+if [ "$LOCAL" = true ]; then
+  echo "This is a local test build (uncommitted code) — do not publish it."
+else
+  echo "To publish: attach $OUTPUT_FILE to a GitHub release."
+fi

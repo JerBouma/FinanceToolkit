@@ -2,7 +2,7 @@
   "manifest_version": "0.4",
   "name": "finance-toolkit",
   "display_name": "Finance Toolkit",
-  "version": "2.1.3",
+  "version": "2.1.4",
   "description": "Give AI assistants access to 200+ financial metrics calculated transparently from raw financial statements, not pulled from third-party endpoints.",
   "long_description": "The Finance Toolkit gives AI assistants access to 200+ financial metrics calculated transparently from raw financial statements. This includes financial statements, historical prices, analyst estimates, 80+ fundamental ratios, 30+ technical indicators, 20+ risk and performance metrics, and 50+ macro and fixed income indicators.\n\nA Financial Modeling Prep API key is required to access 30+ years of financial data. Obtain one at [jeroenbouma.com/fmp](https://jeroenbouma.com/fmp). Authenticate once via OAuth, no key is stored on the server. Rate limit fallback to Yahoo Finance is built in, and macro databases from OECD and GMDB are accessed independently.",
   "author": {
@@ -79,7 +79,7 @@
     },
     {
       "name": "valuation",
-      "description": "Pre-computed valuation ratios (P/E, EPS, EV/EBITDA, EV/EBIT, P/B, P/S, PEG, dividend yield, FCF yield, market cap). Requires tickers='AAPL' \u2014 use comma-separated values for multiple tickers. Use instead of raw financial statements. Supports quarterly=true and start_date/end_date."
+      "description": "Pre-computed valuation ratios (P/E, EPS, EV/EBITDA, EV/EBIT, P/B, P/S, PEG, dividend yield, FCF yield, market cap, forward P/E, forward PEG). Requires tickers='AAPL' \u2014 use comma-separated values for multiple tickers. Use instead of raw financial statements. Supports quarterly=true and start_date/end_date. get_forward_price_earnings_ratio and get_forward_price_earnings_growth_ratio additionally require a Premium FMP subscription and are fetched on first use only."
     },
     {
       "name": "breadth",
@@ -99,15 +99,15 @@
     },
     {
       "name": "models",
-      "description": "Pre-computed financial models (WACC, DuPont analysis, Altman Z-Score, Piotroski F-Score, intrinsic value/DCF). Requires tickers='AAPL' \u2014 use comma-separated values for multiple tickers. Supports quarterly=true and start_date/end_date."
+      "description": "Pre-computed financial models (WACC, DuPont analysis, Extended DuPont analysis, Enterprise value breakdown, intrinsic value/DCF, Gordon Growth Model, Altman Z-Score, Piotroski F-Score, Beneish M-Score, Economic Value Added (EVA), Present Value of Growth Opportunities, Sustainable Growth Rate, Internal Growth Rate, Graham Number). Requires tickers='AAPL' \u2014 use comma-separated values for multiple tickers. Supports quarterly=true and start_date/end_date."
     },
     {
       "name": "performance",
-      "description": "Pre-computed risk-adjusted performance metrics (Sharpe ratio, Sortino ratio, Alpha, Beta, CAPM, Fama-French factors). Requires tickers='AAPL' \u2014 use comma-separated values for multiple tickers. Does NOT support period='daily'; use weekly, monthly, quarterly, or yearly instead."
+      "description": "Pre-computed risk-adjusted performance metrics (Sharpe ratio, Sortino ratio, Alpha, Jensen's Alpha, Beta, CAPM, Treynor ratio, M2 ratio, Tracking Error, Information Ratio, Fama-French factors, period Returns, Excess Returns \u2014 Returns/Excess Returns support cumulative=true for a compounded growth index rebased to 1). Beta, CAPM, Alpha, Jensen's Alpha, Treynor, Sortino, M2, Tracking Error and Information Ratio support rolling=N for a rolling N-period value spanning the full history instead of one value per period (e.g. period='monthly', rolling=6 for a rolling 6-month figure). Requires tickers='AAPL' \u2014 use comma-separated values for multiple tickers. Does NOT support period='daily'; use weekly, monthly, quarterly, or yearly instead."
     },
     {
       "name": "risk",
-      "description": "Pre-computed risk metrics (VaR, CVaR, GARCH volatility, max drawdown, skewness, kurtosis). Requires tickers='AAPL' \u2014 use comma-separated values for multiple tickers. Does NOT support period='daily'; use weekly, monthly, quarterly, or yearly instead."
+      "description": "Pre-computed risk metrics (VaR incl. historic/gaussian/cf/studentt/evt distributions, CVaR, EVaR, GARCH volatility, max drawdown, drawdown duration, drawdown recovery time, Conditional Drawdown at Risk (CDaR), Tail Ratio, skewness, kurtosis, downside deviation, Variance, Volatility, Excess Volatility). VaR, CVaR, skewness, kurtosis, CDaR, Tail Ratio, downside deviation, Variance, Volatility and Excess Volatility support rolling=N for a rolling N-period value spanning the full history instead of one value per period (e.g. period='monthly', rolling=6 for a rolling 6-month figure). Requires tickers='AAPL' \u2014 use comma-separated values for multiple tickers. Does NOT support period='daily'; use weekly, monthly, quarterly, or yearly instead."
     },
     {
       "name": "options",
@@ -115,23 +115,23 @@
     },
     {
       "name": "government",
-      "description": "Government fiscal metrics by country (debt, deficit, expenditure, revenue, tax revenue, trust in government). Requires countries='United States' \u2014 use comma-separated values for multiple countries. Do NOT use tickers= for this tool. Supports start_date/end_date and quarterly=true."
+      "description": "Government fiscal metrics by country (debt, deficit, expenditure, revenue, tax revenue, trust in government). Requires countries='United States' \u2014 use comma-separated values for multiple countries. Do NOT use tickers= for this tool. Supports start_date/end_date and quarterly=true. Supports rolling=N (moving-average smoothing) and trailing=N (trailing N-period sum, e.g. a trailing-4-quarter sum) on the raw series."
     },
     {
       "name": "macroeconomics",
-      "description": "Macroeconomic indicators by country (GDP, CPI, inflation rate, trade balance, imports, exports, investment, consumption, business/consumer confidence, house prices, rent prices, exchange rates). Requires countries='United States' \u2014 use comma-separated values for multiple countries. Do NOT use tickers= for this tool. Supports start_date/end_date and quarterly=true."
+      "description": "Macroeconomic indicators by country (GDP, CPI, inflation rate, trade balance, imports, exports, investment, consumption, business/consumer confidence, house prices, rent prices, exchange rates, money supply). Requires countries='United States' \u2014 use comma-separated values for multiple countries. Do NOT use tickers= for this tool. Supports start_date/end_date and quarterly=true. Supports rolling=N (moving-average smoothing) and trailing=N (trailing N-period sum, e.g. a trailing-4-quarter sum) on the raw series."
     },
     {
       "name": "environment",
-      "description": "Environmental and ESG data. For ESG scores (E, S, G ratings) use tickers='AAPL'. For carbon footprint and renewable energy data use countries='United States'. This is the only tool that accepts BOTH tickers= and countries= depending on the indicator."
+      "description": "Environmental and ESG data. For ESG scores (E, S, G ratings) use tickers='AAPL'. For carbon footprint and renewable energy data use countries='United States' (also supports rolling=N and trailing=N smoothing/summation). This is the only tool that accepts BOTH tickers= and countries= depending on the indicator."
     },
     {
       "name": "jobs",
-      "description": "Labour and social metrics by country (unemployment rate, labour productivity, population statistics, poverty rate, income inequality). Requires countries='United States' \u2014 use comma-separated values for multiple countries. Do NOT use tickers= for this tool. Supports start_date/end_date and quarterly=true."
+      "description": "Labour and social metrics by country (unemployment rate, labour productivity, population statistics, poverty rate, income inequality). Requires countries='United States' \u2014 use comma-separated values for multiple countries. Do NOT use tickers= for this tool. Supports start_date/end_date and quarterly=true. Supports rolling=N (moving-average smoothing) and trailing=N (trailing N-period sum) on the raw series."
     },
     {
       "name": "rates",
-      "description": "Interest rate data (central bank policy rates, short/long-term rates, government bond yields, ICE BofA corporate bond series, EURIBOR, ECB rates, Federal Reserve rates). Requires countries='United States' \u2014 use comma-separated values for multiple countries. Do NOT use tickers= for this tool. Supports start_date/end_date and quarterly=true."
+      "description": "Interest rate data (central bank policy rates, short/long-term rates, government bond yields, ICE BofA corporate bond series, EURIBOR, ECB rates, Federal Reserve rates). Requires countries='United States' \u2014 use comma-separated values for multiple countries. Do NOT use tickers= for this tool. Supports start_date/end_date and quarterly=true. The central bank policy rate and short/long-term rate indicators additionally support rolling=N (moving-average smoothing) and trailing=N (trailing N-period sum)."
     },
     {
       "name": "fixed_income",

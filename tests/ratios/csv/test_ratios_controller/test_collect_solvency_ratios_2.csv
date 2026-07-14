@@ -26,6 +26,15 @@ AAPL,CAPEX Coverage Ratio,Lag 3,,,,-0.0861
 AAPL,Dividend CAPEX Coverage Ratio,Lag 1,,0.0795,0.1742,-0.1102
 AAPL,Dividend CAPEX Coverage Ratio,Lag 2,,,0.2676,0.0449
 AAPL,Dividend CAPEX Coverage Ratio,Lag 3,,,,0.128
+AAPL,Debt-to-Capital Ratio,Lag 1,,0.0494,0.0576,-0.1134
+AAPL,Debt-to-Capital Ratio,Lag 2,,,0.1099,-0.0623
+AAPL,Debt-to-Capital Ratio,Lag 3,,,,-0.016
+AAPL,Preferred Dividend Coverage Ratio,Lag 1,,,,
+AAPL,Preferred Dividend Coverage Ratio,Lag 2,,,,
+AAPL,Preferred Dividend Coverage Ratio,Lag 3,,,,
+AAPL,Interest Paid to Expense Ratio,Lag 1,,-0.0278,-0.0378,-0.0108
+AAPL,Interest Paid to Expense Ratio,Lag 2,,,-0.0645,-0.0482
+AAPL,Interest Paid to Expense Ratio,Lag 3,,,,-0.0746
 MSFT,Debt-to-Assets Ratio,Lag 1,,-0.1379,-0.1733,-0.1328
 MSFT,Debt-to-Assets Ratio,Lag 2,,,-0.2874,-0.2831
 MSFT,Debt-to-Assets Ratio,Lag 3,,,,-0.382
@@ -53,3 +62,12 @@ MSFT,CAPEX Coverage Ratio,Lag 3,,,,-0.207
 MSFT,Dividend CAPEX Coverage Ratio,Lag 1,,0.0412,0.0255,-0.1372
 MSFT,Dividend CAPEX Coverage Ratio,Lag 2,,,0.0678,-0.1151
 MSFT,Dividend CAPEX Coverage Ratio,Lag 3,,,,-0.0787
+MSFT,Debt-to-Capital Ratio,Lag 1,,-0.1386,-0.1677,-0.1621
+MSFT,Debt-to-Capital Ratio,Lag 2,,,-0.2831,-0.3027
+MSFT,Debt-to-Capital Ratio,Lag 3,,,,-0.3994
+MSFT,Preferred Dividend Coverage Ratio,Lag 1,,,,
+MSFT,Preferred Dividend Coverage Ratio,Lag 2,,,,
+MSFT,Preferred Dividend Coverage Ratio,Lag 3,,,,
+MSFT,Interest Paid to Expense Ratio,Lag 1,,,,
+MSFT,Interest Paid to Expense Ratio,Lag 2,,,,
+MSFT,Interest Paid to Expense Ratio,Lag 3,,,,

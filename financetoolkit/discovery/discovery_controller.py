@@ -757,3 +757,924 @@ class Discovery:
         )
 
         return index_list
+
+    def get_stock_news(
+        self,
+        pages: int = 1,
+        limit: int = 100,
+        start_date: str | None = None,
+        end_date: str | None = None,
+    ) -> pd.DataFrame:
+        """
+        Returns the latest stock market news articles. This includes the ticker symbol
+        (when applicable), publisher, title, a short snippet, and the article URL.
+
+        Also known as: stock news feed, market news headlines.
+
+        Args:
+            pages (int, optional): The number of pages to collect, each page is a
+                separate API call, e.g. pages=5 makes 5 calls. Defaults to 1.
+            limit (int, optional): The number of articles to return per page. Defaults to 100.
+            start_date (str, optional): The start date to filter data with.
+            end_date (str, optional): The end date to filter data with.
+
+        Returns:
+            pd.DataFrame: A dataframe with the latest stock market news articles.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Discovery
+
+        discovery = Discovery(api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        stock_news = discovery.get_stock_news(limit=5)
+
+        stock_news[["Symbol", "Publisher", "Title"]]
+        ```
+
+        Which returns:
+
+        | Published Date       | Symbol   | Publisher                  | Title                                                                         |
+        |:---------------------|:---------|:---------------------------|:-------------------------------------------------------------------------------|
+        | 2026-07-07 11:02:16  | VOD      | Proactive Investors        | Starlink threat to BT, Vodafone and other telecoms is 'limited', says analyst  |
+        | 2026-07-07 11:01:15  | TNDM     | Zacks Investment Research  | Does TNDM Stock Still Deserve a Place in Your Portfolio?                       |
+        | 2026-07-07 11:01:13  | OMCL     | Zacks Investment Research  | What's Fueling Omnicell Stock's 52.6% Rally Over the Past Year?                |
+        | 2026-07-07 11:01:10  | AMAT     | Zacks Investment Research  | Best Momentum Stock to Buy for July 7th                                       |
+        | 2026-07-07 11:01:09  | GS       | Zacks Investment Research  | Goldman Sachs (GS) Earnings Expected to Grow: What to Know Ahead of Next Week's Release |
+        """
+        stock_news = discovery_model.get_stock_news(
+            api_key=self._api_key,
+            limit=limit,
+            pages=pages,
+            start_date=start_date,
+            end_date=end_date,
+            user_subscription=self._fmp_plan,
+        )
+
+        return stock_news
+
+    def get_general_news(self, pages: int = 1, limit: int = 100) -> pd.DataFrame:
+        """
+        Returns the latest general news articles, spanning macroeconomic and broad
+        market coverage rather than a specific ticker.
+
+        Also known as: general market news, macro news feed.
+
+        Args:
+            pages (int, optional): The number of pages to collect, each page is a
+                separate API call, e.g. pages=5 makes 5 calls. Defaults to 1.
+            limit (int, optional): The number of articles to return per page. Defaults to 100.
+
+        Returns:
+            pd.DataFrame: A dataframe with the latest general news articles.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Discovery
+
+        discovery = Discovery(api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        general_news = discovery.get_general_news(limit=5)
+
+        general_news[["Publisher", "Title"]]
+        ```
+
+        Which returns:
+
+        | Published Date       | Publisher                  | Title                                                                      |
+        |:---------------------|:----------------------------|:---------------------------------------------------------------------------|
+        | 2026-07-07 10:56:10  | Zacks Investment Research   | ASE Technology Surges 169% YTD: Should You Still Buy the Stock?             |
+        | 2026-07-07 10:53:31  | NYTimes                     | Companies Brace for Fresh Political Uncertainty at U.S. Agencies           |
+        | 2026-07-07 10:41:20  | Zacks Investment Research   | Why LATAM (LTM) is a Top Value Stock for the Long-Term                     |
+        | 2026-07-07 10:35:53  | Reuters                     | AI startup CEO pleaded guilty in US to trading on insider tips from lawyers |
+        | 2026-07-07 10:30:10  | Fox Business                | TENSIONS RISING: Trump delivers unmistakable warning                       |
+        """
+        general_news = discovery_model.get_general_news(
+            api_key=self._api_key,
+            limit=limit,
+            pages=pages,
+            user_subscription=self._fmp_plan,
+        )
+
+        return general_news
+
+    def get_press_releases(
+        self,
+        pages: int = 1,
+        limit: int = 100,
+        start_date: str | None = None,
+        end_date: str | None = None,
+    ) -> pd.DataFrame:
+        """
+        Returns the latest official company press releases, such as earnings
+        announcements, mergers, and other corporate communications.
+
+        Also known as: corporate announcements, company press releases.
+
+        Args:
+            pages (int, optional): The number of pages to collect, each page is a
+                separate API call, e.g. pages=5 makes 5 calls. Defaults to 1.
+            limit (int, optional): The number of articles to return per page. Defaults to 100.
+            start_date (str, optional): The start date to filter data with.
+            end_date (str, optional): The end date to filter data with.
+
+        Returns:
+            pd.DataFrame: A dataframe with the latest company press releases.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Discovery
+
+        discovery = Discovery(api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        press_releases = discovery.get_press_releases(limit=5)
+
+        press_releases[["Symbol", "Publisher", "Title"]]
+        ```
+
+        Which returns:
+
+        | Published Date       | Symbol   | Publisher     | Title                                                                              |
+        |:---------------------|:---------|:--------------|:-------------------------------------------------------------------------------------|
+        | 2026-07-07 11:01:00  | VERI     | GlobeNewsWire | Portnoy Law Firm Announces Class Action on Behalf of Veritone, Inc. Investors        |
+        | 2026-07-07 11:00:00  | VSH      | GlobeNewsWire | Vishay Intertechnology Standard-Level 40 V MOSFETs Prevent False Triggering...       |
+        | 2026-07-07 11:00:00  | TBBK     | GlobeNewsWire | Old National Bancorp Announces Schedule for Second-Quarter Earnings Release...       |
+        | 2026-07-07 10:59:00  | SRAD     | GlobeNewsWire | Portnoy Law Firm Announces Class Action on Behalf of Sportradar Group AG Investors   |
+        | 2026-07-07 10:58:00  | CVLT     | GlobeNewsWire | Portnoy Law Firm Announces Class Action on Behalf of Commvault Systems, Inc. Investors |
+        """
+        press_releases = discovery_model.get_press_releases(
+            api_key=self._api_key,
+            limit=limit,
+            pages=pages,
+            start_date=start_date,
+            end_date=end_date,
+            user_subscription=self._fmp_plan,
+        )
+
+        return press_releases
+
+    def get_crypto_news(self, pages: int = 1, limit: int = 100) -> pd.DataFrame:
+        """
+        Returns the latest cryptocurrency news articles.
+
+        Also known as: crypto news feed, digital asset news.
+
+        Args:
+            pages (int, optional): The number of pages to collect, each page is a
+                separate API call, e.g. pages=5 makes 5 calls. Defaults to 1.
+            limit (int, optional): The number of articles to return per page. Defaults to 100.
+
+        Returns:
+            pd.DataFrame: A dataframe with the latest cryptocurrency news articles.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Discovery
+
+        discovery = Discovery(api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        crypto_news = discovery.get_crypto_news(limit=5)
+
+        crypto_news[["Symbol", "Publisher", "Title"]]
+        ```
+
+        Which returns:
+
+        | Published Date       | Symbol   | Publisher      | Title                                                                    |
+        |:---------------------|:---------|:---------------|:------------------------------------------------------------------------|
+        | 2026-07-07 10:54:44  | STAKEUSD | Crypto Briefing | Former Tether investment chief seeks to sell 1% stake in the stablecoin giant |
+        | 2026-07-07 10:53:57  | BTCUSD   | AMBCrypto       | Tether backs Brazil's Mercado Bitcoin while USDT faces growing restrictions in Europe |
+        | 2026-07-07 10:50:00  | BTCUSD   | UToday          | Satoshi's Bitcoin Saved? Digital Chamber Steps In to Protest $240 Billion Court Seizure |
+        | 2026-07-07 10:38:15  | BTCUSD   | Crypto Economy  | Binance Rolls Out New Bitcoin Yield Product to Help Holders Boost Returns Without Selling |
+        | 2026-07-07 10:37:19  | BTCUSD   | Crypto Briefing | $470B of Bitcoin at risk from advancing quantum computing               |
+        """
+        crypto_news = discovery_model.get_crypto_news(
+            api_key=self._api_key,
+            limit=limit,
+            pages=pages,
+            user_subscription=self._fmp_plan,
+        )
+
+        return crypto_news
+
+    def get_forex_news(self, pages: int = 1, limit: int = 100) -> pd.DataFrame:
+        """
+        Returns the latest forex news articles.
+
+        Also known as: forex news feed, currency market news.
+
+        Args:
+            pages (int, optional): The number of pages to collect, each page is a
+                separate API call, e.g. pages=5 makes 5 calls. Defaults to 1.
+            limit (int, optional): The number of articles to return per page. Defaults to 100.
+
+        Returns:
+            pd.DataFrame: A dataframe with the latest forex news articles.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Discovery
+
+        discovery = Discovery(api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        forex_news = discovery.get_forex_news(limit=5)
+
+        forex_news[["Symbol", "Publisher", "Title"]]
+        ```
+
+        Which returns:
+
+        | Published Date       | Symbol   | Publisher    | Title                                                                        |
+        |:---------------------|:---------|:-------------|:-------------------------------------------------------------------------------|
+        | 2026-07-07 10:16:59  | AUDUSD   | Action Forex | AUDUSD – Recovery Faces Increased Headwinds from Initial Fibo Resistance       |
+        | 2026-07-07 10:11:55  | EURGBP   | FX Street    | EUR/GBP Price Forecast: Bearish bias persists below 0.8600                      |
+        | 2026-07-07 09:59:12  | GBPUSD   | FX Street    | British Pound: Capped by layered resistance against US Dollar – Scotiabank      |
+        | 2026-07-07 09:29:14  | XAUUSD   | FXEmpire     | Gold Price Analysis – Gold Clings to $4,000 Floor Facing Heavy MA Resistance    |
+        | 2026-07-07 09:21:33  | XAGUSD   | FXEmpire     | Silver Price Analysis – Silver Holds Above $60 as Strong Dollar Restricts Gains |
+        """
+        forex_news = discovery_model.get_forex_news(
+            api_key=self._api_key,
+            limit=limit,
+            pages=pages,
+            user_subscription=self._fmp_plan,
+        )
+
+        return forex_news
+
+    def search_stock_news(
+        self,
+        symbols: str | list[str],
+        pages: int = 1,
+        limit: int = 100,
+        start_date: str | None = None,
+        end_date: str | None = None,
+    ) -> pd.DataFrame:
+        """
+        Searches stock market news articles by one or more ticker symbols.
+
+        Also known as: ticker news search, company news lookup.
+
+        Args:
+            symbols (str | list[str]): One or more ticker symbols, e.g. "AAPL" or
+                ["AAPL", "MSFT"].
+            pages (int, optional): The number of pages to collect, each page is a
+                separate API call, e.g. pages=5 makes 5 calls. Defaults to 1.
+            limit (int, optional): The number of articles to return per page. Defaults to 100.
+            start_date (str, optional): The start date to filter data with.
+            end_date (str, optional): The end date to filter data with.
+
+        Returns:
+            pd.DataFrame: A dataframe with stock news articles matching the given symbols.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Discovery
+
+        discovery = Discovery(api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        stock_news = discovery.search_stock_news(symbols="AAPL", limit=5)
+
+        stock_news[["Symbol", "Publisher", "Title"]]
+        ```
+
+        Which returns:
+
+        | Published Date       | Symbol   | Publisher       | Title                                                                       |
+        |:---------------------|:---------|:----------------|:-------------------------------------------------------------------------------|
+        | 2026-07-07 10:46:52  | AAPL     | Benzinga        | Walmart, Apple And Nike May Be Agentic AI's First Winners. Grocery May Be The First Loser |
+        | 2026-07-07 10:20:11  | AAPL     | Forbes          | Why Investors Fell Back In Love With Apple's Cheap AI Strategy               |
+        | 2026-07-07 09:26:50  | AAPL     | Benzinga        | Forget the iPhone. Apple's AI Story May Belong to Macs                       |
+        | 2026-07-07 08:55:03  | AAPL     | 247 Wallst      | Stock Market Live July 7, 2026: S&P 500 (SPY) Drops on Tech Concerns          |
+        | 2026-07-07 08:44:43  | AAPL     | The Motley Fool | How Apple Can Actually Benefit From the Memory Supply Shortage               |
+        """
+        stock_news = discovery_model.search_stock_news(
+            api_key=self._api_key,
+            symbols=symbols,
+            limit=limit,
+            pages=pages,
+            start_date=start_date,
+            end_date=end_date,
+            user_subscription=self._fmp_plan,
+        )
+
+        return stock_news
+
+    def search_press_releases(
+        self,
+        symbols: str | list[str],
+        pages: int = 1,
+        limit: int = 100,
+        start_date: str | None = None,
+        end_date: str | None = None,
+    ) -> pd.DataFrame:
+        """
+        Searches company press releases by one or more ticker symbols.
+
+        Also known as: press release search, corporate announcement lookup.
+
+        Args:
+            symbols (str | list[str]): One or more ticker symbols, e.g. "AAPL" or
+                ["AAPL", "MSFT"].
+            pages (int, optional): The number of pages to collect, each page is a
+                separate API call, e.g. pages=5 makes 5 calls. Defaults to 1.
+            limit (int, optional): The number of articles to return per page. Defaults to 100.
+            start_date (str, optional): The start date to filter data with.
+            end_date (str, optional): The end date to filter data with.
+
+        Returns:
+            pd.DataFrame: A dataframe with press releases matching the given symbols.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Discovery
+
+        discovery = Discovery(api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        press_releases = discovery.search_press_releases(symbols="AAPL", limit=5)
+
+        press_releases[["Symbol", "Publisher", "Title"]]
+        ```
+
+        Which returns:
+
+        | Published Date       | Symbol   | Publisher     | Title                                                                          |
+        |:---------------------|:---------|:--------------|:-----------------------------------------------------------------------------------|
+        | 2026-06-19 17:00:00  | AAPL     | PRNewsWire    | Xiao-I Corporation Provides Update on First-Instance Rulings in Patent Litigation...|
+        | 2026-06-17 09:00:00  | AAPL     | Business Wire | Addigy Expands Identity for Apple Fleets: IdP-Native Login, FileVault...            |
+        | 2026-06-16 13:23:00  | AAPL     | GlobeNewsWire | Pennsylvania Expansion Continues: Apple Blossom Joins Legend Senior Living          |
+        | 2026-06-09 14:28:00  | AAPL     | GlobeNewsWire | Charlotte Volsch, Apple Valley, California Broker, Named Among Real Trends 2026...  |
+        | 2026-06-09 09:58:00  | AAPL     | Business Wire | MIKROE develops Spatial Anchor R1 & S1 for Apple Vision Pro                         |
+        """
+        press_releases = discovery_model.search_press_releases(
+            api_key=self._api_key,
+            symbols=symbols,
+            limit=limit,
+            pages=pages,
+            start_date=start_date,
+            end_date=end_date,
+            user_subscription=self._fmp_plan,
+        )
+
+        return press_releases
+
+    def search_crypto_news(
+        self, symbols: str | list[str], pages: int = 1, limit: int = 100
+    ) -> pd.DataFrame:
+        """
+        Searches cryptocurrency news articles by one or more coin/token symbols.
+
+        Also known as: crypto news search, coin news lookup.
+
+        Args:
+            symbols (str | list[str]): One or more crypto symbols, e.g. "BTCUSD" or
+                ["BTCUSD", "ETHUSD"].
+            pages (int, optional): The number of pages to collect, each page is a
+                separate API call, e.g. pages=5 makes 5 calls. Defaults to 1.
+            limit (int, optional): The number of articles to return per page. Defaults to 100.
+
+        Returns:
+            pd.DataFrame: A dataframe with crypto news articles matching the given symbols.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Discovery
+
+        discovery = Discovery(api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        crypto_news = discovery.search_crypto_news(symbols="BTCUSD", limit=5)
+
+        crypto_news[["Symbol", "Publisher", "Title"]]
+        ```
+
+        Which returns:
+
+        | Published Date       | Symbol   | Publisher      | Title                                                                        |
+        |:---------------------|:---------|:---------------|:---------------------------------------------------------------------------------|
+        | 2026-07-07 10:53:57  | BTCUSD   | AMBCrypto       | Tether backs Brazil's Mercado Bitcoin while USDT faces growing restrictions in Europe |
+        | 2026-07-07 10:50:00  | BTCUSD   | UToday          | Satoshi's Bitcoin Saved? Digital Chamber Steps In to Protest $240 Billion Court Seizure |
+        | 2026-07-07 10:38:15  | BTCUSD   | Crypto Economy  | Binance Rolls Out New Bitcoin Yield Product to Help Holders Boost Returns Without Selling |
+        | 2026-07-07 10:37:19  | BTCUSD   | Crypto Briefing | $470B of Bitcoin at risk from advancing quantum computing                    |
+        | 2026-07-07 10:27:30  | BTCUSD   | CryptoSlate     | Bitcoin dominance hits one-month low as altcoin winners start breaking away  |
+        """
+        crypto_news = discovery_model.search_crypto_news(
+            api_key=self._api_key,
+            symbols=symbols,
+            limit=limit,
+            pages=pages,
+            user_subscription=self._fmp_plan,
+        )
+
+        return crypto_news
+
+    def search_forex_news(
+        self, symbols: str | list[str], pages: int = 1, limit: int = 100
+    ) -> pd.DataFrame:
+        """
+        Searches forex news articles by one or more currency pair symbols.
+
+        Also known as: forex news search, currency pair news lookup.
+
+        Args:
+            symbols (str | list[str]): One or more forex pairs, e.g. "EURUSD" or
+                ["EURUSD", "GBPUSD"].
+            pages (int, optional): The number of pages to collect, each page is a
+                separate API call, e.g. pages=5 makes 5 calls. Defaults to 1.
+            limit (int, optional): The number of articles to return per page. Defaults to 100.
+
+        Returns:
+            pd.DataFrame: A dataframe with forex news articles matching the given symbols.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Discovery
+
+        discovery = Discovery(api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        forex_news = discovery.search_forex_news(symbols="EURUSD", limit=5)
+
+        forex_news[["Symbol", "Publisher", "Title"]]
+        ```
+
+        Which returns:
+
+        | Published Date       | Symbol   | Publisher    | Title                                                                    |
+        |:---------------------|:---------|:-------------|:-------------------------------------------------------------------------|
+        | 2026-07-07 07:16:08  | EURUSD   | FX Street    | Euro: Upside bias held above strong support against US Dollar – UOB     |
+        | 2026-07-07 06:56:14  | EURUSD   | Action Forex | EUR/USD Analysis: Who Is in Control?                                    |
+        | 2026-07-07 06:53:07  | EURUSD   | Forexcom     | EUR/USD forecast: Dollar holds the upper hand as traders await Fed minutes |
+        | 2026-07-07 02:15:13  | EURUSD   | FX Street    | Euro Summer range holds against US Dollar – Commerzbank                  |
+        | 2026-07-07 01:58:21  | EURUSD   | FX Street    | EUR/USD Price Forecast: Turns broadly sideways below 20-day EMA          |
+        """
+        forex_news = discovery_model.search_forex_news(
+            api_key=self._api_key,
+            symbols=symbols,
+            limit=limit,
+            pages=pages,
+            user_subscription=self._fmp_plan,
+        )
+
+        return forex_news
+
+    def get_ipo_calendar(
+        self, start_date: str | None = None, end_date: str | None = None
+    ) -> pd.DataFrame:
+        """
+        Returns the calendar of upcoming and recent initial public offerings (IPOs),
+        including expected pricing, exchange, and share count. This is distinct from
+        the "IPO Date" field on a company's profile, which only shows a single past date.
+
+        Note that the date range is limited to a maximum of 90 days.
+
+        Also known as: IPO pipeline, upcoming listings.
+
+        Args:
+            start_date (str, optional): The start date to filter data with.
+            end_date (str, optional): The end date to filter data with.
+
+        Returns:
+            pd.DataFrame: A dataframe with upcoming and recent IPOs.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Discovery
+
+        discovery = Discovery(api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        ipo_calendar = discovery.get_ipo_calendar(start_date="2024-01-01", end_date="2024-06-01")
+
+        ipo_calendar.head()
+        ```
+
+        Which returns:
+
+        | Symbol   | Date       | Company                                     | Exchange   | Status   |     Shares | Price Range   |   Market Cap |
+        |:---------|:-----------|:---------------------------------------------|:-----------|:---------|-----------:|:--------------|-------------:|
+        | SMTK     | 2024-05-31 | SmartKem, Inc.                                | NASDAQ     | Expected |        nan |               |          nan |
+        | NEWTG    | 2024-05-31 | NewtekOne, Inc. 8.50% Fixed Rate Senior Notes  | NASDAQ     | Expected |        nan |               |          nan |
+        | KDLY     | 2024-05-31 | Kindly MD, Inc.                                | NASDAQ     | Priced   |    1240910 |               |      6825005 |
+        | KDLYW    | 2024-05-31 | Kindly MD, Inc. Warrants                       | NASDAQ     | Expected |        nan |               |          nan |
+        | SECR     | 2024-05-31 | IndexIQ Active ETF Trust                       | NYSE       | Expected |        nan |               |          nan |
+        """
+        ipo_calendar = discovery_model.get_ipo_calendar(
+            api_key=self._api_key,
+            start_date=start_date,
+            end_date=end_date,
+            user_subscription=self._fmp_plan,
+        )
+
+        return ipo_calendar
+
+    def get_ipo_disclosures(
+        self, start_date: str | None = None, end_date: str | None = None
+    ) -> pd.DataFrame:
+        """
+        Returns IPO disclosure filings — the regulatory filings made ahead of an IPO,
+        including filing dates, effectiveness dates, and CIK numbers, with direct links
+        to the official SEC documents.
+
+        Also known as: pre-IPO SEC filings, IPO regulatory disclosures.
+
+        Args:
+            start_date (str, optional): The start date to filter data with.
+            end_date (str, optional): The end date to filter data with.
+
+        Returns:
+            pd.DataFrame: A dataframe with IPO disclosure filings.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Discovery
+
+        discovery = Discovery(api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        ipo_disclosures = discovery.get_ipo_disclosures(start_date="2024-01-01", end_date="2024-06-01")
+
+        ipo_disclosures.head()
+        ```
+
+        Which returns:
+
+        | Symbol   | Filing Date   | Accepted Date   | Effectiveness Date   | CIK        | Form   |
+        |:---------|:--------------|:-----------------|:----------------------|:-----------|:-------|
+        | BIPH     | 2024-05-31    | 2024-05-31       | 2024-05-31             | 0001406234 | CERT   |
+        | BIPJ     | 2024-05-31    | 2024-05-31       | 2024-05-31             | 0001406234 | CERT   |
+        | BRIPF    | 2024-05-31    | 2024-05-31       | 2024-05-31             | 0001406234 | CERT   |
+        | NAKAW    | 2024-05-31    | 2024-05-31       | 2024-05-31             | 0001946573 | CERT   |
+        | BIPI     | 2024-05-31    | 2024-05-31       | 2024-05-31             | 0001406234 | CERT   |
+        """
+        ipo_disclosures = discovery_model.get_ipo_disclosures(
+            api_key=self._api_key,
+            start_date=start_date,
+            end_date=end_date,
+            user_subscription=self._fmp_plan,
+        )
+
+        return ipo_disclosures
+
+    def get_ipo_prospectuses(
+        self, start_date: str | None = None, end_date: str | None = None
+    ) -> pd.DataFrame:
+        """
+        Returns IPO prospectus filings, including public offering price, discounts and
+        commissions, and proceeds before expenses, with links to the official SEC
+        prospectus documents.
+
+        Also known as: IPO pricing details, S-1/424B4 filings.
+
+        Args:
+            start_date (str, optional): The start date to filter data with.
+            end_date (str, optional): The end date to filter data with.
+
+        Returns:
+            pd.DataFrame: A dataframe with IPO prospectus filings.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Discovery
+
+        discovery = Discovery(api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        ipo_prospectuses = discovery.get_ipo_prospectuses(start_date="2024-01-01", end_date="2024-06-01")
+
+        ipo_prospectuses.head()
+        ```
+
+        Which returns:
+
+        | Symbol   | IPO Date   |   Public Price Per Share |   Public Price Total | Form   |
+        |:---------|:-----------|--------------------------:|----------------------:|:-------|
+        | LUCYW    | 2022-08-14 |                     73    |                4024429 | S-1    |
+        | LBGJ     | 2024-05-29 |                      5    |               25000000 | F-1/A  |
+        | CDIX     | 2005-12-21 |                      5    |                8000000 | S-1/A  |
+        | LUCY     | 2022-08-13 |                     73    |                4024429 | S-1    |
+        | ERES     | 2023-07-02 |                      0.02 |                    100 | S-1/A  |
+        """
+        ipo_prospectuses = discovery_model.get_ipo_prospectuses(
+            api_key=self._api_key,
+            start_date=start_date,
+            end_date=end_date,
+            user_subscription=self._fmp_plan,
+        )
+
+        return ipo_prospectuses
+
+    def get_stock_splits_calendar(
+        self, start_date: str | None = None, end_date: str | None = None
+    ) -> pd.DataFrame:
+        """
+        Returns the calendar of upcoming and recent stock splits across all companies,
+        including the split date and ratio. Same calendar pattern as the earnings and
+        dividend calendars.
+
+        Note that the date range is limited to a maximum of 90 days.
+
+        Also known as: split schedule, upcoming stock splits.
+
+        Args:
+            start_date (str, optional): The start date to filter data with.
+            end_date (str, optional): The end date to filter data with.
+
+        Returns:
+            pd.DataFrame: A dataframe with upcoming and recent stock splits.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Discovery
+
+        discovery = Discovery(api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        splits_calendar = discovery.get_stock_splits_calendar(start_date="2024-01-01", end_date="2024-06-01")
+
+        splits_calendar.head()
+        ```
+
+        Which returns:
+
+        | Symbol       | Date       |   Numerator |   Denominator | Split Type   |
+        |:-------------|:-----------|------------:|---------------:|:-------------|
+        | ALZ.ST       | 2024-05-31 |         617 |            500 | stock-split  |
+        | RCSL4.SA     | 2024-05-31 |           1 |              4 | stock-split  |
+        | BFG.NZ       | 2024-05-31 |           3 |             10 | stock-split  |
+        | CRTX.L       | 2024-05-31 |           1 |            160 | stock-split  |
+        | DAVANGERE.NS | 2024-05-31 |          10 |              1 | stock-split  |
+        """
+        splits_calendar = discovery_model.get_stock_splits_calendar(
+            api_key=self._api_key,
+            start_date=start_date,
+            end_date=end_date,
+            user_subscription=self._fmp_plan,
+        )
+
+        return splits_calendar
+
+    def get_sector_performance(
+        self, date: str | None = None, sector: str | None = None
+    ) -> pd.DataFrame:
+        """
+        Returns sector performance — the average price change per sector. Provide
+        exactly one of `date` (a snapshot across all sectors on that date) or
+        `sector` (the historical time series for one sector).
+
+        Also known as: sector performance snapshot, sector performance history, sector trend.
+
+        Args:
+            date (str, optional): The date to retrieve a snapshot for, e.g. "2024-02-01".
+            sector (str, optional): The sector to retrieve the history for, e.g. "Energy".
+
+        Returns:
+            pd.DataFrame: A dataframe with sector performance, indexed by Sector
+                (snapshot) or Date (historical).
+
+        As an example:
+
+        ```python
+        from financetoolkit import Discovery
+
+        discovery = Discovery(api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        sector_snapshot = discovery.get_sector_performance(date="2024-02-01")
+
+        sector_snapshot.head()
+
+        sector_history = discovery.get_sector_performance(sector="Energy")
+
+        sector_history.tail()
+        ```
+
+        Which returns:
+
+        | Sector                 | Date       | Exchange   |   Average Change |
+        |:------------------------|:-----------|:-----------|------------------:|
+        | Basic Materials         | 2024-02-01 | NASDAQ     |          -0.31481 |
+        | Communication Services  | 2024-02-01 | NASDAQ     |           0.85070 |
+        | Consumer Cyclical       | 2024-02-01 | NASDAQ     |           1.81130 |
+        | Consumer Defensive      | 2024-02-01 | NASDAQ     |           1.74347 |
+        | Energy                  | 2024-02-01 | NASDAQ     |           0.63975 |
+        """
+        sector_performance = discovery_model.get_sector_performance(
+            api_key=self._api_key,
+            date=date,
+            sector=sector,
+            user_subscription=self._fmp_plan,
+        )
+
+        return sector_performance
+
+    def get_industry_performance(
+        self, date: str | None = None, industry: str | None = None
+    ) -> pd.DataFrame:
+        """
+        Returns industry performance — the average price change per industry. Provide
+        exactly one of `date` (a snapshot across all industries on that date) or
+        `industry` (the historical time series for one industry).
+
+        Also known as: industry performance snapshot, industry performance history, industry trend.
+
+        Args:
+            date (str, optional): The date to retrieve a snapshot for, e.g. "2024-02-01".
+            industry (str, optional): The industry to retrieve the history for, e.g. "Biotechnology".
+
+        Returns:
+            pd.DataFrame: A dataframe with industry performance, indexed by Industry
+                (snapshot) or Date (historical).
+
+        As an example:
+
+        ```python
+        from financetoolkit import Discovery
+
+        discovery = Discovery(api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        industry_snapshot = discovery.get_industry_performance(date="2024-02-01")
+
+        industry_snapshot.head()
+
+        industry_history = discovery.get_industry_performance(industry="Biotechnology")
+
+        industry_history.tail()
+        ```
+
+        Which returns:
+
+        | Industry                    | Date       | Exchange   |   Average Change |
+        |:-----------------------------|:-----------|:-----------|------------------:|
+        | Advertising Agencies         | 2024-02-01 | NASDAQ     |            3.8660 |
+        | Aerospace & Defense          | 2024-02-01 | NASDAQ     |            0.5853 |
+        | Agricultural Farm Products   | 2024-02-01 | NASDAQ     |            1.6564 |
+        | Agricultural Inputs          | 2024-02-01 | NASDAQ     |            0.5436 |
+        | Agricultural - Machinery     | 2024-02-01 | NASDAQ     |            1.4934 |
+        """
+        industry_performance = discovery_model.get_industry_performance(
+            api_key=self._api_key,
+            date=date,
+            industry=industry,
+            user_subscription=self._fmp_plan,
+        )
+
+        return industry_performance
+
+    def get_sector_pe(
+        self, date: str | None = None, sector: str | None = None
+    ) -> pd.DataFrame:
+        """
+        Returns sector price-to-earnings (P/E) ratios. Provide exactly one of `date`
+        (a snapshot across all sectors on that date) or `sector` (the historical
+        time series for one sector).
+
+        Also known as: sector P/E snapshot, sector P/E history, sector valuation trend.
+
+        Args:
+            date (str, optional): The date to retrieve a snapshot for, e.g. "2024-02-01".
+            sector (str, optional): The sector to retrieve the history for, e.g. "Energy".
+
+        Returns:
+            pd.DataFrame: A dataframe with sector P/E ratios, indexed by Sector
+                (snapshot) or Date (historical).
+
+        As an example:
+
+        ```python
+        from financetoolkit import Discovery
+
+        discovery = Discovery(api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        sector_pe = discovery.get_sector_pe(date="2024-02-01")
+
+        sector_pe.head()
+
+        sector_pe_history = discovery.get_sector_pe(sector="Energy")
+
+        sector_pe_history.tail()
+        ```
+
+        Which returns:
+
+        | Sector                 | Date       | Exchange   |   PE Ratio |
+        |:------------------------|:-----------|:-----------|------------:|
+        | Basic Materials         | 2024-02-01 | NASDAQ     |     15.6877 |
+        | Communication Services  | 2024-02-01 | NASDAQ     |     25.9425 |
+        | Consumer Cyclical       | 2024-02-01 | NASDAQ     |     55.2588 |
+        | Consumer Defensive      | 2024-02-01 | NASDAQ     |     31.7298 |
+        | Energy                  | 2024-02-01 | NASDAQ     |     14.4114 |
+        """
+        sector_pe = discovery_model.get_sector_pe(
+            api_key=self._api_key,
+            date=date,
+            sector=sector,
+            user_subscription=self._fmp_plan,
+        )
+
+        return sector_pe
+
+    def get_industry_pe(
+        self, date: str | None = None, industry: str | None = None
+    ) -> pd.DataFrame:
+        """
+        Returns industry price-to-earnings (P/E) ratios. Provide exactly one of
+        `date` (a snapshot across all industries on that date) or `industry` (the
+        historical time series for one industry).
+
+        Also known as: industry P/E snapshot, industry P/E history, industry valuation trend.
+
+        Args:
+            date (str, optional): The date to retrieve a snapshot for, e.g. "2024-02-01".
+            industry (str, optional): The industry to retrieve the history for, e.g. "Biotechnology".
+
+        Returns:
+            pd.DataFrame: A dataframe with industry P/E ratios, indexed by Industry
+                (snapshot) or Date (historical).
+
+        As an example:
+
+        ```python
+        from financetoolkit import Discovery
+
+        discovery = Discovery(api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        industry_pe = discovery.get_industry_pe(date="2024-02-01")
+
+        industry_pe.head()
+
+        industry_pe_history = discovery.get_industry_pe(industry="Biotechnology")
+
+        industry_pe_history.tail()
+        ```
+
+        Which returns:
+
+        | Industry                    | Date       | Exchange   |   PE Ratio |
+        |:-----------------------------|:-----------|:-----------|------------:|
+        | Advertising Agencies         | 2024-02-01 | NASDAQ     |     71.0960 |
+        | Aerospace & Defense          | 2024-02-01 | NASDAQ     |     46.0186 |
+        | Agricultural Farm Products   | 2024-02-01 | NASDAQ     |      7.4529 |
+        | Agricultural Inputs          | 2024-02-01 | NASDAQ     |     58.9849 |
+        | Agricultural - Machinery     | 2024-02-01 | NASDAQ     |     10.3538 |
+        """
+        industry_pe = discovery_model.get_industry_pe(
+            api_key=self._api_key,
+            date=date,
+            industry=industry,
+            user_subscription=self._fmp_plan,
+        )
+
+        return industry_pe
+
+    def get_mergers_acquisitions_latest(
+        self, limit: int = 100, page: int = 0
+    ) -> pd.DataFrame:
+        """
+        Returns the most recent mergers and acquisitions deal announcements, including
+        the acquirer and target companies and a link to the underlying SEC filing.
+
+        Also known as: M&A feed, deal announcements.
+
+        Args:
+            limit (int, optional): The number of results to return. Defaults to 100.
+            page (int, optional): The page number to retrieve. Defaults to 0.
+
+        Returns:
+            pd.DataFrame: A dataframe with the latest mergers and acquisitions.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Discovery
+
+        discovery = Discovery(api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        mergers_acquisitions = discovery.get_mergers_acquisitions_latest(limit=5)
+
+        mergers_acquisitions[["Company Name", "Targeted Company Name", "Transaction Date"]]
+        ```
+
+        Which returns:
+
+        | Symbol   | Company Name                 | Targeted Company Name                 | Transaction Date   |
+        |:---------|:------------------------------|:-----------------------------------------|:---------------------|
+        | THRM     | GENTHERM Inc                  | Modine Manufacturing Company              | 2026-07-02            |
+        | DBCAU    | D. Boral Acquisition I Corp.   | D. Boral ARC Acquisition I Corp. Cl A     | 2026-07-01            |
+        | DBCA     | D. Boral Acquisition I Corp.   | D. Boral ARC Acquisition I Corp. Cl A     | 2026-07-01            |
+        | CYCCP    | Cyclacel Pharmaceuticals, Inc. | Bio Green Med Solution, Inc.              | 2026-06-16            |
+        | CYCC     | Cyclacel Pharmaceuticals, Inc. | Bio Green Med Solution, Inc.              | 2026-06-16            |
+        """
+        mergers_acquisitions = discovery_model.get_mergers_acquisitions_latest(
+            api_key=self._api_key,
+            limit=limit,
+            page=page,
+            user_subscription=self._fmp_plan,
+        )
+
+        return mergers_acquisitions

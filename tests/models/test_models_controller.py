@@ -77,3 +77,23 @@ def test_get_present_value_of_growth_opportunities(recorder, models_module):
     recorder.capture(
         models_module.get_present_value_of_growth_opportunities(calculate_daily=True)
     )
+
+
+def test_get_economic_value_added(recorder, models_module):
+    recorder.capture(models_module.get_economic_value_added())
+    recorder.capture(models_module.get_economic_value_added(growth=True))
+
+
+def test_get_beneish_m_score(recorder, models_module):
+    recorder.capture(models_module.get_beneish_m_score())
+    recorder.capture(models_module.get_beneish_m_score(growth=True))
+
+
+def test_get_sustainable_growth_rate(recorder, models_module):
+    recorder.capture(models_module.get_sustainable_growth_rate())
+    recorder.capture(models_module.get_sustainable_growth_rate(growth=True))
+
+
+def test_get_internal_growth_rate(recorder, models_module):
+    recorder.capture(models_module.get_internal_growth_rate())
+    recorder.capture(models_module.get_internal_growth_rate(growth=True))

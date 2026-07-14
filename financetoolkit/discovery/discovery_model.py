@@ -173,42 +173,6 @@ def get_stock_list(api_key: str, user_subscription: str = "Free") -> pd.DataFram
     return stock_list
 
 
-def get_stock_quotes(api_key: str, user_subscription: str = "Free") -> pd.DataFrame:
-    """
-    Get the quotes for all stocks.
-
-    Args:
-        api_key (str): the API key from Financial Modeling Prep.
-        user_subscription (str, optional): The user subscription level. Defaults to "Free".
-
-    Returns:
-        pd.DataFrame: DataFrame of stock quotes.
-    """
-    url = f"https://financialmodelingprep.com/stable/stock/full/real-time-price?apikey={api_key}"
-
-    stock_quotes = get_financial_data(url=url, user_subscription=user_subscription)
-
-    stock_quotes = stock_quotes.rename(
-        columns={
-            "symbol": "Symbol",
-            "bidSize": "Bid Size",
-            "askPrice": "Ask Price",
-            "volume": "Volume",
-            "askSize": "Ask Size",
-            "bidPrice": "Bid Price",
-            "lastSalePrice": "Last Sale Price",
-            "lastSaleSize": "Last Sale Size",
-            "lastSaleTime": "Last Sale Time",
-        }
-    )
-
-    stock_quotes = stock_quotes.drop(columns=["fmpLast", "lastUpdated"])
-
-    stock_quotes = stock_quotes.set_index("Symbol").sort_index()
-
-    return stock_quotes
-
-
 def get_stock_shares_float(
     api_key: str, user_subscription: str = "Free"
 ) -> pd.DataFrame:
@@ -582,3 +546,885 @@ def get_index_list(api_key: str, user_subscription: str = "Free") -> pd.DataFram
     index_list = index_list.set_index("Symbol").sort_index()
 
     return index_list
+
+
+def _format_news(news_data: pd.DataFrame) -> pd.DataFrame:
+    """
+    Shared column renaming and indexing logic for all news-related endpoints.
+
+    Args:
+        news_data (pd.DataFrame): the raw news DataFrame as returned by the API.
+
+    Returns:
+        pd.DataFrame: DataFrame of news articles, indexed by Published Date (most recent first).
+    """
+    if news_data.empty:
+        return news_data
+
+    news_data = news_data.rename(
+        columns={
+            "symbol": "Symbol",
+            "publishedDate": "Published Date",
+            "publisher": "Publisher",
+            "title": "Title",
+            "image": "Image",
+            "site": "Site",
+            "text": "Text",
+            "url": "URL",
+        }
+    )
+
+    news_data["Published Date"] = pd.to_datetime(news_data["Published Date"])
+    news_data = news_data.set_index("Published Date").sort_index(ascending=False)
+
+    return news_data
+
+
+def _normalize_symbols(symbols: str | list[str]) -> str:
+    """
+    Normalizes a single symbol, comma-separated string, or list of symbols into
+    the comma-separated string format the FMP API expects.
+
+    Args:
+        symbols (str | list[str]): a single symbol, comma-separated string of
+            symbols, or a list of symbols.
+
+    Returns:
+        str: a comma-separated string of symbols.
+    """
+    if isinstance(symbols, list):
+        return ",".join(symbols)
+
+    return symbols
+
+
+def _get_news_pages(
+    base_url: str, pages: int, user_subscription: str = "Free"
+) -> pd.DataFrame:
+    """
+    Fetches and concatenates one or more pages of a paginated news endpoint. Each
+    page is a separate API call, e.g. pages=5 makes 5 calls (page 0 through 4).
+
+    Args:
+        base_url (str): the endpoint url without the "page" query parameter.
+        pages (int): the number of pages to collect.
+        user_subscription (str, optional): The user subscription level. Defaults to "Free".
+
+    Returns:
+        pd.DataFrame: the concatenated, unformatted news DataFrame across all pages.
+    """
+    page_frames = []
+
+    for page in range(pages):
+        page_data = get_financial_data(
+            url=f"{base_url}&page={page}", user_subscription=user_subscription
+        )
+        if not page_data.empty:
+            page_frames.append(page_data)
+
+    if not page_frames:
+        return pd.DataFrame()
+
+    return pd.concat(page_frames, ignore_index=True)
+
+
+def get_stock_news(
+    api_key: str,
+    limit: int = 100,
+    pages: int = 1,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    user_subscription: str = "Free",
+) -> pd.DataFrame:
+    """
+    Get the latest stock market news articles.
+
+    Args:
+        api_key (str): the API key from Financial Modeling Prep.
+        limit (int, optional): The number of articles to return per page. Defaults to 100.
+        pages (int, optional): The number of pages to collect, each page is a separate
+            API call, e.g. pages=5 makes 5 calls. Defaults to 1.
+        start_date (str, optional): The start date to filter data with.
+        end_date (str, optional): The end date to filter data with.
+        user_subscription (str, optional): The user subscription level. Defaults to "Free".
+
+    Returns:
+        pd.DataFrame: DataFrame of the latest stock market news articles.
+    """
+    base_url = (
+        "https://financialmodelingprep.com/stable/news/stock-latest"
+        f"?limit={limit}&apikey={api_key}"
+    )
+    if start_date:
+        base_url += f"&from={start_date}"
+    if end_date:
+        base_url += f"&to={end_date}"
+
+    stock_news = _get_news_pages(
+        base_url=base_url, pages=pages, user_subscription=user_subscription
+    )
+
+    return _format_news(stock_news)
+
+
+def get_general_news(
+    api_key: str, limit: int = 100, pages: int = 1, user_subscription: str = "Free"
+) -> pd.DataFrame:
+    """
+    Get the latest general news articles.
+
+    Args:
+        api_key (str): the API key from Financial Modeling Prep.
+        limit (int, optional): The number of articles to return per page. Defaults to 100.
+        pages (int, optional): The number of pages to collect, each page is a separate
+            API call, e.g. pages=5 makes 5 calls. Defaults to 1.
+        user_subscription (str, optional): The user subscription level. Defaults to "Free".
+
+    Returns:
+        pd.DataFrame: DataFrame of the latest general news articles.
+    """
+    base_url = (
+        "https://financialmodelingprep.com/stable/news/general-latest"
+        f"?limit={limit}&apikey={api_key}"
+    )
+
+    general_news = _get_news_pages(
+        base_url=base_url, pages=pages, user_subscription=user_subscription
+    )
+
+    return _format_news(general_news)
+
+
+def get_press_releases(
+    api_key: str,
+    limit: int = 100,
+    pages: int = 1,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    user_subscription: str = "Free",
+) -> pd.DataFrame:
+    """
+    Get the latest company press releases.
+
+    Args:
+        api_key (str): the API key from Financial Modeling Prep.
+        limit (int, optional): The number of articles to return per page. Defaults to 100.
+        pages (int, optional): The number of pages to collect, each page is a separate
+            API call, e.g. pages=5 makes 5 calls. Defaults to 1.
+        start_date (str, optional): The start date to filter data with.
+        end_date (str, optional): The end date to filter data with.
+        user_subscription (str, optional): The user subscription level. Defaults to "Free".
+
+    Returns:
+        pd.DataFrame: DataFrame of the latest company press releases.
+    """
+    base_url = (
+        "https://financialmodelingprep.com/stable/news/press-releases-latest"
+        f"?limit={limit}&apikey={api_key}"
+    )
+    if start_date:
+        base_url += f"&from={start_date}"
+    if end_date:
+        base_url += f"&to={end_date}"
+
+    press_releases = _get_news_pages(
+        base_url=base_url, pages=pages, user_subscription=user_subscription
+    )
+
+    return _format_news(press_releases)
+
+
+def get_crypto_news(
+    api_key: str, limit: int = 100, pages: int = 1, user_subscription: str = "Free"
+) -> pd.DataFrame:
+    """
+    Get the latest cryptocurrency news articles.
+
+    Args:
+        api_key (str): the API key from Financial Modeling Prep.
+        limit (int, optional): The number of articles to return per page. Defaults to 100.
+        pages (int, optional): The number of pages to collect, each page is a separate
+            API call, e.g. pages=5 makes 5 calls. Defaults to 1.
+        user_subscription (str, optional): The user subscription level. Defaults to "Free".
+
+    Returns:
+        pd.DataFrame: DataFrame of the latest cryptocurrency news articles.
+    """
+    base_url = (
+        "https://financialmodelingprep.com/stable/news/crypto-latest"
+        f"?limit={limit}&apikey={api_key}"
+    )
+
+    crypto_news = _get_news_pages(
+        base_url=base_url, pages=pages, user_subscription=user_subscription
+    )
+
+    return _format_news(crypto_news)
+
+
+def get_forex_news(
+    api_key: str, limit: int = 100, pages: int = 1, user_subscription: str = "Free"
+) -> pd.DataFrame:
+    """
+    Get the latest forex news articles.
+
+    Args:
+        api_key (str): the API key from Financial Modeling Prep.
+        limit (int, optional): The number of articles to return per page. Defaults to 100.
+        pages (int, optional): The number of pages to collect, each page is a separate
+            API call, e.g. pages=5 makes 5 calls. Defaults to 1.
+        user_subscription (str, optional): The user subscription level. Defaults to "Free".
+
+    Returns:
+        pd.DataFrame: DataFrame of the latest forex news articles.
+    """
+    base_url = (
+        "https://financialmodelingprep.com/stable/news/forex-latest"
+        f"?limit={limit}&apikey={api_key}"
+    )
+
+    forex_news = _get_news_pages(
+        base_url=base_url, pages=pages, user_subscription=user_subscription
+    )
+
+    return _format_news(forex_news)
+
+
+def search_stock_news(
+    api_key: str,
+    symbols: str | list[str],
+    limit: int = 100,
+    pages: int = 1,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    user_subscription: str = "Free",
+) -> pd.DataFrame:
+    """
+    Search stock market news articles by ticker symbol.
+
+    Args:
+        api_key (str): the API key from Financial Modeling Prep.
+        symbols (str | list[str]): One or more ticker symbols, e.g. "AAPL" or
+            ["AAPL", "MSFT"].
+        limit (int, optional): The number of articles to return per page. Defaults to 100.
+        pages (int, optional): The number of pages to collect, each page is a separate
+            API call, e.g. pages=5 makes 5 calls. Defaults to 1.
+        start_date (str, optional): The start date to filter data with.
+        end_date (str, optional): The end date to filter data with.
+        user_subscription (str, optional): The user subscription level. Defaults to "Free".
+
+    Returns:
+        pd.DataFrame: DataFrame of stock news articles matching the given symbols.
+    """
+    base_url = (
+        "https://financialmodelingprep.com/stable/news/stock"
+        f"?symbols={_normalize_symbols(symbols)}&limit={limit}&apikey={api_key}"
+    )
+    if start_date:
+        base_url += f"&from={start_date}"
+    if end_date:
+        base_url += f"&to={end_date}"
+
+    stock_news = _get_news_pages(
+        base_url=base_url, pages=pages, user_subscription=user_subscription
+    )
+
+    return _format_news(stock_news)
+
+
+def search_press_releases(
+    api_key: str,
+    symbols: str | list[str],
+    limit: int = 100,
+    pages: int = 1,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    user_subscription: str = "Free",
+) -> pd.DataFrame:
+    """
+    Search company press releases by ticker symbol.
+
+    Args:
+        api_key (str): the API key from Financial Modeling Prep.
+        symbols (str | list[str]): One or more ticker symbols, e.g. "AAPL" or
+            ["AAPL", "MSFT"].
+        limit (int, optional): The number of articles to return per page. Defaults to 100.
+        pages (int, optional): The number of pages to collect, each page is a separate
+            API call, e.g. pages=5 makes 5 calls. Defaults to 1.
+        start_date (str, optional): The start date to filter data with.
+        end_date (str, optional): The end date to filter data with.
+        user_subscription (str, optional): The user subscription level. Defaults to "Free".
+
+    Returns:
+        pd.DataFrame: DataFrame of press releases matching the given symbols.
+    """
+    base_url = (
+        "https://financialmodelingprep.com/stable/news/press-releases"
+        f"?symbols={_normalize_symbols(symbols)}&limit={limit}&apikey={api_key}"
+    )
+    if start_date:
+        base_url += f"&from={start_date}"
+    if end_date:
+        base_url += f"&to={end_date}"
+
+    press_releases = _get_news_pages(
+        base_url=base_url, pages=pages, user_subscription=user_subscription
+    )
+
+    return _format_news(press_releases)
+
+
+def search_crypto_news(
+    api_key: str,
+    symbols: str | list[str],
+    limit: int = 100,
+    pages: int = 1,
+    user_subscription: str = "Free",
+) -> pd.DataFrame:
+    """
+    Search cryptocurrency news articles by symbol.
+
+    Args:
+        api_key (str): the API key from Financial Modeling Prep.
+        symbols (str | list[str]): One or more crypto symbols, e.g. "BTCUSD" or
+            ["BTCUSD", "ETHUSD"].
+        limit (int, optional): The number of articles to return per page. Defaults to 100.
+        pages (int, optional): The number of pages to collect, each page is a separate
+            API call, e.g. pages=5 makes 5 calls. Defaults to 1.
+        user_subscription (str, optional): The user subscription level. Defaults to "Free".
+
+    Returns:
+        pd.DataFrame: DataFrame of crypto news articles matching the given symbols.
+    """
+    base_url = (
+        "https://financialmodelingprep.com/stable/news/crypto"
+        f"?symbols={_normalize_symbols(symbols)}&limit={limit}&apikey={api_key}"
+    )
+
+    crypto_news = _get_news_pages(
+        base_url=base_url, pages=pages, user_subscription=user_subscription
+    )
+
+    return _format_news(crypto_news)
+
+
+def search_forex_news(
+    api_key: str,
+    symbols: str | list[str],
+    limit: int = 100,
+    pages: int = 1,
+    user_subscription: str = "Free",
+) -> pd.DataFrame:
+    """
+    Search forex news articles by currency pair symbol.
+
+    Args:
+        api_key (str): the API key from Financial Modeling Prep.
+        symbols (str | list[str]): One or more forex pairs, e.g. "EURUSD" or
+            ["EURUSD", "GBPUSD"].
+        limit (int, optional): The number of articles to return per page. Defaults to 100.
+        pages (int, optional): The number of pages to collect, each page is a separate
+            API call, e.g. pages=5 makes 5 calls. Defaults to 1.
+        user_subscription (str, optional): The user subscription level. Defaults to "Free".
+
+    Returns:
+        pd.DataFrame: DataFrame of forex news articles matching the given symbols.
+    """
+    base_url = (
+        "https://financialmodelingprep.com/stable/news/forex"
+        f"?symbols={_normalize_symbols(symbols)}&limit={limit}&apikey={api_key}"
+    )
+
+    forex_news = _get_news_pages(
+        base_url=base_url, pages=pages, user_subscription=user_subscription
+    )
+
+    return _format_news(forex_news)
+
+
+def get_ipo_calendar(
+    api_key: str,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    user_subscription: str = "Free",
+) -> pd.DataFrame:
+    """
+    Get the calendar of upcoming and recent initial public offerings (IPOs).
+
+    Args:
+        api_key (str): the API key from Financial Modeling Prep.
+        start_date (str, optional): The start date to filter data with (max 90-day range).
+        end_date (str, optional): The end date to filter data with (max 90-day range).
+        user_subscription (str, optional): The user subscription level. Defaults to "Free".
+
+    Returns:
+        pd.DataFrame: DataFrame of upcoming and recent IPOs.
+    """
+    url = f"https://financialmodelingprep.com/stable/ipos-calendar?apikey={api_key}"
+
+    if start_date:
+        url += f"&from={start_date}"
+    if end_date:
+        url += f"&to={end_date}"
+
+    ipo_calendar = get_financial_data(url=url, user_subscription=user_subscription)
+
+    if ipo_calendar.empty:
+        return ipo_calendar
+
+    ipo_calendar = ipo_calendar.rename(
+        columns={
+            "symbol": "Symbol",
+            "date": "Date",
+            "daa": "Date (ISO)",
+            "company": "Company",
+            "exchange": "Exchange",
+            "actions": "Status",
+            "shares": "Shares",
+            "priceRange": "Price Range",
+            "marketCap": "Market Cap",
+        }
+    )
+
+    ipo_calendar = ipo_calendar.set_index("Symbol").sort_index()
+
+    return ipo_calendar
+
+
+def get_ipo_disclosures(
+    api_key: str,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    user_subscription: str = "Free",
+) -> pd.DataFrame:
+    """
+    Get IPO disclosure filings (regulatory filings ahead of an IPO).
+
+    Args:
+        api_key (str): the API key from Financial Modeling Prep.
+        start_date (str, optional): The start date to filter data with.
+        end_date (str, optional): The end date to filter data with.
+        user_subscription (str, optional): The user subscription level. Defaults to "Free".
+
+    Returns:
+        pd.DataFrame: DataFrame of IPO disclosure filings.
+    """
+    url = f"https://financialmodelingprep.com/stable/ipos-disclosure?apikey={api_key}"
+
+    if start_date:
+        url += f"&from={start_date}"
+    if end_date:
+        url += f"&to={end_date}"
+
+    ipo_disclosures = get_financial_data(url=url, user_subscription=user_subscription)
+
+    if ipo_disclosures.empty:
+        return ipo_disclosures
+
+    ipo_disclosures = ipo_disclosures.rename(
+        columns={
+            "symbol": "Symbol",
+            "filingDate": "Filing Date",
+            "acceptedDate": "Accepted Date",
+            "effectivenessDate": "Effectiveness Date",
+            "cik": "CIK",
+            "form": "Form",
+            "url": "URL",
+        }
+    )
+
+    ipo_disclosures = ipo_disclosures.set_index("Symbol").sort_index()
+
+    return ipo_disclosures
+
+
+def get_ipo_prospectuses(
+    api_key: str,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    user_subscription: str = "Free",
+) -> pd.DataFrame:
+    """
+    Get IPO prospectus filings, including public offering pricing details.
+
+    Args:
+        api_key (str): the API key from Financial Modeling Prep.
+        start_date (str, optional): The start date to filter data with.
+        end_date (str, optional): The end date to filter data with.
+        user_subscription (str, optional): The user subscription level. Defaults to "Free".
+
+    Returns:
+        pd.DataFrame: DataFrame of IPO prospectus filings.
+    """
+    url = f"https://financialmodelingprep.com/stable/ipos-prospectus?apikey={api_key}"
+
+    if start_date:
+        url += f"&from={start_date}"
+    if end_date:
+        url += f"&to={end_date}"
+
+    ipo_prospectuses = get_financial_data(url=url, user_subscription=user_subscription)
+
+    if ipo_prospectuses.empty:
+        return ipo_prospectuses
+
+    ipo_prospectuses = ipo_prospectuses.rename(
+        columns={
+            "symbol": "Symbol",
+            "acceptedDate": "Accepted Date",
+            "filingDate": "Filing Date",
+            "ipoDate": "IPO Date",
+            "cik": "CIK",
+            "pricePublicPerShare": "Public Price Per Share",
+            "pricePublicTotal": "Public Price Total",
+            "discountsAndCommissionsPerShare": "Discounts and Commissions Per Share",
+            "discountsAndCommissionsTotal": "Discounts and Commissions Total",
+            "proceedsBeforeExpensesPerShare": "Proceeds Before Expenses Per Share",
+            "proceedsBeforeExpensesTotal": "Proceeds Before Expenses Total",
+            "form": "Form",
+            "url": "URL",
+        }
+    )
+
+    ipo_prospectuses = ipo_prospectuses.set_index("Symbol").sort_index()
+
+    return ipo_prospectuses
+
+
+def get_stock_splits_calendar(
+    api_key: str,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    user_subscription: str = "Free",
+) -> pd.DataFrame:
+    """
+    Get the calendar of upcoming and recent stock splits across all companies.
+
+    Args:
+        api_key (str): the API key from Financial Modeling Prep.
+        start_date (str, optional): The start date to filter data with (max 90-day range).
+        end_date (str, optional): The end date to filter data with (max 90-day range).
+        user_subscription (str, optional): The user subscription level. Defaults to "Free".
+
+    Returns:
+        pd.DataFrame: DataFrame of upcoming and recent stock splits.
+    """
+    url = f"https://financialmodelingprep.com/stable/splits-calendar?apikey={api_key}"
+
+    if start_date:
+        url += f"&from={start_date}"
+    if end_date:
+        url += f"&to={end_date}"
+
+    splits_calendar = get_financial_data(url=url, user_subscription=user_subscription)
+
+    if splits_calendar.empty:
+        return splits_calendar
+
+    splits_calendar = splits_calendar.rename(
+        columns={
+            "symbol": "Symbol",
+            "date": "Date",
+            "numerator": "Numerator",
+            "denominator": "Denominator",
+            "splitType": "Split Type",
+        }
+    )
+
+    splits_calendar = splits_calendar.set_index("Symbol").sort_index()
+
+    return splits_calendar
+
+
+def get_sector_performance(
+    api_key: str,
+    date: str | None = None,
+    sector: str | None = None,
+    user_subscription: str = "Free",
+) -> pd.DataFrame:
+    """
+    Get sector performance. Provide exactly one of `date` (a snapshot across all
+    sectors on that date) or `sector` (the historical time series for one sector).
+
+    Args:
+        api_key (str): the API key from Financial Modeling Prep.
+        date (str, optional): The date to retrieve a snapshot for, e.g. "2024-02-01".
+        sector (str, optional): The sector to retrieve the history for, e.g. "Energy".
+        user_subscription (str, optional): The user subscription level. Defaults to "Free".
+
+    Returns:
+        pd.DataFrame: DataFrame of sector performance, indexed by Sector (snapshot)
+            or Date (historical).
+    """
+    if bool(date) == bool(sector):
+        raise ValueError("Please provide exactly one of `date` or `sector`.")
+
+    if date:
+        url = (
+            "https://financialmodelingprep.com/stable/sector-performance-snapshot"
+            f"?date={date}&apikey={api_key}"
+        )
+    else:
+        url = (
+            "https://financialmodelingprep.com/stable/historical-sector-performance"
+            f"?sector={sector}&apikey={api_key}"
+        )
+
+    sector_performance = get_financial_data(
+        url=url, user_subscription=user_subscription
+    )
+
+    if sector_performance.empty:
+        return sector_performance
+
+    sector_performance = sector_performance.rename(
+        columns={
+            "date": "Date",
+            "sector": "Sector",
+            "exchange": "Exchange",
+            "averageChange": "Average Change",
+        }
+    )
+
+    if date:
+        sector_performance = sector_performance.set_index("Sector").sort_index()
+    else:
+        sector_performance["Date"] = pd.to_datetime(sector_performance["Date"])
+        sector_performance = sector_performance.set_index("Date").sort_index()
+
+    return sector_performance
+
+
+def get_industry_performance(
+    api_key: str,
+    date: str | None = None,
+    industry: str | None = None,
+    user_subscription: str = "Free",
+) -> pd.DataFrame:
+    """
+    Get industry performance. Provide exactly one of `date` (a snapshot across all
+    industries on that date) or `industry` (the historical time series for one
+    industry).
+
+    Args:
+        api_key (str): the API key from Financial Modeling Prep.
+        date (str, optional): The date to retrieve a snapshot for, e.g. "2024-02-01".
+        industry (str, optional): The industry to retrieve the history for, e.g. "Biotechnology".
+        user_subscription (str, optional): The user subscription level. Defaults to "Free".
+
+    Returns:
+        pd.DataFrame: DataFrame of industry performance, indexed by Industry (snapshot)
+            or Date (historical).
+    """
+    if bool(date) == bool(industry):
+        raise ValueError("Please provide exactly one of `date` or `industry`.")
+
+    if date:
+        url = (
+            "https://financialmodelingprep.com/stable/industry-performance-snapshot"
+            f"?date={date}&apikey={api_key}"
+        )
+    else:
+        url = (
+            "https://financialmodelingprep.com/stable/historical-industry-performance"
+            f"?industry={industry}&apikey={api_key}"
+        )
+
+    industry_performance = get_financial_data(
+        url=url, user_subscription=user_subscription
+    )
+
+    if industry_performance.empty:
+        return industry_performance
+
+    industry_performance = industry_performance.rename(
+        columns={
+            "date": "Date",
+            "industry": "Industry",
+            "exchange": "Exchange",
+            "averageChange": "Average Change",
+        }
+    )
+
+    if date:
+        industry_performance = industry_performance.set_index("Industry").sort_index()
+    else:
+        industry_performance["Date"] = pd.to_datetime(industry_performance["Date"])
+        industry_performance = industry_performance.set_index("Date").sort_index()
+
+    return industry_performance
+
+
+def get_sector_pe(
+    api_key: str,
+    date: str | None = None,
+    sector: str | None = None,
+    user_subscription: str = "Free",
+) -> pd.DataFrame:
+    """
+    Get sector price-to-earnings (P/E) ratios. Provide exactly one of `date` (a
+    snapshot across all sectors on that date) or `sector` (the historical time
+    series for one sector).
+
+    Args:
+        api_key (str): the API key from Financial Modeling Prep.
+        date (str, optional): The date to retrieve a snapshot for, e.g. "2024-02-01".
+        sector (str, optional): The sector to retrieve the history for, e.g. "Energy".
+        user_subscription (str, optional): The user subscription level. Defaults to "Free".
+
+    Returns:
+        pd.DataFrame: DataFrame of sector P/E ratios, indexed by Sector (snapshot)
+            or Date (historical).
+    """
+    if bool(date) == bool(sector):
+        raise ValueError("Please provide exactly one of `date` or `sector`.")
+
+    if date:
+        url = (
+            "https://financialmodelingprep.com/stable/sector-pe-snapshot"
+            f"?date={date}&apikey={api_key}"
+        )
+    else:
+        url = (
+            "https://financialmodelingprep.com/stable/historical-sector-pe"
+            f"?sector={sector}&apikey={api_key}"
+        )
+
+    sector_pe = get_financial_data(url=url, user_subscription=user_subscription)
+
+    if sector_pe.empty:
+        return sector_pe
+
+    sector_pe = sector_pe.rename(
+        columns={
+            "date": "Date",
+            "sector": "Sector",
+            "exchange": "Exchange",
+            "pe": "PE Ratio",
+        }
+    )
+
+    if date:
+        sector_pe = sector_pe.set_index("Sector").sort_index()
+    else:
+        sector_pe["Date"] = pd.to_datetime(sector_pe["Date"])
+        sector_pe = sector_pe.set_index("Date").sort_index()
+
+    return sector_pe
+
+
+def get_industry_pe(
+    api_key: str,
+    date: str | None = None,
+    industry: str | None = None,
+    user_subscription: str = "Free",
+) -> pd.DataFrame:
+    """
+    Get industry price-to-earnings (P/E) ratios. Provide exactly one of `date` (a
+    snapshot across all industries on that date) or `industry` (the historical time
+    series for one industry).
+
+    Args:
+        api_key (str): the API key from Financial Modeling Prep.
+        date (str, optional): The date to retrieve a snapshot for, e.g. "2024-02-01".
+        industry (str, optional): The industry to retrieve the history for, e.g. "Biotechnology".
+        user_subscription (str, optional): The user subscription level. Defaults to "Free".
+
+    Returns:
+        pd.DataFrame: DataFrame of industry P/E ratios, indexed by Industry (snapshot)
+            or Date (historical).
+    """
+    if bool(date) == bool(industry):
+        raise ValueError("Please provide exactly one of `date` or `industry`.")
+
+    if date:
+        url = (
+            "https://financialmodelingprep.com/stable/industry-pe-snapshot"
+            f"?date={date}&apikey={api_key}"
+        )
+    else:
+        url = (
+            "https://financialmodelingprep.com/stable/historical-industry-pe"
+            f"?industry={industry}&apikey={api_key}"
+        )
+
+    industry_pe = get_financial_data(url=url, user_subscription=user_subscription)
+
+    if industry_pe.empty:
+        return industry_pe
+
+    industry_pe = industry_pe.rename(
+        columns={
+            "date": "Date",
+            "industry": "Industry",
+            "exchange": "Exchange",
+            "pe": "PE Ratio",
+        }
+    )
+
+    if date:
+        industry_pe = industry_pe.set_index("Industry").sort_index()
+    else:
+        industry_pe["Date"] = pd.to_datetime(industry_pe["Date"])
+        industry_pe = industry_pe.set_index("Date").sort_index()
+
+    return industry_pe
+
+
+def get_mergers_acquisitions_latest(
+    api_key: str, limit: int = 100, page: int = 0, user_subscription: str = "Free"
+) -> pd.DataFrame:
+    """
+    Get the most recent mergers and acquisitions deal announcements.
+
+    Args:
+        api_key (str): the API key from Financial Modeling Prep.
+        limit (int, optional): The number of results to return. Defaults to 100.
+        page (int, optional): The page number to retrieve. Defaults to 0.
+        user_subscription (str, optional): The user subscription level. Defaults to "Free".
+
+    Returns:
+        pd.DataFrame: DataFrame of the latest mergers and acquisitions.
+    """
+    url = (
+        "https://financialmodelingprep.com/stable/mergers-acquisitions-latest"
+        f"?page={page}&limit={limit}&apikey={api_key}"
+    )
+
+    mergers_acquisitions = get_financial_data(
+        url=url, user_subscription=user_subscription
+    )
+
+    return _format_mergers_acquisitions(mergers_acquisitions)
+
+
+def _format_mergers_acquisitions(mergers_acquisitions: pd.DataFrame) -> pd.DataFrame:
+    """
+    Shared column renaming and indexing logic for the mergers and acquisitions endpoints.
+
+    Args:
+        mergers_acquisitions (pd.DataFrame): the raw M&A DataFrame as returned by the API.
+
+    Returns:
+        pd.DataFrame: DataFrame of M&A deals, indexed by Symbol.
+    """
+    if mergers_acquisitions.empty:
+        return mergers_acquisitions
+
+    mergers_acquisitions = mergers_acquisitions.rename(
+        columns={
+            "symbol": "Symbol",
+            "companyName": "Company Name",
+            "cik": "CIK",
+            "targetedCompanyName": "Targeted Company Name",
+            "targetedCik": "Targeted CIK",
+            "targetedSymbol": "Targeted Symbol",
+            "transactionDate": "Transaction Date",
+            "acceptedDate": "Accepted Date",
+            "link": "URL",
+        }
+    )
+
+    mergers_acquisitions = mergers_acquisitions.set_index("Symbol").sort_index()
+
+    return mergers_acquisitions

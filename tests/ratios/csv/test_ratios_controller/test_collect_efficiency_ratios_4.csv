@@ -12,6 +12,11 @@ AAPL,SGA-to-Revenue Ratio,,-0.0535,0.0388
 AAPL,Fixed Asset Turnover,,0.0853,0.0401
 AAPL,Asset Turnover Ratio,,0.1384,0.0207
 AAPL,Operating Ratio,,-0.0366,-0.0001
+AAPL,R&D Intensity Ratio,,-0.0016,0.1388
+AAPL,S&M to Revenue Ratio,,,
+AAPL,G&A to Revenue Ratio,,,
+AAPL,SBC to Revenue Ratio,,-0.0304,0.148
+AAPL,Deferred Revenue Ratio,,-0.0811,0.0098
 MSFT,Days of Inventory Outstanding,,0.2046,-0.1251
 MSFT,Days of Sales Outstanding,,-0.0023,0.0087
 MSFT,Operating Cycle,,0.0957,0.0101
@@ -25,3 +30,8 @@ MSFT,SGA-to-Revenue Ratio,,-0.0997,-0.0208
 MSFT,Fixed Asset Turnover,,-0.0813,-0.0878
 MSFT,Asset Turnover Ratio,,0.0705,0.007
 MSFT,Operating Ratio,,-0.0387,-0.0012
+MSFT,R&D Intensity Ratio,,-0.0389,0.0211
+MSFT,S&M to Revenue Ratio,,-0.1034,-0.0507
+MSFT,G&A to Revenue Ratio,,-0.0854,0.0967
+MSFT,SBC to Revenue Ratio,,0.0136,0.121
+MSFT,Deferred Revenue Ratio,,-0.0465,-0.0101

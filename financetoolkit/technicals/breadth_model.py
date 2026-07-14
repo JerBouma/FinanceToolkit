@@ -89,6 +89,73 @@ def get_accumulation_distribution_line(
     return money_flow_volume.cumsum()
 
 
+def get_trin(prices_close: pd.DataFrame, volumes: pd.DataFrame) -> pd.Series:
+    """
+    Calculate the TRIN (Arms Index) for a universe of tickers.
+
+    TRIN compares the ratio of advancing to declining issues against the ratio of
+    volume in advancing issues to volume in declining issues. It is a cross-sectional
+    market breadth indicator, meaning it is calculated across the columns (tickers) of
+    the provided data rather than per ticker over time.
+
+    The formula is a follows:
+
+    - TRIN = (Advancing Issues / Declining Issues) / (Advancing Volume / Declining Volume)
+
+    Also known as: Arms Index, TRIN.
+
+    Args:
+        prices_close (pd.DataFrame): DataFrame of closing prices with tickers as columns.
+        volumes (pd.DataFrame): DataFrame of trading volumes with tickers as columns.
+
+    Returns:
+        pd.Series: TRIN values.
+    """
+    price_change = prices_close.diff()
+
+    advancing = price_change > 0
+    declining = price_change < 0
+
+    advancing_issues = advancing.sum(axis=1)
+    declining_issues = declining.sum(axis=1)
+
+    advancing_volume = volumes.where(advancing, 0).sum(axis=1)
+    declining_volume = volumes.where(declining, 0).sum(axis=1)
+
+    return (advancing_issues / declining_issues) / (advancing_volume / declining_volume)
+
+
+def get_new_highs_new_lows(prices_close: pd.DataFrame, window: int) -> pd.Series:
+    """
+    Calculate the New Highs — New Lows for a universe of tickers.
+
+    New Highs — New Lows measures the number of tickers reaching a new high over the
+    specified window minus the number of tickers reaching a new low over the same
+    window. It is a cross-sectional market breadth indicator, meaning it is calculated
+    across the columns (tickers) of the provided data rather than per ticker over time.
+
+    The formula is a follows:
+
+    - New Highs — New Lows = (Number of tickers at a window-period high) — (Number of tickers at a window-period low)
+
+    Also known as: new highs minus new lows, record high percent.
+
+    Args:
+        prices_close (pd.DataFrame): DataFrame of closing prices with tickers as columns.
+        window (int): Number of periods to consider for the new high / new low lookback.
+
+    Returns:
+        pd.Series: New Highs — New Lows values.
+    """
+    rolling_high = prices_close.rolling(window=window, min_periods=1).max()
+    rolling_low = prices_close.rolling(window=window, min_periods=1).min()
+
+    new_highs = (prices_close >= rolling_high).sum(axis=1)
+    new_lows = (prices_close <= rolling_low).sum(axis=1)
+
+    return new_highs - new_lows
+
+
 def get_chaikin_oscillator(
     prices_high: pd.Series,
     prices_low: pd.Series,

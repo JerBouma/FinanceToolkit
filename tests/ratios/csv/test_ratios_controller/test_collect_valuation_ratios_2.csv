@@ -8,8 +8,8 @@ AAPL,Revenue per Share,Lag 3,,,,0.5477
 AAPL,Price-to-Earnings,Lag 1,,-0.2144,-0.3241,0.0
 AAPL,Price-to-Earnings,Lag 2,,,-0.4691,-0.3241
 AAPL,Price-to-Earnings,Lag 3,,,,-0.4691
-AAPL,Price-to-Earnings-Growth,Lag 1,,,,
-AAPL,Price-to-Earnings-Growth,Lag 2,,,,
+AAPL,Price-to-Earnings-Growth,Lag 1,,,4.4281,0.0
+AAPL,Price-to-Earnings-Growth,Lag 2,,,,4.4281
 AAPL,Price-to-Earnings-Growth,Lag 3,,,,
 AAPL,Book Value per Share,Lag 1,,0.0036,-0.1703,0.2663
 AAPL,Book Value per Share,Lag 2,,,-0.1673,0.0506
@@ -65,6 +65,18 @@ AAPL,Tangible Asset Value,Lag 3,,,,-0.0489
 AAPL,Net Current Asset Value,Lag 1,,-0.7559,-2.9858,-0.9062
 AAPL,Net Current Asset Value,Lag 2,,,-1.4848,-1.1862
 AAPL,Net Current Asset Value,Lag 3,,,,-1.0455
+AAPL,EV-to-Free-Cash-Flow,Lag 1,,0.02,-0.3958,0.0
+AAPL,EV-to-Free-Cash-Flow,Lag 2,,,-0.3837,-0.3958
+AAPL,EV-to-Free-Cash-Flow,Lag 3,,,,-0.3837
+AAPL,Buyback Yield,Lag 1,,-0.0857,0.4792,0.0
+AAPL,Buyback Yield,Lag 2,,,0.3524,0.4792
+AAPL,Buyback Yield,Lag 3,,,,0.3524
+AAPL,Shareholder Yield,Lag 1,,-0.3462,0.4704,0.0
+AAPL,Shareholder Yield,Lag 2,,,-0.0387,0.4704
+AAPL,Shareholder Yield,Lag 3,,,,-0.0387
+AAPL,SBC-Adjusted Free Cash Flow,Lag 1,,0.2782,0.2041,-0.1333
+AAPL,SBC-Adjusted Free Cash Flow,Lag 2,,,0.5391,0.0436
+AAPL,SBC-Adjusted Free Cash Flow,Lag 3,,,,0.3339
 MSFT,Earnings per Share,Lag 1,,0.3973,0.1979,0.0039
 MSFT,Earnings per Share,Lag 2,,,0.6738,0.2025
 MSFT,Earnings per Share,Lag 3,,,,0.6803
@@ -74,8 +86,8 @@ MSFT,Revenue per Share,Lag 3,,,,0.5236
 MSFT,Price-to-Earnings,Lag 1,,0.0912,-0.3991,0.0
 MSFT,Price-to-Earnings,Lag 2,,,-0.3443,-0.3991
 MSFT,Price-to-Earnings,Lag 3,,,,-0.3443
-MSFT,Price-to-Earnings-Growth,Lag 1,,,,
-MSFT,Price-to-Earnings-Growth,Lag 2,,,,
+MSFT,Price-to-Earnings-Growth,Lag 1,,,0.2063,0.0
+MSFT,Price-to-Earnings-Growth,Lag 2,,,,0.2063
 MSFT,Price-to-Earnings-Growth,Lag 3,,,,
 MSFT,Book Value per Share,Lag 1,,0.212,0.1835,0.2495
 MSFT,Book Value per Share,Lag 2,,,0.4344,0.4788
@@ -131,3 +143,15 @@ MSFT,Tangible Asset Value,Lag 3,,,,0.8456
 MSFT,Net Current Asset Value,Lag 1,,-0.1264,-0.2209,0.0738
 MSFT,Net Current Asset Value,Lag 2,,,-0.3194,-0.1634
 MSFT,Net Current Asset Value,Lag 3,,,,-0.2691
+MSFT,EV-to-Free-Cash-Flow,Lag 1,,0.2014,-0.3825,0.0
+MSFT,EV-to-Free-Cash-Flow,Lag 2,,,-0.2581,-0.3825
+MSFT,EV-to-Free-Cash-Flow,Lag 3,,,,-0.2581
+MSFT,Buyback Yield,Lag 1,,-0.2137,0.6893,0.0
+MSFT,Buyback Yield,Lag 2,,,0.3282,0.6893
+MSFT,Buyback Yield,Lag 3,,,,0.3282
+MSFT,Shareholder Yield,Lag 1,,-0.2412,0.6301,0.0
+MSFT,Shareholder Yield,Lag 2,,,0.2368,0.6301
+MSFT,Shareholder Yield,Lag 3,,,,0.2368
+MSFT,SBC-Adjusted Free Cash Flow,Lag 1,,0.2517,0.1529,-0.135
+MSFT,SBC-Adjusted Free Cash Flow,Lag 2,,,0.4432,-0.0027
+MSFT,SBC-Adjusted Free Cash Flow,Lag 3,,,,0.2483

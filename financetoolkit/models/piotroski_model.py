@@ -4,13 +4,13 @@ __docformat__ = "google"
 
 import pandas as pd
 
-from financetoolkit import helpers
 from financetoolkit.ratios import (
     efficiency_model,
     liquidity_model,
     profitability_model,
     solvency_model,
 )
+from financetoolkit.utilities import statistics_model
 
 
 def get_return_on_assets_criteria(
@@ -112,7 +112,7 @@ def get_change_in_return_on_asset_criteria(
         net_income=net_income, average_total_assets=average_total_assets
     )
 
-    return_on_assets_growth = helpers.calculate_growth(return_on_assets)
+    return_on_assets_growth = statistics_model.calculate_growth(return_on_assets)
 
     change_in_return_on_assets_criteria = (
         return_on_assets_growth > return_on_assets_growth.shift(1, axis=1)

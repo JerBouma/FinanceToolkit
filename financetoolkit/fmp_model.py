@@ -17,8 +17,8 @@ import requests
 from urllib3.exceptions import MaxRetryError
 
 from financetoolkit import helpers
-from financetoolkit.helpers import get_request
 from financetoolkit.utilities import error_model, logger_model
+from financetoolkit.utilities.requests_model import get_request
 
 logger = logger_model.get_logger()
 
@@ -211,7 +211,7 @@ def get_financial_statement(
         # second quarter of 2023. This usually happens when companies
         # have a different financial year than the calendar year. It doesn't
         # matter for others that are correctly reporting since 2023-06-31
-        # minus one day is still 2023
+        # minus one day is still 2023Q2
         financial_statement["date"] = pd.to_datetime(
             financial_statement["date"]
         ) - pd.offsets.Day(1)
@@ -260,7 +260,6 @@ def get_historical_data(
     end: str | None = None,
     interval: str = "1d",
     return_column: str = "Adj Close",
-    risk_free_rate: pd.DataFrame = pd.DataFrame(),
     include_dividends: bool = True,
     divide_ohlc_by: int | float | None = None,
     sleep_timer: bool = True,
@@ -284,8 +283,6 @@ def get_historical_data(
             will be converted to '1d'.
         return_column (str, optional): A string representing the column to use for return calculations.
             Defaults to 'Adj Close'.
-        risk_free_rate (pd.DataFrame, optional): A pandas DataFrame object containing the risk free rate data.
-            This is used to calculate the excess return and excess volatility. Defaults to an empty DataFrame.
         include_dividends (bool, optional): A boolean representing whether to include dividends in the
             historical data. Defaults to True.
         divide_ohlc_by (int | float | None, optional): A value to divide the OHLC data by.
@@ -302,7 +299,7 @@ def get_historical_data(
     Returns:
         pd.DataFrame: A pandas DataFrame object containing the historical stock data for the given ticker.
                       The index of the DataFrame is the date of the data and the columns include OHLC, Volume,
-                      Dividends (if requested), Log Return, Cumulative Return, Volatility, and Excess Return.
+                      Dividends (if requested), Return, and Cumulative Return.
                       Returns an empty DataFrame if data retrieval fails or no data is found for the given parameters.
     """
     # Additional data is collected to ensure return calculations are correct
@@ -426,7 +423,6 @@ def get_historical_data(
         start=start,
         end=end,
         return_column=return_column,
-        risk_free_rate=risk_free_rate,
     )
 
     return historical_data
@@ -557,7 +553,6 @@ def get_intraday_data(
         start=start,
         end=end,
         return_column=return_column,
-        risk_free_rate=pd.DataFrame(),
     )
 
     return historical_data
@@ -589,7 +584,7 @@ def get_historical_statistics(ticker: str, api_key: str) -> pd.Series:
     Returns:
         pd.Series: A Sries containing the statistics for the given ticker.
     """
-    profile, _ = get_profile(tickers=ticker, api_key=api_key, progress_bar=False)
+    profile, _ = get_profile(tickers=ticker, api_key=api_key)
 
     profile_df = pd.Series(
         [np.nan] * 9,
@@ -626,7 +621,6 @@ def get_revenue_segmentation(
     start_date: str | None = None,
     end_date: str | None = None,
     sleep_timer: bool = False,
-    progress_bar: bool = True,
     user_subscription: str = "Free",
 ) -> pd.DataFrame:
     """
@@ -645,7 +639,6 @@ def get_revenue_segmentation(
             of the line item, and columns should contain the desired name for that line item.
         sleep_timer (bool): Whether to set a sleep timer when the rate limit is reached. Note that this only works
         if you have a Premium subscription (Starter or higher) from FinancialModelingPrep. Defaults to False.
-        progress_bar (bool): Whether to show a progress bar when retrieving data over 10 tickers. Defaults to True.
         user_subscription (str): The subscription type of the user. Defaults to "Free".
 
     Returns:
@@ -759,7 +752,7 @@ def get_revenue_segmentation(
     threads = []
 
     logger.info(
-        "Obtaining %s segmentation data for %d tickers", method, len(ticker_list)
+        "Obtaining %s segmentation data for %d ticker(s)", method, len(ticker_list)
     )
     for ticker in ticker_list:
         # Introduce a sleep timer to prevent rate limit errors
@@ -829,7 +822,6 @@ def get_analyst_estimates(
     start_date: str | None = None,
     rounding: int | None = 4,
     sleep_timer: bool = False,
-    progress_bar: bool = True,
     user_subscription: str = "Free",
 ) -> pd.DataFrame:
     """
@@ -863,7 +855,6 @@ def get_analyst_estimates(
         start_date (str): The start date to filter data with.
         sleep_timer (bool): Whether to set a sleep timer when the rate limit is reached. Note that this only works
         if you have a Premium subscription (Starter or higher) from FinancialModelingPrep. Defaults to False.
-        progress_bar (bool): Whether to show a progress bar when retrieving data over 10 tickers. Defaults to True.
         user_subscription (str): The subscription type of the user. Defaults to "Free".
 
     Returns:
@@ -964,7 +955,7 @@ def get_analyst_estimates(
     no_data: list[str] = []
     threads = []
 
-    logger.info("Obtaining analyst estimates for %d tickers", len(ticker_list))
+    logger.info("Obtaining analyst estimates for %d ticker(s)", len(ticker_list))
     for ticker in ticker_list:
         # Introduce a sleep timer to prevent rate limit errors
         time.sleep(0.1)
@@ -1030,7 +1021,6 @@ def get_analyst_estimates(
 def get_profile(
     tickers: list[str] | str,
     api_key: str,
-    progress_bar: bool = True,
     user_subscription: str = "Free",
 ) -> pd.DataFrame:
     """
@@ -1040,7 +1030,6 @@ def get_profile(
         ticker (list or string): the company ticker (for example: "AAPL")
         api_key (string): the API Key obtained from
         https://www.jeroenbouma.com/fmp
-        progress_bar (bool): Whether to show a progress bar. Defaults to True.
         user_subscription (str): The subscription type of the user. Defaults to "Free".
 
     Returns:
@@ -1103,7 +1092,7 @@ def get_profile(
     no_data: list[str] = []
     threads = []
 
-    logger.info("Obtaining company profiles for %d tickers", len(ticker_list))
+    logger.info("Obtaining company profiles for %d ticker(s)", len(ticker_list))
     for ticker in ticker_list:
         # Introduce a sleep timer to prevent rate limit errors
         time.sleep(0.1)
@@ -1149,7 +1138,6 @@ def get_profile(
 def get_quote(
     tickers: list[str] | str,
     api_key: str,
-    progress_bar: bool = True,
     user_subscription: str = "Free",
 ) -> pd.DataFrame:
     """
@@ -1160,7 +1148,6 @@ def get_quote(
         ticker (list or string): the company ticker (for example: "AMD")
         api_key (string): the API Key obtained from
         https://www.jeroenbouma.com/fmp
-        progress_bar (bool): Whether to show a progress bar. Defaults to True.
         user_subscription (str): The subscription type of the user. Defaults to "Free".
 
     Returns:
@@ -1213,7 +1200,7 @@ def get_quote(
     no_data: list[str] = []
     threads = []
 
-    logger.info("Obtaining company quotes for %d tickers", len(ticker_list))
+    logger.info("Obtaining company quotes for %d ticker(s)", len(ticker_list))
     for ticker in ticker_list:
         # Introduce a sleep timer to prevent rate limit errors
         time.sleep(0.1)
@@ -1243,7 +1230,6 @@ def get_quote(
 def get_rating(
     tickers: list[str] | str,
     api_key: str,
-    progress_bar: bool = True,
     user_subscription: str = "Free",
 ) -> pd.DataFrame:
     """
@@ -1254,7 +1240,6 @@ def get_rating(
         ticker (list or string): the company ticker (for example: "MSFT")
         api_key (string): the API Key obtained from
         https://www.jeroenbouma.com/fmp
-        progress_bar (bool): Whether to show a progress bar. Defaults to True.
         user_subscription (str): The subscription type of the user. Defaults to "Free".
 
     Returns:
@@ -1304,7 +1289,7 @@ def get_rating(
     no_data: list[str] = []
     threads = []
 
-    logger.info("Obtaining company ratings for %d tickers", len(ticker_list))
+    logger.info("Obtaining company ratings for %d ticker(s)", len(ticker_list))
     for ticker in ticker_list:
         # Introduce a sleep timer to prevent rate limit errors
         time.sleep(0.1)
@@ -1342,7 +1327,6 @@ def get_earnings_calendar(
     end_date: str | None = None,
     actual_dates: bool = True,
     sleep_timer: bool = False,
-    progress_bar: bool = True,
     user_subscription: str = "Free",
 ) -> pd.DataFrame:
     """
@@ -1358,7 +1342,6 @@ def get_earnings_calendar(
         default because the actual date refers to the corresponding quarter.
         sleep_timer (bool): Whether to set a sleep timer when the rate limit is reached. Note that this only works
         if you have a Premium subscription (Starter or higher) from FinancialModelingPrep. Defaults to False.
-        progress_bar (bool): Whether to show a progress bar when retrieving data over 10 tickers. Defaults to True.
         user_subscription (str): The subscription type of the user. Defaults to "Free".
 
     Returns:
@@ -1427,7 +1410,7 @@ def get_earnings_calendar(
     no_data: list[str] = []
     threads = []
 
-    logger.info("Obtaining earnings calendars for %d tickers", len(ticker_list))
+    logger.info("Obtaining earnings calendars for %d ticker(s)", len(ticker_list))
     for ticker in ticker_list:
         # Introduce a sleep timer to prevent rate limit errors
         time.sleep(0.1)
@@ -1464,7 +1447,6 @@ def get_dividend_calendar(
     start_date: str | None = None,
     end_date: str | None = None,
     sleep_timer: bool = False,
-    progress_bar: bool = True,
     user_subscription: str = "Free",
 ) -> pd.DataFrame:
     """
@@ -1478,7 +1460,6 @@ def get_dividend_calendar(
         end_date (str): The end date to filter data with.
         sleep_timer (bool): Whether to set a sleep timer when the rate limit is reached. Note that this only works
         if you have a Premium subscription (Starter or higher) from FinancialModelingPrep. Defaults to False.
-        progress_bar (bool): Whether to show a progress bar when retrieving data over 10 tickers. Defaults to True.
         user_subscription (str): The subscription type of the user. Defaults to "Free".
 
     Returns:
@@ -1547,7 +1528,7 @@ def get_dividend_calendar(
     no_data: list[str] = []
     threads = []
 
-    logger.info("Obtaining dividend calendars for %d tickers", len(ticker_list))
+    logger.info("Obtaining dividend calendars for %d ticker(s)", len(ticker_list))
     for ticker in ticker_list:
         # Introduce a sleep timer to prevent rate limit errors
         time.sleep(0.1)
@@ -1585,7 +1566,6 @@ def get_esg_scores(
     start_date: str | None = None,
     end_date: str | None = None,
     sleep_timer: bool = False,
-    progress_bar: bool = True,
     user_subscription: str = "Free",
 ):
     """
@@ -1599,7 +1579,6 @@ def get_esg_scores(
         end_date (str): The end date to filter data with.
         sleep_timer (bool): Whether to set a sleep timer when the rate limit is reached. Note that this only works
         if you have a Premium subscription (Starter or higher) from FinancialModelingPrep. Defaults to False.
-        progress_bar (bool): Whether to show a progress bar when retrieving data over 10 tickers. Defaults to True.
         user_subscription (str): The subscription type of the user. Defaults to "Free".
 
     Returns:
@@ -1673,7 +1652,7 @@ def get_esg_scores(
     no_data: list[str] = []
     threads = []
 
-    logger.info("Obtaining ESG scores for %d tickers", len(ticker_list))
+    logger.info("Obtaining ESG scores for %d ticker(s)", len(ticker_list))
     for ticker in ticker_list:
         # Introduce a sleep timer to prevent rate limit errors
         time.sleep(0.1)

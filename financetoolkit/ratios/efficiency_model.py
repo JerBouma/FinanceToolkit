@@ -272,3 +272,123 @@ def get_cash_conversion_efficiency(
         float or pd.Series: The cash conversion efficiency value.
     """
     return operating_cash_flow / revenue
+
+
+def get_research_and_development_ratio(
+    research_and_development_expenses: pd.Series,
+    revenue: pd.Series,
+) -> pd.Series:
+    """
+    Calculate the research and development (R&D) intensity ratio, an efficiency ratio
+    that measures how much a company reinvests in research and development relative
+    to its revenue.
+
+    This ratio is particularly relevant for comparing companies in technology,
+    pharmaceutical and other innovation-driven industries, where R&D spending is a
+    key driver of future growth.
+
+    Args:
+        research_and_development_expenses (float or pd.Series): Research and development
+            expenses of the company.
+        revenue (float or pd.Series): Total revenue of the company.
+
+    Returns:
+        float | pd.Series: The R&D intensity ratio value.
+    """
+    return research_and_development_expenses / revenue
+
+
+def get_selling_and_marketing_ratio(
+    selling_and_marketing_expenses: pd.Series,
+    revenue: pd.Series,
+) -> pd.Series:
+    """
+    Calculate the selling and marketing (S&M) expenses to revenue ratio, an efficiency
+    ratio that measures the proportion of revenue spent on selling and marketing
+    activities.
+
+    This ratio isolates the selling and marketing component of the combined SG&A
+    expense line, which is useful for comparing customer-acquisition efficiency
+    (e.g. between companies with different administrative overhead structures).
+
+    Args:
+        selling_and_marketing_expenses (float or pd.Series): Selling and marketing
+            expenses of the company.
+        revenue (float or pd.Series): Total revenue of the company.
+
+    Returns:
+        float | pd.Series: The S&M to revenue ratio value.
+    """
+    return selling_and_marketing_expenses / revenue
+
+
+def get_general_and_administrative_ratio(
+    general_and_administrative_expenses: pd.Series,
+    revenue: pd.Series,
+) -> pd.Series:
+    """
+    Calculate the general and administrative (G&A) expenses to revenue ratio, an
+    efficiency ratio that measures the proportion of revenue spent on general and
+    administrative overhead.
+
+    This ratio isolates the administrative component of the combined SG&A expense
+    line, which is useful for assessing overhead efficiency independently of selling
+    and marketing spend.
+
+    Args:
+        general_and_administrative_expenses (float or pd.Series): General and
+            administrative expenses of the company.
+        revenue (float or pd.Series): Total revenue of the company.
+
+    Returns:
+        float | pd.Series: The G&A to revenue ratio value.
+    """
+    return general_and_administrative_expenses / revenue
+
+
+def get_stock_based_compensation_ratio(
+    stock_based_compensation: pd.Series,
+    revenue: pd.Series,
+) -> pd.Series:
+    """
+    Calculate the stock-based compensation (SBC) to revenue ratio, an efficiency
+    ratio that measures how much of a company's revenue is being used to compensate
+    employees through non-cash equity awards.
+
+    A high or rising SBC-to-revenue ratio is a common quality-of-earnings flag,
+    particularly for technology companies, since SBC is added back in cash flow from
+    operations but represents real economic dilution for shareholders.
+
+    Args:
+        stock_based_compensation (float or pd.Series): Stock-based compensation
+            expense of the company, as reported in the Cash Flow Statement.
+        revenue (float or pd.Series): Total revenue of the company.
+
+    Returns:
+        float | pd.Series: The SBC to revenue ratio value.
+    """
+    return stock_based_compensation / revenue
+
+
+def get_deferred_revenue_ratio(
+    deferred_revenue: pd.Series,
+    revenue: pd.Series,
+) -> pd.Series:
+    """
+    Calculate the deferred revenue ratio, an efficiency ratio that measures the size
+    of a company's deferred revenue (payments collected for goods or services not yet
+    delivered) relative to its revenue.
+
+    This ratio is a common leading indicator for subscription and SaaS businesses,
+    where a growing deferred revenue balance relative to revenue can signal
+    accelerating future revenue recognition.
+
+    Args:
+        deferred_revenue (float or pd.Series): Deferred revenue of the company, as
+            reported in the Balance Sheet Statement.
+        revenue (float or pd.Series): Total revenue of the company.
+
+    Returns:
+        float | pd.Series: The deferred revenue ratio value.
+    """
+    return deferred_revenue / revenue

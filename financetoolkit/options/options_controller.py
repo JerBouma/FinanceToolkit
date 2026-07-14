@@ -4,7 +4,6 @@ __docformat__ = "google"
 
 from datetime import datetime
 
-import numpy as np
 import pandas as pd
 from scipy.optimize import minimize
 
@@ -16,7 +15,9 @@ from financetoolkit.options import (
     options_model,
 )
 from financetoolkit.ratios import valuation_model
+from financetoolkit.risk import risk_model
 from financetoolkit.utilities import logger_model
+from financetoolkit.utilities.statistics_model import calculate_standardization
 
 # pylint: disable=too-many-instance-attributes,too-few-public-methods,too-many-lines,too-many-locals,cell-var-from-loop
 # pylint: disable=line-too-long,too-many-public-methods
@@ -97,7 +98,14 @@ class Options:
 
         # Option Statistics
         self._prices = self._daily_historical["Adj Close"]
-        self._volatility = self._daily_historical["Volatility"] * np.sqrt(252)
+
+        yearly_volatility = risk_model.get_volatility(
+            self._daily_historical["Return"], "yearly"
+        )
+        year_labels = self._daily_historical.index.asfreq("Y")
+        self._volatility = yearly_volatility.reindex(year_labels)
+        self._volatility.index = self._daily_historical.index
+
         self._risk_free_rate = risk_free_rate["Adj Close"]
         self._annual_historical = annual_historical
 
@@ -224,6 +232,7 @@ class Options:
         dividend_yield: float | None = None,
         show_input_info: bool = False,
         rounding: int | None = None,
+        standardize: bool = False,
     ):
         """
         Calculate the Black Scholes Model, a mathematical model used to estimate the price of European—style options.
@@ -278,6 +287,8 @@ class Options:
             means it will use the dividend yield as obtained through annual historical data.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result across the
+                time to expiration columns for each ticker and strike price. Defaults to False.
 
         Returns:
             pd.DataFrame: Black Scholes values containing the tickers and strike prices as the index and the
@@ -373,6 +384,13 @@ class Options:
             rounding if rounding else self._rounding
         )
 
+        if standardize:
+            black_scholes_df = calculate_standardization(
+                dataset=black_scholes_df,
+                rounding=rounding if rounding else self._rounding,
+                axis="columns",
+            )
+
         if show_input_info:
             helpers.show_input_info(
                 start_date=self._daily_historical.index[0],
@@ -394,6 +412,7 @@ class Options:
         show_expiration_dates: bool = False,
         show_input_info: bool = False,
         rounding: int | None = None,
+        standardize: bool = False,
     ):
         """
         Calculate the Implied Volatility (IV) based on the Black Scholes Model and the actual option prices for
@@ -440,6 +459,8 @@ class Options:
             show_expiration_dates (bool, optional): Whether to show the expiration dates. Defaults to False.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result across the
+                time to expiration columns for each ticker and strike price. Defaults to False.
 
         Returns:
             pd.Series | list[str]: Implied Volatility values containing the tickers as the index and the expiration
@@ -554,6 +575,12 @@ class Options:
             rounding if rounding else self._rounding
         )
 
+        if standardize:
+            implied_volatility_df = calculate_standardization(
+                dataset=implied_volatility_df,
+                rounding=rounding if rounding else self._rounding,
+            )
+
         # The Expiration date is used as the name of the DataFrame
         implied_volatility_df.name = option_chains.name
 
@@ -582,6 +609,7 @@ class Options:
         dividend_yield: float | None = None,
         show_input_info: bool = False,
         rounding: int | None = None,
+        standardize: bool = False,
     ):
         """
         Calculate the Binomial Option Pricing Model, a mathematical model used to estimate the price of European and
@@ -643,6 +671,8 @@ class Options:
             means it will use the dividend yield as obtained through annual historical data.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result across the
+                time to expiration columns for each ticker and strike price. Defaults to False.
 
         Returns:
             pd.DataFrame: Binomial Trees values containing the tickers, strike prices and movements as the index and the
@@ -762,6 +792,13 @@ class Options:
             rounding if rounding else self._rounding
         )
 
+        if standardize:
+            binomial_trees_df = calculate_standardization(
+                dataset=binomial_trees_df,
+                rounding=rounding if rounding else self._rounding,
+                axis="columns",
+            )
+
         if show_input_info:
             helpers.show_input_info(
                 start_date=self._daily_historical.index[0],
@@ -788,6 +825,7 @@ class Options:
         show_unique_combinations: bool = False,
         show_input_info: bool = False,
         rounding: int | None = None,
+        standardize: bool = False,
     ):
         """
         Simulate the Stock Price based on the Binomial Model, a mathematical model used to estimate the price of European
@@ -832,6 +870,8 @@ class Options:
             Defaults to False.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result across the
+                time to expiration columns for each ticker and strike price. Defaults to False.
 
         Returns:
             pd.DataFrame: Simulated Stock Price values containing the tickers and movements as the index and the
@@ -926,6 +966,13 @@ class Options:
             rounding if rounding else self._rounding
         )
 
+        if standardize:
+            stock_price_simulation_df = calculate_standardization(
+                dataset=stock_price_simulation_df,
+                rounding=rounding if rounding else self._rounding,
+                axis="columns",
+            )
+
         if show_input_info:
             helpers.show_input_info(
                 start_date=self._daily_historical.index[0],
@@ -952,6 +999,7 @@ class Options:
         put_option: bool = False,
         show_input_info: bool = False,
         rounding: int | None = None,
+        standardize: bool = False,
     ):
         """
         Calculate all Greeks of an option based on the Black Scholes Model. This will return the following Greeks
@@ -1021,6 +1069,8 @@ class Options:
             it will calculate the call option delta.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result across the
+                time to expiration columns for each ticker and strike price. Defaults to False.
 
         Returns:
             pd.DataFrame: the greeks values containing the tickers and strike prices as the index and the
@@ -1064,6 +1114,7 @@ class Options:
             put_option=put_option,
             show_input_info=False,
             rounding=rounding,
+            standardize=standardize,
         )
 
         second_order_greeks = self.collect_second_order_greeks(
@@ -1076,6 +1127,7 @@ class Options:
             put_option=put_option,
             show_input_info=False,
             rounding=rounding,
+            standardize=standardize,
         )
 
         third_order_greeks = self.collect_third_order_greeks(
@@ -1087,6 +1139,7 @@ class Options:
             dividend_yield=dividend_yield,
             show_input_info=show_input_info,
             rounding=rounding,
+            standardize=standardize,
         )
 
         all_greeks = pd.concat(
@@ -1106,6 +1159,7 @@ class Options:
         put_option: bool = False,
         show_input_info: bool = False,
         rounding: int | None = None,
+        standardize: bool = False,
     ):
         """
         Calculate the first order Greeks of an option based on the Black Scholes Model. This will return the following Greeks
@@ -1149,6 +1203,8 @@ class Options:
             it will calculate the call option delta.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result across the
+                time to expiration columns for each ticker and strike price. Defaults to False.
 
         Returns:
             pd.DataFrame: the first order greek values containing the tickers and strike prices as the index
@@ -1161,8 +1217,23 @@ class Options:
 
         toolkit = Toolkit(["AAPL", "ASML"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
-        toolkit.options.collect_first_order_greeks()
+        toolkit.options.collect_first_order_greeks().loc["AAPL"]
         ```
+
+        Which returns:
+
+        |   Strike Price |   (Period('2026-07-30', 'D'), 'Lambda') |   (Period('2026-07-31', 'D'), 'Delta') |   (Period('2026-07-31', 'D'), 'Dual Delta') |   (Period('2026-07-31', 'D'), 'Vega') |   (Period('2026-07-31', 'D'), 'Theta') |   (Period('2026-07-31', 'D'), 'Rho') |   (Period('2026-07-31', 'D'), 'Epsilon') |   (Period('2026-07-31', 'D'), 'Lambda') |
+        |---------------:|----------------------------------------:|---------------------------------------:|--------------------------------------------:|--------------------------------------:|---------------------------------------:|-------------------------------------:|-----------------------------------------:|----------------------------------------:|
+        |            335 |                                 26.7813 |                                 0.1578 |                                     -0.1398 |                                0.2098 |                                -0.1024 |                               3.7223 |                                  -3.8704 |                                 26.1311 |
+        |            340 |                                 28.778  |                                 0.1151 |                                     -0.1008 |                                0.169  |                                -0.082  |                               2.7225 |                                  -2.8231 |                                 28.0524 |
+        |            345 |                                 30.8033 |                                 0.0818 |                                     -0.0707 |                                0.1315 |                                -0.0636 |                               1.9387 |                                  -2.0055 |                                 30.001  |
+        |            350 |                                 32.8506 |                                 0.0566 |                                     -0.0484 |                                0.099  |                                -0.0477 |                               1.3449 |                                  -1.3883 |                                 31.9708 |
+        |            355 |                                 34.914  |                                 0.0382 |                                     -0.0322 |                                0.0722 |                                -0.0347 |                               0.9095 |                                  -0.9371 |                                 33.9561 |
+        |            360 |                                 36.9886 |                                 0.0252 |                                     -0.021  |                                0.0511 |                                -0.0245 |                               0.5999 |                                  -0.6171 |                                 35.9523 |
+        |            365 |                                 39.0699 |                                 0.0162 |                                     -0.0133 |                                0.0352 |                                -0.0168 |                               0.3863 |                                  -0.3968 |                                 37.955  |
+        |            370 |                                 41.1542 |                                 0.0102 |                                     -0.0083 |                                0.0235 |                                -0.0112 |                               0.243  |                                  -0.2492 |                                 39.9609 |
+        |            375 |                                 43.2383 |                                 0.0062 |                                     -0.005  |                                0.0153 |                                -0.0073 |                               0.1494 |                                  -0.1531 |                                 41.9667 |
+        |            380 |                                 45.3195 |                                 0.0038 |                                     -0.003  |                                0.0097 |                                -0.0046 |                               0.0899 |                                  -0.092  |                                 43.97   |
         """
         greeks = {}
 
@@ -1176,6 +1247,7 @@ class Options:
             put_option=put_option,
             show_input_info=False,
             rounding=rounding,
+            standardize=standardize,
         )
 
         greeks["Dual Delta"] = self.get_dual_delta(
@@ -1188,6 +1260,7 @@ class Options:
             put_option=put_option,
             show_input_info=False,
             rounding=rounding,
+            standardize=standardize,
         )
 
         greeks["Vega"] = self.get_vega(
@@ -1199,6 +1272,7 @@ class Options:
             dividend_yield=dividend_yield,
             show_input_info=False,
             rounding=rounding,
+            standardize=standardize,
         )
 
         greeks["Theta"] = self.get_theta(
@@ -1211,6 +1285,7 @@ class Options:
             put_option=put_option,
             show_input_info=False,
             rounding=rounding,
+            standardize=standardize,
         )
 
         greeks["Rho"] = self.get_rho(
@@ -1223,6 +1298,7 @@ class Options:
             put_option=put_option,
             show_input_info=False,
             rounding=rounding,
+            standardize=standardize,
         )
 
         greeks["Epsilon"] = self.get_epsilon(
@@ -1235,6 +1311,7 @@ class Options:
             put_option=put_option,
             show_input_info=show_input_info,
             rounding=rounding,
+            standardize=standardize,
         )
 
         greeks["Lambda"] = self.get_lambda(
@@ -1247,6 +1324,7 @@ class Options:
             put_option=put_option,
             show_input_info=show_input_info,
             rounding=rounding,
+            standardize=standardize,
         )
 
         greeks_df = (
@@ -1268,6 +1346,7 @@ class Options:
         put_option: bool = False,
         show_input_info: bool = False,
         rounding: int | None = None,
+        standardize: bool = False,
     ):
         """
         Calculate the delta of an option based on the Black Scholes Model. The Black Scholes Model
@@ -1315,6 +1394,8 @@ class Options:
             it will calculate the call option delta.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result across the
+                time to expiration columns for each ticker and strike price. Defaults to False.
 
         Returns:
             pd.DataFrame: the delta values containing the tickers and strike prices as the index and the
@@ -1327,8 +1408,23 @@ class Options:
 
         toolkit = Toolkit(["AAPL", "ASML"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
-        toolkit.options.get_delta()
+        toolkit.options.get_delta().loc["AAPL"]
         ```
+
+        Which returns:
+
+        |   Strike Price |   2026-07-24 |   2026-07-25 |   2026-07-26 |   2026-07-27 |   2026-07-28 |   2026-07-29 |   2026-07-30 |   2026-07-31 |
+        |---------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|
+        |            335 |       0.12   |       0.1259 |       0.1316 |       0.1372 |       0.1426 |       0.1478 |       0.1529 |       0.1578 |
+        |            340 |       0.0807 |       0.0859 |       0.091  |       0.096  |       0.101  |       0.1058 |       0.1105 |       0.1151 |
+        |            345 |       0.0523 |       0.0566 |       0.0609 |       0.0652 |       0.0694 |       0.0736 |       0.0777 |       0.0818 |
+        |            350 |       0.0328 |       0.0361 |       0.0395 |       0.0429 |       0.0463 |       0.0497 |       0.0532 |       0.0566 |
+        |            355 |       0.0198 |       0.0223 |       0.0248 |       0.0274 |       0.03   |       0.0327 |       0.0355 |       0.0382 |
+        |            360 |       0.0116 |       0.0133 |       0.0151 |       0.017  |       0.0189 |       0.021  |       0.023  |       0.0252 |
+        |            365 |       0.0066 |       0.0077 |       0.0089 |       0.0102 |       0.0116 |       0.0131 |       0.0146 |       0.0162 |
+        |            370 |       0.0036 |       0.0043 |       0.0051 |       0.006  |       0.007  |       0.008  |       0.009  |       0.0102 |
+        |            375 |       0.0019 |       0.0024 |       0.0029 |       0.0034 |       0.0041 |       0.0047 |       0.0055 |       0.0062 |
+        |            380 |       0.001  |       0.0013 |       0.0016 |       0.0019 |       0.0023 |       0.0027 |       0.0032 |       0.0038 |
         """
         if start_date is not None and start_date not in self._prices.index:
             raise ValueError(f"The start date {start_date} is not a valid date.")
@@ -1389,6 +1485,13 @@ class Options:
 
         delta_df = delta_df.round(rounding if rounding else self._rounding)
 
+        if standardize:
+            delta_df = calculate_standardization(
+                dataset=delta_df,
+                rounding=rounding if rounding else self._rounding,
+                axis="columns",
+            )
+
         if show_input_info:
             helpers.show_input_info(
                 start_date=self._daily_historical.index[0],
@@ -1412,6 +1515,7 @@ class Options:
         put_option: bool = False,
         show_input_info: bool = False,
         rounding: int | None = None,
+        standardize: bool = False,
     ):
         """
         Calculate the dual delta of an option based on the Black Scholes Model. The Black Scholes Model
@@ -1455,6 +1559,8 @@ class Options:
             it will calculate the call option dual delta.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result across the
+                time to expiration columns for each ticker and strike price. Defaults to False.
 
         Returns:
             pd.DataFrame: the dual delta values containing the tickers and strike prices as the index and the
@@ -1467,8 +1573,23 @@ class Options:
 
         toolkit = Toolkit(["AAPL", "ASML"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
-        toolkit.options.get_dual_delta()
+        toolkit.options.get_dual_delta().loc["AAPL"]
         ```
+
+        Which returns:
+
+        |   Strike Price |   2026-07-24 |   2026-07-25 |   2026-07-26 |   2026-07-27 |   2026-07-28 |   2026-07-29 |   2026-07-30 |   2026-07-31 |
+        |---------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|
+        |            335 |      -0.1071 |      -0.1122 |      -0.1172 |      -0.122  |      -0.1267 |      -0.1312 |      -0.1356 |      -0.1398 |
+        |            340 |      -0.0711 |      -0.0756 |      -0.0801 |      -0.0844 |      -0.0886 |      -0.0928 |      -0.0968 |      -0.1008 |
+        |            345 |      -0.0456 |      -0.0493 |      -0.0529 |      -0.0566 |      -0.0602 |      -0.0637 |      -0.0673 |      -0.0707 |
+        |            350 |      -0.0282 |      -0.031  |      -0.0339 |      -0.0368 |      -0.0397 |      -0.0426 |      -0.0455 |      -0.0484 |
+        |            355 |      -0.0168 |      -0.0189 |      -0.021  |      -0.0232 |      -0.0254 |      -0.0277 |      -0.0299 |      -0.0322 |
+        |            360 |      -0.0097 |      -0.0112 |      -0.0126 |      -0.0142 |      -0.0158 |      -0.0175 |      -0.0192 |      -0.021  |
+        |            365 |      -0.0054 |      -0.0064 |      -0.0074 |      -0.0085 |      -0.0096 |      -0.0108 |      -0.012  |      -0.0133 |
+        |            370 |      -0.0029 |      -0.0035 |      -0.0042 |      -0.0049 |      -0.0057 |      -0.0065 |      -0.0074 |      -0.0083 |
+        |            375 |      -0.0015 |      -0.0019 |      -0.0023 |      -0.0028 |      -0.0033 |      -0.0038 |      -0.0044 |      -0.005  |
+        |            380 |      -0.0008 |      -0.001  |      -0.0012 |      -0.0015 |      -0.0018 |      -0.0022 |      -0.0026 |      -0.003  |
         """
         if start_date is not None and start_date not in self._prices.index:
             raise ValueError(f"The start date {start_date} is not a valid date.")
@@ -1529,6 +1650,13 @@ class Options:
 
         dual_delta_df = dual_delta_df.round(rounding if rounding else self._rounding)
 
+        if standardize:
+            dual_delta_df = calculate_standardization(
+                dataset=dual_delta_df,
+                rounding=rounding if rounding else self._rounding,
+                axis="columns",
+            )
+
         if show_input_info:
             helpers.show_input_info(
                 start_date=self._daily_historical.index[0],
@@ -1551,6 +1679,7 @@ class Options:
         dividend_yield: float | None = None,
         show_input_info: bool = False,
         rounding: int | None = None,
+        standardize: bool = False,
     ):
         """
         Calculate the vega of an option based on the Black Scholes Model. The Black Scholes Model
@@ -1596,6 +1725,8 @@ class Options:
             means it will use the dividend yield as obtained through annual historical data.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result across the
+                time to expiration columns for each ticker and strike price. Defaults to False.
 
         Returns:
             pd.DataFrame: the vega values containing the tickers and strike prices as the index and the
@@ -1608,8 +1739,23 @@ class Options:
 
         toolkit = Toolkit(["AAPL", "ASML"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
-        toolkit.options.get_vega()
+        toolkit.options.get_vega().loc["AAPL"]
         ```
+
+        Which returns:
+
+        |   Strike Price |   2026-07-24 |   2026-07-25 |   2026-07-26 |   2026-07-27 |   2026-07-28 |   2026-07-29 |   2026-07-30 |   2026-07-31 |
+        |---------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|
+        |            335 |       0.1516 |       0.1603 |       0.1689 |       0.1773 |       0.1856 |       0.1938 |       0.2019 |       0.2098 |
+        |            340 |       0.1134 |       0.1215 |       0.1296 |       0.1376 |       0.1456 |       0.1535 |       0.1613 |       0.169  |
+        |            345 |       0.081  |       0.0882 |       0.0954 |       0.1026 |       0.1098 |       0.1171 |       0.1243 |       0.1315 |
+        |            350 |       0.0555 |       0.0614 |       0.0675 |       0.0736 |       0.0799 |       0.0862 |       0.0926 |       0.099  |
+        |            355 |       0.0364 |       0.0411 |       0.0459 |       0.051  |       0.0561 |       0.0614 |       0.0668 |       0.0722 |
+        |            360 |       0.023  |       0.0265 |       0.0302 |       0.034  |       0.0381 |       0.0423 |       0.0466 |       0.0511 |
+        |            365 |       0.014  |       0.0164 |       0.0191 |       0.022  |       0.025  |       0.0283 |       0.0316 |       0.0352 |
+        |            370 |       0.0082 |       0.0099 |       0.0117 |       0.0138 |       0.016  |       0.0183 |       0.0208 |       0.0235 |
+        |            375 |       0.0046 |       0.0057 |       0.007  |       0.0084 |       0.0099 |       0.0116 |       0.0134 |       0.0153 |
+        |            380 |       0.0025 |       0.0032 |       0.004  |       0.0049 |       0.0059 |       0.0071 |       0.0083 |       0.0097 |
         """
         if start_date is not None and start_date not in self._prices.index:
             raise ValueError(f"The start date {start_date} is not a valid date.")
@@ -1669,6 +1815,13 @@ class Options:
 
         vega_df = vega_df.round(rounding if rounding else self._rounding)
 
+        if standardize:
+            vega_df = calculate_standardization(
+                dataset=vega_df,
+                rounding=rounding if rounding else self._rounding,
+                axis="columns",
+            )
+
         if show_input_info:
             helpers.show_input_info(
                 start_date=self._daily_historical.index[0],
@@ -1692,6 +1845,7 @@ class Options:
         put_option: bool = False,
         show_input_info: bool = False,
         rounding: int | None = None,
+        standardize: bool = False,
     ):
         """
         Calculate the theta of an option based on the Black Scholes Model. The Black Scholes Model
@@ -1741,6 +1895,8 @@ class Options:
             it will calculate the call option theta.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result across the
+                time to expiration columns for each ticker and strike price. Defaults to False.
 
         Returns:
             pd.DataFrame: the theta values containing the tickers and strike prices as the index and the
@@ -1753,8 +1909,23 @@ class Options:
 
         toolkit = Toolkit(["AAPL", "ASML"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
-        toolkit.options.get_theta()
+        toolkit.options.get_theta().loc["AAPL"]
         ```
+
+        Which returns:
+
+        |   Strike Price |   2026-07-24 |   2026-07-25 |   2026-07-26 |   2026-07-27 |   2026-07-28 |   2026-07-29 |   2026-07-30 |   2026-07-31 |
+        |---------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|
+        |            335 |      -0.0965 |      -0.0977 |      -0.0988 |      -0.0998 |      -0.1006 |      -0.1013 |      -0.1019 |      -0.1024 |
+        |            340 |      -0.0718 |      -0.0738 |      -0.0755 |      -0.0771 |      -0.0785 |      -0.0798 |      -0.081  |      -0.082  |
+        |            345 |      -0.0512 |      -0.0533 |      -0.0554 |      -0.0572 |      -0.059  |      -0.0606 |      -0.0622 |      -0.0636 |
+        |            350 |      -0.0349 |      -0.037  |      -0.039  |      -0.0409 |      -0.0428 |      -0.0445 |      -0.0461 |      -0.0477 |
+        |            355 |      -0.0229 |      -0.0247 |      -0.0265 |      -0.0283 |      -0.0299 |      -0.0316 |      -0.0332 |      -0.0347 |
+        |            360 |      -0.0144 |      -0.0159 |      -0.0174 |      -0.0188 |      -0.0203 |      -0.0217 |      -0.0231 |      -0.0245 |
+        |            365 |      -0.0087 |      -0.0098 |      -0.011  |      -0.0121 |      -0.0133 |      -0.0145 |      -0.0156 |      -0.0168 |
+        |            370 |      -0.0051 |      -0.0059 |      -0.0067 |      -0.0076 |      -0.0085 |      -0.0094 |      -0.0103 |      -0.0112 |
+        |            375 |      -0.0029 |      -0.0034 |      -0.004  |      -0.0046 |      -0.0052 |      -0.0059 |      -0.0066 |      -0.0073 |
+        |            380 |      -0.0016 |      -0.0019 |      -0.0023 |      -0.0027 |      -0.0031 |      -0.0036 |      -0.0041 |      -0.0046 |
         """
         if start_date is not None and start_date not in self._prices.index:
             raise ValueError(f"The start date {start_date} is not a valid date.")
@@ -1815,6 +1986,13 @@ class Options:
 
         theta_df = theta_df.round(rounding if rounding else self._rounding)
 
+        if standardize:
+            theta_df = calculate_standardization(
+                dataset=theta_df,
+                rounding=rounding if rounding else self._rounding,
+                axis="columns",
+            )
+
         if show_input_info:
             helpers.show_input_info(
                 start_date=self._daily_historical.index[0],
@@ -1838,6 +2016,7 @@ class Options:
         put_option: bool = False,
         show_input_info: bool = False,
         rounding: int | None = None,
+        standardize: bool = False,
     ):
         """
         Calculate the rho of an option based on the Black Scholes Model. The Black Scholes Model
@@ -1888,6 +2067,8 @@ class Options:
             it will calculate the call option rho.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result across the
+                time to expiration columns for each ticker and strike price. Defaults to False.
 
         Returns:
             pd.DataFrame: the rho values containing the tickers and strike prices as the index and the
@@ -1900,8 +2081,23 @@ class Options:
 
         toolkit = Toolkit(["AAPL", "ASML"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
-        toolkit.options.get_rho()
+        toolkit.options.get_rho().loc["AAPL"]
         ```
+
+        Which returns:
+
+        |   Strike Price |   2026-07-24 |   2026-07-25 |   2026-07-26 |   2026-07-27 |   2026-07-28 |   2026-07-29 |   2026-07-30 |   2026-07-31 |
+        |---------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|
+        |            335 |       2.162  |       2.369  |       2.5819 |       2.8002 |       3.0237 |       3.252  |       3.485  |       3.7223 |
+        |            340 |       1.4575 |       1.6204 |       1.7898 |       1.9653 |       2.1465 |       2.3333 |       2.5254 |       2.7225 |
+        |            345 |       0.9474 |       1.0707 |       1.2004 |       1.3365 |       1.4785 |       1.6264 |       1.7798 |       1.9387 |
+        |            350 |       0.5944 |       0.6839 |       0.7796 |       0.8812 |       0.9888 |       1.102  |       1.2207 |       1.3449 |
+        |            355 |       0.3602 |       0.4227 |       0.4906 |       0.5638 |       0.6425 |       0.7263 |       0.8153 |       0.9095 |
+        |            360 |       0.211  |       0.253  |       0.2994 |       0.3504 |       0.4059 |       0.466  |       0.5307 |       0.5999 |
+        |            365 |       0.1197 |       0.1468 |       0.1774 |       0.2116 |       0.2496 |       0.2913 |       0.3369 |       0.3863 |
+        |            370 |       0.0657 |       0.0826 |       0.1021 |       0.1243 |       0.1494 |       0.1775 |       0.2087 |       0.243  |
+        |            375 |       0.035  |       0.0452 |       0.0572 |       0.0711 |       0.0872 |       0.1056 |       0.1263 |       0.1494 |
+        |            380 |       0.0181 |       0.024  |       0.0311 |       0.0397 |       0.0497 |       0.0613 |       0.0747 |       0.0899 |
         """
         if start_date is not None and start_date not in self._prices.index:
             raise ValueError(f"The start date {start_date} is not a valid date.")
@@ -1962,6 +2158,13 @@ class Options:
 
         rho_df = rho_df.round(rounding if rounding else self._rounding)
 
+        if standardize:
+            rho_df = calculate_standardization(
+                dataset=rho_df,
+                rounding=rounding if rounding else self._rounding,
+                axis="columns",
+            )
+
         if show_input_info:
             helpers.show_input_info(
                 start_date=self._daily_historical.index[0],
@@ -1985,6 +2188,7 @@ class Options:
         put_option: bool = False,
         show_input_info: bool = False,
         rounding: int | None = None,
+        standardize: bool = False,
     ):
         """
         Calculate the epsilon of an option based on the Black Scholes Model. The Black Scholes Model
@@ -2031,6 +2235,8 @@ class Options:
             it will calculate the call option epsilon.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result across the
+                time to expiration columns for each ticker and strike price. Defaults to False.
 
         Returns:
             pd.DataFrame: the epsilon values containing the tickers and strike prices as the index and the
@@ -2043,8 +2249,23 @@ class Options:
 
         toolkit = Toolkit(["AAPL", "ASML"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
-        toolkit.options.get_epsilon()
+        toolkit.options.get_epsilon().loc["AAPL"]
         ```
+
+        Which returns:
+
+        |   Strike Price |   2026-07-24 |   2026-07-25 |   2026-07-26 |   2026-07-27 |   2026-07-28 |   2026-07-29 |   2026-07-30 |   2026-07-31 |
+        |---------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|
+        |            335 |      -2.2322 |      -2.4486 |      -2.6713 |      -2.9002 |      -3.1348 |      -3.3748 |      -3.6201 |      -3.8704 |
+        |            340 |      -1.5011 |      -1.6706 |      -1.8471 |      -2.0302 |      -2.2196 |      -2.415  |      -2.6163 |      -2.8231 |
+        |            345 |      -0.9737 |      -1.1015 |      -1.2361 |      -1.3775 |      -1.5253 |      -1.6794 |      -1.8396 |      -2.0055 |
+        |            350 |      -0.6097 |      -0.7022 |      -0.8012 |      -0.9065 |      -1.018  |      -1.1356 |      -1.2591 |      -1.3883 |
+        |            355 |      -0.3689 |      -0.4333 |      -0.5033 |      -0.579  |      -0.6603 |      -0.7471 |      -0.8394 |      -0.9371 |
+        |            360 |      -0.2158 |      -0.2589 |      -0.3067 |      -0.3592 |      -0.4165 |      -0.4786 |      -0.5454 |      -0.6171 |
+        |            365 |      -0.1222 |      -0.15   |      -0.1815 |      -0.2167 |      -0.2557 |      -0.2987 |      -0.3457 |      -0.3968 |
+        |            370 |      -0.0671 |      -0.0843 |      -0.1043 |      -0.1271 |      -0.1529 |      -0.1818 |      -0.2139 |      -0.2492 |
+        |            375 |      -0.0357 |      -0.0461 |      -0.0583 |      -0.0727 |      -0.0892 |      -0.108  |      -0.1293 |      -0.1531 |
+        |            380 |      -0.0185 |      -0.0245 |      -0.0318 |      -0.0405 |      -0.0507 |      -0.0627 |      -0.0764 |      -0.092  |
         """
         if start_date is not None and start_date not in self._prices.index:
             raise ValueError(f"The start date {start_date} is not a valid date.")
@@ -2105,6 +2326,13 @@ class Options:
 
         epsilon_df = epsilon_df.round(rounding if rounding else self._rounding)
 
+        if standardize:
+            epsilon_df = calculate_standardization(
+                dataset=epsilon_df,
+                rounding=rounding if rounding else self._rounding,
+                axis="columns",
+            )
+
         if show_input_info:
             helpers.show_input_info(
                 start_date=self._daily_historical.index[0],
@@ -2128,6 +2356,7 @@ class Options:
         put_option: bool = False,
         show_input_info: bool = False,
         rounding: int | None = None,
+        standardize: bool = False,
     ):
         """
         Calculate the lambda of an option based on the Black Scholes Model. The Black Scholes Model
@@ -2176,6 +2405,8 @@ class Options:
             it will calculate the call option lambda.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result across the
+                time to expiration columns for each ticker and strike price. Defaults to False.
 
         Returns:
             pd.DataFrame: the lambda values containing the tickers and strike prices as the index and the
@@ -2188,8 +2419,23 @@ class Options:
 
         toolkit = Toolkit(["AAPL", "ASML"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
-        toolkit.options.get_lambda()
+        toolkit.options.get_lambda().loc["AAPL"]
         ```
+
+        Which returns:
+
+        |   Strike Price |   2026-07-24 |   2026-07-25 |   2026-07-26 |   2026-07-27 |   2026-07-28 |   2026-07-29 |   2026-07-30 |   2026-07-31 |
+        |---------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|
+        |            335 |      31.7968 |      30.7952 |      29.8705 |      29.0138 |      28.2175 |      27.4752 |      26.7813 |      26.1311 |
+        |            340 |      34.3986 |      33.273  |      32.2352 |      31.2748 |      30.3833 |      29.5531 |      28.778  |      28.0524 |
+        |            345 |      37.0389 |      35.7874 |      34.6346 |      33.5689 |      32.5805 |      31.661  |      30.8033 |      30.001  |
+        |            350 |      39.7078 |      38.3291 |      37.0601 |      35.8879 |      34.8017 |      33.7919 |      32.8506 |      31.9708 |
+        |            355 |      42.397  |      40.8903 |      39.5044 |      38.2251 |      37.0402 |      35.9395 |      34.914  |      33.9561 |
+        |            360 |      45.0993 |      43.4642 |      41.9611 |      40.5743 |      39.2905 |      38.0985 |      36.9886 |      35.9523 |
+        |            365 |      47.8086 |      46.0452 |      44.4248 |      42.9305 |      41.5478 |      40.2644 |      39.0699 |      37.955  |
+        |            370 |      50.5198 |      48.6284 |      46.891  |      45.2893 |      43.8078 |      42.4332 |      41.1542 |      39.9609 |
+        |            375 |      53.2287 |      51.2097 |      49.3558 |      47.6471 |      46.0671 |      44.6016 |      43.2383 |      41.9667 |
+        |            380 |      55.9315 |      53.7858 |      51.8158 |      50.0008 |      48.3228 |      46.7667 |      45.3195 |      43.97   |
         """
         if start_date is not None and start_date not in self._prices.index:
             raise ValueError(f"The start date {start_date} is not a valid date.")
@@ -2250,6 +2496,13 @@ class Options:
 
         lambda_df = lambda_df.round(rounding if rounding else self._rounding)
 
+        if standardize:
+            lambda_df = calculate_standardization(
+                dataset=lambda_df,
+                rounding=rounding if rounding else self._rounding,
+                axis="columns",
+            )
+
         if show_input_info:
             helpers.show_input_info(
                 start_date=self._daily_historical.index[0],
@@ -2273,6 +2526,7 @@ class Options:
         put_option: bool = False,
         show_input_info: bool = False,
         rounding: int | None = None,
+        standardize: bool = False,
     ):
         """
         Calculate the second order Greeks of an option based on the Black Scholes Model. This will return the following Greeks
@@ -2316,6 +2570,8 @@ class Options:
             it will calculate the call option delta.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result across the
+                time to expiration columns for each ticker and strike price. Defaults to False.
 
         Returns:
             pd.DataFrame: the second order greeks values containing the tickers and strike prices as the index and the
@@ -2328,7 +2584,23 @@ class Options:
 
         toolkit = Toolkit(["AAPL", "MSFT"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
-        toolkit.options.collect_second_order_greeks()
+        toolkit.options.collect_second_order_greeks().loc["AAPL"]
+        ```
+
+        Which returns:
+
+        |   Strike Price |   (Period('2026-07-31', 'D'), 'Gamma') |   (Period('2026-07-31', 'D'), 'Dual Gamma') |   (Period('2026-07-31', 'D'), 'Vanna') |   (Period('2026-07-31', 'D'), 'Charm') |   (Period('2026-07-31', 'D'), 'Vomma') |   (Period('2026-07-31', 'D'), 'Vera') |   (Period('2026-07-31', 'D'), 'Veta') |   (Period('2026-07-31', 'D'), 'PD') |
+        |---------------:|---------------------------------------:|--------------------------------------------:|---------------------------------------:|---------------------------------------:|---------------------------------------:|--------------------------------------:|--------------------------------------:|------------------------------------:|
+        |            335 |                                 0.0104 |                                      0.0088 |                                 0.9717 |                                -1.7748 |                                84.8089 |                               22.1601 |                              1047.21  |                              0.0088 |
+        |            340 |                                 0.0084 |                                      0.0069 |                                 0.9252 |                                -1.6697 |                                96.5515 |                               21.3439 |                              1024.12  |                              0.0069 |
+        |            345 |                                 0.0065 |                                      0.0052 |                                 0.8292 |                                -1.4833 |                               100.49   |                               19.2881 |                               958.182 |                              0.0052 |
+        |            350 |                                 0.0049 |                                      0.0038 |                                 0.7054 |                                -1.2534 |                                97.1843 |                               16.5099 |                               857.73  |                              0.0038 |
+        |            355 |                                 0.0036 |                                      0.0027 |                                 0.5729 |                                -1.0126 |                                88.2978 |                               13.4738 |                               735.564 |                              0.0027 |
+        |            360 |                                 0.0025 |                                      0.0019 |                                 0.4462 |                                -0.7853 |                                75.9648 |                               10.5348 |                               605.433 |                              0.0019 |
+        |            365 |                                 0.0017 |                                      0.0012 |                                 0.3344 |                                -0.5865 |                                62.2551 |                                7.9212 |                               479.276 |                              0.0012 |
+        |            370 |                                 0.0012 |                                      0.0008 |                                 0.2419 |                                -0.423  |                                48.8282 |                                5.7452 |                               365.664 |                              0.0008 |
+        |            375 |                                 0.0008 |                                      0.0005 |                                 0.1693 |                                -0.2953 |                                36.7917 |                                4.0297 |                               269.421 |                              0.0005 |
+        |            380 |                                 0.0005 |                                      0.0003 |                                 0.1149 |                                -0.1999 |                                26.7166 |                                2.7394 |                               192.07  |                              0.0003 |
         """
         greeks = {}
 
@@ -2341,6 +2613,7 @@ class Options:
             dividend_yield=dividend_yield,
             show_input_info=False,
             rounding=rounding,
+            standardize=standardize,
         )
 
         greeks["Dual Gamma"] = self.get_dual_gamma(
@@ -2352,6 +2625,7 @@ class Options:
             dividend_yield=dividend_yield,
             show_input_info=False,
             rounding=rounding,
+            standardize=standardize,
         )
 
         greeks["Vanna"] = self.get_vanna(
@@ -2363,6 +2637,7 @@ class Options:
             dividend_yield=dividend_yield,
             show_input_info=False,
             rounding=rounding,
+            standardize=standardize,
         )
 
         greeks["Charm"] = self.get_charm(
@@ -2375,6 +2650,7 @@ class Options:
             put_option=put_option,
             show_input_info=False,
             rounding=rounding,
+            standardize=standardize,
         )
 
         greeks["Vomma"] = self.get_vomma(
@@ -2386,6 +2662,7 @@ class Options:
             dividend_yield=dividend_yield,
             show_input_info=False,
             rounding=rounding,
+            standardize=standardize,
         )
 
         greeks["Vera"] = self.get_vera(
@@ -2397,6 +2674,7 @@ class Options:
             dividend_yield=dividend_yield,
             show_input_info=show_input_info,
             rounding=rounding,
+            standardize=standardize,
         )
 
         greeks["Veta"] = self.get_veta(
@@ -2408,6 +2686,7 @@ class Options:
             dividend_yield=dividend_yield,
             show_input_info=show_input_info,
             rounding=rounding,
+            standardize=standardize,
         )
 
         greeks["PD"] = self.get_partial_derivative(
@@ -2419,6 +2698,7 @@ class Options:
             dividend_yield=dividend_yield,
             show_input_info=show_input_info,
             rounding=rounding,
+            standardize=standardize,
         )
 
         greeks_df = (
@@ -2439,6 +2719,7 @@ class Options:
         dividend_yield: float | None = None,
         show_input_info: bool = False,
         rounding: int | None = None,
+        standardize: bool = False,
     ):
         """
         Calculate the gamma of an option based on the Black Scholes Model. The Black Scholes Model
@@ -2482,6 +2763,8 @@ class Options:
             means it will use the current risk free rate.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result across the
+                time to expiration columns for each ticker and strike price. Defaults to False.
 
         Returns:
             pd.DataFrame: the gamma values containing the tickers and strike prices as the index and the
@@ -2494,8 +2777,23 @@ class Options:
 
         toolkit = Toolkit(["AAPL", "ASML"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
-        toolkit.options.get_gamma()
+        toolkit.options.get_gamma().loc["AAPL"]
         ```
+
+        Which returns:
+
+        |   Strike Price |   2026-07-24 |   2026-07-25 |   2026-07-26 |   2026-07-27 |   2026-07-28 |   2026-07-29 |   2026-07-30 |   2026-07-31 |
+        |---------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|
+        |            335 |       0.0099 |       0.01   |       0.0101 |       0.0102 |       0.0102 |       0.0103 |       0.0103 |       0.0104 |
+        |            340 |       0.0074 |       0.0076 |       0.0077 |       0.0079 |       0.008  |       0.0082 |       0.0083 |       0.0084 |
+        |            345 |       0.0053 |       0.0055 |       0.0057 |       0.0059 |       0.0061 |       0.0062 |       0.0064 |       0.0065 |
+        |            350 |       0.0036 |       0.0038 |       0.004  |       0.0042 |       0.0044 |       0.0046 |       0.0047 |       0.0049 |
+        |            355 |       0.0024 |       0.0026 |       0.0027 |       0.0029 |       0.0031 |       0.0033 |       0.0034 |       0.0036 |
+        |            360 |       0.0015 |       0.0017 |       0.0018 |       0.002  |       0.0021 |       0.0023 |       0.0024 |       0.0025 |
+        |            365 |       0.0009 |       0.001  |       0.0011 |       0.0013 |       0.0014 |       0.0015 |       0.0016 |       0.0017 |
+        |            370 |       0.0005 |       0.0006 |       0.0007 |       0.0008 |       0.0009 |       0.001  |       0.0011 |       0.0012 |
+        |            375 |       0.0003 |       0.0004 |       0.0004 |       0.0005 |       0.0005 |       0.0006 |       0.0007 |       0.0008 |
+        |            380 |       0.0002 |       0.0002 |       0.0002 |       0.0003 |       0.0003 |       0.0004 |       0.0004 |       0.0005 |
         """
         if start_date is not None and start_date not in self._prices.index:
             raise ValueError(f"The start date {start_date} is not a valid date.")
@@ -2555,6 +2853,13 @@ class Options:
 
         gamma_df = gamma_df.round(rounding if rounding else self._rounding)
 
+        if standardize:
+            gamma_df = calculate_standardization(
+                dataset=gamma_df,
+                rounding=rounding if rounding else self._rounding,
+                axis="columns",
+            )
+
         if show_input_info:
             helpers.show_input_info(
                 start_date=self._daily_historical.index[0],
@@ -2577,6 +2882,7 @@ class Options:
         dividend_yield: float | None = None,
         show_input_info: bool = False,
         rounding: int | None = None,
+        standardize: bool = False,
     ):
         """
         Calculate the gamma of an option based on the Black Scholes Model. The Black Scholes Model
@@ -2616,6 +2922,8 @@ class Options:
             means it will use the current dividend yield.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result across the
+                time to expiration columns for each ticker and strike price. Defaults to False.
 
         Returns:
             pd.DataFrame: the dual gamma values containing the tickers and strike prices as the index and the
@@ -2628,8 +2936,23 @@ class Options:
 
         toolkit = Toolkit(["AAPL", "ASML"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
-        toolkit.options.get_dual_gamma()
+        toolkit.options.get_dual_gamma().loc["AAPL"]
         ```
+
+        Which returns:
+
+        |   Strike Price |   2026-07-24 |   2026-07-25 |   2026-07-26 |   2026-07-27 |   2026-07-28 |   2026-07-29 |   2026-07-30 |   2026-07-31 |
+        |---------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|
+        |            335 |       0.0084 |       0.0085 |       0.0085 |       0.0086 |       0.0087 |       0.0087 |       0.0088 |       0.0088 |
+        |            340 |       0.0061 |       0.0062 |       0.0064 |       0.0065 |       0.0066 |       0.0067 |       0.0068 |       0.0069 |
+        |            345 |       0.0042 |       0.0044 |       0.0046 |       0.0047 |       0.0048 |       0.005  |       0.0051 |       0.0052 |
+        |            350 |       0.0028 |       0.003  |       0.0031 |       0.0033 |       0.0034 |       0.0036 |       0.0037 |       0.0038 |
+        |            355 |       0.0018 |       0.0019 |       0.0021 |       0.0022 |       0.0023 |       0.0025 |       0.0026 |       0.0027 |
+        |            360 |       0.0011 |       0.0012 |       0.0013 |       0.0014 |       0.0015 |       0.0016 |       0.0018 |       0.0019 |
+        |            365 |       0.0006 |       0.0007 |       0.0008 |       0.0009 |       0.001  |       0.0011 |       0.0012 |       0.0012 |
+        |            370 |       0.0004 |       0.0004 |       0.0005 |       0.0005 |       0.0006 |       0.0007 |       0.0007 |       0.0008 |
+        |            375 |       0.0002 |       0.0002 |       0.0003 |       0.0003 |       0.0004 |       0.0004 |       0.0005 |       0.0005 |
+        |            380 |       0.0001 |       0.0001 |       0.0002 |       0.0002 |       0.0002 |       0.0002 |       0.0003 |       0.0003 |
         """
         if start_date is not None and start_date not in self._prices.index:
             raise ValueError(f"The start date {start_date} is not a valid date.")
@@ -2689,6 +3012,13 @@ class Options:
 
         dual_gamma_df = dual_gamma_df.round(rounding if rounding else self._rounding)
 
+        if standardize:
+            dual_gamma_df = calculate_standardization(
+                dataset=dual_gamma_df,
+                rounding=rounding if rounding else self._rounding,
+                axis="columns",
+            )
+
         if show_input_info:
             helpers.show_input_info(
                 start_date=self._daily_historical.index[0],
@@ -2711,6 +3041,7 @@ class Options:
         dividend_yield: float | None = None,
         show_input_info: bool = False,
         rounding: int | None = None,
+        standardize: bool = False,
     ):
         """
         Calculate the vanna of an option based on the Black Scholes Model. The Black Scholes Model
@@ -2757,6 +3088,8 @@ class Options:
             means it will use the current dividend yield.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result across the
+                time to expiration columns for each ticker and strike price. Defaults to False.
 
         Returns:
             pd.DataFrame: the vanna values containing the tickers and strike prices as the index and the
@@ -2769,8 +3102,23 @@ class Options:
 
         toolkit = Toolkit(["AAPL", "ASML"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
-        toolkit.options.get_vanna()
+        toolkit.options.get_vanna().loc["AAPL"]
         ```
+
+        Which returns:
+
+        |   Strike Price |   2026-07-24 |   2026-07-25 |   2026-07-26 |   2026-07-27 |   2026-07-28 |   2026-07-29 |   2026-07-30 |   2026-07-31 |
+        |---------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|
+        |            335 |       0.927  |       0.9375 |       0.9463 |       0.9536 |       0.9597 |       0.9647 |       0.9686 |       0.9717 |
+        |            340 |       0.8195 |       0.8399 |       0.8582 |       0.8747 |       0.8895 |       0.9027 |       0.9146 |       0.9252 |
+        |            345 |       0.6745 |       0.702  |       0.7275 |       0.7511 |       0.773  |       0.7932 |       0.8119 |       0.8292 |
+        |            350 |       0.5215 |       0.5522 |       0.5813 |       0.609  |       0.6352 |       0.6599 |       0.6833 |       0.7054 |
+        |            355 |       0.3812 |       0.4113 |       0.4406 |       0.469  |       0.4965 |       0.523  |       0.5484 |       0.5729 |
+        |            360 |       0.2646 |       0.2915 |       0.3183 |       0.3448 |       0.3709 |       0.3965 |       0.4217 |       0.4462 |
+        |            365 |       0.1752 |       0.1974 |       0.22   |       0.2428 |       0.2658 |       0.2888 |       0.3117 |       0.3344 |
+        |            370 |       0.111  |       0.1281 |       0.1459 |       0.1643 |       0.1832 |       0.2025 |       0.2221 |       0.2419 |
+        |            375 |       0.0675 |       0.0798 |       0.0931 |       0.1071 |       0.1218 |       0.1372 |       0.153  |       0.1693 |
+        |            380 |       0.0394 |       0.0479 |       0.0573 |       0.0674 |       0.0783 |       0.0899 |       0.1021 |       0.1149 |
         """
         if start_date is not None and start_date not in self._prices.index:
             raise ValueError(f"The start date {start_date} is not a valid date.")
@@ -2830,6 +3178,13 @@ class Options:
 
         vanna_df = vanna_df.round(rounding if rounding else self._rounding)
 
+        if standardize:
+            vanna_df = calculate_standardization(
+                dataset=vanna_df,
+                rounding=rounding if rounding else self._rounding,
+                axis="columns",
+            )
+
         if show_input_info:
             helpers.show_input_info(
                 start_date=self._daily_historical.index[0],
@@ -2853,6 +3208,7 @@ class Options:
         put_option: bool = False,
         show_input_info: bool = False,
         rounding: int | None = None,
+        standardize: bool = False,
     ):
         """
         Calculate the charm of an option based on the Black Scholes Model. The Black Scholes Model
@@ -2900,6 +3256,8 @@ class Options:
             it will calculate the call option charm.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result across the
+                time to expiration columns for each ticker and strike price. Defaults to False.
 
         Returns:
             pd.DataFrame: the charm values containing the tickers and strike prices as the index and the
@@ -2912,8 +3270,23 @@ class Options:
 
         toolkit = Toolkit(["AAPL", "ASML"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
-        toolkit.options.get_charm()
+        toolkit.options.get_charm().loc["AAPL"]
         ```
+
+        Which returns:
+
+        |   Strike Price |   2026-07-24 |   2026-07-25 |   2026-07-26 |   2026-07-27 |   2026-07-28 |   2026-07-29 |   2026-07-30 |   2026-07-31 |
+        |---------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|
+        |            335 |      -2.1899 |      -2.1241 |      -2.0604 |      -1.9988 |      -1.9394 |      -1.8823 |      -1.8274 |      -1.7748 |
+        |            340 |      -1.918  |      -1.8847 |      -1.8499 |      -1.8143 |      -1.7781 |      -1.7418 |      -1.7056 |      -1.6697 |
+        |            345 |      -1.5682 |      -1.5643 |      -1.5567 |      -1.5461 |      -1.533  |      -1.5179 |      -1.5013 |      -1.4833 |
+        |            350 |      -1.2063 |      -1.2239 |      -1.237  |      -1.2462 |      -1.2521 |      -1.255  |      -1.2553 |      -1.2534 |
+        |            355 |      -0.8781 |      -0.9078 |      -0.9335 |      -0.9555 |      -0.9741 |      -0.9896 |      -1.0024 |      -1.0126 |
+        |            360 |      -0.6076 |      -0.6413 |      -0.6719 |      -0.6998 |      -0.7249 |      -0.7474 |      -0.7675 |      -0.7853 |
+        |            365 |      -0.4012 |      -0.4329 |      -0.463  |      -0.4913 |      -0.5178 |      -0.5425 |      -0.5654 |      -0.5865 |
+        |            370 |      -0.2536 |      -0.2802 |      -0.3063 |      -0.3316 |      -0.356  |      -0.3794 |      -0.4018 |      -0.423  |
+        |            375 |      -0.1538 |      -0.1743 |      -0.195  |      -0.2157 |      -0.2362 |      -0.2563 |      -0.2761 |      -0.2953 |
+        |            380 |      -0.0897 |      -0.1045 |      -0.1198 |      -0.1355 |      -0.1515 |      -0.1676 |      -0.1838 |      -0.1999 |
         """
         if start_date is not None and start_date not in self._prices.index:
             raise ValueError(f"The start date {start_date} is not a valid date.")
@@ -2974,6 +3347,13 @@ class Options:
 
         charm_df = charm_df.round(rounding if rounding else self._rounding)
 
+        if standardize:
+            charm_df = calculate_standardization(
+                dataset=charm_df,
+                rounding=rounding if rounding else self._rounding,
+                axis="columns",
+            )
+
         if show_input_info:
             helpers.show_input_info(
                 start_date=self._daily_historical.index[0],
@@ -2996,6 +3376,7 @@ class Options:
         dividend_yield: float | None = None,
         show_input_info: bool = False,
         rounding: int | None = None,
+        standardize: bool = False,
     ):
         """
         Calculate the vomma of an option based on the Black Scholes Model. The Black Scholes Model
@@ -3041,6 +3422,8 @@ class Options:
             means it will use the current dividend yield.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result across the
+                time to expiration columns for each ticker and strike price. Defaults to False.
 
         Returns:
             pd.DataFrame: the vomma values containing the tickers and strike prices as the index and the
@@ -3053,8 +3436,23 @@ class Options:
 
         toolkit = Toolkit(["AAPL", "ASML"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
-        toolkit.options.get_vomma()
+        toolkit.options.get_vomma().loc["AAPL"]
         ```
+
+        Which returns:
+
+        |   Strike Price |   2026-07-24 |   2026-07-25 |   2026-07-26 |   2026-07-27 |   2026-07-28 |   2026-07-29 |   2026-07-30 |   2026-07-31 |
+        |---------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|
+        |            335 |      82.5285 |      83.2266 |      83.7729 |      84.1863 |      84.4832 |      84.6779 |      84.7828 |      84.8089 |
+        |            340 |      86.9501 |      88.9058 |      90.6342 |      92.1567 |      93.4929 |      94.6604 |      95.6751 |      96.5515 |
+        |            345 |      82.9231 |      86.1253 |      89.0707 |      91.7752 |      94.2545 |      96.5238 |      98.5977 |     100.49   |
+        |            350 |      72.7666 |      76.906  |      80.8195 |      84.5108 |      87.9854 |      91.2505 |      94.314  |      97.1843 |
+        |            355 |      59.418  |      64.0139 |      68.4654 |      72.762  |      76.8965 |      80.8648 |      84.6652 |      88.2978 |
+        |            360 |      45.5196 |      50.0738 |      54.5902 |      59.0468 |      63.4256 |      67.712  |      71.8947 |      75.9648 |
+        |            365 |      32.9237 |      37.0405 |      41.222  |      45.4411 |      49.6735 |      53.8983 |      58.0974 |      62.2551 |
+        |            370 |      22.5959 |      26.0392 |      29.6241 |      33.3248 |      37.1171 |      40.9785 |      44.8884 |      48.8282 |
+        |            375 |      14.776  |      17.4675 |      20.3425 |      23.3816 |      26.5652 |      29.8738 |      33.2886 |      36.7917 |
+        |            380 |       9.2386 |      11.2195 |      13.3929 |      15.7475 |      18.271  |      20.9498 |      23.7698 |      26.7166 |
         """
         if start_date is not None and start_date not in self._prices.index:
             raise ValueError(f"The start date {start_date} is not a valid date.")
@@ -3114,6 +3512,13 @@ class Options:
 
         vomma_df = vomma_df.round(rounding if rounding else self._rounding)
 
+        if standardize:
+            vomma_df = calculate_standardization(
+                dataset=vomma_df,
+                rounding=rounding if rounding else self._rounding,
+                axis="columns",
+            )
+
         if show_input_info:
             helpers.show_input_info(
                 start_date=self._daily_historical.index[0],
@@ -3136,6 +3541,7 @@ class Options:
         dividend_yield: float | None = None,
         show_input_info: bool = False,
         rounding: int | None = None,
+        standardize: bool = False,
     ):
         """
         Calculate the vera of an option based on the Black Scholes Model. The Black Scholes Model
@@ -3182,6 +3588,8 @@ class Options:
             means it will use the current dividend yield.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result across the
+                time to expiration columns for each ticker and strike price. Defaults to False.
 
         Returns:
             pd.DataFrame: the vera values containing the tickers and strike prices as the index and the
@@ -3194,8 +3602,23 @@ class Options:
 
         toolkit = Toolkit(["AAPL", "ASML"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
-        toolkit.options.get_vera()
+        toolkit.options.get_vera().loc["AAPL"]
         ```
+
+        Which returns:
+
+        |   Strike Price |   2026-07-24 |   2026-07-25 |   2026-07-26 |   2026-07-27 |   2026-07-28 |   2026-07-29 |   2026-07-30 |   2026-07-31 |
+        |---------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|
+        |            335 |      16.3308 |      17.2218 |      18.093  |      18.9446 |      19.7767 |      20.5898 |      21.3841 |      22.1601 |
+        |            340 |      14.5604 |      15.5679 |      16.5641 |      17.5477 |      18.5181 |      19.4746 |      20.4166 |      21.3439 |
+        |            345 |      12.0591 |      13.0965 |      14.1358 |      15.1746 |      16.2109 |      17.2429 |      18.269  |      19.2881 |
+        |            350 |       9.3674 |      10.3519 |      11.3535 |      12.3687 |      13.3945 |      14.4281 |      15.4673 |      16.5099 |
+        |            355 |       6.8714 |       7.7405 |       8.64   |       9.5661 |      10.5156 |      11.4853 |      12.4722 |      13.4738 |
+        |            360 |       4.7845 |       5.5032 |       6.2612 |       7.0555 |       7.8828 |       8.7404 |       9.6253 |      10.5348 |
+        |            365 |       3.1753 |       3.7352 |       4.3381 |       4.9819 |       5.6645 |       6.3834 |       7.1364 |       7.9212 |
+        |            370 |       2.0153 |       2.4283 |       2.883  |       3.3787 |       3.9142 |       4.4881 |       5.0989 |       5.7452 |
+        |            375 |       1.2269 |       1.5164 |       1.843  |       2.2068 |       2.6078 |       3.0457 |       3.52   |       4.0297 |
+        |            380 |       0.7181 |       0.9119 |       1.1359 |       1.3914 |       1.6791 |       1.9996 |       2.353  |       2.7394 |
         """
         if start_date is not None and start_date not in self._prices.index:
             raise ValueError(f"The start date {start_date} is not a valid date.")
@@ -3255,6 +3678,13 @@ class Options:
 
         vera_df = vera_df.round(rounding if rounding else self._rounding)
 
+        if standardize:
+            vera_df = calculate_standardization(
+                dataset=vera_df,
+                rounding=rounding if rounding else self._rounding,
+                axis="columns",
+            )
+
         if show_input_info:
             helpers.show_input_info(
                 start_date=self._daily_historical.index[0],
@@ -3277,6 +3707,7 @@ class Options:
         dividend_yield: float | None = None,
         show_input_info: bool = False,
         rounding: int | None = None,
+        standardize: bool = False,
     ):
         """
         Calculate the veta of an option based on the Black Scholes Model. The Black Scholes Model
@@ -3324,6 +3755,8 @@ class Options:
             means it will use the current dividend yield.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result across the
+                time to expiration columns for each ticker and strike price. Defaults to False.
 
         Returns:
             pd.DataFrame: the veta values containing the tickers and strike prices as the index and the
@@ -3336,8 +3769,23 @@ class Options:
 
         toolkit = Toolkit(["AAPL", "ASML"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
-        toolkit.options.get_veta()
+        toolkit.options.get_veta().loc["AAPL"]
         ```
+
+        Which returns:
+
+        |   Strike Price |   2026-07-24 |   2026-07-25 |   2026-07-26 |   2026-07-27 |   2026-07-28 |   2026-07-29 |   2026-07-30 |   2026-07-31 |
+        |---------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|
+        |            335 |    1170.49   |    1152.48   |     1134.42  |     1116.45  |     1098.68  |     1081.18  |     1064.01  |     1047.21  |
+        |            340 |    1086.11   |    1080.12   |     1072.76  |     1064.34  |     1055.09  |     1045.2   |     1034.83  |     1024.12  |
+        |            345 |     949.052  |     955.916  |      960.422 |      962.917 |      963.7   |      963.03  |      961.127 |      958.182 |
+        |            350 |     782.262  |     800.007  |      814.975 |      827.465 |      837.751 |      846.079 |      852.672 |      857.73  |
+        |            355 |     609.865  |     634.686  |      656.928 |      676.767 |      694.38  |      709.94  |      723.614 |      735.564 |
+        |            360 |     451.066  |     478.669  |      504.341 |      528.109 |      550.028 |      570.166 |      588.605 |      605.433 |
+        |            365 |     317.447  |     344.156  |      369.769 |      394.195 |      417.377 |      439.286 |      459.915 |      479.276 |
+        |            370 |     213.191  |     236.54   |      259.579 |      282.151 |      304.131 |      325.422 |      345.951 |      365.664 |
+        |            375 |     136.99   |     155.808  |      174.905 |      194.113 |      213.286 |      232.298 |      251.039 |      269.421 |
+        |            380 |      84.4307 |      98.5912 |      113.375 |      128.643 |      144.263 |      160.113 |      176.082 |      192.07  |
         """
         if start_date is not None and start_date not in self._prices.index:
             raise ValueError(f"The start date {start_date} is not a valid date.")
@@ -3397,6 +3845,13 @@ class Options:
 
         veta_df = veta_df.round(rounding if rounding else self._rounding)
 
+        if standardize:
+            veta_df = calculate_standardization(
+                dataset=veta_df,
+                rounding=rounding if rounding else self._rounding,
+                axis="columns",
+            )
+
         if show_input_info:
             helpers.show_input_info(
                 start_date=self._daily_historical.index[0],
@@ -3419,6 +3874,7 @@ class Options:
         dividend_yield: float | None = None,
         show_input_info: bool = False,
         rounding: int | None = None,
+        standardize: bool = False,
     ):
         """
         Calculate the partial derivative of an option based on the Black Scholes Model. The Black Scholes Model
@@ -3457,6 +3913,8 @@ class Options:
             means it will use the current dividend yield.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result across the
+                time to expiration columns for each ticker and strike price. Defaults to False.
 
         Returns:
             pd.DataFrame: the partial derivative values containing the tickers and strike prices as the index and the
@@ -3469,8 +3927,23 @@ class Options:
 
         toolkit = Toolkit(["AAPL", "ASML"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
-        toolkit.options.get_partial_derivative()
+        toolkit.options.get_partial_derivative().loc["AAPL"]
         ```
+
+        Which returns:
+
+        |   Strike Price |   2026-07-24 |   2026-07-25 |   2026-07-26 |   2026-07-27 |   2026-07-28 |   2026-07-29 |   2026-07-30 |   2026-07-31 |
+        |---------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|
+        |            335 |       0.0084 |       0.0085 |       0.0085 |       0.0086 |       0.0087 |       0.0087 |       0.0088 |       0.0088 |
+        |            340 |       0.0061 |       0.0062 |       0.0064 |       0.0065 |       0.0066 |       0.0067 |       0.0068 |       0.0069 |
+        |            345 |       0.0042 |       0.0044 |       0.0046 |       0.0047 |       0.0048 |       0.005  |       0.0051 |       0.0052 |
+        |            350 |       0.0028 |       0.003  |       0.0031 |       0.0033 |       0.0034 |       0.0036 |       0.0037 |       0.0038 |
+        |            355 |       0.0018 |       0.0019 |       0.0021 |       0.0022 |       0.0023 |       0.0025 |       0.0026 |       0.0027 |
+        |            360 |       0.0011 |       0.0012 |       0.0013 |       0.0014 |       0.0015 |       0.0016 |       0.0018 |       0.0019 |
+        |            365 |       0.0006 |       0.0007 |       0.0008 |       0.0009 |       0.001  |       0.0011 |       0.0012 |       0.0012 |
+        |            370 |       0.0004 |       0.0004 |       0.0005 |       0.0005 |       0.0006 |       0.0007 |       0.0007 |       0.0008 |
+        |            375 |       0.0002 |       0.0002 |       0.0003 |       0.0003 |       0.0004 |       0.0004 |       0.0005 |       0.0005 |
+        |            380 |       0.0001 |       0.0001 |       0.0002 |       0.0002 |       0.0002 |       0.0002 |       0.0003 |       0.0003 |
         """
         if start_date is not None and start_date not in self._prices.index:
             raise ValueError(f"The start date {start_date} is not a valid date.")
@@ -3532,6 +4005,13 @@ class Options:
             rounding if rounding else self._rounding
         )
 
+        if standardize:
+            partial_derivative_df = calculate_standardization(
+                dataset=partial_derivative_df,
+                rounding=rounding if rounding else self._rounding,
+                axis="columns",
+            )
+
         if show_input_info:
             helpers.show_input_info(
                 start_date=self._daily_historical.index[0],
@@ -3554,6 +4034,7 @@ class Options:
         dividend_yield: float | None = None,
         show_input_info: bool = False,
         rounding: int | None = None,
+        standardize: bool = False,
     ):
         """
         Calculate the third order Greeks of an option based on the Black Scholes Model. This will return the following Greeks
@@ -3587,6 +4068,8 @@ class Options:
             means it will use the current dividend yield.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result across the
+                time to expiration columns for each ticker and strike price. Defaults to False.
 
         Returns:
             pd.DataFrame: the third order greeks values containing the tickers and strike prices as the index and the
@@ -3599,7 +4082,23 @@ class Options:
 
         toolkit = Toolkit(["MU", "AMZN"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
-        toolkit.options.collect_third_order_greeks()
+        toolkit.options.collect_third_order_greeks().loc["MU"]
+        ```
+
+        Which returns:
+
+        |   Strike Price |   (Period('2026-07-30', 'D'), 'Speed') |   (Period('2026-07-30', 'D'), 'Zomma') |   (Period('2026-07-30', 'D'), 'Color') |   (Period('2026-07-30', 'D'), 'Ultima') |   (Period('2026-07-31', 'D'), 'Speed') |   (Period('2026-07-31', 'D'), 'Zomma') |   (Period('2026-07-31', 'D'), 'Color') |   (Period('2026-07-31', 'D'), 'Ultima') |
+        |---------------:|---------------------------------------:|---------------------------------------:|---------------------------------------:|----------------------------------------:|---------------------------------------:|---------------------------------------:|---------------------------------------:|----------------------------------------:|
+        |           1170 |                                      0 |                                -0.0008 |                                -0.0044 |                                 -1.4174 |                                      0 |                                -0.0008 |                                -0.0044 |                                 -1.4146 |
+        |           1175 |                                      0 |                                -0.0007 |                                -0.0042 |                                 -1.4564 |                                      0 |                                -0.0008 |                                -0.0042 |                                 -1.4547 |
+        |           1180 |                                      0 |                                -0.0007 |                                -0.0039 |                                 -1.4938 |                                      0 |                                -0.0007 |                                -0.0039 |                                 -1.4934 |
+        |           1185 |                                      0 |                                -0.0006 |                                -0.0037 |                                 -1.5295 |                                      0 |                                -0.0007 |                                -0.0037 |                                 -1.5305 |
+        |           1190 |                                      0 |                                -0.0006 |                                -0.0034 |                                 -1.5635 |                                      0 |                                -0.0006 |                                -0.0034 |                                 -1.5659 |
+        |           1195 |                                      0 |                                -0.0006 |                                -0.0031 |                                 -1.5957 |                                      0 |                                -0.0006 |                                -0.0032 |                                 -1.5996 |
+        |           1200 |                                      0 |                                -0.0005 |                                -0.0029 |                                 -1.626  |                                      0 |                                -0.0005 |                                -0.0029 |                                 -1.6316 |
+        |           1205 |                                      0 |                                -0.0005 |                                -0.0026 |                                 -1.6543 |                                      0 |                                -0.0005 |                                -0.0027 |                                 -1.6616 |
+        |           1210 |                                      0 |                                -0.0004 |                                -0.0024 |                                 -1.6806 |                                      0 |                                -0.0005 |                                -0.0025 |                                 -1.6898 |
+        |           1215 |                                      0 |                                -0.0004 |                                -0.0021 |                                 -1.7049 |                                      0 |                                -0.0004 |                                -0.0022 |                                 -1.716  |
         """
         greeks = {}
 
@@ -3612,6 +4111,7 @@ class Options:
             dividend_yield=dividend_yield,
             show_input_info=False,
             rounding=rounding,
+            standardize=standardize,
         )
 
         greeks["Zomma"] = self.get_zomma(
@@ -3623,6 +4123,7 @@ class Options:
             dividend_yield=dividend_yield,
             show_input_info=False,
             rounding=rounding,
+            standardize=standardize,
         )
 
         greeks["Color"] = self.get_color(
@@ -3634,6 +4135,7 @@ class Options:
             dividend_yield=dividend_yield,
             show_input_info=False,
             rounding=rounding,
+            standardize=standardize,
         )
 
         greeks["Ultima"] = self.get_ultima(
@@ -3645,6 +4147,7 @@ class Options:
             dividend_yield=dividend_yield,
             show_input_info=show_input_info,
             rounding=rounding,
+            standardize=standardize,
         )
 
         greeks_df = (
@@ -3665,6 +4168,7 @@ class Options:
         dividend_yield: float | None = None,
         show_input_info: bool = False,
         rounding: int | None = None,
+        standardize: bool = False,
     ):
         """
         Calculate the speed of an option based on the Black Scholes Model. The Black Scholes Model
@@ -3710,6 +4214,8 @@ class Options:
             means it will use the current dividend yield.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result across the
+                time to expiration columns for each ticker and strike price. Defaults to False.
 
         Returns:
             pd.DataFrame: the speed values containing the tickers and strike prices as the index and the
@@ -3722,8 +4228,23 @@ class Options:
 
         toolkit = Toolkit(["AAPL", "ASML"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
-        toolkit.options.get_speed()
+        toolkit.options.get_speed().loc["AAPL"]
         ```
+
+        Which returns:
+
+        |   Strike Price |   2026-07-24 |   2026-07-25 |   2026-07-26 |   2026-07-27 |   2026-07-28 |   2026-07-29 |   2026-07-30 |   2026-07-31 |
+        |---------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|
+        |            335 |       0.0005 |       0.0005 |       0.0005 |       0.0005 |       0.0005 |       0.0004 |       0.0004 |       0.0004 |
+        |            340 |       0.0005 |       0.0005 |       0.0005 |       0.0004 |       0.0004 |       0.0004 |       0.0004 |       0.0004 |
+        |            345 |       0.0004 |       0.0004 |       0.0004 |       0.0004 |       0.0004 |       0.0004 |       0.0004 |       0.0004 |
+        |            350 |       0.0003 |       0.0003 |       0.0003 |       0.0003 |       0.0003 |       0.0003 |       0.0003 |       0.0003 |
+        |            355 |       0.0002 |       0.0002 |       0.0002 |       0.0002 |       0.0003 |       0.0003 |       0.0003 |       0.0003 |
+        |            360 |       0.0002 |       0.0002 |       0.0002 |       0.0002 |       0.0002 |       0.0002 |       0.0002 |       0.0002 |
+        |            365 |       0.0001 |       0.0001 |       0.0001 |       0.0001 |       0.0001 |       0.0001 |       0.0001 |       0.0002 |
+        |            370 |       0.0001 |       0.0001 |       0.0001 |       0.0001 |       0.0001 |       0.0001 |       0.0001 |       0.0001 |
+        |            375 |       0      |       0      |       0.0001 |       0.0001 |       0.0001 |       0.0001 |       0.0001 |       0.0001 |
+        |            380 |       0      |       0      |       0      |       0      |       0      |       0      |       0      |       0.0001 |
         """
         if start_date is not None and start_date not in self._prices.index:
             raise ValueError(f"The start date {start_date} is not a valid date.")
@@ -3783,6 +4304,13 @@ class Options:
 
         speed_df = speed_df.round(rounding if rounding else self._rounding)
 
+        if standardize:
+            speed_df = calculate_standardization(
+                dataset=speed_df,
+                rounding=rounding if rounding else self._rounding,
+                axis="columns",
+            )
+
         if show_input_info:
             helpers.show_input_info(
                 start_date=self._daily_historical.index[0],
@@ -3805,6 +4333,7 @@ class Options:
         dividend_yield: float | None = None,
         show_input_info: bool = False,
         rounding: int | None = None,
+        standardize: bool = False,
     ):
         """
         Calculate the zomma of an option based on the Black Scholes Model. The Black Scholes Model
@@ -3851,6 +4380,8 @@ class Options:
             means it will use the current dividend yield.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result across the
+                time to expiration columns for each ticker and strike price. Defaults to False.
 
         Returns:
             pd.DataFrame: the zomma values containing the tickers and strike prices as the index and the
@@ -3863,8 +4394,23 @@ class Options:
 
         toolkit = Toolkit(["AAPL", "ASML"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
-        toolkit.options.get_zomma()
+        toolkit.options.get_zomma().loc["AAPL"]
         ```
+
+        Which returns:
+
+        |   Strike Price |   2026-07-24 |   2026-07-25 |   2026-07-26 |   2026-07-27 |   2026-07-28 |   2026-07-29 |   2026-07-30 |   2026-07-31 |
+        |---------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|
+        |            335 |       0.0168 |       0.0144 |       0.0122 |       0.0102 |       0.0082 |       0.0064 |       0.0047 |       0.003  |
+        |            340 |       0.029  |       0.027  |       0.0251 |       0.0233 |       0.0214 |       0.0197 |       0.018  |       0.0164 |
+        |            345 |       0.0342 |       0.0331 |       0.0318 |       0.0306 |       0.0293 |       0.0279 |       0.0266 |       0.0253 |
+        |            350 |       0.0339 |       0.0336 |       0.0332 |       0.0326 |       0.032  |       0.0313 |       0.0305 |       0.0297 |
+        |            355 |       0.0298 |       0.0303 |       0.0306 |       0.0308 |       0.0308 |       0.0307 |       0.0305 |       0.0303 |
+        |            360 |       0.0241 |       0.0251 |       0.0259 |       0.0266 |       0.0271 |       0.0276 |       0.0279 |       0.0281 |
+        |            365 |       0.0181 |       0.0193 |       0.0204 |       0.0214 |       0.0222 |       0.023  |       0.0237 |       0.0243 |
+        |            370 |       0.0128 |       0.014  |       0.0151 |       0.0162 |       0.0172 |       0.0181 |       0.019  |       0.0198 |
+        |            375 |       0.0085 |       0.0096 |       0.0106 |       0.0116 |       0.0126 |       0.0136 |       0.0145 |       0.0154 |
+        |            380 |       0.0054 |       0.0063 |       0.0071 |       0.008  |       0.0089 |       0.0097 |       0.0106 |       0.0114 |
         """
         if start_date is not None and start_date not in self._prices.index:
             raise ValueError(f"The start date {start_date} is not a valid date.")
@@ -3924,6 +4470,13 @@ class Options:
 
         zomma_df = zomma_df.round(rounding if rounding else self._rounding)
 
+        if standardize:
+            zomma_df = calculate_standardization(
+                dataset=zomma_df,
+                rounding=rounding if rounding else self._rounding,
+                axis="columns",
+            )
+
         if show_input_info:
             helpers.show_input_info(
                 start_date=self._daily_historical.index[0],
@@ -3946,6 +4499,7 @@ class Options:
         dividend_yield: float | None = None,
         show_input_info: bool = False,
         rounding: int | None = None,
+        standardize: bool = False,
     ):
         """
         Calculate the color of an option based on the Black Scholes Model. The Black Scholes Model
@@ -3992,6 +4546,8 @@ class Options:
             means it will use the current dividend yield.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result across the
+                time to expiration columns for each ticker and strike price. Defaults to False.
 
         Returns:
             pd.DataFrame: the color values containing the tickers and strike prices as the index and the
@@ -4004,8 +4560,23 @@ class Options:
 
         toolkit = Toolkit(["AAPL", "ASML"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
-        toolkit.options.get_color()
+        toolkit.options.get_color().loc["AAPL"]
         ```
+
+        Which returns:
+
+        |   Strike Price |   2026-07-24 |   2026-07-25 |   2026-07-26 |   2026-07-27 |   2026-07-28 |   2026-07-29 |   2026-07-30 |   2026-07-31 |
+        |---------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|
+        |            335 |       0.045  |       0.0382 |       0.0322 |       0.0269 |       0.0223 |       0.0181 |       0.0145 |       0.0113 |
+        |            340 |       0.0712 |       0.0642 |       0.0577 |       0.0519 |       0.0466 |       0.0418 |       0.0375 |       0.0335 |
+        |            345 |       0.0817 |       0.0759 |       0.0704 |       0.0653 |       0.0605 |       0.056  |       0.0518 |       0.0479 |
+        |            350 |       0.0796 |       0.0758 |       0.072  |       0.0682 |       0.0646 |       0.0611 |       0.0577 |       0.0545 |
+        |            355 |       0.0694 |       0.0676 |       0.0657 |       0.0636 |       0.0614 |       0.0591 |       0.0569 |       0.0546 |
+        |            360 |       0.0556 |       0.0555 |       0.055  |       0.0544 |       0.0535 |       0.0525 |       0.0514 |       0.0501 |
+        |            365 |       0.0415 |       0.0424 |       0.0431 |       0.0434 |       0.0436 |       0.0436 |       0.0433 |       0.043  |
+        |            370 |       0.0292 |       0.0306 |       0.0318 |       0.0328 |       0.0335 |       0.0341 |       0.0346 |       0.0348 |
+        |            375 |       0.0194 |       0.0209 |       0.0223 |       0.0235 |       0.0245 |       0.0255 |       0.0263 |       0.0269 |
+        |            380 |       0.0123 |       0.0136 |       0.0149 |       0.0161 |       0.0172 |       0.0182 |       0.0191 |       0.0199 |
         """
         if start_date is not None and start_date not in self._prices.index:
             raise ValueError(f"The start date {start_date} is not a valid date.")
@@ -4065,6 +4636,13 @@ class Options:
 
         color_df = color_df.round(rounding if rounding else self._rounding)
 
+        if standardize:
+            color_df = calculate_standardization(
+                dataset=color_df,
+                rounding=rounding if rounding else self._rounding,
+                axis="columns",
+            )
+
         if show_input_info:
             helpers.show_input_info(
                 start_date=self._daily_historical.index[0],
@@ -4087,6 +4665,7 @@ class Options:
         dividend_yield: float | None = None,
         show_input_info: bool = False,
         rounding: int | None = None,
+        standardize: bool = False,
     ):
         """
         Calculate the ultima of an option based on the Black Scholes Model. The Black Scholes Model
@@ -4133,6 +4712,8 @@ class Options:
             means it will use the current dividend yield.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result across the
+                time to expiration columns for each ticker and strike price. Defaults to False.
 
         Returns:
             pd.DataFrame: the ultima values containing the tickers and strike prices as the index and the
@@ -4145,8 +4726,23 @@ class Options:
 
         toolkit = Toolkit(["AAPL", "ASML"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
-        toolkit.options.get_ultima()
+        toolkit.options.get_ultima().loc["AAPL"]
         ```
+
+        Which returns:
+
+        |   Strike Price |   2026-07-24 |   2026-07-25 |   2026-07-26 |   2026-07-27 |   2026-07-28 |   2026-07-29 |   2026-07-30 |   2026-07-31 |
+        |---------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|
+        |            335 |      -4.7635 |      -5.0149 |      -5.2428 |      -5.449  |      -5.6354 |      -5.8036 |      -5.9553 |      -6.0917 |
+        |            340 |      -3.0824 |      -3.4655 |      -3.8262 |      -4.165  |      -4.4825 |      -4.7796 |      -5.0573 |      -5.3164 |
+        |            345 |      -0.8131 |      -1.2467 |      -1.6707 |      -2.0831 |      -2.4822 |      -2.8671 |      -3.2373 |      -3.5922 |
+        |            350 |       1.3877 |       1.0089 |       0.6192 |       0.2232 |      -0.1754 |      -0.5736 |      -0.9688 |      -1.359  |
+        |            355 |       3.0326 |       2.7955 |       2.5274 |       2.2338 |       1.9195 |       1.589  |       1.2459 |       0.8938 |
+        |            360 |       3.913  |       3.8582 |       3.7601 |       3.6232 |       3.4517 |       3.2499 |       3.0216 |       2.7706 |
+        |            365 |       4.0733 |       4.1906 |       4.2639 |       4.2948 |       4.2856 |       4.2389 |       4.1577 |       4.0446 |
+        |            370 |       3.7098 |       3.9531 |       4.1616 |       4.3339 |       4.4697 |       4.5694 |       4.6338 |       4.6641 |
+        |            375 |       3.0622 |       3.3708 |       3.6596 |       3.925  |       4.1644 |       4.3759 |       4.5583 |       4.7109 |
+        |            380 |       2.3353 |       2.6535 |       2.9678 |       3.2735 |       3.5666 |       3.8438 |       4.1024 |       4.3401 |
         """
         if start_date is not None and start_date not in self._prices.index:
             raise ValueError(f"The start date {start_date} is not a valid date.")
@@ -4205,6 +4801,13 @@ class Options:
         )
 
         ultima_df = ultima_df.round(rounding if rounding else self._rounding)
+
+        if standardize:
+            ultima_df = calculate_standardization(
+                dataset=ultima_df,
+                rounding=rounding if rounding else self._rounding,
+                axis="columns",
+            )
 
         if show_input_info:
             helpers.show_input_info(

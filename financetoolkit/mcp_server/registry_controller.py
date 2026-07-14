@@ -20,7 +20,6 @@ from mcp.server.fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 from pydantic import Field as PydanticField
 
-from financetoolkit.helpers import filter_columns as _filter_columns
 from financetoolkit.mcp_server.coercion_model import (
     coerce_value,
     to_boolean,
@@ -29,6 +28,7 @@ from financetoolkit.mcp_server.coercion_model import (
 from financetoolkit.mcp_server.formatting_model import format_result
 from financetoolkit.mcp_server.inspection_controller import ControllerInspector
 from financetoolkit.mcp_server.provider_model import ToolkitProvider
+from financetoolkit.utilities.dataframe_model import filter_columns as _filter_columns
 from financetoolkit.utilities.logger_model import get_logger
 
 logger = get_logger()
@@ -51,7 +51,36 @@ _PARAM_DESCRIPTIONS: dict[str, str] = {
     "benchmark_ticker": "Ticker used as the market benchmark, e.g. 'SPY' or '^GSPC'.",
     "growth": "Return period-over-period growth rates instead of absolute values.",
     "lag": "Number of periods to lag when computing growth rates.",
-    "trailing": "Number of trailing periods for rolling-window calculations.",
+    "standardize": (
+        "Return the Z-Score (standard score) instead of the raw values, i.e. how many "
+        "standard deviations each value is from the mean of its own series. When "
+        "combined with growth=True, the growth values are standardized instead of the "
+        "raw values."
+    ),
+    "cumulative": (
+        "Return the cumulative value compounded over time instead of the discrete "
+        "value per period. Always rebased to start at 1 at the beginning of the "
+        "selected date range."
+    ),
+    "rolling": (
+        "Rolling window size in number of periods. When set, the metric is computed over "
+        "a smoothly overlapping trailing window across the full history (e.g. period='monthly' "
+        "and rolling=6 gives a rolling 6-month value) instead of one value per period, or "
+        "(for economics indicators) a simple moving average used to smooth the raw series."
+    ),
+    "trailing": (
+        "Trailing window size in number of periods. Sums the raw values over the trailing N "
+        "periods (e.g. trailing=4 on quarterly data gives a trailing-4-quarter / TTM-style sum) "
+        "instead of returning one value per period."
+    ),
+    "threshold_percentile": (
+        "Only used when distribution='evt'. The percentile of losses above which the "
+        "Generalized Pareto Distribution is fitted, e.g. 0.95 fits on the worst 5% of losses."
+    ),
+    "minimum_acceptable_return": (
+        "The minimum acceptable return (MAR) threshold below which returns are considered "
+        "downside, e.g. 0.0 for downside relative to a zero return."
+    ),
     "days": "Number of calendar days used in day-count-based calculations.",
     "period": "Observation frequency, e.g. 'monthly', 'quarterly', or 'annual'.",
     "measure": "Sub-measure selector, e.g. 'M1', 'M2', or 'M3' for money supply.",

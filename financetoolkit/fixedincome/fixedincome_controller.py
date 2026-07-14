@@ -19,9 +19,9 @@ from financetoolkit.fixedincome import (
     fed_model,
     fred_model,
 )
-from financetoolkit.helpers import calculate_growth
 from financetoolkit.utilities import logger_model
 from financetoolkit.utilities.error_model import handle_errors
+from financetoolkit.utilities.statistics_model import finalize_dataset
 
 logger = logger_model.get_logger()
 
@@ -315,6 +315,28 @@ class FixedIncome:
 
         Returns:
             pandas.DataFrame: A DataFrame containing the bond prices for different coupon rates and years to maturity.
+
+        As an example:
+
+        ```python
+        from financetoolkit import FixedIncome
+
+        fixedincome = FixedIncome()
+
+        fixedincome.get_present_value(
+            coupon_rate=[0.03, 0.05, 0.07],
+            years_to_maturity=[5, 10, 15],
+            show_input_info=False,
+        )
+        ```
+
+        Which returns:
+
+        |   Coupon Rate |   (5,) |   (10,) |   (15,) |
+        |--------------:|-------:|--------:|--------:|
+        |          0.03 |  80.04 |   66.45 |   57.2  |
+        |          0.05 |  88.02 |   79.87 |   74.32 |
+        |          0.07 |  96.01 |   93.29 |   91.44 |
         """
         coupon_rate = (
             np.round(
@@ -410,6 +432,29 @@ class FixedIncome:
 
         Returns:
             pandas.DataFrame: A DataFrame containing the bond duration for different coupon rates and years to maturity.
+
+        As an example:
+
+        ```python
+        from financetoolkit import FixedIncome
+
+        fixedincome = FixedIncome()
+
+        fixedincome.get_duration(
+            duration_type='modified',
+            coupon_rate=[0.03, 0.05, 0.07],
+            years_to_maturity=[5, 10, 15],
+            show_input_info=False,
+        )
+        ```
+
+        Which returns:
+
+        |   Coupon Rate |   (5,) |   (10,) |   (15,) |
+        |--------------:|-------:|--------:|--------:|
+        |          0.03 |   4.33 |    7.82 |   10.4  |
+        |          0.05 |   4.18 |    7.26 |    9.41 |
+        |          0.07 |   4.05 |    6.87 |    8.79 |
         """
         duration_type_lower = duration_type.lower()
 
@@ -542,6 +587,29 @@ class FixedIncome:
 
         Returns:
             pandas.DataFrame: A DataFrame containing the yield to maturity for different bond prices and years to maturity.
+
+        As an example:
+
+        ```python
+        from financetoolkit import FixedIncome
+
+        fixedincome = FixedIncome()
+
+        fixedincome.get_yield_to_maturity(
+            coupon_rate=0.05,
+            years_to_maturity=[5, 10, 15],
+            bond_price=[95, 100, 105],
+            show_input_info=False,
+        )
+        ```
+
+        Which returns:
+
+        |   Bond Price |   (5,) |   (10,) |   (15,) |
+        |-------------:|-------:|--------:|--------:|
+        |           95 | 0.0619 |  0.0567 |  0.055  |
+        |          100 | 0.05   |  0.05   |  0.05   |
+        |          105 | 0.0388 |  0.0437 |  0.0453 |
         """
         if bond_price is None:
             # Determine the step size based on the input number
@@ -618,6 +686,8 @@ class FixedIncome:
         years_to_maturity: float | list | range | None = None,
         risk_free_rate: float | None = None,
         notional: float = 10_000_000,
+        tenor: float | None = None,
+        payment_frequency: int = 2,
         is_receiver: bool = True,
         include_payoff: bool = False,
         show_input_info: bool = True,
@@ -640,7 +710,17 @@ class FixedIncome:
         provide lists of values for the fixed rate, strike rate, volatility, and years to maturity to calculate the derivative price
         for multiple scenarios outside of the standard sample.
 
-        Also known as: bond derivative pricing, fixed income derivative.
+        Exercising a swaption is not a single payment at expiration — it is the right to enter a swap that exchanges
+        cash flows at every payment date over the underlying swap's tenor. The price therefore discounts the option
+        payoff by the swap's annuity (present value of a basis point) rather than a single discount factor to
+        expiration, which is why the tenor and payment frequency of the underlying swap matter.
+
+        Note that a swaption's price scales with the tenor of the underlying swap (a right to enter a
+        longer-dated swap is worth more, since it exchanges cash flows over more payment dates) — pass
+        `tenor` explicitly to price a swaption whose underlying swap tenor differs from its years to
+        maturity, e.g. a 1-year option into a 5-year swap: `tenor=5, years_to_maturity=1`.
+
+        Also known as: bond derivative pricing, fixed income derivative, swaption pricing.
 
         Args:
             model (str, optional): The type of model to use for calculating the derivative price. Defaults to "black".
@@ -652,57 +732,42 @@ class FixedIncome:
                 the derivative price for the next 10 years. Can also be a list of years to maturity (e.g. [1, 2.3, 2.5, 3])
             risk_free_rate (float, optional): The risk-free interest rate. Defaults to None which means it is equal to the fixed rate.
             notional (float, optional): The notional amount of the derivative. Defaults to 10_000_000.
+            tenor (float | None, optional): The tenor (length in years) of the underlying swap. Defaults to None,
+                which means it is equal to years_to_maturity for each scenario.
+            payment_frequency (int, optional): Number of fixed-leg payments per year on the underlying swap
+                (e.g. 1 for annual, 2 for semi-annual, 4 for quarterly). Defaults to 2 (semi-annual).
             is_receiver (bool, optional): True if the holder is the receiver of the derivative, False if the holder is the payer. Defaults to True.
             include_payoff (bool, optional): True to include the payoff in the output, False otherwise. Defaults to False.
             show_input_info (bool, optional): True to display input information, False otherwise. Defaults to True.
 
         Returns:
-            pandas.DataFrame: The Black derivative prices rounded to the specified decimal places.
-            pandas.DataFrame (optional): The Black derivative payoffs rounded to the specified decimal places if include_payoff is True.
+            pandas.DataFrame: The derivative prices rounded to the specified decimal places.
+            pandas.DataFrame (optional): The derivative payoffs rounded to the specified decimal places if include_payoff is True.
 
-        For example:
+        As an example:
 
         ```python
         from financetoolkit import FixedIncome
 
         fixedincome = FixedIncome()
 
-        # You can also provide lists of values for the strike rate and years to maturity
-        # to define your own strike rates and years to maturity to display in the DataFrame
-        fixedincome.get_derivative_price(model_type='black', forward_rate=0.0325)
+        fixedincome.get_derivative_price(model='black', forward_rate=0.0325)
         ```
 
         Which returns:
 
-        |   Strike Rate |   2025-04-21 |   2026-04-21 |   2027-04-21 |   2028-04-20 |   2029-04-20 |   2030-04-20 |   2031-04-20 |   2032-04-19 |   2033-04-19 |   2034-04-19 |
-        |--------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|
-        |         0.005 |          0   |          0   |          0   |         0    |         0    |          0   |          0   |         0    |         0    |         0    |
-        |         0.01  |          0   |          0   |          0   |         0    |         0    |          0   |          0   |         0    |         0    |         0    |
-        |         0.015 |          0   |          0   |          0   |         0    |         0    |          0   |          0   |         0    |         0    |         0    |
-        |         0.02  |          0   |          0   |          0   |         0    |         0    |          0   |          0   |         0    |         0    |         0    |
-        |         0.025 |          0   |          0   |          0   |         0    |         0    |          0   |          0   |         0    |         0    |         0    |
-        |         0.03  |          0   |          0   |          0   |         0.04 |         0.25 |          0.9 |          2.3 |         4.68 |         8.22 |        12.98 |
-        |         0.035 |      24200.6 |      23426.7 |      22677.6 |     21952.5  |     21251.2  |      20573.2 |      19918.5 |     19286.4  |     18676.5  |     18088    |
-        |         0.04  |      72601.7 |      70280.1 |      68032.7 |     65857.2  |     63751.2  |      61712.6 |      59739.2 |     57828.9  |     55979.6  |     54189.6  |
-        |         0.045 |     121003   |     117133   |     113388   |    109762    |    106252    |     102854   |      99565.3 |     96381.4  |     93299.4  |     90315.9  |
-        |         0.05  |     169404   |     163987   |     158743   |    153667    |    148753    |     143996   |     139391   |    134934    |    130619    |    126442    |
-        |         0.055 |     217805   |     210840   |     204098   |    197571    |    191254    |     185138   |     179218   |    173487    |    167939    |    162569    |
-        |         0.06  |     266206   |     257694   |     249453   |    241476    |    233754    |     226280   |     219044   |    212039    |    205259    |    198695    |
-        |         0.065 |     314607   |     304547   |     294808   |    285381    |    276255    |     267421   |     258870   |    250592    |    242578    |    234821    |
-        |         0.07  |     363008   |     351400   |     340163   |    329286    |    318756    |     308563   |     298696   |    289144    |    279898    |    270948    |
-        |         0.075 |     411410   |     398254   |     385518   |    373191    |    361257    |     349705   |     338522   |    327697    |    317218    |    307074    |
-        |         0.08  |     459811   |     445107   |     430874   |    417095    |    403758    |     390846   |     378348   |    366250    |    354538    |    343200    |
-        |         0.085 |     508212   |     491960   |     476229   |    461000    |    446258    |     431988   |     418174   |    404802    |    391858    |    379327    |
-        |         0.09  |     556613   |     538814   |     521584   |    504905    |    488759    |     473130   |     458000   |    443355    |    429177    |    415453    |
-        |         0.095 |     605014   |     585667   |     566939   |    548810    |    531260    |     514272   |     497827   |    481907    |    466497    |    451580    |
-        |         0.1   |     653415   |     632521   |     612294   |    592714    |    573761    |     555413   |     537653   |    520460    |    503817    |    487706    |
-        |         0.105 |     701816   |     679374   |     657649   |    636619    |    616262    |     596555   |     577479   |    559012    |    541137    |    523832    |
-        |         0.11  |     750217   |     726227   |     703004   |    680524    |    658762    |     637697   |     617305   |    597565    |    578456    |    559959    |
-        |         0.115 |     798619   |     773081   |     748359   |    724429    |    701263    |     678839   |     657131   |    636118    |    615776    |    596085    |
-        |         0.12  |     847020   |     819934   |     793715   |    768334    |    743764    |     719980   |     696957   |    674670    |    653096    |    632211    |
-        |         0.125 |     895421   |     866787   |     839070   |    812238    |    786265    |     761122   |     736783   |    713223    |    690416    |    668338    |
-        |         0.13  |     943822   |     913641   |     884425   |    856143    |    828766    |     802264   |     776609   |    751775    |    727735    |    704464    |
-
+        |   Strike Rate |   +1Y |    +2Y |    +3Y |    +4Y |    +5Y |     +6Y |     +7Y |     +8Y |     +9Y |    +10Y |
+        |--------------:|------:|-------:|-------:|-------:|-------:|--------:|--------:|--------:|--------:|--------:|
+        |        0.0075 |     0 |      0 |      0 |      0 |      0 |       0 |       0 |       0 |       0 |       0 |
+        |        0.0125 |     0 |      0 |      0 |      0 |      0 |       0 |       0 |       0 |       0 |       0 |
+        |        0.0175 |     0 |      0 |      0 |      0 |      0 |       0 |       0 |       0 |       0 |       0 |
+        |        0.0225 |     0 |      0 |      0 |      0 |      0 |       0 |       0 |       0 |       0 |       0 |
+        |        0.0275 |     0 |      0 |      0 |      0 |      0 |       0 |       0 |       0 |       0 |       0 |
+        |        0.0325 |  1225 |   3300 |   5776 |   8472 |  11280 |   14130 |   16968 |   19757 |   22470 |   25086 |
+        |        0.0375 | 47237 |  89991 | 128592 | 163348 | 194547 |  222456 |  247325 |  269386 |  288855 |  305934 |
+        |        0.0425 | 94474 | 179982 | 257184 | 326697 | 389094 |  444912 |  494650 |  538771 |  577709 |  611868 |
+        |        0.0475 |141712 | 269973 | 385776 | 490045 | 583642 |  667369 |  741975 |  808157 |  866564 |  917802 |
+        |        0.0525 |188949 | 359964 | 514368 | 653394 | 778189 |  889825 |  989299 | 1077540 | 1155420 | 1223740 |
         """
         model_lower = model.lower()
 
@@ -765,6 +830,8 @@ class FixedIncome:
                         years_to_maturity=maturity,
                         risk_free_rate=risk_free_rate,
                         notional=notional,
+                        tenor=tenor,
+                        payment_frequency=payment_frequency,
                         is_receiver=is_receiver,
                     )
                 elif model_lower == "bachelier":
@@ -778,6 +845,8 @@ class FixedIncome:
                         years_to_maturity=maturity,
                         risk_free_rate=risk_free_rate,
                         notional=notional,
+                        tenor=tenor,
+                        payment_frequency=payment_frequency,
                         is_receiver=is_receiver,
                     )
                 else:
@@ -793,12 +862,13 @@ class FixedIncome:
         if show_input_info:
             logger.info(
                 "Forward Rate: %s%%, Volatility: %s%%, Risk Free Rate: %s%%, "
-                "Holder: %s, Notional: %s, Model: %s Model",
+                "Holder: %s, Notional: %s, Payment Frequency: %sx/year, Model: %s Model",
                 f"{forward_rate * 100}",
                 f"{volatility * 100}",
                 f"{risk_free_rate * 100}",
                 "Receiver" if is_receiver else "Payer",
                 f"{notional:,}",
+                payment_frequency,
                 model_lower.title(),
             )
 
@@ -823,6 +893,7 @@ class FixedIncome:
         growth: bool = False,
         lag: int = 1,
         rounding: int | None = None,
+        standardize: bool = False,
     ):
         """
         Long-term interest rates refer to government bonds maturing in ten years.
@@ -858,6 +929,9 @@ class FixedIncome:
             growth (bool, optional): Whether to return the growth data or the actual data.
             lag (int, optional): The number of periods to lag the data by.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Long Term Interest Rate.
@@ -901,25 +975,25 @@ class FixedIncome:
                 period=period,
             )
 
-        if growth:
-            government_bond_yield = calculate_growth(
-                government_bond_yield,
-                lag=lag,
-                rounding=rounding if rounding else self._rounding,
-                axis="rows",
-            )
-
-        government_bond_yield = government_bond_yield.loc[
-            self._start_date : self._end_date
-        ]
-
-        return government_bond_yield.round(rounding if rounding else self._rounding)
+        return finalize_dataset(
+            dataset=government_bond_yield,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            rounding=rounding,
+            growth=growth,
+            lag=lag,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+        )
 
     @handle_errors
     def get_ice_bofa_option_adjusted_spread(
         self,
         maturity: bool = True,
         rounding: int | None = None,
+        standardize: bool = False,
     ):
         """
         The ICE BofA Option-Adjusted Spreads (OASs) are the calculated spreads between a computed OAS index
@@ -939,6 +1013,7 @@ class FixedIncome:
         Args:
             maturity (bool, optional): Whether to return the maturity option adjusted spread or the rating option adjusted spread.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. Defaults to False.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Option Adjusted Spread
@@ -953,7 +1028,7 @@ class FixedIncome:
             end_date='2024-01-15',
         )
 
-        fixedincome.get_option_adjusted_spread()
+        fixedincome.get_ice_bofa_option_adjusted_spread()
         ```
 
         Which returns:
@@ -989,17 +1064,23 @@ class FixedIncome:
             )
         )
 
-        option_adjusted_spread = option_adjusted_spread.round(
-            rounding if rounding else self._rounding
+        return finalize_dataset(
+            dataset=option_adjusted_spread,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
         )
-
-        return option_adjusted_spread
 
     @handle_errors
     def get_ice_bofa_effective_yield(
         self,
         maturity: bool = True,
         rounding: int | None = None,
+        standardize: bool = False,
     ):
         """
         This data represents the effective yield of the ICE BofA Indices, When the last calendar day of the month
@@ -1020,9 +1101,10 @@ class FixedIncome:
         Args:
             maturity (bool, optional): Whether to return the maturity effective yield or the rating effective yield.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. Defaults to False.
 
         Returns:
-            pd.DataFrame: A DataFrame containing the Gross Domestic Product
+            pd.DataFrame: A DataFrame containing the ICE BofA Effective Yield
 
         As an example:
 
@@ -1034,7 +1116,7 @@ class FixedIncome:
             end_date='2024-01-15',
         )
 
-        fixedincome.get_effective_yield(maturity=False)
+        fixedincome.get_ice_bofa_effective_yield(maturity=False)
         ```
 
         Which returns:
@@ -1070,17 +1152,23 @@ class FixedIncome:
             )
         )
 
-        effective_yield = effective_yield.round(
-            rounding if rounding else self._rounding
+        return finalize_dataset(
+            dataset=effective_yield,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
         )
-
-        return effective_yield
 
     @handle_errors
     def get_ice_bofa_total_return(
         self,
         maturity: bool = True,
         rounding: int | None = None,
+        standardize: bool = False,
     ):
         """
         This data represents the total return of the ICE BofA Indices, When the last calendar day of the month
@@ -1097,9 +1185,10 @@ class FixedIncome:
         Args:
             maturity (bool, optional): Whether to return the maturity total return or the rating total return.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. Defaults to False.
 
         Returns:
-            pd.DataFrame: A DataFrame containing the Gross Domestic Product
+            pd.DataFrame: A DataFrame containing the ICE BofA Total Return
 
         As an example:
 
@@ -1111,7 +1200,7 @@ class FixedIncome:
             end_date='2024-01-15',
         )
 
-        fixedincome.get_total_return(maturity=True)
+        fixedincome.get_ice_bofa_total_return(maturity=True)
         ```
 
         Which returns:
@@ -1147,15 +1236,23 @@ class FixedIncome:
             )
         )
 
-        total_return = total_return.round(rounding if rounding else self._rounding)
-
-        return total_return
+        return finalize_dataset(
+            dataset=total_return,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+        )
 
     @handle_errors
     def get_ice_bofa_yield_to_worst(
         self,
         maturity: bool = True,
         rounding: int | None = None,
+        standardize: bool = False,
     ):
         """
         This data represents the semi-annual yield to worst of the ICE BofA Indices, When the last calendar day of the month
@@ -1173,6 +1270,7 @@ class FixedIncome:
         Args:
             maturity (bool, optional): Whether to return the maturity yield to worst or the rating yield to worst.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. Defaults to False.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Gross Domestic Product
@@ -1223,9 +1321,16 @@ class FixedIncome:
             )
         )
 
-        yield_to_worst = yield_to_worst.round(rounding if rounding else self._rounding)
-
-        return yield_to_worst
+        return finalize_dataset(
+            dataset=yield_to_worst,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+        )
 
     @handle_errors
     def get_euribor_rates(
@@ -1233,6 +1338,7 @@ class FixedIncome:
         maturities: str | list | None = None,
         nominal: bool = True,
         rounding: int | None = None,
+        standardize: bool = False,
     ):
         """
         Euribor rates, short for Euro Interbank Offered Rate, are the interest rates at which a panel
@@ -1254,6 +1360,7 @@ class FixedIncome:
                 When set to None, it will retrieve rates for 1 month, 3 months, 6 months, and 12 months.
             nominal (bool, optional): Flag indicating whether to retrieve nominal rates. Defaults to True.
             rounding (int | None, optional): Rounding precision for the rates. Defaults to None.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. Defaults to False.
 
         Returns:
             pandas.DataFrame: DataFrame containing the Euribor rates for the specified maturities.
@@ -1310,14 +1417,22 @@ class FixedIncome:
                 nominal=nominal if not nominal and maturity == "3M" else True,
             )
 
-        euribor_rates = euribor_rates.loc[self._start_date : self._end_date]
-
-        euribor_rates = euribor_rates.round(rounding if rounding else self._rounding)
-
-        return euribor_rates
+        return finalize_dataset(
+            dataset=euribor_rates,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+        )
 
     def get_european_central_bank_rates(
-        self, rate: str | None = None, rounding: int | None = None
+        self,
+        rate: str | None = None,
+        rounding: int | None = None,
+        standardize: bool = False,
     ):
         """
         The Governing Council of the ECB sets the key interest rates for the
@@ -1346,6 +1461,8 @@ class FixedIncome:
         Args:
             rate (str, optional): The rate to return. Defaults to None, which returns all rates.
                 Choose between 'refinancing', 'lending' or 'deposit'.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. Defaults to False.
 
         Returns:
             pd.DataFrame: A DataFrame containing the ECB rates.
@@ -1397,14 +1514,22 @@ class FixedIncome:
         if not rate or rate == "deposit":
             ecb_rates["Deposit"] = ecb_model.get_deposit_facility()
 
-        ecb_rates = ecb_rates.loc[self._start_date : self._end_date]
-
-        ecb_rates = ecb_rates.round(rounding if rounding else self._rounding)
-
-        return ecb_rates
+        return finalize_dataset(
+            dataset=ecb_rates,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+        )
 
     def get_federal_reserve_rates(
-        self, rate: str = "EFFR", rounding: int | None = None
+        self,
+        rate: str = "EFFR",
+        rounding: int | None = None,
+        standardize: bool = False,
     ):
         """
         Get the Federal Reserve rates as published by the Federal Reserve Bank of New York.
@@ -1451,6 +1576,8 @@ class FixedIncome:
 
         Args:
             rate (str): The rate to return. Defaults to 'EFFR' (Effective Federal Funds Rate).
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. Defaults to False.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Federal Reserve rates including the rate,
@@ -1500,8 +1627,13 @@ class FixedIncome:
                 "Rate must be one of 'EFFR', 'OBFR', 'TGCR', 'BGCR' or 'SOFR'."
             )
 
-        fed_data = fed_data.loc[self._start_date : self._end_date]
-
-        fed_data = fed_data.round(rounding if rounding else self._rounding)
-
-        return fed_data
+        return finalize_dataset(
+            dataset=fed_data,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+        )

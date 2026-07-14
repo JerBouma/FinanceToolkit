@@ -1,0 +1,6 @@
+,AAPL,AAPL,AAPL,MSFT,MSFT,MSFT,Benchmark,Benchmark,Benchmark
+,Lag 1,Lag 2,Lag 3,Lag 1,Lag 2,Lag 3,Lag 1,Lag 2,Lag 3
+2019,,,,,,,,,
+2020,inf,,,inf,,,inf,,
+2021,0.6154,inf,,-0.5345,inf,,-0.8763,inf,
+2022,0.0,0.6154,inf,0.0,-0.5345,inf,0.0,-0.8763,inf

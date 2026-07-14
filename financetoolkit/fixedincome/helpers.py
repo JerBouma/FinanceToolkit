@@ -6,7 +6,7 @@ import io
 
 import pandas as pd
 
-from financetoolkit.helpers import get_request
+from financetoolkit.utilities.requests_model import get_request
 
 BASE_URL = "https://data-api.ecb.europa.eu/service/data/"
 EXTENSIONS = "?format=csvdata"

@@ -47,6 +47,12 @@ AAPL,EBT to EBIT Ratio,Lag 3,,,,0.008
 AAPL,EBIT to Revenue,Lag 1,,0.1997,0.0121,-0.0081
 AAPL,EBIT to Revenue,Lag 2,,,0.2142,0.0039
 AAPL,EBIT to Revenue,Lag 3,,,,0.2044
+AAPL,Cash Tax Rate,Lag 1,,0.6412,-0.293,-0.0006
+AAPL,Cash Tax Rate,Lag 2,,,0.1603,-0.2935
+AAPL,Cash Tax Rate,Lag 3,,,,0.1596
+AAPL,Tax Rate Divergence,Lag 1,,-37.8148,-0.9769,6.3913
+AAPL,Tax Rate Divergence,Lag 2,,,-1.8519,-0.829
+AAPL,Tax Rate Divergence,Lag 3,,,,-7.2963
 MSFT,Gross Margin,Lag 1,,0.017,-0.0077,0.0076
 MSFT,Gross Margin,Lag 2,,,0.0091,-0.0001
 MSFT,Gross Margin,Lag 3,,,,0.0168
@@ -95,3 +101,9 @@ MSFT,EBT to EBIT Ratio,Lag 3,,,,0.0262
 MSFT,EBIT to Revenue,Lag 1,,0.1234,-0.0101,-0.0044
 MSFT,EBIT to Revenue,Lag 2,,,0.1121,-0.0144
 MSFT,EBIT to Revenue,Lag 3,,,,0.1072
+MSFT,Cash Tax Rate,Lag 1,,,,
+MSFT,Cash Tax Rate,Lag 2,,,,
+MSFT,Cash Tax Rate,Lag 3,,,,
+MSFT,Tax Rate Divergence,Lag 1,,-0.1623,-0.0521,0.4477
+MSFT,Tax Rate Divergence,Lag 2,,,-0.2059,0.3724
+MSFT,Tax Rate Divergence,Lag 3,,,,0.1496

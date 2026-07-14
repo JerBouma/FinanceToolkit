@@ -4,7 +4,7 @@ import io
 
 import pandas as pd
 
-from financetoolkit.helpers import get_request
+from financetoolkit.utilities.requests_model import get_request
 
 GMD_LOCATION = "https://github.com/KMueller-Lab/Global-Macro-Database/blob/main/data/final/data_final.dta?raw=True"
 
@@ -120,11 +120,6 @@ def get_current_account_balance(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
 def get_current_account_balance_to_gdp(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
     """Extracts current account balance to GDP ('CA_GDP') from the dataset, removing NaN rows."""
     return gmd_dataset["CA_GDP"].dropna(axis="rows", how="all")
-
-
-def get_real_effective_exchange_rate(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
-    """Retrieves real effective exchange rate ('REER'), removing rows with all NaNs."""
-    return gmd_dataset["REER"].dropna(axis="rows", how="all")
 
 
 def get_usd_exchange_rate(gmd_dataset: pd.DataFrame) -> pd.DataFrame:

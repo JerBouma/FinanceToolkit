@@ -79,7 +79,7 @@ Through the link you are able to subscribe for the free plan and also premium pl
 
 # Functionality
 
-This section is an introduction to the Finance Toolkit. Also see [this notebook](https://www.jeroenbouma.com/projects/financetoolkit/getting-started) for a detailed Getting Started guide. Next to that, find below a fully-fledged code documentation as well as Jupyter Notebooks in which you can see many examples ranging from basic examples to creating custom ratios to working with your own datasets.
+This section is an introduction to the Finance Toolkit. Find with the link below fully-fledged code documentation as well as Jupyter Notebooks in which you can see many examples ranging from basic examples to creating custom ratios to working with your own datasets.
 
 ___ 
 

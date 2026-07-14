@@ -560,6 +560,7 @@ The Finance Toolkit has been mentioned in various blogposts, research papers, ne
 
 **Newsletters & Social Media**
 - [LinkedIn #1](https://www.linkedin.com/posts/jerry-liu-64390071_this-is-an-extremely-comprehensive-100-activity-7340897396471623681-plI4?utm_source=share&utm_medium=member_desktop&rcm=ACoAABhYAQUBkaNnlBjz_IYBRfaurU68rfoZPE8) and [Linkedin #2](https://www.linkedin.com/posts/pyquant-news_getting-clean-fundamental-data-used-to-be-activity-7314273012927651841-KXP3?utm_source=share&utm_medium=member_desktop&rcm=ACoAABhYAQUBkaNnlBjz_IYBRfaurU68rfoZPE8)
+- [Facebook](https://www.facebook.com/groups/techtitansgroup/posts/1515790739748239/)
 - [Quant Seeker](https://www.quantseeker.com/p/weekly-research-recap)
 - [Python Hub](https://pythonhub.dev/digest/2023-08-13/)
 - [Python Weekly](https://www.pythonweekly.com/p/python-weekly-issue-611-august-3-2023)

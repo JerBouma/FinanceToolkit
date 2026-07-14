@@ -7,7 +7,7 @@
     "url": "https://github.com/JerBouma/FinanceToolkit",
     "source": "github"
   },
-  "version": "2.1.2",
+  "version": "2.1.4",
   "remotes": [
     {
       "type": "streamable-http",

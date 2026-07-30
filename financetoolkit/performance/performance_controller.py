@@ -102,6 +102,7 @@ class Performance:
         self._fama_and_french_dataset: pd.DataFrame = pd.DataFrame()
         self._fama_and_french_model: pd.DataFrame = pd.DataFrame()
         self._fama_and_french_residuals: pd.DataFrame = pd.DataFrame()
+        self._carhart_four_factor_model: pd.DataFrame = pd.DataFrame()
         self._factor_asset_correlations: pd.DataFrame = pd.DataFrame()
         self._factor_correlations: pd.DataFrame = pd.DataFrame()
 
@@ -1138,6 +1139,172 @@ class Performance:
         return filter_columns(
             finalize_dataset(
                 dataset=self._fama_and_french_model,
+                start_date=self._start_date,
+                end_date=self._end_date,
+                default_rounding=self._rounding,
+                growth=growth,
+                lag=lag,
+                rounding=rounding,
+                standardize=standardize,
+                axis="rows",
+                row_slice=True,
+            ),
+            show_columns,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_carhart_four_factor_model(
+        self,
+        period: str | None = None,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+        show_columns: list[str] | None = None,
+    ):
+        """
+        Calculate Carhart Four Factor model scores for a set of financial assets.
+
+        The Carhart Four Factor model extends the Fama and French Three Factor model with a
+        momentum factor, based on the observation that stocks with high prior returns (winners)
+        tend to keep outperforming stocks with low prior returns (losers) over the medium term:
+
+            - Market Risk Premium (Mkt-RF): The excess return of the market over the risk-free rate.
+            - Size Premium (SMB): The historical excess return of small-cap stocks over large-cap stocks.
+            - Value Premium (HML): The historical excess return of value stocks over growth stocks.
+            - Momentum (MOM): The historical excess return of prior winner stocks over prior loser stocks.
+
+        The model performs a Multi Linear Regression on all four factors and defines the regression
+        parameters for each asset over time based on its exposure to these factors:
+
+            - Excess Return = Intercept + Beta1 * Mkt-RF + Beta2 * SMB + Beta3 * HML + Beta4 * MOM + Residuals
+
+        For more information about the method, see the following paper:
+
+        - Carhart, M.M. (1997). "On Persistence in Mutual Fund Performance." The Journal of
+        Finance, 52(1), 57-82.
+
+        Also known as: Carhart model, four-factor model, momentum-augmented Fama-French model.
+
+        Args:
+            period (str, optional): The period for the calculation (e.g., "weekly", "monthly", "quarterly", "yearly").
+                Defaults to None, using class-defined quarterly or yearly period.
+            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the ratio values. Defaults to False.
+            lag (int or list of int, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+
+        Returns:
+            pd.DataFrame: Carhart Four Factor model scores for the specified assets.
+
+        Notes:
+        - The dataset from Ken French is not always fully up to date. Therefore, some periods could be excluded.
+        - Daily Carhart results is not an option as it would attempt to do a linear regression on a single data
+        point which will not give any meaningful results.
+        - The risk-free rate is the Risk Free Rate reported in the Fama and French dataset (used here, rather
+        than the Toolkit's own risk-free rate, to stay consistent with the momentum factor's construction).
+        - If `growth` is set to True, the method calculates the growth of the ratio values using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AMZN", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.performance.get_carhart_four_factor_model(period="quarterly")["AMZN"]
+        ```
+
+        Which returns (columns are Intercept, Mkt-RF/SMB/HML/MOM Slope, MSE and R Squared, per ticker):
+
+        |        |   Intercept |   Mkt-RF Slope |   MOM Slope |   R Squared |
+        |:-------|-------------:|----------------:|-------------:|-------------:|
+        | 2025Q4 |      -0.0194 |          0.0191 |      -0.006 |       0.4786 |
+        | 2026Q1 |      -0.0122 |          0.0126 |     -0.0034 |       0.3878 |
+        | 2026Q2 |      -0.0119 |          0.0076 |      0.0033 |       0.2513 |
+        """
+        period = period if period else "quarterly" if self._quarterly else "yearly"
+
+        historical_data_within = self._within_historical_data[period]
+        returns = historical_data_within.loc[:, "Return"][
+            self._tickers_without_portfolio
+        ]
+
+        self._fama_and_french_dataset = (
+            performance_model.obtain_fama_and_french_dataset()
+        )
+        momentum_dataset = performance_model.obtain_carhart_momentum_dataset()
+
+        carhart_dataset = self._fama_and_french_dataset[
+            ["Mkt-RF", "SMB", "HML", "RF"]
+        ].merge(momentum_dataset, left_index=True, right_index=True)
+        carhart_dataset = carhart_dataset.rename(columns={"Mom": "MOM"})
+
+        carhart_period = determine_within_dataset(
+            carhart_dataset, period, correlation=False
+        )
+
+        merged_df = carhart_period.merge(returns, left_index=True, right_index=True)
+
+        factors_to_calculate = ["Mkt-RF", "SMB", "HML", "MOM"]
+        factor_scores: dict = {}
+
+        logger.info("Calculating Carhart Four Factor Exposures")
+        for ticker in self._tickers_without_portfolio:
+            factor_scores[ticker] = {}
+
+            for dataset_period in merged_df.index.get_level_values(0):
+                factor_data = merged_df.loc[dataset_period][factors_to_calculate]
+                excess_returns = (
+                    merged_df.loc[dataset_period][ticker]
+                    - merged_df.loc[dataset_period]["RF"]
+                )
+
+                (
+                    factor_scores[ticker][dataset_period],
+                    _,
+                    error_message,
+                ) = performance_model.get_fama_and_french_model_multi(
+                    excess_returns=excess_returns, factor_dataset=factor_data
+                )
+
+                if error_message:
+                    logger.warning(
+                        "%s for %s in %s.", error_message, ticker, dataset_period
+                    )
+
+            carhart_model = pd.DataFrame.from_dict(
+                {
+                    (ticker, factor): value
+                    for ticker, factor_scores_ticker in factor_scores.items()
+                    for factor, value in factor_scores_ticker.items()
+                },
+                orient="index",
+            )
+
+        carhart_model = carhart_model.unstack(level=0, sort=False).swaplevel(
+            0, 1, axis=1
+        )
+
+        tickers_column_order = carhart_model.columns.get_level_values(0).unique()
+        parameters_column_order = carhart_model.columns.get_level_values(1).unique()
+
+        carhart_model = (
+            carhart_model.sort_index(axis=1)
+            .reindex(tickers_column_order, level=0, axis=1)
+            .reindex(parameters_column_order, level=1, axis=1)
+        )
+
+        self._carhart_four_factor_model = carhart_model.round(
+            rounding if rounding else self._rounding
+        ).loc[self._start_date : self._end_date]
+
+        return filter_columns(
+            finalize_dataset(
+                dataset=self._carhart_four_factor_model,
                 start_date=self._start_date,
                 end_date=self._end_date,
                 default_rounding=self._rounding,

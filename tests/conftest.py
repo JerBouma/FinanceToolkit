@@ -593,6 +593,11 @@ def risk_module(test_toolkit):
 
 
 @pytest.fixture(scope="session")
+def timeseries_module(test_toolkit):
+    return test_toolkit.timeseries
+
+
+@pytest.fixture(scope="session")
 def ratios_module(test_toolkit):
     return test_toolkit.ratios
 

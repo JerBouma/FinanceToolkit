@@ -3,16 +3,12 @@
 import numpy as np
 import pandas as pd
 
-from financetoolkit.risk import cvar_model
-
 ALPHA_CONSTRAINT = 0.5
 
 # This is meant for calculations in which a Multi Index exists. This is the case
 # when calculating a "within period" in which the first index represents the period
 # (e.g. 2020Q1) and the second index the days within that period (January to March)
 MULTI_PERIOD_INDEX_LEVELS = 2
-
-# pylint: disable=cyclic-import
 
 
 def get_evar_gaussian(
@@ -39,7 +35,7 @@ def get_evar_gaussian(
         period_data_list = []
 
         for sub_period in periods:
-            period_data = cvar_model.get_cvar_laplace(returns.loc[sub_period], alpha)
+            period_data = get_evar_gaussian(returns.loc[sub_period], alpha)
             period_data.name = sub_period
 
             if not period_data.empty:
@@ -49,6 +45,4 @@ def get_evar_gaussian(
 
         return value_at_risk.T
 
-    return returns.mean() + returns.std(ddof=0) * np.sqrt(
-        -2 * np.log(returns.std(ddof=0))
-    )
+    return returns.mean() + returns.std(ddof=0) * np.sqrt(-2 * np.log(alpha))

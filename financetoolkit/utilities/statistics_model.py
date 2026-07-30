@@ -197,12 +197,15 @@ def calculate_growth(
             for new_index in dataset_lag.index:
                 lag_key = new_index[-1]
                 other_indices = new_index[:-1]
+                if len(other_indices) == 1:
+                    other_indices = other_indices[0]
 
                 dataset_lag.loc[new_index] = (
                     dataset.loc[other_indices]
                     .ffill()
                     .pct_change(periods=lag_dict[lag_key])  # type: ignore
                     .to_numpy()
+                    .reshape(-1)
                 )
         else:
             for old_index in dataset.columns:
@@ -222,12 +225,15 @@ def calculate_growth(
             for new_index in dataset_lag.columns:
                 lag_key = new_index[-1]
                 other_indices = new_index[:-1]
+                if len(other_indices) == 1:
+                    other_indices = other_indices[0]
 
                 dataset_lag.loc[:, new_index] = (
                     dataset.loc[:, other_indices]
                     .ffill()
                     .pct_change(periods=lag_dict[lag_key])  # type: ignore
                     .to_numpy()
+                    .reshape(-1)
                 )
 
         return dataset_lag.round(rounding)

@@ -249,6 +249,6 @@ def get_var_studentt(returns, alpha: float) -> pd.Series | pd.DataFrame:
         v = np.array([stats.t.fit(returns)[0]])
     else:
         v = np.array([stats.t.fit(returns[col])[0] for col in returns.columns])
-    za = stats.t.ppf(alpha, v, 1)
+    za = stats.t.ppf(alpha, v)
 
     return np.sqrt((v - 2) / v) * za * returns.std(ddof=0) + returns.mean()

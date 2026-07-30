@@ -152,7 +152,6 @@ def _filter_dataframe_columns(
             # level repeats the same label in every row — drop it so the result
             # is indexed by ticker alone.
             if len(filtered.index.get_level_values(-1).unique()) == 1:
-                filtered = filtered.copy()
                 filtered.index = filtered.index.droplevel(-1)
             return filtered
     else:

@@ -45,6 +45,7 @@ from financetoolkit.performance.performance_controller import Performance
 from financetoolkit.ratios.ratios_controller import Ratios
 from financetoolkit.risk.risk_controller import Risk
 from financetoolkit.technicals.technicals_controller import Technicals
+from financetoolkit.timeseries.timeseries_controller import TimeSeries
 from financetoolkit.utilities import cache_model, logger_model
 from financetoolkit.utilities.dataframe_model import filter_columns
 from financetoolkit.utilities.requests_model import convert_isin_to_ticker
@@ -1205,6 +1206,65 @@ class Toolkit:
         return risk
 
     @property
+    def timeseries(self) -> TimeSeries:
+        """
+        Gives access to the Time Series module. This module applies statistical tests that
+        operate on the time-series properties of price data itself — whether a series is
+        stationary (Augmented Dickey-Fuller), whether two series share a long-run equilibrium
+        (Engle-Granger cointegration), and whether one series has predictive power over
+        another (Granger causality). These are foundational tools for pairs trading, spread
+        modeling and lead-lag analysis.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.timeseries.get_augmented_dickey_fuller(period="quarterly")
+        ```
+        """
+        if not self._start_date:
+            self._start_date = (datetime.today() - timedelta(days=365 * 10)).strftime(
+                "%Y-%m-%d"
+            )
+        if not self._end_date:
+            self._end_date = datetime.today().strftime("%Y-%m-%d")
+
+        for period in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
+            self.get_historical_data(period=period)
+
+        tickers = (
+            self._daily_historical_data.columns.get_level_values(1).unique().tolist()
+        )
+
+        historical_data = {
+            "intraday": self._intraday_historical_data,
+            "daily": self._daily_historical_data,
+            "weekly": self._weekly_historical_data,
+            "monthly": self._monthly_historical_data,
+            "quarterly": self._quarterly_historical_data,
+            "yearly": self._yearly_historical_data,
+        }
+
+        timeseries = TimeSeries(
+            tickers=(
+                tickers + ["Portfolio"] if "Portfolio" in self._tickers else tickers
+            ),
+            historical_data=historical_data,
+            quarterly=self._quarterly,
+            rounding=self._rounding,
+            start_date=self._start_date,
+            end_date=self._end_date,
+        )
+
+        if self._portfolio_weights:
+            timeseries._portfolio_weights = self._portfolio_weights
+
+        return timeseries
+
+    @property
     def fixedincome(self) -> FixedIncome:
         """
         This gives access to the Fixed Income module. This module contains a wide variety of fixed income
@@ -2218,7 +2278,7 @@ class Toolkit:
         if period == "daily":
             historical_data = self._daily_historical_data.loc[
                 self._start_date : self._end_date, :
-            ].copy()
+            ]
             historical_data.loc[historical_data.index[0], "Return"] = 0
 
         elif period == "weekly":
@@ -2237,7 +2297,7 @@ class Toolkit:
 
             historical_data = self._weekly_historical_data.loc[
                 self._start_date : self._end_date, :
-            ].copy()
+            ]
             historical_data.loc[historical_data.index[0], "Return"] = 0
 
         elif period == "monthly":
@@ -2256,7 +2316,7 @@ class Toolkit:
 
             historical_data = self._monthly_historical_data.loc[
                 self._start_date : self._end_date, :
-            ].copy()
+            ]
             historical_data.loc[historical_data.index[0], "Return"] = 0
 
         elif period == "quarterly":
@@ -2275,7 +2335,7 @@ class Toolkit:
 
             historical_data = self._quarterly_historical_data.loc[
                 self._start_date : self._end_date, :
-            ].copy()
+            ]
             historical_data.loc[historical_data.index[0], "Return"] = 0
 
         elif period == "yearly":
@@ -2294,7 +2354,7 @@ class Toolkit:
 
             historical_data = self._yearly_historical_data.loc[
                 self._start_date : self._end_date, :
-            ].copy()
+            ]
             historical_data.loc[historical_data.index[0], "Return"] = 0
 
         else:
@@ -2468,7 +2528,7 @@ class Toolkit:
 
         historical_data = self._intraday_historical_data.loc[
             self._start_date : self._end_date, :
-        ].copy()
+        ]
 
         historical_data.loc[historical_data.index[0], "Return"] = 0
 
@@ -3124,7 +3184,7 @@ class Toolkit:
         if period == "daily":
             historical_data = self._daily_exchange_rate_data.loc[
                 self._start_date : self._end_date, :
-            ].copy()
+            ]
             historical_data.loc[historical_data.index[0], "Return"] = 0
 
             if len(self._currencies) == 1:
@@ -3143,7 +3203,7 @@ class Toolkit:
 
             historical_data = self._weekly_exchange_rate_data.loc[
                 self._start_date : self._end_date, :
-            ].copy()
+            ]
             historical_data.loc[historical_data.index[0], "Return"] = 0
 
             if len(self._currencies) == 1:
@@ -3162,7 +3222,7 @@ class Toolkit:
 
             historical_data = self._monthly_exchange_rate_data.loc[
                 self._start_date : self._end_date, :
-            ].copy()
+            ]
             historical_data.loc[historical_data.index[0], "Return"] = 0
 
             if len(self._currencies) == 1:
@@ -3181,7 +3241,7 @@ class Toolkit:
 
             historical_data = self._quarterly_exchange_rate_data.loc[
                 self._start_date : self._end_date, :
-            ].copy()
+            ]
             historical_data.loc[historical_data.index[0], "Return"] = 0
 
             if len(self._currencies) == 1:
@@ -3200,7 +3260,7 @@ class Toolkit:
 
             historical_data = self._yearly_exchange_rate_data.loc[
                 self._start_date : self._end_date, :
-            ].copy()
+            ]
             historical_data.loc[historical_data.index[0], "Return"] = 0
 
             return historical_data

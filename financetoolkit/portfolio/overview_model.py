@@ -354,7 +354,7 @@ def create_transactions_performance(
     last_prices = []
     last_benchmark_prices = []
 
-    for period, _ in period_performance_grouped.iterrows():
+    for period in period_performance_grouped.index:
         # A period/ticker combination can be missing from period_prices when the price
         # history available for that ticker doesn't reach back as far as the transaction
         # (e.g. a demo dataset with a transaction dated before the ticker's actual price

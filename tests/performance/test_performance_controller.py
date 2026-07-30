@@ -109,6 +109,24 @@ def test_get_fama_and_french_model(recorder, performance_module, live_mode):
     )
 
 
+def test_get_carhart_four_factor_model(recorder, performance_module, live_mode):
+    if not live_mode:
+        pytest.skip("Downloads Fama-French and momentum data from the internet")
+    recorder.capture(
+        performance_module.get_carhart_four_factor_model().round(2).sort_index(axis=1)
+    )
+    recorder.capture(
+        performance_module.get_carhart_four_factor_model(period="monthly")
+        .round(2)
+        .sort_index(axis=1)
+    )
+    recorder.capture(
+        performance_module.get_carhart_four_factor_model(growth=True)
+        .round(2)
+        .sort_index(axis=1)
+    )
+
+
 def test_get_alpha(recorder, performance_module):
     recorder.capture(performance_module.get_alpha())
     recorder.capture(performance_module.get_alpha(period="quarterly"))

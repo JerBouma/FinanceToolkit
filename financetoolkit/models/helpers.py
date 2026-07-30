@@ -36,22 +36,14 @@ def determine_within_historical_data(
     within_historical_data = {}
 
     for period, symbol in PERIOD_TRANSLATION.items():
-        within_historical_data[period] = daily_historical_data.groupby(
-            pd.Grouper(freq=f"{symbol}E" if symbol in ["M", "Q", "Y"] else symbol)
-        ).apply(lambda x: x)
-
-        within_historical_data[period].index = within_historical_data[
-            period
-        ].index.set_levels(
+        period_data = daily_historical_data.copy()
+        period_data.index = pd.MultiIndex.from_arrays(
             [
-                pd.PeriodIndex(
-                    within_historical_data[period].index.levels[0],
-                    freq=symbol,
-                ),
-                pd.PeriodIndex(
-                    within_historical_data[period].index.levels[1], freq="D"
-                ),
-            ],
+                daily_historical_data.index.to_period(symbol),
+                daily_historical_data.index.to_period("D"),
+            ]
         )
+
+        within_historical_data[period] = period_data
 
     return within_historical_data

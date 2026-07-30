@@ -677,7 +677,7 @@ class Portfolio:
             columns=self._tickers, index=self._daily_benchmark_data.index
         )
 
-        for (date, ticker), _ in self._portfolio_dataset.iterrows():
+        for date, ticker in self._portfolio_dataset.index:
             original_ticker = self._original_ticker_combinations[ticker]
             benchmark_ticker = self._benchmark_tickers[original_ticker]
 

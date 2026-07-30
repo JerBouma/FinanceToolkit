@@ -54,7 +54,7 @@ def enrich_historical_data(
 
     historical_data["Cumulative Return"] = 1
 
-    adjusted_return = historical_data.loc[start:end, "Return"].copy()
+    adjusted_return = historical_data.loc[start:end, "Return"]
 
     with contextlib.suppress(IndexError):
         adjusted_return.iloc[0] = 0

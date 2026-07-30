@@ -8,7 +8,9 @@ import pandas as pd
 
 from financetoolkit.helpers import handle_portfolio
 from financetoolkit.risk import (
+    backtesting_model,
     cvar_model,
+    diagnostics_model,
     evar_model,
     garch_model,
     risk_model,
@@ -1379,23 +1381,23 @@ class Risk:
 
         toolkit = Toolkit(["AMZN", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
-        toolkit.risk.get_garch()
+        toolkit.risk.get_garch(period="quarterly")
         ```
 
         Which returns:
 
         | Date   |   AMZN |   TSLA |   Benchmark |
         |:-------|-------:|-------:|------------:|
-        | 2012Q4 | 0      |  0     |      0      |
-        | 2013Q1 | 0.0147 |  0.214 |      0.0008 |
-        | 2013Q2 | 0.0223 |  0.214 |      0.0024 |
-        | 2013Q3 | 0.0262 |  0.214 |      0.0029 |
-        | 2013Q4 | 0.0282 |  0.214 |      0.0034 |
-        | 2014Q1 | 0.0293 |  0.214 |      0.0045 |
-        | 2014Q2 | 0.0298 |  0.214 |      0.0045 |
-        | 2014Q3 | 0.03   |  0.214 |      0.0047 |
-        | 2014Q4 | 0.0302 |  0.214 |      0.0047 |
-        | 2015Q1 | 0.0303 |  0.214 |      0.0048 |
+        | 2024Q2 | 0.0267 | 0.1602 |      0.008  |
+        | 2024Q3 | 0.0266 | 0.151  |      0.0069 |
+        | 2024Q4 | 0.0265 | 0.163  |      0.0064 |
+        | 2025Q1 | 0.0266 | 0.1912 |      0.0056 |
+        | 2025Q2 | 0.0266 | 0.1692 |      0.0052 |
+        | 2025Q3 | 0.0266 | 0.1567 |      0.0065 |
+        | 2025Q4 | 0.0265 | 0.1714 |      0.0066 |
+        | 2026Q1 | 0.0265 | 0.1495 |      0.0058 |
+        | 2026Q2 | 0.0265 | 0.1523 |      0.0054 |
+        | 2026Q3 | 0.0266 | 0.1507 |      0.0083 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
@@ -1498,23 +1500,23 @@ class Risk:
 
         toolkit = Toolkit(["AMZN", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
-        toolkit.risk.get_garch_forecast()
+        toolkit.risk.get_garch_forecast(period="quarterly")
         ```
 
         Which returns:
 
-        |      |   AMZN |     TSLA |   Benchmark |
-        |:-----|-------:|---------:|------------:|
-        | 2024 | 0      |    0     |      0      |
-        | 2025 | 0      |    0     |      0      |
-        | 2026 | 0.4156 |  252.921 |      0.0058 |
-        | 2027 | 0.7897 |  480.55  |      0.011  |
-        | 2028 | 1.1263 |  685.417 |      0.0156 |
-        | 2029 | 1.4293 |  869.796 |      0.0198 |
-        | 2030 | 1.702  | 1035.74  |      0.0236 |
-        | 2031 | 1.9474 | 1185.09  |      0.027  |
-        | 2032 | 2.1683 | 1319.5   |      0.0301 |
-        | 2033 | 2.3671 | 1440.47  |      0.0329 |
+        |        |   AMZN |   TSLA |   Benchmark |
+        |:-------|-------:|-------:|------------:|
+        | 2026Q4 | 0.0267 | 0.1703 |      0.0053 |
+        | 2027Q1 | 0.0267 | 0.1703 |      0.0053 |
+        | 2027Q2 | 0.0267 | 0.1738 |      0.0056 |
+        | 2027Q3 | 0.0267 | 0.1745 |      0.0058 |
+        | 2027Q4 | 0.0266 | 0.1747 |      0.006  |
+        | 2028Q1 | 0.0266 | 0.1747 |      0.0062 |
+        | 2028Q2 | 0.0266 | 0.1747 |      0.0063 |
+        | 2028Q3 | 0.0266 | 0.1747 |      0.0064 |
+        | 2028Q4 | 0.0266 | 0.1747 |      0.0065 |
+        | 2029Q1 | 0.0266 | 0.1747 |      0.0066 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
@@ -1568,6 +1570,1015 @@ class Risk:
             axis="rows",
             apply_slice=False,
         )
+
+    @handle_portfolio
+    @handle_errors
+    def get_garch_parameters(
+        self,
+        period: str | None = None,
+        optimization_t: int | None = None,
+        rounding: int | None = None,
+    ) -> pd.DataFrame:
+        """
+        Fits a GARCH(1, 1) model to the historical returns and returns the estimated
+        Omega, Alpha and Beta parameters for each asset.
+
+        GARCH (Generalized autoregressive conditional heteroskedasticity) is a stochastic model
+        for time series, used to model volatility clustering. A GARCH(1, 1) model expresses the
+        conditional variance sigma_t^2 as:
+
+        - sigma_t^2 = Omega + Alpha * u_(t-1)^2 + Beta * sigma_(t-1)^2
+
+        With the constraints Omega, Alpha, Beta > 0 and Alpha + Beta < 1. The parameters are
+        estimated via simulated annealing, maximizing the GARCH log-likelihood function.
+
+        Unlike `get_garch` and `get_garch_forecast`, which return a (forecasted) volatility path,
+        this method returns the fitted parameters themselves. This is useful when the parameters
+        are needed directly, for example to seed a separate volatility simulation.
+
+        For more information about the method, see the following book:
+
+        - Finance Compact Plus Band 1, by Yvonne Seler Zimmerman and Heinz Zimmerman; ISBN: 978-3-907291-31-1
+
+        Also known as: GARCH weights, GARCH coefficients, conditional variance parameters.
+
+        Args:
+            period (str, optional): The data frequency for returns (daily, weekly, quarterly, or yearly).
+            Defaults to "quarterly".
+            optimization_t (int, optional): Time steps of the returns series to use for the optimization.
+            Defaults to the full length of the returns series.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+
+        Returns:
+            pd.DataFrame: Omega, Alpha and Beta values per asset.
+
+        Notes:
+        - The method retrieves historical return data based on the specified `period` and fits a
+        GARCH(1, 1) model for each asset in the Toolkit instance.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AMZN", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.risk.get_garch_parameters(period="quarterly")
+        ```
+
+        Which returns:
+
+        |       |   AMZN |   TSLA |   Benchmark |
+        |:------|-------:|-------:|------------:|
+        | Omega | 0.0191 | 0.1379 |      0.0011 |
+        | Alpha | 0.0038 | 0.143  |      0.1528 |
+        | Beta  | 0.278  | 0.0677 |      0.6939 |
+        """
+        period = period if period else "quarterly" if self._quarterly else "yearly"
+
+        if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
+            raise ValueError(
+                "Period must be daily, weekly, monthly, quarterly, or yearly."
+            )
+        if period == "daily" and self._historical_data["intraday"].empty:
+            raise ValueError("Intraday data is required for daily calculations.")
+
+        returns = self._historical_data[period]["Return"].dropna().replace(0, 1e-100)
+
+        parameters = pd.DataFrame(
+            {
+                ticker: garch_model.get_garch_weights(
+                    returns[ticker].to_numpy(), t=optimization_t
+                )
+                for ticker in returns.columns
+            },
+            index=["Omega", "Alpha", "Beta"],
+        )
+
+        return parameters.round(rounding if rounding is not None else self._rounding)
+
+    @handle_portfolio
+    @handle_errors
+    def get_gjr_garch(
+        self,
+        period: str | None = None,
+        time_steps: int | None = None,
+        optimization_t: int | None = None,
+        within_period: bool = False,
+        rounding: int | None = 4,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+    ):
+        """
+        Calculates volatility forecasts based on the GJR-GARCH model.
+
+        GJR-GARCH extends GARCH with a leverage term that lets negative shocks (bad
+        news) raise volatility by more than positive shocks of the same size, a well
+        documented asymmetry in equity returns that symmetric GARCH cannot capture.
+
+        For more information about the method, see the following paper:
+
+        - Glosten, L.R., Jagannathan, R., and Runkle, D.E. (1993). "On the Relation
+        between the Expected Value and the Volatility of the Nominal Excess Return on
+        Stocks." The Journal of Finance, 48(5), 1779-1801.
+
+        Also known as: GJR-GARCH, threshold GARCH, TGARCH.
+
+        Args:
+            period (str, optional): The data frequency for returns (daily, weekly, quarterly, or yearly).
+            Defaults to "quarterly".
+            time_steps (int, optional): Time steps to calculate GJR-GARCH for.
+            optimization_t (int, optional): Time steps to optimize GJR-GARCH for. It is only used if no
+            weights are given.
+            within_period (bool, optional): Whether to calculate GJR-GARCH within the specified period or
+            for the entire period. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the GJR-GARCH values over time.
+            Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+
+        Returns:
+            pd.DataFrame | pd.Series: GJR-GARCH values
+
+        Notes:
+        - The method retrieves historical return data based on the specified `period` and calculates
+        GJR-GARCH for each asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of GJR-GARCH values using the
+        specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AMZN", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.risk.get_gjr_garch(period="quarterly")
+        ```
+
+        Which returns:
+
+        | Date   |   AMZN |   TSLA |   Benchmark |
+        |:-------|-------:|-------:|------------:|
+        | 2024Q2 | 0.027  | 0.1542 |      0.0053 |
+        | 2024Q3 | 0.0267 | 0.1513 |      0.0047 |
+        | 2024Q4 | 0.0266 | 0.1642 |      0.0048 |
+        | 2025Q1 | 0.0264 | 0.1937 |      0.0046 |
+        | 2025Q2 | 0.027  | 0.1603 |      0.0065 |
+        | 2025Q3 | 0.0267 | 0.157  |      0.0053 |
+        | 2025Q4 | 0.0265 | 0.173  |      0.005  |
+        | 2026Q1 | 0.0264 | 0.1503 |      0.0046 |
+        | 2026Q2 | 0.0267 | 0.1506 |      0.0066 |
+        | 2026Q3 | 0.0265 | 0.1513 |      0.0061 |
+        """
+        period = period if period else "quarterly" if self._quarterly else "yearly"
+
+        if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
+            raise ValueError(
+                "Period must be daily, weekly, monthly, quarterly, or yearly."
+            )
+        if period == "daily" and self._historical_data["intraday"].empty:
+            raise ValueError("Intraday data is required for daily calculations.")
+
+        returns = (
+            (
+                self._within_historical_data[period]["Return"]
+                if within_period
+                else self._historical_data[period]["Return"]
+            )
+            .dropna()
+            .replace(0, 1e-100)
+        )
+
+        gjr_garch_sigma_2 = garch_model.get_gjr_garch(
+            returns=returns,
+            weights=None,
+            time_steps=time_steps,
+            optimization_t=optimization_t,
+        )
+
+        gjr_garch_sigma_2 = gjr_garch_sigma_2.loc[self._start_date : self._end_date]
+
+        return finalize_dataset(
+            dataset=gjr_garch_sigma_2,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            apply_slice=False,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_gjr_garch_forecast(
+        self,
+        period: str | None = None,
+        time_steps: int = 10,
+        within_period: bool = False,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+    ):
+        """
+        Calculates sigma_2 forecasts based on the GJR-GARCH model.
+
+        For more information about the method, see the following paper:
+
+        - Glosten, L.R., Jagannathan, R., and Runkle, D.E. (1993). "On the Relation
+        between the Expected Value and the Volatility of the Nominal Excess Return on
+        Stocks." The Journal of Finance, 48(5), 1779-1801.
+
+        Also known as: volatility forecast, predicted volatility.
+
+        Args:
+            period (str, optional): The data frequency for returns (daily, weekly, quarterly, or yearly).
+            Defaults to "quarterly".
+            time_steps (int, optional): Time steps to calculate GJR-GARCH and to forecast sigma_2 values for.
+            within_period (bool, optional): Whether to calculate GJR-GARCH within each specified period or
+            all at once. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to
+            None.
+            growth (bool, optional): Whether to calculate the growth of the GJR-GARCH values over time.
+            Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+
+        Returns:
+            pd.DataFrame | pd.Series: sigma_2 forecast values
+
+        Notes:
+        - The method retrieves historical return data based on the specified `period` and calculates the
+        sigma_2 forecast for each asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the forecasted sigma_2 values using
+        the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AMZN", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.risk.get_gjr_garch_forecast(period="quarterly")
+        ```
+
+        Which returns:
+
+        |        |   AMZN |   TSLA |   Benchmark |
+        |:-------|-------:|-------:|------------:|
+        | 2026Q4 | 0.0258 | 0.1716 |      0.0046 |
+        | 2027Q1 | 0.0258 | 0.1716 |      0.0046 |
+        | 2027Q2 | 0.0264 | 0.1687 |      0.0071 |
+        | 2027Q3 | 0.0268 | 0.1681 |      0.0086 |
+        | 2027Q4 | 0.0272 | 0.168  |      0.0094 |
+        | 2028Q1 | 0.0274 | 0.168  |      0.0099 |
+        | 2028Q2 | 0.0276 | 0.168  |      0.0102 |
+        | 2028Q3 | 0.0277 | 0.168  |      0.0103 |
+        | 2028Q4 | 0.0278 | 0.168  |      0.0104 |
+        | 2029Q1 | 0.0279 | 0.168  |      0.0105 |
+        """
+        period = period if period else "quarterly" if self._quarterly else "yearly"
+
+        if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
+            raise ValueError(
+                "Period must be daily, weekly, monthly, quarterly, or yearly."
+            )
+        if period == "daily" and self._historical_data["intraday"].empty:
+            raise ValueError("Intraday data is required for daily calculations.")
+
+        returns = (
+            (
+                self._within_historical_data[period]["Return"]
+                if within_period
+                else self._historical_data[period]["Return"]
+            )
+            .dropna()
+            .replace(0, 1e-100)
+        )
+
+        sigma_2_forecast = garch_model.get_gjr_garch_forecast(
+            returns, None, time_steps
+        ).dropna()
+
+        period_symbol = (
+            "W"
+            if period == "weekly"
+            else (
+                "ME" if period == "monthly" else "QE" if period == "quarterly" else "YE"
+            )
+        )
+        period_index = pd.PeriodIndex(
+            pd.date_range(
+                start=returns.index[-1].to_timestamp(),
+                periods=time_steps + 1,
+                freq=period_symbol,
+            )
+        )
+
+        sigma_2_forecast.index = period_index[1:]
+
+        return finalize_dataset(
+            dataset=sigma_2_forecast,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            apply_slice=False,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_gjr_garch_parameters(
+        self,
+        period: str | None = None,
+        optimization_t: int | None = None,
+        rounding: int | None = None,
+    ) -> pd.DataFrame:
+        """
+        Fits a GJR-GARCH(1, 1, 1) model to the historical returns and returns the
+        estimated Omega, Alpha, Gamma and Beta parameters for each asset.
+
+        A positive Gamma indicates the presence of a leverage effect (negative shocks
+        raise volatility by more than positive ones of the same size), which symmetric
+        GARCH cannot represent.
+
+        For more information about the method, see the following paper:
+
+        - Glosten, L.R., Jagannathan, R., and Runkle, D.E. (1993). "On the Relation
+        between the Expected Value and the Volatility of the Nominal Excess Return on
+        Stocks." The Journal of Finance, 48(5), 1779-1801.
+
+        Also known as: GJR-GARCH weights, GJR-GARCH coefficients, leverage parameters.
+
+        Args:
+            period (str, optional): The data frequency for returns (daily, weekly, quarterly, or yearly).
+            Defaults to "quarterly".
+            optimization_t (int, optional): Time steps of the returns series to use for the optimization.
+            Defaults to the full length of the returns series.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to
+            None.
+
+        Returns:
+            pd.DataFrame: Omega, Alpha, Gamma and Beta values per asset.
+
+        Notes:
+        - The method retrieves historical return data based on the specified `period` and fits a
+        GJR-GARCH(1, 1, 1) model for each asset in the Toolkit instance.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AMZN", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.risk.get_gjr_garch_parameters(period="quarterly")
+        ```
+
+        Which returns:
+
+        |       |   AMZN |    TSLA |   Benchmark |
+        |:------|-------:|--------:|------------:|
+        | Omega | 0.0074 |  0.138  |      0.0045 |
+        | Alpha | 0      |  0.1492 |      0.0699 |
+        | Gamma | 0.0428 | -0.0828 |      1      |
+        | Beta  | 0.7156 |  0.0711 |      0      |
+        """
+        period = period if period else "quarterly" if self._quarterly else "yearly"
+
+        if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
+            raise ValueError(
+                "Period must be daily, weekly, monthly, quarterly, or yearly."
+            )
+        if period == "daily" and self._historical_data["intraday"].empty:
+            raise ValueError("Intraday data is required for daily calculations.")
+
+        returns = self._historical_data[period]["Return"].dropna().replace(0, 1e-100)
+
+        parameters = pd.DataFrame(
+            {
+                ticker: garch_model.get_gjr_garch_weights(
+                    returns[ticker].to_numpy(), t=optimization_t
+                )
+                for ticker in returns.columns
+            },
+            index=["Omega", "Alpha", "Gamma", "Beta"],
+        )
+
+        return parameters.round(rounding if rounding is not None else self._rounding)
+
+    @handle_portfolio
+    @handle_errors
+    def get_egarch(
+        self,
+        period: str | None = None,
+        time_steps: int | None = None,
+        optimization_t: int | None = None,
+        within_period: bool = False,
+        rounding: int | None = 4,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+    ):
+        """
+        Calculates volatility forecasts based on the EGARCH model.
+
+        EGARCH models the log of the conditional variance, which avoids having to
+        constrain the parameters to keep the variance positive and, like GJR-GARCH,
+        lets negative and positive shocks of the same size have a different impact on
+        volatility (the leverage effect).
+
+        For more information about the method, see the following paper:
+
+        - Nelson, D.B. (1991). "Conditional Heteroskedasticity in Asset Returns: A New
+        Approach." Econometrica, 59(2), 347-370.
+
+        Also known as: exponential GARCH, log-GARCH.
+
+        Args:
+            period (str, optional): The data frequency for returns (daily, weekly, quarterly, or yearly).
+            Defaults to "quarterly".
+            time_steps (int, optional): Time steps to calculate EGARCH for.
+            optimization_t (int, optional): Time steps to optimize EGARCH for. It is only used if no
+            weights are given.
+            within_period (bool, optional): Whether to calculate EGARCH within the specified period or
+            for the entire period. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the EGARCH values over time.
+            Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+
+        Returns:
+            pd.DataFrame | pd.Series: EGARCH values
+
+        Notes:
+        - The method retrieves historical return data based on the specified `period` and calculates
+        EGARCH for each asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of EGARCH values using the
+        specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AMZN", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.risk.get_egarch(period="quarterly")
+        ```
+
+        Which returns:
+
+        | Date   |   AMZN |   TSLA |   Benchmark |
+        |:-------|-------:|-------:|------------:|
+        | 2024Q2 | 0.0263 | 0.1078 |      0.005  |
+        | 2024Q3 | 0.0259 | 0.1658 |      0.0047 |
+        | 2024Q4 | 0.0255 | 0.1991 |      0.0048 |
+        | 2025Q1 | 0.0262 | 0.2357 |      0.0046 |
+        | 2025Q2 | 0.0249 | 0.1134 |      0.0078 |
+        | 2025Q3 | 0.0262 | 0.1846 |      0.0051 |
+        | 2025Q4 | 0.0257 | 0.2112 |      0.0049 |
+        | 2026Q1 | 0.0259 | 0.1543 |      0.0046 |
+        | 2026Q2 | 0.0251 | 0.1238 |      0.0079 |
+        | 2026Q3 | 0.0261 | 0.1672 |      0.0053 |
+        """
+        period = period if period else "quarterly" if self._quarterly else "yearly"
+
+        if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
+            raise ValueError(
+                "Period must be daily, weekly, monthly, quarterly, or yearly."
+            )
+        if period == "daily" and self._historical_data["intraday"].empty:
+            raise ValueError("Intraday data is required for daily calculations.")
+
+        returns = (
+            (
+                self._within_historical_data[period]["Return"]
+                if within_period
+                else self._historical_data[period]["Return"]
+            )
+            .dropna()
+            .replace(0, 1e-100)
+        )
+
+        egarch_sigma_2 = garch_model.get_egarch(
+            returns=returns,
+            weights=None,
+            time_steps=time_steps,
+            optimization_t=optimization_t,
+        )
+
+        egarch_sigma_2 = egarch_sigma_2.loc[self._start_date : self._end_date]
+
+        return finalize_dataset(
+            dataset=egarch_sigma_2,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            apply_slice=False,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_egarch_forecast(
+        self,
+        period: str | None = None,
+        time_steps: int = 10,
+        within_period: bool = False,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+    ):
+        """
+        Calculates sigma_2 forecasts based on the EGARCH model.
+
+        For more information about the method, see the following paper:
+
+        - Nelson, D.B. (1991). "Conditional Heteroskedasticity in Asset Returns: A New
+        Approach." Econometrica, 59(2), 347-370.
+
+        Also known as: volatility forecast, predicted volatility.
+
+        Args:
+            period (str, optional): The data frequency for returns (daily, weekly, quarterly, or yearly).
+            Defaults to "quarterly".
+            time_steps (int, optional): Time steps to calculate EGARCH and to forecast sigma_2 values for.
+            within_period (bool, optional): Whether to calculate EGARCH within each specified period or
+            all at once. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to
+            None.
+            growth (bool, optional): Whether to calculate the growth of the EGARCH values over time.
+            Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+
+        Returns:
+            pd.DataFrame | pd.Series: sigma_2 forecast values
+
+        Notes:
+        - The method retrieves historical return data based on the specified `period` and calculates the
+        sigma_2 forecast for each asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the forecasted sigma_2 values using
+        the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AMZN", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.risk.get_egarch_forecast(period="quarterly")
+        ```
+
+        Which returns:
+
+        |        |   AMZN |   TSLA |   Benchmark |
+        |:-------|-------:|-------:|------------:|
+        | 2026Q4 | 0.0261 | 0.1672 |      0.0053 |
+        | 2027Q1 | 0.0255 | 0.1465 |      0.0066 |
+        | 2027Q2 | 0.0255 | 0.1448 |      0.0067 |
+        | 2027Q3 | 0.0255 | 0.1447 |      0.0067 |
+        | 2027Q4 | 0.0255 | 0.1447 |      0.0067 |
+        | 2028Q1 | 0.0255 | 0.1447 |      0.0067 |
+        | 2028Q2 | 0.0255 | 0.1447 |      0.0067 |
+        | 2028Q3 | 0.0255 | 0.1447 |      0.0067 |
+        | 2028Q4 | 0.0255 | 0.1447 |      0.0067 |
+        | 2029Q1 | 0.0255 | 0.1447 |      0.0067 |
+        """
+        period = period if period else "quarterly" if self._quarterly else "yearly"
+
+        if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
+            raise ValueError(
+                "Period must be daily, weekly, monthly, quarterly, or yearly."
+            )
+        if period == "daily" and self._historical_data["intraday"].empty:
+            raise ValueError("Intraday data is required for daily calculations.")
+
+        returns = (
+            (
+                self._within_historical_data[period]["Return"]
+                if within_period
+                else self._historical_data[period]["Return"]
+            )
+            .dropna()
+            .replace(0, 1e-100)
+        )
+
+        sigma_2_forecast = garch_model.get_egarch_forecast(
+            returns, None, time_steps
+        ).dropna()
+
+        period_symbol = (
+            "W"
+            if period == "weekly"
+            else (
+                "ME" if period == "monthly" else "QE" if period == "quarterly" else "YE"
+            )
+        )
+        period_index = pd.PeriodIndex(
+            pd.date_range(
+                start=returns.index[-1].to_timestamp(),
+                periods=time_steps + 1,
+                freq=period_symbol,
+            )
+        )
+
+        sigma_2_forecast.index = period_index[1:]
+
+        return finalize_dataset(
+            dataset=sigma_2_forecast,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            apply_slice=False,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_egarch_parameters(
+        self,
+        period: str | None = None,
+        optimization_t: int | None = None,
+        rounding: int | None = None,
+    ) -> pd.DataFrame:
+        """
+        Fits an EGARCH(1, 1) model to the historical returns and returns the estimated
+        Omega, Alpha, Gamma and Beta parameters for each asset.
+
+        A negative Gamma indicates the presence of a leverage effect (negative shocks
+        raise volatility by more than positive ones of the same size).
+
+        For more information about the method, see the following paper:
+
+        - Nelson, D.B. (1991). "Conditional Heteroskedasticity in Asset Returns: A New
+        Approach." Econometrica, 59(2), 347-370.
+
+        Also known as: EGARCH weights, EGARCH coefficients, leverage parameters.
+
+        Args:
+            period (str, optional): The data frequency for returns (daily, weekly, quarterly, or yearly).
+            Defaults to "quarterly".
+            optimization_t (int, optional): Time steps of the returns series to use for the optimization.
+            Defaults to the full length of the returns series.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to
+            None.
+
+        Returns:
+            pd.DataFrame: Omega, Alpha, Gamma and Beta values per asset.
+
+        Notes:
+        - The method retrieves historical return data based on the specified `period` and fits an
+        EGARCH(1, 1) model for each asset in the Toolkit instance.
+        - EGARCH's log-variance parameterization is less constrained than plain GARCH, which makes it
+        more prone to unstable, boundary-hugging fits on very short return histories (e.g. yearly data).
+        Prefer `period="quarterly"` or a higher frequency where possible.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AMZN", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.risk.get_egarch_parameters(period="quarterly")
+        ```
+
+        Which returns:
+
+        |       |    AMZN |    TSLA |   Benchmark |
+        |:------|--------:|--------:|------------:|
+        | Omega | -3.5971 | -1.7701 |     -4.6755 |
+        | Alpha | -0.0115 | -0.0296 |      0.485  |
+        | Gamma |  0.0286 |  0.3887 |     -0.4054 |
+        | Beta  |  0.0196 |  0.0844 |      0.0651 |
+        """
+        period = period if period else "quarterly" if self._quarterly else "yearly"
+
+        if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
+            raise ValueError(
+                "Period must be daily, weekly, monthly, quarterly, or yearly."
+            )
+        if period == "daily" and self._historical_data["intraday"].empty:
+            raise ValueError("Intraday data is required for daily calculations.")
+
+        returns = self._historical_data[period]["Return"].dropna().replace(0, 1e-100)
+
+        parameters = pd.DataFrame(
+            {
+                ticker: garch_model.get_egarch_weights(
+                    returns[ticker].to_numpy(), t=optimization_t
+                )
+                for ticker in returns.columns
+            },
+            index=["Omega", "Alpha", "Gamma", "Beta"],
+        )
+
+        return parameters.round(rounding if rounding is not None else self._rounding)
+
+    @handle_portfolio
+    @handle_errors
+    def get_arch_lm_test(
+        self,
+        period: str | None = None,
+        within_period: bool = True,
+        lags: int = 5,
+        rounding: int | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate Engle's Lagrange Multiplier (LM) test for ARCH effects.
+
+        The test regresses squared, mean-demeaned returns on `lags` of themselves and
+        tests whether the resulting R-squared is significantly different from zero.
+        A significant result (low p-value) indicates that the return series exhibits
+        volatility clustering, and a GARCH-family model is an appropriate choice for
+        it. A high p-value suggests fitting GARCH would not be meaningful, since there
+        is no detectable time-varying volatility to model.
+
+        For more information about the method, see the following paper:
+
+        - Engle, R.F. (1982). "Autoregressive Conditional Heteroscedasticity with
+        Estimates of the Variance of United Kingdom Inflation." Econometrica, 50(4),
+        987-1008.
+
+        Also known as: ARCH-LM test, Engle's ARCH test.
+
+        Args:
+            period (str, optional): The data frequency for returns (daily, weekly, quarterly, or yearly).
+            Defaults to "quarterly".
+            within_period (bool, optional): Whether to calculate the test within the specified period or for
+            the entire period. Thus whether to look at the test within a specific year (if period = 'yearly')
+            or look at the entirety of all years. Defaults to True.
+            lags (int, optional): The number of lags to test for ARCH effects. Defaults to 5.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+
+        Returns:
+            pd.DataFrame: The ARCH-LM statistic and its p-value per asset.
+
+        Notes:
+        - The method retrieves historical return data based on the specified `period` and runs the ARCH-LM
+        test for each asset in the Toolkit instance.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AMZN", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.risk.get_arch_lm_test(period="quarterly")
+        ```
+
+        Which returns:
+
+        |                   |     AMZN |   TSLA |   Benchmark |
+        |:------------------|---------:|-------:|------------:|
+        | ARCH-LM Statistic |   4.0116 | 3.7793 |      2.8938 |
+        | P-Value           |   0.548  | 0.5817 |      0.7161 |
+        """
+        period = period if period else "quarterly" if self._quarterly else "yearly"
+
+        if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
+            raise ValueError(
+                "Period must be daily, weekly, monthly, quarterly, or yearly."
+            )
+        if period == "daily" and self._historical_data["intraday"].empty:
+            raise ValueError("Intraday data is required for daily calculations.")
+
+        returns = (
+            self._within_historical_data[period]["Return"]
+            if within_period
+            else self._historical_data[period]["Return"]
+        ).dropna()
+
+        result = diagnostics_model.get_arch_lm_test(returns, lags=lags)
+
+        return result.round(rounding if rounding is not None else self._rounding)
+
+    @handle_portfolio
+    @handle_errors
+    def get_jarque_bera_test(
+        self,
+        period: str | None = None,
+        within_period: bool = True,
+        rounding: int | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the Jarque-Bera test for normality.
+
+        The test combines sample skewness and excess kurtosis into a single statistic
+        that is chi-squared distributed with 2 degrees of freedom under the null
+        hypothesis that returns are normally distributed. A significant result (low
+        p-value) indicates that returns are not normally distributed, which is
+        relevant when choosing between e.g. gaussian and Student-T based Value at Risk
+        models.
+
+        For more information about the method, see the following paper:
+
+        - Jarque, C.M. and Bera, A.K. (1987). "A Test for Normality of Observations
+        and Regression Residuals." International Statistical Review, 55(2), 163-172.
+
+        Also known as: JB test, normality test.
+
+        Args:
+            period (str, optional): The data frequency for returns (daily, weekly, quarterly, or yearly).
+            Defaults to "quarterly".
+            within_period (bool, optional): Whether to calculate the test within the specified period or for
+            the entire period. Thus whether to look at the test within a specific year (if period = 'yearly')
+            or look at the entirety of all years. Defaults to True.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+
+        Returns:
+            pd.DataFrame: The Jarque-Bera statistic and its p-value per asset.
+
+        Notes:
+        - The method retrieves historical return data based on the specified `period` and runs the
+        Jarque-Bera test for each asset in the Toolkit instance.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AMZN", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.risk.get_jarque_bera_test(period="quarterly")
+        ```
+
+        Which returns:
+
+        |                      |    AMZN |    TSLA |   Benchmark |
+        |:---------------------|--------:|--------:|------------:|
+        | Jarque-Bera Statistic |  3.0505 |  1.9354 |      2.4941 |
+        | P-Value               |  0.2175 |  0.38   |      0.2874 |
+        """
+        period = period if period else "quarterly" if self._quarterly else "yearly"
+
+        if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
+            raise ValueError(
+                "Period must be daily, weekly, monthly, quarterly, or yearly."
+            )
+        if period == "daily" and self._historical_data["intraday"].empty:
+            raise ValueError("Intraday data is required for daily calculations.")
+
+        returns = (
+            self._within_historical_data[period]["Return"]
+            if within_period
+            else self._historical_data[period]["Return"]
+        ).dropna()
+
+        result = diagnostics_model.get_jarque_bera_test(returns)
+
+        return result.round(rounding if rounding is not None else self._rounding)
+
+    @handle_portfolio
+    @handle_errors
+    def get_var_backtest(
+        self,
+        period: str | None = None,
+        distribution: str = "historic",
+        alpha: float = 0.05,
+        window_size: int = 252,
+        test: str = "both",
+        rounding: int | None = None,
+    ) -> pd.DataFrame:
+        """
+        Backtest a Value at Risk model against realized returns.
+
+        A Value at Risk estimate is only useful if it is actually well-calibrated
+        against reality. This method builds a rolling, out-of-sample VaR path (each
+        VaR estimate uses only the `window_size` returns preceding it, never the
+        return it is compared against) and tests it with Kupiec's Proportion of
+        Failures test (is the overall breach rate consistent with `alpha`?) and/or
+        Christoffersen's independence test (are breaches spread out over time, or do
+        they cluster together?).
+
+        For more information about the methods, see the following papers:
+
+        - Kupiec, P.H. (1995). "Techniques for Verifying the Accuracy of Risk
+        Measurement Models." The Journal of Derivatives, 3(2), 73-84.
+        - Christoffersen, P.F. (1998). "Evaluating Interval Forecasts." International
+        Economic Review, 39(4), 841-862.
+
+        Also known as: VaR validation, VaR backtest, POF test.
+
+        Args:
+            period (str, optional): The data frequency for returns (daily, weekly, quarterly, or yearly).
+            Defaults to "daily", since `window_size` is expressed in return observations of this frequency
+            (252 only means "about one year" when `period` is daily).
+            distribution (str, optional): The distribution to use for the rolling VaR estimates, one of
+            "historic", "gaussian", "studentt" or "evt". Defaults to "historic".
+            alpha (float, optional): The confidence level for the VaR estimates (e.g., 0.05 for 95%
+            confidence). Defaults to 0.05.
+            window_size (int, optional): The rolling window size (in number of return observations) used to
+            estimate each VaR value. Defaults to 252 (approximately one trading year of daily returns).
+            test (str, optional): Which test(s) to run, one of "kupiec", "christoffersen" or "both". Defaults
+            to "both".
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+
+        Returns:
+            pd.DataFrame: The requested test statistic(s) and their p-value(s) per asset.
+
+        Notes:
+        - The rolling VaR path is calculated over the full return history, not the `within_period` slices
+        used elsewhere in this module, since a meaningful rolling window generally needs more history than
+        a single sub-period provides.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AMZN", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.risk.get_var_backtest(window_size=252)
+        ```
+
+        Which returns:
+
+        |                         |    AMZN |    TSLA |   Benchmark |
+        |:------------------------|--------:|--------:|------------:|
+        | Kupiec Statistic        |  0.0817 |  1.6459 |      0.0018 |
+        | P-Value                 |  0.7749 |  0.1995 |      0.9662 |
+        | Christoffersen Statistic |  0.0631 |  0.4302 |      1.0847 |
+        | P-Value                 |  0.8017 |  0.512  |      0.2977 |
+        """
+        period = period if period else "daily"
+
+        if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
+            raise ValueError(
+                "Period must be daily, weekly, monthly, quarterly, or yearly."
+            )
+        if distribution not in ["historic", "gaussian", "studentt", "evt"]:
+            raise ValueError(
+                "Distribution must be historic, gaussian, studentt, or evt."
+            )
+        if test not in ["kupiec", "christoffersen", "both"]:
+            raise ValueError("Test must be kupiec, christoffersen, or both.")
+
+        returns = self._historical_data[period]["Return"].dropna()
+
+        if distribution == "historic":
+            rolling_var = var_model.get_rolling_var_historic(
+                returns, alpha, window_size
+            )
+        elif distribution == "gaussian":
+            rolling_var = returns.rolling(window=window_size).apply(
+                lambda window: var_model.get_var_gaussian(window, alpha), raw=False
+            )
+        elif distribution == "studentt":
+            rolling_var = returns.rolling(window=window_size).apply(
+                lambda window: var_model.get_var_studentt(window, alpha), raw=False
+            )
+        else:
+            rolling_var = returns.rolling(window=window_size).apply(
+                lambda window: var_model.get_var_evt(window, alpha), raw=False
+            )
+
+        results = []
+        if test in ("kupiec", "both"):
+            results.append(
+                backtesting_model.get_kupiec_test(returns, rolling_var, alpha)
+            )
+        if test in ("christoffersen", "both"):
+            results.append(
+                backtesting_model.get_christoffersen_test(returns, rolling_var)
+            )
+
+        result = pd.concat(results, axis=0) if len(results) > 1 else results[0]
+
+        return result.round(rounding if rounding is not None else self._rounding)
 
     @handle_portfolio
     @handle_errors

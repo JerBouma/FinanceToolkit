@@ -233,6 +233,59 @@ def obtain_fama_and_french_dataset(fama_and_french_url: str | None = None):
     return fama_and_french_dataset
 
 
+def obtain_carhart_momentum_dataset(momentum_url: str | None = None) -> pd.DataFrame:
+    """
+    This functionality returns the Carhart Momentum (MOM) factor dataset, used to extend
+    the Fama and French 3 Factor Model into the Carhart 4 Factor Model:
+
+        - Momentum (MOM): Stocks with high prior returns (winners) tend to keep outperforming
+        stocks with low prior returns (losers) over the medium term.
+
+    The dataset is available on the website of Dartmouth College and is updated on a monthly
+    basis. The dataset is packaged in a ZIP file, so it needs to be extracted first.
+
+    Args:
+        momentum_url (str): the URL of the ZIP file that contains the dataset. If no URL is
+        provided, the default Ken French Momentum Factor URL is used.
+
+    Returns:
+        pd.DataFrame: the Carhart Momentum Factor dataset, with a single "Mom" column.
+    """
+    momentum_url = (
+        momentum_url
+        if momentum_url
+        else "https://mba.tuck.dartmouth.edu/pages/faculty/ken.french/ftp/F-F_Momentum_Factor_daily_CSV.zip"
+    )
+
+    response = get_request(momentum_url, timeout=10)
+    zip_data = response.content
+
+    with zipfile.ZipFile(io.BytesIO(zip_data)) as zip_file:
+        zip_file_contents = zip_file.namelist()
+
+        csv_file_name = zip_file_contents[0]
+
+        with zip_file.open(csv_file_name) as csv_file:
+            # Skip the descriptive header rows; the "Mom" data starts right after
+            momentum_dataset = pd.read_csv(csv_file, skiprows=13, index_col=0)
+
+        # The raw CSV has a trailing comma on every data row, which pandas turns into
+        # an all-NaN "Unnamed" column; drop it before dropping NaN rows, otherwise
+        # every row (including valid ones) would be dropped as "having a NaN".
+        momentum_dataset = momentum_dataset.loc[
+            :, ~momentum_dataset.columns.str.contains("Unnamed")
+        ]
+        momentum_dataset = momentum_dataset.dropna(axis="index")
+
+        momentum_dataset.index = pd.to_datetime(
+            momentum_dataset.index, format="%Y%m%d"
+        ).to_period(freq="D")
+        momentum_dataset.index.name = "Date"
+        momentum_dataset.columns = momentum_dataset.columns.str.strip()
+
+    return momentum_dataset
+
+
 def get_factor_asset_correlations(
     factors: pd.DataFrame,
     excess_return: pd.Series,

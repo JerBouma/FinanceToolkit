@@ -15,7 +15,6 @@ classifiers = [
     "Topic :: Office/Business :: Financial :: Investment",
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
@@ -41,9 +40,9 @@ keywords = [
     "Commodities",
     "Options"
 ]
-requires-python = ">=3.10, <3.16"
+requires-python = ">=3.11, <3.16"
 dependencies = [
-    "pandas>=2.2",
+    "pandas>=3.0",
     "scikit-learn>=1.6",
     "requests>=2.32",
     "yfinance",
@@ -131,6 +130,7 @@ lint.ignore = [
     "S106",  # Bandit: insecure usage pattern (e.g., weak crypto or risky API)
     "S107",  # Bandit: use of eval/exec or other code-injection risk
     "PLR0913",  # Pylint-refactor: too many arguments in function/method
+    "PLR0917",  # Pylint-refactor: too many positional arguments in function/method
     "PLR0912",  # Pylint-refactor: too many branches in function/method
     "PLR0911",  # Pylint-refactor: too many return statements in function/method
     "PLR0915",  # Pylint-refactor: function/method too many statements (too complex)

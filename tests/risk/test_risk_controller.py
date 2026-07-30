@@ -83,6 +83,66 @@ def test_get_garch_forecast(recorder, risk_module):
     recorder.capture(risk_module.get_garch_forecast(growth=True, lag=[1, 2, 3]))
 
 
+def test_get_garch_parameters(recorder, risk_module):
+    recorder.capture(risk_module.get_garch_parameters())
+    recorder.capture(risk_module.get_garch_parameters(period="monthly"))
+
+
+def test_get_gjr_garch(recorder, risk_module):
+    recorder.capture(risk_module.get_gjr_garch())
+    recorder.capture(risk_module.get_gjr_garch(period="monthly"))
+    recorder.capture(risk_module.get_gjr_garch(growth=True))
+
+
+def test_get_gjr_garch_forecast(recorder, risk_module):
+    recorder.capture(risk_module.get_gjr_garch_forecast())
+    recorder.capture(risk_module.get_gjr_garch_forecast(period="monthly"))
+
+
+def test_get_gjr_garch_parameters(recorder, risk_module):
+    recorder.capture(risk_module.get_gjr_garch_parameters())
+    recorder.capture(risk_module.get_gjr_garch_parameters(period="monthly"))
+
+
+def test_get_egarch(recorder, risk_module):
+    recorder.capture(risk_module.get_egarch())
+    recorder.capture(risk_module.get_egarch(period="monthly"))
+    recorder.capture(risk_module.get_egarch(growth=True))
+
+
+def test_get_egarch_forecast(recorder, risk_module):
+    recorder.capture(risk_module.get_egarch_forecast())
+    recorder.capture(risk_module.get_egarch_forecast(period="monthly"))
+
+
+def test_get_egarch_parameters(recorder, risk_module):
+    recorder.capture(risk_module.get_egarch_parameters())
+    recorder.capture(risk_module.get_egarch_parameters(period="monthly"))
+
+
+def test_get_arch_lm_test(recorder, risk_module):
+    recorder.capture(risk_module.get_arch_lm_test())
+    recorder.capture(risk_module.get_arch_lm_test(within_period=False))
+    recorder.capture(risk_module.get_arch_lm_test(period="monthly", lags=3))
+
+
+def test_get_jarque_bera_test(recorder, risk_module):
+    recorder.capture(risk_module.get_jarque_bera_test())
+    recorder.capture(risk_module.get_jarque_bera_test(within_period=False))
+    recorder.capture(risk_module.get_jarque_bera_test(period="monthly"))
+
+
+def test_get_var_backtest(recorder, risk_module):
+    recorder.capture(risk_module.get_var_backtest(window_size=100))
+    recorder.capture(
+        risk_module.get_var_backtest(window_size=100, distribution="gaussian")
+    )
+    recorder.capture(risk_module.get_var_backtest(window_size=100, test="kupiec"))
+    recorder.capture(
+        risk_module.get_var_backtest(window_size=100, test="christoffersen")
+    )
+
+
 def test_get_maximum_drawdown(recorder, risk_module):
     recorder.capture(risk_module.get_maximum_drawdown())
     recorder.capture(risk_module.get_maximum_drawdown(within_period=False))

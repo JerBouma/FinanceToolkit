@@ -361,7 +361,7 @@ def convert_daily_to_other_period(
                 pd.Period(end).asfreq(period_str), period_historical_data.index[-1]
             )
 
-        adjusted_return = period_historical_data.loc[start:end, "Return"].copy()
+        adjusted_return = period_historical_data.loc[start:end, "Return"]
         adjusted_return.iloc[0] = 0
 
         period_historical_data["Cumulative Return"] = (

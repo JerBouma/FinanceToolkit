@@ -81,6 +81,10 @@ def convert_currencies(
     """
     no_data = []
 
+    # Currency conversion always yields floats; cast upfront so `.loc` assignment
+    # below doesn't hit pandas' post-3.0 ban on silently upcasting int columns.
+    financial_statement_data = financial_statement_data.astype("float64")
+
     periods = financial_statement_data.columns
     tickers = financial_statement_data.index.get_level_values(0).unique()
     currencies: dict[str, list[str]] = {}

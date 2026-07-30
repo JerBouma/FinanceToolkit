@@ -152,7 +152,7 @@ def get_cvar_studentt(
         col_v, _, col_scale = stats.t.fit(returns[col])
         v = np.append(v, col_v)
         scale = np.append(scale, col_scale)
-    za = stats.t.ppf(1 - alpha, v, 1)
+    za = stats.t.ppf(1 - alpha, v)
 
     return -scale * (v + za**2) / (v - 1) * stats.t.pdf(za, v) / alpha + returns.mean()
 

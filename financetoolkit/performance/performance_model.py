@@ -6,10 +6,12 @@ import zipfile
 
 import numpy as np
 import pandas as pd
+from scipy import stats
 from scipy.stats import linregress
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import mean_squared_error
 
+from financetoolkit.risk import cvar_model
 from financetoolkit.utilities.requests_model import get_request
 from financetoolkit.utilities.statistics_model import PERIOD_TRANSLATION
 
@@ -17,6 +19,10 @@ from financetoolkit.utilities.statistics_model import PERIOD_TRANSLATION
 # when calculating a "within period" in which the first index represents the period
 # (e.g. 2020Q1) and the second index the days within that period (January to March)
 MULTI_PERIOD_INDEX_LEVELS = 2
+
+# The Euler-Mascheroni constant, used in the Expected Maximum Sharpe Ratio
+# formula underlying the Deflated Sharpe Ratio.
+EULER_MASCHERONI_CONSTANT = 0.5772156649015329
 
 # pylint: disable=isinstance-second-argument-not-valid-type
 
@@ -610,6 +616,183 @@ def get_rolling_sharpe_ratio(
     )
 
     return sharpe_ratio
+
+
+def get_probabilistic_sharpe_ratio(
+    sharpe_ratio: pd.Series | pd.DataFrame | float,
+    benchmark_sharpe_ratio: pd.Series | pd.DataFrame | float,
+    skewness: pd.Series | pd.DataFrame | float,
+    kurtosis: pd.Series | pd.DataFrame | float,
+    n_observations: pd.Series | pd.DataFrame | float | int,
+) -> pd.Series | pd.DataFrame | float:
+    """
+    Calculate the Probabilistic Sharpe Ratio (PSR).
+
+    The naive Sharpe ratio significance test (e.g. a t-test on SR̂) implicitly assumes
+    that returns are normally (i.i.d. Gaussian) distributed. Real financial returns are
+    typically skewed and fat-tailed, which means the standard error of the Sharpe ratio
+    is understated and the naive test overstates confidence. The PSR corrects for this by
+    explicitly folding the skewness and kurtosis of the return distribution into the
+    standard error of the Sharpe ratio estimator.
+
+    The formula is as follows:
+
+        - PSR(SR*) = Φ( (SR̂ − SR*) · sqrt(n − 1) / sqrt(1 − γ₃·SR̂ + ((γ₄ − 1) / 4)·SR̂²) )
+
+    Where SR̂ is the observed (realized) Sharpe ratio, SR* is the benchmark/hypothesized
+    Sharpe ratio being tested against (often 0, i.e. "is there any skill at all"), γ₃ is
+    the skewness of the returns, γ₄ is the kurtosis of the returns, n is the number of
+    return observations used to estimate SR̂, and Φ is the standard normal CDF.
+
+    PSR(SR*) is the probability that the true, population Sharpe ratio exceeds SR*, given
+    the observed sample. It is bounded between 0 and 1: a PSR close to 1 means it is very
+    likely the strategy has genuine skill above SR*, a PSR near 0.5 means the evidence is
+    inconclusive, and a low PSR means the observed Sharpe ratio could plausibly be noise.
+
+    Note that this formula requires **non-excess (raw) kurtosis**, i.e. a Normal
+    distribution has a kurtosis of 3, not 0. This codebase's `risk_model.get_kurtosis`
+    defaults to `fisher=True` (excess kurtosis, Normal = 0); either call it with
+    `fisher=False` before passing the result in here, or add 3 to a Fisher/excess
+    kurtosis value. Getting this convention backwards silently shifts every PSR value
+    (via the ((γ₄ − 1) / 4) term), which is exactly the kind of sign/convention bug this
+    codebase has been bitten by before, so double check which convention is being fed in.
+
+    For more information about the method, see the following paper:
+
+    - Bailey, D.H., & López de Prado, M. (2012). "The Sharpe Ratio Efficient Frontier."
+    Journal of Risk, 15(2), 3-44.
+
+    Args:
+        sharpe_ratio (pd.Series | pd.DataFrame | float): The observed (realized) Sharpe
+        ratio (SR̂), computed over the same return frequency as `n_observations`.
+        benchmark_sharpe_ratio (pd.Series | pd.DataFrame | float): The hypothesized or
+        benchmark Sharpe ratio (SR*) to test the observed Sharpe ratio against. Often 0.
+        skewness (pd.Series | pd.DataFrame | float): The skewness (γ₃) of the same
+        returns used to compute `sharpe_ratio`.
+        kurtosis (pd.Series | pd.DataFrame | float): The non-excess (raw) kurtosis (γ₄)
+        of the same returns used to compute `sharpe_ratio`. See the Notes above — a
+        Normal distribution has a kurtosis of 3 under this convention, not 0.
+        n_observations (pd.Series | pd.DataFrame | float | int): The number of return
+        observations used to compute `sharpe_ratio`.
+
+    Returns:
+        pd.Series | pd.DataFrame | float: The probability, between 0 and 1, that the true
+        Sharpe ratio exceeds `benchmark_sharpe_ratio`.
+    """
+    numerator = (sharpe_ratio - benchmark_sharpe_ratio) * np.sqrt(n_observations - 1)
+    denominator = np.sqrt(
+        1 - skewness * sharpe_ratio + ((kurtosis - 1) / 4) * sharpe_ratio**2
+    )
+
+    z_score = numerator / denominator
+    probabilistic_sharpe_ratio = stats.norm.cdf(z_score)
+
+    if isinstance(z_score, pd.DataFrame):
+        return pd.DataFrame(
+            probabilistic_sharpe_ratio, index=z_score.index, columns=z_score.columns
+        )
+    if isinstance(z_score, pd.Series):
+        return pd.Series(probabilistic_sharpe_ratio, index=z_score.index)
+
+    return probabilistic_sharpe_ratio
+
+
+def get_deflated_sharpe_ratio(
+    sharpe_ratio: pd.Series | pd.DataFrame | float,
+    sharpe_ratio_variance: pd.Series | pd.DataFrame | float,
+    n_trials: pd.Series | pd.DataFrame | float | int,
+    n_observations: pd.Series | pd.DataFrame | float | int,
+    skewness: pd.Series | pd.DataFrame | float,
+    kurtosis: pd.Series | pd.DataFrame | float,
+) -> pd.Series | pd.DataFrame | float:
+    """
+    Calculate the Deflated Sharpe Ratio (DSR).
+
+    The Probabilistic Sharpe Ratio corrects the naive Sharpe ratio test for skewed,
+    fat-tailed returns, but it still assumes the reported Sharpe ratio is the *only*
+    one that was ever computed. In practice a reported Sharpe ratio is often the best
+    of many strategy variations, lookback windows, or parameter combinations tried
+    during a backtest (the "backtest overfitting" / multiple-testing / selection-bias
+    problem) — the more trials attempted, the more likely it is that at least one of
+    them shows an impressive Sharpe ratio purely by chance, even with zero true skill.
+
+    The DSR corrects for this by first computing the Sharpe ratio one would *expect* to
+    observe, purely by chance, as the maximum of `n_trials` independent trials under the
+    null hypothesis of no skill, and then uses that expected maximum as the benchmark
+    (SR*) plugged into the Probabilistic Sharpe Ratio formula (see
+    `get_probabilistic_sharpe_ratio`), instead of a naive benchmark such as 0.
+
+    The formula for the expected maximum Sharpe ratio benchmark is as follows:
+
+        - SR* = sqrt(Var[SR_trials]) · [ (1 − γ)·Φ⁻¹(1 − 1/N) + γ·Φ⁻¹(1 − 1/(N·e)) ]
+
+    Where `N` is `n_trials`, `Var[SR_trials]` is the variance of the Sharpe ratios
+    observed across those N trials (`sharpe_ratio_variance`), γ ≈ 0.5772 is the
+    Euler-Mascheroni constant, and Φ⁻¹ is the inverse standard normal CDF. This
+    asymptotic approximation is only meaningful for `N >= 2` trials (with N = 1 there is
+    no order-statistic/selection effect at all, so the benchmark falls back to 0, which
+    is also the true limiting value of the expected maximum of a single draw).
+
+    DSR = PSR(SR*), i.e. the Deflated Sharpe Ratio is the Probabilistic Sharpe Ratio
+    computed with this trial-adjusted SR* as the benchmark rather than a fixed value
+    such as 0. Because SR* only grows (or stays flat) as `n_trials` increases, the DSR is
+    always less than or equal to the PSR computed with the same underlying Sharpe ratio,
+    skewness, kurtosis and number of observations against a benchmark of 0.
+
+    For more information about the method, see the following paper:
+
+    - Bailey, D.H., & López de Prado, M. (2014). "The Deflated Sharpe Ratio: Correcting
+    for Selection Bias, Backtest Overfitting, and Non-Normality." Journal of Portfolio
+    Management, 40(5), 94-107.
+
+    Args:
+        sharpe_ratio (pd.Series | pd.DataFrame | float): The observed (realized) Sharpe
+        ratio (SR̂) being tested, i.e. the one actually reported after the trials.
+        sharpe_ratio_variance (pd.Series | pd.DataFrame | float): The variance of the
+        Sharpe ratios observed across the `n_trials` trials. When the literal N distinct
+        strategy trials are not available, a reasonable proxy is the variance of a
+        rolling Sharpe ratio series computed over the same returns (see
+        `get_rolling_sharpe_ratio`), used as an approximation of how dispersed the
+        Sharpe ratio could plausibly have been under different choices.
+        n_trials (pd.Series | pd.DataFrame | float | int): The number of independent (or
+        effectively independent) strategy variations, parameter combinations, or
+        lookback windows tried before arriving at `sharpe_ratio`. Must be >= 1.
+        n_observations (pd.Series | pd.DataFrame | float | int): The number of return
+        observations used to compute `sharpe_ratio`.
+        skewness (pd.Series | pd.DataFrame | float): The skewness (γ₃) of the same
+        returns used to compute `sharpe_ratio`.
+        kurtosis (pd.Series | pd.DataFrame | float): The non-excess (raw) kurtosis (γ₄)
+        of the same returns used to compute `sharpe_ratio`. See the Notes in
+        `get_probabilistic_sharpe_ratio` — a Normal distribution has a kurtosis of 3
+        under this convention, not 0.
+
+    Returns:
+        pd.Series | pd.DataFrame | float: The probability, between 0 and 1, that the
+        true Sharpe ratio exceeds the trial-adjusted expected maximum Sharpe ratio one
+        would observe purely by chance given `n_trials` attempts.
+    """
+    n_trials_array = np.asarray(n_trials, dtype=float)
+
+    with np.errstate(divide="ignore", invalid="ignore"):
+        expected_max_z_score = (1 - EULER_MASCHERONI_CONSTANT) * stats.norm.ppf(
+            1 - 1 / n_trials_array
+        ) + EULER_MASCHERONI_CONSTANT * stats.norm.ppf(1 - 1 / (n_trials_array * np.e))
+
+    # The asymptotic expected-maximum-of-N approximation above is undefined (it
+    # evaluates to -inf) for N = 1, since there is no "maximum" to speak of with a
+    # single trial. The true expected maximum of a single draw from a Normal
+    # distribution is 0, so no deflation is applied in that case.
+    expected_max_z_score = np.where(n_trials_array <= 1, 0.0, expected_max_z_score)
+
+    benchmark_sharpe_ratio = np.sqrt(sharpe_ratio_variance) * expected_max_z_score
+
+    return get_probabilistic_sharpe_ratio(
+        sharpe_ratio=sharpe_ratio,
+        benchmark_sharpe_ratio=benchmark_sharpe_ratio,
+        skewness=skewness,
+        kurtosis=kurtosis,
+        n_observations=n_observations,
+    )
 
 
 def get_sortino_ratio(excess_returns: pd.Series | pd.DataFrame) -> pd.Series:
@@ -1405,3 +1588,580 @@ def get_covariance_matrix(returns: pd.DataFrame) -> pd.DataFrame:
         raise TypeError("Expects pd.DataFrame, no other value.")
 
     return returns.cov()
+
+
+def get_capm_residuals(
+    excess_returns: pd.DataFrame,
+    beta: pd.DataFrame,
+    benchmark_excess_returns: pd.Series,
+) -> pd.DataFrame:
+    """
+    Calculate the pointwise (e.g. daily) CAPM regression residuals within each period of
+    a "within period" (period, date) Multi Index dataset, given a Beta estimated once per
+    period.
+
+    The formula is as follows:
+
+        - CAPM Residual = Excess Return − Beta * Benchmark Excess Return
+
+    This is exactly the same formula as `get_jensens_alpha` evaluated on already-excess
+    returns (i.e. with the risk-free rate set to 0). `get_jensens_alpha` itself cannot be
+    called directly on a full "within period" DataFrame together with a period-indexed
+    Beta, because it shapes its output after `beta.index` (one row per period) rather than
+    after the (period, date) index of the pointwise returns. This function instead calls
+    `get_jensens_alpha` once per (period, ticker) pair — where both the returns and the
+    Beta reduce to plain, aligned Series/scalars — so that the period-level Beta is
+    correctly broadcast across every day within that period, and reuses the exact same
+    CAPM regression formula rather than reimplementing it.
+
+    Args:
+        excess_returns (pd.DataFrame): A "within period" (period, date) Multi Index
+        DataFrame of asset excess returns, one column per ticker.
+        beta (pd.DataFrame): The asset's Beta per period, indexed by period with one
+        column per ticker (see `get_beta`).
+        benchmark_excess_returns (pd.Series): A "within period" (period, date) Multi Index
+        Series of benchmark excess returns.
+
+    Returns:
+        pd.DataFrame: The pointwise CAPM regression residuals, indexed the same way as
+        `excess_returns`.
+    """
+    periods = excess_returns.index.get_level_values(0).unique()
+    period_residuals_list = []
+
+    for sub_period in periods:
+        period_excess_returns = excess_returns.loc[sub_period]
+        period_benchmark_excess_return = benchmark_excess_returns.loc[sub_period]
+        period_beta = beta.loc[sub_period]
+
+        period_residuals = pd.DataFrame(
+            index=period_excess_returns.index,
+            columns=period_excess_returns.columns,
+            dtype=np.float64,
+        )
+
+        for column in period_excess_returns.columns:
+            period_residuals[column] = get_jensens_alpha(
+                period_excess_returns[column],
+                0.0,
+                period_beta[column],
+                period_benchmark_excess_return,
+            )
+
+        period_residuals_list.append(period_residuals)
+
+    # Using pd.concat with keys rebuilds the (period, date) Multi Index rather than
+    # writing into a pre-allocated Multi Index DataFrame via partial `.loc` assignment,
+    # since the latter is unreliable under pandas' Copy-on-Write semantics.
+    return pd.concat(
+        period_residuals_list, keys=periods, names=excess_returns.index.names
+    )
+
+
+def get_appraisal_ratio(
+    jensens_alpha: pd.Series | pd.DataFrame,
+    capm_residuals: pd.Series | pd.DataFrame,
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate the Appraisal Ratio, i.e. Jensen's Alpha divided by the idiosyncratic
+    (residual, unsystematic) standard deviation left over from the CAPM regression that
+    produced that Alpha.
+
+    Jensen's Alpha (see `get_jensens_alpha`) measures how much return a manager generated
+    above what CAPM would predict given the asset's Beta. However, a large Alpha achieved
+    with wildly noisy, unpredictable residual returns is far less attractive than the same
+    Alpha achieved consistently. The Appraisal Ratio normalizes Alpha by that noise (the
+    "specific risk" not explained by market exposure), giving a Sharpe-ratio-like measure
+    of stock-picking or timing skill per unit of idiosyncratic risk taken.
+
+    The formula is as follows:
+
+        - Appraisal Ratio = Jensen's Alpha / Residual Standard Deviation
+
+    Where the residual standard deviation is the standard deviation of the pointwise CAPM
+    regression residuals, i.e. of `capm_residuals`, computed as:
+
+        - CAPM Residual = Asset Excess Return − Beta * Benchmark Excess Return
+
+    which is exactly the same formula as `get_jensens_alpha`, evaluated on already-excess
+    returns with the risk-free rate set to 0 (see the Notes below and `get_capm_residuals`
+    for the regression machinery this reuses).
+
+    Also known as: Treynor-Black Appraisal Ratio, information ratio of a CAPM regression.
+
+    For more information about the method, see the following paper:
+
+    - Treynor, J.L., & Black, F. (1973). "How to Use Security Analysis to Improve
+    Portfolio Selection." Journal of Business, 46(1), 66-86.
+
+    Args:
+        jensens_alpha (pd.Series | pd.DataFrame): Jensen's Alpha, see `get_jensens_alpha`.
+        capm_residuals (pd.Series | pd.DataFrame): The pointwise CAPM regression residuals
+        over the estimation window used for `jensens_alpha`, from which the idiosyncratic
+        (residual) standard deviation is derived. When this has a "within period" Multi
+        Index (period, date), the standard deviation is computed separately within each
+        period; otherwise it is computed over the entire series at once.
+
+    Returns:
+        pd.Series | pd.DataFrame: Appraisal Ratio values.
+
+    Notes:
+    - `capm_residuals` is typically obtained via `get_capm_residuals`, which calls
+    `get_jensens_alpha` under the hood on already-excess returns (i.e. with
+    `risk_free_rate` set to 0), so it reuses the exact same CAPM regression machinery as
+    `jensens_alpha` itself rather than reimplementing it.
+    """
+    if capm_residuals.index.nlevels == MULTI_PERIOD_INDEX_LEVELS:
+        residual_standard_deviation = capm_residuals.groupby(level=0).std()
+    else:
+        residual_standard_deviation = capm_residuals.std()
+
+    return jensens_alpha / residual_standard_deviation
+
+
+def get_fama_decomposition(
+    asset_returns: pd.Series | pd.DataFrame,
+    risk_free_rate: pd.Series | float,
+    beta: pd.Series | pd.DataFrame | float,
+    benchmark_returns: pd.Series | float,
+    asset_standard_deviation: pd.Series | pd.DataFrame,
+    benchmark_standard_deviation: pd.Series | float,
+) -> tuple[pd.Series | pd.DataFrame, pd.Series | pd.DataFrame]:
+    """
+    Calculate the Fama (1972) decomposition of total excess return into Selectivity and
+    Diversification.
+
+    Jensen's Alpha alone conflates two very different sources of excess return: genuine
+    stock/timing selection skill, and simply carrying more total risk than the market by
+    holding an under-diversified portfolio (which, in a CAPM world, should be compensated
+    with extra return even absent any skill). Fama's decomposition separates the two by
+    comparing the portfolio's actual return against two different CAPM-implied return
+    benchmarks:
+
+        - one using the portfolio's actual Beta (systematic risk only), and
+        - one using the portfolio's actual *total* risk ratio Sigma_Portfolio / Sigma_Market
+        in place of Beta, i.e. the return CAPM would imply if the portfolio's entire
+        standard deviation (not just its market-correlated slice) were systematic.
+
+    The formulas are as follows:
+
+        - Selectivity = (Asset Return − Risk-Free Rate) − (Sigma_Portfolio / Sigma_Market)
+            * (Benchmark Return − Risk-Free Rate)
+        - Diversification = [Risk-Free Rate + (Sigma_Portfolio / Sigma_Market)
+            * (Benchmark Return − Risk-Free Rate)] − [Risk-Free Rate + Beta * (Benchmark Return − Risk-Free Rate)]
+
+    Selectivity is the return earned above what would be required for a *fully
+    diversified* portfolio carrying the same total risk, i.e. genuine security selection
+    or timing skill. Diversification is the extra return the manager left on the table (if
+    positive, it is a cost) by taking on unsystematic risk that a fully diversified
+    portfolio of the same total risk would not have: Sigma_Portfolio / Sigma_Market >= Beta
+    always holds (since Beta only captures the market-correlated fraction of total risk),
+    so Diversification >= 0 whenever Beta < Sigma_Portfolio / Sigma_Market, i.e. whenever
+    the portfolio is not perfectly diversified relative to the benchmark.
+
+    Selectivity + Diversification + Beta * (Benchmark Return − Risk-Free Rate) reconstructs
+    the portfolio's total excess return exactly; equivalently, Jensen's Alpha (see
+    `get_jensens_alpha`) equals Selectivity + Diversification.
+
+    Also known as: Fama's Net Selectivity, Fama performance decomposition.
+
+    For more information about the method, see the following paper:
+
+    - Fama, E.F. (1972). "Components of Investment Performance." Journal of Finance,
+    27(3), 551-567.
+
+    Args:
+        asset_returns (pd.Series | pd.DataFrame | float): The asset's or portfolio's
+        return over the period.
+        risk_free_rate (pd.Series | float): The risk-free rate over the same period.
+        beta (pd.Series | pd.DataFrame | float): The asset's or portfolio's Beta, see
+        `get_beta`.
+        benchmark_returns (pd.Series | float): The benchmark's return over the same
+        period.
+        asset_standard_deviation (pd.Series | pd.DataFrame): The asset's or portfolio's
+        total return standard deviation (Sigma_Portfolio) over the same window used to
+        estimate `beta`.
+        benchmark_standard_deviation (pd.Series | float): The benchmark's total return
+        standard deviation (Sigma_Market) over the same window used to estimate `beta`.
+
+    Returns:
+        tuple[pd.Series | pd.DataFrame, pd.Series | pd.DataFrame]: The Selectivity and
+        Diversification components, in that order. Their sum equals Jensen's Alpha.
+    """
+    if isinstance(beta, pd.DataFrame) and isinstance(asset_returns, pd.DataFrame):
+        total_risk_ratio = asset_standard_deviation.div(
+            benchmark_standard_deviation, axis=0
+        )
+
+        selectivity = pd.DataFrame(
+            index=beta.index, columns=beta.columns, dtype=np.float64
+        )
+        diversification = pd.DataFrame(
+            index=beta.index, columns=beta.columns, dtype=np.float64
+        )
+
+        for column in beta.columns:
+            capm_actual_beta = risk_free_rate + beta[column] * (
+                benchmark_returns - risk_free_rate
+            )
+            capm_total_risk = risk_free_rate + total_risk_ratio[column] * (
+                benchmark_returns - risk_free_rate
+            )
+
+            selectivity.loc[:, column] = asset_returns[column] - capm_total_risk
+            diversification.loc[:, column] = capm_total_risk - capm_actual_beta
+    elif isinstance(beta, (pd.Series | float)) and isinstance(
+        asset_returns, (pd.Series | float)
+    ):
+        total_risk_ratio = asset_standard_deviation / benchmark_standard_deviation
+
+        capm_actual_beta = risk_free_rate + beta * (benchmark_returns - risk_free_rate)
+        capm_total_risk = risk_free_rate + total_risk_ratio * (
+            benchmark_returns - risk_free_rate
+        )
+
+        selectivity = asset_returns - capm_total_risk
+        diversification = capm_total_risk - capm_actual_beta
+    else:
+        raise TypeError(
+            "Expects pd.DataFrame for both Asset Returns and Beta or pd.Series / Float "
+            "for both Asset Returns and Beta"
+        )
+
+    return selectivity, diversification
+
+
+def get_adjusted_sharpe_ratio(
+    sharpe_ratio: pd.Series | pd.DataFrame | float,
+    skewness: pd.Series | pd.DataFrame | float,
+    kurtosis: pd.Series | pd.DataFrame | float,
+) -> pd.Series | pd.DataFrame | float:
+    """
+    Calculate the Adjusted Sharpe Ratio (ASR).
+
+    The Sharpe ratio only looks at the mean and standard deviation of returns, implicitly
+    assuming a Normal distribution. The Adjusted Sharpe Ratio (Pezier & White, 2006)
+    penalizes (or rewards) the Sharpe ratio for negative skewness and excess kurtosis using
+    a Cornish-Fisher-style expansion, so that two strategies with the same Sharpe ratio but
+    different tail shapes are no longer scored identically: a strategy with negative
+    skewness (large, infrequent losses) or fat tails (high kurtosis) is penalized relative
+    to one with positive skewness or thin tails.
+
+    The formula is as follows:
+
+        - ASR = SR * [1 + (S / 6) * SR − ((K − 3) / 24) * SR^2]
+
+    Where SR is the (ordinary, period) Sharpe ratio, S is the skewness (γ₃) of the same
+    returns, and K is the non-excess (raw) kurtosis (γ₄) of the same returns.
+
+    Note that this formula requires **non-excess (raw) kurtosis**, i.e. a Normal
+    distribution has a kurtosis of 3, not 0 — exactly the same convention documented in
+    `get_probabilistic_sharpe_ratio` and used by `get_deflated_sharpe_ratio`. This
+    codebase's `risk_model.get_kurtosis` defaults to `fisher=True` (excess kurtosis, Normal
+    = 0); either call it with `fisher=False` before passing the result in here, or add 3 to
+    a Fisher/excess kurtosis value first. Getting this convention backwards flips the sign
+    of the ((K - 3) / 24) * SR^2 term for any return series that is actually close to
+    Normal (where raw kurtosis is close to 3 but excess/Fisher kurtosis is close to 0),
+    silently turning a near-zero adjustment into a large, wrong one — exactly the kind of
+    sign/convention bug this codebase has been bitten by before, so double check which
+    convention is being fed in.
+
+    For more information about the method, see the following paper:
+
+    - Pezier, J., & White, A. (2006). "The Relative Merits of Investable Hedge Fund
+    Indices and of Funds of Hedge Funds in Optimal Passive Portfolios." ICMA Centre
+    Discussion Papers in Finance, DP2006-10.
+
+    Args:
+        sharpe_ratio (pd.Series | pd.DataFrame | float): The (ordinary) Sharpe ratio, see
+        `get_sharpe_ratio`.
+        skewness (pd.Series | pd.DataFrame | float): The skewness (γ₃) of the same returns
+        used to compute `sharpe_ratio`.
+        kurtosis (pd.Series | pd.DataFrame | float): The non-excess (raw) kurtosis (γ₄) of
+        the same returns used to compute `sharpe_ratio`. See the Notes above — a Normal
+        distribution has a kurtosis of 3 under this convention, not 0.
+
+    Returns:
+        pd.Series | pd.DataFrame | float: The Adjusted Sharpe Ratio values.
+    """
+    return sharpe_ratio * (
+        1 + (skewness / 6) * sharpe_ratio - ((kurtosis - 3) / 24) * sharpe_ratio**2
+    )
+
+
+def get_starr_ratio(
+    excess_returns: pd.Series | pd.DataFrame,
+    returns: pd.Series | pd.DataFrame,
+    alpha: float = 0.05,
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate the STARR (Stable Tail Adjusted Return Ratio) of returns.
+
+    The Sharpe ratio penalizes upside and downside volatility equally via the standard
+    deviation. The STARR ratio instead scales the mean excess return by the Conditional
+    Value at Risk (CVaR / Expected Shortfall), a coherent tail-risk measure that only looks
+    at the average magnitude of losses beyond the `alpha` quantile. This makes STARR more
+    appropriate than the Sharpe ratio for return distributions with fat left tails, where
+    the standard deviation understates the risk that actually matters to an investor.
+
+    The formula is as follows:
+
+        - STARR Ratio = Excess Return / |CVaR(alpha)|
+
+    Where CVaR is computed on the raw (non-excess) `returns` using the historical method
+    (see `financetoolkit.risk.cvar_model.get_cvar_historic`), which this function calls
+    directly rather than reimplementing the CVaR calculation. `excess_returns` is divided
+    by CVaR elementwise (e.g. per period), so pass already-aggregated excess returns (e.g.
+    one value per period) rather than a raw daily series if a mean excess return per period
+    is intended — this function does not average `excess_returns` itself.
+
+    Also known as: Stable Tail Adjusted Return Ratio, Conditional Sharpe Ratio.
+
+    For more information about the method, see the following paper:
+
+    - Martin, R.D., Rachev, S.T., & Siboulet, F. (2003). "Phi-Alpha Optimal Portfolios and
+    Extreme Risk Management." Wilmott Magazine of Finance, 6, 70-83.
+
+    Args:
+        excess_returns (pd.Series | pd.DataFrame): A Series or DataFrame of returns with
+        the risk-free rate subtracted.
+        returns (pd.Series | pd.DataFrame): The corresponding raw (non-excess) returns,
+        from which the CVaR denominator is computed.
+        alpha (float, optional): The confidence level used for the CVaR calculation (e.g.
+        0.05 for the worst 5% of outcomes). Defaults to 0.05.
+
+    Returns:
+        pd.Series | pd.DataFrame: STARR Ratio values.
+    """
+    conditional_value_at_risk = cvar_model.get_cvar_historic(returns, alpha)
+
+    starr_ratio = excess_returns / abs(conditional_value_at_risk)
+
+    if isinstance(starr_ratio, pd.Series | pd.DataFrame):
+        return starr_ratio.dropna()
+
+    return starr_ratio
+
+
+def get_rachev_ratio(
+    returns: pd.Series | pd.DataFrame,
+    alpha: float = 0.05,
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate the Rachev Ratio (R-Ratio) of returns.
+
+    The Rachev ratio compares the "quality" of the best outcomes to the "quality" of the
+    worst outcomes by taking the ratio of the right-tail Expected Shortfall (the average of
+    the best `alpha` fraction of returns) to the left-tail Expected Shortfall (the average
+    magnitude of the worst `alpha` fraction of returns). A ratio above 1 indicates that the
+    average size of extreme gains outweighs the average size of extreme losses, i.e. the
+    return distribution is favorably (right-)skewed in its tails; a ratio below 1 indicates
+    the opposite.
+
+    The formula is as follows:
+
+        - Rachev Ratio = ES_right(alpha) / ES_left(alpha)
+        - ES_right(alpha) = E[Return | Return >= Quantile(1 - alpha)]
+        - ES_left(alpha) = -E[Return | Return <= Quantile(alpha)]
+
+    Both tail expected shortfalls are computed by calling the existing
+    `financetoolkit.risk.cvar_model.get_cvar_historic` function — the left tail directly on
+    `returns`, and the right tail on `-returns` (which turns the upper tail of `returns`
+    into the lower tail of the negated series, letting the same CVaR machinery compute it
+    without reimplementing any tail-averaging logic) — rather than duplicating the CVaR
+    calculation.
+
+    Also known as: R-Ratio.
+
+    For more information about the method, see the following paper:
+
+    - Biglova, A., Ortobelli, S., Rachev, S.T., & Stoyanov, S. (2004). "Different Approaches
+    to Risk Estimation in Portfolio Theory." Journal of Portfolio Management, 31(1), 103-112.
+
+    Args:
+        returns (pd.Series | pd.DataFrame): A Series or DataFrame of returns.
+        alpha (float, optional): The confidence level used for both tails (e.g. 0.05 for
+        the best/worst 5% of outcomes). Defaults to 0.05.
+
+    Returns:
+        pd.Series | pd.DataFrame: Rachev Ratio values.
+    """
+    right_tail_expected_shortfall = -cvar_model.get_cvar_historic(-returns, alpha)
+    left_tail_expected_shortfall = -cvar_model.get_cvar_historic(returns, alpha)
+
+    rachev_ratio = right_tail_expected_shortfall / left_tail_expected_shortfall
+
+    if isinstance(rachev_ratio, pd.Series | pd.DataFrame):
+        return rachev_ratio.dropna()
+
+    return rachev_ratio
+
+
+def _get_market_timing_regression(
+    excess_returns: pd.Series,
+    benchmark_excess_returns: pd.Series,
+    second_regressor: pd.Series,
+    second_regressor_name: str,
+) -> tuple[dict, pd.Series]:
+    """
+    Shared regression machinery for the Treynor-Mazuy and Henriksson-Merton market timing
+    models, which both regress excess returns on the benchmark excess return plus one
+    additional engineered regressor that captures convexity (Treynor-Mazuy) or a piecewise
+    up-market slope (Henriksson-Merton).
+
+    Args:
+        excess_returns (pd.Series): The asset's excess returns.
+        benchmark_excess_returns (pd.Series): The benchmark's excess returns.
+        second_regressor (pd.Series): The additional engineered regressor.
+        second_regressor_name (str): The name to use for the additional regressor's
+        coefficient in the returned regression results (e.g. "Gamma" or "Up Market Beta").
+
+    Returns:
+        dict: the regression results.
+        pd.Series: the residuals.
+    """
+    if len(excess_returns) < 3:  # noqa
+        # Robust handling of insufficient data points for regression method
+        regression_results = {
+            "Alpha": np.nan,
+            "Beta": np.nan,
+            second_regressor_name: np.nan,
+            "R Squared": np.nan,
+        }
+        return regression_results, excess_returns * np.nan
+
+    factor_dataset = pd.DataFrame(
+        {
+            "Benchmark Excess Return": benchmark_excess_returns,
+            second_regressor_name: second_regressor,
+        }
+    )
+
+    model = LinearRegression()
+    model.fit(factor_dataset, excess_returns)
+
+    y_pred = model.predict(factor_dataset)
+    residuals = excess_returns - y_pred
+
+    r_squared = model.score(factor_dataset, excess_returns)
+
+    regression_results = {
+        "Alpha": model.intercept_,
+        "Beta": model.coef_[0],
+        second_regressor_name: model.coef_[1],
+        "R Squared": r_squared,
+    }
+
+    return regression_results, residuals
+
+
+def get_treynor_mazuy_model(
+    excess_returns: pd.Series,
+    benchmark_excess_returns: pd.Series,
+) -> tuple[dict, pd.Series]:
+    """
+    Calculate the Treynor-Mazuy market timing model.
+
+    Jensen's Alpha and Beta from a plain CAPM regression cannot distinguish stock-picking
+    skill (selectivity) from market-timing skill (shifting exposure ahead of market moves).
+    The Treynor-Mazuy model adds a quadratic term in the benchmark excess return to the
+    regression: a manager who successfully increases (decreases) market exposure ahead of
+    up (down) markets will show a return profile that curves upward as a function of the
+    benchmark return, captured by a positive quadratic coefficient (Gamma).
+
+    The formula is as follows:
+
+        - Excess Return = Alpha + Beta * Benchmark Excess Return + Gamma * Benchmark Excess Return^2 + Residuals
+
+    Gamma > 0 indicates positive market-timing ability (the portfolio's beta effectively
+    rises in up markets and falls in down markets); Gamma <= 0 indicates no timing ability.
+    Alpha in this regression captures selectivity net of any timing effect already absorbed
+    by Gamma.
+
+    Also known as: Treynor-Mazuy quadratic timing model, TM model.
+
+    For more information about the method, see the following paper:
+
+    - Treynor, J., & Mazuy, K. (1966). "Can Mutual Funds Outguess the Market?" Harvard
+    Business Review, 44(4), 131-136.
+
+    Args:
+        excess_returns (pd.Series): The asset's excess returns.
+        benchmark_excess_returns (pd.Series): The benchmark's excess returns, aligned to
+        the same index as `excess_returns`.
+
+    Returns:
+        dict: The regression results (Alpha, Beta, Gamma, R Squared).
+        pd.Series: The regression residuals.
+    """
+    if not isinstance(excess_returns, pd.Series) or not isinstance(
+        benchmark_excess_returns, pd.Series
+    ):
+        raise TypeError(
+            "Expects pd.Series for both excess_returns and benchmark_excess_returns."
+        )
+
+    return _get_market_timing_regression(
+        excess_returns,
+        benchmark_excess_returns,
+        benchmark_excess_returns**2,
+        "Gamma",
+    )
+
+
+def get_henriksson_merton_model(
+    excess_returns: pd.Series,
+    benchmark_excess_returns: pd.Series,
+) -> tuple[dict, pd.Series]:
+    """
+    Calculate the Henriksson-Merton market timing model.
+
+    Like the Treynor-Mazuy model, this separates market-timing skill from selectivity, but
+    models timing as a piecewise (rather than quadratic) change in Beta: an "up-market"
+    Beta and a "down-market" Beta. This maps naturally onto a manager choosing between two
+    discrete exposure levels (e.g. based on a market call) rather than continuously scaling
+    exposure with the magnitude of the expected move.
+
+    The formula is as follows:
+
+        - Excess Return = Alpha + Beta1 * Benchmark Excess Return + Beta2 * max(Benchmark Excess Return, 0) + Residuals
+
+    Beta1 is the "down-market" Beta (the portfolio's market exposure when the benchmark
+    excess return is negative), and Beta1 + Beta2 is the "up-market" Beta (exposure when
+    the benchmark excess return is positive). Beta2 > 0 indicates positive market-timing
+    ability (higher exposure in up markets than down markets); Beta2 <= 0 indicates no
+    timing ability.
+
+    Also known as: Henriksson-Merton piecewise timing model, HM model.
+
+    For more information about the method, see the following paper:
+
+    - Henriksson, R.D., & Merton, R.C. (1981). "On Market Timing and Investment
+    Performance II: Statistical Procedures for Evaluating Forecasting Skills." Journal of
+    Business, 54(4), 513-533.
+
+    Args:
+        excess_returns (pd.Series): The asset's excess returns.
+        benchmark_excess_returns (pd.Series): The benchmark's excess returns, aligned to
+        the same index as `excess_returns`.
+
+    Returns:
+        dict: The regression results (Alpha, Beta, Up Market Beta, R Squared), where
+        "Beta" is the down-market Beta and "Beta" + "Up Market Beta" is the up-market Beta.
+        pd.Series: The regression residuals.
+    """
+    if not isinstance(excess_returns, pd.Series) or not isinstance(
+        benchmark_excess_returns, pd.Series
+    ):
+        raise TypeError(
+            "Expects pd.Series for both excess_returns and benchmark_excess_returns."
+        )
+
+    up_market_excess_returns = benchmark_excess_returns.clip(lower=0)
+
+    return _get_market_timing_regression(
+        excess_returns,
+        benchmark_excess_returns,
+        up_market_excess_returns,
+        "Up Market Beta",
+    )

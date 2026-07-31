@@ -160,6 +160,43 @@ def test_get_sharpe_ratio(recorder, performance_module):
     recorder.capture(performance_module.get_sharpe_ratio(growth=True, lag=[1, 2, 3]))
 
 
+def test_get_probabilistic_sharpe_ratio(recorder, performance_module):
+    recorder.capture(round(performance_module.get_probabilistic_sharpe_ratio(), 4))
+    recorder.capture(
+        performance_module.get_probabilistic_sharpe_ratio(period="quarterly")
+    )
+    recorder.capture(
+        performance_module.get_probabilistic_sharpe_ratio(period="monthly", rolling=6)
+    )
+    recorder.capture(
+        performance_module.get_probabilistic_sharpe_ratio(benchmark_sharpe_ratio=-0.5)
+    )
+    recorder.capture(performance_module.get_probabilistic_sharpe_ratio(growth=True))
+    recorder.capture(
+        performance_module.get_probabilistic_sharpe_ratio(growth=True, lag=[1, 2, 3])
+    )
+
+
+def test_get_deflated_sharpe_ratio(recorder, performance_module):
+    recorder.capture(round(performance_module.get_deflated_sharpe_ratio(), 4))
+    recorder.capture(performance_module.get_deflated_sharpe_ratio(period="quarterly"))
+    recorder.capture(
+        performance_module.get_deflated_sharpe_ratio(period="monthly", rolling=6)
+    )
+    recorder.capture(performance_module.get_deflated_sharpe_ratio(n_trials=1))
+    recorder.capture(performance_module.get_deflated_sharpe_ratio(n_trials=50))
+    recorder.capture(performance_module.get_deflated_sharpe_ratio(growth=True))
+    recorder.capture(
+        performance_module.get_deflated_sharpe_ratio(growth=True, lag=[1, 2, 3])
+    )
+
+    # Deflating for more trials should never raise the probability relative to
+    # fewer trials, holding everything else fixed.
+    fewer_trials = performance_module.get_deflated_sharpe_ratio(n_trials=1)
+    more_trials = performance_module.get_deflated_sharpe_ratio(n_trials=50)
+    assert (more_trials.fillna(0) <= fewer_trials.fillna(0) + 1e-9).all().all()
+
+
 def test_get_sortino_ratio(recorder, performance_module):
     recorder.capture(performance_module.get_sortino_ratio())
     recorder.capture(performance_module.get_sortino_ratio(period="quarterly"))
@@ -208,3 +245,73 @@ def test_get_information_ratio(recorder, performance_module):
 def test_get_compound_growth_rate(recorder, performance_module):
     recorder.capture(performance_module.get_compound_growth_rate())
     recorder.capture(performance_module.get_compound_growth_rate(rounding=10))
+
+
+def test_get_appraisal_ratio(recorder, performance_module):
+    recorder.capture(performance_module.get_appraisal_ratio())
+    recorder.capture(performance_module.get_appraisal_ratio(period="quarterly"))
+    recorder.capture(performance_module.get_appraisal_ratio(growth=True))
+    recorder.capture(performance_module.get_appraisal_ratio(growth=True, lag=[1, 2, 3]))
+    recorder.capture(
+        performance_module.get_appraisal_ratio(period="monthly", rolling=6)
+    )
+
+
+def test_get_fama_decomposition(recorder, performance_module):
+    recorder.capture(performance_module.get_fama_decomposition())
+    recorder.capture(performance_module.get_fama_decomposition(period="quarterly"))
+    recorder.capture(performance_module.get_fama_decomposition(growth=True))
+    recorder.capture(
+        performance_module.get_fama_decomposition(period="monthly", rolling=6)
+    )
+
+    # Selectivity + Diversification must reconstruct Jensen's Alpha for every ticker.
+    fama_decomposition = performance_module.get_fama_decomposition()
+    jensens_alpha = performance_module.get_jensens_alpha()
+    reconstructed = (
+        fama_decomposition.xs("Selectivity", level=1, axis=1)
+        + fama_decomposition.xs("Diversification", level=1, axis=1)
+    ).round(2)
+    assert (reconstructed == jensens_alpha.round(2)).all().all()
+
+
+def test_get_adjusted_sharpe_ratio(recorder, performance_module):
+    recorder.capture(performance_module.get_adjusted_sharpe_ratio())
+    recorder.capture(performance_module.get_adjusted_sharpe_ratio(period="quarterly"))
+    recorder.capture(
+        performance_module.get_adjusted_sharpe_ratio(period="monthly", rolling=6)
+    )
+    recorder.capture(performance_module.get_adjusted_sharpe_ratio(growth=True))
+    recorder.capture(
+        performance_module.get_adjusted_sharpe_ratio(growth=True, lag=[1, 2, 3])
+    )
+
+
+def test_get_starr_ratio(recorder, performance_module):
+    recorder.capture(performance_module.get_starr_ratio())
+    recorder.capture(performance_module.get_starr_ratio(period="quarterly"))
+    recorder.capture(performance_module.get_starr_ratio(within_period=False))
+    recorder.capture(performance_module.get_starr_ratio(alpha=0.1))
+    recorder.capture(performance_module.get_starr_ratio(growth=True))
+    recorder.capture(performance_module.get_starr_ratio(growth=True, lag=[1, 2, 3]))
+
+
+def test_get_rachev_ratio(recorder, performance_module):
+    recorder.capture(performance_module.get_rachev_ratio())
+    recorder.capture(performance_module.get_rachev_ratio(period="quarterly"))
+    recorder.capture(performance_module.get_rachev_ratio(within_period=False))
+    recorder.capture(performance_module.get_rachev_ratio(alpha=0.1))
+    recorder.capture(performance_module.get_rachev_ratio(growth=True))
+    recorder.capture(performance_module.get_rachev_ratio(growth=True, lag=[1, 2, 3]))
+
+
+def test_get_treynor_mazuy_model(recorder, performance_module):
+    recorder.capture(performance_module.get_treynor_mazuy_model())
+    recorder.capture(performance_module.get_treynor_mazuy_model(period="quarterly"))
+    recorder.capture(performance_module.get_treynor_mazuy_model(growth=True))
+
+
+def test_get_henriksson_merton_model(recorder, performance_module):
+    recorder.capture(performance_module.get_henriksson_merton_model())
+    recorder.capture(performance_module.get_henriksson_merton_model(period="quarterly"))
+    recorder.capture(performance_module.get_henriksson_merton_model(growth=True))

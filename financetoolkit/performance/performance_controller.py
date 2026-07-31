@@ -13,7 +13,15 @@ from financetoolkit.performance.helpers import (
     determine_within_historical_data,
     handle_errors,
 )
-from financetoolkit.risk.risk_model import get_max_drawdown, get_ui, get_volatility
+from financetoolkit.risk.risk_model import (
+    get_kurtosis,
+    get_max_drawdown,
+    get_rolling_kurtosis,
+    get_rolling_skewness,
+    get_skewness,
+    get_ui,
+    get_volatility,
+)
 from financetoolkit.utilities.dataframe_model import filter_columns
 from financetoolkit.utilities.logger_model import get_logger
 from financetoolkit.utilities.statistics_model import finalize_dataset
@@ -1766,6 +1774,300 @@ class Performance:
 
         return finalize_dataset(
             dataset=sharpe_ratio,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+            dropna=True,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_probabilistic_sharpe_ratio(
+        self,
+        period: str | None = None,
+        rolling: int | None = None,
+        benchmark_sharpe_ratio: float = 0.0,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+    ):
+        """
+        Calculate the Probabilistic Sharpe Ratio (PSR), the probability that the true
+        (population) Sharpe ratio exceeds a benchmark Sharpe ratio, correcting the
+        naive Sharpe ratio significance test for skewed and fat-tailed returns.
+
+        A plain Sharpe ratio significance test (e.g. treating SR̂ as approximately
+        normally distributed) implicitly assumes Gaussian, i.i.d. returns. Real asset
+        and strategy returns are typically skewed and fat-tailed, which understates the
+        true uncertainty around the Sharpe ratio estimate and makes the naive test
+        overconfident. The PSR explicitly folds the skewness and (non-excess) kurtosis
+        of the underlying returns into the standard error of the Sharpe ratio, giving a
+        more honest probability that the strategy truly beats `benchmark_sharpe_ratio`
+        rather than 0 or 0.5 simply being a coincidence of a short, lumpy sample.
+
+        The formula is as follows:
+
+            - PSR(SR*) = Φ( (SR̂ − SR*) · sqrt(n − 1) / sqrt(1 − γ₃·SR̂ + ((γ₄ − 1) / 4)·SR̂²) )
+
+        Where SR̂ is the observed Sharpe ratio, SR* is `benchmark_sharpe_ratio`, γ₃ is
+        skewness, γ₄ is the non-excess (raw) kurtosis, n is the number of return
+        observations and Φ is the standard normal CDF.
+
+        Also known as: PSR, Sharpe ratio significance probability.
+
+        Args:
+            period (str, optional): The period to use for the calculation. Defaults to None which
+            results in basing it off the quarterly parameter as defined in the class instance.
+            rolling (int, optional): The rolling period to use for the calculation. If you select
+            period = 'monthly' and set rolling to 12 you obtain the rolling 12-month Probabilistic
+            Sharpe Ratio.
+            benchmark_sharpe_ratio (float, optional): The hypothesized or benchmark Sharpe ratio
+            (SR*) to test the observed Sharpe ratio against. Defaults to 0.0, i.e. testing whether
+            the strategy has any skill at all above doing nothing.
+            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+
+        Returns:
+            pd.DataFrame: Probabilistic Sharpe Ratio values, between 0 and 1.
+
+        Notes:
+        - This uses the **non-excess (raw)** kurtosis convention, i.e. a Normal distribution has a
+        kurtosis of 3, not 0. Internally this calls `risk_model.get_kurtosis(..., fisher=False)`.
+        - The method retrieves historical data and calculates the Probabilistic Sharpe ratio for
+        each asset in the Toolkit instance, using the same excess returns as `get_sharpe_ratio`.
+        - If `growth` is set to True, the method calculates the growth of the ratio values using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.performance.get_probabilistic_sharpe_ratio()
+        ```
+
+        Which returns:
+
+        | Date   |   AAPL |   TSLA |
+        |:-------|-------:|-------:|
+        | 2021   | 0.0000 | 0.0008 |
+        | 2022   | 0.0000 | 0.0000 |
+        | 2023   | 0.0000 | 0.0000 |
+        | 2024   | 0.0000 | 0.0000 |
+        | 2025   | 0.0000 | 0.0000 |
+        | 2026   | 0.0000 | 0.0000 |
+        """
+        period = period if period else "quarterly" if self._quarterly else "yearly"
+
+        if rolling:
+            period_returns = self._historical_data[period].loc[:, "Return"][
+                self._tickers_without_portfolio
+            ]
+            excess_return = performance_model.get_excess_return(
+                period_returns, self._risk_free_rate_data[period]
+            )
+            sharpe_ratio = performance_model.get_rolling_sharpe_ratio(
+                excess_return, rolling
+            )
+            skewness = get_rolling_skewness(excess_return, rolling)
+            kurtosis = get_rolling_kurtosis(excess_return, rolling, fisher=False)
+            n_observations = rolling
+        else:
+            excess_return = self._within_historical_data[period].loc[
+                :, "Excess Return"
+            ][self._tickers_without_portfolio]
+
+            sharpe_ratio = performance_model.get_sharpe_ratio(excess_return)
+            skewness = get_skewness(excess_return)
+            kurtosis = get_kurtosis(excess_return, fisher=False)
+            n_observations = excess_return.groupby(level=0).count()
+
+        probabilistic_sharpe_ratio = performance_model.get_probabilistic_sharpe_ratio(
+            sharpe_ratio=sharpe_ratio,
+            benchmark_sharpe_ratio=benchmark_sharpe_ratio,
+            skewness=skewness,
+            kurtosis=kurtosis,
+            n_observations=n_observations,
+        )
+
+        return finalize_dataset(
+            dataset=probabilistic_sharpe_ratio,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+            dropna=True,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_deflated_sharpe_ratio(
+        self,
+        period: str | None = None,
+        rolling: int | None = None,
+        trials_window: int | None = None,
+        n_trials: int | None = None,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+    ):
+        """
+        Calculate the Deflated Sharpe Ratio (DSR), the Probabilistic Sharpe Ratio
+        corrected for the fact that the reported Sharpe ratio is often the best of many
+        strategy variations, parameter combinations, or lookback windows tried during a
+        backtest (multiple testing / selection bias / "backtest overfitting").
+
+        The more variations that were tried, the more likely it is that at least one of
+        them shows an impressive Sharpe ratio by pure chance, even with zero true skill.
+        The DSR accounts for this by first estimating the Sharpe ratio one would expect
+        to observe, purely by chance, as the maximum of `n_trials` independent trials
+        under the null hypothesis of no skill, and then uses that expected maximum as
+        the benchmark (SR*) in the Probabilistic Sharpe Ratio formula, instead of a
+        naive benchmark such as 0.
+
+        The formula for the expected maximum Sharpe ratio benchmark is as follows:
+
+            - SR* = sqrt(Var[SR_trials]) · [ (1 − γ)·Φ⁻¹(1 − 1/N) + γ·Φ⁻¹(1 − 1/(N·e)) ]
+
+        Where N is `n_trials`, Var[SR_trials] is the variance of the Sharpe ratios
+        observed across those N trials, and γ ≈ 0.5772 is the Euler-Mascheroni constant.
+        DSR = PSR(SR*), i.e. it is always less than or equal to the Probabilistic Sharpe
+        Ratio computed against a benchmark of 0.
+
+        This codebase does not track "N literal strategy trials" — there is no record of
+        how many parameter combinations were tried before arriving at the current
+        Toolkit configuration. As a documented approximation, `Var[SR_trials]` is
+        estimated from the variance of an auxiliary *rolling* Sharpe ratio series (see
+        `get_rolling_sharpe_ratio`) computed over a `trials_window`-sized window across
+        the full return history, and `n_trials` defaults to the number of valid
+        (non-NaN) values in that same rolling series. This treats each rolling window as
+        if it were one "trial" — a reasonable proxy for how dispersed the Sharpe ratio
+        could plausibly have been under different choices, but not a substitute for
+        passing the actual number of variations tried (via `n_trials`) when that is
+        known, since the quality of the correction depends directly on it.
+
+        Also known as: DSR, backtest overfitting correction, selection-bias-adjusted Sharpe ratio.
+
+        Args:
+            period (str, optional): The period to use for the calculation. Defaults to None which
+            results in basing it off the quarterly parameter as defined in the class instance.
+            rolling (int, optional): The rolling period to use for the primary Sharpe ratio
+            being tested. If you select period = 'monthly' and set rolling to 12 you obtain the
+            rolling 12-month Deflated Sharpe Ratio.
+            trials_window (int, optional): The window size (in units of `period`) used for the
+            auxiliary rolling Sharpe ratio series that approximates `Var[SR_trials]` and the
+            default `n_trials`, see the Notes above. Defaults to None, which uses half of the
+            available return history so that enough overlapping windows exist regardless of
+            `period` or date range.
+            n_trials (int, optional): The number of independent (or effectively independent)
+            strategy variations, parameter combinations, or lookback windows tried before
+            arriving at the reported Sharpe ratio. Defaults to None, which falls back to the
+            number of valid values in the auxiliary rolling Sharpe ratio series described above.
+            Pass this explicitly whenever the actual number of trials is known.
+            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+
+        Returns:
+            pd.DataFrame: Deflated Sharpe Ratio values, between 0 and 1.
+
+        Notes:
+        - This uses the **non-excess (raw)** kurtosis convention, i.e. a Normal distribution has a
+        kurtosis of 3, not 0. Internally this calls `risk_model.get_kurtosis(..., fisher=False)`.
+        - The method retrieves historical data and calculates the Deflated Sharpe ratio for
+        each asset in the Toolkit instance, using the same excess returns as `get_sharpe_ratio`.
+        - If `growth` is set to True, the method calculates the growth of the ratio values using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.performance.get_deflated_sharpe_ratio()
+        ```
+
+        Which returns:
+
+        | Date   |   AAPL |   TSLA |
+        |:-------|-------:|-------:|
+        | 2021   | 0.0000 | 0.0000 |
+        | 2022   | 0.0000 | 0.0000 |
+        | 2023   | 0.0000 | 0.0000 |
+        | 2024   | 0.0000 | 0.0000 |
+        | 2025   | 0.0000 | 0.0000 |
+        | 2026   | 0.0000 | 0.0000 |
+        """
+        period = period if period else "quarterly" if self._quarterly else "yearly"
+
+        period_returns = self._historical_data[period].loc[:, "Return"][
+            self._tickers_without_portfolio
+        ]
+        full_excess_return = performance_model.get_excess_return(
+            period_returns, self._risk_free_rate_data[period]
+        )
+
+        trials_window = (
+            trials_window
+            if trials_window is not None
+            else max(2, len(period_returns) // 2)
+        )
+        trials_sharpe_ratio = performance_model.get_rolling_sharpe_ratio(
+            full_excess_return, trials_window
+        )
+        sharpe_ratio_variance = trials_sharpe_ratio.var()
+        trials = n_trials if n_trials is not None else trials_sharpe_ratio.count()
+
+        if rolling:
+            sharpe_ratio = performance_model.get_rolling_sharpe_ratio(
+                full_excess_return, rolling
+            )
+            skewness = get_rolling_skewness(full_excess_return, rolling)
+            kurtosis = get_rolling_kurtosis(full_excess_return, rolling, fisher=False)
+            n_observations = rolling
+        else:
+            excess_return = self._within_historical_data[period].loc[
+                :, "Excess Return"
+            ][self._tickers_without_portfolio]
+
+            sharpe_ratio = performance_model.get_sharpe_ratio(excess_return)
+            skewness = get_skewness(excess_return)
+            kurtosis = get_kurtosis(excess_return, fisher=False)
+            n_observations = excess_return.groupby(level=0).count()
+
+        deflated_sharpe_ratio = performance_model.get_deflated_sharpe_ratio(
+            sharpe_ratio=sharpe_ratio,
+            sharpe_ratio_variance=sharpe_ratio_variance,
+            n_trials=trials,
+            n_observations=n_observations,
+            skewness=skewness,
+            kurtosis=kurtosis,
+        )
+
+        return finalize_dataset(
+            dataset=deflated_sharpe_ratio,
             start_date=self._start_date,
             end_date=self._end_date,
             default_rounding=self._rounding,
@@ -3560,3 +3862,870 @@ class Performance:
         covariance_matrix = performance_model.get_covariance_matrix(returns)
 
         return covariance_matrix.round(rounding if rounding else self._rounding)
+
+    @handle_portfolio
+    @handle_errors
+    def get_appraisal_ratio(
+        self,
+        period: str | None = None,
+        rolling: int | None = None,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+    ):
+        """
+        Calculate the Appraisal Ratio, i.e. Jensen's Alpha divided by the idiosyncratic
+        (residual, unsystematic) standard deviation left over from the CAPM regression
+        that produced that Alpha.
+
+        Jensen's Alpha (see `get_jensens_alpha`) measures how much return a manager
+        generated above what CAPM would predict given the asset's Beta. However, a large
+        Alpha achieved with wildly noisy, unpredictable residual returns is far less
+        attractive than the same Alpha achieved consistently. The Appraisal Ratio
+        normalizes Alpha by that noise (the "specific risk" not explained by market
+        exposure), giving a Sharpe-ratio-like measure of stock-picking or timing skill per
+        unit of idiosyncratic risk taken.
+
+        The formula is as follows:
+
+        - Appraisal Ratio = Jensen's Alpha / Residual Standard Deviation
+
+        Where the residual standard deviation is the standard deviation of the pointwise
+        CAPM regression residuals (Asset Excess Return − Beta * Benchmark Excess Return),
+        reusing the exact same CAPM regression formula as `get_jensens_alpha`.
+
+        See definition: https://en.wikipedia.org/wiki/Information_ratio
+
+        Also known as: Treynor-Black Appraisal Ratio.
+
+        Args:
+            period (str, optional): The period to use for the calculation. Defaults to None which
+            results in basing it off the quarterly parameter as defined in the class instance.
+            rolling (int, optional): The rolling window size to use for the Beta component of the
+            calculation. If set, Beta is estimated over a rolling window of this many periods across
+            the full return history instead of per `period`. Defaults to None.
+            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+
+        Returns:
+            pd.DataFrame: Appraisal Ratio values.
+
+        Notes:
+        - Daily Appraisal Ratio is not an option as the standard deviation for 1 day is close to
+        zero. Therefore, it does not give any useful insights.
+        - The method retrieves historical data and calculates Jensen's Alpha and the CAPM
+        regression residuals for each asset in the Toolkit instance, reusing the same Beta and
+        CAPM formula as `get_jensens_alpha`.
+        - If `growth` is set to True, the method calculates the growth of the ratio values using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.performance.get_appraisal_ratio()
+        ```
+
+        Which returns:
+
+        | Date   |    AAPL |    MSFT |
+        |:-------|--------:|--------:|
+        | 2020   | 37.2641 | 16.0511 |
+        | 2021   | -2.5308 | 20.9479 |
+        | 2022   | -1.4753 | -3.3995 |
+        """
+        period = period if period else "quarterly" if self._quarterly else "yearly"
+
+        if rolling:
+            historical_data = self._historical_data[period]
+            returns = historical_data.loc[:, "Return"][self._tickers_without_portfolio]
+            benchmark_returns = historical_data.loc[:, "Return"][self._benchmark_name]
+
+            beta = performance_model.get_rolling_beta(
+                returns, benchmark_returns, rolling
+            )
+
+            risk_free_rate = self._risk_free_rate_data[period]
+            within_excess_return = performance_model.get_excess_return(
+                returns, risk_free_rate
+            )
+            within_benchmark_excess_return = performance_model.get_excess_return(
+                benchmark_returns, risk_free_rate
+            )
+
+            capm_residuals = performance_model.get_jensens_alpha(
+                within_excess_return, 0.0, beta, within_benchmark_excess_return
+            )
+        else:
+            historical_within_data = self._within_historical_data[period]
+            returns = historical_within_data.loc[:, "Return"][
+                self._tickers_without_portfolio
+            ]
+            benchmark_returns = historical_within_data.loc[:, "Return"][
+                self._benchmark_name
+            ]
+
+            beta = performance_model.get_beta(returns, benchmark_returns)
+
+            within_excess_return = historical_within_data.loc[:, "Excess Return"][
+                self._tickers_without_portfolio
+            ]
+            within_benchmark_excess_return = historical_within_data.loc[
+                :, "Excess Return"
+            ][self._benchmark_name]
+
+            capm_residuals = performance_model.get_capm_residuals(
+                within_excess_return, beta, within_benchmark_excess_return
+            )
+
+        historical_data = self._historical_data[period]
+
+        period_returns = historical_data.loc[:, "Return"][
+            self._tickers_without_portfolio
+        ]
+
+        risk_free_rate = self._risk_free_rate_data[period]
+        benchmark_period_returns = historical_data.loc[:, "Return"][
+            self._benchmark_name
+        ]
+
+        jensens_alpha = performance_model.get_jensens_alpha(
+            period_returns, risk_free_rate, beta, benchmark_period_returns
+        )
+
+        appraisal_ratio = performance_model.get_appraisal_ratio(
+            jensens_alpha, capm_residuals
+        )
+
+        return finalize_dataset(
+            dataset=appraisal_ratio,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+            dropna=True,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_fama_decomposition(
+        self,
+        period: str | None = None,
+        rolling: int | None = None,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+    ):
+        """
+        Calculate the Fama (1972) decomposition of total excess return into Selectivity
+        and Diversification.
+
+        Jensen's Alpha alone conflates two very different sources of excess return:
+        genuine stock/timing selection skill, and simply carrying more total risk than the
+        market by holding an under-diversified portfolio (which, in a CAPM world, should
+        be compensated with extra return even absent any skill). Fama's decomposition
+        separates the two by comparing the portfolio's actual return against two different
+        CAPM-implied return benchmarks: one using the portfolio's actual Beta (systematic
+        risk only), and one using the portfolio's actual *total* risk ratio
+        (Sigma_Portfolio / Sigma_Market) in place of Beta.
+
+        The formulas are as follows:
+
+        - Selectivity = (Asset Return − Risk-Free Rate) − (Sigma_Portfolio / Sigma_Market)
+            * (Benchmark Return − Risk-Free Rate)
+        - Diversification = [Risk-Free Rate + (Sigma_Portfolio / Sigma_Market)
+            * (Benchmark Return − Risk-Free Rate)] − [Risk-Free Rate + Beta * (Benchmark Return − Risk-Free Rate)]
+
+        Selectivity is the return earned above what would be required for a fully
+        diversified portfolio carrying the same total risk, i.e. genuine security
+        selection or timing skill. Diversification is the extra return the manager left on
+        the table (if positive, it is a cost) by taking on unsystematic risk that a fully
+        diversified portfolio of the same total risk would not have. Selectivity plus
+        Diversification equals Jensen's Alpha (see `get_jensens_alpha`).
+
+        Also known as: Fama's Net Selectivity, Fama performance decomposition.
+
+        Args:
+            period (str, optional): The period to use for the calculation. Defaults to None which
+            results in basing it off the quarterly parameter as defined in the class instance.
+            rolling (int, optional): The rolling window size to use for the Beta component of the
+            calculation. If set, Beta is estimated over a rolling window of this many periods across
+            the full return history instead of per `period`. Defaults to None.
+            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+
+        Returns:
+            pd.DataFrame: Selectivity and Diversification values, with a Multi Index of
+            (ticker, component) as the columns.
+
+        Notes:
+        - Daily Fama Decomposition is not an option as the standard deviation for 1 day is close
+        to zero. Therefore, it does not give any useful insights.
+        - The method retrieves historical data and calculates Beta, the asset's and benchmark's
+        standard deviation, and the Selectivity and Diversification components for each asset in
+        the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the ratio values using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.performance.get_fama_decomposition().xs("AAPL", level=0, axis=1)
+        ```
+
+        Which returns:
+
+        | Date   |   Selectivity |   Diversification |
+        |:-------|--------------:|-------------------:|
+        | 2020   |        0.5708 |              0.0416 |
+        | 2021   |       -0.1945 |              0.1653 |
+        | 2022   |        0.0220 |             -0.0375 |
+        """
+        period = period if period else "quarterly" if self._quarterly else "yearly"
+
+        if rolling:
+            historical_data = self._historical_data[period]
+            returns = historical_data.loc[:, "Return"][self._tickers_without_portfolio]
+            benchmark_returns = historical_data.loc[:, "Return"][self._benchmark_name]
+
+            beta = performance_model.get_rolling_beta(
+                returns, benchmark_returns, rolling
+            )
+        else:
+            historical_within_data = self._within_historical_data[period]
+            returns = historical_within_data.loc[:, "Return"][
+                self._tickers_without_portfolio
+            ]
+            benchmark_returns = historical_within_data.loc[:, "Return"][
+                self._benchmark_name
+            ]
+
+            beta = performance_model.get_beta(returns, benchmark_returns)
+
+        historical_data = self._historical_data[period]
+
+        period_returns = historical_data.loc[:, "Return"][
+            self._tickers_without_portfolio
+        ]
+        risk_free_rate = self._risk_free_rate_data[period]
+        benchmark_period_returns = historical_data.loc[:, "Return"][
+            self._benchmark_name
+        ]
+
+        daily_returns = self._historical_data["daily"].loc[:, "Return"][
+            self._tickers_without_portfolio
+        ]
+        daily_benchmark_returns = self._historical_data["daily"].loc[:, "Return"][
+            self._benchmark_name
+        ]
+
+        asset_standard_deviation = get_volatility(daily_returns, period)
+        benchmark_standard_deviation = get_volatility(daily_benchmark_returns, period)
+
+        selectivity, diversification = performance_model.get_fama_decomposition(
+            period_returns,
+            risk_free_rate,
+            beta,
+            benchmark_period_returns,
+            asset_standard_deviation,
+            benchmark_standard_deviation,
+        )
+
+        fama_decomposition = pd.concat(
+            {"Selectivity": selectivity, "Diversification": diversification}, axis=1
+        ).swaplevel(0, 1, axis=1)
+
+        fama_decomposition = fama_decomposition.reindex(
+            self._tickers_without_portfolio, level=0, axis=1
+        )
+
+        return finalize_dataset(
+            dataset=fama_decomposition,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+            dropna=True,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_adjusted_sharpe_ratio(
+        self,
+        period: str | None = None,
+        rolling: int | None = None,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+    ):
+        """
+        Calculate the Adjusted Sharpe Ratio (ASR) of an investment portfolio or asset's
+        returns.
+
+        The Sharpe ratio only looks at the mean and standard deviation of returns,
+        implicitly assuming a Normal distribution. The Adjusted Sharpe Ratio (Pezier &
+        White, 2006) penalizes (or rewards) the Sharpe ratio for negative skewness and
+        excess kurtosis using a Cornish-Fisher-style expansion, so that two strategies
+        with the same Sharpe ratio but different tail shapes are no longer scored
+        identically.
+
+        The formula is as follows:
+
+        - ASR = SR * [1 + (S / 6) * SR − ((K − 3) / 24) * SR^2]
+
+        Where SR is the (ordinary, period) Sharpe ratio, S is the skewness of the same
+        returns, and K is the non-excess (raw) kurtosis of the same returns.
+
+        Also known as: Pezier and White Adjusted Sharpe Ratio.
+
+        Args:
+            period (str, optional): The period to use for the calculation. Defaults to None which
+            results in basing it off the quarterly parameter as defined in the class instance.
+            rolling (int, optional): The rolling period to use for the calculation. If you select
+            period = 'monthly' and set rolling to 12 you obtain the rolling 12-month Adjusted
+            Sharpe Ratio.
+            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+
+        Returns:
+            pd.DataFrame: Adjusted Sharpe Ratio values.
+
+        Notes:
+        - This uses the **non-excess (raw)** kurtosis convention, i.e. a Normal distribution has a
+        kurtosis of 3, not 0. Internally this calls `risk_model.get_kurtosis(..., fisher=False)`,
+        the same convention documented in `get_probabilistic_sharpe_ratio`.
+        - Daily Adjusted Sharpe Ratio is not an option as the standard deviation for 1 day is close
+        to zero. Therefore, it does not give any useful insights.
+        - The method retrieves historical data and calculates the Adjusted Sharpe ratio for each
+        asset in the Toolkit instance, using the same excess returns as `get_sharpe_ratio`.
+        - If `growth` is set to True, the method calculates the growth of the ratio values using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.performance.get_adjusted_sharpe_ratio()
+        ```
+
+        Which returns:
+
+        | Date   |    AAPL |    MSFT |
+        |:-------|--------:|--------:|
+        | 2020   | -0.2021 | -0.2502 |
+        | 2021   | -0.8212 | -0.9321 |
+        | 2022   | -1.2058 | -1.2489 |
+        """
+        period = period if period else "quarterly" if self._quarterly else "yearly"
+
+        if rolling:
+            period_returns = self._historical_data[period].loc[:, "Return"][
+                self._tickers_without_portfolio
+            ]
+            excess_return = performance_model.get_excess_return(
+                period_returns, self._risk_free_rate_data[period]
+            )
+            sharpe_ratio = performance_model.get_rolling_sharpe_ratio(
+                excess_return, rolling
+            )
+            skewness = get_rolling_skewness(excess_return, rolling)
+            kurtosis = get_rolling_kurtosis(excess_return, rolling, fisher=False)
+        else:
+            excess_return = self._within_historical_data[period].loc[
+                :, "Excess Return"
+            ][self._tickers_without_portfolio]
+
+            sharpe_ratio = performance_model.get_sharpe_ratio(excess_return)
+            skewness = get_skewness(excess_return)
+            kurtosis = get_kurtosis(excess_return, fisher=False)
+
+        adjusted_sharpe_ratio = performance_model.get_adjusted_sharpe_ratio(
+            sharpe_ratio=sharpe_ratio,
+            skewness=skewness,
+            kurtosis=kurtosis,
+        )
+
+        return finalize_dataset(
+            dataset=adjusted_sharpe_ratio,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+            dropna=True,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_starr_ratio(
+        self,
+        period: str | None = None,
+        within_period: bool = True,
+        alpha: float = 0.05,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+    ):
+        """
+        Calculate the STARR (Stable Tail Adjusted Return Ratio) of an investment
+        portfolio or asset's returns.
+
+        The Sharpe ratio penalizes upside and downside volatility equally via the
+        standard deviation. The STARR ratio instead scales the mean excess return by the
+        Conditional Value at Risk (CVaR / Expected Shortfall), a coherent tail-risk
+        measure that only looks at the average magnitude of losses beyond the `alpha`
+        quantile. This makes STARR more appropriate than the Sharpe ratio for return
+        distributions with fat left tails.
+
+        The formula is as follows:
+
+        - STARR Ratio = Excess Return / |CVaR(alpha)|
+
+        See definition: https://en.wikipedia.org/wiki/Expected_shortfall
+
+        Also known as: Stable Tail Adjusted Return Ratio, Conditional Sharpe Ratio.
+
+        Args:
+            period (str, optional): The period to use for the calculation. Defaults to None which
+            results in basing it off the quarterly parameter as defined in the class instance.
+            within_period (bool, optional): Whether to calculate the CVaR within the specified
+            period or for the entire period. Thus whether to look at the CVaR within a specific
+            year (if period = 'yearly') or look at the entirety of all years. Defaults to True.
+            alpha (float, optional): The confidence level used for the CVaR calculation (e.g. 0.05
+            for the worst 5% of outcomes). Defaults to 0.05.
+            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+
+        Returns:
+            pd.DataFrame: STARR Ratio values.
+
+        Notes:
+        - The method retrieves historical data and calculates the STARR Ratio for each asset in
+        the Toolkit instance.
+        - Periods with very few return observations (e.g. a partial period at the very start of
+        the selected date range) can produce a degenerate (e.g. zero or ±infinite) CVaR, since
+        CVaR is not a meaningful statistic with only one or two data points. This mirrors the
+        analogous caveat for the Sharpe Ratio needing enough observations for its standard
+        deviation to be meaningful.
+        - If `growth` is set to True, the method calculates the growth of the ratio values using
+        the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.performance.get_starr_ratio()
+        ```
+
+        Which returns:
+
+        | Date   |     AAPL |    MSFT |
+        |:-------|---------:|--------:|
+        | 2020   |  12.0414 |  6.5831 |
+        | 2021   |   9.8271 | 18.3701 |
+        | 2022   |  -6.7460 | -6.8990 |
+        """
+        period = period if period else "quarterly" if self._quarterly else "yearly"
+
+        returns = (
+            self._within_historical_data[period]
+            if within_period
+            else self._historical_data[period]
+        ).loc[:, "Return"][self._tickers_without_portfolio]
+
+        historical_data = self._historical_data[period]
+        period_returns = historical_data.loc[:, "Return"][
+            self._tickers_without_portfolio
+        ]
+        risk_free_rate = self._risk_free_rate_data[period]
+
+        excess_return = performance_model.get_excess_return(
+            period_returns, risk_free_rate
+        )
+
+        starr_ratio = performance_model.get_starr_ratio(excess_return, returns, alpha)
+
+        return finalize_dataset(
+            dataset=starr_ratio,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+            dropna=True,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_rachev_ratio(
+        self,
+        period: str | None = None,
+        within_period: bool = True,
+        alpha: float = 0.05,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+    ):
+        """
+        Calculate the Rachev Ratio (R-Ratio) of an investment portfolio or asset's
+        returns.
+
+        The Rachev ratio compares the "quality" of the best outcomes to the "quality" of
+        the worst outcomes by taking the ratio of the right-tail Expected Shortfall (the
+        average of the best `alpha` fraction of returns) to the left-tail Expected
+        Shortfall (the average magnitude of the worst `alpha` fraction of returns). A
+        ratio above 1 indicates that the average size of extreme gains outweighs the
+        average size of extreme losses.
+
+        The formula is as follows:
+
+        - Rachev Ratio = ES_right(alpha) / ES_left(alpha)
+
+        Also known as: R-Ratio.
+
+        Args:
+            period (str, optional): The period to use for the calculation. Defaults to None which
+            results in basing it off the quarterly parameter as defined in the class instance.
+            within_period (bool, optional): Whether to calculate the Rachev Ratio within the
+            specified period or for the entire period. Thus whether to look at the return
+            distribution within a specific year (if period = 'yearly') or look at the entirety of
+            all years. Defaults to True.
+            alpha (float, optional): The confidence level used for both tails (e.g. 0.05 for the
+            best/worst 5% of outcomes). Defaults to 0.05.
+            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+
+        Returns:
+            pd.DataFrame: Rachev Ratio values.
+
+        Notes:
+        - The method retrieves historical data and calculates the Rachev Ratio for each asset in
+        the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the ratio values using
+        the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.performance.get_rachev_ratio()
+        ```
+
+        Which returns:
+
+        | Date   |   AAPL |   MSFT |
+        |:-------|-------:|-------:|
+        | 2020   | 1.0649 | 1.0946 |
+        | 2021   | 0.9964 | 1.0552 |
+        | 2022   | 1.0790 | 1.0200 |
+        """
+        period = period if period else "quarterly" if self._quarterly else "yearly"
+
+        returns = (
+            self._within_historical_data[period]
+            if within_period
+            else self._historical_data[period]
+        ).loc[:, "Return"][self._tickers_without_portfolio]
+
+        rachev_ratio = performance_model.get_rachev_ratio(returns, alpha)
+
+        return finalize_dataset(
+            dataset=rachev_ratio,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+            dropna=True,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_treynor_mazuy_model(
+        self,
+        period: str | None = None,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+    ):
+        """
+        Calculate the Treynor-Mazuy market timing model for each asset in the Toolkit
+        instance.
+
+        Jensen's Alpha and Beta from a plain CAPM regression cannot distinguish
+        stock-picking skill (selectivity) from market-timing skill (shifting exposure
+        ahead of market moves). The Treynor-Mazuy model adds a quadratic term in the
+        benchmark excess return to the regression: a manager who successfully increases
+        (decreases) market exposure ahead of up (down) markets will show a return profile
+        that curves upward as a function of the benchmark return, captured by a positive
+        quadratic coefficient (Gamma).
+
+        The formula is as follows:
+
+        - Excess Return = Alpha + Beta * Benchmark Excess Return + Gamma * Benchmark Excess Return^2 + Residuals
+
+        Gamma > 0 indicates positive market-timing ability; Gamma <= 0 indicates no
+        timing ability.
+
+        Also known as: Treynor-Mazuy quadratic timing model, TM model.
+
+        Args:
+            period (str, optional): The period to use for the calculation. Defaults to None which
+            results in basing it off the quarterly parameter as defined in the class instance.
+            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+
+        Returns:
+            pd.DataFrame: Alpha, Beta, Gamma and R Squared values, with a Multi Index of
+            (ticker, parameter) as the columns.
+
+        Notes:
+        - Daily and weekly Treynor-Mazuy results are not an option as there would be too few
+        observations within each period to run a meaningful regression.
+        - The method retrieves historical data and performs a quadratic regression for each asset
+        in the Toolkit instance, within each period.
+        - If `growth` is set to True, the method calculates the growth of the ratio values using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.performance.get_treynor_mazuy_model().xs("AAPL", level=0, axis=1)
+        ```
+
+        Which returns:
+
+        | Date   |   Alpha |   Beta |   Gamma |   R Squared |
+        |:-------|--------:|-------:|--------:|------------:|
+        | 2020   |  0.0030 | 1.1648 |  0.3569 |       0.6932 |
+        | 2021   |  0.0051 | 1.4745 |  5.9823 |       0.4704 |
+        | 2022   |  0.0090 | 1.3691 |  1.5507 |       0.8050 |
+        """
+        period = period if period else "quarterly" if self._quarterly else "yearly"
+
+        historical_within_data = self._within_historical_data[period]
+        excess_return = historical_within_data.loc[:, "Excess Return"][
+            self._tickers_without_portfolio
+        ]
+        benchmark_excess_return = historical_within_data.loc[:, "Excess Return"][
+            self._benchmark_name
+        ]
+
+        logger.info("Calculating Treynor-Mazuy Market Timing Model")
+
+        regression_results: dict[str, pd.DataFrame] = {}
+
+        for ticker in self._tickers_without_portfolio:
+            ticker_results: dict = {}
+
+            for sub_period in excess_return.index.get_level_values(0).unique():
+                asset_excess = excess_return.loc[sub_period, ticker]
+                benchmark_excess = benchmark_excess_return.loc[sub_period]
+
+                result, _ = performance_model.get_treynor_mazuy_model(
+                    asset_excess, benchmark_excess
+                )
+                ticker_results[sub_period] = result
+
+            regression_results[ticker] = pd.DataFrame.from_dict(
+                ticker_results, orient="index"
+            )
+
+        treynor_mazuy_model = pd.concat(regression_results, axis=1)
+
+        return finalize_dataset(
+            dataset=treynor_mazuy_model,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+            dropna=True,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_henriksson_merton_model(
+        self,
+        period: str | None = None,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+    ):
+        """
+        Calculate the Henriksson-Merton market timing model for each asset in the
+        Toolkit instance.
+
+        Like the Treynor-Mazuy model (see `get_treynor_mazuy_model`), this separates
+        market-timing skill from selectivity, but models timing as a piecewise (rather
+        than quadratic) change in Beta: a "down-market" Beta and an "up-market" Beta.
+
+        The formula is as follows:
+
+        - Excess Return = Alpha + Beta * Benchmark Excess Return
+            + Up Market Beta * max(Benchmark Excess Return, 0) + Residuals
+
+        Beta is the "down-market" Beta (the portfolio's market exposure when the
+        benchmark excess return is negative), and Beta + Up Market Beta is the
+        "up-market" Beta. Up Market Beta > 0 indicates positive market-timing ability;
+        Up Market Beta <= 0 indicates no timing ability.
+
+        Also known as: Henriksson-Merton piecewise timing model, HM model.
+
+        Args:
+            period (str, optional): The period to use for the calculation. Defaults to None which
+            results in basing it off the quarterly parameter as defined in the class instance.
+            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+
+        Returns:
+            pd.DataFrame: Alpha, Beta, Up Market Beta and R Squared values, with a Multi Index of
+            (ticker, parameter) as the columns.
+
+        Notes:
+        - Daily and weekly Henriksson-Merton results are not an option as there would be too few
+        observations within each period to run a meaningful regression.
+        - The method retrieves historical data and performs a piecewise regression for each asset
+        in the Toolkit instance, within each period.
+        - If `growth` is set to True, the method calculates the growth of the ratio values using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.performance.get_henriksson_merton_model().xs("AAPL", level=0, axis=1)
+        ```
+
+        Which returns:
+
+        | Date   |   Alpha |   Beta |   Up Market Beta |   R Squared |
+        |:-------|--------:|-------:|------------------:|------------:|
+        | 2020   |  0.0032 | 1.1578 |            -0.0071 |       0.6929 |
+        | 2021   |  0.0033 | 1.2403 |             1.3512 |       0.4740 |
+        | 2022   |  0.0068 | 1.2399 |             1.5621 |       0.8105 |
+        """
+        period = period if period else "quarterly" if self._quarterly else "yearly"
+
+        historical_within_data = self._within_historical_data[period]
+        excess_return = historical_within_data.loc[:, "Excess Return"][
+            self._tickers_without_portfolio
+        ]
+        benchmark_excess_return = historical_within_data.loc[:, "Excess Return"][
+            self._benchmark_name
+        ]
+
+        logger.info("Calculating Henriksson-Merton Market Timing Model")
+
+        regression_results: dict[str, pd.DataFrame] = {}
+
+        for ticker in self._tickers_without_portfolio:
+            ticker_results: dict = {}
+
+            for sub_period in excess_return.index.get_level_values(0).unique():
+                asset_excess = excess_return.loc[sub_period, ticker]
+                benchmark_excess = benchmark_excess_return.loc[sub_period]
+
+                result, _ = performance_model.get_henriksson_merton_model(
+                    asset_excess, benchmark_excess
+                )
+                ticker_results[sub_period] = result
+
+            regression_results[ticker] = pd.DataFrame.from_dict(
+                ticker_results, orient="index"
+            )
+
+        henriksson_merton_model = pd.concat(regression_results, axis=1)
+
+        return finalize_dataset(
+            dataset=henriksson_merton_model,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+            dropna=True,
+        )

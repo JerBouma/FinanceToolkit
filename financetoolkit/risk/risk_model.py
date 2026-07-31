@@ -861,6 +861,132 @@ def get_autocorrelation(data: pd.Series, lags: int = 10) -> pd.Series:
     return pd.Series(acf_values, name="Autocorrelation")
 
 
+def get_hill_estimator(
+    returns: pd.Series | pd.DataFrame,
+    k: int | float = 0.1,
+    tail: str = "left",
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate the Hill Estimator of the tail index of returns, over the `k` most
+    extreme order statistics.
+
+    Unlike the (finite-sample) skewness and kurtosis in `get_skewness` and
+    `get_kurtosis`, the Hill Estimator is a semi-parametric estimate of how heavy the
+    tail of the return distribution actually is, under the assumption that the tail
+    follows a Pareto-type power law P(X > x) ~ x^(-alpha) as x becomes large. Smaller
+    values of the tail index `alpha` indicate a heavier tail (more extreme outliers
+    are likely) -- as a rule of thumb, `alpha` < 4 implies the kurtosis is theoretically
+    infinite, and `alpha` <= 2 implies the Variance itself is theoretically infinite.
+
+    The estimator sorts the (loss-side, by default) values in descending order and
+    averages the log-ratio of the `k` largest values to the (k+1)-th largest value:
+
+    - xi_hill = (1 / k) * SUM_{i=1}^{k} [ln(X_(i)) - ln(X_(k+1))]
+    - alpha_hill = 1 / xi_hill
+
+    Where `X_(i)` is the i-th largest (strictly positive) value. The estimator is
+    only defined on strictly positive values, since it operates on logs -- for
+    `tail="left"` (the default) this module treats the losses (the negated returns)
+    as the variable of interest, so only days with a negative return contribute; for
+    `tail="right"` the raw (positive) returns are used instead, so only days with a
+    positive return contribute.
+
+    The choice of `k` trades off bias against variance: too large a `k` pulls in
+    observations from the center of the distribution (biasing `alpha` upward, i.e.
+    understating tail heaviness), while too small a `k` leaves too few observations
+    for a stable estimate (inflating the Standard Error). The (large-sample) Standard
+    Error of `alpha_hill` is `alpha_hill / sqrt(k)`.
+
+    Also known as: Hill tail index estimator, Hill's estimator.
+
+    For more information about the method, see the following paper:
+
+    - Hill, B.M. (1975). "A Simple General Approach to Inference About the Tail of a
+    Distribution." The Annals of Statistics, 3(5), 1163-1174.
+
+    Args:
+        returns (pd.Series | pd.DataFrame): A Series or Dataframe of returns.
+        k (int | float, optional): The number of upper order statistics to use. If a
+        float in (0, 1) it is interpreted as the fraction of the strictly positive
+        (loss- or gain-side, depending on `tail`) observations to use, rounded down
+        to the nearest integer with a minimum of 1. Defaults to 0.1 (the top 10%).
+        tail (str, optional): Which tail to estimate, one of "left" (the loss tail,
+        i.e. the negated returns) or "right" (the gain tail, i.e. the raw returns).
+        Defaults to "left".
+
+    Returns:
+        pd.Series | pd.DataFrame: The Hill tail index (alpha), the Hill shape
+        parameter (xi, its reciprocal), its Standard Error and the number of order
+        statistics `k` actually used, as a pd.Series if returns is a pd.Series,
+        otherwise as a pd.DataFrame with one column per asset.
+
+    Raises:
+        ValueError: If `tail` is not one of "left" or "right".
+    """
+    if tail not in ("left", "right"):
+        raise ValueError("tail must be 'left' (loss tail) or 'right' (gain tail).")
+
+    if isinstance(returns, pd.DataFrame):
+        if returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS:
+            periods = returns.index.get_level_values(0).unique()
+            period_data_list = []
+
+            for sub_period in periods:
+                period_data = returns.loc[sub_period].aggregate(
+                    get_hill_estimator, k=k, tail=tail
+                )
+                period_data.name = sub_period
+
+                if not period_data.empty:
+                    period_data_list.append(period_data)
+
+            hill_estimator = pd.concat(period_data_list, axis=1)
+
+            return hill_estimator.T
+
+        return pd.DataFrame(
+            {
+                column: get_hill_estimator(returns[column], k=k, tail=tail)
+                for column in returns.columns
+            }
+        )
+    if isinstance(returns, pd.Series):
+        tail_values = -returns.dropna() if tail == "left" else returns.dropna()
+        tail_values = tail_values[tail_values > 0].sort_values(ascending=False)
+
+        n = len(tail_values)
+        number_of_order_statistics = int(k * n) if isinstance(k, float) else k
+        number_of_order_statistics = max(number_of_order_statistics, 1)
+
+        if number_of_order_statistics >= n:
+            return pd.Series(
+                {
+                    "Hill Tail Index": np.nan,
+                    "Hill Shape (xi)": np.nan,
+                    "Standard Error": np.nan,
+                    "Observations Used (k)": number_of_order_statistics,
+                }
+            )
+
+        order_statistics = tail_values.to_numpy()[:number_of_order_statistics]
+        threshold = tail_values.to_numpy()[number_of_order_statistics]
+
+        xi_hill = np.mean(np.log(order_statistics) - np.log(threshold))
+        alpha_hill = 1 / xi_hill
+        standard_error = alpha_hill / np.sqrt(number_of_order_statistics)
+
+        return pd.Series(
+            {
+                "Hill Tail Index": alpha_hill,
+                "Hill Shape (xi)": xi_hill,
+                "Standard Error": standard_error,
+                "Observations Used (k)": number_of_order_statistics,
+            }
+        )
+
+    raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
+
+
 def get_hurst_exponent(data: pd.Series, max_lag: int = 20) -> float:
     """
     Calculate the Hurst Exponent of a series, a measure of long-term memory that

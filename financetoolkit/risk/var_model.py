@@ -103,11 +103,13 @@ def get_var_gaussian(
 
     if cornish_fisher:
         S = risk_model.get_skewness(returns)
+        # get_kurtosis defaults to fisher=True, i.e. this is already excess kurtosis
+        # (normal = 0), so it must not be shifted by another -3 here.
         K = risk_model.get_kurtosis(returns)
         za = (
             za
             + (za**2 - 1) * S / 6
-            + (za**3 - 3 * za) * (K - 3) / 24
+            + (za**3 - 3 * za) * K / 24
             - (2 * za**3 - 5 * za) * (S**2) / 36
         )
 
@@ -130,6 +132,59 @@ def get_rolling_var_historic(
     """
     return returns.rolling(window=window_size).apply(
         lambda window: np.percentile(window, alpha * 100)
+    )
+
+
+def fit_gpd_tail(
+    returns: pd.DataFrame, threshold_percentile: float
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Fit a Generalized Pareto Distribution (GPD) to the losses of each column of `returns`
+    that exceed a given threshold, following the Peak-over-Threshold approach.
+
+    This is the shared fitting routine behind both `get_var_evt` (below) and
+    `cvar_model.get_cvar_evt`, since both need the same shape, scale and threshold
+    parameters of the fitted GPD tail.
+
+    Args:
+        returns (pd.DataFrame): A Dataframe of returns, one column per asset.
+        threshold_percentile (float): The percentile of losses above which the GPD is
+        fitted (e.g. 0.95 fits the GPD on the worst 5% of losses).
+
+    Returns:
+        tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]: The fitted shape (xi), scale
+        (sigma), threshold (u) and exceedance probability, one value per column of `returns`,
+        in the same order as `returns.columns`. A minimum number of exceedances is required
+        for the GPD fit to be meaningful; if there are too few (e.g. a short sub-period), NaN
+        is returned for the shape, scale and exceedance probability of that column.
+    """
+    minimum_number_of_exceedances = 2
+
+    shape, scale, threshold, exceedance_probability = [], [], [], []
+    for column in returns.columns:
+        losses = -returns[column].dropna()
+        column_threshold = np.percentile(losses, threshold_percentile * 100)
+        exceedances = losses[losses > column_threshold] - column_threshold
+
+        if len(exceedances) < minimum_number_of_exceedances:
+            shape.append(np.nan)
+            scale.append(np.nan)
+            threshold.append(column_threshold)
+            exceedance_probability.append(np.nan)
+            continue
+
+        column_shape, _, column_scale = stats.genpareto.fit(exceedances, floc=0)
+
+        shape.append(column_shape)
+        scale.append(column_scale)
+        threshold.append(column_threshold)
+        exceedance_probability.append(len(exceedances) / len(losses))
+
+    return (
+        np.array(shape),
+        np.array(scale),
+        np.array(threshold),
+        np.array(exceedance_probability),
     )
 
 
@@ -178,34 +233,9 @@ def get_var_evt(
     returns = pd.DataFrame(returns)
 
     # Fitting a Generalized Pareto Distribution to the exceedances over the threshold.
-    # A minimum number of exceedances is required for the GPD fit to be meaningful, if
-    # there are too few (e.g. a short sub-period), NaN is returned for that column.
-    minimum_number_of_exceedances = 2
-
-    shape, scale, threshold, exceedance_probability = [], [], [], []
-    for column in returns.columns:
-        losses = -returns[column].dropna()
-        column_threshold = np.percentile(losses, threshold_percentile * 100)
-        exceedances = losses[losses > column_threshold] - column_threshold
-
-        if len(exceedances) < minimum_number_of_exceedances:
-            shape.append(np.nan)
-            scale.append(np.nan)
-            threshold.append(column_threshold)
-            exceedance_probability.append(np.nan)
-            continue
-
-        column_shape, _, column_scale = stats.genpareto.fit(exceedances, floc=0)
-
-        shape.append(column_shape)
-        scale.append(column_scale)
-        threshold.append(column_threshold)
-        exceedance_probability.append(len(exceedances) / len(losses))
-
-    shape = np.array(shape)
-    scale = np.array(scale)
-    threshold = np.array(threshold)
-    exceedance_probability = np.array(exceedance_probability)
+    shape, scale, threshold, exceedance_probability = fit_gpd_tail(
+        returns, threshold_percentile
+    )
 
     value_at_risk = -(
         threshold + (scale / shape) * ((alpha / exceedance_probability) ** (-shape) - 1)
@@ -252,3 +282,73 @@ def get_var_studentt(returns, alpha: float) -> pd.Series | pd.DataFrame:
     za = stats.t.ppf(alpha, v)
 
     return np.sqrt((v - 2) / v) * za * returns.std(ddof=0) + returns.mean()
+
+
+def get_var_cornish_fisher(
+    returns: pd.Series | pd.DataFrame, alpha: float
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate the Value at Risk (VaR) of returns based on the Cornish-Fisher (modified
+    Gaussian) expansion.
+
+    The Cornish-Fisher expansion adjusts the standard normal quantile for the sample
+    skewness and (excess) kurtosis of the return distribution, which makes the resulting
+    VaR more accurate than the plain gaussian VaR (`get_var_gaussian`) for returns that
+    are not normally distributed, i.e. that are skewed and/or fat-tailed (as most asset
+    returns are, see `econometrics.diagnostics_model.get_jarque_bera_test`).
+
+    The formula is as follows:
+
+    - z_cf = z + (z^2 - 1) * S / 6 + (z^3 - 3z) * K / 24 - (2z^3 - 5z) * S^2 / 36
+    - VaR = mean + z_cf * std
+
+    Where `z` is the gaussian quantile at `alpha`, `S` is the skewness and `K` is the
+    excess (Fisher) kurtosis of `returns`.
+
+    Also known as: modified VaR, mVaR.
+
+    For more information about the method, see the following papers:
+
+    - Cornish, E.A., & Fisher, R.A. (1938). "Moments and Cumulants in the Specification
+    of Distributions." Revue de l'Institut International de Statistique, 5(4), 307-320.
+    - Favre, L., & Galeano, J.A. (2002). "Mean-Modified Value-at-Risk Optimization with
+    Hedge Funds." Journal of Alternative Investments, 5(2), 21-25.
+
+    Args:
+        returns (pd.Series | pd.DataFrame): A Series or Dataframe of returns.
+        alpha (float): The confidence level (e.g., 0.05 for 95% confidence).
+
+    Returns:
+        pd.Series | pd.DataFrame: VaR values as float if returns is a pd.Series,
+        otherwise as pd.Series or pd.DataFrame with time as index.
+    """
+    if (
+        isinstance(returns, pd.DataFrame)
+        and returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS
+    ):
+        periods = returns.index.get_level_values(0).unique()
+        period_data_list = []
+
+        for sub_period in periods:
+            period_data = get_var_cornish_fisher(returns.loc[sub_period], alpha)
+            period_data.name = sub_period
+
+            if not period_data.empty:
+                period_data_list.append(period_data)
+
+        value_at_risk = pd.concat(period_data_list, axis=1)
+
+        return value_at_risk.T
+
+    za = stats.norm.ppf(alpha, 0, 1)
+    skewness = risk_model.get_skewness(returns)
+    excess_kurtosis = risk_model.get_kurtosis(returns, fisher=True)
+
+    z_cornish_fisher = (
+        za
+        + (za**2 - 1) * skewness / 6
+        + (za**3 - 3 * za) * excess_kurtosis / 24
+        - (2 * za**3 - 5 * za) * (skewness**2) / 36
+    )
+
+    return returns.mean() + z_cornish_fisher * returns.std(ddof=0)

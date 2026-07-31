@@ -4,15 +4,19 @@ __docformat__ = "google"
 
 import warnings
 
+import numpy as np
 import pandas as pd
 
 from financetoolkit.helpers import handle_portfolio
 from financetoolkit.risk import (
     backtesting_model,
+    copula_model,
+    covar_model,
     cvar_model,
-    diagnostics_model,
     evar_model,
     garch_model,
+    market_liquidity_model,
+    realized_volatility_model,
     risk_model,
     var_model,
 )
@@ -367,7 +371,10 @@ class Risk:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             distribution (str): The distribution to use for the VaR calculations (historic, gaussian, cf,
-            studentt or evt). Defaults to "historic".
+            cornish-fisher, studentt or evt). Defaults to "historic". Note that "cf" and "cornish-fisher"
+            both adjust the gaussian quantile for skewness and kurtosis, but "cornish-fisher" uses the
+            more standard Cornish-Fisher expansion (see `var_model.get_var_cornish_fisher`), while "cf"
+            is kept for backwards compatibility.
             threshold_percentile (float, optional): Only used when `distribution` is "evt". The percentile
             of losses above which the Generalized Pareto Distribution is fitted. Defaults to 0.95.
 
@@ -431,6 +438,8 @@ class Risk:
                 value_at_risk = var_model.get_var_gaussian(returns, alpha)
             elif distribution == "cf":
                 value_at_risk = var_model.get_var_gaussian(returns, alpha, True)
+            elif distribution == "cornish-fisher":
+                value_at_risk = var_model.get_var_cornish_fisher(returns, alpha)
             elif distribution == "studentt":
                 value_at_risk = var_model.get_var_studentt(returns, alpha)
             elif distribution == "evt":
@@ -439,7 +448,8 @@ class Risk:
                 )
             else:
                 raise ValueError(
-                    "Distribution must be historic, gaussian, cf, studentt or evt."
+                    "Distribution must be historic, gaussian, cf, cornish-fisher, "
+                    "studentt or evt."
                 )
 
         if rolling or within_period:
@@ -471,6 +481,7 @@ class Risk:
         lag: int | list[int] = 1,
         standardize: bool = False,
         distribution: str = "historic",
+        threshold_percentile: float = 0.95,
     ):
         """
         Calculate the Conditional Value at Risk (CVaR) of an investment portfolio or asset's returns.
@@ -502,8 +513,10 @@ class Risk:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            distribution (str): The distribution to use for the CVaR calculations (historic, gaussian, studentt, laplace
-            or logistic). Defaults to "historic".
+            distribution (str): The distribution to use for the CVaR calculations (historic, gaussian, studentt, laplace,
+            logistic, cornish-fisher or evt). Defaults to "historic".
+            threshold_percentile (float, optional): Only used when `distribution` is "evt". The percentile
+            of losses above which the Generalized Pareto Distribution is fitted. Defaults to 0.95.
 
         Returns:
             pd.Series: CVaR values with time as the index.
@@ -566,14 +579,23 @@ class Risk:
             elif distribution == "gaussian":
                 conditional_value_at_risk = cvar_model.get_cvar_gaussian(returns, alpha)
             elif distribution == "studentt":
-                conditional_value_at_risk = var_model.get_var_studentt(returns, alpha)
+                conditional_value_at_risk = cvar_model.get_cvar_studentt(returns, alpha)
             elif distribution == "laplace":
                 conditional_value_at_risk = cvar_model.get_cvar_laplace(returns, alpha)
             elif distribution == "logistic":
                 conditional_value_at_risk = cvar_model.get_cvar_logistic(returns, alpha)
+            elif distribution == "cornish-fisher":
+                conditional_value_at_risk = cvar_model.get_cvar_cornish_fisher(
+                    returns, alpha
+                )
+            elif distribution == "evt":
+                conditional_value_at_risk = cvar_model.get_cvar_evt(
+                    returns, alpha, threshold_percentile
+                )
             else:
                 raise ValueError(
-                    "Distribution must be historic, gaussian, studentt, laplace or logistic."
+                    "Distribution must be historic, gaussian, studentt, laplace, "
+                    "logistic, cornish-fisher or evt."
                 )
 
         if rolling or within_period:
@@ -2307,48 +2329,71 @@ class Risk:
 
         return parameters.round(rounding if rounding is not None else self._rounding)
 
-    @handle_portfolio
+    def _get_price_column(self, period: str, column: str) -> pd.DataFrame:
+        if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
+            raise ValueError(
+                "Period must be daily, weekly, monthly, quarterly, or yearly."
+            )
+        if period == "daily" and self._historical_data["intraday"].empty:
+            raise ValueError("Intraday data is required for daily calculations.")
+
+        return self._historical_data[period][column].dropna()
+
     @handle_errors
-    def get_arch_lm_test(
+    def get_tail_dependence_coefficient(
         self,
+        ticker_a: str,
+        ticker_b: str,
         period: str | None = None,
-        within_period: bool = True,
-        lags: int = 5,
+        column: str = "Return",
+        q: float = 0.95,
+        method: str = "empirical",
+        dof: float = 4.0,
         rounding: int | None = None,
-    ) -> pd.DataFrame:
+    ) -> pd.Series:
         """
-        Calculate Engle's Lagrange Multiplier (LM) test for ARCH effects.
+        Calculate the Upper and Lower Tail Dependence Coefficients between `ticker_a`
+        and `ticker_b`.
 
-        The test regresses squared, mean-demeaned returns on `lags` of themselves and
-        tests whether the resulting R-squared is significantly different from zero.
-        A significant result (low p-value) indicates that the return series exhibits
-        volatility clustering, and a GARCH-family model is an appropriate choice for
-        it. A high p-value suggests fitting GARCH would not be meaningful, since there
-        is no detectable time-varying volatility to model.
+        Correlation only captures the *average* co-movement between two assets -- it
+        says nothing about whether they are more likely to crash together than an
+        equivalent gaussian relationship would imply. The Tail Dependence Coefficient
+        answers that specific question directly: the probability that one asset is in
+        extreme distress, given that the other one already is.
 
-        For more information about the method, see the following paper:
+        For more information about the method, see the following papers:
 
-        - Engle, R.F. (1982). "Autoregressive Conditional Heteroscedasticity with
-        Estimates of the Variance of United Kingdom Inflation." Econometrica, 50(4),
-        987-1008.
+        - Embrechts, P., McNeil, A., & Straumann, D. (1999). "Correlation: Pitfalls
+        and Alternatives." RISK Magazine, 12, 69-71.
+        - Poon, S.H., Rockinger, M., & Tawn, J. (2004). "Extreme Value Dependence in
+        Financial Markets: Diagnostics, Models, and Financial Implications." Review of
+        Financial Studies, 17(2), 581-610.
 
-        Also known as: ARCH-LM test, Engle's ARCH test.
+        Also known as: tail dependence, extremal dependence coefficient.
 
         Args:
-            period (str, optional): The data frequency for returns (daily, weekly, quarterly, or yearly).
+            ticker_a (str): The first asset.
+            ticker_b (str): The second asset.
+            period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly).
             Defaults to "quarterly".
-            within_period (bool, optional): Whether to calculate the test within the specified period or for
-            the entire period. Thus whether to look at the test within a specific year (if period = 'yearly')
-            or look at the entirety of all years. Defaults to True.
-            lags (int, optional): The number of lags to test for ARCH effects. Defaults to 5.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            column (str, optional): The historical data column to use. Defaults to "Return", since
+            tail dependence between return series is the standard risk management application.
+            q (float, optional): The threshold quantile used for the "empirical" method, in (0.5, 1).
+            Defaults to 0.95.
+            method (str, optional): The estimation method, one of "empirical", "gaussian" or
+            "student-t". Defaults to "empirical".
+            dof (float, optional): The degrees of freedom of the Student-T copula, only used when
+            `method="student-t"`. Defaults to 4.0.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to
+            None.
 
         Returns:
-            pd.DataFrame: The ARCH-LM statistic and its p-value per asset.
+            pd.Series: The Lower and Upper Tail Dependence Coefficients, the linear (Pearson)
+            correlation between the two assets, and the number of observations used.
 
         Notes:
-        - The method retrieves historical return data based on the specified `period` and runs the ARCH-LM
-        test for each asset in the Toolkit instance.
+        - The method retrieves historical data based on the specified `period` for the two given
+        assets and estimates the tail dependence coefficient between them.
 
         As an example:
 
@@ -2357,74 +2402,76 @@ class Risk:
 
         toolkit = Toolkit(["AMZN", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
-        toolkit.risk.get_arch_lm_test(period="quarterly")
+        toolkit.risk.get_tail_dependence_coefficient("AAPL", "MSFT", period="weekly")
         ```
 
         Which returns:
 
-        |                   |     AMZN |   TSLA |   Benchmark |
-        |:------------------|---------:|-------:|------------:|
-        | ARCH-LM Statistic |   4.0116 | 3.7793 |      2.8938 |
-        | P-Value           |   0.548  | 0.5817 |      0.7161 |
+        | Metric                |   Value |
+        |:-----------------------|--------:|
+        | Lower Tail Dependence  |  0.25   |
+        | Upper Tail Dependence  |  0.375  |
+        | Correlation            |  0.7602 |
+        | Observations           | 157      |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
+        returns = self._get_price_column(period, column)
 
-        if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
-            raise ValueError(
-                "Period must be daily, weekly, monthly, quarterly, or yearly."
-            )
-        if period == "daily" and self._historical_data["intraday"].empty:
-            raise ValueError("Intraday data is required for daily calculations.")
-
-        returns = (
-            self._within_historical_data[period]["Return"]
-            if within_period
-            else self._historical_data[period]["Return"]
-        ).dropna()
-
-        result = diagnostics_model.get_arch_lm_test(returns, lags=lags)
+        result = copula_model.get_tail_dependence_coefficient(
+            returns[ticker_a], returns[ticker_b], q=q, method=method, dof=dof
+        )
 
         return result.round(rounding if rounding is not None else self._rounding)
 
-    @handle_portfolio
     @handle_errors
-    def get_jarque_bera_test(
+    def get_covar(
         self,
+        ticker: str,
+        conditioning_ticker: str,
         period: str | None = None,
-        within_period: bool = True,
+        column: str = "Return",
+        alpha: float = 0.05,
         rounding: int | None = None,
-    ) -> pd.DataFrame:
+    ) -> pd.Series:
         """
-        Calculate the Jarque-Bera test for normality.
+        Calculate the (Delta-)CoVaR of `ticker` conditional on `conditioning_ticker`
+        being in its own distress state.
 
-        The test combines sample skewness and excess kurtosis into a single statistic
-        that is chi-squared distributed with 2 degrees of freedom under the null
-        hypothesis that returns are normally distributed. A significant result (low
-        p-value) indicates that returns are not normally distributed, which is
-        relevant when choosing between e.g. gaussian and Student-T based Value at Risk
-        models.
+        Ordinary Value at Risk treats each asset in isolation, which misses systemic
+        risk -- the fact that one asset's distress can spill over and worsen
+        another's risk. CoVaR directly measures that spillover: it is the VaR of
+        `ticker`, conditional on `conditioning_ticker` itself being at its own
+        `alpha`-VaR, estimated via a linear Quantile Regression of `ticker`'s returns
+        on `conditioning_ticker`'s returns at quantile `alpha`. The Delta-CoVaR
+        isolates the marginal, distress-specific contribution by subtracting the same
+        construction evaluated in the "normal" (median) state instead.
 
         For more information about the method, see the following paper:
 
-        - Jarque, C.M. and Bera, A.K. (1987). "A Test for Normality of Observations
-        and Regression Residuals." International Statistical Review, 55(2), 163-172.
+        - Adrian, T., & Brunnermeier, M.K. (2016). "CoVaR." American Economic Review,
+        106(7), 1705-1741.
 
-        Also known as: JB test, normality test.
+        Also known as: Conditional Value at Risk (systemic risk sense), Delta-CoVaR.
 
         Args:
-            period (str, optional): The data frequency for returns (daily, weekly, quarterly, or yearly).
+            ticker (str): The asset whose conditional VaR is being measured.
+            conditioning_ticker (str): The asset (or e.g. a benchmark/index) whose distress
+            `ticker` is conditioned on.
+            period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly).
             Defaults to "quarterly".
-            within_period (bool, optional): Whether to calculate the test within the specified period or for
-            the entire period. Thus whether to look at the test within a specific year (if period = 'yearly')
-            or look at the entirety of all years. Defaults to True.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            column (str, optional): The historical data column to use. Defaults to "Return".
+            alpha (float, optional): The confidence level for both the tail quantile regression and
+            the VaR of `conditioning_ticker` (e.g., 0.05 for 95% confidence). Defaults to 0.05.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to
+            None.
 
         Returns:
-            pd.DataFrame: The Jarque-Bera statistic and its p-value per asset.
+            pd.Series: The CoVaR, the Delta-CoVaR, the tail (alpha-quantile) Quantile Regression
+            slope and intercept, and the number of observations used.
 
         Notes:
-        - The method retrieves historical return data based on the specified `period` and runs the
-        Jarque-Bera test for each asset in the Toolkit instance.
+        - The method retrieves historical data based on the specified `period` for the two given
+        assets and estimates the CoVaR of `ticker` conditional on `conditioning_ticker`.
 
         As an example:
 
@@ -2433,32 +2480,25 @@ class Risk:
 
         toolkit = Toolkit(["AMZN", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
-        toolkit.risk.get_jarque_bera_test(period="quarterly")
+        toolkit.risk.get_covar("AAPL", "MSFT", period="weekly")
         ```
 
         Which returns:
 
-        |                      |    AMZN |    TSLA |   Benchmark |
-        |:---------------------|--------:|--------:|------------:|
-        | Jarque-Bera Statistic |  3.0505 |  1.9354 |      2.4941 |
-        | P-Value               |  0.2175 |  0.38   |      0.2874 |
+        | Metric                         |   Value |
+        |:--------------------------------|--------:|
+        | CoVaR                           | -0.1077 |
+        | Delta-CoVaR                     | -0.1134 |
+        | Quantile Regression Slope       |  0.9214 |
+        | Quantile Regression Intercept   | -0.0508 |
+        | Observations                    | 157     |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
+        returns = self._get_price_column(period, column)
 
-        if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
-            raise ValueError(
-                "Period must be daily, weekly, monthly, quarterly, or yearly."
-            )
-        if period == "daily" and self._historical_data["intraday"].empty:
-            raise ValueError("Intraday data is required for daily calculations.")
-
-        returns = (
-            self._within_historical_data[period]["Return"]
-            if within_period
-            else self._historical_data[period]["Return"]
-        ).dropna()
-
-        result = diagnostics_model.get_jarque_bera_test(returns)
+        result = covar_model.get_covar(
+            returns[ticker], returns[conditioning_ticker], alpha=alpha
+        )
 
         return result.round(rounding if rounding is not None else self._rounding)
 
@@ -2577,6 +2617,129 @@ class Risk:
             )
 
         result = pd.concat(results, axis=0) if len(results) > 1 else results[0]
+
+        return result.round(rounding if rounding is not None else self._rounding)
+
+    @handle_portfolio
+    @handle_errors
+    def get_acerbi_szekely_test(
+        self,
+        period: str | None = None,
+        distribution: str = "historic",
+        alpha: float = 0.05,
+        window_size: int = 252,
+        n_bootstrap: int = 1000,
+        random_state: int = 42,
+        rounding: int | None = None,
+    ) -> pd.DataFrame:
+        """
+        Backtest a Conditional Value at Risk (Expected Shortfall) model against
+        realized returns, via the Acerbi-Szekely (2014) Z2 statistic.
+
+        `get_var_backtest` above only backtests the VaR estimate itself -- it checks
+        how often (and how independently) the VaR threshold is breached, but says
+        nothing about the *severity* of the losses on those breach days, which is
+        exactly the extra information a CVaR (Expected Shortfall) estimate is
+        supposed to add over VaR. This method builds a rolling, out-of-sample CVaR
+        (and VaR) path and compares the actual loss on each breach day to the CVaR
+        that was supposed to describe the average loss on such days.
+
+        For more information about the method, see the following paper:
+
+        - Acerbi, C., & Szekely, B. (2014). "Back-Testing Expected Shortfall." RISK
+        Magazine, 27(11), 76-81.
+
+        Also known as: Acerbi-Szekely test, ES backtest, Z2 test.
+
+        Args:
+            period (str, optional): The data frequency for returns (daily, weekly, quarterly, or yearly).
+            Defaults to "daily", since `window_size` is expressed in return observations of this frequency.
+            distribution (str, optional): The distribution to use for the rolling VaR/CVaR estimates,
+            one of "historic", "gaussian", "studentt" or "evt". Defaults to "historic".
+            alpha (float, optional): The confidence level for the VaR/CVaR estimates (e.g., 0.05 for 95%
+            confidence). Defaults to 0.05.
+            window_size (int, optional): The rolling window size (in number of return observations) used
+            to estimate each VaR/CVaR value. Defaults to 252 (approximately one trading year of daily
+            returns).
+            n_bootstrap (int, optional): The number of bootstrap resamples used to estimate the Standard
+            Error of Z2. Defaults to 1000.
+            random_state (int, optional): The seed for the bootstrap random number generator. Defaults to
+            42.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+
+        Returns:
+            pd.DataFrame: The Z2 statistic, its bootstrap Standard Error, its p-value, and the number of
+            breaches observed, per asset.
+
+        Notes:
+        - The rolling VaR/CVaR path is calculated over the full return history, not the `within_period`
+        slices used elsewhere in this module, since a meaningful rolling window generally needs more
+        history than a single sub-period provides.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AMZN", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.risk.get_acerbi_szekely_test(window_size=100)
+        ```
+
+        Which returns:
+
+        |                           |    AAPL |    MSFT |   Benchmark |
+        |:--------------------------|--------:|--------:|------------:|
+        | Acerbi-Szekely Statistic  |  0.0905 |  0.0095 |     -0.003  |
+        | Standard Error            |  0.1817 |  0.1723 |      0.1663 |
+        | P-Value                   |  0.6185 |  0.9558 |      0.9858 |
+        | Breaches                  | 37      | 33      |     33      |
+        """
+        period = period if period else "daily"
+
+        if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
+            raise ValueError(
+                "Period must be daily, weekly, monthly, quarterly, or yearly."
+            )
+        if distribution not in ["historic", "gaussian", "studentt", "evt"]:
+            raise ValueError(
+                "Distribution must be historic, gaussian, studentt, or evt."
+            )
+
+        returns = self._historical_data[period]["Return"].dropna()
+
+        if distribution == "historic":
+            rolling_var = var_model.get_rolling_var_historic(
+                returns, alpha, window_size
+            )
+            rolling_cvar = cvar_model.get_rolling_cvar_historic(
+                returns, alpha, window_size
+            )
+        elif distribution == "gaussian":
+            rolling_var = returns.rolling(window=window_size).apply(
+                lambda window: var_model.get_var_gaussian(window, alpha), raw=False
+            )
+            rolling_cvar = returns.rolling(window=window_size).apply(
+                lambda window: cvar_model.get_cvar_gaussian(window, alpha), raw=False
+            )
+        elif distribution == "studentt":
+            rolling_var = returns.rolling(window=window_size).apply(
+                lambda window: var_model.get_var_studentt(window, alpha), raw=False
+            )
+            rolling_cvar = returns.rolling(window=window_size).apply(
+                lambda window: cvar_model.get_cvar_studentt(window, alpha), raw=False
+            )
+        else:
+            rolling_var = returns.rolling(window=window_size).apply(
+                lambda window: var_model.get_var_evt(window, alpha), raw=False
+            )
+            rolling_cvar = returns.rolling(window=window_size).apply(
+                lambda window: cvar_model.get_cvar_evt(window, alpha), raw=False
+            )
+
+        result = backtesting_model.get_acerbi_szekely_test(
+            returns, rolling_var, rolling_cvar, alpha, n_bootstrap, random_state
+        )
 
         return result.round(rounding if rounding is not None else self._rounding)
 
@@ -2803,6 +2966,93 @@ class Risk:
 
     @handle_portfolio
     @handle_errors
+    def get_hill_estimator(
+        self,
+        period: str | None = None,
+        within_period: bool = True,
+        k: int | float = 0.1,
+        tail: str = "left",
+        rounding: int | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the Hill Estimator of the tail index of returns, per asset.
+
+        Unlike the (finite-sample) Skewness and Kurtosis above, the Hill Estimator is
+        a semi-parametric estimate of how heavy the tail of the return distribution
+        actually is, under the assumption that the tail follows a Pareto-type power
+        law. Smaller values of the tail index indicate a heavier tail (more extreme
+        outliers are likely) -- as a rule of thumb, a tail index below 4 implies the
+        Kurtosis is theoretically infinite, and below 2 implies the Variance itself is
+        theoretically infinite.
+
+        For more information about the method, see the following paper:
+
+        - Hill, B.M. (1975). "A Simple General Approach to Inference About the Tail of
+        a Distribution." The Annals of Statistics, 3(5), 1163-1174.
+
+        Also known as: Hill tail index estimator, Hill's estimator.
+
+        Args:
+            period (str, optional): The data frequency for returns (daily, weekly, quarterly, or yearly).
+            Defaults to "quarterly".
+            within_period (bool, optional): Whether to calculate the estimator within the specified period
+            or for the entire period. Defaults to True.
+            k (int | float, optional): The number of upper order statistics to use. If a float in (0, 1)
+            it is interpreted as the fraction of the strictly positive observations to use. Defaults to
+            0.1 (the top 10%).
+            tail (str, optional): Which tail to estimate, one of "left" (the loss tail) or "right" (the
+            gain tail). Defaults to "left".
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to
+            None.
+
+        Returns:
+            pd.DataFrame: The Hill tail index, the Hill shape parameter, its Standard Error and the
+            number of order statistics used, per asset.
+
+        Notes:
+        - The method retrieves historical return data based on the specified `period` and calculates the
+        Hill Estimator for each asset in the Toolkit instance.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AMZN", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.risk.get_hill_estimator(period="weekly", within_period=False)
+        ```
+
+        Which returns:
+
+        |                        |   AAPL |   MSFT |   Benchmark |
+        |:-----------------------|-------:|-------:|------------:|
+        | Hill Tail Index        | 2.6934 | 5.0478 |      2.1843 |
+        | Hill Shape (xi)        | 0.3713 | 0.1981 |      0.4578 |
+        | Standard Error         | 1.018  | 1.9079 |      0.8256 |
+        | Observations Used (k)  | 7      | 7      |      7      |
+        """
+        period = period if period else "quarterly" if self._quarterly else "yearly"
+
+        if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
+            raise ValueError(
+                "Period must be daily, weekly, monthly, quarterly, or yearly."
+            )
+        if period == "daily" and self._historical_data["intraday"].empty:
+            raise ValueError("Intraday data is required for daily calculations.")
+
+        returns = (
+            self._within_historical_data[period]["Return"]
+            if within_period
+            else self._historical_data[period]["Return"]
+        ).dropna()
+
+        result = risk_model.get_hill_estimator(returns, k=k, tail=tail)
+
+        return result.round(rounding if rounding is not None else self._rounding)
+
+    @handle_portfolio
+    @handle_errors
     def get_variance(
         self,
         period: str | None = None,
@@ -2991,6 +3241,737 @@ class Risk:
             axis="rows",
             apply_slice=False,
         )
+
+    @handle_portfolio
+    @handle_errors
+    def get_parkinson_volatility(
+        self,
+        period: str | None = None,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+    ):
+        """
+        Calculate the Parkinson Volatility of an investment portfolio or asset for a given
+        period based on daily High and Low prices.
+
+        The Parkinson estimator uses the daily trading range (High vs Low) instead of only the
+        close-to-close return, which makes it considerably more efficient (i.e. it needs fewer
+        observations to reach the same precision) than the standard close-to-close Volatility
+        (see `get_volatility`), at the cost of assuming that prices follow a continuous
+        geometric Brownian motion with no drift and no overnight jumps.
+
+        The daily Volatility is scaled to the given period by multiplying the underlying
+        Variance with the number of trading days within that period (e.g. 252 / 52 for weekly),
+        in the same way as `get_volatility`.
+
+        Also known as: Parkinson's range-based Volatility, high-low Volatility.
+
+        For more information about the method, see the following paper:
+
+        - Parkinson, M. (1980). "The Extreme Value Method for Estimating the Variance of the
+        Rate of Return." Journal of Business, 53(1), 61-65.
+
+        Args:
+            period (str, optional): The data frequency for returns (weekly, monthly,
+            quarterly, or yearly). Defaults to "yearly".
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the Parkinson Volatility values
+            over time. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+
+        Returns:
+            pd.Series: Parkinson Volatility values with time as the index.
+
+        Notes:
+        - The method retrieves the daily historical High and Low price data and calculates the
+        Parkinson Volatility for the specified `period` for each asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of Parkinson Volatility
+        values using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AMZN", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.risk.get_parkinson_volatility(period="yearly")
+        ```
+
+        Which returns:
+
+        | Date   |   AMZN |   TSLA |   Benchmark |
+        |:-------|-------:|-------:|------------:|
+        | 2021   | 0.2099 | 0.426  |      0.103  |
+        | 2022   | 0.3717 | 0.5547 |      0.1916 |
+        | 2023   | 0.2611 | 0.4365 |      0.1101 |
+        | 2024   | 0.219  | 0.4357 |      0.0989 |
+        | 2025   | 0.267  | 0.5062 |      0.152  |
+        | 2026   | 0.2681 | 0.3781 |      0.1111 |
+        """
+        period = period if period else "quarterly" if self._quarterly else "yearly"
+
+        if period not in ["weekly", "monthly", "quarterly", "yearly"]:
+            raise ValueError("Period must be weekly, monthly, quarterly, or yearly.")
+
+        high_prices = self._historical_data["daily"]["High"]
+        low_prices = self._historical_data["daily"]["Low"]
+
+        volatility = realized_volatility_model.get_parkinson_volatility(
+            high_prices, low_prices, period
+        )
+
+        volatility = volatility.loc[self._start_date : self._end_date]
+
+        return finalize_dataset(
+            dataset=volatility,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            apply_slice=False,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_garman_klass_volatility(
+        self,
+        period: str | None = None,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+    ):
+        """
+        Calculate the Garman-Klass Volatility of an investment portfolio or asset for a given
+        period based on daily Open, High, Low and Close prices.
+
+        The Garman-Klass estimator extends Parkinson's range-based estimator (see
+        `get_parkinson_volatility`) by also incorporating the Open and Close, which allows it to
+        account for the opening jump and makes it more efficient still (assuming, as Parkinson
+        does, no drift and no overnight jumps beyond the modeled open).
+
+        The daily Volatility is scaled to the given period in the same way as `get_volatility`.
+
+        Also known as: Garman-Klass range-based Volatility.
+
+        For more information about the method, see the following paper:
+
+        - Garman, M.B., & Klass, M.J. (1980). "On the Estimation of Security Price
+        Volatilities from Historical Data." Journal of Business, 53(1), 67-78.
+
+        Args:
+            period (str, optional): The data frequency for returns (weekly, monthly,
+            quarterly, or yearly). Defaults to "yearly".
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the Garman-Klass Volatility
+            values over time. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+
+        Returns:
+            pd.Series: Garman-Klass Volatility values with time as the index.
+
+        Notes:
+        - The method retrieves the daily historical Open, High, Low and Close price data and
+        calculates the Garman-Klass Volatility for the specified `period` for each asset in the
+        Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of Garman-Klass Volatility
+        values using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AMZN", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.risk.get_garman_klass_volatility(period="yearly")
+        ```
+
+        Which returns:
+
+        | Date   |   AMZN |   TSLA |   Benchmark |
+        |:-------|-------:|-------:|------------:|
+        | 2021   | 0.2113 | 0.4204 |      0.1023 |
+        | 2022   | 0.3709 | 0.539  |      0.188  |
+        | 2023   | 0.2616 | 0.4326 |      0.1089 |
+        | 2024   | 0.223  | 0.4379 |      0.0997 |
+        | 2025   | 0.2654 | 0.4987 |      0.1441 |
+        | 2026   | 0.2756 | 0.375  |      0.1138 |
+        """
+        period = period if period else "quarterly" if self._quarterly else "yearly"
+
+        if period not in ["weekly", "monthly", "quarterly", "yearly"]:
+            raise ValueError("Period must be weekly, monthly, quarterly, or yearly.")
+
+        open_prices = self._historical_data["daily"]["Open"]
+        high_prices = self._historical_data["daily"]["High"]
+        low_prices = self._historical_data["daily"]["Low"]
+        close_prices = self._historical_data["daily"]["Close"]
+
+        volatility = realized_volatility_model.get_garman_klass_volatility(
+            open_prices, high_prices, low_prices, close_prices, period
+        )
+
+        volatility = volatility.loc[self._start_date : self._end_date]
+
+        return finalize_dataset(
+            dataset=volatility,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            apply_slice=False,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_rogers_satchell_volatility(
+        self,
+        period: str | None = None,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+    ):
+        """
+        Calculate the Rogers-Satchell Volatility of an investment portfolio or asset for a
+        given period based on daily Open, High, Low and Close prices.
+
+        Unlike Parkinson (`get_parkinson_volatility`) and Garman-Klass
+        (`get_garman_klass_volatility`), the Rogers-Satchell estimator is drift-independent,
+        meaning it remains unbiased even when the underlying asset has a non-zero expected
+        return over the period, at the cost of still assuming no overnight jumps.
+
+        The daily Volatility is scaled to the given period in the same way as `get_volatility`.
+
+        Also known as: Rogers-Satchell range-based Volatility, drift-independent Volatility.
+
+        For more information about the method, see the following paper:
+
+        - Rogers, L.C.G., & Satchell, S.E. (1991). "Estimating Variance from High, Low and
+        Close Prices." Annals of Applied Probability, 1(4), 504-512.
+
+        Args:
+            period (str, optional): The data frequency for returns (weekly, monthly,
+            quarterly, or yearly). Defaults to "yearly".
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the Rogers-Satchell
+            Volatility values over time. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+
+        Returns:
+            pd.Series: Rogers-Satchell Volatility values with time as the index.
+
+        Notes:
+        - The method retrieves the daily historical Open, High, Low and Close price data and
+        calculates the Rogers-Satchell Volatility for the specified `period` for each asset in
+        the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of Rogers-Satchell
+        Volatility values using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AMZN", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.risk.get_rogers_satchell_volatility(period="yearly")
+        ```
+
+        Which returns:
+
+        | Date   |   AMZN |   TSLA |   Benchmark |
+        |:-------|-------:|-------:|------------:|
+        | 2021   | 0.2108 | 0.42   |      0.102  |
+        | 2022   | 0.3696 | 0.5325 |      0.1852 |
+        | 2023   | 0.2614 | 0.4294 |      0.1075 |
+        | 2024   | 0.2235 | 0.4359 |      0.1015 |
+        | 2025   | 0.2655 | 0.4949 |      0.1392 |
+        | 2026   | 0.2806 | 0.3681 |      0.1144 |
+        """
+        period = period if period else "quarterly" if self._quarterly else "yearly"
+
+        if period not in ["weekly", "monthly", "quarterly", "yearly"]:
+            raise ValueError("Period must be weekly, monthly, quarterly, or yearly.")
+
+        open_prices = self._historical_data["daily"]["Open"]
+        high_prices = self._historical_data["daily"]["High"]
+        low_prices = self._historical_data["daily"]["Low"]
+        close_prices = self._historical_data["daily"]["Close"]
+
+        volatility = realized_volatility_model.get_rogers_satchell_volatility(
+            open_prices, high_prices, low_prices, close_prices, period
+        )
+
+        volatility = volatility.loc[self._start_date : self._end_date]
+
+        return finalize_dataset(
+            dataset=volatility,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            apply_slice=False,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_yang_zhang_volatility(
+        self,
+        period: str | None = None,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+    ):
+        """
+        Calculate the Yang-Zhang Volatility of an investment portfolio or asset for a given
+        period based on daily Open, High, Low and Close prices.
+
+        The Yang-Zhang estimator is a weighted combination of the overnight (close-to-open)
+        Variance, the open-to-close Variance and the Rogers-Satchell Variance (see
+        `get_rogers_satchell_volatility`). It is both drift-independent and accounts for
+        overnight jumps, which makes it the most statistically efficient of the range-based
+        Volatility estimators implemented here (i.e. it has the lowest variance of the
+        estimator itself across sub-samples).
+
+        The daily Volatility is scaled to the given period in the same way as `get_volatility`.
+
+        Also known as: Yang-Zhang range-based Volatility, drift-independent overnight-aware
+        Volatility.
+
+        For more information about the method, see the following paper:
+
+        - Yang, D., & Zhang, Q. (2000). "Drift-Independent Volatility Estimation Based on
+        High, Low, Open, and Close Prices." Journal of Business, 73(3), 477-491.
+
+        Args:
+            period (str, optional): The data frequency for returns (weekly, monthly,
+            quarterly, or yearly). Defaults to "yearly".
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the Yang-Zhang Volatility
+            values over time. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+
+        Returns:
+            pd.Series: Yang-Zhang Volatility values with time as the index.
+
+        Notes:
+        - The method retrieves the daily historical Open, High, Low and Close price data and
+        calculates the Yang-Zhang Volatility for the specified `period` for each asset in the
+        Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of Yang-Zhang Volatility
+        values using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AMZN", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.risk.get_yang_zhang_volatility(period="yearly")
+        ```
+
+        Which returns:
+
+        | Date   |   AMZN |   TSLA |   Benchmark |
+        |:-------|-------:|-------:|------------:|
+        | 2021   | 0.2387 | 0.4859 |      0.1267 |
+        | 2022   | 0.5037 | 0.6471 |      0.2321 |
+        | 2023   | 0.3314 | 0.5434 |      0.1321 |
+        | 2024   | 0.3067 | 0.5969 |      0.131  |
+        | 2025   | 0.3806 | 0.6125 |      0.1863 |
+        | 2026   | 0.3557 | 0.4404 |      0.1474 |
+        """
+        period = period if period else "quarterly" if self._quarterly else "yearly"
+
+        if period not in ["weekly", "monthly", "quarterly", "yearly"]:
+            raise ValueError("Period must be weekly, monthly, quarterly, or yearly.")
+
+        open_prices = self._historical_data["daily"]["Open"]
+        high_prices = self._historical_data["daily"]["High"]
+        low_prices = self._historical_data["daily"]["Low"]
+        close_prices = self._historical_data["daily"]["Close"]
+
+        volatility = realized_volatility_model.get_yang_zhang_volatility(
+            open_prices, high_prices, low_prices, close_prices, period
+        )
+
+        volatility = volatility.loc[self._start_date : self._end_date]
+
+        return finalize_dataset(
+            dataset=volatility,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            apply_slice=False,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_har_rv_forecast(
+        self,
+        estimator: str = "squared_return",
+        weekly_window: int = 5,
+        monthly_window: int = 22,
+        horizon: int = 1,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+    ):
+        """
+        Calculate the Corsi (2009) Heterogeneous Autoregressive Realized Volatility
+        (HAR-RV) forecast of future daily Realized Variance, per asset.
+
+        Volatility clustering happens across multiple, overlapping time horizons at
+        once. HAR-RV captures this cheaply -- without the numerical optimization a
+        GARCH-family fit requires (see `get_garch`) -- by regressing future daily
+        Realized Variance on trailing daily, weekly and monthly average Realized
+        Variance components. The daily Realized Variance itself can be constructed in
+        several ways via `estimator`: the simplest is the squared daily return, while
+        the OHLC range-based estimators (see `get_parkinson_volatility`,
+        `get_garman_klass_volatility` and `get_rogers_satchell_volatility`) use the
+        daily (pre-period-aggregation) term behind each of those estimators instead,
+        which is more statistically efficient since it uses the daily trading range
+        rather than only the close-to-close move.
+
+        For more information about the method, see the following paper:
+
+        - Corsi, F. (2009). "A Simple Approximate Long-Memory Model of Realized
+        Volatility." Journal of Financial Econometrics, 7(2), 174-196.
+
+        Also known as: HAR-RV model, Corsi's HAR model, Heterogeneous Autoregressive model.
+
+        Args:
+            estimator (str, optional): How to construct the daily Realized Variance input, one of
+            "squared_return", "parkinson", "garman_klass" or "rogers_satchell". Defaults to
+            "squared_return".
+            weekly_window (int, optional): The trailing window (in trading days) for the weekly RV
+            component. Defaults to 5.
+            monthly_window (int, optional): The trailing window (in trading days) for the monthly RV
+            component. Defaults to 22.
+            horizon (int, optional): The number of days ahead to forecast. Defaults to 1.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the HAR-RV forecast values over
+            time. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+
+        Returns:
+            pd.Series: The HAR-RV forecast of Realized Variance with time as the index.
+
+        Notes:
+        - The method retrieves daily historical price data and calculates the HAR-RV forecast for each
+        asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the HAR-RV forecast values
+        using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AMZN", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.risk.get_har_rv_forecast(estimator="squared_return").tail()
+        ```
+
+        Which returns:
+
+        | Date       |   AAPL |   MSFT |   Benchmark |
+        |:-----------|-------:|-------:|------------:|
+        | 2022-12-23 | 0.0004 | 0.0002 |      0.0001 |
+        | 2022-12-27 | 0.0004 | 0.0002 |      0.0001 |
+        | 2022-12-28 | 0.0006 | 0.0003 |      0.0002 |
+        | 2022-12-29 | 0.0006 | 0.0006 |      0.0002 |
+        | 2022-12-30 | NaN    | NaN    |    NaN      |
+
+        The last row is NaN since there is no `2022-12-31` return yet to forecast against.
+        """
+        if estimator not in (
+            "squared_return",
+            "parkinson",
+            "garman_klass",
+            "rogers_satchell",
+        ):
+            raise ValueError(
+                "estimator must be 'squared_return', 'parkinson', 'garman_klass', "
+                "or 'rogers_satchell'."
+            )
+
+        if estimator == "squared_return":
+            realized_variance = self._historical_data["daily"]["Return"].dropna() ** 2
+        else:
+            open_prices = self._historical_data["daily"]["Open"]
+            high_prices = self._historical_data["daily"]["High"]
+            low_prices = self._historical_data["daily"]["Low"]
+            close_prices = self._historical_data["daily"]["Close"]
+
+            if estimator == "parkinson":
+                realized_variance = np.log(high_prices / low_prices) ** 2 / (
+                    4 * np.log(2)
+                )
+            elif estimator == "garman_klass":
+                realized_variance = (
+                    0.5 * np.log(high_prices / low_prices) ** 2
+                    - (2 * np.log(2) - 1) * np.log(close_prices / open_prices) ** 2
+                )
+            else:
+                realized_variance = np.log(high_prices / close_prices) * np.log(
+                    high_prices / open_prices
+                ) + np.log(low_prices / close_prices) * np.log(low_prices / open_prices)
+
+        forecast = realized_volatility_model.get_har_rv_forecast(
+            realized_variance, weekly_window, monthly_window, horizon
+        )
+
+        forecast = forecast.loc[self._start_date : self._end_date]
+
+        return finalize_dataset(
+            dataset=forecast,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            apply_slice=False,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_amihud_illiquidity(
+        self,
+        period: str | None = None,
+        within_period: bool = True,
+        scale: float = 1_000_000,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+    ):
+        """
+        Calculate the Amihud (2002) Illiquidity ratio, per asset.
+
+        The Amihud ratio measures the average price impact of trading -- how much the
+        price moves per dollar of trading volume. A high value means that even a small
+        amount of trading moves the price a lot (the asset is illiquid), while a low
+        value means the asset can absorb a large amount of trading with little price
+        impact (the asset is liquid).
+
+        For more information about the method, see the following paper:
+
+        - Amihud, Y. (2002). "Illiquidity and Stock Returns: Cross-Section and
+        Time-Series Effects." Journal of Financial Markets, 5(1), 31-56.
+
+        Also known as: Amihud illiquidity ratio, ILLIQ, price impact ratio.
+
+        Args:
+            period (str, optional): The data frequency for returns (daily, weekly, quarterly, or yearly).
+            Defaults to "quarterly".
+            within_period (bool, optional): Whether to calculate the ratio within the specified period or
+            for the entire period. Defaults to True.
+            scale (float, optional): A multiplier applied to the resulting ratio purely for readability.
+            Defaults to 1,000,000.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the Amihud Illiquidity values over
+            time. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+
+        Returns:
+            pd.Series: Amihud Illiquidity values with time as the index.
+
+        Notes:
+        - The method retrieves historical return, Close price and Volume data based on the specified
+        `period` and calculates the Amihud Illiquidity ratio for each asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the Amihud Illiquidity values
+        using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AMZN", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.risk.get_amihud_illiquidity(period="quarterly", scale=1e12)
+        ```
+
+        Which returns:
+
+        | Date   |   AAPL |   MSFT |   Benchmark |
+        |:-------|-------:|-------:|------------:|
+        | 2022Q1 | 0.9388 | 1.4796 |      0.2251 |
+        | 2022Q2 | 1.4477 | 2.2593 |      0.3401 |
+        | 2022Q3 | 1.1619 | 1.942  |      0.3349 |
+        | 2022Q4 | 1.5347 | 2.429  |      0.3445 |
+
+        Note that a large `scale` is used here since these are liquid, large-cap
+        stocks with very high dollar trading volume relative to their typical daily
+        price move -- the default `scale` of 1,000,000 (as used in Amihud's original
+        1980s/1990s-era paper) would round these to 0.0 at the default precision.
+        """
+        period = period if period else "quarterly" if self._quarterly else "yearly"
+
+        if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
+            raise ValueError(
+                "Period must be daily, weekly, monthly, quarterly, or yearly."
+            )
+        if period == "daily" and self._historical_data["intraday"].empty:
+            raise ValueError("Intraday data is required for daily calculations.")
+
+        source_data = (
+            self._within_historical_data[period]
+            if within_period
+            else self._historical_data[period]
+        )
+
+        returns = source_data["Return"].dropna()
+        dollar_volume = source_data["Close"] * source_data["Volume"]
+
+        illiquidity = market_liquidity_model.get_amihud_illiquidity(
+            returns, dollar_volume, scale
+        )
+
+        if within_period:
+            illiquidity = illiquidity.loc[self._start_date : self._end_date]
+
+        return finalize_dataset(
+            dataset=illiquidity,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            apply_slice=False,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_roll_spread(
+        self,
+        period: str | None = None,
+        within_period: bool = True,
+        rounding: int | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the Roll (1984) implied bid-ask spread, per asset.
+
+        Roll's model shows that, under a stylized microstructure model in which the
+        true (efficient) price follows a random walk and observed trade prices
+        randomly bounce between the bid and the ask, the effective spread can be
+        backed out purely from the serial covariance of consecutive price changes,
+        without needing any actual quote data. If the estimated covariance is zero or
+        positive, no valid estimate can be backed out and NaN is returned instead.
+
+        For more information about the method, see the following paper:
+
+        - Roll, R. (1984). "A Simple Implicit Measure of the Effective Bid-Ask Spread
+        in an Efficient Market." The Journal of Finance, 39(4), 1127-1139.
+
+        Also known as: Roll's implied spread, Roll measure.
+
+        Args:
+            period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly).
+            Defaults to "quarterly".
+            within_period (bool, optional): Whether to calculate the spread within the specified period or
+            for the entire period. Defaults to True.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to
+            None.
+
+        Returns:
+            pd.DataFrame: The Roll Spread (in price units), the Roll Spread as a percentage of the mean
+            price, the underlying lag-1 autocovariance, and whether that autocovariance was negative (i.e.
+            whether a valid estimate could be backed out), per asset.
+
+        Notes:
+        - The method retrieves historical Close price data based on the specified `period` and calculates
+        the Roll Spread for each asset in the Toolkit instance.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AMZN", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        # Shown here for a single quarter (2022Q2); with the default within_period=True
+        # this is computed separately for every quarter in the Toolkit's date range.
+        toolkit.risk.get_roll_spread(period="quarterly").xs("2022Q2", level=0)
+        ```
+
+        Which returns:
+
+        |                 |    AAPL |    MSFT |   Benchmark |
+        |:----------------|--------:|--------:|------------:|
+        | Roll Spread     |  3.3103 |  5.1999 |      4.3436 |
+        | Roll Spread (%) |  2.1859 |  1.9159 |      1.0603 |
+        | Autocovariance  | -2.7396 | -6.7598 |     -4.7167 |
+        | Valid Estimate  |  1      |  1      |      1      |
+        """
+        period = period if period else "quarterly" if self._quarterly else "yearly"
+
+        if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
+            raise ValueError(
+                "Period must be daily, weekly, monthly, quarterly, or yearly."
+            )
+        if period == "daily" and self._historical_data["intraday"].empty:
+            raise ValueError("Intraday data is required for daily calculations.")
+
+        close_prices = (
+            self._within_historical_data[period]["Close"]
+            if within_period
+            else self._historical_data[period]["Close"]
+        )
+
+        result = market_liquidity_model.get_roll_spread(close_prices)
+
+        return result.round(rounding if rounding is not None else self._rounding)
 
     @handle_portfolio
     @handle_errors

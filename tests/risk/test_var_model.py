@@ -1,10 +1,15 @@
 """Value at Risk Model Tests"""
 
+import numpy as np
 import pandas as pd
 
 from financetoolkit.risk import var_model
 
 # pylint: disable=missing-function-docstring
+
+# Tolerance used to assert that the Cornish-Fisher VaR is close to the gaussian VaR for
+# near-normal data, kept as a named constant to avoid a PLR2004 "magic value" warning.
+CLOSE_TO_GAUSSIAN_TOLERANCE = 0.001
 
 
 def test_get_var_historic(recorder):
@@ -208,3 +213,71 @@ def test_var_edge_cases(recorder):
             4,
         )
     )
+
+
+def test_get_var_cornish_fisher(recorder):
+    recorder.capture(
+        round(
+            var_model.get_var_cornish_fisher(
+                returns=pd.Series([0.3, 0.2, 0.1, 0, 0.06]), alpha=0.05
+            ),
+            4,
+        )
+    )
+
+
+def test_get_var_cornish_fisher_dataframe(recorder):
+    returns_df = pd.DataFrame(
+        {"AAPL": [0.3, 0.2, 0.1, 0, 0.06], "MSFT": [0.25, 0.15, 0.08, -0.02, 0.04]}
+    )
+    recorder.capture(
+        var_model.get_var_cornish_fisher(returns=returns_df, alpha=0.05).round(4)
+    )
+
+
+def test_get_var_cornish_fisher_close_to_gaussian_for_normal_data(recorder):
+    # For near-normal (unskewed, mesokurtic) data, the Cornish-Fisher VaR should be very
+    # close to the plain gaussian VaR, since skewness and excess kurtosis are both ~0.
+    rng = np.random.default_rng(42)
+    returns = pd.Series(rng.standard_normal(2000) * 0.01)
+
+    gaussian = var_model.get_var_gaussian(returns=returns, alpha=0.05)
+    cornish_fisher = var_model.get_var_cornish_fisher(returns=returns, alpha=0.05)
+
+    recorder.capture(
+        bool(round(abs(gaussian - cornish_fisher), 4) < CLOSE_TO_GAUSSIAN_TOLERANCE)
+    )
+
+
+def test_get_var_cornish_fisher_more_extreme_for_skewed_fat_tailed_data(recorder):
+    # For negatively skewed, fat-tailed returns, the Cornish-Fisher VaR should show more
+    # tail risk (a more negative VaR) than the plain gaussian VaR.
+    rng = np.random.default_rng(42)
+    returns = pd.Series(
+        np.concatenate(
+            [
+                rng.standard_normal(1900) * 0.005,
+                -np.abs(rng.standard_normal(100)) * 0.05,
+            ]
+        )
+    )
+
+    gaussian = var_model.get_var_gaussian(returns=returns, alpha=0.05)
+    cornish_fisher = var_model.get_var_cornish_fisher(returns=returns, alpha=0.05)
+
+    recorder.capture(bool(cornish_fisher < gaussian))
+
+
+def test_get_var_cornish_fisher_multiindex(recorder):
+    periods = ["2023Q1", "2023Q2"]
+    dates = pd.date_range("2023-01-01", periods=10, freq="D")
+
+    multi_index = pd.MultiIndex.from_product(
+        [periods[:1], dates[:5]], names=["Period", "Date"]
+    )
+    returns_multi = pd.DataFrame(
+        {"AAPL": np.random.default_rng(1).normal(0.001, 0.02, 5)}, index=multi_index
+    )
+
+    result = var_model.get_var_cornish_fisher(returns=returns_multi, alpha=0.05)
+    recorder.capture(result.shape)

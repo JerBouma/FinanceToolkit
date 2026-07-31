@@ -1,5 +1,6 @@
 """Risk Model Tests"""
 
+import numpy as np
 import pandas as pd
 
 from financetoolkit.risk import risk_model
@@ -236,6 +237,65 @@ def test_get_rolling_volatility(recorder):
             window_size=3,
         ).round(4)
     )
+
+
+def test_get_hill_estimator_pareto_recovery(recorder):
+    # Simulate a Pareto(alpha=3) tail and check the Hill estimator recovers a tail
+    # index reasonably close to the true value.
+    rng = np.random.default_rng(42)
+    alpha_true = 3.0
+    n = 20000
+    u = rng.uniform(size=n)
+    pareto = (1 - u) ** (-1 / alpha_true)
+    returns = pd.Series(-pareto * 0.001)
+
+    result = risk_model.get_hill_estimator(returns, k=0.05, tail="left")
+    assert abs(result["Hill Tail Index"] - alpha_true) < 1.0
+    recorder.capture(result.round(4))
+
+
+def test_get_hill_estimator_dataframe(recorder):
+    rng = np.random.default_rng(42)
+    returns_df = pd.DataFrame(
+        {
+            "AAPL": rng.standard_normal(2000) * 0.02,
+            "MSFT": rng.standard_normal(2000) * 0.02,
+        }
+    )
+    recorder.capture(
+        risk_model.get_hill_estimator(returns_df, k=0.1, tail="left").round(4)
+    )
+
+
+def test_get_hill_estimator_right_tail(recorder):
+    rng = np.random.default_rng(42)
+    returns = pd.Series(rng.standard_normal(2000) * 0.02)
+    recorder.capture(
+        risk_model.get_hill_estimator(returns, k=0.1, tail="right").round(4)
+    )
+
+
+def test_get_hill_estimator_k_too_large():
+    returns = pd.Series([0.01, -0.02, 0.03, -0.01, 0.02])
+    result = risk_model.get_hill_estimator(returns, k=10, tail="left")
+    assert pd.isna(result["Hill Tail Index"])
+
+
+def test_get_hill_estimator_invalid_tail():
+    returns = pd.Series([0.01, -0.02, 0.03])
+    try:
+        risk_model.get_hill_estimator(returns, tail="bad")
+        raise AssertionError("Expected ValueError")
+    except ValueError:
+        pass
+
+
+def test_get_hill_estimator_invalid_type():
+    try:
+        risk_model.get_hill_estimator(123)
+        raise AssertionError("Expected TypeError")
+    except TypeError:
+        pass
 
 
 def test_get_rolling_excess_volatility(recorder):

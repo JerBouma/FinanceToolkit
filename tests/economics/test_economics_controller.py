@@ -273,3 +273,100 @@ def test_get_population_statistics(recorder, economics_module):
 def test_get_poverty_rate(recorder, economics_module):
     recorder.capture(economics_module.get_poverty_rate())
     recorder.capture(economics_module.get_poverty_rate(growth=True))
+
+
+def test_get_real_gross_domestic_product_usd(recorder, economics_module):
+    recorder.capture(economics_module.get_real_gross_domestic_product_usd())
+    recorder.capture(economics_module.get_real_gross_domestic_product_usd(growth=True))
+
+
+def test_get_real_gross_domestic_product_per_capita(recorder, economics_module):
+    recorder.capture(economics_module.get_real_gross_domestic_product_per_capita())
+    recorder.capture(
+        economics_module.get_real_gross_domestic_product_per_capita(growth=True)
+    )
+
+
+def test_get_output_gap(recorder, economics_module):
+    recorder.capture(economics_module.get_output_gap())
+    recorder.capture(economics_module.get_output_gap(growth=True))
+    recorder.capture(
+        economics_module.get_output_gap(countries=["United States", "Germany", "Japan"])
+    )
+
+
+def test_get_trade_balance(recorder, economics_module):
+    recorder.capture(economics_module.get_trade_balance())
+    recorder.capture(economics_module.get_trade_balance(growth=True))
+    recorder.capture(
+        economics_module.get_trade_balance(countries=["United States", "China"])
+    )
+
+
+def test_get_real_effective_exchange_rate(recorder, economics_module):
+    recorder.capture(economics_module.get_real_effective_exchange_rate())
+    recorder.capture(economics_module.get_real_effective_exchange_rate(growth=True))
+
+
+def test_get_producer_price_index(recorder, economics_module):
+    recorder.capture(economics_module.get_producer_price_index())
+    recorder.capture(economics_module.get_producer_price_index(growth=True))
+    recorder.capture(
+        economics_module.get_producer_price_index(
+            countries=["United States", "Germany"], period="yearly"
+        )
+    )
+
+
+def test_get_real_interest_rate(recorder, economics_module):
+    recorder.capture(economics_module.get_real_interest_rate())
+    recorder.capture(economics_module.get_real_interest_rate(growth=True))
+    recorder.capture(
+        economics_module.get_real_interest_rate(
+            countries=["United States", "Germany", "Japan"], rate_type="short_term"
+        )
+    )
+    recorder.capture(
+        economics_module.get_real_interest_rate(
+            countries=["United States", "Germany"], gmdb_source=False
+        )
+    )
+
+
+def test_get_misery_index(recorder, economics_module):
+    recorder.capture(economics_module.get_misery_index())
+    recorder.capture(economics_module.get_misery_index(growth=True))
+    recorder.capture(
+        economics_module.get_misery_index(
+            countries=["United States", "Germany"], gmdb_source=False
+        )
+    )
+
+
+def test_get_yield_curve_slope(recorder, economics_module):
+    recorder.capture(economics_module.get_yield_curve_slope())
+    recorder.capture(economics_module.get_yield_curve_slope(growth=True))
+    recorder.capture(
+        economics_module.get_yield_curve_slope(
+            countries=["United States", "Germany"], gmdb_source=False
+        )
+    )
+
+
+def test_get_sovereign_debt_crisis(recorder, economics_module):
+    recorder.capture(economics_module.get_sovereign_debt_crisis())
+    recorder.capture(economics_module.get_sovereign_debt_crisis(countries="Argentina"))
+
+
+def test_get_currency_crisis(recorder, economics_module):
+    recorder.capture(economics_module.get_currency_crisis())
+    recorder.capture(economics_module.get_currency_crisis(countries="Turkey"))
+
+
+def test_get_banking_crisis(recorder, economics_module):
+    recorder.capture(economics_module.get_banking_crisis())
+    recorder.capture(
+        economics_module.get_banking_crisis(
+            countries=["United States", "United Kingdom"]
+        )
+    )

@@ -310,6 +310,249 @@ class Economics:
         )
 
     @handle_errors
+    def get_real_gross_domestic_product_usd(
+        self,
+        countries: list[str] | str | None = None,
+        rolling: int | None = None,
+        trailing: int | None = None,
+        growth: bool = False,
+        lag: int = 1,
+        standardize: bool = False,
+        rounding: int | None = None,
+    ):
+        """
+        Get the Real Gross Domestic Product expressed in cross-country comparable US Dollars
+        for a variety of countries over time from the Global Macro Database (GMDB). This is the
+        inflation-adjusted GDP of a country converted into US Dollars, which makes it possible to
+        directly compare the economic output of countries that use different currencies without
+        having to perform the currency conversion or inflation adjustment yourself.
+
+        Data comes from the Global Macro Database (GMDB), further information about the
+        variable can be found within https://www.globalmacrodata.com/documentation.html
+
+        Also known as: real GDP in USD, cross-country comparable GDP.
+
+        Args:
+            countries (list[str] | str | None, optional): A list of countries or a single country to include in the results. Defaults to None.
+            rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
+            trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+
+        Returns:
+            pd.DataFrame: A DataFrame containing the Real Gross Domestic Product in US Dollars
+
+        As an example:
+
+        ```python
+        from financetoolkit import Economics
+
+        economics = Economics(start_date='2015-01-01')
+
+        economics.get_real_gross_domestic_product_usd(countries=['United States', 'Japan', 'Germany'])
+        ```
+        """
+        if self._gmbd_dataset.empty:
+            self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
+
+        real_gross_domestic_product_usd = (
+            gmdb_model.get_real_gross_domestic_product_usd(
+                gmd_dataset=self._gmbd_dataset
+            )
+        )
+
+        return finalize_dataset(
+            dataset=real_gross_domestic_product_usd,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="Real Gross Domestic Product (USD)",
+            countries=countries,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+        )
+
+    @handle_errors
+    def get_real_gross_domestic_product_per_capita(
+        self,
+        countries: list[str] | str | None = None,
+        rolling: int | None = None,
+        trailing: int | None = None,
+        growth: bool = False,
+        lag: int = 1,
+        standardize: bool = False,
+        rounding: int | None = None,
+    ):
+        """
+        Get the Real Gross Domestic Product per Capita for a variety of countries over time from
+        the Global Macro Database (GMDB). This is the inflation-adjusted Gross Domestic Product
+        (GDP) divided by the total population of a country, which gives an indication of the
+        average economic output (and by extension, living standard) per person.
+
+        Formula:
+
+            Real GDP per Capita = Real Gross Domestic Product / Population
+
+        This uses the Global Macro Database's own precomputed per-capita series rather than
+        dividing GDP by population manually, which avoids subtle mismatches that can arise from
+        differences in population coverage or timing between the two underlying series.
+
+        Data comes from the Global Macro Database (GMDB), further information about the
+        variable can be found within https://www.globalmacrodata.com/documentation.html
+
+        Also known as: real GDP per capita, real income per capita, standard of living.
+
+        Args:
+            countries (list[str] | str | None, optional): A list of countries or a single country to include in the results. Defaults to None.
+            rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
+            trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+
+        Returns:
+            pd.DataFrame: A DataFrame containing the Real Gross Domestic Product per Capita
+
+        As an example:
+
+        ```python
+        from financetoolkit import Economics
+
+        economics = Economics(start_date='2015-01-01')
+
+        economics.get_real_gross_domestic_product_per_capita(countries=['Netherlands', 'Germany', 'China'])
+        ```
+        """
+        if self._gmbd_dataset.empty:
+            self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
+
+        real_gross_domestic_product_per_capita = (
+            gmdb_model.get_real_gross_domestic_product_per_capita(
+                gmd_dataset=self._gmbd_dataset
+            )
+        )
+
+        return finalize_dataset(
+            dataset=real_gross_domestic_product_per_capita,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="Real Gross Domestic Product per Capita",
+            countries=countries,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+        )
+
+    @handle_errors
+    def get_output_gap(
+        self,
+        countries: list[str] | str | None = None,
+        rolling: int | None = None,
+        trailing: int | None = None,
+        growth: bool = False,
+        lag: int = 1,
+        standardize: bool = False,
+        rounding: int | None = None,
+    ):
+        """
+        Get the Output Gap for a variety of countries over time from the OECD Economic Outlook.
+        The output gap is the difference between actual Gross Domestic Product (GDP) and
+        estimated potential GDP, expressed as a percentage of potential GDP. Potential GDP is the
+        level of output an economy can sustain over the long term without generating excess
+        inflationary or disinflationary pressure, based on the full, non-inflationary use of its
+        productive resources (labour, capital and technology).
+
+        A positive output gap indicates the economy is running above its long-run potential
+        (an economic "boom", typically associated with rising inflationary pressure), while a
+        negative output gap indicates the economy is running below potential (an economic
+        "slack", typically associated with rising unemployment and disinflationary pressure).
+        The output gap therefore complements indicators such as the Inflation Rate and
+        Unemployment Rate as a measure of where an economy sits within the business cycle.
+
+        Formula:
+
+            Output Gap = ((Actual GDP - Potential GDP) / Potential GDP) * 100
+
+        This data is only available on a yearly basis, since the OECD Economic Outlook is
+        published as a set of annual projections and estimates.
+
+        See definition: https://www.oecd.org/en/data/indicators/output-gaps.html
+
+        Also known as: business cycle gap, GDP gap.
+
+        Args:
+            countries (list[str] | str | None, optional): The countries to include in the data. Defaults to None.
+            rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
+            trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
+            growth (bool, optional): Whether to return the growth data or the actual data.
+            lag (int, optional): The number of periods to lag the data by.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+
+        Returns:
+            pd.DataFrame: A DataFrame containing the Output Gap.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Economics
+
+        economics = Economics(start_date='2018-01-01', end_date='2022-01-01')
+
+        economics.get_output_gap(countries=['United States', 'Germany', 'Japan'])
+        ```
+
+        Which returns:
+
+        |      |   United States |   Germany |    Japan |
+        |:-----|-----------------:|----------:|---------:|
+        | 2018 |          0.0189  |   1.896   |  1.942   |
+        | 2019 |          0.1531  |   2.0146  |  0.7237  |
+        | 2020 |         -4.2231  |  -3.1507  | -4.2207  |
+        | 2021 |         -0.7285  |  -0.0537  | -1.3727  |
+        | 2022 |         -0.6584  |   1.076   | -0.4859  |
+        """
+        output_gap = oecd_model.get_output_gap()
+
+        return finalize_dataset(
+            dataset=output_gap,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="Output Gap",
+            countries=countries,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+        )
+
+    @handle_errors
     def get_total_consumption(
         self,
         countries: list[str] | str | None = None,
@@ -1171,6 +1414,83 @@ class Economics:
             end_date=self._end_date,
             default_rounding=self._rounding,
             indicator_name="Imports to GDP Ratio",
+            countries=countries,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+        )
+
+    @handle_errors
+    def get_trade_balance(
+        self,
+        countries: list[str] | str | None = None,
+        rolling: int | None = None,
+        trailing: int | None = None,
+        growth: bool = False,
+        lag: int = 1,
+        standardize: bool = False,
+        rounding: int | None = None,
+    ):
+        """
+        Get the Trade Balance for a variety of countries over time from the Global Macro
+        Database (GMDB). The Trade Balance is the difference between the total value of goods
+        and services a country exports and the total value of goods and services it imports. A
+        positive trade balance (a "trade surplus") means a country exports more than it imports,
+        while a negative trade balance (a "trade deficit") means a country imports more than it
+        exports.
+
+        Formula:
+
+            Trade Balance = Exports - Imports
+
+        Data comes from the Global Macro Database (GMDB), further information about the
+        variable can be found within https://www.globalmacrodata.com/documentation.html
+
+        Also known as: net exports, balance of trade.
+
+        Args:
+            countries (list[str] | str | None, optional): A list of countries or a single country to include in the results. Defaults to None.
+            rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
+            trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+
+        Returns:
+            pd.DataFrame: A DataFrame containing the Trade Balance
+
+        As an example:
+
+        ```python
+        from financetoolkit import Economics
+
+        economics = Economics(start_date='2020-01-01', end_date='2023-01-01')
+
+        economics.get_trade_balance(countries=['United States', 'Germany', 'China'])
+        ```
+        """
+        if self._gmbd_dataset.empty:
+            self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
+
+        exports = gmdb_model.get_exports(gmd_dataset=self._gmbd_dataset)
+        imports = gmdb_model.get_imports(gmd_dataset=self._gmbd_dataset)
+
+        trade_balance = exports - imports
+
+        return finalize_dataset(
+            dataset=trade_balance,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="Trade Balance",
             countries=countries,
             rolling=rolling,
             trailing=trailing,
@@ -2467,6 +2787,94 @@ class Economics:
         )
 
     @handle_errors
+    def get_producer_price_index(
+        self,
+        countries: list[str] | str | None = None,
+        period: str | None = None,
+        rolling: int | None = None,
+        trailing: int | None = None,
+        growth: bool = False,
+        lag: int = 1,
+        standardize: bool = False,
+        rounding: int | None = None,
+    ):
+        """
+        Get the Producer Price Index (PPI) for a variety of countries over time from the OECD.
+        The PPI measures the average change over time in the prices received by domestic
+        producers (manufacturing) for their output. Because producers tend to pass rising input
+        costs on to their customers with a lag, the PPI is generally seen as a leading, upstream
+        indicator of cost pressure that later shows up in the Consumer Price Index (CPI).
+
+        The index is set to 100 in the base year, which can vary per country.
+
+        See definition: https://www.oecd.org/en/data/indicators/producer-prices-ppi.html
+
+        Also known as: PPI, wholesale prices, factory gate prices, upstream inflation.
+
+        Args:
+            countries (list[str] | str | None, optional): The countries to include in the data. Defaults to None.
+            period (str | None, optional): Whether to return the monthly, quarterly or the annual data.
+            rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
+            trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
+            growth (bool, optional): Whether to return the growth data or the actual data.
+            lag (int, optional): The number of periods to lag the data by.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+
+        Returns:
+            pd.DataFrame: A DataFrame containing the Producer Price Index.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Economics
+
+        economics = Economics(start_date='2018-01-01', end_date='2022-01-01')
+
+        economics.get_producer_price_index(
+            countries=['United States', 'Germany'],
+            period='yearly'
+        )
+        ```
+
+        Which returns:
+
+        |      |   United States |   Germany |
+        |:-----|-----------------:|----------:|
+        | 2018 |          106.059 |   102.758 |
+        | 2019 |          106.068 |   103.65  |
+        | 2020 |          103.849 |   103.15  |
+        | 2021 |          116.511 |   108.241 |
+        | 2022 |          134.46  |   122.75  |
+        """
+        period = (
+            period
+            if period is not None
+            else "quarterly" if self._quarterly else "yearly"
+        )
+
+        producer_price_index = oecd_model.get_producer_price_index(period=period)
+
+        return finalize_dataset(
+            dataset=producer_price_index,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="Producer Price Index",
+            countries=countries,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+        )
+
+    @handle_errors
     def get_consumer_confidence_index(
         self,
         countries: list[str] | str | None = None,
@@ -3098,6 +3506,82 @@ class Economics:
         )
 
     @handle_errors
+    def get_real_effective_exchange_rate(
+        self,
+        countries: list[str] | str | None = None,
+        rolling: int | None = None,
+        trailing: int | None = None,
+        growth: bool = False,
+        lag: int = 1,
+        standardize: bool = False,
+        rounding: int | None = None,
+    ):
+        """
+        Get the Real Effective Exchange Rate (REER) for a variety of countries over time from the
+        Global Macro Database (GMDB). The REER is a trade-weighted average of a country's currency
+        relative to a basket of other major currencies, adjusted for relative price levels
+        (inflation) between the country and its trading partners.
+
+        Unlike a simple bilateral exchange rate, the REER captures a currency's overall
+        competitiveness: a rising REER indicates that a country's exports are becoming more
+        expensive (and imports cheaper) relative to its trading partners after accounting for
+        inflation differentials, while a falling REER indicates the opposite. The index is set to
+        100 in the base year, which can vary per country.
+
+        Data comes from the Global Macro Database (GMDB), further information about the
+        variable can be found within https://www.globalmacrodata.com/documentation.html
+
+        Also known as: REER, trade-weighted exchange rate, currency competitiveness index.
+
+        Args:
+            countries (list[str] | str | None, optional): A list of countries or a single country to include in the results. Defaults to None.
+            rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
+            trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+
+        Returns:
+            pd.DataFrame: A DataFrame containing the Real Effective Exchange Rate
+
+        As an example:
+
+        ```python
+        from financetoolkit import Economics
+
+        economics = Economics(start_date='2018-01-01')
+
+        economics.get_real_effective_exchange_rate(countries=['United States', 'Japan', 'Netherlands'])
+        ```
+        """
+        if self._gmbd_dataset.empty:
+            self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
+
+        real_effective_exchange_rate = gmdb_model.get_real_effective_exchange_rate(
+            gmd_dataset=self._gmbd_dataset
+        )
+
+        return finalize_dataset(
+            dataset=real_effective_exchange_rate,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="Real Effective Exchange Rate",
+            countries=countries,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+        )
+
+    @handle_errors
     def get_money_supply(
         self,
         countries: list[str] | str | None = None,
@@ -3525,6 +4009,250 @@ class Economics:
         )
 
     @handle_errors
+    def get_real_interest_rate(
+        self,
+        countries: list[str] | str | None = None,
+        rate_type: str = "long_term",
+        gmdb_source: bool | None = None,
+        rolling: int | None = None,
+        trailing: int | None = None,
+        growth: bool = False,
+        lag: int = 1,
+        standardize: bool = False,
+        rounding: int | None = None,
+    ):
+        """
+        Get the Real Interest Rate for a variety of countries over time. The Real Interest Rate
+        is the nominal interest rate adjusted for inflation, and reflects the true cost of
+        borrowing (or the true return earned on savings) once the erosion of purchasing power
+        by inflation is taken into account.
+
+        Formula (Fisher equation, approximation):
+
+            Real Interest Rate = Nominal Interest Rate - Inflation Rate
+
+        The nominal interest rate is either the Long Term Interest Rate (the 10-year government
+        bond yield) or the Short Term Interest Rate (the 3-month money market rate), selected via
+        the rate_type parameter. The Inflation Rate is only available on an annual basis (see
+        get_inflation_rate), which comes from the Global Macro Database (GMDB). Both the nominal
+        interest rate and the inflation rate are always retrieved as annual, GMDB-consistent
+        percentage values so that they line up correctly for the subtraction: when gmdb_source is
+        True (the default) both legs come from the GMDB, and when gmdb_source is False the OECD
+        nominal rate (which is otherwise expressed as a fraction, e.g. 0.05 for 5%) is rescaled to
+        a percentage (5.0) to match the GMDB inflation series it is combined with.
+
+        A negative real interest rate means that, after inflation, savers are effectively losing
+        purchasing power and borrowers are being subsidized in real terms; this occurred in many
+        countries during the 2021-2022 inflation surge.
+
+        Also known as: real yield, inflation-adjusted interest rate.
+
+        Args:
+            countries (list[str] | str | None, optional): A list of countries or a single country to include in the results. Defaults to None.
+            rate_type (str, optional): Which nominal interest rate to use. Can be 'long_term'
+                (10-year government bond yield) or 'short_term' (3-month money market rate).
+                Defaults to 'long_term'.
+            gmdb_source (bool | None, optional): Whether to get the nominal interest rate from
+                the Global Macro Database (GMDB) instead of the OECD. Defaults to None, which
+                falls back to the gmdb_source set on the Economics class (True by default).
+            rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
+            trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+
+        Returns:
+            pd.DataFrame: A DataFrame containing the Real Interest Rate
+
+        As an example:
+
+        ```python
+        from financetoolkit import Economics
+
+        economics = Economics(start_date='2018-01-01', end_date='2023-01-01')
+
+        economics.get_real_interest_rate(countries=['United States', 'Germany', 'Japan'])
+        ```
+
+        Which returns:
+
+        |      |   United States |   Germany |   Japan |
+        |:-----|-----------------:|----------:|--------:|
+        | 2018 |             0.47 |     -1.33 |   -0.92 |
+        | 2019 |             0.33 |     -1.6  |   -0.59 |
+        | 2020 |            -0.34 |     -1.02 |    0.01 |
+        | 2021 |            -3.26 |     -3.52 |    0.31 |
+        | 2022 |            -5.05 |     -5.73 |   -2.28 |
+        | 2023 |            -0.16 |     -3.51 |   -2.71 |
+        """
+        rate_type = rate_type.lower()
+
+        if rate_type not in ["long_term", "short_term"]:
+            raise ValueError(
+                "Please choose either 'long_term' or 'short_term' for the rate_type parameter."
+            )
+
+        gmdb_source = gmdb_source if gmdb_source is not None else self._gmdb_source
+
+        if self._gmbd_dataset.empty:
+            self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
+
+        if gmdb_source:
+            nominal_interest_rate = (
+                gmdb_model.get_long_term_interest_rate(gmd_dataset=self._gmbd_dataset)
+                if rate_type == "long_term"
+                else gmdb_model.get_short_term_interest_rate(
+                    gmd_dataset=self._gmbd_dataset
+                )
+            )
+        else:
+            nominal_interest_rate = (
+                oecd_model.get_long_term_interest_rate(period="yearly")
+                if rate_type == "long_term"
+                else oecd_model.get_short_term_interest_rate(period="yearly")
+            )
+
+            # OECD interest rates are expressed as a fraction (e.g. 0.05 for 5%), rescale to a
+            # percentage so that they are on the same scale as the GMDB inflation rate below.
+            nominal_interest_rate = nominal_interest_rate * 100
+
+        inflation_rate = gmdb_model.get_inflation_rate(gmd_dataset=self._gmbd_dataset)
+
+        real_interest_rate = nominal_interest_rate - inflation_rate
+
+        return finalize_dataset(
+            dataset=real_interest_rate,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="Real Interest Rate",
+            countries=countries,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+        )
+
+    @handle_errors
+    def get_yield_curve_slope(
+        self,
+        countries: list[str] | str | None = None,
+        period: str | None = None,
+        gmdb_source: bool | None = None,
+        rolling: int | None = None,
+        trailing: int | None = None,
+        growth: bool = False,
+        lag: int = 1,
+        standardize: bool = False,
+        rounding: int | None = None,
+    ):
+        """
+        Get the Yield Curve Slope for a variety of countries over time. The Yield Curve Slope is
+        the difference between the Long Term Interest Rate (the 10-year government bond yield)
+        and the Short Term Interest Rate (the 3-month money market rate), and summarizes the
+        overall shape of the yield curve in a single number.
+
+        Formula:
+
+            Yield Curve Slope = Long Term Interest Rate - Short Term Interest Rate
+
+        A positive (upward-sloping) yield curve is the historical norm and reflects investors
+        demanding a premium for locking up money for longer. A negative (inverted) yield curve,
+        where short-term rates exceed long-term rates, has historically been one of the more
+        reliable leading indicators of an upcoming recession, as it signals that markets expect
+        the central bank to cut rates in response to a weakening economy.
+
+        Also known as: term spread, 10Y-3M spread, curve inversion.
+
+        Args:
+            countries (list[str] | str | None, optional): A list of countries or a single country to include in the results. Defaults to None.
+            period (str | None, optional): Whether to return the monthly, quarterly or the annual data.
+            gmdb_source (bool | None, optional): Whether to get the data from the Global Macro Database (GMDB).
+            rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
+            trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+
+        Returns:
+            pd.DataFrame: A DataFrame containing the Yield Curve Slope
+
+        As an example:
+
+        ```python
+        from financetoolkit import Economics
+
+        economics = Economics(start_date='2021-01-01', end_date='2023-12-31')
+
+        economics.get_yield_curve_slope(
+            countries=['United States', 'Germany', 'Japan'],
+            period='yearly'
+        )
+        ```
+
+        Which returns:
+
+        |      |   United States |   Germany |   Japan |
+        |:-----|-----------------:|----------:|--------:|
+        | 2021 |             1.33 |      0.17 |    0.14 |
+        | 2022 |             0.72 |      0.8  |    0.26 |
+        | 2023 |            -1.22 |     -1    |    0.56 |
+        """
+        period = (
+            period
+            if period is not None
+            else "quarterly" if self._quarterly else "yearly"
+        )
+        gmdb_source = gmdb_source if gmdb_source is not None else self._gmdb_source
+
+        if gmdb_source:
+            if self._gmbd_dataset.empty:
+                self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
+
+            long_term_interest_rate = gmdb_model.get_long_term_interest_rate(
+                gmd_dataset=self._gmbd_dataset
+            )
+            short_term_interest_rate = gmdb_model.get_short_term_interest_rate(
+                gmd_dataset=self._gmbd_dataset
+            )
+        else:
+            long_term_interest_rate = oecd_model.get_long_term_interest_rate(
+                period=period
+            )
+            short_term_interest_rate = oecd_model.get_short_term_interest_rate(
+                period=period
+            )
+
+        yield_curve_slope = long_term_interest_rate - short_term_interest_rate
+
+        return finalize_dataset(
+            dataset=yield_curve_slope,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="Yield Curve Slope",
+            countries=countries,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+        )
+
+    @handle_errors
     def get_renewable_energy(
         self,
         countries: list[str] | str | None = None,
@@ -3797,6 +4525,115 @@ class Economics:
             end_date=self._end_date,
             default_rounding=self._rounding,
             indicator_name="Unemployment Rate",
+            countries=countries,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+        )
+
+    @handle_errors
+    def get_misery_index(
+        self,
+        countries: list[str] | str | None = None,
+        gmdb_source: bool | None = None,
+        rolling: int | None = None,
+        trailing: int | None = None,
+        growth: bool = False,
+        lag: int = 1,
+        standardize: bool = False,
+        rounding: int | None = None,
+    ):
+        """
+        Get the Misery Index for a variety of countries over time. The Misery Index is a simple
+        gauge of the overall economic discomfort felt by the average person, combining the two
+        economic ills that are most directly and visibly felt by households: unemployment and
+        rising prices.
+
+        Formula:
+
+            Misery Index = Unemployment Rate + Inflation Rate
+
+        The Unemployment Rate and Inflation Rate are both retrieved as annual, GMDB-consistent
+        percentage values so that they line up correctly for the addition: when gmdb_source is
+        True (the default) both legs come from the GMDB, and when gmdb_source is False the OECD
+        unemployment rate (which is otherwise expressed as a fraction, e.g. 0.05 for 5%) is
+        rescaled to a percentage (5.0) to match the GMDB inflation series it is combined with.
+
+        A higher Misery Index indicates a more uncomfortable economic climate for the average
+        household, while a lower value indicates a more comfortable one. It was originally
+        popularized by economist Arthur Okun.
+
+        Also known as: economic discomfort index, Okun's misery index.
+
+        Args:
+            countries (list[str] | str | None, optional): A list of countries or a single country to include in the results. Defaults to None.
+            gmdb_source (bool | None, optional): Whether to get the unemployment rate from the
+                Global Macro Database (GMDB) instead of the OECD. Defaults to None, which falls
+                back to the gmdb_source set on the Economics class (True by default).
+            rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
+            trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+
+        Returns:
+            pd.DataFrame: A DataFrame containing the Misery Index
+
+        As an example:
+
+        ```python
+        from financetoolkit import Economics
+
+        economics = Economics(start_date='2018-01-01', end_date='2023-01-01')
+
+        economics.get_misery_index(countries=['United States', 'Germany', 'Japan'])
+        ```
+
+        Which returns:
+
+        |      |   United States |   Germany |   Japan |
+        |:-----|-----------------:|----------:|--------:|
+        | 2018 |             6.33 |      4.94 |    3.41 |
+        | 2019 |             5.49 |      4.32 |    2.84 |
+        | 2020 |             9.33 |      4.13 |    2.78 |
+        | 2021 |            10.05 |      6.72 |    2.58 |
+        | 2022 |            11.64 |      9.94 |    5.1  |
+        | 2023 |             7.74 |      8.97 |    5.84 |
+        """
+        gmdb_source = gmdb_source if gmdb_source is not None else self._gmdb_source
+
+        if self._gmbd_dataset.empty:
+            self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
+
+        if gmdb_source:
+            unemployment_rate = gmdb_model.get_unemployment_rate(
+                gmd_dataset=self._gmbd_dataset
+            )
+        else:
+            unemployment_rate = oecd_model.get_unemployment_rate(period="yearly")
+
+            # OECD unemployment rate is expressed as a fraction (e.g. 0.05 for 5%), rescale to
+            # a percentage so that it is on the same scale as the GMDB inflation rate below.
+            unemployment_rate = unemployment_rate * 100
+
+        inflation_rate = gmdb_model.get_inflation_rate(gmd_dataset=self._gmbd_dataset)
+
+        misery_index = unemployment_rate + inflation_rate
+
+        return finalize_dataset(
+            dataset=misery_index,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="Misery Index",
             countries=countries,
             rolling=rolling,
             trailing=trailing,
@@ -4180,6 +5017,185 @@ class Economics:
             lag=lag,
             rounding=rounding,
             standardize=standardize,
+            axis="rows",
+            row_slice=True,
+        )
+
+    @handle_errors
+    def get_sovereign_debt_crisis(
+        self,
+        countries: list[str] | str | None = None,
+        rolling: int | None = None,
+        trailing: int | None = None,
+        rounding: int | None = None,
+    ):
+        """
+        Get the Sovereign Debt Crisis dummy for a variety of countries over time from the Global
+        Macro Database (GMDB). Unlike the other indicators in this module, this is a binary
+        (0 = no crisis, 1 = crisis) Reinhart & Rogoff style crisis-dating series rather than a
+        continuous economic series: a value of 1 marks a year in which a country was undergoing a
+        sovereign debt crisis (e.g. a default or restructuring of government debt), and 0 marks a
+        year in which it was not.
+
+        Data comes from the Global Macro Database (GMDB), further information about the
+        variable can be found within https://www.globalmacrodata.com/documentation.html
+
+        Also known as: sovereign default, debt crisis dummy.
+
+        Args:
+            countries (list[str] | str | None, optional): A list of countries or a single country to include in the results. Defaults to None.
+            rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
+            trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+
+        Returns:
+            pd.DataFrame: A DataFrame containing the Sovereign Debt Crisis dummy
+
+        As an example:
+
+        ```python
+        from financetoolkit import Economics
+
+        economics = Economics(start_date='1980-01-01')
+
+        economics.get_sovereign_debt_crisis(countries='Argentina')
+        ```
+        """
+        if self._gmbd_dataset.empty:
+            self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
+
+        sovereign_debt_crisis = gmdb_model.get_sovereign_debt_crisis(
+            gmd_dataset=self._gmbd_dataset
+        )
+
+        return finalize_dataset(
+            dataset=sovereign_debt_crisis,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="Sovereign Debt Crisis",
+            countries=countries,
+            rolling=rolling,
+            trailing=trailing,
+            rounding=rounding,
+            axis="rows",
+            row_slice=True,
+        )
+
+    @handle_errors
+    def get_currency_crisis(
+        self,
+        countries: list[str] | str | None = None,
+        rolling: int | None = None,
+        trailing: int | None = None,
+        rounding: int | None = None,
+    ):
+        """
+        Get the Currency Crisis dummy for a variety of countries over time from the Global Macro
+        Database (GMDB). Unlike the other indicators in this module, this is a binary (0 = no
+        crisis, 1 = crisis) Reinhart & Rogoff style crisis-dating series rather than a continuous
+        economic series: a value of 1 marks a year in which a country was undergoing a currency
+        crisis (e.g. a sharp, disorderly depreciation or collapse of the exchange rate), and 0
+        marks a year in which it was not.
+
+        Data comes from the Global Macro Database (GMDB), further information about the
+        variable can be found within https://www.globalmacrodata.com/documentation.html
+
+        Also known as: currency collapse, exchange rate crisis dummy.
+
+        Args:
+            countries (list[str] | str | None, optional): A list of countries or a single country to include in the results. Defaults to None.
+            rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
+            trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+
+        Returns:
+            pd.DataFrame: A DataFrame containing the Currency Crisis dummy
+
+        As an example:
+
+        ```python
+        from financetoolkit import Economics
+
+        economics = Economics(start_date='1990-01-01')
+
+        economics.get_currency_crisis(countries='Turkey')
+        ```
+        """
+        if self._gmbd_dataset.empty:
+            self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
+
+        currency_crisis = gmdb_model.get_currency_crisis(gmd_dataset=self._gmbd_dataset)
+
+        return finalize_dataset(
+            dataset=currency_crisis,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="Currency Crisis",
+            countries=countries,
+            rolling=rolling,
+            trailing=trailing,
+            rounding=rounding,
+            axis="rows",
+            row_slice=True,
+        )
+
+    @handle_errors
+    def get_banking_crisis(
+        self,
+        countries: list[str] | str | None = None,
+        rolling: int | None = None,
+        trailing: int | None = None,
+        rounding: int | None = None,
+    ):
+        """
+        Get the Banking Crisis dummy for a variety of countries over time from the Global Macro
+        Database (GMDB). Unlike the other indicators in this module, this is a binary (0 = no
+        crisis, 1 = crisis) Reinhart & Rogoff style crisis-dating series rather than a continuous
+        economic series: a value of 1 marks a year in which a country was undergoing a systemic
+        banking crisis (e.g. bank runs, large-scale bank failures or government intervention to
+        prevent them), and 0 marks a year in which it was not.
+
+        Data comes from the Global Macro Database (GMDB), further information about the
+        variable can be found within https://www.globalmacrodata.com/documentation.html
+
+        Also known as: banking panic, financial crisis dummy, systemic banking crisis.
+
+        Args:
+            countries (list[str] | str | None, optional): A list of countries or a single country to include in the results. Defaults to None.
+            rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
+            trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+
+        Returns:
+            pd.DataFrame: A DataFrame containing the Banking Crisis dummy
+
+        As an example:
+
+        ```python
+        from financetoolkit import Economics
+
+        economics = Economics(start_date='2005-01-01')
+
+        economics.get_banking_crisis(countries=['United States', 'United Kingdom'])
+        ```
+        """
+        if self._gmbd_dataset.empty:
+            self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
+
+        banking_crisis = gmdb_model.get_banking_crisis(gmd_dataset=self._gmbd_dataset)
+
+        return finalize_dataset(
+            dataset=banking_crisis,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="Banking Crisis",
+            countries=countries,
+            rolling=rolling,
+            trailing=trailing,
+            rounding=rounding,
             axis="rows",
             row_slice=True,
         )

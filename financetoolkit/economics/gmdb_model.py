@@ -47,6 +47,18 @@ def get_real_gross_domestic_product(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
     return gmd_dataset["rGDP"].dropna(axis="rows", how="all")
 
 
+def get_real_gross_domestic_product_usd(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
+    """Retrieves real GDP expressed in cross-country comparable USD ('rGDP_USD'), removing rows with all NaNs."""
+    return gmd_dataset["rGDP_USD"].dropna(axis="rows", how="all")
+
+
+def get_real_gross_domestic_product_per_capita(
+    gmd_dataset: pd.DataFrame,
+) -> pd.DataFrame:
+    """Retrieves real GDP per capita ('rGDP_pc'), removing rows with all NaNs."""
+    return gmd_dataset["rGDP_pc"].dropna(axis="rows", how="all")
+
+
 def get_gross_domestic_product_deflator(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
     """Retrieves GDP deflator ('deflator'), removing rows with all NaNs."""
     return gmd_dataset["deflator"].dropna(axis="rows", how="all")
@@ -125,6 +137,11 @@ def get_current_account_balance_to_gdp(gmd_dataset: pd.DataFrame) -> pd.DataFram
 def get_usd_exchange_rate(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
     """Retrieves the USD exchange rate ('USDfx'), removing rows with all NaNs."""
     return gmd_dataset["USDfx"].dropna(axis="rows", how="all")
+
+
+def get_real_effective_exchange_rate(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
+    """Retrieves the real effective exchange rate ('REER'), removing rows with all NaNs."""
+    return gmd_dataset["REER"].dropna(axis="rows", how="all")
 
 
 def get_government_debt(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
@@ -215,3 +232,30 @@ def get_inflation_rate(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
 def get_unemployment_rate(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
     """Retrieves unemployment rate ('unemp'), removing rows with all NaNs."""
     return gmd_dataset["unemp"].dropna(axis="rows", how="all")
+
+
+def get_sovereign_debt_crisis(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
+    """Retrieves the sovereign debt crisis dummy ('SovDebtCrisis'), removing rows with all NaNs.
+
+    The values are binary (0 = no crisis, 1 = crisis) Reinhart & Rogoff style crisis-dating
+    indicators, not a continuous economic series.
+    """
+    return gmd_dataset["SovDebtCrisis"].dropna(axis="rows", how="all")
+
+
+def get_currency_crisis(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
+    """Retrieves the currency crisis dummy ('CurrencyCrisis'), removing rows with all NaNs.
+
+    The values are binary (0 = no crisis, 1 = crisis) Reinhart & Rogoff style crisis-dating
+    indicators, not a continuous economic series.
+    """
+    return gmd_dataset["CurrencyCrisis"].dropna(axis="rows", how="all")
+
+
+def get_banking_crisis(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
+    """Retrieves the banking crisis dummy ('BankingCrisis'), removing rows with all NaNs.
+
+    The values are binary (0 = no crisis, 1 = crisis) Reinhart & Rogoff style crisis-dating
+    indicators, not a continuous economic series.
+    """
+    return gmd_dataset["BankingCrisis"].dropna(axis="rows", how="all")

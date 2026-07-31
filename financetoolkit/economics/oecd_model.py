@@ -466,6 +466,40 @@ def get_short_term_interest_rate(period: str):
     return short_term_interest_rate
 
 
+def get_producer_price_index(period: str):
+    """
+    Get the Producer Price Index (PPI) for a variety of countries over time from the OECD.
+    The PPI measures the average change over time in the prices received by domestic
+    producers (manufacturing) for their output. Because producers pass rising input costs
+    on to their customers with a lag, the PPI is generally seen as a leading indicator of
+    upstream cost pressure that later shows up in the Consumer Price Index (CPI).
+
+    The index is set to 100 in the base year, which can vary per country.
+
+    Args:
+        period (str): The period of the data. Can be 'monthly', 'quarterly' or 'yearly'.
+
+    Returns:
+       pd.DataFrame: A DataFrame containing the Producer Price Index for a variety
+        of countries over time.
+    """
+    period = period.lower()
+
+    if period not in ["monthly", "quarterly", "yearly"]:
+        raise ValueError("Period must be one of 'monthly', 'quarterly' or 'yearly'")
+
+    period_data = "M" if period == "monthly" else "Q" if period == "quarterly" else "A"
+
+    oecd_data_string = f"OECD.SDD.STES,DSD_KEI@DF_KEI,4.0/.{period_data}.PP.IX.C._Z._Z"
+
+    producer_price_index = collect_oecd_data(
+        oecd_data_string,
+        "Y" if period_data == "A" else period_data if period_data == "Q" else "M",
+    )
+
+    return producer_price_index
+
+
 def get_exchange_rates(period: str):
     """
     Get the exchange rates for a variety of countries over time from the OECD.
@@ -545,6 +579,34 @@ def get_labour_productivity():
     labour_productivity = collect_oecd_data(oecd_data_string, "Y")
 
     return labour_productivity
+
+
+def get_output_gap():
+    """
+    Get the Output Gap for a variety of countries over time from the OECD Economic Outlook.
+    The output gap is the difference between actual Gross Domestic Product (GDP) and estimated
+    potential GDP, expressed as a percentage of potential GDP. Potential GDP is the level of
+    output an economy can sustain over the long term without generating excess inflationary or
+    disinflationary pressure, based on the full, non-inflationary use of its productive resources
+    (labour, capital and technology).
+
+    A positive output gap indicates the economy is running above its long-run potential (a
+    "boom", typically associated with rising inflationary pressure), while a negative output gap
+    indicates the economy is running below potential (a "slack", typically associated with rising
+    unemployment and disinflationary pressure).
+
+    This data is only available on a yearly basis, since the OECD Economic Outlook is published
+    as a set of annual projections and estimates.
+
+    Returns:
+       pd.DataFrame: A DataFrame containing the output gap for a variety
+        of countries over time.
+    """
+    oecd_data_string = "OECD.ECO.MAD,DSD_EO@DF_EO,1.5/.GAP.A"
+
+    output_gap = collect_oecd_data(oecd_data_string, "Y")
+
+    return output_gap
 
 
 def get_population(gender: str | None = None):

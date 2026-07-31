@@ -1,0 +1,5 @@
+,Coefficient,Std. Error,t-Statistic,P-Value
+Volume,-0.0,0.0,-4.784,0.0
+Entity Effect: AAPL,0.025,,,
+Entity Effect: Benchmark,0.0184,,,
+Entity Effect: MSFT,0.0091,,,

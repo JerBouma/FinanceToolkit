@@ -1,0 +1,8 @@
+,AAPL,MSFT
+Phillips-Perron Statistic,,
+Lags Used,7,7
+Observations,12,12
+Critical Value 1%,,
+Critical Value 5%,,
+Critical Value 10%,,
+Reject Unit Root (5%),False,False

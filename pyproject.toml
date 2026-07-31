@@ -50,6 +50,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+econometrics = [
+    "statsmodels>=0.14",
+    "linearmodels>=6.0",
+]
 mcp = [
     "fastmcp>=3.4.2",
     "mcp[cli]>=1.27.0",
@@ -82,6 +86,7 @@ dev = [
     "ruff>=0.13.2",
     "httpx2>=0.28",
     "financetoolkit[mcp]",
+    "financetoolkit[econometrics]",
 ]
 
 [tool.uv]
@@ -146,6 +151,9 @@ exclude = ["conftest.py"]
 [tool.ruff.lint.per-file-ignores]
 # HTML template strings contain lines that cannot be wrapped
 "financetoolkit/mcp_server/auth_model.py" = ["E501"]
+# Test assertions commonly compare against literal thresholds/expected values, and
+# tests often import a specific function locally to keep a single test's scope clear
+"tests/**" = ["PLR2004", "PLC0415"]
 
 [tool.ruff.lint.isort]
 combine-as-imports = true
@@ -158,7 +166,7 @@ skip_gitignore = true
 combine_as_imports = true
 
 [tool.codespell]
-ignore-words-list = 'te,hsi,amplitud,nam,tha,plaform,ine,daa'
+ignore-words-list = 'te,hsi,amplitud,nam,tha,plaform,ine,daa,pring,pezier'
 skip = '*.json,./.git,pyproject.toml,poetry.lock,examples'
 
 [tool.pytest.ini_options]

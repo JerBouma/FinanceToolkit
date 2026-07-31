@@ -1,0 +1,4 @@
+,Coefficient,Std. Error,t-Statistic,P-Value
+Intercept,0.0019,0.0021,0.8845,0.3778
+MSFT,0.4291,0.0848,5.0591,0.0
+Benchmark,0.6803,0.1029,6.6098,0.0

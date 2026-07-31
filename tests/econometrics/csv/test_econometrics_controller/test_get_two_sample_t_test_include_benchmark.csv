@@ -1,0 +1,4 @@
+Ticker A,Ticker B,T-Statistic,Degrees of Freedom,P-Value,Mean A,Mean B
+AAPL,MSFT,0.2318,306.6549,0.8168,0.0047,0.0036
+AAPL,Benchmark,0.6234,283.8198,0.5335,0.0047,0.0019
+MSFT,Benchmark,0.406,301.0158,0.685,0.0036,0.0019

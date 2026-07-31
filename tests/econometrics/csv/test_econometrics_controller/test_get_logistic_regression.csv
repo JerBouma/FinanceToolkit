@@ -1,0 +1,4 @@
+,Coefficient,Std. Error,z-Statistic,P-Value
+Intercept,0.0909,0.2195,0.4139,0.6789
+MSFT,24.8481,10.1178,2.4559,0.0141
+Benchmark,63.677,15.5493,4.0952,0.0

@@ -8,6 +8,7 @@ import re
 import warnings
 from collections import Counter
 from datetime import datetime, timedelta
+from typing import TYPE_CHECKING
 
 import pandas as pd
 
@@ -45,11 +46,19 @@ from financetoolkit.performance.performance_controller import Performance
 from financetoolkit.ratios.ratios_controller import Ratios
 from financetoolkit.risk.risk_controller import Risk
 from financetoolkit.technicals.technicals_controller import Technicals
-from financetoolkit.timeseries.timeseries_controller import TimeSeries
 from financetoolkit.utilities import cache_model, logger_model
 from financetoolkit.utilities.dataframe_model import filter_columns
 from financetoolkit.utilities.requests_model import convert_isin_to_ticker
 from financetoolkit.utilities.statistics_model import calculate_growth
+
+if TYPE_CHECKING:
+    # The Econometrics module depends on the optional `financetoolkit[econometrics]`
+    # extra (statsmodels/linearmodels) -- imported lazily inside the `econometrics`
+    # property below (with a friendly error if the extra isn't installed) so that
+    # `import financetoolkit` itself never requires those dependencies. This
+    # TYPE_CHECKING-only import keeps the `-> Econometrics` type hint working for
+    # static type checkers/IDEs without triggering that import at runtime.
+    from financetoolkit.econometrics.econometrics_controller import Econometrics
 
 # Set up logger, this is meant to display useful messages, warnings or errors when
 # the Finance Toolkit runs into issues or does something that might not be entirely
@@ -1113,7 +1122,12 @@ class Toolkit:
     def risk(self) -> Risk:
         """
         This gives access to the Risk module. The Risk Module is meant to calculate metrics related to risk such
-        as Value at Risk (VaR), Conditional Value at Risk (cVaR), EMWA/GARCH models and similar models.
+        as Value at Risk (VaR), Conditional Value at Risk (cVaR), EMWA/GARCH models and similar models. It also
+        houses cross-asset systemic risk and liquidity measures (CoVaR, Tail Dependence, Amihud Illiquidity,
+        Roll Spread).
+
+        Note that the time-series diagnostic and econometric tests (unit root tests, cointegration, Granger
+        causality, ARCH-LM, Jarque-Bera and similar tests) live in the separate Econometrics module instead.
 
         It gives insights in the risk a stock composes that is not perceived as easily by looking at the data.
         This class is closely related to the Performance class which highlights things such as Sharpe Ratio and
@@ -1206,14 +1220,26 @@ class Toolkit:
         return risk
 
     @property
-    def timeseries(self) -> TimeSeries:
+    def econometrics(self) -> "Econometrics":
         """
-        Gives access to the Time Series module. This module applies statistical tests that
-        operate on the time-series properties of price data itself — whether a series is
-        stationary (Augmented Dickey-Fuller), whether two series share a long-run equilibrium
-        (Engle-Granger cointegration), and whether one series has predictive power over
-        another (Granger causality). These are foundational tools for pairs trading, spread
-        modeling and lead-lag analysis.
+        This gives access to the Econometrics module, a thin wrapper that funnels this Toolkit's
+        price/return data through `statsmodels` and `linearmodels` -- regression (OLS/WLS/GLS/
+        Logit/Probit/Quantile), panel data (Fixed/Random Effects, Hausman), causal inference
+        (IV-2SLS, Difference-in-Differences, Regression Discontinuity, Propensity Score Matching),
+        specification/hypothesis tests (Breusch-Pagan, White, Durbin-Watson, VIF, RESET, Chow,
+        t/F/LR/Wald tests), stationarity (Augmented Dickey-Fuller, KPSS, Phillips-Perron,
+        Zivot-Andrews unit root tests), long-run equilibrium relationships (Engle-Granger and
+        Johansen cointegration), predictive lead-lag relationships (Granger causality), model/
+        residual diagnostics (ARCH-LM, Jarque-Bera, Ljung-Box, Variance Ratio, CUSUM), forecast
+        comparison (Diebold-Mariano), and time series forecasting (ARIMA, VAR, VECM).
+
+        This class is closely related to the Risk class, which houses the risk measures (VaR,
+        CVaR, GARCH) that these tests often inform the choice of.
+
+        Requires the optional `financetoolkit[econometrics]` extra (`statsmodels` and
+        `linearmodels`) -- install with `pip install financetoolkit[econometrics]`.
+
+        See the following link for more information: https://www.jeroenbouma.com/projects/financetoolkit/docs/econometrics
 
         As an example:
 
@@ -1222,9 +1248,20 @@ class Toolkit:
 
         toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
-        toolkit.timeseries.get_augmented_dickey_fuller(period="quarterly")
+        toolkit.econometrics.get_augmented_dickey_fuller(period='yearly')
         ```
         """
+        try:
+            from financetoolkit.econometrics.econometrics_controller import (  # noqa: PLC0415
+                Econometrics,
+            )
+        except ImportError as error:
+            raise ImportError(
+                "The Econometrics module requires the optional 'econometrics' extra "
+                "(statsmodels and linearmodels). Install it with: "
+                "pip install financetoolkit[econometrics]"
+            ) from error
+
         if not self._start_date:
             self._start_date = (datetime.today() - timedelta(days=365 * 10)).strftime(
                 "%Y-%m-%d"
@@ -1234,6 +1271,14 @@ class Toolkit:
 
         for period in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
             self.get_historical_data(period=period)
+
+        if self._intraday_period:
+            if self._intraday_period in ["1min", "5min", "15min", "30min", "1hour"]:
+                self.get_intraday_data(period=self._intraday_period)
+            else:
+                raise ValueError(
+                    "The intraday period must be one of '1min', '5min', '15min', '30min' or '1hour'."
+                )
 
         tickers = (
             self._daily_historical_data.columns.get_level_values(1).unique().tolist()
@@ -1248,11 +1293,12 @@ class Toolkit:
             "yearly": self._yearly_historical_data,
         }
 
-        timeseries = TimeSeries(
+        econometrics = Econometrics(
             tickers=(
                 tickers + ["Portfolio"] if "Portfolio" in self._tickers else tickers
             ),
             historical_data=historical_data,
+            intraday_period=self._intraday_period,
             quarterly=self._quarterly,
             rounding=self._rounding,
             start_date=self._start_date,
@@ -1260,9 +1306,9 @@ class Toolkit:
         )
 
         if self._portfolio_weights:
-            timeseries._portfolio_weights = self._portfolio_weights
+            econometrics._portfolio_weights = self._portfolio_weights
 
-        return timeseries
+        return econometrics
 
     @property
     def fixedincome(self) -> FixedIncome:

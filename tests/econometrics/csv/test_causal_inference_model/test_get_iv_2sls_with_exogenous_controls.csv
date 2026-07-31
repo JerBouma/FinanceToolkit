@@ -1,0 +1,4 @@
+,Coefficient,Std. Error,t-Statistic,P-Value
+Intercept,1.0055,0.0208,48.3484,0.0
+Control,-0.5013,0.0207,-24.2383,0.0
+X,2.0075,0.0255,78.8777,0.0

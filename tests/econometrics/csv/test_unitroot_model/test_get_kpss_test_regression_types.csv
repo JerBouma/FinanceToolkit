@@ -1,0 +1,10 @@
+,0
+KPSS Statistic,0.6501
+P-Value,0.01
+Lags Used,12
+Observations,500
+Critical Value 1%,0.216
+Critical Value 2.5%,0.176
+Critical Value 5%,0.146
+Critical Value 10%,0.119
+Reject Stationarity (5%),1

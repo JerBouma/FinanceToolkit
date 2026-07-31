@@ -1,8 +1,0 @@
-,AAPL,MSFT,Benchmark
-ADF Statistic,-0.1171790743273841,0.18585079489223963,0.61916566209939
-Lags Used,10,10,10
-Observations,26,26,26
-Critical Value 1%,-2.56,-2.56,-2.56
-Critical Value 5%,-1.94,-1.94,-1.94
-Critical Value 10%,-1.62,-1.62,-1.62
-Reject Unit Root (5%),False,False,False

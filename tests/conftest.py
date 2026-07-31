@@ -593,8 +593,8 @@ def risk_module(test_toolkit):
 
 
 @pytest.fixture(scope="session")
-def timeseries_module(test_toolkit):
-    return test_toolkit.timeseries
+def econometrics_module(test_toolkit):
+    return test_toolkit.econometrics
 
 
 @pytest.fixture(scope="session")

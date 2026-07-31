@@ -1,0 +1,21 @@
+,,2020,2021,2022,2023
+AAPL,Retained Earnings to Total Assets,,-0.6571,-1.5489,-0.9302
+AAPL,Sales to Total Assets,,0.2297,0.0726,-0.0275
+AAPL,EBT to Total Equity,,0.6858,0.3579,-0.2214
+AAPL,Cash Flow to Total Liabilities,,0.1581,0.119,-0.0587
+AAPL,Debt to Total Assets,,0.0302,-0.0344,-0.1611
+AAPL,Current Liabilities to Total Assets,,0.0986,0.221,-0.0559
+AAPL,Log of Tangible Total Assets,,0.003,0.0002,-0.0
+AAPL,Working Capital to Total Liabilities,,-0.7808,-2.8926,-0.9025
+AAPL,Log of EBIT to Interest Expense,,0.1729,-0.0042,-0.0886
+AAPL,Fulmer H-Score,,0.0344,0.0037,-0.022
+MSFT,Retained Earnings to Total Assets,,0.49,0.3514,0.2488
+MSFT,Sales to Total Assets,,0.061,0.0791,-0.0535
+MSFT,EBT to Total Equity,,0.117,0.0038,-0.1384
+MSFT,Cash Flow to Total Liabilities,,0.2068,0.1221,-0.052
+MSFT,Debt to Total Assets,,-0.1383,-0.1729,-0.1333
+MSFT,Current Liabilities to Total Assets,,0.1068,-0.0188,-0.03
+MSFT,Log of Tangible Total Assets,,0.0037,0.0013,0.006
+MSFT,Working Capital to Total Liabilities,,-0.1664,-0.2464,0.0349
+MSFT,Log of EBIT to Interest Expense,,0.123,0.0824,0.0293
+MSFT,Fulmer H-Score,,0.0535,0.036,0.0301

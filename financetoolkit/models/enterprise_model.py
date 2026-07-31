@@ -70,3 +70,62 @@ def get_enterprise_value_breakdown(
         )
 
     return pd.DataFrame.from_dict(components, orient="index")
+
+
+def get_tobins_q_ratio(
+    market_value_of_equity: float | pd.Series | pd.DataFrame,
+    total_liabilities: float | pd.Series | pd.DataFrame,
+    total_assets: float | pd.Series | pd.DataFrame,
+) -> float | pd.Series | pd.DataFrame:
+    """
+    Tobin's Q Ratio is a financial metric, developed by economist James Tobin, that compares
+    the market value of a company to the cost of replacing its assets. It is used as a
+    valuation gauge for the company as a whole as well as an indicator of management's
+    incentive to invest: a high Q suggests the market values the firm well above the cost of
+    replacing its assets (making new investment attractive), while a low Q suggests the
+    opposite.
+
+    The formula is as follows:
+
+        - Tobin's Q Ratio = (Market Value of Equity + Total Liabilities) / Total Assets
+
+    Also known as: Tobin's Q, Q ratio.
+
+    Args:
+        market_value_of_equity (float | pd.Series | pd.DataFrame): The market value of a
+        company's equity, i.e. the share price multiplied by the total shares outstanding.
+        total_liabilities (float | pd.Series | pd.DataFrame): The sum of a company's current
+        and non-current liabilities.
+        total_assets (float | pd.Series | pd.DataFrame): The sum of a company's current and
+        non-current assets.
+
+    Returns:
+        float | pd.Series | pd.DataFrame: Tobin's Q Ratio.
+
+    Notes:
+    - A Q ratio greater than 1 indicates that the market values the company above the
+    (book) cost of replacing its assets, which can reflect growth expectations, intangible
+    assets not fully captured on the balance sheet (e.g. brand value, intellectual property),
+    or overvaluation.
+    - A Q ratio less than 1 indicates that the market values the company below the (book)
+    cost of replacing its assets, which can reflect undervaluation, declining growth
+    prospects, or assets that are worth less than their book value.
+    - This implementation uses two simplifications relative to Tobin's original formulation:
+    the market value of debt is approximated with the book value of Total Liabilities (rather
+    than the market value of debt), and the replacement cost of assets is approximated with
+    the book value of Total Assets (rather than their true replacement cost). Both
+    simplifications are standard practice given that market values for debt and asset
+    replacement costs are rarely observable, and mirror the same simplifications used
+    elsewhere in this toolkit's Weighted Average Cost of Capital calculation.
+
+    References:
+    - Tobin, James. "A General Equilibrium Approach to Monetary Theory." Journal of Money,
+    Credit and Banking, Vol. 1, No. 1, 1969, pp. 15-29.
+    """
+    if not isinstance(market_value_of_equity, int | float | pd.Series | pd.DataFrame):
+        raise TypeError(
+            "market_value_of_equity must be a float, pd.Series or pd.DataFrame, "
+            f"not {type(market_value_of_equity)}."
+        )
+
+    return (market_value_of_equity + total_liabilities) / total_assets

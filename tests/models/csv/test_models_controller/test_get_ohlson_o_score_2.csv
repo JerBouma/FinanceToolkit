@@ -1,0 +1,67 @@
+,,,2020,2021,2022,2023
+AAPL,Log of Total Assets,Lag 1,,0.003,0.0002,-0.0
+AAPL,Log of Total Assets,Lag 2,,,0.0032,0.0002
+AAPL,Log of Total Assets,Lag 3,,,,0.0032
+AAPL,Total Liabilities to Total Assets,Lag 1,,0.0275,0.044,-0.0381
+AAPL,Total Liabilities to Total Assets,Lag 2,,,0.0728,0.0042
+AAPL,Total Liabilities to Total Assets,Lag 3,,,,0.0319
+AAPL,Working Capital to Total Assets,Lag 1,,-0.7747,-2.9759,-0.9062
+AAPL,Working Capital to Total Assets,Lag 2,,,-1.4451,-1.1854
+AAPL,Working Capital to Total Assets,Lag 3,,,,-1.0418
+AAPL,Current Liabilities to Current Assets,Lag 1,,0.269,0.222,-0.11
+AAPL,Current Liabilities to Current Assets,Lag 2,,,0.5507,0.0876
+AAPL,Current Liabilities to Current Assets,Lag 3,,,,0.3802
+AAPL,Negative Equity Indicator,Lag 1,,,,
+AAPL,Negative Equity Indicator,Lag 2,,,,
+AAPL,Negative Equity Indicator,Lag 3,,,,
+AAPL,Net Income to Total Assets,Lag 1,,0.5218,0.0489,-0.0277
+AAPL,Net Income to Total Assets,Lag 2,,,0.5961,0.0199
+AAPL,Net Income to Total Assets,Lag 3,,,,0.552
+AAPL,Funds from Operations to Total Liabilities,Lag 1,,0.1581,0.119,-0.0587
+AAPL,Funds from Operations to Total Liabilities,Lag 2,,,0.2959,0.0533
+AAPL,Funds from Operations to Total Liabilities,Lag 3,,,,0.2198
+AAPL,Negative Income Indicator,Lag 1,,,,
+AAPL,Negative Income Indicator,Lag 2,,,,
+AAPL,Negative Income Indicator,Lag 3,,,,
+AAPL,Change in Net Income,Lag 1,,,-0.8925,-1.5417
+AAPL,Change in Net Income,Lag 2,,,,-1.0582
+AAPL,Change in Net Income,Lag 3,,,,
+AAPL,Ohlson O-Score,Lag 1,,,-0.0406,0.0232
+AAPL,Ohlson O-Score,Lag 2,,,,-0.0184
+AAPL,Ohlson O-Score,Lag 3,,,,
+AAPL,Ohlson Bankruptcy Probability,Lag 1,,,0.4171,-0.1738
+AAPL,Ohlson Bankruptcy Probability,Lag 2,,,,0.1708
+AAPL,Ohlson Bankruptcy Probability,Lag 3,,,,
+MSFT,Log of Total Assets,Lag 1,,0.0039,0.0034,0.0046
+MSFT,Log of Total Assets,Lag 2,,,0.0072,0.0079
+MSFT,Log of Total Assets,Lag 3,,,,0.0118
+MSFT,Total Liabilities to Total Assets,Lag 1,,-0.0539,-0.0541,-0.0811
+MSFT,Total Liabilities to Total Assets,Lag 2,,,-0.1051,-0.1308
+MSFT,Total Liabilities to Total Assets,Lag 3,,,,-0.1777
+MSFT,Working Capital to Total Assets,Lag 1,,-0.2114,-0.2872,-0.0491
+MSFT,Working Capital to Total Assets,Lag 2,,,-0.4379,-0.3222
+MSFT,Working Capital to Total Assets,Lag 3,,,,-0.4654
+MSFT,Current Liabilities to Current Assets,Lag 1,,0.2095,0.1655,0.0087
+MSFT,Current Liabilities to Current Assets,Lag 2,,,0.4097,0.1757
+MSFT,Current Liabilities to Current Assets,Lag 3,,,,0.422
+MSFT,Negative Equity Indicator,Lag 1,,,,
+MSFT,Negative Equity Indicator,Lag 2,,,,
+MSFT,Negative Equity Indicator,Lag 3,,,,
+MSFT,Net Income to Total Assets,Lag 1,,0.2491,0.0861,-0.119
+MSFT,Net Income to Total Assets,Lag 2,,,0.3566,-0.0432
+MSFT,Net Income to Total Assets,Lag 3,,,,0.1952
+MSFT,Funds from Operations to Total Liabilities,Lag 1,,0.2068,0.1221,-0.052
+MSFT,Funds from Operations to Total Liabilities,Lag 2,,,0.3543,0.0638
+MSFT,Funds from Operations to Total Liabilities,Lag 3,,,,0.2839
+MSFT,Negative Income Indicator,Lag 1,,,,
+MSFT,Negative Income Indicator,Lag 2,,,,
+MSFT,Negative Income Indicator,Lag 3,,,,
+MSFT,Change in Net Income,Lag 1,,,-0.4684,-1.0304
+MSFT,Change in Net Income,Lag 2,,,,-1.0161
+MSFT,Change in Net Income,Lag 3,,,,
+MSFT,Ohlson O-Score,Lag 1,,,0.0182,0.0149
+MSFT,Ohlson O-Score,Lag 2,,,,0.0334
+MSFT,Ohlson O-Score,Lag 3,,,,
+MSFT,Ohlson Bankruptcy Probability,Lag 1,,,-0.1709,-0.1442
+MSFT,Ohlson Bankruptcy Probability,Lag 2,,,,-0.2905
+MSFT,Ohlson Bankruptcy Probability,Lag 3,,,,

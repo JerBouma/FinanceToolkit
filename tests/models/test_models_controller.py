@@ -89,6 +89,18 @@ def test_get_beneish_m_score(recorder, models_module):
     recorder.capture(models_module.get_beneish_m_score(growth=True))
 
 
+def test_get_ohlson_o_score(recorder, models_module):
+    recorder.capture(models_module.get_ohlson_o_score())
+    recorder.capture(models_module.get_ohlson_o_score(growth=True))
+    recorder.capture(models_module.get_ohlson_o_score(growth=True, lag=[1, 2, 3]))
+
+
+def test_get_zmijewski_score(recorder, models_module):
+    recorder.capture(models_module.get_zmijewski_score())
+    recorder.capture(models_module.get_zmijewski_score(growth=True))
+    recorder.capture(models_module.get_zmijewski_score(growth=True, lag=[1, 2, 3]))
+
+
 def test_get_sustainable_growth_rate(recorder, models_module):
     recorder.capture(models_module.get_sustainable_growth_rate())
     recorder.capture(models_module.get_sustainable_growth_rate(growth=True))
@@ -97,3 +109,59 @@ def test_get_sustainable_growth_rate(recorder, models_module):
 def test_get_internal_growth_rate(recorder, models_module):
     recorder.capture(models_module.get_internal_growth_rate())
     recorder.capture(models_module.get_internal_growth_rate(growth=True))
+
+
+def test_get_market_value_added(recorder, models_module):
+    recorder.capture(models_module.get_market_value_added())
+    recorder.capture(models_module.get_market_value_added(growth=True))
+
+
+def test_get_tobins_q_ratio(recorder, models_module):
+    recorder.capture(models_module.get_tobins_q_ratio())
+    recorder.capture(models_module.get_tobins_q_ratio(growth=True))
+
+
+def test_get_free_cash_flow_to_firm(recorder, models_module):
+    recorder.capture(models_module.get_free_cash_flow_to_firm())
+    recorder.capture(models_module.get_free_cash_flow_to_firm(growth=True))
+
+
+def test_get_free_cash_flow_to_equity(recorder, models_module):
+    recorder.capture(models_module.get_free_cash_flow_to_equity())
+    recorder.capture(models_module.get_free_cash_flow_to_equity(growth=True))
+
+
+def test_get_two_stage_dividend_discount_model(recorder, models_module):
+    recorder.capture(
+        models_module.get_two_stage_dividend_discount_model(
+            rate_of_return=0.10, high_growth_rate=0.12, stable_growth_rate=0.03
+        )
+    )
+    recorder.capture(
+        models_module.get_two_stage_dividend_discount_model(
+            rate_of_return=[0.10, 0.09],
+            high_growth_rate=0.12,
+            stable_growth_rate=0.03,
+            high_growth_periods=3,
+        )
+    )
+
+
+def test_get_residual_income(recorder, models_module):
+    recorder.capture(models_module.get_residual_income())
+    recorder.capture(models_module.get_residual_income(growth=True))
+
+
+def test_get_springate_score(recorder, models_module):
+    recorder.capture(models_module.get_springate_score())
+    recorder.capture(models_module.get_springate_score(growth=True))
+
+
+def test_get_grover_score(recorder, models_module):
+    recorder.capture(models_module.get_grover_score())
+    recorder.capture(models_module.get_grover_score(growth=True))
+
+
+def test_get_fulmer_h_score(recorder, models_module):
+    recorder.capture(models_module.get_fulmer_h_score())
+    recorder.capture(models_module.get_fulmer_h_score(growth=True))

@@ -1,0 +1,23 @@
+,,2020,2021,2022,2023
+AAPL,Log of Total Assets,,0.003,0.0002,-0.0
+AAPL,Total Liabilities to Total Assets,,0.0275,0.044,-0.0381
+AAPL,Working Capital to Total Assets,,-0.7747,-2.9759,-0.9062
+AAPL,Current Liabilities to Current Assets,,0.269,0.222,-0.11
+AAPL,Negative Equity Indicator,,,,
+AAPL,Net Income to Total Assets,,0.5218,0.0489,-0.0277
+AAPL,Funds from Operations to Total Liabilities,,0.1581,0.119,-0.0587
+AAPL,Negative Income Indicator,,,,
+AAPL,Change in Net Income,,inf,-0.8925,-1.5417
+AAPL,Ohlson O-Score,,-inf,-0.0406,0.0232
+AAPL,Ohlson Bankruptcy Probability,,inf,0.4171,-0.1738
+MSFT,Log of Total Assets,,0.0039,0.0034,0.0046
+MSFT,Total Liabilities to Total Assets,,-0.0539,-0.0541,-0.0811
+MSFT,Working Capital to Total Assets,,-0.2114,-0.2872,-0.0491
+MSFT,Current Liabilities to Current Assets,,0.2095,0.1655,0.0087
+MSFT,Negative Equity Indicator,,,,
+MSFT,Net Income to Total Assets,,0.2491,0.0861,-0.119
+MSFT,Funds from Operations to Total Liabilities,,0.2068,0.1221,-0.052
+MSFT,Negative Income Indicator,,,,
+MSFT,Change in Net Income,,inf,-0.4684,-1.0304
+MSFT,Ohlson O-Score,,-inf,0.0182,0.0149
+MSFT,Ohlson Bankruptcy Probability,,inf,-0.1709,-0.1442

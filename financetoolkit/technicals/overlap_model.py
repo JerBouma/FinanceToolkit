@@ -116,6 +116,93 @@ def get_weighted_moving_average(prices: pd.Series, window: int) -> pd.Series:
     )
 
 
+def get_kaufman_adaptive_moving_average(
+    prices: pd.Series,
+    window: int = 10,
+    fast_window: int = 2,
+    slow_window: int = 30,
+) -> pd.Series:
+    """
+    Calculate the Kaufman Adaptive Moving Average (KAMA) of a given price series.
+
+    The Kaufman Adaptive Moving Average adjusts its own responsiveness to price changes
+    based on how "efficiently" price is moving. It compares the net directional move over
+    the window to the total (sum of absolute) movement over that same window — the
+    Efficiency Ratio. When price trends strongly in one direction (an efficient move), the
+    Efficiency Ratio is close to 1 and KAMA tracks price closely, behaving like a fast EMA.
+    When price whipsaws sideways (an inefficient move), the Efficiency Ratio is close to 0
+    and KAMA flattens out, behaving like a slow EMA — reducing whipsaw signals in choppy
+    markets while still reacting quickly during strong trends.
+
+    The formula is a follows:
+
+    - Change = |Close(t) — Close(t - window)|
+    - Volatility = Sum(|Close(i) — Close(i - 1)|, window)
+    - Efficiency Ratio (ER) = Change / Volatility
+    - Fastest SC = 2 / (fast_window + 1), Slowest SC = 2 / (slow_window + 1)
+    - Smoothing Constant (SC) = [ER * (Fastest SC — Slowest SC) + Slowest SC]^2
+    - KAMA(t) = KAMA(t-1) + SC * (Close(t) — KAMA(t-1))
+
+    Also known as: KAMA, Kaufman's Adaptive Moving Average.
+
+    Reference: Kaufman, P.J. (1998). "Trading Systems and Methods." 3rd ed. Wiley.
+
+    Args:
+        prices (pd.Series): Series of prices.
+        window (int): Number of periods over which the Efficiency Ratio is calculated.
+            Defaults to 10.
+        fast_window (int): The number of periods that corresponds to the fastest EMA
+            constant used when the Efficiency Ratio is at its maximum (1.0). Defaults to 2.
+        slow_window (int): The number of periods that corresponds to the slowest EMA
+            constant used when the Efficiency Ratio is at its minimum (0.0). Defaults to 30.
+
+    Returns:
+        pd.Series: KAMA values.
+
+    Raises:
+        TypeError: If `prices` is not a pandas Series.
+    """
+    if not isinstance(prices, pd.Series):
+        raise TypeError("prices must be a pandas Series.")
+
+    change = (prices - prices.shift(window)).abs()
+    volatility = prices.diff().abs().rolling(window=window).sum()
+    efficiency_ratio = change / volatility
+
+    fastest_smoothing_constant = 2 / (fast_window + 1)
+    slowest_smoothing_constant = 2 / (slow_window + 1)
+
+    smoothing_constant = (
+        efficiency_ratio * (fastest_smoothing_constant - slowest_smoothing_constant)
+        + slowest_smoothing_constant
+    ) ** 2
+
+    kama = pd.Series(index=prices.index, dtype="float64")
+
+    length = len(prices)
+    if length == 0:
+        return kama
+
+    first_valid_index = smoothing_constant.first_valid_index()
+    if first_valid_index is None:
+        return kama
+
+    start_position = prices.index.get_loc(first_valid_index)
+    kama.iloc[start_position] = prices.iloc[start_position]
+
+    for i in range(start_position + 1, length):
+        smoothing_constant_value = smoothing_constant.iloc[i]
+        if pd.isna(smoothing_constant_value):
+            kama.iloc[i] = kama.iloc[i - 1]
+            continue
+
+        kama.iloc[i] = kama.iloc[i - 1] + smoothing_constant_value * (
+            prices.iloc[i] - kama.iloc[i - 1]
+        )
+
+    return kama
+
+
 def get_hull_moving_average(prices: pd.Series, window: int) -> pd.Series:
     """
     Calculate the Hull Moving Average (HMA) of a given price series.
@@ -368,3 +455,78 @@ def get_support_resistance_levels(
     ).sort_index()
 
     return support_resistance_levels.reindex(prices.index).ffill()
+
+
+def get_fibonacci_retracement_levels(
+    high_prices: pd.Series,
+    low_prices: pd.Series,
+    levels: list[float] | None = None,
+    trend: str = "uptrend",
+) -> pd.DataFrame:
+    """
+    Calculate the Fibonacci Retracement Levels for a given high and low price series.
+
+    Fibonacci Retracement Levels are horizontal price levels, derived from ratios found in the
+    Fibonacci sequence, that traders watch as potential support (during a pullback within an
+    uptrend) or resistance (during a bounce within a downtrend) zones. `high_prices` and
+    `low_prices` are expected to already represent the swing high and swing low over the
+    lookback window of interest — e.g. a rolling maximum and rolling minimum computed by the
+    caller — so that a full set of retracement levels is produced for every date rather than
+    for a single, hand-picked swing.
+
+    The formula is a follows:
+
+    - Uptrend (retracing down from the high): Level = High — Ratio * (High — Low)
+    - Downtrend (retracing up from the low): Level = Low + Ratio * (High — Low)
+
+    Also known as: Fibonacci retracement, Fib levels, retracement levels.
+
+    Notes:
+        - The 50% level is not actually a Fibonacci ratio. It is included purely by long-standing
+          market convention, based on the Dow Theory observation that markets often retrace about
+          half of a prior move.
+        - The 78.6% level is the square root of 0.618, not a ratio drawn directly from the
+          Fibonacci sequence itself (unlike 23.6%, 38.2% and 61.8%, which are).
+        - There is no single canonical academic paper behind Fibonacci Retracement Levels — the
+          indicator is a practitioner tool derived from the Fibonacci sequence's ratios rather
+          than a published financial model. The standard textbook treatment is Murphy, J.J.
+          (1999). "Technical Analysis of the Financial Markets." New York Institute of Finance.
+
+    Args:
+        high_prices (pd.Series): Series of high prices (e.g. a rolling maximum over the
+            desired lookback window).
+        low_prices (pd.Series): Series of low prices (e.g. a rolling minimum over the
+            desired lookback window).
+        levels (list[float] | None): The Fibonacci ratios to calculate levels for. Defaults to
+            the standard [0.0, 0.236, 0.382, 0.5, 0.618, 0.786, 1.0].
+        trend (str): Whether to compute retracement levels for an "uptrend" (levels measured
+            down from the high — the conventional direction, used when a prior move was up and
+            price is now pulling back) or a "downtrend" (levels measured up from the low, used
+            when a prior move was down and price is now bouncing). Defaults to "uptrend".
+
+    Returns:
+        pd.DataFrame: Fibonacci Retracement Levels, one column per ratio in `levels`, labelled
+            by the ratio expressed as a percentage (e.g. "23.6%").
+
+    Raises:
+        ValueError: If `trend` is not "uptrend" or "downtrend".
+    """
+    if levels is None:
+        levels = [0.0, 0.236, 0.382, 0.5, 0.618, 0.786, 1.0]
+
+    if trend not in ("uptrend", "downtrend"):
+        raise ValueError("trend must be either 'uptrend' or 'downtrend'.")
+
+    price_range = high_prices - low_prices
+
+    retracement_levels = {}
+    for level in levels:
+        column_name = f"{level * 100:.1f}%"
+        if trend == "uptrend":
+            retracement_levels[column_name] = high_prices - level * price_range
+        else:
+            retracement_levels[column_name] = low_prices + level * price_range
+
+    return pd.concat(
+        retracement_levels.values(), keys=retracement_levels.keys(), axis=1
+    )

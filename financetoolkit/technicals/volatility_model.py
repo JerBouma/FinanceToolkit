@@ -60,6 +60,141 @@ def get_average_true_range(
     return atr
 
 
+def get_supertrend(
+    prices_high: pd.Series,
+    prices_low: pd.Series,
+    prices_close: pd.Series,
+    window: int = 10,
+    multiplier: float = 3.0,
+) -> pd.DataFrame:
+    """
+    Calculate the Supertrend indicator for a given price series.
+
+    The Supertrend indicator plots a single trailing line that flips between sitting below
+    price (in an uptrend) and above price (in a downtrend). The line is built from two bands
+    offset from the median price ((High + Low) / 2) by a multiple of the Average True Range,
+    which are then "ratcheted" period over period — each band can only move in the direction
+    that tightens around price — so that the active band only flips to the other side once
+    the closing price actually crosses it. This makes Supertrend both a trend filter (the
+    flip direction signals a trend change) and a trailing stop-loss level.
+
+    The formula is a follows:
+
+    - Basic Upper Band = (High + Low) / 2 + multiplier * ATR(window)
+    - Basic Lower Band = (High + Low) / 2 — multiplier * ATR(window)
+    - Final Upper Band(t) = Basic Upper Band(t) if Basic Upper Band(t) < Final Upper Band(t-1)
+      or Close(t-1) > Final Upper Band(t-1), else Final Upper Band(t-1)
+    - Final Lower Band(t) = Basic Lower Band(t) if Basic Lower Band(t) > Final Lower Band(t-1)
+      or Close(t-1) < Final Lower Band(t-1), else Final Lower Band(t-1)
+    - While in an uptrend, Supertrend = Final Lower Band, until Close crosses below it, at
+      which point the trend flips to a downtrend and Supertrend = Final Upper Band (and vice
+      versa)
+
+    Also known as: Supertrend, SuperTrend.
+
+    Notes:
+        - There is no academic journal citation for Supertrend. Like the Parabolic SAR, it is
+          a practitioner-developed trailing-stop/trend indicator rather than one derived from
+          a published financial paper.
+        - The trend is initialized as an uptrend (Trend Direction = 1) on the first available
+          period, since there is no prior period to determine the starting direction from.
+
+    Args:
+        prices_high (pd.Series): Series of high prices.
+        prices_low (pd.Series): Series of low prices.
+        prices_close (pd.Series): Series of closing prices.
+        window (int): Number of periods for the underlying Average True Range calculation.
+            Defaults to 10.
+        multiplier (float): Multiplier applied to the Average True Range to determine how
+            far the bands sit from the median price. Defaults to 3.0.
+
+    Returns:
+        pd.DataFrame: Supertrend (the trailing indicator line) and Trend Direction (1 for an
+            uptrend — Supertrend sits below price — and -1 for a downtrend — Supertrend sits
+            above price).
+
+    Raises:
+        TypeError: If `prices_high`, `prices_low` or `prices_close` is not a pandas Series.
+    """
+    if not (
+        isinstance(prices_high, pd.Series)
+        and isinstance(prices_low, pd.Series)
+        and isinstance(prices_close, pd.Series)
+    ):
+        raise TypeError(
+            "prices_high, prices_low and prices_close must be pandas Series."
+        )
+
+    average_true_range = get_average_true_range(
+        prices_high, prices_low, prices_close, window
+    )
+    median_price = (prices_high + prices_low) / 2
+
+    basic_upper_band = median_price + multiplier * average_true_range
+    basic_lower_band = median_price - multiplier * average_true_range
+
+    length = len(prices_close)
+
+    final_upper_band = pd.Series(index=prices_close.index, dtype="float64")
+    final_lower_band = pd.Series(index=prices_close.index, dtype="float64")
+    supertrend = pd.Series(index=prices_close.index, dtype="float64")
+    trend_direction = pd.Series(index=prices_close.index, dtype="float64")
+
+    if length == 0:
+        return pd.concat(
+            [supertrend, trend_direction],
+            keys=["Supertrend", "Trend Direction"],
+            axis=1,
+        )
+
+    final_upper_band.iloc[0] = basic_upper_band.iloc[0]
+    final_lower_band.iloc[0] = basic_lower_band.iloc[0]
+    trend_direction.iloc[0] = 1
+    supertrend.iloc[0] = final_lower_band.iloc[0]
+
+    for i in range(1, length):
+        if pd.isna(basic_upper_band.iloc[i]) or pd.isna(basic_lower_band.iloc[i]):
+            final_upper_band.iloc[i] = final_upper_band.iloc[i - 1]
+            final_lower_band.iloc[i] = final_lower_band.iloc[i - 1]
+            trend_direction.iloc[i] = trend_direction.iloc[i - 1]
+            supertrend.iloc[i] = supertrend.iloc[i - 1]
+            continue
+
+        if (
+            basic_upper_band.iloc[i] < final_upper_band.iloc[i - 1]
+            or prices_close.iloc[i - 1] > final_upper_band.iloc[i - 1]
+        ):
+            final_upper_band.iloc[i] = basic_upper_band.iloc[i]
+        else:
+            final_upper_band.iloc[i] = final_upper_band.iloc[i - 1]
+
+        if (
+            basic_lower_band.iloc[i] > final_lower_band.iloc[i - 1]
+            or prices_close.iloc[i - 1] < final_lower_band.iloc[i - 1]
+        ):
+            final_lower_band.iloc[i] = basic_lower_band.iloc[i]
+        else:
+            final_lower_band.iloc[i] = final_lower_band.iloc[i - 1]
+
+        if trend_direction.iloc[i - 1] == 1:
+            if prices_close.iloc[i] < final_lower_band.iloc[i]:
+                trend_direction.iloc[i] = -1
+                supertrend.iloc[i] = final_upper_band.iloc[i]
+            else:
+                trend_direction.iloc[i] = 1
+                supertrend.iloc[i] = final_lower_band.iloc[i]
+        elif prices_close.iloc[i] > final_upper_band.iloc[i]:
+            trend_direction.iloc[i] = 1
+            supertrend.iloc[i] = final_lower_band.iloc[i]
+        else:
+            trend_direction.iloc[i] = -1
+            supertrend.iloc[i] = final_upper_band.iloc[i]
+
+    return pd.concat(
+        [supertrend, trend_direction], keys=["Supertrend", "Trend Direction"], axis=1
+    )
+
+
 def get_keltner_channels(
     prices_high: pd.Series,
     prices_low: pd.Series,

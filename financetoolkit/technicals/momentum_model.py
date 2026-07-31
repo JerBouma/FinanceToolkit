@@ -2,12 +2,17 @@
 
 __docformat__ = "google"
 
+import numpy as np
 import pandas as pd
 
 from financetoolkit.technicals.overlap_model import (
     get_exponential_moving_average,
     get_moving_average,
 )
+from financetoolkit.technicals.volatility_model import get_true_range
+
+# The Know Sure Thing combines exactly four smoothed Rate of Change components.
+KST_COMPONENT_COUNT = 4
 
 
 def get_money_flow_index(
@@ -509,3 +514,337 @@ def get_balance_of_power(
     bop_values = ((prices_close - prices_open) / (prices_high - prices_low)).fillna(0)
 
     return bop_values
+
+
+def get_awesome_oscillator(
+    prices_high: pd.Series,
+    prices_low: pd.Series,
+    short_window: int = 5,
+    long_window: int = 34,
+) -> pd.Series:
+    """
+    Calculate the Awesome Oscillator (AO) for a given price series.
+
+    The Awesome Oscillator measures market momentum by comparing a short-term and a long-term
+    Simple Moving Average of the median price (the midpoint of each period's high and low,
+    rather than the closing price). It was developed by Bill Williams as part of his broader
+    "Trading Chaos" collection of momentum indicators.
+
+    The formula is a follows:
+
+    - Median Price = (High + Low) / 2
+    - AO = SMA(Median Price, short_window) — SMA(Median Price, long_window)
+
+    Also known as: AO, Bill Williams Awesome Oscillator.
+
+    Notes:
+        - There is no academic journal citation for the Awesome Oscillator. Like most of Bill
+          Williams' indicators, it is a practitioner-developed tool rather than one derived from
+          a published financial paper. The standard textbook source is Williams, B. (1995).
+          "Trading Chaos: Applying Expert Techniques to Maximize Your Profit." Wiley.
+        - A cross of the AO above zero occurs exactly when the short-window SMA of the median
+          price crosses above the long-window SMA, and vice versa for a cross below zero.
+
+    Args:
+        prices_high (pd.Series): Series of high prices.
+        prices_low (pd.Series): Series of low prices.
+        short_window (int): Number of periods for the short-term SMA of the median price.
+            Defaults to 5.
+        long_window (int): Number of periods for the long-term SMA of the median price.
+            Defaults to 34.
+
+    Returns:
+        pd.Series: Awesome Oscillator values. Positive values (and a cross above zero) signal
+            building bullish momentum; negative values (and a cross below zero) signal building
+            bearish momentum.
+    """
+    median_price = (prices_high + prices_low) / 2
+
+    short_sma = get_moving_average(median_price, short_window)
+    long_sma = get_moving_average(median_price, long_window)
+
+    return short_sma - long_sma
+
+
+def get_vortex_indicator(
+    prices_high: pd.Series,
+    prices_low: pd.Series,
+    prices_close: pd.Series,
+    window: int = 14,
+) -> pd.DataFrame:
+    """
+    Calculate the Vortex Indicator for a given price series.
+
+    The Vortex Indicator quantifies the presence and strength of a directional trend by
+    comparing each period's price movement away from the prior period's range to the period's
+    overall volatility (True Range). It consists of two lines, VI+ and VI-, whose crossovers
+    signal potential trend changes: VI+ above VI- suggests an uptrend is in control, VI- above
+    VI+ suggests a downtrend is in control.
+
+    The formula is a follows:
+
+    - VM+ = |High(t) — Low(t-1)|
+    - VM- = |Low(t) — High(t-1)|
+    - VI+ = Sum(VM+, window) / Sum(True Range, window)
+    - VI- = Sum(VM-, window) / Sum(True Range, window)
+
+    Also known as: VI, Vortex Indicator +/-, trend direction indicator.
+
+    Reference: Botes, E., & Siepman, D. (2010). "The Vortex Indicator." Technical Analysis of
+    Stocks & Commodities, 28(1), 20-25.
+
+    Args:
+        prices_high (pd.Series): Series of high prices.
+        prices_low (pd.Series): Series of low prices.
+        prices_close (pd.Series): Series of closing prices.
+        window (int): Number of periods to sum the directional movement and true range over.
+            Defaults to 14.
+
+    Returns:
+        pd.DataFrame: Vortex Indicator (VI+ and VI-) values.
+    """
+    positive_vortex_movement = (prices_high - prices_low.shift(1)).abs()
+    negative_vortex_movement = (prices_low - prices_high.shift(1)).abs()
+
+    true_range = get_true_range(prices_high, prices_low, prices_close)
+
+    positive_vortex_indicator = (
+        positive_vortex_movement.rolling(window=window).sum()
+        / true_range.rolling(window=window).sum()
+    )
+    negative_vortex_indicator = (
+        negative_vortex_movement.rolling(window=window).sum()
+        / true_range.rolling(window=window).sum()
+    )
+
+    return pd.concat(
+        [positive_vortex_indicator, negative_vortex_indicator],
+        keys=["VI+", "VI-"],
+        axis=1,
+    )
+
+
+def get_elder_ray_index(
+    prices_high: pd.Series,
+    prices_low: pd.Series,
+    prices_close: pd.Series,
+    window: int = 13,
+) -> pd.DataFrame:
+    """
+    Calculate the Elder Ray Index (Bull Power and Bear Power) for a given price series.
+
+    The Elder Ray Index measures buying and selling pressure in the market relative to a trend
+    baseline (an Exponential Moving Average of the closing price). Bull Power captures how far
+    the high extends above the EMA (buying pressure), while Bear Power captures how far the low
+    extends below the EMA (selling pressure).
+
+    The formula is a follows:
+
+    - Bull Power = High — EMA(Close, window)
+    - Bear Power = Low — EMA(Close, window)
+
+    Also known as: Elder Ray, Bull Power, Bear Power.
+
+    Reference: Elder, A. (1993). "Trading for a Living." Wiley.
+
+    Args:
+        prices_high (pd.Series): Series of high prices.
+        prices_low (pd.Series): Series of low prices.
+        prices_close (pd.Series): Series of closing prices.
+        window (int): Number of periods for the EMA used as the trend baseline. Defaults to 13,
+            as originally proposed by Elder.
+
+    Returns:
+        pd.DataFrame: Elder Ray Index (Bull Power and Bear Power) values. When the close is
+            above the EMA (uptrend), Bull Power tends to stay positive and Bear Power moves
+            toward zero from below; when the close is below the EMA (downtrend), both tend to
+            be negative.
+    """
+    exponential_moving_average = get_exponential_moving_average(prices_close, window)
+
+    bull_power = prices_high - exponential_moving_average
+    bear_power = prices_low - exponential_moving_average
+
+    return pd.concat(
+        [bull_power, bear_power], keys=["Bull Power", "Bear Power"], axis=1
+    )
+
+
+def get_rate_of_change(
+    prices_close: pd.Series | pd.DataFrame, window: int
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate the Rate of Change (ROC) for a given price series.
+
+    The Rate of Change is a pure momentum oscillator that measures the percentage change
+    in price between the current period and the price a fixed number of periods ago. It
+    oscillates around zero: positive values indicate price is higher than `window` periods
+    ago (upward momentum), while negative values indicate price is lower (downward momentum).
+
+    The formula is a follows:
+
+    - ROC = (Close(t) / Close(t - window) — 1) * 100
+
+    Also known as: ROC, Price Rate of Change, momentum (in its unscaled form Close(t) —
+    Close(t - window)).
+
+    Reference: Murphy, J.J. (1999). "Technical Analysis of the Financial Markets." New York
+    Institute of Finance.
+
+    Args:
+        prices_close (pd.Series | pd.DataFrame): Series (or DataFrame with one column per
+            ticker) of closing prices.
+        window (int): Number of periods to look back for the rate of change calculation.
+
+    Returns:
+        pd.Series | pd.DataFrame: Rate of Change values, expressed as a percentage.
+
+    Raises:
+        TypeError: If `prices_close` is not a pandas Series or DataFrame.
+    """
+    if not isinstance(prices_close, pd.Series | pd.DataFrame):
+        raise TypeError("prices_close must be a pandas Series or DataFrame.")
+
+    return (prices_close / prices_close.shift(window) - 1) * 100
+
+
+def get_choppiness_index(
+    prices_high: pd.Series,
+    prices_low: pd.Series,
+    prices_close: pd.Series,
+    window: int,
+) -> pd.Series:
+    """
+    Calculate the Choppiness Index (CHOP) for a given price series.
+
+    The Choppiness Index quantifies whether the market is trending or moving sideways
+    ("choppy") by comparing the sum of True Range over the window (a measure of the total
+    price path travelled) to the net range the price actually covered over that same window
+    (the distance between the highest high and the lowest low). When price travels a long,
+    winding path but ends up covering little net ground, the index is high (near 100),
+    signalling a choppy, range-bound market. When price travels efficiently in one direction,
+    the index is low (near 0), signalling a trending market.
+
+    The formula is a follows:
+
+    - CHOP = 100 * log10( Sum(True Range, window) / (Max(High, window) — Min(Low, window)) ) / log10(window)
+
+    Also known as: CHOP, Choppiness Index.
+
+    Reference: Dreiss, E.W. (1990s). Developed by Australian commodities trader Bill Dreiss;
+    there is no formal journal citation. The standard textbook treatment is Kaufman, P.J.
+    (2013). "Trading Systems and Methods." 5th ed. Wiley.
+
+    Args:
+        prices_high (pd.Series): Series of high prices.
+        prices_low (pd.Series): Series of low prices.
+        prices_close (pd.Series): Series of closing prices.
+        window (int): Number of periods to consider for the Choppiness Index calculation.
+
+    Returns:
+        pd.Series: Choppiness Index values, bounded between 0 and 100. Values above 61.8 are
+            commonly read as signalling a choppy (range-bound) market, while values below 38.2
+            are commonly read as signalling a trending market.
+
+    Raises:
+        TypeError: If `prices_high`, `prices_low` or `prices_close` is not a pandas Series.
+    """
+    if not (
+        isinstance(prices_high, pd.Series)
+        and isinstance(prices_low, pd.Series)
+        and isinstance(prices_close, pd.Series)
+    ):
+        raise TypeError(
+            "prices_high, prices_low and prices_close must be pandas Series."
+        )
+
+    true_range = get_true_range(prices_high, prices_low, prices_close)
+
+    summed_true_range = true_range.rolling(window=window).sum()
+    highest_high = prices_high.rolling(window=window).max()
+    lowest_low = prices_low.rolling(window=window).min()
+
+    choppiness_index = (
+        100
+        * np.log10(summed_true_range / (highest_high - lowest_low))
+        / np.log10(window)
+    )
+
+    return choppiness_index
+
+
+def get_know_sure_thing(
+    prices_close: pd.Series,
+    roc_windows: list[int] | None = None,
+    sma_windows: list[int] | None = None,
+    weights: list[int] | None = None,
+    signal_window: int = 9,
+) -> pd.DataFrame:
+    """
+    Calculate the Know Sure Thing (KST) for a given price series.
+
+    The Know Sure Thing is a momentum oscillator developed by Martin Pring that combines
+    four smoothed Rate of Change series, each calculated over a progressively longer lookback
+    period, into a single weighted sum. Smoothing each Rate of Change with a Simple Moving
+    Average before combining them reduces noise, while the increasing weights on the longer
+    lookback periods give more influence to the more significant, longer-term price cycles.
+    A signal line (a Simple Moving Average of the KST itself) is used to spot crossovers, in
+    the same way the MACD line is compared to its signal line.
+
+    The formula is a follows:
+
+    - RCMA(i) = SMA(ROC(Close, roc_windows[i]), sma_windows[i])
+    - KST = Sum(RCMA(i) * weights[i]) for i = 1..4
+    - Signal Line = SMA(KST, signal_window)
+
+    Also known as: KST, Pring's Know Sure Thing, Summed Rate of Change.
+
+    Reference: Pring, M.J. (1992). "The Know Sure Thing (KST)." Technical Analysis of Stocks
+    & Commodities, 10(6).
+
+    Args:
+        prices_close (pd.Series): Series of closing prices.
+        roc_windows (list[int] | None): The four lookback periods used for the underlying
+            Rate of Change calculations. Defaults to the standard [10, 15, 20, 30].
+        sma_windows (list[int] | None): The four Simple Moving Average smoothing periods
+            applied to each Rate of Change series. Defaults to the standard [10, 10, 10, 15].
+        weights (list[int] | None): The four weights applied to each smoothed Rate of Change
+            series before summing. Defaults to the standard [1, 2, 3, 4].
+        signal_window (int): Number of periods for the Simple Moving Average of the KST used
+            as the signal line. Defaults to 9.
+
+    Returns:
+        pd.DataFrame: Know Sure Thing (KST and Signal Line) values.
+
+    Raises:
+        TypeError: If `prices_close` is not a pandas Series.
+        ValueError: If `roc_windows`, `sma_windows` and `weights` are not all length 4.
+    """
+    if not isinstance(prices_close, pd.Series):
+        raise TypeError("prices_close must be a pandas Series.")
+
+    if roc_windows is None:
+        roc_windows = [10, 15, 20, 30]
+    if sma_windows is None:
+        sma_windows = [10, 10, 10, 15]
+    if weights is None:
+        weights = [1, 2, 3, 4]
+
+    if (
+        len(roc_windows) != KST_COMPONENT_COUNT
+        or len(sma_windows) != KST_COMPONENT_COUNT
+        or len(weights) != KST_COMPONENT_COUNT
+    ):
+        raise ValueError(
+            "roc_windows, sma_windows and weights must each contain exactly 4 values."
+        )
+
+    kst = pd.Series(0.0, index=prices_close.index)
+    for roc_window, sma_window, weight in zip(roc_windows, sma_windows, weights):
+        rate_of_change = get_rate_of_change(prices_close, roc_window)
+        smoothed_rate_of_change = get_moving_average(rate_of_change, sma_window)
+        kst = kst + smoothed_rate_of_change * weight
+
+    signal_line = get_moving_average(kst, signal_window)
+
+    return pd.concat([kst, signal_line], keys=["KST", "Signal Line"], axis=1)

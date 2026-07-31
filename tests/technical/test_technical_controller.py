@@ -180,6 +180,26 @@ def test_get_balance_of_power(recorder, technical_module):
     recorder.capture(technical_module.get_balance_of_power(growth=True, lag=[1, 2, 3]))
 
 
+def test_get_awesome_oscillator(recorder, technical_module):
+    recorder.capture(technical_module.get_awesome_oscillator())
+    recorder.capture(technical_module.get_awesome_oscillator(growth=True))
+    recorder.capture(
+        technical_module.get_awesome_oscillator(growth=True, lag=[1, 2, 3])
+    )
+
+
+def test_get_vortex_indicator(recorder, technical_module):
+    recorder.capture(technical_module.get_vortex_indicator())
+    recorder.capture(technical_module.get_vortex_indicator(growth=True))
+    recorder.capture(technical_module.get_vortex_indicator(growth=True, lag=[1, 2, 3]))
+
+
+def test_get_elder_ray_index(recorder, technical_module):
+    recorder.capture(technical_module.get_elder_ray_index())
+    recorder.capture(technical_module.get_elder_ray_index(growth=True))
+    recorder.capture(technical_module.get_elder_ray_index(growth=True, lag=[1, 2, 3]))
+
+
 def test_get_moving_average(recorder, technical_module):
     recorder.capture(technical_module.get_moving_average())
     recorder.capture(technical_module.get_moving_average(growth=True))
@@ -229,6 +249,17 @@ def test_get_triangular_moving_average(recorder, technical_module):
 def test_get_support_resistance_levels(recorder, technical_module):
     recorder.capture(technical_module.get_support_resistance_levels())
     recorder.capture(technical_module.get_support_resistance_levels(sensitivity=0.10))
+
+
+def test_get_fibonacci_retracement_levels(recorder, technical_module):
+    recorder.capture(technical_module.get_fibonacci_retracement_levels())
+    recorder.capture(technical_module.get_fibonacci_retracement_levels(growth=True))
+    recorder.capture(
+        technical_module.get_fibonacci_retracement_levels(growth=True, lag=[1, 2, 3])
+    )
+    recorder.capture(
+        technical_module.get_fibonacci_retracement_levels(trend="downtrend")
+    )
 
 
 def test_get_true_range(recorder, technical_module):
@@ -332,3 +363,97 @@ def test_get_donchian_channels(recorder, technical_module):
 def test_get_volatility_cone(recorder, technical_module):
     recorder.capture(technical_module.get_volatility_cone())
     recorder.capture(technical_module.get_volatility_cone(windows=[5, 10, 20]))
+
+
+def test_get_rate_of_change(recorder, technical_module):
+    recorder.capture(technical_module.get_rate_of_change())
+    recorder.capture(technical_module.get_rate_of_change(growth=True))
+    recorder.capture(technical_module.get_rate_of_change(growth=True, lag=[1, 2, 3]))
+
+
+def test_get_choppiness_index(recorder, technical_module):
+    recorder.capture(technical_module.get_choppiness_index())
+    recorder.capture(technical_module.get_choppiness_index(growth=True))
+    recorder.capture(technical_module.get_choppiness_index(growth=True, lag=[1, 2, 3]))
+
+
+def test_get_know_sure_thing(recorder, technical_module):
+    recorder.capture(technical_module.get_know_sure_thing())
+    recorder.capture(technical_module.get_know_sure_thing(growth=True))
+    recorder.capture(technical_module.get_know_sure_thing(growth=True, lag=[1, 2, 3]))
+
+
+def test_get_kaufman_adaptive_moving_average(recorder, technical_module):
+    recorder.capture(technical_module.get_kaufman_adaptive_moving_average())
+    recorder.capture(technical_module.get_kaufman_adaptive_moving_average(growth=True))
+    recorder.capture(
+        technical_module.get_kaufman_adaptive_moving_average(growth=True, lag=[1, 2, 3])
+    )
+
+
+def test_get_chaikin_money_flow(recorder, technical_module):
+    recorder.capture(technical_module.get_chaikin_money_flow())
+    recorder.capture(technical_module.get_chaikin_money_flow(growth=True))
+    recorder.capture(
+        technical_module.get_chaikin_money_flow(growth=True, lag=[1, 2, 3])
+    )
+
+
+def test_get_ease_of_movement(recorder, technical_module):
+    recorder.capture(technical_module.get_ease_of_movement())
+    recorder.capture(technical_module.get_ease_of_movement(growth=True))
+    recorder.capture(technical_module.get_ease_of_movement(growth=True, lag=[1, 2, 3]))
+
+
+def test_get_negative_volume_index(recorder, technical_module):
+    recorder.capture(technical_module.get_negative_volume_index())
+    recorder.capture(technical_module.get_negative_volume_index(growth=True))
+    recorder.capture(
+        technical_module.get_negative_volume_index(growth=True, lag=[1, 2, 3])
+    )
+
+
+def test_get_positive_volume_index(recorder, technical_module):
+    recorder.capture(technical_module.get_positive_volume_index())
+    recorder.capture(technical_module.get_positive_volume_index(growth=True))
+    recorder.capture(
+        technical_module.get_positive_volume_index(growth=True, lag=[1, 2, 3])
+    )
+
+
+def test_get_supertrend(recorder, technical_module):
+    recorder.capture(technical_module.get_supertrend())
+    recorder.capture(technical_module.get_supertrend(growth=True))
+    recorder.capture(technical_module.get_supertrend(growth=True, lag=[1, 2, 3]))
+
+
+def test_get_doji(recorder, technical_module):
+    recorder.capture(technical_module.get_doji())
+    recorder.capture(technical_module.get_doji(growth=True))
+    recorder.capture(technical_module.get_doji(growth=True, lag=[1, 2, 3]))
+
+
+def test_get_bullish_engulfing(recorder, technical_module):
+    recorder.capture(technical_module.get_bullish_engulfing())
+    recorder.capture(technical_module.get_bullish_engulfing(growth=True))
+    recorder.capture(technical_module.get_bullish_engulfing(growth=True, lag=[1, 2, 3]))
+
+
+def test_get_bearish_engulfing(recorder, technical_module):
+    recorder.capture(technical_module.get_bearish_engulfing())
+    recorder.capture(technical_module.get_bearish_engulfing(growth=True))
+    recorder.capture(technical_module.get_bearish_engulfing(growth=True, lag=[1, 2, 3]))
+
+
+def test_get_hammer(recorder, technical_module):
+    recorder.capture(technical_module.get_hammer())
+    recorder.capture(technical_module.get_hammer(growth=True))
+    recorder.capture(technical_module.get_hammer(growth=True, lag=[1, 2, 3]))
+
+
+def test_collect_candlestick_indicators(recorder, technical_module):
+    recorder.capture(technical_module.collect_candlestick_indicators())
+    recorder.capture(technical_module.collect_candlestick_indicators(growth=True))
+    recorder.capture(
+        technical_module.collect_candlestick_indicators(growth=True, lag=[1, 2, 3])
+    )

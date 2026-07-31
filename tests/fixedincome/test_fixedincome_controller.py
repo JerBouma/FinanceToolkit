@@ -69,6 +69,73 @@ def test_get_yield_to_maturity(recorder, fixedincome_module):
     )
 
 
+def test_get_forward_rate(recorder, fixedincome_module):
+    recorder.capture(
+        fixedincome_module.get_forward_rate(
+            near_maturity=[1, 2, 3], far_maturity=[5, 10]
+        )
+    )
+
+
+def test_get_par_yield(recorder, fixedincome_module):
+    recorder.capture(
+        fixedincome_module.get_par_yield(years_to_maturity=[1, 2, 3, 5, 10])
+    )
+
+
+def test_get_yield_curve_spread(recorder, fixedincome_module):
+    recorder.capture(
+        fixedincome_module.get_yield_curve_spread(
+            long_maturity=[10, 30], short_maturity=[1, 2]
+        )
+    )
+
+
+def test_get_breakeven_inflation_rate(recorder, fixedincome_module):
+    recorder.capture(
+        fixedincome_module.get_breakeven_inflation_rate(maturity=[1, 5, 10, 30])
+    )
+
+
+def test_get_z_spread(recorder, fixedincome_module):
+    recorder.capture(
+        fixedincome_module.get_z_spread(
+            coupon_rate=0.05,
+            years_to_maturity=[5, 10, 15],
+            bond_price=[95, 100, 105],
+        )
+    )
+
+
+def test_get_bond_equivalent_yield(recorder, fixedincome_module):
+    recorder.capture(
+        fixedincome_module.get_bond_equivalent_yield(
+            discount_yield=[0.03, 0.05, 0.07], days_to_maturity=[90, 180, 360]
+        )
+    )
+
+
+def test_get_key_rate_duration(recorder, fixedincome_module):
+    recorder.capture(
+        fixedincome_module.get_key_rate_duration(
+            coupon_rate=0.05,
+            years_to_maturity=[5, 10],
+            key_rate_maturity=[2, 5, 10],
+        )
+    )
+
+
+def test_get_taylor_price_change(recorder, fixedincome_module):
+    recorder.capture(
+        fixedincome_module.get_taylor_price_change(
+            coupon_rate=[0.03, 0.05, 0.07],
+            years_to_maturity=[5, 10, 15],
+            yield_to_maturity=0.08,
+            yield_change=0.01,
+        )
+    )
+
+
 def test_get_derivative_price(recorder, fixedincome_module):
     recorder.capture(fixedincome_module.get_derivative_price())
     recorder.capture(fixedincome_module.get_derivative_price(model="bachelier"))

@@ -53,6 +53,9 @@ AAPL,SBC to Revenue Ratio,Lag 3,,,,0.1365
 AAPL,Deferred Revenue Ratio,Lag 1,,-0.1405,-0.0337,0.0448
 AAPL,Deferred Revenue Ratio,Lag 2,,,-0.1694,0.0096
 AAPL,Deferred Revenue Ratio,Lag 3,,,,-0.1322
+AAPL,Working Capital Turnover Ratio,Lag 1,,,-6.5727,-0.5588
+AAPL,Working Capital Turnover Ratio,Lag 2,,,,-3.4584
+AAPL,Working Capital Turnover Ratio,Lag 3,,,,
 MSFT,Days of Inventory Outstanding,Lag 1,,,0.1736,-0.0691
 MSFT,Days of Inventory Outstanding,Lag 2,,,,0.0925
 MSFT,Days of Inventory Outstanding,Lag 3,,,,
@@ -107,6 +110,9 @@ MSFT,SBC to Revenue Ratio,Lag 3,,,,0.227
 MSFT,Deferred Revenue Ratio,Lag 1,,-0.0187,-0.07,0.0457
 MSFT,Deferred Revenue Ratio,Lag 2,,,-0.0874,-0.0275
 MSFT,Deferred Revenue Ratio,Lag 3,,,,-0.0457
+MSFT,Working Capital Turnover Ratio,Lag 1,,,0.4219,0.1769
+MSFT,Working Capital Turnover Ratio,Lag 2,,,,0.6734
+MSFT,Working Capital Turnover Ratio,Lag 3,,,,
 AAPL,Current Ratio,Lag 1,,-0.2119,-0.1816,0.1235
 AAPL,Current Ratio,Lag 2,,,-0.3551,-0.0806
 AAPL,Current Ratio,Lag 3,,,,-0.2754
@@ -128,6 +134,9 @@ AAPL,Operating Cash Flow to Sales Ratio,Lag 3,,,,-0.0187
 AAPL,Short Term Coverage Ratio,Lag 1,,0.302,-0.17,0.0474
 AAPL,Short Term Coverage Ratio,Lag 2,,,0.0807,-0.1306
 AAPL,Short Term Coverage Ratio,Lag 3,,,,0.1319
+AAPL,Defensive Interval Ratio,Lag 1,,-0.2931,-0.3083,0.112
+AAPL,Defensive Interval Ratio,Lag 2,,,-0.511,-0.2308
+AAPL,Defensive Interval Ratio,Lag 3,,,,-0.4563
 MSFT,Current Ratio,Lag 1,,-0.1732,-0.142,-0.0086
 MSFT,Current Ratio,Lag 2,,,-0.2906,-0.1494
 MSFT,Current Ratio,Lag 3,,,,-0.2968
@@ -149,6 +158,9 @@ MSFT,Operating Cash Flow to Sales Ratio,Lag 3,,,,-0.0259
 MSFT,Short Term Coverage Ratio,Lag 1,,0.0595,0.0207,-0.1379
 MSFT,Short Term Coverage Ratio,Lag 2,,,0.0815,-0.12
 MSFT,Short Term Coverage Ratio,Lag 3,,,,-0.0676
+MSFT,Defensive Interval Ratio,Lag 1,,-0.091,-0.1972,-0.0714
+MSFT,Defensive Interval Ratio,Lag 2,,,-0.2702,-0.2545
+MSFT,Defensive Interval Ratio,Lag 3,,,,-0.3223
 AAPL,Gross Margin,Lag 1,,0.0929,0.0366,0.0189
 AAPL,Gross Margin,Lag 2,,,0.1329,0.0562
 AAPL,Gross Margin,Lag 3,,,,0.1543
@@ -158,6 +170,12 @@ AAPL,Operating Margin,Lag 3,,,,0.2348
 AAPL,Net Profit Margin,Lag 1,,0.2377,-0.022,0.0
 AAPL,Net Profit Margin,Lag 2,,,0.2104,-0.022
 AAPL,Net Profit Margin,Lag 3,,,,0.2104
+AAPL,EBITDA Margin,Lag 1,,0.1668,0.007,-0.0082
+AAPL,EBITDA Margin,Lag 2,,,0.175,-0.0012
+AAPL,EBITDA Margin,Lag 3,,,,0.1654
+AAPL,Free Cash Flow Margin,Lag 1,,-0.0494,0.1122,-0.0807
+AAPL,Free Cash Flow Margin,Lag 2,,,0.0572,0.0224
+AAPL,Free Cash Flow Margin,Lag 3,,,,-0.0281
 AAPL,Interest Coverage Ratio,Lag 1,,0.6885,-0.0202,-0.2817
 AAPL,Interest Coverage Ratio,Lag 2,,,0.6544,-0.2962
 AAPL,Interest Coverage Ratio,Lag 3,,,,0.1883
@@ -170,6 +188,9 @@ AAPL,Effective Tax Rate,Lag 3,,,,0.0201
 AAPL,Return on Assets,Lag 1,,,0.0107,-0.0303
 AAPL,Return on Assets,Lag 2,,,,-0.02
 AAPL,Return on Assets,Lag 3,,,,
+AAPL,Cash Return on Assets,Lag 1,,,0.1259,-0.0971
+AAPL,Cash Return on Assets,Lag 2,,,,0.0165
+AAPL,Cash Return on Assets,Lag 3,,,,
 AAPL,Return on Equity,Lag 1,,,0.19,-0.02
 AAPL,Return on Equity,Lag 2,,,,0.1662
 AAPL,Return on Equity,Lag 3,,,,
@@ -212,6 +233,12 @@ MSFT,Operating Margin,Lag 3,,,,0.128
 MSFT,Net Profit Margin,Lag 1,,0.1773,0.0066,-0.0692
 MSFT,Net Profit Margin,Lag 2,,,0.1851,-0.0631
 MSFT,Net Profit Margin,Lag 3,,,,0.103
+MSFT,EBITDA Margin,Lag 1,,0.0559,0.0165,-0.0211
+MSFT,EBITDA Margin,Lag 2,,,0.0733,-0.0049
+MSFT,EBITDA Margin,Lag 3,,,,0.0507
+MSFT,Free Cash Flow Margin,Lag 1,,0.0556,-0.0159,-0.1458
+MSFT,Free Cash Flow Margin,Lag 2,,,0.0389,-0.1593
+MSFT,Free Cash Flow Margin,Lag 3,,,,-0.1126
 MSFT,Interest Coverage Ratio,Lag 1,,0.3706,0.3635,0.0969
 MSFT,Interest Coverage Ratio,Lag 2,,,0.8688,0.4957
 MSFT,Interest Coverage Ratio,Lag 3,,,,1.05
@@ -224,6 +251,9 @@ MSFT,Effective Tax Rate,Lag 3,,,,0.1496
 MSFT,Return on Assets,Lag 1,,,0.0788,-0.1052
 MSFT,Return on Assets,Lag 2,,,,-0.0347
 MSFT,Return on Assets,Lag 3,,,,
+MSFT,Cash Return on Assets,Lag 1,,,0.0546,-0.1153
+MSFT,Cash Return on Assets,Lag 2,,,,-0.067
+MSFT,Cash Return on Assets,Lag 3,,,,
 MSFT,Return on Equity,Lag 1,,,0.0015,-0.1767
 MSFT,Return on Equity,Lag 2,,,,-0.1754
 MSFT,Return on Equity,Lag 3,,,,
@@ -260,6 +290,9 @@ MSFT,Tax Rate Divergence,Lag 3,,,,0.1496
 AAPL,Debt-to-Assets Ratio,Lag 1,,0.0302,-0.0342,-0.1611
 AAPL,Debt-to-Assets Ratio,Lag 2,,,-0.005,-0.1898
 AAPL,Debt-to-Assets Ratio,Lag 3,,,,-0.1653
+AAPL,Asset Coverage Ratio,Lag 1,,-0.0755,-0.0917,0.2436
+AAPL,Asset Coverage Ratio,Lag 2,,,-0.1603,0.1295
+AAPL,Asset Coverage Ratio,Lag 3,,,,0.0442
 AAPL,Debt-to-Equity Ratio,Lag 1,,0.1563,0.2082,-0.3163
 AAPL,Debt-to-Equity Ratio,Lag 2,,,0.3971,-0.1739
 AAPL,Debt-to-Equity Ratio,Lag 3,,,,-0.0448
@@ -275,6 +308,9 @@ AAPL,Free Cash Flow Yield,Lag 3,,,,0.644
 AAPL,Net-Debt to EBITDA Ratio,Lag 1,,-0.2244,-0.0133,-0.2266
 AAPL,Net-Debt to EBITDA Ratio,Lag 2,,,-0.2347,-0.2368
 AAPL,Net-Debt to EBITDA Ratio,Lag 3,,,,-0.4081
+AAPL,Gross Debt to EBITDA Ratio,Lag 1,,-0.2818,-0.1062,-0.1301
+AAPL,Gross Debt to EBITDA Ratio,Lag 2,,,-0.3581,-0.2225
+AAPL,Gross Debt to EBITDA Ratio,Lag 3,,,,-0.4416
 AAPL,Cash Flow Coverage Ratio,Lag 1,,0.155,0.2098,0.0793
 AAPL,Cash Flow Coverage Ratio,Lag 2,,,0.3974,0.3057
 AAPL,Cash Flow Coverage Ratio,Lag 3,,,,0.5082
@@ -296,6 +332,9 @@ AAPL,Interest Paid to Expense Ratio,Lag 3,,,,-0.0746
 MSFT,Debt-to-Assets Ratio,Lag 1,,-0.1379,-0.1733,-0.1328
 MSFT,Debt-to-Assets Ratio,Lag 2,,,-0.2874,-0.2831
 MSFT,Debt-to-Assets Ratio,Lag 3,,,,-0.382
+MSFT,Asset Coverage Ratio,Lag 1,,0.12,0.2047,0.1799
+MSFT,Asset Coverage Ratio,Lag 2,,,0.3493,0.4214
+MSFT,Asset Coverage Ratio,Lag 3,,,,0.5921
 MSFT,Debt-to-Equity Ratio,Lag 1,,-0.2046,-0.2292,-0.2096
 MSFT,Debt-to-Equity Ratio,Lag 2,,,-0.3869,-0.3907
 MSFT,Debt-to-Equity Ratio,Lag 3,,,,-0.5154
@@ -311,6 +350,9 @@ MSFT,Free Cash Flow Yield,Lag 3,,,,0.3394
 MSFT,Net-Debt to EBITDA Ratio,Lag 1,,-0.2486,-0.2627,-0.4901
 MSFT,Net-Debt to EBITDA Ratio,Lag 2,,,-0.446,-0.624
 MSFT,Net-Debt to EBITDA Ratio,Lag 3,,,,-0.7175
+MSFT,Gross Debt to EBITDA Ratio,Lag 1,,-0.2307,-0.2461,-0.0647
+MSFT,Gross Debt to EBITDA Ratio,Lag 2,,,-0.42,-0.2948
+MSFT,Gross Debt to EBITDA Ratio,Lag 3,,,,-0.4575
 MSFT,Cash Flow Coverage Ratio,Lag 1,,0.3249,0.2834,0.0051
 MSFT,Cash Flow Coverage Ratio,Lag 2,,,0.7004,0.2899
 MSFT,Cash Flow Coverage Ratio,Lag 3,,,,0.7091
@@ -371,6 +413,9 @@ AAPL,Price-to-Cash-Flow,Lag 3,,,,-0.3904
 AAPL,Price-to-Free-Cash-Flow,Lag 1,,0.0225,-0.4058,0.0
 AAPL,Price-to-Free-Cash-Flow,Lag 2,,,-0.3924,-0.4058
 AAPL,Price-to-Free-Cash-Flow,Lag 3,,,,-0.3924
+AAPL,Price-to-Sales,Lag 1,,-0.0278,-0.3391,0.0
+AAPL,Price-to-Sales,Lag 2,,,-0.3575,-0.3391
+AAPL,Price-to-Sales,Lag 3,,,,-0.3575
 AAPL,Market Cap,Lag 1,,0.2955,-0.2876,0.0
 AAPL,Market Cap,Lag 2,,,-0.077,-0.2876
 AAPL,Market Cap,Lag 3,,,,-0.077
@@ -449,6 +494,9 @@ MSFT,Price-to-Cash-Flow,Lag 3,,,,-0.266
 MSFT,Price-to-Free-Cash-Flow,Lag 1,,0.2171,-0.3855,0.0
 MSFT,Price-to-Free-Cash-Flow,Lag 2,,,-0.2522,-0.3855
 MSFT,Price-to-Free-Cash-Flow,Lag 3,,,,-0.2522
+MSFT,Price-to-Sales,Lag 1,,0.2847,-0.3952,0.0
+MSFT,Price-to-Sales,Lag 2,,,-0.2231,-0.3952
+MSFT,Price-to-Sales,Lag 3,,,,-0.2231
 MSFT,Market Cap,Lag 1,,0.5099,-0.2867,0.0
 MSFT,Market Cap,Lag 2,,,0.0771,-0.2867
 MSFT,Market Cap,Lag 3,,,,0.0771

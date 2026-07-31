@@ -370,6 +370,37 @@ def get_stock_based_compensation_ratio(
     return stock_based_compensation / revenue
 
 
+def get_working_capital_turnover_ratio(
+    revenue: pd.Series,
+    average_working_capital: pd.Series,
+) -> pd.Series:
+    """
+    Calculate the working capital turnover ratio, an efficiency ratio that measures how
+    effectively a company uses its working capital to generate revenue.
+
+    A high working capital turnover ratio indicates that a company is generating a
+    large amount of revenue relative to the working capital it employs, which can
+    signal an efficient (or, if extreme, undercapitalized) operation. A low ratio can
+    indicate excess inventory, slow receivables collection, or otherwise underutilized
+    working capital.
+
+    The formula is as follows:
+
+        Working Capital Turnover Ratio = Revenue / Average Working Capital
+
+    Args:
+        revenue (float or pd.Series): Total revenue of the company.
+        average_working_capital (float or pd.Series): Average working capital of the company.
+            This is typically calculated as (beginning working capital + ending working
+            capital) / 2, where working capital equals current assets minus current
+            liabilities.
+
+    Returns:
+        float | pd.Series: The working capital turnover ratio value.
+    """
+    return revenue / average_working_capital
+
+
 def get_deferred_revenue_ratio(
     deferred_revenue: pd.Series,
     revenue: pd.Series,

@@ -2,6 +2,9 @@
 AAPL,Debt-to-Assets Ratio,Lag 1,,0.0302,-0.0342,-0.1611
 AAPL,Debt-to-Assets Ratio,Lag 2,,,-0.005,-0.1898
 AAPL,Debt-to-Assets Ratio,Lag 3,,,,-0.1653
+AAPL,Asset Coverage Ratio,Lag 1,,-0.0755,-0.0917,0.2436
+AAPL,Asset Coverage Ratio,Lag 2,,,-0.1603,0.1295
+AAPL,Asset Coverage Ratio,Lag 3,,,,0.0442
 AAPL,Debt-to-Equity Ratio,Lag 1,,0.1563,0.2082,-0.3163
 AAPL,Debt-to-Equity Ratio,Lag 2,,,0.3971,-0.1739
 AAPL,Debt-to-Equity Ratio,Lag 3,,,,-0.0448
@@ -17,6 +20,9 @@ AAPL,Free Cash Flow Yield,Lag 3,,,,0.644
 AAPL,Net-Debt to EBITDA Ratio,Lag 1,,-0.2244,-0.0133,-0.2266
 AAPL,Net-Debt to EBITDA Ratio,Lag 2,,,-0.2347,-0.2368
 AAPL,Net-Debt to EBITDA Ratio,Lag 3,,,,-0.4081
+AAPL,Gross Debt to EBITDA Ratio,Lag 1,,-0.2818,-0.1062,-0.1301
+AAPL,Gross Debt to EBITDA Ratio,Lag 2,,,-0.3581,-0.2225
+AAPL,Gross Debt to EBITDA Ratio,Lag 3,,,,-0.4416
 AAPL,Cash Flow Coverage Ratio,Lag 1,,0.155,0.2098,0.0793
 AAPL,Cash Flow Coverage Ratio,Lag 2,,,0.3974,0.3057
 AAPL,Cash Flow Coverage Ratio,Lag 3,,,,0.5082
@@ -38,6 +44,9 @@ AAPL,Interest Paid to Expense Ratio,Lag 3,,,,-0.0746
 MSFT,Debt-to-Assets Ratio,Lag 1,,-0.1379,-0.1733,-0.1328
 MSFT,Debt-to-Assets Ratio,Lag 2,,,-0.2874,-0.2831
 MSFT,Debt-to-Assets Ratio,Lag 3,,,,-0.382
+MSFT,Asset Coverage Ratio,Lag 1,,0.12,0.2047,0.1799
+MSFT,Asset Coverage Ratio,Lag 2,,,0.3493,0.4214
+MSFT,Asset Coverage Ratio,Lag 3,,,,0.5921
 MSFT,Debt-to-Equity Ratio,Lag 1,,-0.2046,-0.2292,-0.2096
 MSFT,Debt-to-Equity Ratio,Lag 2,,,-0.3869,-0.3907
 MSFT,Debt-to-Equity Ratio,Lag 3,,,,-0.5154
@@ -53,6 +62,9 @@ MSFT,Free Cash Flow Yield,Lag 3,,,,0.3394
 MSFT,Net-Debt to EBITDA Ratio,Lag 1,,-0.2486,-0.2627,-0.4901
 MSFT,Net-Debt to EBITDA Ratio,Lag 2,,,-0.446,-0.624
 MSFT,Net-Debt to EBITDA Ratio,Lag 3,,,,-0.7175
+MSFT,Gross Debt to EBITDA Ratio,Lag 1,,-0.2307,-0.2461,-0.0647
+MSFT,Gross Debt to EBITDA Ratio,Lag 2,,,-0.42,-0.2948
+MSFT,Gross Debt to EBITDA Ratio,Lag 3,,,,-0.4575
 MSFT,Cash Flow Coverage Ratio,Lag 1,,0.3249,0.2834,0.0051
 MSFT,Cash Flow Coverage Ratio,Lag 2,,,0.7004,0.2899
 MSFT,Cash Flow Coverage Ratio,Lag 3,,,,0.7091

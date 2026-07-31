@@ -17,6 +17,7 @@ AAPL,S&M to Revenue Ratio,0.0,0.0,0.0,0.0
 AAPL,G&A to Revenue Ratio,0.0,0.0,0.0,0.0
 AAPL,SBC to Revenue Ratio,0.0249,0.0216,0.0229,0.0283
 AAPL,Deferred Revenue Ratio,0.0242,0.0208,0.0201,0.021
+AAPL,Working Capital Turnover Ratio,,15.346,-85.519,-37.7268
 MSFT,Days of Inventory Outstanding,,15.8314,18.5792,17.296
 MSFT,Days of Sales Outstanding,,76.0605,75.7577,80.0472
 MSFT,Operating Cycle,,91.8919,94.3369,97.3431
@@ -35,3 +36,4 @@ MSFT,S&M to Revenue Ratio,0.137,0.1197,0.1101,0.1074
 MSFT,G&A to Revenue Ratio,0.0357,0.0304,0.0298,0.0357
 MSFT,SBC to Revenue Ratio,0.037,0.0364,0.0378,0.0454
 MSFT,Deferred Revenue Ratio,0.2517,0.247,0.2297,0.2402
+MSFT,Working Capital Turnover Ratio,,1.6371,2.3278,2.7395

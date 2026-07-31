@@ -259,6 +259,38 @@ def get_price_to_free_cash_flow_ratio(
     return market_cap / free_cash_flow
 
 
+def get_price_to_sales_ratio(
+    market_cap: pd.Series, total_revenue: pd.Series
+) -> pd.Series:
+    """
+    Calculate the price to sales ratio (P/S), a valuation ratio that compares a
+    company's market capitalization to its total revenue.
+
+    The price to sales ratio is particularly useful for valuing companies that are not
+    yet profitable (and therefore have no meaningful P/E ratio), since revenue is
+    typically positive even when earnings are not, and is less susceptible to
+    accounting distortions than earnings-based multiples. It is, however, less
+    informative than earnings- or cash-flow-based multiples for mature, profitable
+    companies since it ignores profitability and cost structure entirely.
+
+    The formula is as follows:
+
+        Price to Sales Ratio = Market Capitalization / Total Revenue
+
+    This is equivalent to Stock Price / Revenue per Share.
+
+    Also known as: P/S ratio, sales multiple.
+
+    Args:
+        market_cap (float or pd.Series): Market capitalization of the company.
+        total_revenue (float or pd.Series): Total revenue of the company.
+
+    Returns:
+        float | pd.Series: The price to sales ratio value.
+    """
+    return market_cap / total_revenue
+
+
 def get_market_cap(
     share_price: pd.Series,
     total_shares_outstanding: pd.Series,

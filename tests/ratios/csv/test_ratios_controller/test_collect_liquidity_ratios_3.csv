@@ -6,6 +6,7 @@ AAPL,Working Capital,23838000000.0,-4611000000.0,-10159500000.0
 AAPL,Operating Cash Flow Ratio,1.6001,1.6187,1.555
 AAPL,Operating Cash Flow to Sales Ratio,0.2885,0.2976,0.2992
 AAPL,Short Term Coverage Ratio,-8.3922,-8.5532,-8.0577
+AAPL,Defensive Interval Ratio,593.7112,413.4445,364.9064
 MSFT,Current Ratio,2.2758,1.9271,1.7765
 MSFT,Quick Ratio,2.0926,1.727,1.5507
 MSFT,Cash Ratio,1.6574,1.279,1.0842
@@ -13,3 +14,4 @@ MSFT,Working Capital,102677000000.0,85175500000.0,77355000000.0
 MSFT,Operating Cash Flow Ratio,1.7074,1.8045,1.773
 MSFT,Operating Cash Flow to Sales Ratio,0.4417,0.4525,0.4306
 MSFT,Short Term Coverage Ratio,5.8609,6.0814,5.6885
+MSFT,Defensive Interval Ratio,939.4332,803.944,692.2967

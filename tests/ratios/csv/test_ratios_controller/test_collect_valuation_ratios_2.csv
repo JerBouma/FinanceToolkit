@@ -41,6 +41,9 @@ AAPL,Price-to-Cash-Flow,Lag 3,,,,-0.3904
 AAPL,Price-to-Free-Cash-Flow,Lag 1,,0.0225,-0.4058,0.0
 AAPL,Price-to-Free-Cash-Flow,Lag 2,,,-0.3924,-0.4058
 AAPL,Price-to-Free-Cash-Flow,Lag 3,,,,-0.3924
+AAPL,Price-to-Sales,Lag 1,,-0.0278,-0.3391,0.0
+AAPL,Price-to-Sales,Lag 2,,,-0.3575,-0.3391
+AAPL,Price-to-Sales,Lag 3,,,,-0.3575
 AAPL,Market Cap,Lag 1,,0.2955,-0.2876,0.0
 AAPL,Market Cap,Lag 2,,,-0.077,-0.2876
 AAPL,Market Cap,Lag 3,,,,-0.077
@@ -119,6 +122,9 @@ MSFT,Price-to-Cash-Flow,Lag 3,,,,-0.266
 MSFT,Price-to-Free-Cash-Flow,Lag 1,,0.2171,-0.3855,0.0
 MSFT,Price-to-Free-Cash-Flow,Lag 2,,,-0.2522,-0.3855
 MSFT,Price-to-Free-Cash-Flow,Lag 3,,,,-0.2522
+MSFT,Price-to-Sales,Lag 1,,0.2847,-0.3952,0.0
+MSFT,Price-to-Sales,Lag 2,,,-0.2231,-0.3952
+MSFT,Price-to-Sales,Lag 3,,,,-0.2231
 MSFT,Market Cap,Lag 1,,0.5099,-0.2867,0.0
 MSFT,Market Cap,Lag 2,,,0.0771,-0.2867
 MSFT,Market Cap,Lag 3,,,,0.0771

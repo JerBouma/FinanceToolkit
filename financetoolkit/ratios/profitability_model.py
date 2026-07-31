@@ -50,6 +50,40 @@ def get_net_profit_margin(net_income: pd.Series, revenue: pd.Series) -> pd.Serie
     return net_income / revenue
 
 
+def get_ebitda_margin(
+    operating_income: pd.Series,
+    depreciation_and_amortization: pd.Series,
+    revenue: pd.Series,
+) -> pd.Series:
+    """
+    Calculate the EBITDA margin, a profitability ratio that measures the percentage of
+    revenue that remains as earnings before interest, taxes, depreciation and
+    amortization (EBITDA).
+
+    EBITDA margin approximates a company's core operating profitability before the
+    effects of financing decisions (interest), tax jurisdictions, and non-cash
+    accounting choices around fixed and intangible assets (depreciation and
+    amortization). This makes it a commonly used metric to compare operating
+    performance across companies with different capital structures, tax regimes, and
+    depreciation policies.
+
+    The formula is as follows:
+
+        EBITDA Margin = (Operating Income + Depreciation and Amortization) / Revenue
+
+    Also known as: EBITDA-to-revenue ratio.
+
+    Args:
+        operating_income (float or pd.Series): Operating income of the company.
+        depreciation_and_amortization (float or pd.Series): Depreciation and amortization of the company.
+        revenue (float or pd.Series): Total revenue of the company.
+
+    Returns:
+        float | pd.Series: The EBITDA margin percentage value.
+    """
+    return (operating_income + depreciation_and_amortization) / revenue
+
+
 def get_interest_coverage_ratio(
     operating_income: pd.Series, interest_expense: pd.Series
 ) -> pd.Series:
@@ -140,6 +174,37 @@ def get_return_on_assets(
         float | pd.Series: The ROA percentage value.
     """
     return net_income / average_total_assets
+
+
+def get_cash_return_on_assets(
+    operating_cash_flow: pd.Series, average_total_assets: pd.Series
+) -> pd.Series:
+    """
+    Calculate the cash return on assets (Cash ROA), a profitability ratio that measures
+    how efficiently a company uses its assets to generate operating cash flow.
+
+    Unlike the return on assets, which uses accrual-based net income, the cash return
+    on assets uses operating cash flow, making it less sensitive to non-cash accounting
+    choices (e.g. depreciation method, revenue recognition timing, working capital
+    accruals). Comparing cash ROA to ROA is a useful earnings-quality cross-check: a
+    cash ROA that persistently trails ROA can indicate that reported profits are not
+    being converted into cash.
+
+    The formula is as follows:
+
+        Cash Return on Assets = Operating Cash Flow / Average Total Assets
+
+    Also known as: cash ROA.
+
+    Args:
+        operating_cash_flow (float or pd.Series): Operating cash flow of the company.
+        average_total_assets (float or pd.Series): Average total assets of the company.
+            This is typically calculated as (beginning total assets + ending total assets) / 2.
+
+    Returns:
+        float | pd.Series: The cash return on assets percentage value.
+    """
+    return operating_cash_flow / average_total_assets
 
 
 def get_return_on_equity(
@@ -290,6 +355,34 @@ def get_free_cash_flow_operating_cash_flow_ratio(
         float | pd.Series: The free cash flow to operating cash flow ratio value.
     """
     return free_cash_flow / operating_cash_flow
+
+
+def get_free_cash_flow_margin(
+    free_cash_flow: pd.Series, revenue: pd.Series
+) -> pd.Series:
+    """
+    Calculate the free cash flow margin, a profitability ratio that measures the
+    percentage of revenue that is converted into free cash flow.
+
+    Unlike the net profit margin, which can be distorted by non-cash accounting items
+    (e.g. depreciation, stock-based compensation, deferred taxes) and by working
+    capital timing, the free cash flow margin reflects the cash a company actually
+    generates, after capital expenditures, for every dollar of revenue. A persistently
+    low or declining free cash flow margin relative to the net profit margin can be a
+    quality-of-earnings warning sign.
+
+    The formula is as follows:
+
+        Free Cash Flow Margin = Free Cash Flow / Revenue
+
+    Args:
+        free_cash_flow (float or pd.Series): Free cash flow of the company.
+        revenue (float or pd.Series): Total revenue of the company.
+
+    Returns:
+        float | pd.Series: The free cash flow margin percentage value.
+    """
+    return free_cash_flow / revenue
 
 
 def get_tax_burden_ratio(

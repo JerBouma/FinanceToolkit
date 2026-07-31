@@ -13,6 +13,7 @@ AAPL,Dividend Yield,,-0.7525,0.42,20.8169
 AAPL,Weighted Dividend Yield,,-0.2097,0.449,20.8169
 AAPL,Price-to-Cash-Flow,,0.0046,-0.3932,-0.991
 AAPL,Price-to-Free-Cash-Flow,,0.0225,-0.4058,-0.9918
+AAPL,Price-to-Sales,,-0.0278,-0.3391,-0.9709
 AAPL,Market Cap,,0.2955,-0.2876,-1.0
 AAPL,Enterprise Value,,0.2923,-0.2756,-1.0
 AAPL,EV-to-Sales,,-0.0302,-0.328,-0.9723
@@ -39,6 +40,7 @@ MSFT,Dividend Yield,,-0.2784,0.5429,24.3333
 MSFT,Weighted Dividend Yield,,-0.2826,0.5455,25.8235
 MSFT,Price-to-Cash-Flow,,0.1938,-0.3852,-0.9863
 MSFT,Price-to-Free-Cash-Flow,,0.2171,-0.3855,-0.99
+MSFT,Price-to-Sales,,0.2847,-0.3952,-0.9694
 MSFT,Market Cap,,0.5099,-0.2867,-1.0
 MSFT,Enterprise Value,,0.4905,-0.2831,-1.0
 MSFT,EV-to-Sales,,0.2682,-0.3922,-0.9702

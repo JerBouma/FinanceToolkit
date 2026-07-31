@@ -70,6 +70,49 @@ def get_cash_ratio(
     return (cash_and_equivalents + marketable_securities) / current_liabilities
 
 
+def get_defensive_interval_ratio(
+    cash_and_equivalents: pd.Series,
+    marketable_securities: pd.Series,
+    accounts_receivable: pd.Series,
+    daily_operating_expenses: pd.Series,
+) -> pd.Series:
+    """
+    Calculate the defensive interval ratio (DIR), a liquidity ratio that measures how
+    many days a company could continue to cover its operating expenses using only its
+    existing defensive (most liquid) assets, without relying on additional revenue.
+
+    Unlike the current, quick, and cash ratios, which express liquidity relative to
+    current liabilities, the defensive interval ratio expresses liquidity relative to
+    the company's actual daily cash burn rate. This makes it a more direct measure of
+    how long a company could survive a sudden stop in incoming cash flow, which is
+    especially relevant for early-stage or cyclical companies.
+
+    The formula is as follows:
+
+        Defensive Interval Ratio = (Cash and Cash Equivalents + Marketable Securities +
+            Accounts Receivable) / Daily Operating Expenses
+
+    Where Daily Operating Expenses is typically calculated as
+    (Operating Expenses - Non-Cash Charges) / 365, i.e. the average cash operating
+    expenses incurred per day.
+
+    Also known as: defensive interval period, basic defense interval.
+
+    Args:
+        cash_and_equivalents (float or pd.Series): Total cash and cash equivalents of the company.
+        marketable_securities (float or pd.Series): Total marketable securities of the company.
+        accounts_receivable (float or pd.Series): Total accounts receivable of the company.
+        daily_operating_expenses (float or pd.Series): The average cash operating expenses
+            incurred per day, typically (Operating Expenses - Non-Cash Charges) / 365.
+
+    Returns:
+        float | pd.Series: The defensive interval ratio value, expressed in days.
+    """
+    return (
+        cash_and_equivalents + marketable_securities + accounts_receivable
+    ) / daily_operating_expenses
+
+
 def get_working_capital(
     current_assets: pd.Series, current_liabilities: pd.Series
 ) -> pd.Series:

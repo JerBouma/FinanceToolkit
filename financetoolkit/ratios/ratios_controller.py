@@ -662,6 +662,9 @@ class Ratios:
         efficiency_ratios["Deferred Revenue Ratio"] = self.get_deferred_revenue_ratio(
             trailing=trailing
         )
+        efficiency_ratios["Working Capital Turnover Ratio"] = (
+            self.get_working_capital_turnover_ratio(trailing=trailing)
+        )
 
         self._efficiency_ratios = (
             pd.concat(efficiency_ratios)
@@ -1936,6 +1939,94 @@ class Ratios:
 
     @handle_portfolio
     @handle_errors
+    def get_working_capital_turnover_ratio(
+        self,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+        trailing: int | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the working capital turnover ratio, an efficiency ratio that
+        measures how effectively a company uses its working capital to generate
+        revenue.
+
+        A high working capital turnover ratio indicates that a company is generating a
+        large amount of revenue relative to the working capital it employs, which can
+        signal an efficient (or, if extreme, undercapitalized) operation. A low ratio
+        can indicate excess inventory, slow receivables collection, or otherwise
+        underutilized working capital.
+
+        The formula is as follows:
+
+        - Working Capital Turnover Ratio = Revenue / Average Working Capital
+
+        Args:
+            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            trailing (int): Defines whether to select a trailing period.
+            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+
+        Returns:
+            pd.DataFrame: Working capital turnover ratio values.
+
+        Notes:
+        - The method retrieves historical data and calculates the working capital
+        turnover ratio for each asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the ratio
+        values using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        working_capital_turnover_ratios = toolkit.ratios.get_working_capital_turnover_ratio()
+        ```
+        """
+        working_capital = liquidity_model.get_working_capital(
+            self._balance_sheet_statement.loc[:, "Total Current Assets", :],
+            self._balance_sheet_statement.loc[:, "Total Current Liabilities", :],
+        )
+
+        if trailing:
+            working_capital_turnover_ratio = (
+                efficiency_model.get_working_capital_turnover_ratio(
+                    self._income_statement.loc[:, "Revenue", :]
+                    .T.rolling(trailing)
+                    .sum()
+                    .T,
+                    working_capital.T.rolling(trailing).mean().T,
+                )
+            )
+        else:
+            working_capital_turnover_ratio = (
+                efficiency_model.get_working_capital_turnover_ratio(
+                    self._income_statement.loc[:, "Revenue", :],
+                    working_capital.T.rolling(2).mean().T,
+                )
+            )
+
+        return finalize_dataset(
+            dataset=working_capital_turnover_ratio,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+        )
+
+    @handle_portfolio
+    @handle_errors
     def get_operating_ratio(
         self,
         rounding: int | None = None,
@@ -2529,6 +2620,9 @@ class Ratios:
         )
         liquidity_ratios["Short Term Coverage Ratio"] = (
             self.get_short_term_coverage_ratio(trailing=trailing)
+        )
+        liquidity_ratios["Defensive Interval Ratio"] = (
+            self.get_defensive_interval_ratio(trailing=trailing)
         )
 
         self._liquidity_ratios = (
@@ -3229,6 +3323,133 @@ class Ratios:
             standardize=standardize,
         )
 
+    @handle_portfolio
+    @handle_errors
+    def get_defensive_interval_ratio(
+        self,
+        days: int | float | None = None,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+        trailing: int | None = None,
+    ):
+        """
+        Calculate the defensive interval ratio (DIR), a liquidity ratio that measures
+        how many days a company could continue to cover its operating expenses using
+        only its existing defensive (most liquid) assets, without relying on
+        additional revenue.
+
+        Unlike the current, quick, and cash ratios, which express liquidity relative
+        to current liabilities, the defensive interval ratio expresses liquidity
+        relative to the company's actual daily cash burn rate, making it a more direct
+        measure of how long a company could survive a sudden stop in incoming cash
+        flow.
+
+        The formula is as follows:
+
+        - Defensive Interval Ratio = (Cash and Cash Equivalents + Short Term Investments +
+          Accounts Receivable) / Daily Operating Expenses
+
+        Where Daily Operating Expenses = (Operating Expenses - Depreciation and
+        Amortization) / Days, i.e. the average cash operating expenses incurred per
+        day, net of the largest non-cash charge (depreciation and amortization).
+
+        Also known as: defensive interval period, basic defense interval.
+
+        Args:
+            days (int, optional): The number of days to use for the daily operating
+                expenses calculation. Defaults to 365.
+            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            trailing (int): Defines whether to select a trailing period.
+            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+
+        Returns:
+            pd.DataFrame: Defensive interval ratio values, expressed in days.
+
+        Notes:
+        - The method retrieves historical data and calculates the defensive interval
+        ratio for each asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the ratio
+        values using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        defensive_interval_ratios = toolkit.ratios.get_defensive_interval_ratio()
+        ```
+        """
+        if not days:
+            days = 365 / 4 if self._quarterly else 365
+
+        if trailing:
+            operating_expenses = (
+                self._income_statement.loc[:, "Operating Expenses", :]
+                .T.rolling(trailing)
+                .sum()
+                .T
+            )
+            depreciation_and_amortization = (
+                self._cash_flow_statement.loc[:, "Depreciation and Amortization", :]
+                .T.rolling(trailing)
+                .sum()
+                .T
+            )
+            daily_operating_expenses = (
+                operating_expenses - depreciation_and_amortization
+            ) / days
+
+            defensive_interval_ratio = liquidity_model.get_defensive_interval_ratio(
+                self._balance_sheet_statement.loc[:, "Cash and Cash Equivalents", :]
+                .T.rolling(trailing)
+                .mean()
+                .T,
+                self._balance_sheet_statement.loc[:, "Short Term Investments", :]
+                .T.rolling(trailing)
+                .mean()
+                .T,
+                self._balance_sheet_statement.loc[:, "Accounts Receivable", :]
+                .T.rolling(trailing)
+                .mean()
+                .T,
+                daily_operating_expenses,
+            )
+        else:
+            operating_expenses = self._income_statement.loc[:, "Operating Expenses", :]
+            depreciation_and_amortization = self._cash_flow_statement.loc[
+                :, "Depreciation and Amortization", :
+            ]
+            daily_operating_expenses = (
+                operating_expenses - depreciation_and_amortization
+            ) / days
+
+            defensive_interval_ratio = liquidity_model.get_defensive_interval_ratio(
+                self._balance_sheet_statement.loc[:, "Cash and Cash Equivalents", :],
+                self._balance_sheet_statement.loc[:, "Short Term Investments", :],
+                self._balance_sheet_statement.loc[:, "Accounts Receivable", :],
+                daily_operating_expenses,
+            )
+
+        return finalize_dataset(
+            dataset=defensive_interval_ratio,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+        )
+
     def collect_profitability_ratios(
         self,
         rounding: int | None = None,
@@ -3294,6 +3515,12 @@ class Ratios:
         profitability_ratios["Net Profit Margin"] = self.get_net_profit_margin(
             trailing=trailing
         )
+        profitability_ratios["EBITDA Margin"] = self.get_ebitda_margin(
+            trailing=trailing
+        )
+        profitability_ratios["Free Cash Flow Margin"] = self.get_free_cash_flow_margin(
+            trailing=trailing
+        )
         profitability_ratios["Interest Coverage Ratio"] = (
             self.get_interest_coverage_ratio(trailing=trailing)
         )
@@ -3304,6 +3531,9 @@ class Ratios:
             trailing=trailing
         )
         profitability_ratios["Return on Assets"] = self.get_return_on_assets(
+            trailing=trailing
+        )
+        profitability_ratios["Cash Return on Assets"] = self.get_cash_return_on_assets(
             trailing=trailing
         )
         profitability_ratios["Return on Equity"] = self.get_return_on_equity(
@@ -3647,6 +3877,93 @@ class Ratios:
 
         return finalize_dataset(
             dataset=net_profit_margin,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_ebitda_margin(
+        self,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+        trailing: int | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the EBITDA margin, a profitability ratio that measures the
+        percentage of revenue that remains as earnings before interest, taxes,
+        depreciation and amortization (EBITDA).
+
+        EBITDA margin approximates a company's core operating profitability before the
+        effects of financing decisions (interest), tax jurisdictions, and non-cash
+        accounting choices around fixed and intangible assets (depreciation and
+        amortization). This makes it a commonly used metric to compare operating
+        performance across companies with different capital structures, tax regimes,
+        and depreciation policies.
+
+        The formula is as follows:
+
+        - EBITDA Margin = (Operating Income + Depreciation and Amortization) / Revenue
+
+        Also known as: EBITDA-to-revenue ratio.
+
+        Args:
+            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            trailing (int): Defines whether to select a trailing period.
+            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+
+        Returns:
+            pd.DataFrame: EBITDA margin values.
+
+        Notes:
+        - The method retrieves historical data and calculates the EBITDA margin for
+        each asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the ratio
+        values using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        ebitda_margins = toolkit.ratios.get_ebitda_margin()
+        ```
+        """
+        if trailing:
+            ebitda_margin = profitability_model.get_ebitda_margin(
+                self._income_statement.loc[:, "Operating Income", :]
+                .T.rolling(trailing)
+                .sum()
+                .T,
+                self._cash_flow_statement.loc[:, "Depreciation and Amortization", :]
+                .T.rolling(trailing)
+                .sum()
+                .T,
+                self._income_statement.loc[:, "Revenue", :].T.rolling(trailing).sum().T,
+            )
+        else:
+            ebitda_margin = profitability_model.get_ebitda_margin(
+                self._income_statement.loc[:, "Operating Income", :],
+                self._cash_flow_statement.loc[:, "Depreciation and Amortization", :],
+                self._income_statement.loc[:, "Revenue", :],
+            )
+
+        return finalize_dataset(
+            dataset=ebitda_margin,
             start_date=self._start_date,
             end_date=self._end_date,
             default_rounding=self._rounding,
@@ -4007,6 +4324,94 @@ class Ratios:
 
         return finalize_dataset(
             dataset=return_on_assets,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_cash_return_on_assets(
+        self,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+        trailing: int | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the cash return on assets (Cash ROA), a profitability ratio that
+        measures how efficiently a company uses its assets to generate operating cash
+        flow.
+
+        Unlike the return on assets, which uses accrual-based net income, the cash
+        return on assets uses operating cash flow, making it less sensitive to
+        non-cash accounting choices (e.g. depreciation method, revenue recognition
+        timing, working capital accruals). Comparing cash ROA to ROA is a useful
+        earnings-quality cross-check: a cash ROA that persistently trails ROA can
+        indicate that reported profits are not being converted into cash.
+
+        The formula is as follows:
+
+        - Cash Return on Assets = Cash Flow from Operations / Average Total Assets
+
+        Also known as: cash ROA.
+
+        Args:
+            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            trailing (int): Defines whether to select a trailing period.
+            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+
+        Returns:
+            pd.DataFrame: Cash return on assets (Cash ROA) values.
+
+        Notes:
+        - The method retrieves historical data and calculates the cash ROA for each
+        asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the ratio
+        values using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        cash_roa_ratios = toolkit.ratios.get_cash_return_on_assets()
+        ```
+        """
+        if trailing:
+            cash_return_on_assets = profitability_model.get_cash_return_on_assets(
+                self._cash_flow_statement.loc[:, "Cash Flow from Operations", :]
+                .T.rolling(trailing)
+                .sum()
+                .T,
+                self._balance_sheet_statement.loc[:, "Total Assets", :]
+                .T.rolling(trailing)
+                .mean()
+                .T,
+            )
+        else:
+            cash_return_on_assets = profitability_model.get_cash_return_on_assets(
+                self._cash_flow_statement.loc[:, "Cash Flow from Operations", :],
+                self._balance_sheet_statement.loc[:, "Total Assets", :]
+                .T.rolling(2)
+                .mean()
+                .T,
+            )
+
+        return finalize_dataset(
+            dataset=cash_return_on_assets,
             start_date=self._start_date,
             end_date=self._end_date,
             default_rounding=self._rounding,
@@ -4714,6 +5119,85 @@ class Ratios:
 
     @handle_portfolio
     @handle_errors
+    def get_free_cash_flow_margin(
+        self,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+        trailing: int | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the free cash flow margin, a profitability ratio that measures the
+        percentage of revenue that is converted into free cash flow.
+
+        Unlike the net profit margin, which can be distorted by non-cash accounting
+        items (e.g. depreciation, stock-based compensation, deferred taxes) and by
+        working capital timing, the free cash flow margin reflects the cash a company
+        actually generates, after capital expenditures, for every dollar of revenue. A
+        persistently low or declining free cash flow margin relative to the net profit
+        margin can be a quality-of-earnings warning sign.
+
+        The formula is as follows:
+
+        - Free Cash Flow Margin = Free Cash Flow / Revenue
+
+        Args:
+            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            trailing (int): Defines whether to select a trailing period.
+            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+
+        Returns:
+            pd.DataFrame: Free cash flow margin values.
+
+        Notes:
+        - The method retrieves historical data and calculates the free cash flow
+        margin for each asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the ratio
+        values using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        free_cash_flow_margins = toolkit.ratios.get_free_cash_flow_margin()
+        ```
+        """
+        if trailing:
+            free_cash_flow_margin = profitability_model.get_free_cash_flow_margin(
+                self._cash_flow_statement.loc[:, "Free Cash Flow", :]
+                .T.rolling(trailing)
+                .sum()
+                .T,
+                self._income_statement.loc[:, "Revenue", :].T.rolling(trailing).sum().T,
+            )
+        else:
+            free_cash_flow_margin = profitability_model.get_free_cash_flow_margin(
+                self._cash_flow_statement.loc[:, "Free Cash Flow", :],
+                self._income_statement.loc[:, "Revenue", :],
+            )
+
+        return finalize_dataset(
+            dataset=free_cash_flow_margin,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+        )
+
+    @handle_portfolio
+    @handle_errors
     def get_tax_burden_ratio(
         self,
         rounding: int | None = None,
@@ -5226,6 +5710,9 @@ class Ratios:
         solvency_ratios["Debt-to-Assets Ratio"] = self.get_debt_to_assets_ratio(
             trailing=trailing
         )
+        solvency_ratios["Asset Coverage Ratio"] = self.get_asset_coverage_ratio(
+            trailing=trailing
+        )
         solvency_ratios["Debt-to-Equity Ratio"] = self.get_debt_to_equity_ratio(
             trailing=trailing
         )
@@ -5240,6 +5727,9 @@ class Ratios:
         )
         solvency_ratios["Net-Debt to EBITDA Ratio"] = self.get_net_debt_to_ebitda_ratio(
             trailing=trailing
+        )
+        solvency_ratios["Gross Debt to EBITDA Ratio"] = (
+            self.get_gross_debt_to_ebitda_ratio(trailing=trailing)
         )
         solvency_ratios["Cash Flow Coverage Ratio"] = self.get_cash_flow_coverage_ratio(
             trailing=trailing
@@ -5398,6 +5888,96 @@ class Ratios:
 
         return finalize_dataset(
             dataset=debt_to_assets_ratio,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_asset_coverage_ratio(
+        self,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+        trailing: int | None = None,
+    ):
+        """
+        Calculate the asset coverage ratio, a solvency ratio that measures how well a
+        company's tangible assets, after settling current liabilities, can cover its
+        total debt.
+
+        This ratio is commonly used by lenders and bondholders to assess the extent to
+        which a company's hard (tangible) assets would be available to repay debt
+        obligations in a liquidation scenario, since intangible assets (e.g. goodwill)
+        typically have little to no recovery value and current liabilities are assumed
+        to be settled first out of current assets.
+
+        The formula is as follows:
+
+        - Asset Coverage Ratio = (Total Assets - Intangible Assets - Total Current Liabilities) / Total Debt
+
+        Args:
+            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            trailing (int): Defines whether to select a trailing period.
+            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+
+        Returns:
+            pd.DataFrame: Asset coverage ratio values.
+
+        Notes:
+        - The method retrieves historical data and calculates the ratio for each asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the ratio values using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        asset_coverage_ratios = toolkit.ratios.get_asset_coverage_ratio()
+        ```
+        """
+        if trailing:
+            asset_coverage_ratio = solvency_model.get_asset_coverage_ratio(
+                self._balance_sheet_statement.loc[:, "Total Assets", :]
+                .T.rolling(trailing)
+                .mean()
+                .T,
+                self._balance_sheet_statement.loc[:, "Intangible Assets", :]
+                .T.rolling(trailing)
+                .mean()
+                .T,
+                self._balance_sheet_statement.loc[:, "Total Current Liabilities", :]
+                .T.rolling(trailing)
+                .mean()
+                .T,
+                self._balance_sheet_statement.loc[:, "Total Debt", :]
+                .T.rolling(trailing)
+                .mean()
+                .T,
+            )
+        else:
+            asset_coverage_ratio = solvency_model.get_asset_coverage_ratio(
+                self._balance_sheet_statement.loc[:, "Total Assets", :],
+                self._balance_sheet_statement.loc[:, "Intangible Assets", :],
+                self._balance_sheet_statement.loc[:, "Total Current Liabilities", :],
+                self._balance_sheet_statement.loc[:, "Total Debt", :],
+            )
+
+        return finalize_dataset(
+            dataset=asset_coverage_ratio,
             start_date=self._start_date,
             end_date=self._end_date,
             default_rounding=self._rounding,
@@ -5988,6 +6568,93 @@ class Ratios:
 
         return finalize_dataset(
             dataset=net_debt_to_ebitda_ratio,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_gross_debt_to_ebitda_ratio(
+        self,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+        trailing: int | None = None,
+    ):
+        """
+        Calculates the gross debt to EBITDA ratio, which measures the total (gross)
+        debt of the company relative to its EBITDA (Earnings Before Interest, Taxes,
+        Depreciation, and Amortization).
+
+        This differs from the Net-Debt to EBITDA Ratio in that it uses total (gross)
+        debt rather than net debt (total debt minus cash and cash equivalents). Gross
+        debt to EBITDA is a more conservative leverage measure since it does not
+        assume that a company's cash balance would actually be used to pay down debt,
+        which matters when comparing companies with restricted cash, cash earmarked
+        for other purposes, or when assessing gross refinancing risk rather than net
+        economic leverage.
+
+        The formula is as follows:
+
+        - Gross Debt to EBITDA Ratio = Total Debt / EBITDA
+
+        Args:
+            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            trailing (int): Defines whether to select a trailing period.
+            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+
+        Returns:
+            pd.DataFrame: Gross debt to EBITDA ratio values.
+
+        Notes:
+        - The method retrieves historical data and calculates the ratio for each asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the ratio values using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        gross_debt_to_ebitda_ratios = toolkit.ratios.get_gross_debt_to_ebitda_ratio()
+        ```
+        """
+        if trailing:
+            gross_debt_to_ebitda_ratio = solvency_model.get_gross_debt_to_ebitda_ratio(
+                self._balance_sheet_statement.loc[:, "Total Debt", :]
+                .T.rolling(trailing)
+                .mean()
+                .T,
+                self._income_statement.loc[:, "Operating Income", :]
+                .T.rolling(trailing)
+                .sum()
+                .T,
+                self._cash_flow_statement.loc[:, "Depreciation and Amortization", :]
+                .T.rolling(trailing)
+                .sum()
+                .T,
+            )
+        else:
+            gross_debt_to_ebitda_ratio = solvency_model.get_gross_debt_to_ebitda_ratio(
+                self._balance_sheet_statement.loc[:, "Total Debt", :],
+                self._income_statement.loc[:, "Operating Income", :],
+                self._cash_flow_statement.loc[:, "Depreciation and Amortization", :],
+            )
+
+        return finalize_dataset(
+            dataset=gross_debt_to_ebitda_ratio,
             start_date=self._start_date,
             end_date=self._end_date,
             default_rounding=self._rounding,
@@ -6650,6 +7317,9 @@ class Ratios:
         )
         valuation_ratios["Price-to-Free-Cash-Flow"] = (
             self.get_price_to_free_cash_flow_ratio(diluted=diluted, trailing=trailing)
+        )
+        valuation_ratios["Price-to-Sales"] = self.get_price_to_sales_ratio(
+            diluted=diluted, trailing=trailing
         )
         valuation_ratios["Market Cap"] = self.get_market_cap(
             diluted=diluted, trailing=trailing
@@ -8231,6 +8901,107 @@ class Ratios:
 
         return finalize_dataset(
             dataset=price_to_free_cash_flow_ratio,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            row_slice=show_daily,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_price_to_sales_ratio(
+        self,
+        show_daily: bool = False,
+        diluted: bool = True,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+        trailing: int | None = None,
+    ):
+        """
+        Calculate the price to sales ratio (P/S), a valuation ratio that compares a
+        company's market capitalization to its total revenue.
+
+        The price to sales ratio is particularly useful for valuing companies that are
+        not yet profitable (and therefore have no meaningful P/E ratio), since revenue
+        is typically positive even when earnings are not, and is less susceptible to
+        accounting distortions than earnings-based multiples. It is, however, less
+        informative than earnings- or cash-flow-based multiples for mature, profitable
+        companies since it ignores profitability and cost structure entirely.
+
+        The formula is as follows:
+
+        - Price to Sales Ratio = Market Cap / Revenue
+
+        Also known as: P/S ratio, sales multiple.
+
+        Args:
+            show_daily (bool, optional): Whether to show daily data. Defaults to False.
+            diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
+            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            trailing (int): Defines whether to select a trailing period.
+            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+
+        Returns:
+            pd.DataFrame: Price to sales ratio values.
+
+        Notes:
+        - The method retrieves historical data and calculates the price to sales ratio for each asset
+        in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the price to sales ratio values
+        using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        price_to_sales_ratio = toolkit.ratios.get_price_to_sales_ratio()
+        ```
+        """
+        market_cap = self.get_market_cap(
+            diluted=diluted,
+            trailing=trailing if trailing else None,
+            show_daily=show_daily,
+        )
+
+        revenue = self._income_statement.loc[:, "Revenue", :]
+
+        if show_daily:
+            revenue = map_period_data_to_daily_data(
+                period_data=revenue,
+                daily_dates=market_cap.index,
+                quarterly=self._quarterly,
+            )
+
+        if trailing:
+            price_to_sales_ratio = valuation_model.get_price_to_sales_ratio(
+                market_cap,
+                (
+                    revenue.rolling(trailing).sum()
+                    if show_daily
+                    else revenue.T.rolling(trailing).sum().T
+                ),
+            )
+        else:
+            price_to_sales_ratio = valuation_model.get_price_to_sales_ratio(
+                market_cap, revenue
+            )
+
+        return finalize_dataset(
+            dataset=price_to_sales_ratio,
             start_date=self._start_date,
             end_date=self._end_date,
             default_rounding=self._rounding,

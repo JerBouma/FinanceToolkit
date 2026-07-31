@@ -298,3 +298,136 @@ def get_option_payoffs(
         return option_payoffs, up_movement, down_movement, risk_neutral_probability
 
     return option_payoffs
+
+
+def get_strategy_payoff(
+    stock_price: float | pd.Series | np.ndarray,
+    legs: list[dict[str, float | bool | str]],
+) -> float | pd.Series:
+    """
+    Calculate the net expiration profit and loss (P&L) of a multi-leg option (and,
+    optionally, stock) strategy.
+
+    Also known as: option strategy payoff diagram, P&L profile.
+
+    A strategy is expressed as a list of "legs". Each leg is a dictionary describing
+    either an option position or a stock position:
+
+    - For an option leg:
+        - "instrument" (str): "option" (this is the default if omitted).
+        - "strike_price" (float): the option's strike price.
+        - "put_option" (bool): whether the leg is a put option. Defaults to False (call).
+        - "position" (str): "long" or "short". Defaults to "long".
+        - "premium" (float): the premium paid (long) or received (short) per option.
+          Defaults to 0.
+    - For a stock leg:
+        - "instrument" (str): "stock".
+        - "position" (str): "long" or "short". Defaults to "long".
+        - "premium" (float): the entry price paid (long) or received (short) per share.
+          Defaults to 0.
+
+    The net P&L at expiration is the sum, across all legs, of:
+
+    - Long option: max(payoff, 0) — premium
+    - Short option: premium — max(payoff, 0)
+    - Long stock: stock_price — entry_price
+    - Short stock: entry_price — stock_price
+
+    Where payoff is max(S — K, 0) for a call and max(K — S, 0) for a put (see
+    `get_call_option_payoffs` and `get_put_option_payoffs`).
+
+    This single, generic building block can express many common strategies by
+    combining option (and stock) legs, for example:
+
+    - Straddle: long call + long put, same strike.
+    - Strangle: long call + long put, different (OTM) strikes.
+    - Bull call spread: long call (lower strike) + short call (higher strike).
+    - Bear put spread: long put (higher strike) + short put (lower strike).
+    - Covered call: long stock + short call.
+    - Protective put: long stock + long put.
+    - Iron condor: short put + long put (lower strikes) + short call + long call
+      (higher strikes).
+
+    Args:
+        stock_price (float | pd.Series | np.ndarray): The stock price(s) at expiration
+            for which to evaluate the strategy, e.g. a range of prices to build a
+            payoff diagram.
+        legs (list[dict]): A list of leg dictionaries as described above. Must contain
+            at least one leg.
+
+    Returns:
+        float | pd.Series: The net strategy P&L for the given stock price(s).
+
+    Raises:
+        TypeError: if legs is not a list of dictionaries or if a leg's numeric fields
+        are not numeric.
+        ValueError: if legs is empty, or a leg's "position" or "instrument" is invalid,
+        or an option leg is missing "strike_price".
+    """
+    if not isinstance(legs, list):
+        raise TypeError(
+            f"legs must be a list of dictionaries, received {type(legs).__name__}."
+        )
+
+    if not legs:
+        raise ValueError("legs must contain at least one leg.")
+
+    total_payoff: float | pd.Series | np.ndarray = 0.0
+
+    for index, leg in enumerate(legs):
+        if not isinstance(leg, dict):
+            raise TypeError(
+                f"Leg {index} must be a dictionary, received {type(leg).__name__}."
+            )
+
+        instrument = leg.get("instrument", "option")
+        if instrument not in ("option", "stock"):
+            raise ValueError(
+                f"Leg {index} 'instrument' must be 'option' or 'stock', received {instrument!r}."
+            )
+
+        position = leg.get("position", "long")
+        if position not in ("long", "short"):
+            raise ValueError(
+                f"Leg {index} 'position' must be 'long' or 'short', received {position!r}."
+            )
+
+        premium = leg.get("premium", 0.0)
+        if not isinstance(premium, (int, float)) or isinstance(premium, bool):
+            raise TypeError(
+                f"Leg {index} 'premium' must be a float or int, received {type(premium).__name__}."
+            )
+
+        if instrument == "stock":
+            leg_value = stock_price
+        else:
+            strike_price = leg.get("strike_price")
+            if (
+                strike_price is None
+                or not isinstance(strike_price, (int, float))
+                or isinstance(strike_price, bool)
+            ):
+                raise TypeError(
+                    f"Leg {index} must define a numeric 'strike_price' for an option instrument."
+                )
+
+            put_option = leg.get("put_option", False)
+            if not isinstance(put_option, bool):
+                raise TypeError(
+                    f"Leg {index} 'put_option' must be a bool, received {type(put_option).__name__}."
+                )
+
+            if put_option:
+                leg_value = get_put_option_payoffs(
+                    stock_price=stock_price, strike_price=strike_price
+                )
+            else:
+                leg_value = get_call_option_payoffs(
+                    stock_price=stock_price, strike_price=strike_price
+                )
+
+        leg_pnl = leg_value - premium if position == "long" else premium - leg_value
+
+        total_payoff = total_payoff + leg_pnl
+
+    return total_payoff

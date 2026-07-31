@@ -10,6 +10,7 @@ from scipy.optimize import minimize
 from financetoolkit.options import (
     binomial_trees_model,
     black_scholes_model,
+    exotics_model,
     greeks_model,
     helpers,
     options_model,
@@ -987,6 +988,1241 @@ class Options:
             )
 
         return stock_price_simulation_df
+
+    def get_put_call_parity(
+        self,
+        start_date: str | None = None,
+        strike_price_range: float = 0.25,
+        strike_step_size: int = 5,
+        expiration_time_range: int = 30,
+        risk_free_rate: float | None = None,
+        dividend_yield: float | None = None,
+        show_input_info: bool = False,
+        rounding: int | None = None,
+        standardize: bool = False,
+    ):
+        """
+        Calculate the Put-Call Parity gap, the amount by which Black-Scholes call and put
+        prices deviate from the no-arbitrage relationship between them.
+
+        Put-Call Parity states that, for European options sharing the same strike price
+        and time to expiration, the following relationship must hold in order to prevent
+        arbitrage:
+
+        - C - P = S * e^(-q * t) - K * e^(-r * t)
+
+        Where C is the call option price, P is the put option price, S is the stock
+        price, K is the strike price, r is the risk-free rate, q is the dividend yield
+        and t is the time to expiration.
+
+        This method computes the Black-Scholes call and put price for each ticker,
+        strike price and time to expiration and then calculates the parity gap, i.e. the
+        amount by which (C - P) deviates from S * e^(-qt) - K * e^(-rt). Because both
+        prices come from the same Black-Scholes model and inputs, the gap is (up to
+        floating point precision) always zero — this is a useful diagnostic to confirm
+        that a set of option prices is internally consistent, or, when plugging in
+        externally observed call and put prices, to detect potential arbitrage.
+
+        Also known as: Put-Call Parity, PCP, the no-arbitrage relationship between calls
+        and puts.
+
+        Args:
+            start_date (str | None, optional): The start date which determines the stock price. Defaults to None
+            which means it will use the most recent date.
+            strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
+            25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
+            strike_step_size (int): The step size to use for the strike prices. Defaults to 5 which means that the
+            strike prices will be 75, 80, 85, 90, 95, 100, 105, 110, 115 and 120 if the current stock price is 100.
+            expiration_time_range (int): The number of days to use for the time to expiration. Defaults to 30 which equals
+            30 days.
+            risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None which
+            means it will use the current risk free rate.
+            dividend_yield (float, optional): The dividend yield to use for the calculation. Defaults to None which
+            means it will use the dividend yield as obtained through annual historical data.
+            show_input_info (bool, optional): Whether to show the input information. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result across the
+                time to expiration columns for each ticker and strike price. Defaults to False.
+
+        Returns:
+            pd.DataFrame: The Put-Call Parity gap containing the tickers and strike prices as the index and the
+            time to expiration as the columns. Values should be (approximately) zero.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AMZN", "AAPL"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        parity_gap = toolkit.options.get_put_call_parity()
+
+        parity_gap.loc['AMZN']
+        ```
+        """
+        if start_date is not None and start_date not in self._prices.index:
+            raise ValueError(f"The start date {start_date} is not a valid date.")
+
+        start_date = start_date if start_date else self._daily_historical.index[-1]
+        stock_price = self._prices.loc[start_date]
+        volatility = self._volatility.loc[start_date]
+
+        risk_free_rate = (
+            risk_free_rate
+            if risk_free_rate is not None
+            else self._risk_free_rate.loc[start_date]
+        )
+
+        strike_prices_per_ticker = helpers.define_strike_prices(
+            tickers=self._tickers,
+            stock_price=stock_price,
+            strike_step_size=strike_step_size,
+            strike_price_range=strike_price_range,
+        )
+
+        time_to_expiration_list = [
+            time / 365 for time in range(0, expiration_time_range)
+        ]
+
+        parity_gap: dict[str, dict[float, dict[float, float]]] = {}
+        dividend_yield_value: dict[str, float] = {}
+
+        for ticker, strike_prices in strike_prices_per_ticker.items():
+            parity_gap[ticker] = {}
+            dividend_yield_value[ticker] = (
+                dividend_yield
+                if dividend_yield is not None
+                else self._dividend_yield[ticker].iloc[-1]
+            )
+
+            for strike_price in strike_prices:
+                parity_gap[ticker][strike_price] = {}
+
+                for time_to_expiration in time_to_expiration_list:
+                    call_price = black_scholes_model.get_black_scholes(
+                        stock_price=stock_price.loc[ticker],
+                        strike_price=strike_price,
+                        risk_free_rate=risk_free_rate,
+                        volatility=volatility.loc[ticker],
+                        time_to_expiration=time_to_expiration,
+                        dividend_yield=dividend_yield_value[ticker],
+                        put_option=False,
+                    )
+                    put_price = black_scholes_model.get_black_scholes(
+                        stock_price=stock_price.loc[ticker],
+                        strike_price=strike_price,
+                        risk_free_rate=risk_free_rate,
+                        volatility=volatility.loc[ticker],
+                        time_to_expiration=time_to_expiration,
+                        dividend_yield=dividend_yield_value[ticker],
+                        put_option=True,
+                    )
+
+                    parity_gap[ticker][strike_price][time_to_expiration] = (
+                        black_scholes_model.get_put_call_parity(
+                            stock_price=stock_price.loc[ticker],
+                            strike_price=strike_price,
+                            risk_free_rate=risk_free_rate,
+                            time_to_expiration=time_to_expiration,
+                            dividend_yield=dividend_yield_value[ticker],
+                            call_price=call_price,
+                            put_price=put_price,
+                        )
+                    )
+
+        parity_gap_df = helpers.create_greek_dataframe(
+            greek_dictionary=parity_gap,
+            start_date=start_date,
+        )
+
+        parity_gap_df = parity_gap_df.round(rounding if rounding else self._rounding)
+
+        if standardize:
+            parity_gap_df = calculate_standardization(
+                dataset=parity_gap_df,
+                rounding=rounding if rounding else self._rounding,
+                axis="columns",
+            )
+
+        if show_input_info:
+            helpers.show_input_info(
+                start_date=self._daily_historical.index[0],
+                end_date=self._daily_historical.index[-1],
+                stock_prices=stock_price,
+                volatility=volatility,
+                risk_free_rate=risk_free_rate,
+                dividend_yield=dividend_yield_value,
+            )
+
+        return parity_gap_df
+
+    def get_garman_kohlhagen(
+        self,
+        start_date: str | None = None,
+        put_option: bool = False,
+        strike_price_range: float = 0.25,
+        strike_step_size: int = 5,
+        expiration_time_range: int = 30,
+        risk_free_rate: float | None = None,
+        foreign_risk_free_rate: float = 0.0,
+        show_input_info: bool = False,
+        rounding: int | None = None,
+        standardize: bool = False,
+    ):
+        """
+        Calculate the Garman-Kohlhagen Model, a variant of the Black-Scholes model used
+        to price European-style options on foreign exchange (FX) rates.
+
+        Because holding foreign currency earns the foreign risk-free rate (analogous to a
+        continuous dividend yield on a stock), the Garman-Kohlhagen model uses the
+        foreign risk-free rate in place of the dividend yield used in the standard
+        Black-Scholes model.
+
+        The formulas are as follows:
+
+        - d1 = (ln(S / K) + (r — r_f + (σ^2) / 2) * t) / (σ * sqrt(t))
+        - d2 = d1 — σ * sqrt(t)
+        - Call Option Price = S * e^(—r_f * t) * N(d1) — K * e^(—r * t) * N(d2)
+        - Put Option Price = K * e^(—r * t) * N(—d2) — S * e^(—r_f * t) * N(—d1)
+
+        Where S is the spot exchange rate, K is the strike price, r is the domestic
+        risk-free rate, r_f is the foreign risk-free rate, σ is the volatility, t is the
+        time to expiration, N(d1) is the cumulative normal distribution of d1 and N(d2)
+        is the cumulative normal distribution of d2.
+
+        Also known as: the Black-Scholes model for currency options, FX option pricing
+        model.
+
+        Args:
+            start_date (str | None, optional): The start date which determines the stock price. Defaults to None
+            which means it will use the most recent date.
+            put_option (bool, optional): Whether to calculate the put option price. Defaults to False which means
+            it will calculate the call option price.
+            strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
+            25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
+            strike_step_size (int): The step size to use for the strike prices. Defaults to 5 which means that the
+            strike prices will be 75, 80, 85, 90, 95, 100, 105, 110, 115 and 120 if the current stock price is 100.
+            expiration_time_range (int): The number of days to use for the time to expiration. Defaults to 30 which equals
+            30 days.
+            risk_free_rate (float, optional): The domestic risk free rate to use for the calculation. Defaults to
+            None which means it will use the current risk free rate.
+            foreign_risk_free_rate (float, optional): The foreign risk free rate to use for the calculation, which
+            plays the role of the dividend yield in the standard Black-Scholes model. Defaults to 0.0.
+            show_input_info (bool, optional): Whether to show the input information. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result across the
+                time to expiration columns for each ticker and strike price. Defaults to False.
+
+        Returns:
+            pd.DataFrame: Garman-Kohlhagen values containing the tickers and strike prices as the index and the
+            time to expiration as the columns.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AMZN", "AAPL"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        garman_kohlhagen = toolkit.options.get_garman_kohlhagen(foreign_risk_free_rate=0.02)
+
+        garman_kohlhagen.loc['AMZN']
+        ```
+        """
+        if start_date is not None and start_date not in self._prices.index:
+            raise ValueError(f"The start date {start_date} is not a valid date.")
+
+        start_date = start_date if start_date else self._daily_historical.index[-1]
+        stock_price = self._prices.loc[start_date]
+        volatility = self._volatility.loc[start_date]
+
+        risk_free_rate = (
+            risk_free_rate
+            if risk_free_rate is not None
+            else self._risk_free_rate.loc[start_date]
+        )
+
+        strike_prices_per_ticker = helpers.define_strike_prices(
+            tickers=self._tickers,
+            stock_price=stock_price,
+            strike_step_size=strike_step_size,
+            strike_price_range=strike_price_range,
+        )
+
+        time_to_expiration_list = [
+            time / 365 for time in range(0, expiration_time_range)
+        ]
+
+        garman_kohlhagen: dict[str, dict[float, dict[float, float]]] = {}
+
+        for ticker, strike_prices in strike_prices_per_ticker.items():
+            garman_kohlhagen[ticker] = {}
+
+            for strike_price in strike_prices:
+                garman_kohlhagen[ticker][strike_price] = {}
+
+                for time_to_expiration in time_to_expiration_list:
+                    garman_kohlhagen[ticker][strike_price][time_to_expiration] = (
+                        black_scholes_model.get_garman_kohlhagen(
+                            stock_price=stock_price.loc[ticker],
+                            strike_price=strike_price,
+                            risk_free_rate=risk_free_rate,
+                            foreign_risk_free_rate=foreign_risk_free_rate,
+                            volatility=volatility.loc[ticker],
+                            time_to_expiration=time_to_expiration,
+                            put_option=put_option,
+                        )
+                    )
+
+        garman_kohlhagen_df = helpers.create_greek_dataframe(
+            greek_dictionary=garman_kohlhagen,
+            start_date=start_date,
+        )
+
+        garman_kohlhagen_df = garman_kohlhagen_df.round(
+            rounding if rounding else self._rounding
+        )
+
+        if standardize:
+            garman_kohlhagen_df = calculate_standardization(
+                dataset=garman_kohlhagen_df,
+                rounding=rounding if rounding else self._rounding,
+                axis="columns",
+            )
+
+        if show_input_info:
+            helpers.show_input_info(
+                start_date=self._daily_historical.index[0],
+                end_date=self._daily_historical.index[-1],
+                stock_prices=stock_price,
+                volatility=volatility,
+                risk_free_rate=risk_free_rate,
+            )
+
+        return garman_kohlhagen_df
+
+    def get_binary_option(
+        self,
+        start_date: str | None = None,
+        put_option: bool = False,
+        option_type: str = "cash-or-nothing",
+        cash_payout: float = 1.0,
+        strike_price_range: float = 0.25,
+        strike_step_size: int = 5,
+        expiration_time_range: int = 30,
+        risk_free_rate: float | None = None,
+        dividend_yield: float | None = None,
+        show_input_info: bool = False,
+        rounding: int | None = None,
+        standardize: bool = False,
+    ):
+        """
+        Calculate the price of a Binary (Digital) Option using the Black-Scholes
+        framework.
+
+        A binary option pays out a fixed amount if the option expires in-the-money and
+        nothing otherwise. Two variants are supported through the ``option_type``
+        parameter:
+
+        - "cash-or-nothing": pays a fixed cash amount if the option expires
+          in-the-money.
+
+            - Call = cash_payout * e^(—r * t) * N(d2)
+            - Put = cash_payout * e^(—r * t) * N(—d2)
+
+        - "asset-or-nothing": pays the value of the underlying asset if the option
+          expires in-the-money.
+
+            - Call = S * e^(—q * t) * N(d1)
+            - Put = S * e^(—q * t) * N(—d1)
+
+        Where S is the stock price, r is the risk-free rate, q is the dividend yield, t
+        is the time to expiration, N(d1) is the cumulative normal distribution of d1 and
+        N(d2) is the cumulative normal distribution of d2.
+
+        Also known as: digital option, all-or-nothing option, cash-or-nothing option,
+        asset-or-nothing option.
+
+        Args:
+            start_date (str | None, optional): The start date which determines the stock price. Defaults to None
+            which means it will use the most recent date.
+            put_option (bool, optional): Whether to calculate the put option price. Defaults to False which means
+            it will calculate the call option price.
+            option_type (str, optional): Either "cash-or-nothing" or "asset-or-nothing". Defaults to
+            "cash-or-nothing".
+            cash_payout (float, optional): The fixed cash amount paid out by a cash-or-nothing option when it
+            expires in-the-money. Ignored for asset-or-nothing options. Defaults to 1.0.
+            strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
+            25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
+            strike_step_size (int): The step size to use for the strike prices. Defaults to 5 which means that the
+            strike prices will be 75, 80, 85, 90, 95, 100, 105, 110, 115 and 120 if the current stock price is 100.
+            expiration_time_range (int): The number of days to use for the time to expiration. Defaults to 30 which equals
+            30 days.
+            risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None which
+            means it will use the current risk free rate.
+            dividend_yield (float, optional): The dividend yield to use for the calculation. Defaults to None which
+            means it will use the dividend yield as obtained through annual historical data.
+            show_input_info (bool, optional): Whether to show the input information. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result across the
+                time to expiration columns for each ticker and strike price. Defaults to False.
+
+        Returns:
+            pd.DataFrame: Binary Option values containing the tickers and strike prices as the index and the
+            time to expiration as the columns.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AMZN", "AAPL"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        binary_option = toolkit.options.get_binary_option()
+
+        binary_option.loc['AMZN']
+        ```
+        """
+        if start_date is not None and start_date not in self._prices.index:
+            raise ValueError(f"The start date {start_date} is not a valid date.")
+
+        start_date = start_date if start_date else self._daily_historical.index[-1]
+        stock_price = self._prices.loc[start_date]
+        volatility = self._volatility.loc[start_date]
+
+        risk_free_rate = (
+            risk_free_rate
+            if risk_free_rate is not None
+            else self._risk_free_rate.loc[start_date]
+        )
+
+        strike_prices_per_ticker = helpers.define_strike_prices(
+            tickers=self._tickers,
+            stock_price=stock_price,
+            strike_step_size=strike_step_size,
+            strike_price_range=strike_price_range,
+        )
+
+        time_to_expiration_list = [
+            time / 365 for time in range(0, expiration_time_range)
+        ]
+
+        binary_option: dict[str, dict[float, dict[float, float]]] = {}
+        dividend_yield_value: dict[str, float] = {}
+
+        for ticker, strike_prices in strike_prices_per_ticker.items():
+            binary_option[ticker] = {}
+            dividend_yield_value[ticker] = (
+                dividend_yield
+                if dividend_yield is not None
+                else self._dividend_yield[ticker].iloc[-1]
+            )
+
+            for strike_price in strike_prices:
+                binary_option[ticker][strike_price] = {}
+
+                for time_to_expiration in time_to_expiration_list:
+                    binary_option[ticker][strike_price][time_to_expiration] = (
+                        black_scholes_model.get_binary_option(
+                            stock_price=stock_price.loc[ticker],
+                            strike_price=strike_price,
+                            risk_free_rate=risk_free_rate,
+                            volatility=volatility.loc[ticker],
+                            time_to_expiration=time_to_expiration,
+                            dividend_yield=dividend_yield_value[ticker],
+                            put_option=put_option,
+                            option_type=option_type,
+                            cash_payout=cash_payout,
+                        )
+                    )
+
+        binary_option_df = helpers.create_greek_dataframe(
+            greek_dictionary=binary_option,
+            start_date=start_date,
+        )
+
+        binary_option_df = binary_option_df.round(
+            rounding if rounding else self._rounding
+        )
+
+        if standardize:
+            binary_option_df = calculate_standardization(
+                dataset=binary_option_df,
+                rounding=rounding if rounding else self._rounding,
+                axis="columns",
+            )
+
+        if show_input_info:
+            helpers.show_input_info(
+                start_date=self._daily_historical.index[0],
+                end_date=self._daily_historical.index[-1],
+                stock_prices=stock_price,
+                volatility=volatility,
+                risk_free_rate=risk_free_rate,
+                dividend_yield=dividend_yield_value,
+            )
+
+        return binary_option_df
+
+    def get_bjerksund_stensland(
+        self,
+        start_date: str | None = None,
+        put_option: bool = False,
+        strike_price_range: float = 0.25,
+        strike_step_size: int = 5,
+        expiration_time_range: int = 30,
+        risk_free_rate: float | None = None,
+        dividend_yield: float | None = None,
+        show_input_info: bool = False,
+        rounding: int | None = None,
+        standardize: bool = False,
+    ):
+        """
+        Calculate American option prices using the Bjerksund-Stensland (1993)
+        closed-form analytical approximation.
+
+        Unlike European options, American options can be exercised at any time up to
+        and including expiration, which normally requires a numerical approach such as
+        the Binomial Tree model (see ``get_binomial_model``). The Bjerksund-Stensland
+        model instead derives a closed-form approximation by assuming the early-exercise
+        boundary is a flat trigger price: once the stock price crosses this level,
+        immediate exercise is assumed optimal.
+
+        The approximation (call, cost of carry b = r - q smaller than r) is:
+
+        - β = (0.5 — b / σ²) + sqrt((b / σ² — 0.5)² + 2r / σ²)
+        - B∞ = β / (β — 1) * K
+        - B0 = max(K, r / (r — b) * K)
+        - h(T) = —(b * T + 2σ√T) * (B0 / (B∞ — B0))
+        - I = B0 + (B∞ — B0) * (1 — e^h(T))
+
+        If S ≥ I, immediate exercise is optimal and the value is S — K. American puts
+        are priced through the put-call transformation AmericanPut(S, K, T, r, b, σ) =
+        AmericanCall(K, S, T, r — b, —b, σ).
+
+        Also known as: BS93, Bjerksund-Stensland approximation, American option
+        approximation.
+
+        Args:
+            start_date (str | None, optional): The start date which determines the stock price. Defaults to None
+            which means it will use the most recent date.
+            put_option (bool, optional): Whether to calculate the put option price. Defaults to False which means
+            it will calculate the call option price.
+            strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
+            25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
+            strike_step_size (int): The step size to use for the strike prices. Defaults to 5 which means that the
+            strike prices will be 75, 80, 85, 90, 95, 100, 105, 110, 115 and 120 if the current stock price is 100.
+            expiration_time_range (int): The number of days to use for the time to expiration. Defaults to 30 which equals
+            30 days.
+            risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None which
+            means it will use the current risk free rate.
+            dividend_yield (float, optional): The dividend yield to use for the calculation. Defaults to None which
+            means it will use the dividend yield as obtained through annual historical data.
+            show_input_info (bool, optional): Whether to show the input information. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result across the
+                time to expiration columns for each ticker and strike price. Defaults to False.
+
+        Returns:
+            pd.DataFrame: Bjerksund-Stensland American option values containing the tickers and strike prices as
+            the index and the time to expiration as the columns.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AMZN", "AAPL"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        bjerksund_stensland = toolkit.options.get_bjerksund_stensland()
+
+        bjerksund_stensland.loc['AMZN']
+        ```
+        """
+        if start_date is not None and start_date not in self._prices.index:
+            raise ValueError(f"The start date {start_date} is not a valid date.")
+
+        start_date = start_date if start_date else self._daily_historical.index[-1]
+        stock_price = self._prices.loc[start_date]
+        volatility = self._volatility.loc[start_date]
+
+        risk_free_rate = (
+            risk_free_rate
+            if risk_free_rate is not None
+            else self._risk_free_rate.loc[start_date]
+        )
+
+        strike_prices_per_ticker = helpers.define_strike_prices(
+            tickers=self._tickers,
+            stock_price=stock_price,
+            strike_step_size=strike_step_size,
+            strike_price_range=strike_price_range,
+        )
+
+        time_to_expiration_list = [
+            time / 365 for time in range(0, expiration_time_range)
+        ]
+
+        bjerksund_stensland: dict[str, dict[float, dict[float, float]]] = {}
+        dividend_yield_value: dict[str, float] = {}
+
+        for ticker, strike_prices in strike_prices_per_ticker.items():
+            bjerksund_stensland[ticker] = {}
+            dividend_yield_value[ticker] = (
+                dividend_yield
+                if dividend_yield is not None
+                else self._dividend_yield[ticker].iloc[-1]
+            )
+
+            for strike_price in strike_prices:
+                bjerksund_stensland[ticker][strike_price] = {}
+
+                for time_to_expiration in time_to_expiration_list:
+                    bjerksund_stensland[ticker][strike_price][time_to_expiration] = (
+                        black_scholes_model.get_bjerksund_stensland(
+                            stock_price=stock_price.loc[ticker],
+                            strike_price=strike_price,
+                            risk_free_rate=risk_free_rate,
+                            volatility=volatility.loc[ticker],
+                            time_to_expiration=time_to_expiration,
+                            dividend_yield=dividend_yield_value[ticker],
+                            put_option=put_option,
+                        )
+                    )
+
+        bjerksund_stensland_df = helpers.create_greek_dataframe(
+            greek_dictionary=bjerksund_stensland,
+            start_date=start_date,
+        )
+
+        bjerksund_stensland_df = bjerksund_stensland_df.round(
+            rounding if rounding else self._rounding
+        )
+
+        if standardize:
+            bjerksund_stensland_df = calculate_standardization(
+                dataset=bjerksund_stensland_df,
+                rounding=rounding if rounding else self._rounding,
+                axis="columns",
+            )
+
+        if show_input_info:
+            helpers.show_input_info(
+                start_date=self._daily_historical.index[0],
+                end_date=self._daily_historical.index[-1],
+                stock_prices=stock_price,
+                volatility=volatility,
+                risk_free_rate=risk_free_rate,
+                dividend_yield=dividend_yield_value,
+            )
+
+        return bjerksund_stensland_df
+
+    def get_monte_carlo_option_price(
+        self,
+        start_date: str | None = None,
+        put_option: bool = False,
+        strike_price_range: float = 0.25,
+        strike_step_size: int = 5,
+        expiration_time_range: int = 30,
+        risk_free_rate: float | None = None,
+        dividend_yield: float | None = None,
+        simulations: int = 10_000,
+        time_steps: int = 100,
+        seed: int | None = None,
+        show_standard_error: bool = False,
+        show_input_info: bool = False,
+        rounding: int | None = None,
+        standardize: bool = False,
+    ):
+        """
+        Calculate European option prices through Monte Carlo simulation of Geometric
+        Brownian Motion (GBM) stock price paths.
+
+        The Monte Carlo method prices an option by simulating a large number of possible
+        future paths for the underlying stock price under the risk-neutral measure,
+        computing the option's payoff at expiration for each simulated path, and then
+        discounting the average payoff back to the present:
+
+        - S(t + Δt) = S(t) * e^((r — q — σ²/2) * Δt + σ * √Δt * Z)
+        - Call Price = e^(—r * T) * mean(max(S(T) — K, 0))
+        - Put Price = e^(—r * T) * mean(max(K — S(T), 0))
+
+        Where S(t) is the stock price at time t, r is the risk-free rate, q is the
+        dividend yield, σ is the volatility, Δt is the length of a single time step and
+        Z is a standard normal random variable.
+
+        As it is a simulation, the result comes with sampling error. Set
+        ``show_standard_error=True`` to additionally return the standard error of each
+        estimate — as a rule of thumb, the true price lies within plus or minus 2 times
+        the standard error roughly 95% of the time. A fixed ``seed`` is used by default
+        for reproducibility of documentation examples; set it explicitly (or leave it as
+        None) to control this behavior.
+
+        Also known as: Monte Carlo option pricing, simulation-based option pricing.
+
+        Args:
+            start_date (str | None, optional): The start date which determines the stock price. Defaults to None
+            which means it will use the most recent date.
+            put_option (bool, optional): Whether to calculate the put option price. Defaults to False which means
+            it will calculate the call option price.
+            strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
+            25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
+            strike_step_size (int): The step size to use for the strike prices. Defaults to 5 which means that the
+            strike prices will be 75, 80, 85, 90, 95, 100, 105, 110, 115 and 120 if the current stock price is 100.
+            expiration_time_range (int): The number of days to use for the time to expiration. Defaults to 30 which equals
+            30 days.
+            risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None which
+            means it will use the current risk free rate.
+            dividend_yield (float, optional): The dividend yield to use for the calculation. Defaults to None which
+            means it will use the dividend yield as obtained through annual historical data.
+            simulations (int, optional): The number of simulated stock price paths. Defaults to 10,000.
+            time_steps (int, optional): The number of time steps used to build each simulated path. Defaults to 100.
+            seed (int | None, optional): The seed used to initialize the random number generator, ensuring
+            reproducible results. Defaults to None, which means the results will not be reproducible.
+            show_standard_error (bool, optional): Whether to also return the standard error of each Monte Carlo
+            estimate as a second DataFrame. Defaults to False.
+            show_input_info (bool, optional): Whether to show the input information. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result across the
+                time to expiration columns for each ticker and strike price. Defaults to False.
+
+        Returns:
+            pd.DataFrame: Monte Carlo option values containing the tickers and strike prices as the index and the
+            time to expiration as the columns. If show_standard_error is True, a tuple of (prices, standard_errors)
+            is returned instead.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AMZN", "AAPL"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        monte_carlo = toolkit.options.get_monte_carlo_option_price(seed=42)
+
+        monte_carlo.loc['AMZN']
+        ```
+        """
+        if start_date is not None and start_date not in self._prices.index:
+            raise ValueError(f"The start date {start_date} is not a valid date.")
+
+        start_date = start_date if start_date else self._daily_historical.index[-1]
+        stock_price = self._prices.loc[start_date]
+        volatility = self._volatility.loc[start_date]
+
+        risk_free_rate = (
+            risk_free_rate
+            if risk_free_rate is not None
+            else self._risk_free_rate.loc[start_date]
+        )
+
+        strike_prices_per_ticker = helpers.define_strike_prices(
+            tickers=self._tickers,
+            stock_price=stock_price,
+            strike_step_size=strike_step_size,
+            strike_price_range=strike_price_range,
+        )
+
+        time_to_expiration_list = [
+            time / 365 for time in range(0, expiration_time_range)
+        ]
+
+        monte_carlo_price: dict[str, dict[float, dict[float, float]]] = {}
+        monte_carlo_error: dict[str, dict[float, dict[float, float]]] = {}
+        dividend_yield_value: dict[str, float] = {}
+
+        logger.info("Running Monte Carlo Simulations")
+        for ticker, strike_prices in strike_prices_per_ticker.items():
+            monte_carlo_price[ticker] = {}
+            monte_carlo_error[ticker] = {}
+            dividend_yield_value[ticker] = (
+                dividend_yield
+                if dividend_yield is not None
+                else self._dividend_yield[ticker].iloc[-1]
+            )
+
+            for strike_price in strike_prices:
+                monte_carlo_price[ticker][strike_price] = {}
+                monte_carlo_error[ticker][strike_price] = {}
+
+                for time_to_expiration in time_to_expiration_list:
+                    price, standard_error = options_model.get_monte_carlo_option_price(
+                        stock_price=stock_price.loc[ticker],
+                        strike_price=strike_price,
+                        risk_free_rate=risk_free_rate,
+                        volatility=volatility.loc[ticker],
+                        time_to_expiration=time_to_expiration,
+                        dividend_yield=dividend_yield_value[ticker],
+                        put_option=put_option,
+                        simulations=simulations,
+                        time_steps=time_steps,
+                        seed=seed,
+                    )
+                    monte_carlo_price[ticker][strike_price][time_to_expiration] = price
+                    monte_carlo_error[ticker][strike_price][
+                        time_to_expiration
+                    ] = standard_error
+
+        monte_carlo_price_df = helpers.create_greek_dataframe(
+            greek_dictionary=monte_carlo_price,
+            start_date=start_date,
+        )
+        monte_carlo_price_df = monte_carlo_price_df.round(
+            rounding if rounding else self._rounding
+        )
+
+        if standardize:
+            monte_carlo_price_df = calculate_standardization(
+                dataset=monte_carlo_price_df,
+                rounding=rounding if rounding else self._rounding,
+                axis="columns",
+            )
+
+        if show_input_info:
+            helpers.show_input_info(
+                start_date=self._daily_historical.index[0],
+                end_date=self._daily_historical.index[-1],
+                stock_prices=stock_price,
+                volatility=volatility,
+                risk_free_rate=risk_free_rate,
+                dividend_yield=dividend_yield_value,
+            )
+
+        if show_standard_error:
+            monte_carlo_error_df = helpers.create_greek_dataframe(
+                greek_dictionary=monte_carlo_error,
+                start_date=start_date,
+            )
+            monte_carlo_error_df = monte_carlo_error_df.round(
+                rounding if rounding else self._rounding
+            )
+
+            return monte_carlo_price_df, monte_carlo_error_df
+
+        return monte_carlo_price_df
+
+    def get_barrier_option(
+        self,
+        start_date: str | None = None,
+        put_option: bool = False,
+        barrier_percentage: float = 0.9,
+        barrier_direction: str = "down",
+        knock_type: str = "out",
+        rebate: float = 0.0,
+        strike_price_range: float = 0.25,
+        strike_step_size: int = 5,
+        expiration_time_range: int = 30,
+        risk_free_rate: float | None = None,
+        dividend_yield: float | None = None,
+        show_input_info: bool = False,
+        rounding: int | None = None,
+        standardize: bool = False,
+    ):
+        """
+        Calculate the closed-form price of a single-barrier (knock-in or knock-out, up
+        or down) European option using the Reiner & Rubinstein (1991) formulas.
+
+        A barrier option is a path-dependent option whose payoff (and existence)
+        depends on whether the underlying stock price touches a pre-specified barrier
+        level at any point before expiration:
+
+        - Knock-out: the option becomes worthless if the barrier is touched.
+        - Knock-in: the option only comes into existence if the barrier is touched.
+        - Down barrier: the barrier is below the current stock price.
+        - Up barrier: the barrier is above the current stock price.
+
+        The barrier level is defined relative to the current stock price through
+        ``barrier_percentage``, e.g. a value of 0.9 sets the barrier at 90% of the
+        current stock price (a sensible default for a down barrier).
+
+        A useful identity is in-out parity: for identical parameters, a knock-in option
+        plus its corresponding knock-out option (same direction) always equals the price
+        of the equivalent vanilla Black-Scholes option, since the underlying either does
+        or does not touch the barrier.
+
+        Also known as: knock-in option, knock-out option, down-and-out, down-and-in,
+        up-and-out, up-and-in option.
+
+        Args:
+            start_date (str | None, optional): The start date which determines the stock price. Defaults to None
+            which means it will use the most recent date.
+            put_option (bool, optional): Whether to calculate the put option price. Defaults to False which means
+            it will calculate the call option price.
+            barrier_percentage (float, optional): The barrier level as a percentage of the current stock price.
+            Defaults to 0.9 which equals 90% of the current stock price.
+            barrier_direction (str, optional): Either "down" or "up". Defaults to "down".
+            knock_type (str, optional): Either "in" or "out". Defaults to "out".
+            rebate (float, optional): The fixed cash amount paid out if the option knocks out (or fails to knock
+            in). Defaults to 0.0.
+            strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
+            25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
+            strike_step_size (int): The step size to use for the strike prices. Defaults to 5 which means that the
+            strike prices will be 75, 80, 85, 90, 95, 100, 105, 110, 115 and 120 if the current stock price is 100.
+            expiration_time_range (int): The number of days to use for the time to expiration. Defaults to 30 which equals
+            30 days.
+            risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None which
+            means it will use the current risk free rate.
+            dividend_yield (float, optional): The dividend yield to use for the calculation. Defaults to None which
+            means it will use the dividend yield as obtained through annual historical data.
+            show_input_info (bool, optional): Whether to show the input information. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result across the
+                time to expiration columns for each ticker and strike price. Defaults to False.
+
+        Returns:
+            pd.DataFrame: Barrier option values containing the tickers and strike prices as the index and the
+            time to expiration as the columns.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AMZN", "AAPL"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        barrier_option = toolkit.options.get_barrier_option()
+
+        barrier_option.loc['AMZN']
+        ```
+        """
+        if start_date is not None and start_date not in self._prices.index:
+            raise ValueError(f"The start date {start_date} is not a valid date.")
+
+        start_date = start_date if start_date else self._daily_historical.index[-1]
+        stock_price = self._prices.loc[start_date]
+        volatility = self._volatility.loc[start_date]
+
+        risk_free_rate = (
+            risk_free_rate
+            if risk_free_rate is not None
+            else self._risk_free_rate.loc[start_date]
+        )
+
+        strike_prices_per_ticker = helpers.define_strike_prices(
+            tickers=self._tickers,
+            stock_price=stock_price,
+            strike_step_size=strike_step_size,
+            strike_price_range=strike_price_range,
+        )
+
+        time_to_expiration_list = [
+            time / 365 for time in range(0, expiration_time_range)
+        ]
+
+        barrier_option: dict[str, dict[float, dict[float, float]]] = {}
+        dividend_yield_value: dict[str, float] = {}
+
+        for ticker, strike_prices in strike_prices_per_ticker.items():
+            barrier_option[ticker] = {}
+            dividend_yield_value[ticker] = (
+                dividend_yield
+                if dividend_yield is not None
+                else self._dividend_yield[ticker].iloc[-1]
+            )
+            barrier = stock_price.loc[ticker] * barrier_percentage
+
+            for strike_price in strike_prices:
+                barrier_option[ticker][strike_price] = {}
+
+                for time_to_expiration in time_to_expiration_list:
+                    barrier_option[ticker][strike_price][time_to_expiration] = (
+                        exotics_model.get_barrier_option(
+                            stock_price=stock_price.loc[ticker],
+                            strike_price=strike_price,
+                            barrier=barrier,
+                            risk_free_rate=risk_free_rate,
+                            volatility=volatility.loc[ticker],
+                            time_to_expiration=time_to_expiration,
+                            dividend_yield=dividend_yield_value[ticker],
+                            put_option=put_option,
+                            barrier_direction=barrier_direction,
+                            knock_type=knock_type,
+                            rebate=rebate,
+                        )
+                    )
+
+        barrier_option_df = helpers.create_greek_dataframe(
+            greek_dictionary=barrier_option,
+            start_date=start_date,
+        )
+
+        barrier_option_df = barrier_option_df.round(
+            rounding if rounding else self._rounding
+        )
+
+        if standardize:
+            barrier_option_df = calculate_standardization(
+                dataset=barrier_option_df,
+                rounding=rounding if rounding else self._rounding,
+                axis="columns",
+            )
+
+        if show_input_info:
+            helpers.show_input_info(
+                start_date=self._daily_historical.index[0],
+                end_date=self._daily_historical.index[-1],
+                stock_prices=stock_price,
+                volatility=volatility,
+                risk_free_rate=risk_free_rate,
+                dividend_yield=dividend_yield_value,
+            )
+
+        return barrier_option_df
+
+    def get_asian_option(
+        self,
+        start_date: str | None = None,
+        put_option: bool = False,
+        strike_price_range: float = 0.25,
+        strike_step_size: int = 5,
+        expiration_time_range: int = 30,
+        risk_free_rate: float | None = None,
+        dividend_yield: float | None = None,
+        show_input_info: bool = False,
+        rounding: int | None = None,
+        standardize: bool = False,
+    ):
+        """
+        Calculate the closed-form price of a geometric-average Asian option using the
+        Kemna & Vorst (1990) formula.
+
+        An Asian option's payoff depends on the average price of the underlying stock
+        over the option's life, rather than the price at a single point in time, which
+        typically makes it cheaper than the equivalent vanilla option (the averaging
+        reduces variance). The geometric-average version has a closed-form solution
+        based on an adjusted volatility and cost of carry:
+
+        - σ_A = σ / √3
+        - b_A = 0.5 * (b — σ²/6), where b = r — q is the cost of carry
+        - d1 = (ln(S / K) + (b_A + σ_A²/2) * t) / (σ_A * √t)
+        - d2 = d1 — σ_A * √t
+        - Call Price = S * e^((b_A — r) * t) * N(d1) — K * e^(—r * t) * N(d2)
+        - Put Price = K * e^(—r * t) * N(—d2) — S * e^((b_A — r) * t) * N(—d1)
+
+        Where S is the stock price, K is the strike price, r is the risk-free rate, q is
+        the dividend yield, σ is the volatility, t is the time to expiration, N(d1) is
+        the cumulative normal distribution of d1 and N(d2) is the cumulative normal
+        distribution of d2.
+
+        Also known as: geometric Asian option, average rate option, average price
+        option.
+
+        Args:
+            start_date (str | None, optional): The start date which determines the stock price. Defaults to None
+            which means it will use the most recent date.
+            put_option (bool, optional): Whether to calculate the put option price. Defaults to False which means
+            it will calculate the call option price.
+            strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
+            25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
+            strike_step_size (int): The step size to use for the strike prices. Defaults to 5 which means that the
+            strike prices will be 75, 80, 85, 90, 95, 100, 105, 110, 115 and 120 if the current stock price is 100.
+            expiration_time_range (int): The number of days to use for the time to expiration. Defaults to 30 which equals
+            30 days.
+            risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None which
+            means it will use the current risk free rate.
+            dividend_yield (float, optional): The dividend yield to use for the calculation. Defaults to None which
+            means it will use the dividend yield as obtained through annual historical data.
+            show_input_info (bool, optional): Whether to show the input information. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result across the
+                time to expiration columns for each ticker and strike price. Defaults to False.
+
+        Returns:
+            pd.DataFrame: Geometric-average Asian option values containing the tickers and strike prices as the
+            index and the time to expiration as the columns.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AMZN", "AAPL"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        asian_option = toolkit.options.get_asian_option()
+
+        asian_option.loc['AMZN']
+        ```
+        """
+        if start_date is not None and start_date not in self._prices.index:
+            raise ValueError(f"The start date {start_date} is not a valid date.")
+
+        start_date = start_date if start_date else self._daily_historical.index[-1]
+        stock_price = self._prices.loc[start_date]
+        volatility = self._volatility.loc[start_date]
+
+        risk_free_rate = (
+            risk_free_rate
+            if risk_free_rate is not None
+            else self._risk_free_rate.loc[start_date]
+        )
+
+        strike_prices_per_ticker = helpers.define_strike_prices(
+            tickers=self._tickers,
+            stock_price=stock_price,
+            strike_step_size=strike_step_size,
+            strike_price_range=strike_price_range,
+        )
+
+        time_to_expiration_list = [
+            time / 365 for time in range(0, expiration_time_range)
+        ]
+
+        asian_option: dict[str, dict[float, dict[float, float]]] = {}
+        dividend_yield_value: dict[str, float] = {}
+
+        for ticker, strike_prices in strike_prices_per_ticker.items():
+            asian_option[ticker] = {}
+            dividend_yield_value[ticker] = (
+                dividend_yield
+                if dividend_yield is not None
+                else self._dividend_yield[ticker].iloc[-1]
+            )
+
+            for strike_price in strike_prices:
+                asian_option[ticker][strike_price] = {}
+
+                for time_to_expiration in time_to_expiration_list:
+                    asian_option[ticker][strike_price][time_to_expiration] = (
+                        exotics_model.get_asian_option(
+                            stock_price=stock_price.loc[ticker],
+                            strike_price=strike_price,
+                            risk_free_rate=risk_free_rate,
+                            volatility=volatility.loc[ticker],
+                            time_to_expiration=time_to_expiration,
+                            dividend_yield=dividend_yield_value[ticker],
+                            put_option=put_option,
+                        )
+                    )
+
+        asian_option_df = helpers.create_greek_dataframe(
+            greek_dictionary=asian_option,
+            start_date=start_date,
+        )
+
+        asian_option_df = asian_option_df.round(
+            rounding if rounding else self._rounding
+        )
+
+        if standardize:
+            asian_option_df = calculate_standardization(
+                dataset=asian_option_df,
+                rounding=rounding if rounding else self._rounding,
+                axis="columns",
+            )
+
+        if show_input_info:
+            helpers.show_input_info(
+                start_date=self._daily_historical.index[0],
+                end_date=self._daily_historical.index[-1],
+                stock_prices=stock_price,
+                volatility=volatility,
+                risk_free_rate=risk_free_rate,
+                dividend_yield=dividend_yield_value,
+            )
+
+        return asian_option_df
+
+    def get_strategy_payoff(
+        self,
+        legs: list[dict[str, float | bool | str]],
+        start_date: str | None = None,
+        stock_price_range: float = 0.5,
+        stock_price_step_size: float = 1,
+        rounding: int | None = None,
+    ):
+        """
+        Calculate the net expiration profit and loss (P&L) profile of a multi-leg
+        option (and, optionally, stock) strategy across a range of stock prices.
+
+        A strategy is expressed as a list of "legs". Each leg is a dictionary
+        describing either an option position or a stock position:
+
+        - For an option leg: "instrument": "option" (default), "strike_price" (float,
+          required), "put_option" (bool, defaults to False), "position" ("long" or
+          "short", defaults to "long"), "premium" (float, defaults to 0).
+        - For a stock leg: "instrument": "stock", "position" ("long" or "short",
+          defaults to "long"), "premium" (float, the entry price, defaults to 0).
+
+        This single, generic building block can express many common strategies by
+        combining legs, for example:
+
+        - Straddle: long call + long put, same strike.
+        - Strangle: long call + long put, different (OTM) strikes.
+        - Bull call spread: long call (lower strike) + short call (higher strike).
+        - Bear put spread: long put (higher strike) + short put (lower strike).
+        - Covered call: long stock + short call.
+        - Protective put: long stock + long put.
+        - Iron condor: short put + long put (lower strikes) + short call + long call
+          (higher strikes).
+
+        Also known as: option strategy payoff diagram, P&L profile.
+
+        Args:
+            legs (list[dict]): A list of leg dictionaries as described above. Must
+            contain at least one leg. The same legs are applied to every ticker, so
+            strike prices should be chosen with the relevant tickers' price levels in
+            mind.
+            start_date (str | None, optional): The start date which determines the stock price. Defaults to None
+            which means it will use the most recent date.
+            stock_price_range (float): The percentage range to use for the stock prices at expiration. Defaults
+            to 0.5 which equals 50% and thus results in stock prices from 50 to 150 if the current stock price is
+            100.
+            stock_price_step_size (float): The step size to use for the stock prices at expiration. Defaults to 1.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+
+        Returns:
+            pd.DataFrame: The strategy's net P&L with the range of stock prices at expiration as the index and the
+            tickers as the columns.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AMZN", "AAPL"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        straddle_legs = [
+            {"strike_price": 150, "put_option": False, "position": "long", "premium": 8},
+            {"strike_price": 150, "put_option": True, "position": "long", "premium": 6},
+        ]
+
+        strategy_payoff = toolkit.options.get_strategy_payoff(legs=straddle_legs)
+
+        strategy_payoff["AMZN"]
+        ```
+        """
+        if start_date is not None and start_date not in self._prices.index:
+            raise ValueError(f"The start date {start_date} is not a valid date.")
+
+        start_date = start_date if start_date else self._daily_historical.index[-1]
+        stock_price = self._prices.loc[start_date]
+
+        stock_price_range_per_ticker = helpers.define_strike_prices(
+            tickers=self._tickers,
+            stock_price=stock_price,
+            strike_step_size=stock_price_step_size,
+            strike_price_range=stock_price_range,
+        )
+
+        strategy_payoff: dict[str, pd.Series] = {}
+
+        for ticker, price_range in stock_price_range_per_ticker.items():
+            price_range_series = pd.Series(price_range, index=price_range, name=ticker)
+
+            strategy_payoff[ticker] = binomial_trees_model.get_strategy_payoff(
+                stock_price=price_range_series,
+                legs=legs,
+            )
+
+        strategy_payoff_df = pd.DataFrame(strategy_payoff)
+        strategy_payoff_df.index.name = "Stock Price"
+
+        strategy_payoff_df = strategy_payoff_df.round(
+            rounding if rounding else self._rounding
+        )
+
+        return strategy_payoff_df
 
     def collect_all_greeks(
         self,

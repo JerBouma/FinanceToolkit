@@ -11,7 +11,6 @@ from statsmodels.stats.outliers_influence import variance_inflation_factor
 from statsmodels.stats.stattools import durbin_watson
 
 from financetoolkit.econometrics import regression_model
-from financetoolkit.econometrics.regression_model import RegressionResult
 
 # The conventional 5% significance level used for the boolean "reject" flags
 # returned by every hypothesis-testing function in this module.
@@ -32,7 +31,7 @@ DURBIN_WATSON_UPPER_BAND = 2.5
 MINIMUM_RESET_POWER = 2
 
 
-def get_breusch_pagan_test(result: RegressionResult) -> pd.Series:
+def get_breusch_pagan_test(result: dict) -> pd.Series:
     """
     Calculate the Breusch-Pagan test for heteroskedasticity of a fitted OLS
     regression's residuals, via `statsmodels.stats.diagnostic.het_breuschpagan`.
@@ -40,7 +39,7 @@ def get_breusch_pagan_test(result: RegressionResult) -> pd.Series:
     Also known as: BP test, Breusch-Pagan-Godfrey test.
 
     The test regresses the *squared* residuals of the original model on the
-    original regressors (`result.design_matrix`) and tests whether the
+    original regressors (`result["design_matrix"]`) and tests whether the
     resulting R-squared of that auxiliary regression is significantly
     different from zero:
 
@@ -67,19 +66,19 @@ def get_breusch_pagan_test(result: RegressionResult) -> pd.Series:
     and Random Coefficient Variation." Econometrica, 47(5), 1287-1294.
 
     Args:
-        result (RegressionResult): A fitted OLS regression, from `regression_model.get_ols`.
+        result (dict): A fitted OLS regression, from `regression_model.get_ols`.
 
     Returns:
         pd.Series: The Breusch-Pagan LM statistic, its p-value, and whether
         homoskedasticity is rejected at the 5% level.
 
     Notes:
-    - Uses `result.design_matrix` (the design matrix actually used to fit `result`) as
+    - Uses `result["design_matrix"]` (the design matrix actually used to fit `result`) as
     the regressors of the auxiliary regression, exactly as specified in the original
     Breusch-Pagan (1979) formulation.
     """
     lm_statistic, p_value, _, _ = het_breuschpagan(
-        result.residuals, result.design_matrix
+        result["residuals"], result["design_matrix"]
     )
 
     return pd.Series(
@@ -91,7 +90,7 @@ def get_breusch_pagan_test(result: RegressionResult) -> pd.Series:
     )
 
 
-def get_white_test(result: RegressionResult) -> pd.Series:
+def get_white_test(result: dict) -> pd.Series:
     """
     Calculate White's test for heteroskedasticity of a fitted OLS regression's
     residuals, via `statsmodels.stats.diagnostic.het_white`.
@@ -125,7 +124,7 @@ def get_white_test(result: RegressionResult) -> pd.Series:
     817-838.
 
     Args:
-        result (RegressionResult): A fitted OLS regression, from `regression_model.get_ols`.
+        result (dict): A fitted OLS regression, from `regression_model.get_ols`.
 
     Returns:
         pd.Series: White's LM statistic, its p-value, and whether homoskedasticity is
@@ -135,7 +134,9 @@ def get_white_test(result: RegressionResult) -> pd.Series:
         ValueError: If the polynomial-expanded auxiliary design is rank-deficient
         (e.g. too few observations relative to the number of original regressors).
     """
-    lm_statistic, p_value, _, _ = het_white(result.residuals, result.design_matrix)
+    lm_statistic, p_value, _, _ = het_white(
+        result["residuals"], result["design_matrix"]
+    )
 
     return pd.Series(
         {
@@ -146,7 +147,7 @@ def get_white_test(result: RegressionResult) -> pd.Series:
     )
 
 
-def get_durbin_watson_test(result: RegressionResult) -> pd.Series:
+def get_durbin_watson_test(result: dict) -> pd.Series:
     """
     Calculate the Durbin-Watson statistic for first-order autocorrelation of a
     fitted OLS regression's residuals, via `statsmodels.stats.stattools.durbin_watson`.
@@ -170,7 +171,7 @@ def get_durbin_watson_test(result: RegressionResult) -> pd.Series:
     Least Squares Regression I." Biometrika, 37(3/4), 409-428.
 
     Args:
-        result (RegressionResult): A fitted OLS regression, from `regression_model.get_ols`.
+        result (dict): A fitted OLS regression, from `regression_model.get_ols`.
 
     Returns:
         pd.Series: The Durbin-Watson statistic and an approximate interpretation flag.
@@ -185,7 +186,7 @@ def get_durbin_watson_test(result: RegressionResult) -> pd.Series:
     Likely", `DW > 2.5` -> "Negative Autocorrelation Likely", otherwise -> "No Strong
     Evidence"), not a formal hypothesis test at a stated significance level.
     """
-    durbin_watson_statistic = float(durbin_watson(result.residuals))
+    durbin_watson_statistic = float(durbin_watson(result["residuals"]))
 
     if durbin_watson_statistic < DURBIN_WATSON_LOWER_BAND:
         interpretation = "Positive Autocorrelation Likely"
@@ -223,15 +224,16 @@ def get_vif(x: pd.DataFrame) -> pd.Series:
     times larger than it would be under no multicollinearity.
 
     Unlike the other functions in this module, VIF takes the raw regressor
-    matrix directly rather than a fitted `RegressionResult` -- multicollinearity
+    matrix directly rather than a fitted regression result dict -- multicollinearity
     is a property of the regressors alone, independent of any particular
     dependent variable or fitted model.
 
     Args:
         x (pd.DataFrame): The regressor matrix, one column per regressor. A column
-        named "Intercept" (e.g. from `RegressionResult.design_matrix`, reassembled
-        into a DataFrame), if present, is excluded automatically -- a constant is
-        by definition uncorrelated with everything else and its VIF is not meaningful.
+        named "Intercept" (e.g. from a regression result dict's `design_matrix` key,
+        reassembled into a DataFrame), if present, is excluded automatically -- a
+        constant is by definition uncorrelated with everything else and its VIF is
+        not meaningful.
 
     Returns:
         pd.Series: The VIF of each regressor, indexed by column name.
@@ -263,7 +265,7 @@ def get_vif(x: pd.DataFrame) -> pd.Series:
     return pd.Series(vif_values, name="VIF")
 
 
-def get_ramsey_reset_test(result: RegressionResult, power: int = 3) -> pd.Series:
+def get_ramsey_reset_test(result: dict, power: int = 3) -> pd.Series:
     """
     Calculate Ramsey's Regression Equation Specification Error Test (RESET) for
     functional form misspecification of a fitted OLS regression, via
@@ -300,7 +302,7 @@ def get_ramsey_reset_test(result: RegressionResult, power: int = 3) -> pd.Series
     Society, Series B, 31(2), 350-371.
 
     Args:
-        result (RegressionResult): A fitted OLS regression, from `regression_model.get_ols`.
+        result (dict): A fitted OLS regression, from `regression_model.get_ols`.
         power (int, optional): The highest power of the fitted values to add,
         i.e. `fitted^2` through `fitted^power` are added. Defaults to 3.
 
@@ -317,12 +319,13 @@ def get_ramsey_reset_test(result: RegressionResult, power: int = 3) -> pd.Series
             f"power must be at least {MINIMUM_RESET_POWER}, received {power}."
         )
 
-    # `y` is not stored on `RegressionResult` directly, but is exactly recoverable
-    # from `fitted_values + residuals` (residuals = y - fitted_values by construction).
-    target = result.fitted_values + result.residuals
+    # `y` is not stored on `result` directly, but is exactly recoverable from
+    # `result["fitted_values"] + result["residuals"]` (residuals = y - fitted_values
+    # by construction).
+    target = result["fitted_values"] + result["residuals"]
 
     try:
-        sm_result = sm.OLS(target, result.design_matrix).fit()
+        sm_result = sm.OLS(target, result["design_matrix"]).fit()
         reset_result = linear_reset(sm_result, power=power, use_f=True)
     except (ValueError, np.linalg.LinAlgError) as error:
         raise ValueError(
@@ -344,7 +347,7 @@ def get_ramsey_reset_test(result: RegressionResult, power: int = 3) -> pd.Series
 
 
 def get_chow_test(
-    result_full: RegressionResult,
+    result_full: dict,
     x: pd.DataFrame | pd.Series | np.ndarray,
     y: pd.Series | np.ndarray,
     break_index: int,
@@ -387,11 +390,12 @@ def get_chow_test(
     Linear Regressions." Econometrica, 28(3), 591-605.
 
     Args:
-        result_full (RegressionResult): The OLS regression fit on the entire (unsplit)
+        result_full (dict): The OLS regression fit on the entire (unsplit)
         sample, from `regression_model.get_ols`.
         x (pd.DataFrame | pd.Series | np.ndarray): The independent variable(s)/regressor(s),
         matching the same sample (and row order) that produced `result_full`, excluding any
-        constant column -- pass the same `x` originally given to `get_ols`, not `result_full.design_matrix`.
+        constant column -- pass the same `x` originally given to `get_ols`, not
+        `result_full["design_matrix"]`.
         y (pd.Series | np.ndarray): The dependent variable, matching `x`.
         break_index (int): The positional index (0-based) at which to split the sample --
         rows `[0, break_index)` form the "before" sub-sample, rows `[break_index, n)` form
@@ -448,9 +452,9 @@ def get_chow_test(
         y_values[break_index:], x_values[break_index:], add_constant=add_constant
     )
 
-    residual_sum_of_squares_pooled = float(np.sum(result_full.residuals**2))
-    residual_sum_of_squares_before = float(np.sum(result_before.residuals**2))
-    residual_sum_of_squares_after = float(np.sum(result_after.residuals**2))
+    residual_sum_of_squares_pooled = float(np.sum(result_full["residuals"] ** 2))
+    residual_sum_of_squares_before = float(np.sum(result_before["residuals"] ** 2))
+    residual_sum_of_squares_after = float(np.sum(result_after["residuals"] ** 2))
     residual_sum_of_squares_split = (
         residual_sum_of_squares_before + residual_sum_of_squares_after
     )

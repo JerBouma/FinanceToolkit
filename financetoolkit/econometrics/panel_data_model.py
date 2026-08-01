@@ -2,14 +2,10 @@
 
 __docformat__ = "google"
 
-from dataclasses import dataclass
-
 import numpy as np
 import pandas as pd
 from linearmodels.panel import PanelOLS, RandomEffects
 from scipy import stats
-
-from financetoolkit.econometrics.regression_model import RegressionResult
 
 # pylint: disable=too-many-locals
 
@@ -133,8 +129,13 @@ def _effect_intercepts(
 
 def _from_panel_result(
     sm_result, feature_names: list[str], design_matrix: np.ndarray
-) -> RegressionResult:
-    """Translates a fitted `linearmodels` panel results object into a `RegressionResult`."""
+) -> dict:
+    """
+    Translates a fitted `linearmodels` panel results object into the same
+    regression result dict shape `regression_model._from_statsmodels_ols` returns
+    (see its docstring for the full key list) -- keeps `PanelOLS`/`RandomEffects`
+    fits interchangeable with OLS/WLS/GLS fits everywhere downstream.
+    """
     n = int(sm_result.nobs)
     degrees_of_freedom = int(sm_result.df_resid)
     r_squared = float(sm_result.rsquared)
@@ -145,66 +146,24 @@ def _from_panel_result(
         else r_squared
     )
 
-    return RegressionResult(
-        coefficients=sm_result.params.to_numpy(),
-        standard_errors=sm_result.std_errors.to_numpy(),
-        t_statistics=sm_result.tstats.to_numpy(),
-        p_values=sm_result.pvalues.to_numpy(),
-        residuals=sm_result.resids.to_numpy(),
-        fitted_values=sm_result.fitted_values.to_numpy().ravel(),
-        covariance_matrix=sm_result.cov.to_numpy(),
-        r_squared=r_squared,
-        adjusted_r_squared=adjusted_r_squared,
-        residual_variance=float(sm_result.s2),
-        degrees_of_freedom=degrees_of_freedom,
-        n_observations=n,
-        n_parameters=len(feature_names),
-        feature_names=feature_names,
-        design_matrix=design_matrix,
-        cov_type="nonrobust",
-    )
-
-
-@dataclass
-class FixedEffectsResult:
-    """
-    The fitted output of `get_fixed_effects`.
-
-    `regression_model.RegressionResult` has no field for "the intercept per
-    group" since ordinary (non-panel) regressions only ever have one intercept --
-    rather than redefining/subclassing that shared dataclass (used unchanged
-    across `regression_model`, `panel_data_model` and every other econometrics
-    submodule) just to add group-specific intercepts, this module wraps it in a
-    small companion dataclass instead, keeping `RegressionResult` itself generic.
-
-    Attributes:
-        regression (RegressionResult): The `linearmodels.panel.PanelOLS` within
-        (demeaned) fit -- `.coefficients` are the estimated slopes on the original
-        regressors (no intercept: it is absorbed by the fixed effects). Degrees of
-        freedom, `residual_variance`, `standard_errors`, `t_statistics`, `p_values`
-        and `covariance_matrix` are already corrected by `linearmodels` for the
-        number of fixed-effect parameters absorbed.
-        entity_effects (pd.Series | None): The estimated entity-specific
-        intercepts `alpha_i = mean_t(y_it) - mean_t(x_it) @ beta`, indexed by
-        entity. `None` if `entity_effects=False` was passed to
-        `get_fixed_effects`.
-        time_effects (pd.Series | None): The estimated time-specific intercepts
-        `gamma_t = mean_i(y_it) - mean_i(x_it) @ beta`, indexed by time. `None`
-        if `time_effects=False` was passed to `get_fixed_effects`.
-    """
-
-    regression: RegressionResult
-    entity_effects: pd.Series | None
-    time_effects: pd.Series | None
-
-    def summary(self) -> pd.DataFrame:
-        """
-        Returns:
-            pd.DataFrame: The underlying regression's coefficient table -- see
-            `RegressionResult.summary()`. Use `.entity_effects`/`.time_effects`
-            directly for the group-specific intercepts.
-        """
-        return self.regression.summary()
+    return {
+        "coefficients": sm_result.params.to_numpy(),
+        "standard_errors": sm_result.std_errors.to_numpy(),
+        "t_statistics": sm_result.tstats.to_numpy(),
+        "p_values": sm_result.pvalues.to_numpy(),
+        "residuals": sm_result.resids.to_numpy(),
+        "fitted_values": sm_result.fitted_values.to_numpy().ravel(),
+        "covariance_matrix": sm_result.cov.to_numpy(),
+        "r_squared": r_squared,
+        "adjusted_r_squared": adjusted_r_squared,
+        "residual_variance": float(sm_result.s2),
+        "degrees_of_freedom": degrees_of_freedom,
+        "n_observations": n,
+        "n_parameters": len(feature_names),
+        "feature_names": feature_names,
+        "design_matrix": design_matrix,
+        "cov_type": "nonrobust",
+    }
 
 
 def get_fixed_effects(
@@ -212,7 +171,7 @@ def get_fixed_effects(
     x: pd.DataFrame | pd.Series,
     entity_effects: bool = True,
     time_effects: bool = False,
-) -> FixedEffectsResult:
+) -> dict:
     """
     Fit a Fixed Effects ("within") estimator of `y` on `x` for panel data, via
     `linearmodels.panel.PanelOLS`.
@@ -237,7 +196,7 @@ def get_fixed_effects(
     controlling for anything common to all entities at a given time (e.g. a
     market-wide shock) the same way. Because the entity/time intercepts are
     absorbed rather than estimated as coefficients, they are recovered separately
-    (see `FixedEffectsResult.entity_effects`/`.time_effects`) as
+    (see the returned dict's `entity_effects`/`time_effects` keys) as
     `alpha_i = mean_t(y_it) - mean_t(x_it) @ beta`.
 
     Args:
@@ -254,9 +213,12 @@ def get_fixed_effects(
         i.e. control for entity-invariant time-specific shocks. Defaults to False.
 
     Returns:
-        FixedEffectsResult: The fitted within-regression (degrees-of-freedom
-        corrected for the absorbed fixed effects) plus the recovered entity and/or
-        time intercepts.
+        dict: `{"regression": ..., "entity_effects": ..., "time_effects": ...}` --
+        `regression` is the fitted within-regression result dict (degrees-of-freedom
+        already corrected for the absorbed fixed effects, no intercept: it is
+        absorbed by the fixed effects; see `_from_panel_result` for the full key
+        list), `entity_effects`/`time_effects` are the recovered entity-/time-
+        specific intercepts (`pd.Series`, or `None` if that effect was not fit).
 
     Raises:
         TypeError: If `y` or `x` is not one of the accepted types/shapes.
@@ -274,7 +236,7 @@ def get_fixed_effects(
     ```python
     import numpy as np
     import pandas as pd
-    from financetoolkit.econometrics import panel_data_model
+    from financetoolkit.econometrics import panel_data_model, regression_model
 
     rng = np.random.default_rng(42)
     entities = [f"E{i}" for i in range(6)]
@@ -289,7 +251,7 @@ def get_fixed_effects(
     ) + rng.standard_normal(len(index)) * 0.1
 
     result = panel_data_model.get_fixed_effects(y, x)
-    print(result.summary().round(4))
+    print(regression_model.regression_summary_table(result["regression"]).round(4))
     ```
 
     Which returns:
@@ -336,25 +298,27 @@ def get_fixed_effects(
     fit = _from_panel_result(sm_result, list(x_panel.columns), x_panel.to_numpy())
 
     entity_alpha = (
-        _effect_intercepts(y_panel, x_panel, fit.coefficients, "entity")
+        _effect_intercepts(y_panel, x_panel, fit["coefficients"], "entity")
         if entity_effects
         else None
     )
     time_alpha = (
-        _effect_intercepts(y_panel, x_panel, fit.coefficients, "time")
+        _effect_intercepts(y_panel, x_panel, fit["coefficients"], "time")
         if time_effects
         else None
     )
 
-    return FixedEffectsResult(
-        regression=fit, entity_effects=entity_alpha, time_effects=time_alpha
-    )
+    return {
+        "regression": fit,
+        "entity_effects": entity_alpha,
+        "time_effects": time_alpha,
+    }
 
 
 def get_random_effects(
     y: pd.Series | pd.DataFrame,
     x: pd.DataFrame | pd.Series,
-) -> RegressionResult:
+) -> dict:
     """
     Fit a Random Effects estimator of `y` on `x` for panel data, via
     `linearmodels.panel.RandomEffects` (Swamy-Arora feasible Generalized Least
@@ -392,9 +356,10 @@ def get_random_effects(
         the same `(entity, time)` shape as `y`.
 
     Returns:
-        RegressionResult: The fitted GLS regression on the quasi-demeaned data,
+        dict: The fitted GLS regression result dict on the quasi-demeaned data,
         including an "Intercept" coefficient (the pooled/population-average
-        intercept, distinct from Fixed Effects' per-entity intercepts).
+        intercept, distinct from Fixed Effects' per-entity intercepts) -- see
+        `_from_panel_result` for the full key list.
 
     Raises:
         TypeError: If `y` or `x` is not one of the accepted types/shapes.
@@ -411,7 +376,7 @@ def get_random_effects(
     ```python
     import numpy as np
     import pandas as pd
-    from financetoolkit.econometrics import panel_data_model
+    from financetoolkit.econometrics import panel_data_model, regression_model
 
     rng = np.random.default_rng(42)
     entities = [f"E{i}" for i in range(6)]
@@ -428,7 +393,7 @@ def get_random_effects(
     ) + rng.standard_normal(len(index)) * 0.1
 
     result = panel_data_model.get_random_effects(y, x)
-    print(result.summary().round(4))
+    print(regression_model.regression_summary_table(result).round(4))
     ```
 
     Which returns:
@@ -569,10 +534,10 @@ def get_hausman_test(
     fe_result = get_fixed_effects(y, x, entity_effects=True, time_effects=False)
     re_result = get_random_effects(y, x)
 
-    fe = fe_result.regression
+    fe = fe_result["regression"]
     re = re_result
 
-    common_names = [name for name in fe.feature_names if name in re.feature_names]
+    common_names = [name for name in fe["feature_names"] if name in re["feature_names"]]
     if not common_names:
         raise ValueError(
             "The Fixed Effects and Random Effects fits share no common "
@@ -581,13 +546,13 @@ def get_hausman_test(
             "least one shared slope regressor."
         )
 
-    fe_index = [fe.feature_names.index(name) for name in common_names]
-    re_index = [re.feature_names.index(name) for name in common_names]
+    fe_index = [fe["feature_names"].index(name) for name in common_names]
+    re_index = [re["feature_names"].index(name) for name in common_names]
 
-    b_fe = fe.coefficients[fe_index]
-    b_re = re.coefficients[re_index]
-    var_fe = fe.covariance_matrix[np.ix_(fe_index, fe_index)]
-    var_re = re.covariance_matrix[np.ix_(re_index, re_index)]
+    b_fe = fe["coefficients"][fe_index]
+    b_re = re["coefficients"][re_index]
+    var_fe = fe["covariance_matrix"][np.ix_(fe_index, fe_index)]
+    var_re = re["covariance_matrix"][np.ix_(re_index, re_index)]
 
     difference = b_fe - b_re
     variance_difference = var_fe - var_re

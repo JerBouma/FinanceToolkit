@@ -241,8 +241,8 @@ def test_get_wald_test_single_restriction_equals_t_squared_exactly():
 
     wald_result = hypothesis_testing_model.get_wald_test(result, restriction_matrix)
 
-    t_statistic = result.t_statistics[2]
-    p_value = result.p_values[2]
+    t_statistic = result["t_statistics"][2]
+    p_value = result["p_values"][2]
 
     assert np.isclose(
         wald_result["Wald Statistic (Chi2)"], t_statistic**2, atol=1e-10, rtol=1e-10
@@ -421,12 +421,12 @@ def test_get_hausman_wu_test_matches_manual_two_step_ols():
 
     # Manual replication of the exact same two-step procedure using get_ols directly.
     stage_one = regression_model.get_ols(x, pd.Series(z, name="Z"))
-    v_hat = stage_one.residuals
+    v_hat = stage_one["residuals"]
     stage_two = regression_model.get_ols(y, pd.DataFrame({"X": x, "Residual": v_hat}))
-    residual_index = stage_two.feature_names.index("Residual")
+    residual_index = stage_two["feature_names"].index("Residual")
 
-    assert np.isclose(result["T-Statistic"], stage_two.t_statistics[residual_index])
-    assert np.isclose(result["P-Value"], stage_two.p_values[residual_index])
+    assert np.isclose(result["T-Statistic"], stage_two["t_statistics"][residual_index])
+    assert np.isclose(result["P-Value"], stage_two["p_values"][residual_index])
 
 
 def test_get_hausman_wu_test_with_additional_exogenous_regressor():

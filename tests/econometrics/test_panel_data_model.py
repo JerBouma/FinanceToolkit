@@ -3,7 +3,7 @@
 import numpy as np
 import pandas as pd
 
-from financetoolkit.econometrics import panel_data_model
+from financetoolkit.econometrics import panel_data_model, regression_model
 
 # pylint: disable=missing-function-docstring
 
@@ -40,8 +40,10 @@ def test_get_fixed_effects_recovers_known_beta(recorder):
 
     result = panel_data_model.get_fixed_effects(y, x)
 
-    assert abs(result.regression.coefficients[0] - 2.0) < 0.05
-    recorder.capture(result.summary().round(4))
+    assert abs(result["regression"]["coefficients"][0] - 2.0) < 0.05
+    recorder.capture(
+        regression_model.regression_summary_table(result["regression"]).round(4)
+    )
 
 
 def test_get_fixed_effects_recovers_entity_intercepts():
@@ -50,9 +52,9 @@ def test_get_fixed_effects_recovers_entity_intercepts():
 
     result = panel_data_model.get_fixed_effects(y, x)
 
-    assert result.entity_effects is not None
+    assert result["entity_effects"] is not None
     for entity, true_alpha in alpha.items():
-        assert abs(result.entity_effects[entity] - true_alpha) < 0.2
+        assert abs(result["entity_effects"][entity] - true_alpha) < 0.2
 
 
 def test_get_fixed_effects_is_invariant_to_true_alpha_values():
@@ -68,8 +70,8 @@ def test_get_fixed_effects_is_invariant_to_true_alpha_values():
 
     assert (
         abs(
-            result.regression.coefficients[0]
-            - result_shifted.regression.coefficients[0]
+            result["regression"]["coefficients"][0]
+            - result_shifted["regression"]["coefficients"][0]
         )
         < 1e-8
     )
@@ -101,12 +103,12 @@ def test_get_fixed_effects_matches_dummy_variable_ols():
     lsdv_coefficients, _, _, _ = np.linalg.lstsq(design, y.to_numpy(), rcond=None)
 
     assert np.allclose(
-        fe_result.regression.coefficients[0], lsdv_coefficients[-1], atol=1e-8
+        fe_result["regression"]["coefficients"][0], lsdv_coefficients[-1], atol=1e-8
     )
 
     # The recovered entity intercepts should also match the LSDV dummy coefficients.
     for i, entity in enumerate(entities):
-        assert abs(fe_result.entity_effects[entity] - lsdv_coefficients[i]) < 1e-8
+        assert abs(fe_result["entity_effects"][entity] - lsdv_coefficients[i]) < 1e-8
 
 
 def test_get_fixed_effects_degrees_of_freedom_correction():
@@ -120,7 +122,7 @@ def test_get_fixed_effects_degrees_of_freedom_correction():
     result = panel_data_model.get_fixed_effects(y, x)
 
     n = 6 * 40
-    assert result.regression.degrees_of_freedom == n - 1 - 6
+    assert result["regression"]["degrees_of_freedom"] == n - 1 - 6
 
 
 def test_get_fixed_effects_two_way():
@@ -142,10 +144,10 @@ def test_get_fixed_effects_two_way():
         y, x, entity_effects=True, time_effects=True
     )
 
-    assert abs(result.regression.coefficients[0] - 1.5) < 0.05
-    assert result.entity_effects is not None
-    assert result.time_effects is not None
-    assert len(result.time_effects) == 20
+    assert abs(result["regression"]["coefficients"][0] - 1.5) < 0.05
+    assert result["entity_effects"] is not None
+    assert result["time_effects"] is not None
+    assert len(result["time_effects"]) == 20
 
 
 def test_get_fixed_effects_accepts_wide_dataframe():
@@ -159,7 +161,8 @@ def test_get_fixed_effects_accepts_wide_dataframe():
     result_wide = panel_data_model.get_fixed_effects(y_wide, x_wide)
 
     assert np.allclose(
-        result_multiindex.regression.coefficients, result_wide.regression.coefficients
+        result_multiindex["regression"]["coefficients"],
+        result_wide["regression"]["coefficients"],
     )
 
 
@@ -223,9 +226,9 @@ def test_get_random_effects_recovers_known_beta(recorder):
 
     result = panel_data_model.get_random_effects(y, x)
 
-    assert result.feature_names == ["Intercept", "X"]
-    assert abs(result.coefficients[1] - 2.0) < 0.05
-    recorder.capture(result.summary().round(4))
+    assert result["feature_names"] == ["Intercept", "X"]
+    assert abs(result["coefficients"][1] - 2.0) < 0.05
+    recorder.capture(regression_model.regression_summary_table(result).round(4))
 
 
 def test_get_random_effects_matches_pooled_ols_when_no_entity_variance():
@@ -242,7 +245,7 @@ def test_get_random_effects_matches_pooled_ols_when_no_entity_variance():
 
     pooled = get_ols(y.to_numpy(), x.to_numpy(), add_constant=True)
 
-    assert np.allclose(re_result.coefficients, pooled.coefficients, atol=0.05)
+    assert np.allclose(re_result["coefficients"], pooled["coefficients"], atol=0.05)
 
 
 def test_get_random_effects_invalid_type():

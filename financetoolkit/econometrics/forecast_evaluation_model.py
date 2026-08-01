@@ -346,9 +346,9 @@ def get_out_of_sample_validation(
     2. Call `forecast_function(train_series, forecast_steps=len(holdout),
        **forecast_kwargs)` -- designed to accept `time_series_model.get_arima_forecast`
        or `time_series_model.get_var_forecast` directly (or any function with a
-       compatible signature that returns either an object with a `.forecast`
-       attribute, such as `ARIMAResult`/`VARResult`, or a plain `pd.Series`/single-
-       column `pd.DataFrame`/array-like of forecast values).
+       compatible signature that returns either a result dict with a `"forecast"`
+       key, such as those two return, or a plain `pd.Series`/single-column
+       `pd.DataFrame`/array-like of forecast values).
     3. Compare that forecast against the actual holdout values via `get_rmse`/`get_mae`.
 
     Args:
@@ -356,7 +356,7 @@ def get_out_of_sample_validation(
         ordered.
         forecast_function (Callable): A function called as
         `forecast_function(train_series, forecast_steps=h, **forecast_kwargs)`,
-        returning `h` forecast values (directly, or via a `.forecast` attribute).
+        returning `h` forecast values (directly, or via a `"forecast"` dict key).
         train_fraction (float, optional): The fraction of (non-missing) observations
         used for training; the remainder is the holdout. Defaults to 0.8.
         **forecast_kwargs: Additional keyword arguments passed through to
@@ -416,7 +416,9 @@ def get_out_of_sample_validation(
     raw_forecast = forecast_function(
         train, forecast_steps=len(holdout), **forecast_kwargs
     )
-    forecast_values = getattr(raw_forecast, "forecast", raw_forecast)
+    forecast_values = (
+        raw_forecast["forecast"] if isinstance(raw_forecast, dict) else raw_forecast
+    )
 
     if isinstance(forecast_values, pd.DataFrame):
         if forecast_values.shape[1] != 1:

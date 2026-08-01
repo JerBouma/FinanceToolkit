@@ -13,6 +13,8 @@ from financetoolkit.econometrics import (
     causality_model,
     cointegration_model,
     diagnostics_model,
+    event_study_model,
+    fama_macbeth_model,
     forecast_evaluation_model,
     hypothesis_testing_model,
     panel_data_model,
@@ -1400,6 +1402,7 @@ class Econometrics:
         add_constant: bool = True,
         cov_type: str = "nonrobust",
         clusters: pd.Series | None = None,
+        maxlags: int | None = None,
         rounding: int | None = None,
     ) -> pd.DataFrame:
         """
@@ -1425,12 +1428,17 @@ class Econometrics:
             add_constant (bool, optional): Whether to include an intercept. Defaults to True.
             cov_type (str, optional): Which covariance estimator to use for the standard errors --
             one of "nonrobust" (classical, assumes homoskedastic errors), "HC0"/"HC1"/"HC2"/"HC3"
-            (heteroskedasticity-robust) or "cluster" (cluster-robust, requires `clusters`). Use
-            `get_breusch_pagan_test`/`get_white_test` to check for heteroskedasticity first.
-            Defaults to "nonrobust".
+            (heteroskedasticity-robust), "cluster" (cluster-robust, requires `clusters`) or "HAC"
+            (Newey-West, heteroskedasticity-and-autocorrelation-consistent, requires `maxlags`).
+            Use `get_breusch_pagan_test`/`get_white_test` to check for heteroskedasticity and
+            `get_ljung_box_test` to check for autocorrelation first. Defaults to "nonrobust".
             clusters (pd.Series | None, optional): The cluster label for each observation
             (e.g. a coarser time bucket derived from the return index, to correct for
             within-period correlation), required when `cov_type="cluster"`. Defaults to None.
+            maxlags (int | None, optional): The maximum lag to include when estimating the
+            HAC (Newey-West) covariance matrix, required when `cov_type="HAC"`. A common
+            rule of thumb is `floor(4 * (n / 100)^(2/9))` (Newey & West, 1994). Defaults to
+            None.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to
             None.
 
@@ -1458,6 +1466,10 @@ class Econometrics:
         # Or, simply opt every default independent ticker (here, just TSLA) into
         # including Benchmark too:
         toolkit.econometrics.get_ols(period="quarterly", include_benchmark=True)
+
+        # Or, use Newey-West (HAC) standard errors for time-series regressions
+        # where errors may be both heteroskedastic and autocorrelated:
+        toolkit.econometrics.get_ols(period="quarterly", cov_type="HAC", maxlags=4)
         ```
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
@@ -1475,9 +1487,10 @@ class Econometrics:
             add_constant=add_constant,
             cov_type=cov_type,
             clusters=clusters,
+            maxlags=maxlags,
         )
 
-        return result.summary().round(
+        return regression_model.regression_summary_table(result).round(
             rounding if rounding is not None else self._rounding
         )
 
@@ -1493,6 +1506,7 @@ class Econometrics:
         add_constant: bool = True,
         cov_type: str = "nonrobust",
         clusters: pd.Series | None = None,
+        maxlags: int | None = None,
         rounding: int | None = None,
     ) -> pd.DataFrame:
         """
@@ -1523,6 +1537,9 @@ class Econometrics:
             Defaults to "nonrobust".
             clusters (pd.Series | None, optional): The cluster label for each observation,
             required when `cov_type="cluster"`. Defaults to None.
+            maxlags (int | None, optional): The maximum lag to include when estimating the
+            HAC (Newey-West) covariance matrix, required when `cov_type="HAC"`. See
+            `get_ols`'s `maxlags` for the rule-of-thumb formula. Defaults to None.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to
             None.
 
@@ -1575,9 +1592,10 @@ class Econometrics:
             add_constant=add_constant,
             cov_type=cov_type,
             clusters=aligned_clusters,
+            maxlags=maxlags,
         )
 
-        return result.summary().round(
+        return regression_model.regression_summary_table(result).round(
             rounding if rounding is not None else self._rounding
         )
 
@@ -1663,7 +1681,7 @@ class Econometrics:
             add_constant=add_constant,
         )
 
-        return result.summary().round(
+        return regression_model.regression_summary_table(result).round(
             rounding if rounding is not None else self._rounding
         )
 
@@ -1749,7 +1767,7 @@ class Econometrics:
             direction, returns[independent_tickers], add_constant=add_constant
         )
 
-        return result.summary().round(
+        return regression_model.binary_regression_summary_table(result).round(
             rounding if rounding is not None else self._rounding
         )
 
@@ -1835,7 +1853,7 @@ class Econometrics:
             direction, returns[independent_tickers], add_constant=add_constant
         )
 
-        return result.summary().round(
+        return regression_model.binary_regression_summary_table(result).round(
             rounding if rounding is not None else self._rounding
         )
 
@@ -1921,7 +1939,105 @@ class Econometrics:
             n_bootstrap=n_bootstrap,
         )
 
-        return result.summary().round(
+        return regression_model.quantile_regression_summary_table(result).round(
+            rounding if rounding is not None else self._rounding
+        )
+
+    @handle_errors
+    def get_fama_macbeth_regression(
+        self,
+        factor_tickers: str | list[str] | None = None,
+        asset_tickers: str | list[str] | None = None,
+        period: str | None = None,
+        column: str = "Return",
+        add_constant: bool = True,
+        rounding: int | None = None,
+    ) -> pd.DataFrame:
+        """
+        Fit a Fama-MacBeth (1973) two-pass cross-sectional regression: `asset_tickers`
+        is treated as the cross-section of test assets, `factor_tickers` as the risk
+        factor(s) whose risk premia are estimated -- the standard procedure for
+        testing whether a proposed risk factor is actually priced.
+
+        Also known as: two-pass regression, Fama-MacBeth procedure.
+
+        For more information about the method, see
+        `fama_macbeth_model.get_fama_macbeth_regression`.
+
+        Args:
+            factor_tickers (str | list[str] | None, optional): The ticker(s) whose
+            returns are used as the risk factor(s) (e.g. "Benchmark" for a
+            single-factor/CAPM-style test). Defaults to None, meaning `["Benchmark"]`.
+            asset_tickers (str | list[str] | None, optional): The ticker(s) forming the
+            cross-section of test assets. Defaults to None, meaning every Toolkit
+            ticker (including "Benchmark") not already used as a factor.
+            period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly).
+            Defaults to "quarterly".
+            column (str, optional): The historical data column to regress on. Defaults to "Return".
+            add_constant (bool, optional): Whether to include an intercept in the
+            second-pass cross-sectional regression. Defaults to True.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to
+            None.
+
+        Returns:
+            pd.DataFrame: A coefficient table (Risk Premium, Std. Error, t-Statistic,
+            P-Value), indexed by factor name (plus "Intercept" if present).
+
+        Notes:
+        - The cross-sectional second pass needs strictly more assets than factors
+        (plus an intercept, if `add_constant=True`) to be identified -- with only a
+        couple of Toolkit tickers loaded, either pass `add_constant=False` or (better)
+        construct the Toolkit with many tickers, since Fama-MacBeth is fundamentally a
+        many-asset cross-sectional technique (dozens of assets is typical in practice),
+        not a limitation of this method's implementation.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "MSFT"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        # Benchmark (the default factor) is the single risk factor; AAPL and MSFT
+        # are the test assets. add_constant=False since only 2 assets are available.
+        toolkit.econometrics.get_fama_macbeth_regression(
+            period="weekly", add_constant=False
+        )
+        ```
+        """
+        period = period if period else "quarterly" if self._quarterly else "yearly"
+        returns = self._get_price_column(period, column)
+
+        factor_tickers = (
+            [factor_tickers]
+            if isinstance(factor_tickers, str)
+            else (
+                list(factor_tickers)
+                if factor_tickers is not None
+                else [BENCHMARK_TICKER]
+            )
+        )
+
+        if asset_tickers is None:
+            asset_tickers = [
+                ticker
+                for ticker in self._get_tickers(include_benchmark=True)
+                if ticker not in factor_tickers
+            ]
+        else:
+            asset_tickers = (
+                [asset_tickers]
+                if isinstance(asset_tickers, str)
+                else list(asset_tickers)
+            )
+
+        result = fama_macbeth_model.get_fama_macbeth_regression(
+            returns[asset_tickers],
+            returns[factor_tickers],
+            add_constant=add_constant,
+        )
+
+        return fama_macbeth_model.fama_macbeth_summary_table(result).round(
             rounding if rounding is not None else self._rounding
         )
 
@@ -1932,13 +2048,13 @@ class Econometrics:
         period: str | None,
         column: str,
         add_constant: bool,
-    ) -> regression_model.RegressionResult:
+    ) -> dict:
         """
         Shared helper for the hypothesis-testing methods below -- fits an OLS model
-        via `regression_model.get_ols` and returns the raw (unrounded)
-        `RegressionResult`, rather than the rounded coefficient table `get_ols`
-        returns, since the F-test, Wald test and Likelihood Ratio test all operate
-        directly on a `RegressionResult`'s residuals/coefficients/covariance matrix.
+        via `regression_model.get_ols` and returns the raw (unrounded) regression
+        result dict, rather than the rounded coefficient table `get_ols` returns,
+        since the F-test, Wald test and Likelihood Ratio test all operate directly
+        on the result dict's residuals/coefficients/covariance matrix.
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
         returns = self._get_price_column(period, column)
@@ -2399,14 +2515,14 @@ class Econometrics:
         period: str | None,
         column: str,
         add_constant: bool,
-    ) -> regression_model.RegressionResult:
+    ) -> dict:
         """
         Shared helper that fits the OLS regression of `dependent_ticker` on
         `independent_tickers` used internally by every post-estimation diagnostic
         below (`get_breusch_pagan_test`, `get_white_test`, `get_durbin_watson_test`,
         `get_ramsey_reset_test`, `get_chow_test`) -- each of these tests operates on
-        an already-fitted `RegressionResult` (see `specification_tests_model`), so
-        the controller's job is simply to assemble that same fit `get_ols` itself
+        an already-fitted regression result dict (see `specification_tests_model`),
+        so the controller's job is simply to assemble that same fit `get_ols` itself
         produces before handing it off to the requested diagnostic.
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
@@ -3003,7 +3119,7 @@ class Econometrics:
             add_constant=add_constant,
         )
 
-        return result.summary().round(
+        return regression_model.regression_summary_table(result).round(
             rounding if rounding is not None else self._rounding
         )
 
@@ -3130,7 +3246,7 @@ class Econometrics:
             outcome, treated, post, add_constant=add_constant
         )
 
-        return result.summary().round(
+        return regression_model.regression_summary_table(result).round(
             rounding if rounding is not None else self._rounding
         )
 
@@ -3224,9 +3340,9 @@ class Econometrics:
             kernel=kernel,
         )
 
-        return result.summary().round(
-            rounding if rounding is not None else self._rounding
-        )
+        return causal_inference_model.regression_discontinuity_summary_table(
+            result
+        ).round(rounding if rounding is not None else self._rounding)
 
     @handle_errors
     def get_propensity_score_matching(
@@ -3327,7 +3443,114 @@ class Econometrics:
             add_constant=add_constant,
         )
 
-        return result.summary().round(
+        return causal_inference_model.propensity_score_matching_summary(result).round(
+            rounding if rounding is not None else self._rounding
+        )
+
+    @handle_errors
+    def get_synthetic_control(
+        self,
+        treated_ticker: str,
+        treatment_period,
+        donor_tickers: str | list[str] | None = None,
+        period: str | None = None,
+        column: str = "Return",
+        include_benchmark: bool = False,
+        rounding: int | None = None,
+    ) -> pd.Series:
+        """
+        Construct a Synthetic Control for `treated_ticker` from a weighted combination
+        of `donor_tickers` (Abadie, Diamond & Hainmueller, 2010), and estimate the
+        effect of an event/intervention as the post-`treatment_period` gap between
+        `treated_ticker`'s actual and synthetic counterfactual return path.
+
+        Also known as: SCM, synthetic control method.
+
+        For more information about the method, see
+        `causal_inference_model.get_synthetic_control`.
+
+        Args:
+            treated_ticker (str): The asset believed to be affected by an event/
+            intervention starting at `treatment_period`.
+            treatment_period: The first post-treatment period -- periods at or after
+            this value (within `period`'s index) are treated as post-treatment,
+            everything before as pre-treatment (used to fit the synthetic control's
+            weights).
+            donor_tickers (str | list[str] | None, optional): The ticker(s) forming
+            the donor pool the synthetic control is built from. Defaults to None,
+            meaning every other Toolkit ticker (subject to `include_benchmark`).
+            period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly).
+            Defaults to "quarterly".
+            column (str, optional): The historical data column to use. Defaults to "Return".
+            include_benchmark (bool, optional): Whether to include "Benchmark" in the
+            default donor pool (has no effect when donor_tickers is given explicitly).
+            Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to
+            None.
+
+        Returns:
+            pd.Series: The average post-treatment effect, pre/post RMSPE and their
+            ratio, the placebo-based p-value, and the donor pool/period counts.
+
+        Notes:
+        - Needs at least 2 donor tickers -- with only 1-2 Toolkit tickers loaded,
+        pass `donor_tickers` explicitly (e.g. including "Benchmark") or (better)
+        construct the Toolkit with more tickers, since Fama-MacBeth-style small
+        donor pools give both a poorly-identified synthetic control and a very coarse
+        placebo p-value (with `k` donors, the smallest achievable p-value is
+        `1 / (k + 1)`).
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "MSFT"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.econometrics.get_synthetic_control(
+            "AAPL",
+            treatment_period="2021-07-01",
+            donor_tickers=["MSFT", "Benchmark"],
+            period="weekly",
+        )
+        ```
+
+        Which returns:
+
+        |                           |   Value |
+        |:--------------------------|--------:|
+        | Average Treatment Effect  |  0.0012 |
+        | Pre-Treatment RMSPE       |  0.0286 |
+        | Post-Treatment RMSPE      |  0.024  |
+        | RMSPE Ratio               |  0.8417 |
+        | P-Value                   |  0.3333 |
+        | N Donors                  |  2      |
+        | N Pre-Periods             | 78      |
+        | N Post-Periods            | 79      |
+        """
+        period = period if period else "quarterly" if self._quarterly else "yearly"
+        returns = self._get_price_column(period, column)
+
+        if donor_tickers is None:
+            donor_tickers = [
+                ticker
+                for ticker in self._get_tickers(include_benchmark=include_benchmark)
+                if ticker != treated_ticker
+            ]
+        else:
+            donor_tickers = (
+                [donor_tickers]
+                if isinstance(donor_tickers, str)
+                else list(donor_tickers)
+            )
+
+        result = causal_inference_model.get_synthetic_control(
+            returns[treated_ticker],
+            returns[donor_tickers],
+            treatment_period=treatment_period,
+        )
+
+        return causal_inference_model.synthetic_control_summary(result).round(
             rounding if rounding is not None else self._rounding
         )
 
@@ -3570,17 +3793,17 @@ class Econometrics:
         )
 
         rounding = rounding if rounding is not None else self._rounding
-        summary = result.regression.summary()
+        summary = regression_model.regression_summary_table(result["regression"])
 
-        if result.entity_effects is not None:
-            entity_rows = pd.DataFrame({"Coefficient": result.entity_effects})
+        if result["entity_effects"] is not None:
+            entity_rows = pd.DataFrame({"Coefficient": result["entity_effects"]})
             entity_rows.index = [
                 f"Entity Effect: {entity}" for entity in entity_rows.index
             ]
             summary = pd.concat([summary, entity_rows])
 
-        if result.time_effects is not None:
-            time_rows = pd.DataFrame({"Coefficient": result.time_effects})
+        if result["time_effects"] is not None:
+            time_rows = pd.DataFrame({"Coefficient": result["time_effects"]})
             time_rows.index = [f"Time Effect: {time}" for time in time_rows.index]
             summary = pd.concat([summary, time_rows])
 
@@ -3672,7 +3895,7 @@ class Econometrics:
 
         result = panel_data_model.get_random_effects(y_panel, x_panel)
 
-        return result.summary().round(
+        return regression_model.regression_summary_table(result).round(
             rounding if rounding is not None else self._rounding
         )
 
@@ -3850,7 +4073,7 @@ class Econometrics:
                     q=q,
                     forecast_steps=forecast_steps,
                     include_constant=include_constant,
-                ).forecast
+                )["forecast"]
                 for ticker in tickers
             }
         )
@@ -3934,7 +4157,180 @@ class Econometrics:
             returns[tickers], lags=lags, forecast_steps=forecast_steps
         )
 
-        return result.forecast.round(
+        return result["forecast"].round(
+            rounding if rounding is not None else self._rounding
+        )
+
+    @handle_errors
+    def get_impulse_response_function(
+        self,
+        period: str | None = None,
+        column: str = "Return",
+        lags: int = 1,
+        periods: int = 10,
+        orthogonalized: bool = True,
+        include_benchmark: bool = False,
+        rounding: int | None = None,
+    ) -> pd.DataFrame:
+        """
+        Fit a Vector Autoregression (VAR) across every ticker in the Toolkit instance
+        and trace out the Impulse Response Function (IRF) -- how a one-standard-
+        deviation shock to each ticker propagates through the whole system over
+        `periods` periods ahead.
+
+        Also known as: IRF.
+
+        A natural companion to `get_var_forecast`: rather than forecasting the levels
+        forward, this traces out each ticker's dynamic response to a shock in every
+        ticker (including itself) -- see `time_series_model.get_impulse_response_function`
+        for the full formula, the Cholesky-orthogonalization used to identify the
+        shocks, and why the ordering of tickers is an identifying assumption.
+
+        Args:
+            period (str, optional): The data frequency (daily, weekly, monthly,
+            quarterly, or yearly). Defaults to "quarterly".
+            column (str, optional): The historical data column to model. Defaults to
+            "Return".
+            lags (int, optional): The VAR order. Defaults to 1.
+            periods (int, optional): The number of periods ahead to trace the response
+            out to. Defaults to 10.
+            orthogonalized (bool, optional): Whether to orthogonalize the shocks via a
+            Cholesky decomposition of the residual covariance matrix -- see
+            `time_series_model.get_impulse_response_function`. Defaults to True.
+            include_benchmark (bool, optional): Whether to include "Benchmark" among
+            the tickers modeled jointly. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the
+            results to. Defaults to None.
+
+        Returns:
+            pd.DataFrame: Each shock ticker's response table, one column per response
+            ticker, concatenated side by side under a top-level column per shock
+            ticker, indexed `0, ..., periods` (horizon, `0` = impact response).
+
+        Notes:
+        - The ordering of tickers modeled (Toolkit ticker order, or `independent_tickers`-
+        style ordering is not configurable here -- reorder the Toolkit instance's
+        tickers themselves to change the Cholesky identification order) determines
+        which ticker is treated as contemporaneously prior to the others -- see
+        `time_series_model.get_impulse_response_function`'s `Notes`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "MSFT"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.econometrics.get_impulse_response_function(period="quarterly", periods=5)
+        ```
+
+        Which returns:
+
+        | Horizon   |   ('AAPL', 'AAPL') |   ('AAPL', 'MSFT') |   ('MSFT', 'AAPL') |   ('MSFT', 'MSFT') |
+        |:----------|--------------------:|--------------------:|--------------------:|--------------------:|
+        | 0         |              0.1667 |              0.0865 |               0     |              0.0708 |
+        | 1         |              0.0075 |             -0.0196 |               0.0836|              0.0553 |
+        | 2         |             -0.0274 |             -0.0192 |               0.0178|             -0.0006 |
+        | 3         |             -0.0071 |             -0.0007 |              -0.0108|             -0.0097 |
+        | 4         |              0.0033 |              0.0032 |              -0.0054|             -0.002  |
+        | 5         |              0.0019 |              0.0008 |               0.0007|              0.0013 |
+        """
+        period = period if period else "quarterly" if self._quarterly else "yearly"
+        returns = self._get_price_column(period, column)
+
+        tickers = self._get_tickers(include_benchmark=include_benchmark)
+
+        var_result = time_series_model.get_var_forecast(
+            returns[tickers], lags=lags, forecast_steps=1
+        )
+        result = time_series_model.get_impulse_response_function(
+            var_result, periods=periods, orthogonalized=orthogonalized
+        )
+
+        return time_series_model.irf_summary_table(result).round(
+            rounding if rounding is not None else self._rounding
+        )
+
+    @handle_errors
+    def get_variance_decomposition(
+        self,
+        period: str | None = None,
+        column: str = "Return",
+        lags: int = 1,
+        periods: int = 10,
+        include_benchmark: bool = False,
+        rounding: int | None = None,
+    ) -> pd.DataFrame:
+        """
+        Fit a Vector Autoregression (VAR) across every ticker in the Toolkit instance
+        and compute the (orthogonalized) Forecast Error Variance Decomposition (FEVD)
+        -- what fraction of each ticker's `h`-step-ahead forecast error variance is
+        attributable to each ticker's own structural shock, for `h = 1, ..., periods`.
+
+        Also known as: FEVD, variance decomposition.
+
+        The other natural companion to `get_var_forecast` (alongside
+        `get_impulse_response_function`, which the FEVD is built from) -- see
+        `time_series_model.get_variance_decomposition` for the full formula. A large
+        own-shock share at short horizons that decays as the horizon grows is the
+        classic signature of a ticker that is initially self-driven but increasingly
+        explained by the rest of the system over time.
+
+        Args:
+            period (str, optional): The data frequency (daily, weekly, monthly,
+            quarterly, or yearly). Defaults to "quarterly".
+            column (str, optional): The historical data column to model. Defaults to
+            "Return".
+            lags (int, optional): The VAR order. Defaults to 1.
+            periods (int, optional): The forecast horizon to decompose out to.
+            Defaults to 10.
+            include_benchmark (bool, optional): Whether to include "Benchmark" among
+            the tickers modeled jointly. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the
+            results to. Defaults to None.
+
+        Returns:
+            pd.DataFrame: Each response ticker's variance-share table (one column per
+            shock ticker, rows summing to 1), concatenated side by side under a
+            top-level column per response ticker, indexed `1, ..., periods` (horizon).
+
+        Notes:
+        - See `get_impulse_response_function`'s `Notes` on the Cholesky ordering --
+        the same identifying assumption applies here.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "MSFT"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.econometrics.get_variance_decomposition(period="quarterly", periods=5)
+        ```
+
+        Which returns:
+
+        | Horizon   |   ('AAPL', 'AAPL') |   ('AAPL', 'MSFT') |   ('MSFT', 'AAPL') |   ('MSFT', 'MSFT') |
+        |:----------|--------------------:|--------------------:|--------------------:|--------------------:|
+        | 1         |              1      |              0      |              0.5984 |              0.4016 |
+        | 2         |              0.7993 |              0.2007 |              0.4935 |              0.5065 |
+        | 3         |              0.7965 |              0.2035 |              0.5049 |              0.4951 |
+        | 4         |              0.7942 |              0.2058 |              0.502  |              0.498  |
+        | 5         |              0.7936 |              0.2064 |              0.5022 |              0.4978 |
+        """
+        period = period if period else "quarterly" if self._quarterly else "yearly"
+        returns = self._get_price_column(period, column)
+
+        tickers = self._get_tickers(include_benchmark=include_benchmark)
+
+        var_result = time_series_model.get_var_forecast(
+            returns[tickers], lags=lags, forecast_steps=1
+        )
+        result = time_series_model.get_variance_decomposition(
+            var_result, periods=periods
+        )
+
+        return time_series_model.variance_decomposition_summary_table(result).round(
             rounding if rounding is not None else self._rounding
         )
 
@@ -4031,7 +4427,7 @@ class Econometrics:
             significance=significance,
         )
 
-        return result.forecast.round(
+        return result["forecast"].round(
             rounding if rounding is not None else self._rounding
         )
 
@@ -4309,7 +4705,7 @@ class Econometrics:
                 train, lags=lags, forecast_steps=len(holdout)
             )
             forecast = pd.Series(
-                var_result.forecast[ticker].to_numpy(), index=holdout.index
+                var_result["forecast"][ticker].to_numpy(), index=holdout.index
             )
 
             columns[ticker] = pd.Series(
@@ -4325,3 +4721,107 @@ class Econometrics:
         result = pd.DataFrame(columns)
 
         return result.round(rounding if rounding is not None else self._rounding)
+
+    @handle_errors
+    def get_event_study(
+        self,
+        event_date,
+        dependent_ticker: str | None = None,
+        column: str = "Return",
+        estimation_window: int = 250,
+        gap_days: int = 30,
+        pre_event_days: int = 10,
+        post_event_days: int = 10,
+        rounding: int | None = None,
+    ) -> pd.Series:
+        """
+        Perform a market-model event study around a single event date, following the
+        methodology in MacKinlay, A.C. (1997), "Event Studies in Economics and
+        Finance," Journal of Economic Literature, 35(1), 13-39 -- the canonical
+        reference and still the dominant approach used to measure the stock-price
+        impact of corporate events (earnings announcements, M&A deals, index
+        additions/deletions, dividend changes, regulatory actions, etc.).
+
+        A market model (`Return_t = alpha + beta * Benchmark_Return_t + e_t`) is fit
+        via OLS over a clean "estimation window" ending `gap_days` before the event,
+        then the Abnormal Return on each day of the "event window" around the event
+        is the actual return minus the market-model-predicted expected return. These
+        are cumulated into the Cumulative Abnormal Return (CAR) -- the stock-price
+        impact attributable to the event, after stripping out what would have been
+        expected from general market movements alone -- along with a t-test of
+        whether CAR is significantly different from zero.
+
+        Also known as: CAR analysis, abnormal returns analysis, market model event
+        study.
+
+        Args:
+            event_date: The date of the event (e.g. "2023-05-04"). Must fall within
+                the Toolkit instance's daily historical data.
+            dependent_ticker (str | None, optional): The ticker being studied.
+                Defaults to the first ticker in the Toolkit instance.
+            column (str, optional): The historical data column to use. Defaults to
+                "Return".
+            estimation_window (int, optional): Number of trading days used to
+                estimate the market model. Defaults to 250 (~one trading year).
+            gap_days (int, optional): Number of trading days between the end of the
+                estimation window and the event date. Defaults to 30.
+            pre_event_days (int, optional): Number of trading days before the event
+                date included in the event window. Defaults to 10.
+            post_event_days (int, optional): Number of trading days after the event
+                date included in the event window. Defaults to 10.
+            rounding (int | None, optional): The number of decimals to round the
+                results to. Defaults to None.
+
+        Returns:
+            pd.Series: The Cumulative Abnormal Return (CAR), its t-statistic and
+            p-value, the market-model alpha and beta, and the number of estimation-
+            window observations used.
+
+        Notes:
+        - Always uses daily data -- event windows are measured in trading days, so
+          quarterly/yearly granularity would not be meaningful here.
+        - The market/benchmark return series is the Toolkit instance's `"Benchmark"`
+          column.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "MSFT"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.econometrics.get_event_study(event_date="2023-05-04")
+        ```
+        """
+        # Bypasses `_get_price_column` on purpose: its "daily" branch checks
+        # `self._historical_data["intraday"]` for emptiness rather than
+        # `self._historical_data["daily"]`, which would reject perfectly valid daily
+        # data whenever no separate intraday dataset was supplied to the Toolkit.
+        returns = self._historical_data["daily"][column].dropna()
+
+        dependent_ticker = dependent_ticker or self._get_tickers()[0]
+
+        result = event_study_model.get_event_study(
+            returns=returns[dependent_ticker],
+            market_returns=returns[BENCHMARK_TICKER],
+            event_date=event_date,
+            estimation_window=estimation_window,
+            gap_days=gap_days,
+            pre_event_days=pre_event_days,
+            post_event_days=post_event_days,
+        )
+
+        summary = pd.Series(
+            {
+                "Cumulative Abnormal Return": result["cumulative_abnormal_return"],
+                "CAR t-statistic": result["car_t_statistic"],
+                "CAR p-value": result["car_p_value"],
+                "Alpha": result["alpha"],
+                "Beta": result["beta"],
+                "Estimation Window Observations": result[
+                    "estimation_window_observations"
+                ],
+            }
+        )
+
+        return summary.round(rounding if rounding is not None else self._rounding)

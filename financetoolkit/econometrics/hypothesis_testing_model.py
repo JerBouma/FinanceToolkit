@@ -8,7 +8,6 @@ import statsmodels.api as sm
 from statsmodels.stats.weightstats import ttest_ind
 
 from financetoolkit.econometrics.regression_model import (
-    RegressionResult,
     _to_design_matrix,
     _to_target_vector,
     get_ols,
@@ -87,9 +86,7 @@ def get_two_sample_t_test(
     )
 
 
-def _validate_nested_models(
-    result_restricted: RegressionResult, result_unrestricted: RegressionResult
-) -> int:
+def _validate_nested_models(result_restricted: dict, result_unrestricted: dict) -> int:
     """
     Shared nesting validation for `get_f_test` and `get_likelihood_ratio_test` --
     both compare a "restricted" (fewer regressors) against an "unrestricted" (more
@@ -97,42 +94,40 @@ def _validate_nested_models(
     requirements for that comparison to be meaningful. Returns `q`, the number of
     restrictions (the difference in parameter counts).
     """
-    if result_unrestricted.n_parameters <= result_restricted.n_parameters:
+    if result_unrestricted["n_parameters"] <= result_restricted["n_parameters"]:
         raise ValueError(
             "result_unrestricted must have strictly more parameters than "
-            f"result_restricted, received {result_unrestricted.n_parameters} and "
-            f"{result_restricted.n_parameters} respectively -- are these the right "
+            f'result_restricted, received {result_unrestricted["n_parameters"]} and '
+            f'{result_restricted["n_parameters"]} respectively -- are these the right '
             "way around?"
         )
-    if result_unrestricted.n_observations != result_restricted.n_observations:
+    if result_unrestricted["n_observations"] != result_restricted["n_observations"]:
         raise ValueError(
             "result_restricted and result_unrestricted must be fit on the same "
-            f"number of observations, received {result_restricted.n_observations} "
-            f"and {result_unrestricted.n_observations} respectively -- are both "
+            f'number of observations, received {result_restricted["n_observations"]} '
+            f'and {result_unrestricted["n_observations"]} respectively -- are both '
             "models fit on the same y?"
         )
 
-    return result_unrestricted.n_parameters - result_restricted.n_parameters
+    return result_unrestricted["n_parameters"] - result_restricted["n_parameters"]
 
 
-def _refit(result: RegressionResult):
+def _refit(result: dict):
     """
-    Refits `result` (a `RegressionResult` produced by `regression_model.get_ols`/
+    Refits `result` (a regression result dict produced by `regression_model.get_ols`/
     `get_wls`/`get_gls`) as a `statsmodels.api.OLS` results object on the exact same
     (post-transform) design matrix and dependent variable, so the nested-model
     comparison and restriction-testing functions below can delegate to `statsmodels`'
     own `compare_f_test`/`compare_lr_test`/`wald_test` machinery rather than
     reimplementing the RSS-ratio/quadratic-form formulas by hand. `y` is not stored on
-    `RegressionResult` directly, but is exactly recoverable from
-    `fitted_values + residuals`.
+    `result` directly, but is exactly recoverable from `result["fitted_values"] +
+    result["residuals"]`.
     """
-    target = result.fitted_values + result.residuals
-    return sm.OLS(target, result.design_matrix).fit()
+    target = result["fitted_values"] + result["residuals"]
+    return sm.OLS(target, result["design_matrix"]).fit()
 
 
-def get_f_test(
-    result_restricted: RegressionResult, result_unrestricted: RegressionResult
-) -> pd.Series:
+def get_f_test(result_restricted: dict, result_unrestricted: dict) -> pd.Series:
     """
     Calculate a nested-model F-test for the joint significance of the extra
     regressors in `result_unrestricted` relative to `result_restricted`, via
@@ -154,12 +149,12 @@ def get_f_test(
     p-value) result means the extra regressors meaningfully improve the fit and
     should not be dropped. This is the same nested-F construction used internally by
     `causality_model.get_granger_causality`, exposed here as a general-purpose
-    primitive for any two nested `RegressionResult`s.
+    primitive for any two nested regression result dicts.
 
     Args:
-        result_restricted (RegressionResult): The fitted restricted model (fewer
+        result_restricted (dict): The fitted restricted model (fewer
         regressors).
-        result_unrestricted (RegressionResult): The fitted unrestricted model (more
+        result_unrestricted (dict): The fitted unrestricted model (more
         regressors, nesting `result_restricted`).
 
     Returns:
@@ -179,7 +174,7 @@ def get_f_test(
     sm_unrestricted = _refit(result_unrestricted)
 
     f_statistic, p_value, _ = sm_unrestricted.compare_f_test(sm_restricted)
-    degrees_of_freedom_denominator = result_unrestricted.degrees_of_freedom
+    degrees_of_freedom_denominator = result_unrestricted["degrees_of_freedom"]
 
     return pd.Series(
         {
@@ -193,21 +188,21 @@ def get_f_test(
 
 
 def get_wald_test(
-    result: RegressionResult,
+    result: dict,
     restriction_matrix: np.ndarray,
     restriction_values: np.ndarray | None = None,
 ) -> pd.Series:
     """
     Calculate a Wald test of `q` general linear restriction(s) on the coefficients of
-    a single fitted `RegressionResult`, via `statsmodels`' `RegressionResults.wald_test`.
+    a single fitted regression result dict, via `statsmodels`' `RegressionResults.wald_test`.
 
     Also known as: Wald chi-squared test.
 
     Tests the null hypothesis `H0: R @ beta = r`, where `R` (`restriction_matrix`) is
     a `(q, k)` matrix encoding `q` linear restrictions on the `k` coefficients and `r`
     (`restriction_values`) is a length-`q` vector of hypothesized values (zero by
-    default). This generalizes the single-coefficient t-test reported on every
-    `RegressionResult` to arbitrary linear combinations of coefficients -- e.g.
+    default). This generalizes the single-coefficient t-test reported on every fitted
+    regression to arbitrary linear combinations of coefficients -- e.g.
     testing that two coefficients are jointly zero (`R` with two one-hot rows),
     that one coefficient equals a specific non-zero value (`R` a single one-hot row,
     `r` that value), or that two coefficients are equal to each other
@@ -228,10 +223,10 @@ def get_wald_test(
     Mathematical Society, 54(3), 426-482.
 
     Args:
-        result (RegressionResult): The fitted model whose coefficients are being
+        result (dict): The fitted model whose coefficients are being
         tested.
         restriction_matrix (np.ndarray): The `(q, k)` restriction matrix `R`, `k`
-        matching `result.n_parameters`.
+        matching `result["n_parameters"]`.
         restriction_values (np.ndarray | None, optional): The length-`q` vector `r`
         of hypothesized values. Defaults to None, i.e. `r = 0` (the restrictions are
         all "equals zero").
@@ -243,16 +238,16 @@ def get_wald_test(
 
     Raises:
         ValueError: If `restriction_matrix`'s number of columns does not match
-        `result.n_parameters`, or `restriction_values`'s length does not match
+        `result["n_parameters"]`, or `restriction_values`'s length does not match
         `restriction_matrix`'s number of rows.
     """
     restriction_matrix = np.atleast_2d(np.asarray(restriction_matrix, dtype=float))
     n_restrictions, n_coefficients = restriction_matrix.shape
 
-    if n_coefficients != result.n_parameters:
+    if n_coefficients != result["n_parameters"]:
         raise ValueError(
             f"restriction_matrix has {n_coefficients} columns but the fitted model "
-            f"has {result.n_parameters} coefficients -- these must match."
+            f'has {result["n_parameters"]} coefficients -- these must match.'
         )
 
     if restriction_values is None:
@@ -291,7 +286,7 @@ def get_wald_test(
 
 
 def get_likelihood_ratio_test(
-    result_restricted: RegressionResult, result_unrestricted: RegressionResult
+    result_restricted: dict, result_unrestricted: dict
 ) -> pd.Series:
     """
     Calculate a nested-model Likelihood Ratio (LR) test, the Maximum Likelihood
@@ -320,9 +315,9 @@ def get_likelihood_ratio_test(
     Testing Composite Hypotheses." Annals of Mathematical Statistics, 9(1), 60-62.
 
     Args:
-        result_restricted (RegressionResult): The fitted restricted model (fewer
+        result_restricted (dict): The fitted restricted model (fewer
         regressors).
-        result_unrestricted (RegressionResult): The fitted unrestricted model (more
+        result_unrestricted (dict): The fitted unrestricted model (more
         regressors, nesting `result_restricted`).
 
     Returns:
@@ -448,7 +443,7 @@ def get_hausman_wu_test(
 
     stage_one_design, _ = _combine_regressors(instruments, x_other)
     stage_one = get_ols(x_suspect_values, stage_one_design, add_constant=True)
-    v_hat = stage_one.residuals
+    v_hat = stage_one["residuals"]
 
     stage_two_parts = [x_suspect_matrix, v_hat.reshape(-1, 1)]
     stage_two_names = [x_suspect_names[0], "Residual"]
@@ -463,16 +458,16 @@ def get_hausman_wu_test(
     )
     stage_two = get_ols(y_values, stage_two_design, add_constant=True)
 
-    residual_index = stage_two.feature_names.index("Residual")
-    v_hat_coefficient = float(stage_two.coefficients[residual_index])
-    t_statistic = float(stage_two.t_statistics[residual_index])
-    p_value = float(stage_two.p_values[residual_index])
+    residual_index = stage_two["feature_names"].index("Residual")
+    v_hat_coefficient = float(stage_two["coefficients"][residual_index])
+    t_statistic = float(stage_two["t_statistics"][residual_index])
+    p_value = float(stage_two["p_values"][residual_index])
 
     return pd.Series(
         {
             "V-Hat Coefficient": v_hat_coefficient,
             "T-Statistic": t_statistic,
-            "Degrees of Freedom": stage_two.degrees_of_freedom,
+            "Degrees of Freedom": stage_two["degrees_of_freedom"],
             "P-Value": p_value,
             "Endogenous (5%)": bool(p_value < SIGNIFICANCE_LEVEL),
         }

@@ -2,15 +2,13 @@
 
 __docformat__ = "google"
 
-from dataclasses import dataclass
-
 import numpy as np
 import pandas as pd
 from linearmodels.iv import IV2SLS
 from scipy import stats
+from scipy.optimize import minimize
 
 from financetoolkit.econometrics.regression_model import (
-    RegressionResult,
     _to_design_matrix,
     _to_target_vector,
     get_logistic_regression,
@@ -21,6 +19,9 @@ from financetoolkit.econometrics.regression_model import (
 # pylint: disable=too-many-locals,too-many-arguments,too-many-instance-attributes
 
 MINIMUM_LOCAL_OBSERVATIONS = 3
+MINIMUM_DONORS = 2
+MINIMUM_PRE_PERIODS = 2
+MINIMUM_POST_PERIODS = 1
 
 
 def get_iv_2sls(
@@ -29,7 +30,7 @@ def get_iv_2sls(
     instruments: pd.DataFrame | pd.Series | np.ndarray,
     x_exogenous: pd.DataFrame | pd.Series | np.ndarray | None = None,
     add_constant: bool = True,
-) -> RegressionResult:
+) -> dict:
     """
     Fit an Instrumental Variables regression via Two-Stage Least Squares (2SLS) of `y`
     on `x_endogenous` (+ `x_exogenous`), using `instruments` to isolate the variation in
@@ -80,10 +81,12 @@ def get_iv_2sls(
         Defaults to True.
 
     Returns:
-        RegressionResult: The 2SLS coefficients (on `x_exogenous` then `x_endogenous`, in
-        that order), their standard errors/t-statistics/p-values, the actual-X residuals/
-        fitted values, and related fit statistics. Call `.summary()` for a coefficient
-        table. `design_matrix` holds the actual (not fitted/instrumented) `X`.
+        dict: The 2SLS coefficients (on `x_exogenous` then `x_endogenous`, in that
+        order), their standard errors/t-statistics/p-values, the actual-X residuals/
+        fitted values, and related fit statistics -- see
+        `regression_model._from_statsmodels_ols` for the full key list. Call
+        `regression_model.regression_summary_table` for a coefficient table.
+        `design_matrix` holds the actual (not fitted/instrumented) `X`.
 
     Raises:
         TypeError: If any input is not one of the accepted types.
@@ -102,7 +105,7 @@ def get_iv_2sls(
     ```python
     import numpy as np
     import pandas as pd
-    from financetoolkit.econometrics import causal_inference_model
+    from financetoolkit.econometrics import causal_inference_model, regression_model
 
     rng = np.random.default_rng(42)
     n = 2000
@@ -115,7 +118,7 @@ def get_iv_2sls(
     y = 1.0 + 2.0 * x + 0.9 * confounder + rng.standard_normal(n) * 0.3
 
     result = causal_inference_model.get_iv_2sls(y, x, instrument)
-    print(result.summary().round(4))
+    print(regression_model.regression_summary_table(result).round(4))
     ```
 
     Which returns (recovering the true slope of 2.0, unlike naive OLS which would be
@@ -186,23 +189,24 @@ def get_iv_2sls(
     k = len(feature_names)
     degrees_of_freedom = int(sm_result.df_resid)
 
-    return RegressionResult(
-        coefficients=sm_result.params.to_numpy(),
-        standard_errors=sm_result.std_errors.to_numpy(),
-        t_statistics=sm_result.tstats.to_numpy(),
-        p_values=sm_result.pvalues.to_numpy(),
-        residuals=sm_result.resids.to_numpy(),
-        fitted_values=sm_result.fitted_values.to_numpy().ravel(),
-        covariance_matrix=sm_result.cov.to_numpy(),
-        r_squared=float(sm_result.rsquared),
-        adjusted_r_squared=float(sm_result.rsquared_adj),
-        residual_variance=float(sm_result.s2),
-        degrees_of_freedom=degrees_of_freedom,
-        n_observations=n,
-        n_parameters=k,
-        feature_names=feature_names,
-        design_matrix=design_matrix,
-    )
+    return {
+        "coefficients": sm_result.params.to_numpy(),
+        "standard_errors": sm_result.std_errors.to_numpy(),
+        "t_statistics": sm_result.tstats.to_numpy(),
+        "p_values": sm_result.pvalues.to_numpy(),
+        "residuals": sm_result.resids.to_numpy(),
+        "fitted_values": sm_result.fitted_values.to_numpy().ravel(),
+        "covariance_matrix": sm_result.cov.to_numpy(),
+        "r_squared": float(sm_result.rsquared),
+        "adjusted_r_squared": float(sm_result.rsquared_adj),
+        "residual_variance": float(sm_result.s2),
+        "degrees_of_freedom": degrees_of_freedom,
+        "n_observations": n,
+        "n_parameters": k,
+        "feature_names": feature_names,
+        "design_matrix": design_matrix,
+        "cov_type": "nonrobust",
+    }
 
 
 def get_difference_in_differences(
@@ -211,7 +215,7 @@ def get_difference_in_differences(
     post: pd.Series | np.ndarray,
     x_controls: pd.DataFrame | pd.Series | np.ndarray | None = None,
     add_constant: bool = True,
-) -> RegressionResult:
+) -> dict:
     """
     Fit a Difference-in-Differences (DiD) regression of `y` on a treatment-group dummy
     (`treated`), a post-period dummy (`post`), and their interaction.
@@ -249,10 +253,12 @@ def get_difference_in_differences(
         add_constant (bool, optional): Whether to include an intercept. Defaults to True.
 
     Returns:
-        RegressionResult: The fitted coefficients (`Treated`, `Post`, `Treated x Post`,
-        then any controls), their standard errors/t-statistics/p-values, residuals,
-        fitted values and related fit statistics. Call `.summary()` for a coefficient
-        table -- the row labeled `"Treated x Post"` is the DiD treatment-effect estimate.
+        dict: The fitted coefficients (`Treated`, `Post`, `Treated x Post`, then any
+        controls), their standard errors/t-statistics/p-values, residuals, fitted
+        values and related fit statistics -- see
+        `regression_model._from_statsmodels_ols` for the full key list. Call
+        `regression_model.regression_summary_table` for a coefficient table -- the
+        row labeled `"Treated x Post"` is the DiD treatment-effect estimate.
 
     Raises:
         TypeError: If any input is not one of the accepted types.
@@ -269,7 +275,7 @@ def get_difference_in_differences(
     ```python
     import numpy as np
     import pandas as pd
-    from financetoolkit.econometrics import causal_inference_model
+    from financetoolkit.econometrics import causal_inference_model, regression_model
 
     rng = np.random.default_rng(1)
     n_units, n_periods = 100, 2
@@ -290,7 +296,7 @@ def get_difference_in_differences(
     result = causal_inference_model.get_difference_in_differences(
         pd.Series(y), pd.Series(treated), pd.Series(post)
     )
-    print(result.summary().round(4))
+    print(regression_model.regression_summary_table(result).round(4))
     ```
 
     Which returns (recovering the true treatment effect of 3.0 in the `Treated x Post` row):
@@ -340,76 +346,43 @@ def get_difference_in_differences(
     return get_ols(y_values, design, add_constant=add_constant)
 
 
-@dataclass
-class RegressionDiscontinuityResult:
+def regression_discontinuity_summary_table(result: dict) -> pd.DataFrame:
     """
-    The fitted output of `get_regression_discontinuity`.
+    Builds a one-column table of the discontinuity estimate, its standard error/
+    t-statistic/p-value, and the cutoff/bandwidth/sample sizes used, from a
+    `get_regression_discontinuity` result dict.
 
-    Attributes:
-        discontinuity (float): The estimated jump in the outcome at the cutoff (the
-        right-side local intercept minus the left-side local intercept).
-        standard_error (float): The standard error of `discontinuity`, combining the
-        two local regressions' intercept standard errors under independence:
-        `sqrt(se_right^2 + se_left^2)`.
-        t_statistic (float): `discontinuity / standard_error`.
-        p_value (float): The two-sided p-value from the Student-T distribution with
-        `left_result.degrees_of_freedom + right_result.degrees_of_freedom` degrees of
-        freedom.
-        cutoff (float): The running-variable cutoff used.
-        bandwidth (float): The bandwidth used (observations further than this from
-        `cutoff` are excluded from both local regressions).
-        kernel (str): The kernel used to weight observations by distance to the cutoff,
-        `"uniform"` or `"triangular"`.
-        n_left (int): The number of observations used in the left-side local regression.
-        n_right (int): The number of observations used in the right-side local regression.
-        left_result (RegressionResult): The left-side (running variable < cutoff) local
-        linear regression.
-        right_result (RegressionResult): The right-side (running variable >= cutoff)
-        local linear regression.
+    Args:
+        result (dict): A fitted RDD result dict, as returned by
+        `get_regression_discontinuity`.
+
+    Returns:
+        pd.DataFrame: The one-column results table.
     """
-
-    discontinuity: float
-    standard_error: float
-    t_statistic: float
-    p_value: float
-    cutoff: float
-    bandwidth: float
-    kernel: str
-    n_left: int
-    n_right: int
-    left_result: RegressionResult
-    right_result: RegressionResult
-
-    def summary(self) -> pd.DataFrame:
-        """
-        Returns:
-            pd.DataFrame: A one-column table of the discontinuity estimate, its standard
-            error/t-statistic/p-value, and the cutoff/bandwidth/sample sizes used.
-        """
-        return pd.DataFrame(
-            {
-                "Value": [
-                    self.discontinuity,
-                    self.standard_error,
-                    self.t_statistic,
-                    self.p_value,
-                    self.cutoff,
-                    self.bandwidth,
-                    self.n_left,
-                    self.n_right,
-                ]
-            },
-            index=[
-                "Discontinuity",
-                "Std. Error",
-                "t-Statistic",
-                "P-Value",
-                "Cutoff",
-                "Bandwidth",
-                "N Left",
-                "N Right",
-            ],
-        )
+    return pd.DataFrame(
+        {
+            "Value": [
+                result["discontinuity"],
+                result["standard_error"],
+                result["t_statistic"],
+                result["p_value"],
+                result["cutoff"],
+                result["bandwidth"],
+                result["n_left"],
+                result["n_right"],
+            ]
+        },
+        index=[
+            "Discontinuity",
+            "Std. Error",
+            "t-Statistic",
+            "P-Value",
+            "Cutoff",
+            "Bandwidth",
+            "N Left",
+            "N Right",
+        ],
+    )
 
 
 def get_regression_discontinuity(
@@ -418,7 +391,7 @@ def get_regression_discontinuity(
     cutoff: float,
     bandwidth: float | None = None,
     kernel: str = "uniform",
-) -> RegressionDiscontinuityResult:
+) -> dict:
     """
     Estimate a Sharp Regression Discontinuity Design (RDD): the jump in `y` exactly at
     `cutoff`, where treatment assignment switches on/off deterministically based on
@@ -463,9 +436,12 @@ def get_regression_discontinuity(
         "uniform".
 
     Returns:
-        RegressionDiscontinuityResult: The estimated discontinuity, its standard error/
-        t-statistic/p-value, the cutoff/bandwidth/kernel used, and the two underlying
-        local `RegressionResult`s. Call `.summary()` for a one-column results table.
+        dict: The estimated discontinuity, its standard error/t-statistic/p-value,
+        the cutoff/bandwidth/kernel used, and the two underlying local regression
+        result dicts -- keys `discontinuity`, `standard_error`, `t_statistic`,
+        `p_value`, `cutoff`, `bandwidth`, `kernel`, `n_left`, `n_right`,
+        `left_result`, `right_result`. Call `regression_discontinuity_summary_table`
+        for a one-column results table.
 
     Raises:
         TypeError: If `y` or `running_variable` is not one of the accepted types.
@@ -494,7 +470,7 @@ def get_regression_discontinuity(
     y = 1.0 + 0.3 * running + true_jump * (running >= 0) + rng.standard_normal(n) * 0.5
 
     result = causal_inference_model.get_regression_discontinuity(y, running, cutoff=0.0)
-    print(result.summary().round(4))
+    print(causal_inference_model.regression_discontinuity_summary_table(result).round(4))
     ```
 
     Which returns (recovering the true jump of 4.0 at the cutoff):
@@ -544,7 +520,7 @@ def get_regression_discontinuity(
             f"Consider increasing `bandwidth`."
         )
 
-    def _fit_local(mask: np.ndarray) -> RegressionResult:
+    def _fit_local(mask: np.ndarray) -> dict:
         x_side = centered[mask]
         y_side = y_values[mask]
         if kernel == "triangular":
@@ -555,91 +531,61 @@ def get_regression_discontinuity(
     left_result = _fit_local(left_mask)
     right_result = _fit_local(right_mask)
 
-    intercept_index = left_result.feature_names.index("Intercept")
-    left_intercept = left_result.coefficients[intercept_index]
-    right_intercept = right_result.coefficients[intercept_index]
-    left_se = left_result.standard_errors[intercept_index]
-    right_se = right_result.standard_errors[intercept_index]
+    intercept_index = left_result["feature_names"].index("Intercept")
+    left_intercept = left_result["coefficients"][intercept_index]
+    right_intercept = right_result["coefficients"][intercept_index]
+    left_se = left_result["standard_errors"][intercept_index]
+    right_se = right_result["standard_errors"][intercept_index]
 
     discontinuity = float(right_intercept - left_intercept)
     standard_error = float(np.sqrt(left_se**2 + right_se**2))
     degrees_of_freedom = (
-        left_result.degrees_of_freedom + right_result.degrees_of_freedom
+        left_result["degrees_of_freedom"] + right_result["degrees_of_freedom"]
     )
 
     with np.errstate(divide="ignore", invalid="ignore"):
         t_statistic = discontinuity / standard_error
     p_value = float(2 * stats.t.sf(np.abs(t_statistic), degrees_of_freedom))
 
-    return RegressionDiscontinuityResult(
-        discontinuity=discontinuity,
-        standard_error=standard_error,
-        t_statistic=t_statistic,
-        p_value=p_value,
-        cutoff=float(cutoff),
-        bandwidth=float(bandwidth),
-        kernel=kernel,
-        n_left=n_left,
-        n_right=n_right,
-        left_result=left_result,
-        right_result=right_result,
+    return {
+        "discontinuity": discontinuity,
+        "standard_error": standard_error,
+        "t_statistic": t_statistic,
+        "p_value": p_value,
+        "cutoff": float(cutoff),
+        "bandwidth": float(bandwidth),
+        "kernel": kernel,
+        "n_left": n_left,
+        "n_right": n_right,
+        "left_result": left_result,
+        "right_result": right_result,
+    }
+
+
+def propensity_score_matching_summary(result: dict) -> pd.Series:
+    """
+    Builds the ATT estimate, its standard error/t-statistic/p-value, and the number
+    of matched pairs / treated / control units, from a `get_propensity_score_matching`
+    result dict.
+
+    Args:
+        result (dict): A fitted PSM result dict, as returned by
+        `get_propensity_score_matching`.
+
+    Returns:
+        pd.Series: The results table.
+    """
+    return pd.Series(
+        {
+            "ATT": result["att"],
+            "Std. Error": result["standard_error"],
+            "t-Statistic": result["t_statistic"],
+            "P-Value": result["p_value"],
+            "Matched Pairs": result["n_matched_pairs"],
+            "N Treated": result["n_treated"],
+            "N Control": result["n_control"],
+        }
     )
-
-
-@dataclass
-class PropensityScoreMatchingResult:
-    """
-    The fitted output of `get_propensity_score_matching`.
-
-    Attributes:
-        att (float): The estimated Average Treatment effect on the Treated -- the mean
-        outcome difference (treated minus matched control) across matched pairs.
-        standard_error (float): The standard error of `att`, the standard error of the
-        mean of the (treated - matched control) paired differences.
-        t_statistic (float): `att / standard_error`.
-        p_value (float): The two-sided p-value from the Student-T distribution with
-        `n_matched_pairs - 1` degrees of freedom.
-        n_matched_pairs (int): The number of treated units successfully matched to a
-        (not-yet-used) control unit.
-        n_treated (int): The total number of treated units.
-        n_control (int): The total number of control units.
-        propensity_scores (np.ndarray): The fitted P(treated=1 | covariates) for every
-        input observation, shape `(n,)`.
-        matched_treated_indices (np.ndarray): The positional index (into the original
-        input arrays) of each matched treated unit.
-        matched_control_indices (np.ndarray): The positional index of each matched
-        treated unit's matched control unit, in the same order as
-        `matched_treated_indices`.
-    """
-
-    att: float
-    standard_error: float
-    t_statistic: float
-    p_value: float
-    n_matched_pairs: int
-    n_treated: int
-    n_control: int
-    propensity_scores: np.ndarray
-    matched_treated_indices: np.ndarray
-    matched_control_indices: np.ndarray
-
-    def summary(self) -> pd.Series:
-        """
-        Returns:
-            pd.Series: The ATT estimate, its standard error/t-statistic/p-value, and the
-            number of matched pairs / treated / control units.
-        """
-        return pd.Series(
-            {
-                "ATT": self.att,
-                "Std. Error": self.standard_error,
-                "t-Statistic": self.t_statistic,
-                "P-Value": self.p_value,
-                "Matched Pairs": self.n_matched_pairs,
-                "N Treated": self.n_treated,
-                "N Control": self.n_control,
-            }
-        )
 
 
 def get_propensity_score_matching(
@@ -648,7 +594,7 @@ def get_propensity_score_matching(
     covariates: pd.DataFrame | pd.Series | np.ndarray,
     caliper: float | None = None,
     add_constant: bool = True,
-) -> PropensityScoreMatchingResult:
+) -> dict:
     """
     Estimate the Average Treatment effect on the Treated (ATT) via Propensity Score
     Matching (PSM): 1-to-1 nearest-neighbor matching on the estimated probability of
@@ -709,10 +655,12 @@ def get_propensity_score_matching(
         score model. Defaults to True.
 
     Returns:
-        PropensityScoreMatchingResult: The ATT estimate, its standard error/t-statistic/
-        p-value, the number of matched pairs/treated/control units, the fitted
-        propensity scores, and the matched index pairs. Call `.summary()` for a results
-        table.
+        dict: The ATT estimate, its standard error/t-statistic/p-value, the number of
+        matched pairs/treated/control units, the fitted propensity scores, and the
+        matched index pairs -- keys `att`, `standard_error`, `t_statistic`,
+        `p_value`, `n_matched_pairs`, `n_treated`, `n_control`,
+        `propensity_scores`, `matched_treated_indices`, `matched_control_indices`.
+        Call `propensity_score_matching_summary` for a results table.
 
     Raises:
         TypeError: If any input is not one of the accepted types.
@@ -756,7 +704,7 @@ def get_propensity_score_matching(
     result = causal_inference_model.get_propensity_score_matching(
         treatment, outcome, covariate
     )
-    print(result.summary().round(4))
+    print(causal_inference_model.propensity_score_matching_summary(result).round(4))
     ```
 
     Which returns (recovering the true effect of 2.0 in `att`, unlike the naive,
@@ -787,7 +735,7 @@ def get_propensity_score_matching(
     propensity_model = get_logistic_regression(
         treatment_values, covariate_values, add_constant=add_constant
     )
-    propensity_scores = propensity_model.fitted_probabilities
+    propensity_scores = propensity_model["fitted_probabilities"]
 
     # Match on the LOGIT of the propensity score, not the raw probability -- see
     # docstring ("Austin, 2011") for why this materially improves match quality.
@@ -848,15 +796,287 @@ def get_propensity_score_matching(
         t_statistic = np.nan
         p_value = np.nan
 
-    return PropensityScoreMatchingResult(
-        att=att,
-        standard_error=standard_error,
-        t_statistic=t_statistic,
-        p_value=p_value,
-        n_matched_pairs=n_matched_pairs,
-        n_treated=len(treated_indices),
-        n_control=len(control_indices),
-        propensity_scores=propensity_scores,
-        matched_treated_indices=np.array(matched_treated),
-        matched_control_indices=np.array(matched_control),
+    return {
+        "att": att,
+        "standard_error": standard_error,
+        "t_statistic": t_statistic,
+        "p_value": p_value,
+        "n_matched_pairs": n_matched_pairs,
+        "n_treated": len(treated_indices),
+        "n_control": len(control_indices),
+        "propensity_scores": propensity_scores,
+        "matched_treated_indices": np.array(matched_treated),
+        "matched_control_indices": np.array(matched_control),
+    }
+
+
+def _fit_synthetic_weights(
+    target_pre: np.ndarray, donors_pre: np.ndarray
+) -> np.ndarray:
+    """
+    Solves for the donor weights `w` (non-negative, summing to 1) that minimize the
+    pre-treatment sum of squared prediction errors `||target_pre - donors_pre @ w||^2`
+    -- the core optimization behind `get_synthetic_control`, also reused for every
+    placebo run in its permutation-based inference. Starts from equal weighting
+    (`1 / n_donors` each) and solves via Sequential Least Squares Programming (SLSQP),
+    the standard approach for this small, smooth, convex-constrained (simplex) problem.
+    """
+    n_donors = donors_pre.shape[1]
+    initial_weights = np.full(n_donors, 1 / n_donors)
+
+    def _objective(weights: np.ndarray) -> float:
+        residuals = target_pre - donors_pre @ weights
+        return float(residuals @ residuals)
+
+    result = minimize(
+        _objective,
+        initial_weights,
+        method="SLSQP",
+        bounds=[(0.0, 1.0)] * n_donors,
+        constraints=[{"type": "eq", "fun": lambda w: np.sum(w) - 1.0}],
     )
+    return result.x
+
+
+def _root_mean_squared_prediction_error(gap: np.ndarray) -> float:
+    return float(np.sqrt(np.mean(gap**2))) if len(gap) > 0 else np.nan
+
+
+def synthetic_control_summary(result: dict) -> pd.Series:
+    """
+    Builds the average post-treatment effect, pre/post RMSPE and their ratio, the
+    placebo-based p-value, and the donor pool/period counts, from a
+    `get_synthetic_control` result dict.
+
+    Args:
+        result (dict): A fitted Synthetic Control result dict, as returned by
+        `get_synthetic_control`.
+
+    Returns:
+        pd.Series: The headline results table.
+    """
+    return pd.Series(
+        {
+            "Average Treatment Effect": result["average_treatment_effect"],
+            "Pre-Treatment RMSPE": result["pre_treatment_rmspe"],
+            "Post-Treatment RMSPE": result["post_treatment_rmspe"],
+            "RMSPE Ratio": result["rmspe_ratio"],
+            "P-Value": result["p_value"],
+            "N Donors": result["n_donors"],
+            "N Pre-Periods": result["n_pre_periods"],
+            "N Post-Periods": result["n_post_periods"],
+        }
+    )
+
+
+def get_synthetic_control(
+    treated: pd.Series,
+    donors: pd.DataFrame,
+    treatment_period,
+) -> dict:
+    """
+    Construct a Synthetic Control for `treated` from a weighted combination of
+    `donors` (Abadie, Diamond & Hainmueller, 2010), and estimate the treatment effect
+    as the post-treatment gap between the treated unit and its synthetic counterfactual.
+
+    Also known as: SCM, synthetic control method.
+
+    When a single unit (a country, a state, a firm, an index constituent) experiences
+    an intervention/event and there is no single obvious comparison unit, SCM
+    constructs a data-driven counterfactual instead: a weighted average of untreated
+    "donor pool" units, with weights chosen so the resulting "synthetic control"
+    closely tracks the treated unit's OWN outcome path before treatment. If that
+    pre-treatment fit is good, the synthetic control's post-treatment path is taken as
+    an estimate of what would have happened to the treated unit absent treatment, and
+    the gap between the treated unit's actual and synthetic post-treatment outcomes
+    estimates the treatment effect -- without requiring the "parallel trends"
+    assumption DiD relies on (the synthetic control is constructed to already match
+    the treated unit's own pre-trend, not just move in parallel with it).
+
+    - Weights: `w* = argmin_w ||treated_pre - donors_pre @ w||^2`, subject to `w >= 0`
+      and `sum(w) = 1` (a weighted average, not an unconstrained regression -- this is
+      what distinguishes SCM from simply regressing the treated unit on the donors).
+    - Synthetic control: `synthetic_t = donors_t @ w*`, for every period `t`.
+    - Treatment effect: `gap_t = treated_t - synthetic_t`, for post-treatment `t`.
+
+    Inference has no closed form (there is exactly one treated unit), so this uses
+    Abadie et al.'s placebo/permutation approach instead: rerun the identical
+    procedure treating each DONOR as if it were the treated unit (against the
+    remaining donors), compute each placebo's own post/pre RMSPE ratio, and compare
+    the treated unit's ratio to that reference distribution -- `p_value` is the
+    fraction of units (treated included) whose ratio is at least as extreme.
+
+    For more information about the method, see the following papers:
+
+    - Abadie, A., Diamond, A., & Hainmueller, J. (2010). "Synthetic Control Methods
+      for Comparative Case Studies: Estimating the Effect of California's Tobacco
+      Control Program." Journal of the American Statistical Association, 105(490),
+      493-505.
+    - Abadie, A. (2021). "Using Synthetic Controls: Feasibility, Data Requirements,
+      and Methodological Aspects." Journal of Economic Literature, 59(2), 391-425.
+
+    Args:
+        treated (pd.Series): The treated unit's outcome path, indexed by period.
+        donors (pd.DataFrame): The donor pool's outcome paths, one column per donor
+        unit, aligned to `treated`'s index.
+        treatment_period: The first post-treatment period -- periods in
+        `treated.index` at or after this value are treated as post-treatment,
+        everything before as pre-treatment (used to fit the weights).
+
+    Returns:
+        dict: The fitted donor weights, the synthetic control and gap paths, the
+        average post-treatment effect, pre/post RMSPE and their ratio, and the
+        placebo-based p-value -- keys `weights`, `synthetic_control`, `gap`,
+        `average_treatment_effect`, `pre_treatment_rmspe`, `post_treatment_rmspe`,
+        `rmspe_ratio`, `p_value`, `placebo_ratios`, `treatment_period`, `n_donors`,
+        `n_pre_periods`, `n_post_periods`. Call `synthetic_control_summary` for a
+        headline results table.
+
+    Raises:
+        TypeError: If `treated` is not a `pd.Series` or `donors` is not a
+        `pd.DataFrame`.
+        ValueError: If `treated` and `donors` share no overlapping periods, there are
+        fewer than 2 donor units, or there are not enough pre-/post-treatment periods
+        (at least 2 pre-treatment, at least 1 post-treatment).
+
+    Notes:
+    - Matches ONLY on the pre-treatment outcome path itself, not on additional
+      predictor characteristics weighted by a separately-estimated importance matrix
+      `V` -- the fuller optimization in Abadie, Diamond & Hainmueller (2010) also
+      matches auxiliary predictors and their pre-treatment averages. Matching on the
+      full pre-treatment outcome path alone is a standard, widely used simplification
+      (see Doudchenko, N., & Imbens, G.W. (2016). "Balancing, Regression,
+      Difference-In-Differences and Synthetic Control Methods: A Comparison." NBER
+      Working Paper No. 22791) that requires no auxiliary predictor data and is
+      exactly identified by the outcome history alone.
+    - The placebo distribution here includes every donor unconditionally; Abadie et
+      al. (2010) also discuss discarding placebo runs with a very poor pre-treatment
+      fit (large `pre_treatment_rmspe` relative to the treated unit's), since those
+      inflate `rmspe_ratio` for reasons unrelated to any treatment effect. Not applied
+      here -- inspect `placebo_ratios` directly if a donor's own pre-treatment fit
+      looks poor.
+    - Verified by simulating a donor pool where one donor unit is (deliberately) an
+      almost-exact pre-treatment match for the treated unit, confirming the fitted
+      weights concentrate heavily on it, and by simulating a known, constant
+      post-treatment effect and confirming `average_treatment_effect` recovers it.
+
+    As an example:
+
+    ```python
+    import numpy as np
+    import pandas as pd
+    from financetoolkit.econometrics import causal_inference_model
+
+    rng = np.random.default_rng(1)
+    n_periods = 40
+    treatment_period = 30
+
+    common_trend = np.cumsum(rng.standard_normal(n_periods) * 0.5)
+    donors = pd.DataFrame(
+        {
+            f"Donor_{i}": common_trend + rng.standard_normal(n_periods) * 0.3
+            for i in range(5)
+        }
+    )
+
+    true_effect = 3.0
+    treated_values = common_trend + rng.standard_normal(n_periods) * 0.3
+    treated_values[treatment_period:] += true_effect
+    treated = pd.Series(treated_values, name="Treated")
+
+    result = causal_inference_model.get_synthetic_control(
+        treated, donors, treatment_period=treatment_period
+    )
+    print(causal_inference_model.synthetic_control_summary(result).round(4))
+    ```
+    """
+    if not isinstance(treated, pd.Series):
+        raise TypeError(
+            f"treated must be a pd.Series, received {type(treated).__name__}."
+        )
+    if not isinstance(donors, pd.DataFrame):
+        raise TypeError(
+            f"donors must be a pd.DataFrame, received {type(donors).__name__}."
+        )
+
+    donor_names = list(donors.columns)
+    if len(donor_names) < MINIMUM_DONORS:
+        raise ValueError(
+            f"Not enough donor units ({len(donor_names)}) -- need at least "
+            f"{MINIMUM_DONORS}."
+        )
+
+    aligned = pd.concat(
+        [treated.rename("__treated__"), donors], axis=1, join="inner"
+    ).dropna()
+    if aligned.empty:
+        raise ValueError("treated and donors share no overlapping periods.")
+
+    pre_mask = np.asarray(aligned.index < treatment_period)
+    post_mask = ~pre_mask
+
+    n_pre_periods = int(pre_mask.sum())
+    n_post_periods = int(post_mask.sum())
+    if n_pre_periods < MINIMUM_PRE_PERIODS:
+        raise ValueError(
+            f"Not enough pre-treatment periods ({n_pre_periods}) -- need at least "
+            f"{MINIMUM_PRE_PERIODS}."
+        )
+    if n_post_periods < MINIMUM_POST_PERIODS:
+        raise ValueError(
+            f"Not enough post-treatment periods ({n_post_periods}) -- need at least "
+            f"{MINIMUM_POST_PERIODS}."
+        )
+
+    treated_values = aligned["__treated__"].to_numpy()
+    donor_values = aligned[donor_names].to_numpy()
+
+    weights_array = _fit_synthetic_weights(
+        treated_values[pre_mask], donor_values[pre_mask]
+    )
+    weights = pd.Series(weights_array, index=donor_names)
+
+    synthetic_values = donor_values @ weights_array
+    gap_values = treated_values - synthetic_values
+
+    pre_treatment_rmspe = _root_mean_squared_prediction_error(gap_values[pre_mask])
+    post_treatment_rmspe = _root_mean_squared_prediction_error(gap_values[post_mask])
+    rmspe_ratio = post_treatment_rmspe / pre_treatment_rmspe
+
+    # Placebo/permutation inference: rerun the identical procedure with each donor as
+    # the "placebo treated" unit against the remaining donors, and rank the actual
+    # treated unit's ratio against this reference distribution.
+    placebo_ratios: dict[str, float] = {}
+    for placebo_donor in donor_names:
+        other_donors = [name for name in donor_names if name != placebo_donor]
+        placebo_target = aligned[placebo_donor].to_numpy()
+        placebo_donor_values = aligned[other_donors].to_numpy()
+
+        placebo_weights = _fit_synthetic_weights(
+            placebo_target[pre_mask], placebo_donor_values[pre_mask]
+        )
+        placebo_synthetic = placebo_donor_values @ placebo_weights
+        placebo_gap = placebo_target - placebo_synthetic
+
+        placebo_pre_rmspe = _root_mean_squared_prediction_error(placebo_gap[pre_mask])
+        placebo_post_rmspe = _root_mean_squared_prediction_error(placebo_gap[post_mask])
+        placebo_ratios[placebo_donor] = placebo_post_rmspe / placebo_pre_rmspe
+
+    all_ratios = np.array([rmspe_ratio, *placebo_ratios.values()])
+    p_value = float(np.mean(all_ratios >= rmspe_ratio))
+
+    return {
+        "weights": weights,
+        "synthetic_control": pd.Series(synthetic_values, index=aligned.index),
+        "gap": pd.Series(gap_values, index=aligned.index),
+        "average_treatment_effect": float(gap_values[post_mask].mean()),
+        "pre_treatment_rmspe": pre_treatment_rmspe,
+        "post_treatment_rmspe": post_treatment_rmspe,
+        "rmspe_ratio": float(rmspe_ratio),
+        "p_value": p_value,
+        "placebo_ratios": pd.Series(placebo_ratios),
+        "treatment_period": treatment_period,
+        "n_donors": len(donor_names),
+        "n_pre_periods": n_pre_periods,
+        "n_post_periods": n_post_periods,
+    }

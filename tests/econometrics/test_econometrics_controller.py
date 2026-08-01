@@ -169,6 +169,20 @@ def test_get_ols_explicit_dependent_ticker(recorder, econometrics_module):
     recorder.capture(override)
 
 
+def test_get_ols_hac(recorder, econometrics_module):
+    recorder.capture(
+        econometrics_module.get_ols(period="weekly", cov_type="HAC", maxlags=4)
+    )
+
+
+def test_get_wls_hac(recorder, econometrics_module):
+    returns = econometrics_module._get_price_column("weekly", "Return")
+    weights = pd.Series(1.0, index=returns.index)
+    recorder.capture(
+        econometrics_module.get_wls(weights, period="weekly", cov_type="HAC", maxlags=4)
+    )
+
+
 def test_get_wls(recorder, econometrics_module):
     returns = econometrics_module._get_price_column("weekly", "Return")
     weights = pd.Series(1.0, index=returns.index)
@@ -204,6 +218,32 @@ def test_get_quantile_regression(recorder, econometrics_module):
             independent_tickers=["MSFT", "Benchmark"], tau=0.5, period="weekly"
         )
     )
+
+
+def test_get_fama_macbeth_regression(recorder, econometrics_module):
+    recorder.capture(
+        econometrics_module.get_fama_macbeth_regression(
+            period="weekly", add_constant=False
+        )
+    )
+
+
+def test_get_fama_macbeth_regression_explicit_tickers(recorder, econometrics_module):
+    recorder.capture(
+        econometrics_module.get_fama_macbeth_regression(
+            factor_tickers="Benchmark",
+            asset_tickers=["AAPL", "MSFT"],
+            period="weekly",
+            add_constant=False,
+        )
+    )
+
+
+def test_get_fama_macbeth_regression_too_few_assets(econometrics_module):
+    # Default add_constant=True needs strictly more assets than factors + 1 -- only
+    # 2 non-benchmark tickers are in the fixture, so this is under-identified.
+    result = econometrics_module.get_fama_macbeth_regression(period="weekly")
+    assert result.empty
 
 
 def test_get_two_sample_t_test(recorder, econometrics_module):
@@ -482,6 +522,40 @@ def test_get_propensity_score_matching_custom_threshold(recorder, econometrics_m
     )
 
 
+def test_get_synthetic_control(recorder, econometrics_module):
+    recorder.capture(
+        econometrics_module.get_synthetic_control(
+            "AAPL",
+            treatment_period="2021-07-01",
+            donor_tickers=["MSFT", "Benchmark"],
+            period="weekly",
+        )
+    )
+
+
+def test_get_synthetic_control_default_donor_tickers(recorder, econometrics_module):
+    # Default donor pool with include_benchmark=True brings in both MSFT and
+    # Benchmark (2 donors) -- enough to satisfy the minimum donor requirement with
+    # this fixture's 2 real tickers.
+    recorder.capture(
+        econometrics_module.get_synthetic_control(
+            "AAPL",
+            treatment_period="2021-07-01",
+            period="weekly",
+            include_benchmark=True,
+        )
+    )
+
+
+def test_get_synthetic_control_too_few_donors(econometrics_module):
+    # Default donor pool with include_benchmark=False leaves only 1 non-benchmark
+    # ticker (MSFT) -- under the minimum of 2 donors.
+    result = econometrics_module.get_synthetic_control(
+        "AAPL", treatment_period="2021-07-01", period="weekly"
+    )
+    assert result.empty
+
+
 def test_get_arima_forecast(recorder, econometrics_module):
     recorder.capture(econometrics_module.get_arima_forecast(period="quarterly"))
 
@@ -513,6 +587,38 @@ def test_get_var_forecast_multiple_lags(recorder, econometrics_module):
 
 def test_get_var_forecast_invalid_lags(econometrics_module):
     result = econometrics_module.get_var_forecast(period="quarterly", lags=0)
+    assert result.empty
+
+
+def test_get_impulse_response_function(recorder, econometrics_module):
+    recorder.capture(
+        econometrics_module.get_impulse_response_function(period="weekly", periods=5)
+    )
+
+
+def test_get_impulse_response_function_reduced_form(recorder, econometrics_module):
+    recorder.capture(
+        econometrics_module.get_impulse_response_function(
+            period="weekly", periods=5, orthogonalized=False
+        )
+    )
+
+
+def test_get_impulse_response_function_invalid_periods(econometrics_module):
+    result = econometrics_module.get_impulse_response_function(
+        period="weekly", periods=0
+    )
+    assert result.empty
+
+
+def test_get_variance_decomposition(recorder, econometrics_module):
+    recorder.capture(
+        econometrics_module.get_variance_decomposition(period="weekly", periods=5)
+    )
+
+
+def test_get_variance_decomposition_invalid_periods(econometrics_module):
+    result = econometrics_module.get_variance_decomposition(period="weekly", periods=0)
     assert result.empty
 
 
@@ -650,3 +756,15 @@ def test_get_hausman_test_not_enough_entities(econometrics_module):
         period="weekly",
     )
     assert result.empty
+
+
+def test_get_event_study(recorder, econometrics_module):
+    recorder.capture(econometrics_module.get_event_study(event_date="2021-03-11"))
+
+
+def test_get_event_study_default_ticker(recorder, econometrics_module):
+    recorder.capture(
+        econometrics_module.get_event_study(
+            event_date="2021-03-11", dependent_ticker="MSFT"
+        )
+    )

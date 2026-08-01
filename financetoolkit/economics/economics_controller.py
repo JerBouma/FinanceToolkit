@@ -3,17 +3,20 @@
 __docformat__ = "google"
 
 
+import os
 import re
 from datetime import datetime, timedelta
 
 import pandas as pd
 
-from financetoolkit.economics import gmdb_model, oecd_model
+from financetoolkit.economics import fred_model, gmdb_model, oecd_model
 from financetoolkit.utilities.error_model import handle_errors
 from financetoolkit.utilities.logger_model import get_logger
 from financetoolkit.utilities.statistics_model import finalize_dataset
 
 logger = get_logger()
+
+FRED_API_KEY: str = os.environ.get("FRED_API_KEY", "")
 
 # pylint: disable=too-many-instance-attributes,too-few-public-methods,too-many-lines,
 # pylint: disable=too-many-locals,line-too-long,too-many-public-methods
@@ -34,6 +37,7 @@ class Economics:
         gmdb_source: bool = True,
         quarterly: bool | None = None,
         rounding: int | None = 4,
+        fred_api_key: str = FRED_API_KEY,
     ):
         """
         Initializes the Economics Controller Class.
@@ -45,6 +49,11 @@ class Economics:
             quarterly (bool | None, optional): If True, returns quarterly data; otherwise, returns yearly data.
                 Defaults to None. This only works for data retrieved from the OECD source.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            fred_api_key (str, optional): A FRED API key used to retrieve US-specific labor market and
+                real-activity indicators (e.g. Nonfarm Payrolls, Initial Jobless Claims, Retail Sales).
+                Obtain a free key at https://fred.stlouisfed.org/docs/api/api_key.html. Can also be set
+                via the FRED_API_KEY environment variable. Defaults to the value of FRED_API_KEY if set,
+                otherwise an empty string.
 
         As an example:
 
@@ -107,6 +116,23 @@ class Economics:
         )
         self._quarterly: bool | None = quarterly
         self._rounding: int | None = rounding
+        self._fred_api_key: str = fred_api_key
+
+    def _require_fred_api_key(self) -> None:
+        if not self._fred_api_key:
+            logger.warning(
+                "No FRED API key found. This indicator is sourced from FRED (Federal "
+                "Reserve Economic Data) and requires a key to access — registration is "
+                "entirely free and takes about a minute at "
+                "https://fred.stlouisfed.org/docs/api/api_key.html. Once you have one, "
+                "pass it via the fred_api_key argument or set the FRED_API_KEY "
+                "environment variable."
+            )
+            raise ValueError(
+                "A FRED API key is required to retrieve this indicator. Obtain a free key at "
+                "https://fred.stlouisfed.org/docs/api/api_key.html and pass it via the "
+                "fred_api_key argument or set the FRED_API_KEY environment variable."
+            )
 
     @handle_errors
     def get_gross_domestic_product(
@@ -201,7 +227,9 @@ class Economics:
                     gmd_dataset=self._gmbd_dataset
                 )
         else:
-            gross_domestic_product = oecd_model.get_annual_gross_domestic_product()
+            gross_domestic_product = oecd_model.get_annual_gross_domestic_product(
+                start_date=self._start_date, end_date=self._end_date
+            )
 
         return finalize_dataset(
             dataset=gross_domestic_product,
@@ -533,7 +561,9 @@ class Economics:
         | 2021 |         -0.7285  |  -0.0537  | -1.3727  |
         | 2022 |         -0.6584  |   1.076   | -0.4859  |
         """
-        output_gap = oecd_model.get_output_gap()
+        output_gap = oecd_model.get_output_gap(
+            start_date=self._start_date, end_date=self._end_date
+        )
 
         return finalize_dataset(
             dataset=output_gap,
@@ -2602,7 +2632,9 @@ class Economics:
         | 2022 |          0.3654 |   0.3086 |  0.3798 |
         | 2023 |          0.3654 |   0.3217 |  0.3798 |
         """
-        trust_in_government = oecd_model.get_trust_in_goverment()
+        trust_in_government = oecd_model.get_trust_in_goverment(
+            start_date=self._start_date, end_date=self._end_date
+        )
 
         return finalize_dataset(
             dataset=trust_in_government,
@@ -2625,6 +2657,8 @@ class Economics:
     def get_consumer_price_index(
         self,
         countries: list[str] | str | None = None,
+        period: str | None = None,
+        oecd_source: bool = False,
         rolling: int | None = None,
         trailing: int | None = None,
         growth: bool = False,
@@ -2635,7 +2669,11 @@ class Economics:
         """
         Consumer Price Index (CPI) is a measure that examines the average change in prices
         paid by consumers for goods and services over time. It is a measure of inflation.
-        The base year (2010) is the year against which the index is set to 100.
+
+        By default, data comes from the Global Macro Database (GMDB), which is annual-only
+        (base year 2010). Set `oecd_source=True` to instead retrieve monthly or quarterly
+        data from the OECD (base year varies per country), useful for tracking inflation
+        more closely in real time.
 
         Data comes from the Global Macro Database (GMDB), further information about the
         variable can be found within https://www.globalmacrodata.com/documentation.html
@@ -2644,6 +2682,10 @@ class Economics:
 
         Args:
             countries (list[str] | str | None, optional): The countries to include in the data. Defaults to None.
+            period (str | None, optional): Whether to return the monthly, quarterly or the annual data.
+                Only used when `oecd_source=True`; the GMDB source is always annual. Defaults to None.
+            oecd_source (bool, optional): Whether to get the data from the OECD instead of the
+                Global Macro Database (GMDB). Defaults to False.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data.
@@ -2684,12 +2726,22 @@ class Economics:
         | 2019 |  113.815  | 111.591  |    111.243 |
         | 2020 |  114.239  | 112.18   |    111.108 |
         """
-        if self._gmbd_dataset.empty:
-            self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
+        if oecd_source:
+            period = (
+                period
+                if period is not None
+                else "quarterly" if self._quarterly else "yearly"
+            )
+            consumer_price_index = oecd_model.get_consumer_price_index(
+                period=period, start_date=self._start_date, end_date=self._end_date
+            )
+        else:
+            if self._gmbd_dataset.empty:
+                self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
 
-        consumer_price_index = gmdb_model.get_consumer_price_index(
-            gmd_dataset=self._gmbd_dataset
-        )
+            consumer_price_index = gmdb_model.get_consumer_price_index(
+                gmd_dataset=self._gmbd_dataset
+            )
 
         return finalize_dataset(
             dataset=consumer_price_index,
@@ -2855,7 +2907,9 @@ class Economics:
             else "quarterly" if self._quarterly else "yearly"
         )
 
-        producer_price_index = oecd_model.get_producer_price_index(period=period)
+        producer_price_index = oecd_model.get_producer_price_index(
+            period=period, start_date=self._start_date, end_date=self._end_date
+        )
 
         return finalize_dataset(
             dataset=producer_price_index,
@@ -2938,7 +2992,9 @@ class Economics:
         | 2009-02 |   97.4573 |  97.3785 |    96.658  |
         | 2009-03 |   97.4165 |  97.4899 |    96.9339 |
         """
-        consumer_confidence_index = oecd_model.get_consumer_confidence_index()
+        consumer_confidence_index = oecd_model.get_consumer_confidence_index(
+            start_date=self._start_date, end_date=self._end_date
+        )
 
         return finalize_dataset(
             dataset=consumer_confidence_index,
@@ -3017,7 +3073,9 @@ class Economics:
         | 2023-02 |  99.2644 |  98.6224 |      101.35  |
         | 2023-03 |  99.3837 |  98.2617 |      101.553 |
         """
-        business_confidence_index = oecd_model.get_business_confidence_index()
+        business_confidence_index = oecd_model.get_business_confidence_index(
+            start_date=self._start_date, end_date=self._end_date
+        )
 
         return finalize_dataset(
             dataset=business_confidence_index,
@@ -3091,7 +3149,9 @@ class Economics:
         | 2023-10 |         99.4863 |         100.806  | 100.075 |
         | 2023-11 |         99.5104 |         100.998  | 100.085 |
         """
-        composite_leading_indicator = oecd_model.get_composite_leading_indicator()
+        composite_leading_indicator = oecd_model.get_composite_leading_indicator(
+            start_date=self._start_date, end_date=self._end_date
+        )
 
         return finalize_dataset(
             dataset=composite_leading_indicator,
@@ -3199,7 +3259,10 @@ class Economics:
             )
         else:
             house_prices = oecd_model.get_house_prices(
-                quarterly=quarterly, inflation_adjusted=inflation_adjusted
+                quarterly=quarterly,
+                inflation_adjusted=inflation_adjusted,
+                start_date=self._start_date,
+                end_date=self._end_date,
             )
 
         return finalize_dataset(
@@ -3285,7 +3348,9 @@ class Economics:
         """
         quarterly = quarterly if quarterly is not None else self._quarterly
 
-        rent_prices = oecd_model.get_rent_prices(quarterly=quarterly)
+        rent_prices = oecd_model.get_rent_prices(
+            quarterly=quarterly, start_date=self._start_date, end_date=self._end_date
+        )
 
         return finalize_dataset(
             dataset=rent_prices,
@@ -3293,6 +3358,169 @@ class Economics:
             end_date=self._end_date,
             default_rounding=self._rounding,
             indicator_name="Rent Prices",
+            countries=countries,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+        )
+
+    @handle_errors
+    def get_household_savings_rate(
+        self,
+        countries: list[str] | str | None = None,
+        quarterly: bool | None = None,
+        rolling: int | None = None,
+        trailing: int | None = None,
+        growth: bool = False,
+        lag: int = 1,
+        standardize: bool = False,
+        rounding: int | None = None,
+    ):
+        """
+        Get the Gross Household Savings Rate for a variety of countries over time from the
+        OECD's Household Dashboard. The household savings rate is the share of household
+        gross disposable income (adjusted for the net change in pension entitlements) that
+        is saved rather than spent on final consumption.
+
+        It is a key input to consumption-smoothing and life-cycle/permanent-income theories
+        of household behaviour, and a closely watched signal of both near-term consumption
+        momentum (a falling savings rate can temporarily prop up spending even as income
+        growth slows) and a household sector's buffer against future income shocks. It
+        complements Total Consumption (see `get_total_consumption`) — the two together
+        show how much of household income is spent versus set aside.
+
+        See definition: https://data-explorer.oecd.org/vis?df[ds]=dsDisseminateFinalDMZ&df[id]=DSD_HHDASH%40DF_HHDASH_INDIC
+
+        Also known as: household savings ratio, personal savings rate.
+
+        Args:
+            countries (list[str] | str | None, optional): The countries to include in the data. Defaults to None.
+            quarterly (bool | None, optional): Whether to return the quarterly data or the annual data.
+            rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
+            trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
+            growth (bool, optional): Whether to return the growth data or the actual data.
+            lag (int, optional): The number of periods to lag the data by.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+
+        Returns:
+            pd.DataFrame: A DataFrame containing the Household Savings Rate.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Economics
+
+        economics = Economics(start_date='2015-01-01', end_date='2022-12-31')
+
+        economics.get_household_savings_rate(
+            countries=['United States', 'Germany'],
+            quarterly=False)
+        ```
+        """
+        quarterly = quarterly if quarterly is not None else self._quarterly
+
+        household_savings_rate = oecd_model.get_household_savings_rate(
+            quarterly=quarterly,
+            start_date=self._start_date,
+            end_date=self._end_date,
+        )
+
+        return finalize_dataset(
+            dataset=household_savings_rate,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="Household Savings Rate",
+            countries=countries,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+        )
+
+    @handle_errors
+    def get_household_debt_to_income_ratio(
+        self,
+        countries: list[str] | str | None = None,
+        quarterly: bool | None = None,
+        rolling: int | None = None,
+        trailing: int | None = None,
+        growth: bool = False,
+        lag: int = 1,
+        standardize: bool = False,
+        rounding: int | None = None,
+    ):
+        """
+        Get the Household Debt to Disposable Income Ratio for a variety of countries over
+        time from the OECD's Household Dashboard. This expresses total household gross
+        debt (loans and debt securities) as a percentage of household gross disposable
+        income.
+
+        It is a standard household-leverage indicator used in financial-stability analysis:
+        a high or rapidly rising ratio signals households are more exposed to income shocks
+        or interest rate increases (debt-servicing costs rise directly with rates on
+        variable-rate or refinanced debt), and has historically preceded credit-cycle
+        downturns (e.g. in the lead-up to the 2008 financial crisis). It is the household-
+        sector analogue to government debt (see `get_government_debt_to_gdp_ratio`) — the
+        two together give a fuller picture of an economy's overall leverage.
+
+        See definition: https://data-explorer.oecd.org/vis?df[ds]=dsDisseminateFinalDMZ&df[id]=DSD_HHDASH%40DF_HHDASH_INDIC
+
+        Also known as: household leverage ratio, debt-to-income ratio.
+
+        Args:
+            countries (list[str] | str | None, optional): The countries to include in the data. Defaults to None.
+            quarterly (bool | None, optional): Whether to return the quarterly data or the annual data.
+            rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
+            trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
+            growth (bool, optional): Whether to return the growth data or the actual data.
+            lag (int, optional): The number of periods to lag the data by.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+
+        Returns:
+            pd.DataFrame: A DataFrame containing the Household Debt to Income Ratio.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Economics
+
+        economics = Economics(start_date='2015-01-01', end_date='2022-12-31')
+
+        economics.get_household_debt_to_income_ratio(
+            countries=['United States', 'Australia'],
+            quarterly=False)
+        ```
+        """
+        quarterly = quarterly if quarterly is not None else self._quarterly
+
+        household_debt_to_income_ratio = oecd_model.get_household_debt_to_income_ratio(
+            quarterly=quarterly,
+            start_date=self._start_date,
+            end_date=self._end_date,
+        )
+
+        return finalize_dataset(
+            dataset=household_debt_to_income_ratio,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="Household Debt to Income Ratio",
             countries=countries,
             rolling=rolling,
             trailing=trailing,
@@ -3385,7 +3613,9 @@ class Economics:
             else "quarterly" if self._quarterly else "yearly"
         )
 
-        share_prices = oecd_model.get_share_prices(period=period)
+        share_prices = oecd_model.get_share_prices(
+            period=period, start_date=self._start_date, end_date=self._end_date
+        )
 
         return finalize_dataset(
             dataset=share_prices,
@@ -3486,7 +3716,9 @@ class Economics:
                 gmd_dataset=self._gmbd_dataset
             )
         else:
-            exchange_rates = oecd_model.get_exchange_rates(period=period)
+            exchange_rates = oecd_model.get_exchange_rates(
+                period=period, start_date=self._start_date, end_date=self._end_date
+            )
 
         return finalize_dataset(
             dataset=exchange_rates,
@@ -3879,6 +4111,8 @@ class Economics:
         else:
             short_term_interest_rate = oecd_model.get_short_term_interest_rate(
                 period=period,
+                start_date=self._start_date,
+                end_date=self._end_date,
             )
 
         return finalize_dataset(
@@ -3989,6 +4223,8 @@ class Economics:
         else:
             long_term_interest_rate = oecd_model.get_long_term_interest_rate(
                 period=period,
+                start_date=self._start_date,
+                end_date=self._end_date,
             )
 
         return finalize_dataset(
@@ -4110,9 +4346,17 @@ class Economics:
             )
         else:
             nominal_interest_rate = (
-                oecd_model.get_long_term_interest_rate(period="yearly")
+                oecd_model.get_long_term_interest_rate(
+                    period="yearly",
+                    start_date=self._start_date,
+                    end_date=self._end_date,
+                )
                 if rate_type == "long_term"
-                else oecd_model.get_short_term_interest_rate(period="yearly")
+                else oecd_model.get_short_term_interest_rate(
+                    period="yearly",
+                    start_date=self._start_date,
+                    end_date=self._end_date,
+                )
             )
 
             # OECD interest rates are expressed as a fraction (e.g. 0.05 for 5%), rescale to a
@@ -4227,10 +4471,14 @@ class Economics:
             )
         else:
             long_term_interest_rate = oecd_model.get_long_term_interest_rate(
-                period=period
+                period=period,
+                start_date=self._start_date,
+                end_date=self._end_date,
             )
             short_term_interest_rate = oecd_model.get_short_term_interest_rate(
-                period=period
+                period=period,
+                start_date=self._start_date,
+                end_date=self._end_date,
             )
 
         yield_curve_slope = long_term_interest_rate - short_term_interest_rate
@@ -4323,7 +4571,9 @@ class Economics:
         | 2019 |    0.3006 |    0.1485 |          0.0776 |
         | 2020 |    0.3191 |    0.1637 |          0.083  |
         """
-        renewable_energy = oecd_model.get_renewable_energy()
+        renewable_energy = oecd_model.get_renewable_energy(
+            start_date=self._start_date, end_date=self._end_date
+        )
 
         return finalize_dataset(
             dataset=renewable_energy,
@@ -4405,7 +4655,9 @@ class Economics:
         | 2017 |    10.661 |          17.211 |    7.497 |
         | 2018 |    10.437 |          17.551 |    7.539 |
         """
-        carbon_footprint_df = oecd_model.get_carbon_footprint()
+        carbon_footprint_df = oecd_model.get_carbon_footprint(
+            start_date=self._start_date, end_date=self._end_date
+        )
 
         return finalize_dataset(
             dataset=carbon_footprint_df,
@@ -4517,7 +4769,9 @@ class Economics:
                 gmd_dataset=self._gmbd_dataset
             )
         else:
-            unemployment_rate = oecd_model.get_unemployment_rate(period=period)
+            unemployment_rate = oecd_model.get_unemployment_rate(
+                period=period, start_date=self._start_date, end_date=self._end_date
+            )
 
         return finalize_dataset(
             dataset=unemployment_rate,
@@ -4618,7 +4872,9 @@ class Economics:
                 gmd_dataset=self._gmbd_dataset
             )
         else:
-            unemployment_rate = oecd_model.get_unemployment_rate(period="yearly")
+            unemployment_rate = oecd_model.get_unemployment_rate(
+                period="yearly", start_date=self._start_date, end_date=self._end_date
+            )
 
             # OECD unemployment rate is expressed as a fraction (e.g. 0.05 for 5%), rescale to
             # a percentage so that it is on the same scale as the GMDB inflation rate below.
@@ -4713,7 +4969,9 @@ class Economics:
         | 2021 |     1.6538 |    0.8441 |  0.8455 |
         | 2022 |     1.8601 |    0.9503 |  0.9496 |
         """
-        labour_productivity = oecd_model.get_labour_productivity()
+        labour_productivity = oecd_model.get_labour_productivity(
+            start_date=self._start_date, end_date=self._end_date
+        )
 
         return finalize_dataset(
             dataset=labour_productivity,
@@ -4796,7 +5054,9 @@ class Economics:
         | 2020 |              0.377 |       5.8 |       2.2 |       2.6 |          1.64 |       7.5 |
         | 2021 |              0.375 |       5.4 |       2.2 |       2.4 |          1.63 |       7.1 |
         """
-        income_inequality = oecd_model.get_income_inequality()
+        income_inequality = oecd_model.get_income_inequality(
+            start_date=self._start_date, end_date=self._end_date
+        )
 
         return finalize_dataset(
             dataset=income_inequality,
@@ -4918,9 +5178,15 @@ class Economics:
         else:
             population_statistics = {}
 
-            population_statistics["Population"] = oecd_model.get_population()
-            population_statistics["Men"] = oecd_model.get_population(gender="men")
-            population_statistics["Women"] = oecd_model.get_population(gender="women")
+            population_statistics["Population"] = oecd_model.get_population(
+                start_date=self._start_date, end_date=self._end_date
+            )
+            population_statistics["Men"] = oecd_model.get_population(
+                gender="men", start_date=self._start_date, end_date=self._end_date
+            )
+            population_statistics["Women"] = oecd_model.get_population(
+                gender="women", start_date=self._start_date, end_date=self._end_date
+            )
 
             population_statistics_df = pd.concat(population_statistics, axis=0).unstack(
                 level=0
@@ -5002,7 +5268,9 @@ class Economics:
         | 2019 |   0.106 |       0.131 |        0.098 |        0.107 |
         | 2020 |   0.128 |       0.152 |        0.118 |        0.138 |
         """
-        poverty_rate = oecd_model.get_poverty_rate()
+        poverty_rate = oecd_model.get_poverty_rate(
+            start_date=self._start_date, end_date=self._end_date
+        )
 
         return finalize_dataset(
             dataset=poverty_rate,
@@ -5196,6 +5464,620 @@ class Economics:
             rolling=rolling,
             trailing=trailing,
             rounding=rounding,
+            axis="rows",
+            row_slice=True,
+        )
+
+    @handle_errors
+    def get_nonfarm_payrolls(
+        self,
+        rolling: int | None = None,
+        trailing: int | None = None,
+        growth: bool = False,
+        lag: int = 1,
+        standardize: bool = False,
+        rounding: int | None = None,
+    ) -> pd.DataFrame:
+        """
+        Get Total Nonfarm Payroll Employment for the United States from the Bureau of
+        Labor Statistics (via FRED).
+
+        Nonfarm Payrolls is the headline monthly employment report and one of the most
+        closely watched real-activity indicators in macroeconomics: it counts the
+        number of paid US workers excluding farm employees, general government
+        employees, private household employees and nonprofit organization employees.
+        Sharp month-over-month changes are a core input to business-cycle dating (used
+        directly by the NBER's Business Cycle Dating Committee) and, through Okun's
+        Law, are closely tied to changes in the Unemployment Rate (see
+        `get_unemployment_rate`).
+
+        Requires a free FRED API key, see the `fred_api_key` parameter of the
+        `Economics` class.
+
+        See definition: https://fred.stlouisfed.org/series/PAYEMS
+
+        Also known as: NFP, nonfarm employment, the "jobs report".
+
+        Args:
+            rolling (int, optional): The rolling window size to use for smoothing the data (simple
+            moving average). Defaults to None.
+            trailing (int, optional): The trailing window size to use for summing the data over
+            trailing periods. Defaults to None.
+            growth (bool, optional): Whether to return the growth data or the actual data.
+            lag (int, optional): The number of periods to lag the data by.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+
+        Returns:
+            pd.DataFrame: A single-column ("United States") DataFrame of nonfarm payroll
+            employment, in thousands of persons.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Economics
+
+        economics = Economics(start_date='2020-01-01', fred_api_key='FRED_API_KEY')
+
+        economics.get_nonfarm_payrolls()
+        ```
+        """
+        self._require_fred_api_key()
+
+        nonfarm_payrolls = fred_model.get_nonfarm_payrolls(
+            self._start_date, self._end_date, self._fred_api_key
+        )
+
+        return finalize_dataset(
+            dataset=nonfarm_payrolls,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+        )
+
+    @handle_errors
+    def get_initial_jobless_claims(
+        self,
+        rolling: int | None = None,
+        trailing: int | None = None,
+        growth: bool = False,
+        lag: int = 1,
+        standardize: bool = False,
+        rounding: int | None = None,
+    ) -> pd.DataFrame:
+        """
+        Get weekly Initial Claims for Unemployment Insurance for the United States
+        from the Department of Labor (via FRED).
+
+        Initial Jobless Claims counts the number of individuals filing for
+        unemployment insurance for the first time in a given week. Because it is
+        reported weekly (versus Nonfarm Payrolls' monthly cadence, see
+        `get_nonfarm_payrolls`) and captures layoffs essentially in real time, it is
+        one of the most timely leading indicators of labor-market deterioration and a
+        core component of the Conference Board's Leading Economic Index.
+
+        Requires a free FRED API key, see the `fred_api_key` parameter of the
+        `Economics` class.
+
+        See definition: https://fred.stlouisfed.org/series/ICSA
+
+        Also known as: initial claims, new unemployment claims.
+
+        Args:
+            rolling (int, optional): The rolling window size to use for smoothing the data (simple
+            moving average). Defaults to None.
+            trailing (int, optional): The trailing window size to use for summing the data over
+            trailing periods. Defaults to None.
+            growth (bool, optional): Whether to return the growth data or the actual data.
+            lag (int, optional): The number of periods to lag the data by.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+
+        Returns:
+            pd.DataFrame: A single-column ("United States") DataFrame of weekly initial
+            jobless claims, seasonally adjusted.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Economics
+
+        economics = Economics(start_date='2020-01-01', fred_api_key='FRED_API_KEY')
+
+        economics.get_initial_jobless_claims()
+        ```
+        """
+        self._require_fred_api_key()
+
+        initial_jobless_claims = fred_model.get_initial_jobless_claims(
+            self._start_date, self._end_date, self._fred_api_key
+        )
+
+        return finalize_dataset(
+            dataset=initial_jobless_claims,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+        )
+
+    @handle_errors
+    def get_retail_sales(
+        self,
+        rolling: int | None = None,
+        trailing: int | None = None,
+        growth: bool = False,
+        lag: int = 1,
+        standardize: bool = False,
+        rounding: int | None = None,
+    ) -> pd.DataFrame:
+        """
+        Get Advance Retail Sales (Retail and Food Services) for the United States from
+        the Census Bureau (via FRED).
+
+        Retail Sales measures nominal spending at retail and food-service
+        establishments. Since Personal Consumption Expenditures make up roughly
+        two-thirds to three-quarters of US GDP, this monthly, high-frequency series is
+        a core input to real-time (nowcast) GDP estimates such as the Federal Reserve
+        Bank of Atlanta's GDPNow.
+
+        Requires a free FRED API key, see the `fred_api_key` parameter of the
+        `Economics` class.
+
+        See definition: https://fred.stlouisfed.org/series/RSAFS
+
+        Also known as: retail trade, consumer spending (proxy).
+
+        Args:
+            rolling (int, optional): The rolling window size to use for smoothing the data (simple
+            moving average). Defaults to None.
+            trailing (int, optional): The trailing window size to use for summing the data over
+            trailing periods. Defaults to None.
+            growth (bool, optional): Whether to return the growth data or the actual data.
+            lag (int, optional): The number of periods to lag the data by.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+
+        Returns:
+            pd.DataFrame: A single-column ("United States") DataFrame of total retail
+            and food services sales, in millions of dollars.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Economics
+
+        economics = Economics(start_date='2020-01-01', fred_api_key='FRED_API_KEY')
+
+        economics.get_retail_sales()
+        ```
+        """
+        self._require_fred_api_key()
+
+        retail_sales = fred_model.get_retail_sales(
+            self._start_date, self._end_date, self._fred_api_key
+        )
+
+        return finalize_dataset(
+            dataset=retail_sales,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+        )
+
+    @handle_errors
+    def get_industrial_production_index(
+        self,
+        rolling: int | None = None,
+        trailing: int | None = None,
+        growth: bool = False,
+        lag: int = 1,
+        standardize: bool = False,
+        rounding: int | None = None,
+    ) -> pd.DataFrame:
+        """
+        Get the Industrial Production Index for the United States from the Federal
+        Reserve's G.17 statistical release (via FRED).
+
+        The Industrial Production Index measures real output in manufacturing,
+        mining, and electric and gas utilities. Unlike survey-based sentiment
+        indices, it is a hard, quantity-based measure of physical production and is
+        one of the four coincident indicators the NBER's Business Cycle Dating
+        Committee uses to date US recessions (alongside real personal income, real
+        manufacturing/trade sales and, see `get_nonfarm_payrolls`, nonfarm payroll
+        employment).
+
+        Requires a free FRED API key, see the `fred_api_key` parameter of the
+        `Economics` class.
+
+        See definition: https://fred.stlouisfed.org/series/INDPRO
+
+        Also known as: IP index, industrial output.
+
+        Args:
+            rolling (int, optional): The rolling window size to use for smoothing the data (simple
+            moving average). Defaults to None.
+            trailing (int, optional): The trailing window size to use for summing the data over
+            trailing periods. Defaults to None.
+            growth (bool, optional): Whether to return the growth data or the actual data.
+            lag (int, optional): The number of periods to lag the data by.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+
+        Returns:
+            pd.DataFrame: A single-column ("United States") DataFrame of the
+            Industrial Production Index (2017 = 100).
+
+        As an example:
+
+        ```python
+        from financetoolkit import Economics
+
+        economics = Economics(start_date='2020-01-01', fred_api_key='FRED_API_KEY')
+
+        economics.get_industrial_production_index()
+        ```
+        """
+        self._require_fred_api_key()
+
+        industrial_production_index = fred_model.get_industrial_production_index(
+            self._start_date, self._end_date, self._fred_api_key
+        )
+
+        return finalize_dataset(
+            dataset=industrial_production_index,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+        )
+
+    @handle_errors
+    def get_housing_starts(
+        self,
+        rolling: int | None = None,
+        trailing: int | None = None,
+        growth: bool = False,
+        lag: int = 1,
+        standardize: bool = False,
+        rounding: int | None = None,
+    ) -> pd.DataFrame:
+        """
+        Get Housing Starts (Total New Privately-Owned Housing Units Started) for the
+        United States from the Census Bureau (via FRED).
+
+        Housing Starts counts the number of new residential construction projects
+        that have begun in a given month. Residential investment is one of the most
+        interest-rate-sensitive components of GDP, and construction activity leads
+        the broader business cycle (it typically turns down before a recession and
+        turns up before a recovery), making Housing Starts one of the ten components
+        of the Conference Board's Leading Economic Index.
+
+        Requires a free FRED API key, see the `fred_api_key` parameter of the
+        `Economics` class.
+
+        See definition: https://fred.stlouisfed.org/series/HOUST
+
+        Also known as: new residential construction.
+
+        Args:
+            rolling (int, optional): The rolling window size to use for smoothing the data (simple
+            moving average). Defaults to None.
+            trailing (int, optional): The trailing window size to use for summing the data over
+            trailing periods. Defaults to None.
+            growth (bool, optional): Whether to return the growth data or the actual data.
+            lag (int, optional): The number of periods to lag the data by.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+
+        Returns:
+            pd.DataFrame: A single-column ("United States") DataFrame of new housing
+            starts, in thousands of units, seasonally adjusted annual rate.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Economics
+
+        economics = Economics(start_date='2020-01-01', fred_api_key='FRED_API_KEY')
+
+        economics.get_housing_starts()
+        ```
+        """
+        self._require_fred_api_key()
+
+        housing_starts = fred_model.get_housing_starts(
+            self._start_date, self._end_date, self._fred_api_key
+        )
+
+        return finalize_dataset(
+            dataset=housing_starts,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+        )
+
+    @handle_errors
+    def get_real_personal_income(
+        self,
+        rolling: int | None = None,
+        trailing: int | None = None,
+        growth: bool = False,
+        lag: int = 1,
+        standardize: bool = False,
+        rounding: int | None = None,
+    ) -> pd.DataFrame:
+        """
+        Get Real Personal Income Excluding Current Transfer Receipts for the United
+        States from the Bureau of Economic Analysis (via FRED).
+
+        This is the exact series (not a proxy) the NBER's Business Cycle Dating
+        Committee uses as one of its four primary coincident indicators for dating
+        US recessions — alongside Nonfarm Payrolls (see `get_nonfarm_payrolls`),
+        the Industrial Production Index (see `get_industrial_production_index`) and
+        Real Personal Consumption Expenditures. It measures aggregate household
+        income from wages, investments and proprietors' income, deliberately
+        excluding government transfer payments (e.g. unemployment insurance, Social
+        Security) so that the series reflects income generated by ongoing economic
+        activity rather than the fiscal cushioning that automatically increases
+        during a downturn.
+
+        Requires a free FRED API key, see the `fred_api_key` parameter of the
+        `Economics` class.
+
+        See definition: https://fred.stlouisfed.org/series/W875RX1
+
+        Also known as: RPI less transfers, NBER real income indicator.
+
+        Args:
+            rolling (int, optional): The rolling window size to use for smoothing the data (simple
+            moving average). Defaults to None.
+            trailing (int, optional): The trailing window size to use for summing the data over
+            trailing periods. Defaults to None.
+            growth (bool, optional): Whether to return the growth data or the actual data.
+            lag (int, optional): The number of periods to lag the data by.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+
+        Returns:
+            pd.DataFrame: A single-column ("United States") DataFrame of real personal
+            income excluding current transfer receipts, in billions of chained 2017
+            dollars.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Economics
+
+        economics = Economics(start_date='2020-01-01', fred_api_key='FRED_API_KEY')
+
+        economics.get_real_personal_income()
+        ```
+        """
+        self._require_fred_api_key()
+
+        real_personal_income = fred_model.get_real_personal_income(
+            self._start_date, self._end_date, self._fred_api_key
+        )
+
+        return finalize_dataset(
+            dataset=real_personal_income,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+        )
+
+    @handle_errors
+    def get_mortgage_rate_30_year(
+        self,
+        rolling: int | None = None,
+        trailing: int | None = None,
+        growth: bool = False,
+        lag: int = 1,
+        standardize: bool = False,
+        rounding: int | None = None,
+    ) -> pd.DataFrame:
+        """
+        Get the weekly average 30-Year Fixed Rate Mortgage from FRED (Freddie
+        Mac's Primary Mortgage Market Survey).
+
+        The 30-year fixed mortgage rate is the primary interest rate US households
+        actually borrow at for home purchases, and is one of the clearest single
+        transmission points from Federal Reserve policy to the real economy: it
+        moves with (but is not identical to) the 10-year Treasury yield plus a
+        credit/prepayment spread, and directly drives housing affordability and
+        demand. It is the natural interest-rate complement to Housing Starts (see
+        `get_housing_starts`) — rate moves here lead construction activity, since
+        higher borrowing costs price marginal buyers out of the market before
+        builders scale back new projects.
+
+        Requires a free FRED API key, see the `fred_api_key` parameter of the
+        `Economics` class.
+
+        See definition: https://fred.stlouisfed.org/series/MORTGAGE30US
+
+        Also known as: 30-year mortgage rate, Freddie Mac PMMS rate.
+
+        Args:
+            rolling (int, optional): The rolling window size to use for smoothing the data (simple
+            moving average). Defaults to None.
+            trailing (int, optional): The trailing window size to use for summing the data over
+            trailing periods. Defaults to None.
+            growth (bool, optional): Whether to return the growth data or the actual data.
+            lag (int, optional): The number of periods to lag the data by.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+
+        Returns:
+            pd.DataFrame: A single-column ("United States") DataFrame of the weekly
+            average 30-year fixed mortgage rate, in percent.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Economics
+
+        economics = Economics(start_date='2020-01-01', fred_api_key='FRED_API_KEY')
+
+        economics.get_mortgage_rate_30_year()
+        ```
+        """
+        self._require_fred_api_key()
+
+        mortgage_rate_30_year = fred_model.get_mortgage_rate_30_year(
+            self._start_date, self._end_date, self._fred_api_key
+        )
+
+        return finalize_dataset(
+            dataset=mortgage_rate_30_year,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+        )
+
+    @handle_errors
+    def get_recession_indicator(
+        self,
+        rolling: int | None = None,
+        trailing: int | None = None,
+        growth: bool = False,
+        lag: int = 1,
+        standardize: bool = False,
+        rounding: int | None = None,
+    ) -> pd.DataFrame:
+        """
+        Get the NBER-based US Recession Indicator from FRED.
+
+        This is the official US business-cycle chronology maintained by the
+        National Bureau of Economic Research (NBER) Business Cycle Dating
+        Committee, encoded as 1 during NBER-dated recession months (peak through
+        trough) and 0 otherwise. The Committee determines recession dates
+        retrospectively from a broad set of coincident indicators — including
+        Nonfarm Payrolls (see `get_nonfarm_payrolls`) and the Industrial Production
+        Index (see `get_industrial_production_index`) — rather than the popular
+        "two consecutive quarters of negative GDP growth" rule of thumb, which the
+        NBER does not use. This series is the standard ground-truth label used in
+        academic and applied business-cycle research to backtest whether other
+        indicators lead, lag or coincide with recessions.
+
+        Requires a free FRED API key, see the `fred_api_key` parameter of the
+        `Economics` class.
+
+        See definition: https://fred.stlouisfed.org/series/USREC
+
+        Also known as: USREC, NBER recession dummy, business cycle indicator.
+
+        Args:
+            rolling (int, optional): The rolling window size to use for smoothing the data (simple
+            moving average). Defaults to None.
+            trailing (int, optional): The trailing window size to use for summing the data over
+            trailing periods. Defaults to None.
+            growth (bool, optional): Whether to return the growth data or the actual data.
+            lag (int, optional): The number of periods to lag the data by.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+
+        Returns:
+            pd.DataFrame: A single-column ("United States") DataFrame, 1 during
+            NBER-dated recession months and 0 otherwise.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Economics
+
+        economics = Economics(start_date='2020-01-01', fred_api_key='FRED_API_KEY')
+
+        economics.get_recession_indicator()
+        ```
+        """
+        self._require_fred_api_key()
+
+        recession_indicator = fred_model.get_recession_indicator(
+            self._start_date, self._end_date, self._fred_api_key
+        )
+
+        return finalize_dataset(
+            dataset=recession_indicator,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
             axis="rows",
             row_slice=True,
         )

@@ -1,4 +1,4 @@
-"""Per-request Financial Modeling Prep API key resolution and OAuth 2.1 authentication for hosted deployments."""
+"""Per-request Financial Modeling Prep and FRED API key resolution and OAuth 2.1 authentication for hosted deployments."""
 
 from __future__ import annotations
 
@@ -38,6 +38,16 @@ _QUERY_NAMES: tuple[str, ...] = (
     "fmp_api_key",
     "api_key",
     "fmp_key",
+)
+
+# Header names checked in order for the (optional) FRED API key, used by the
+# Economics and FixedIncome modules' US labor/activity/rates indicators.
+_FRED_HEADER_NAMES: tuple[str, ...] = ("x-fred-api-key",)
+
+# Query-string parameter names checked in order for the FRED API key.
+_FRED_QUERY_NAMES: tuple[str, ...] = (
+    "fred_api_key",
+    "fred_key",
 )
 
 HTML_TEMPLATE = """<!DOCTYPE html>
@@ -403,6 +413,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             <h1>Authorize Access</h1>
             <p class="subtitle">
                 Enter your Financial Modeling Prep API key to grant this client access to financial data tools.
+                Optionally add a FRED API key to also enable US labor market, macroeconomic and interest rate
+                indicators.
             </p>
         </div>
 
@@ -449,6 +461,39 @@ a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
                 </div>
             </div>
 
+            <div class="form-group">
+                <label for="fred_api_key">FRED API Key <span style="text-transform:none;font-weight:400;color:var(--text-muted);">(optional)</span></label>
+                <div class="input-wrapper">
+                    <input
+                        class="key-input"
+                        type="password"
+                        id="fred_api_key"
+                        name="fred_api_key"
+                        placeholder="Enter your FRED API key (optional)"
+                        autocomplete="current-password"
+                        spellcheck="false"
+                    >
+                    <button type="button" class="toggle-btn" id="toggleBtnFred" aria-label="Toggle key visibility">
+                        <svg class="icon-visible" xmlns="http://www.w3.org/2000/svg"
+                            width="16" height="16" viewBox="0 0 24 24"
+                            fill="none" stroke="currentColor" stroke-width="2"
+                            stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                            <circle cx="12" cy="12" r="3"></circle>
+                        </svg>
+                        <svg class="icon-hidden" xmlns="http://www.w3.org/2000/svg"
+                            width="16" height="16" viewBox="0 0 24 24"
+                            fill="none" stroke="currentColor" stroke-width="2"
+                            stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8
+a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8
+a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
+                            <line x1="1" y1="1" x2="23" y2="23"></line>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+
             <div class="trust-note">
                 <svg xmlns="http://www.w3.org/2000/svg"
                     width="14" height="14" viewBox="0 0 24 24"
@@ -457,7 +502,7 @@ a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
                     <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
                     <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
                 </svg>
-                Your key is embedded in a signed session token and is never stored on the server.
+                Your keys are embedded in a signed session token and are never stored on the server.
             </div>
 
             <button type="submit" class="btn-authorize">Authorize Access</button>
@@ -467,6 +512,19 @@ a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
             <span class="footer-text">No FMP key yet?</span>
             <a class="footer-link" href="https://www.jeroenbouma.com/fmp" target="_blank" rel="noopener noreferrer">
                 Get one with 15% discount
+                <svg xmlns="http://www.w3.org/2000/svg"
+                    width="11" height="11" viewBox="0 0 24 24"
+                    fill="none" stroke="currentColor" stroke-width="2.5"
+                    stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="7" y1="17" x2="17" y2="7"></line>
+                    <polyline points="7 7 17 7 17 17"></polyline>
+                </svg>
+            </a>
+        </div>
+        <div class="card-footer">
+            <span class="footer-text">No FRED key yet?</span>
+            <a class="footer-link" href="https://fred.stlouisfed.org/docs/api/api_key.html" target="_blank" rel="noopener noreferrer">
+                Get one for free
                 <svg xmlns="http://www.w3.org/2000/svg"
                     width="11" height="11" viewBox="0 0 24 24"
                     fill="none" stroke="currentColor" stroke-width="2.5"
@@ -490,13 +548,17 @@ a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
 
     <script>
         (function () {{
-            var btn = document.getElementById('toggleBtn');
-            var inp = document.getElementById('fmp_api_key');
-            btn.addEventListener('click', function () {{
-                var isHidden = inp.type === 'password';
-                inp.type = isHidden ? 'text' : 'password';
-                btn.classList.toggle('revealed', isHidden);
-            }});
+            function wireToggle(buttonId, inputId) {{
+                var btn = document.getElementById(buttonId);
+                var inp = document.getElementById(inputId);
+                btn.addEventListener('click', function () {{
+                    var isHidden = inp.type === 'password';
+                    inp.type = isHidden ? 'text' : 'password';
+                    btn.classList.toggle('revealed', isHidden);
+                }});
+            }}
+            wireToggle('toggleBtn', 'fmp_api_key');
+            wireToggle('toggleBtnFred', 'fred_api_key');
         }})();
     </script>
 </body>
@@ -657,6 +719,80 @@ def resolve_api_key() -> str:
     return ""
 
 
+def get_fred_api_key_from_headers(headers: Any) -> str:
+    """Extract and validate the (optional) FRED API key from request headers."""
+    for name in _FRED_HEADER_NAMES:
+        value = headers.get(name)
+        if value:
+            payload = verify_jwt(value.strip())
+            if payload and "fred_api_key" in payload:
+                return str(payload["fred_api_key"])
+            return value.strip()
+
+    # A signed FMP bearer token carries the FRED key alongside it, if the
+    # caller authorized with one via the OAuth flow.
+    auth_header = headers.get("authorization", "")
+    if auth_header.lower().startswith("bearer "):
+        token = auth_header[7:].strip()
+        if token:
+            payload = verify_jwt(token)
+            if payload and "fred_api_key" in payload:
+                return str(payload["fred_api_key"])
+
+    return ""
+
+
+def get_fred_api_key_from_request(request: Request) -> str:
+    """Extract and validate the FRED API key from headers, auth header, or query params."""
+    key = get_fred_api_key_from_headers(request.headers)
+    if key:
+        return key
+
+    for name in _FRED_QUERY_NAMES:
+        value = request.query_params.get(name)
+        if value:
+            payload = verify_jwt(value.strip())
+            if payload and "fred_api_key" in payload:
+                return str(payload["fred_api_key"])
+            return value.strip()
+
+    return ""
+
+
+def resolve_fred_api_key() -> str:
+    """Resolve the (optional) FRED API key from the active HTTP request, if any.
+
+    Mirrors `resolve_api_key`, but for the FRED key used by the Economics and
+    FixedIncome modules' US labor/activity/rates indicators. Unlike the FMP key,
+    a missing FRED key does not block access — it only disables the subset of
+    tools that require it.
+
+    Returns:
+        str: The resolved API key, or ``""`` when none is present.
+    """
+    try:
+        headers = deps.get_http_headers(include={"authorization"})
+        key = get_fred_api_key_from_headers(headers)
+        if key:
+            return key
+    except Exception:  # noqa: S110
+        pass
+
+    try:
+        request = deps.get_http_request()
+        for name in _FRED_QUERY_NAMES:
+            value = request.query_params.get(name)
+            if value:
+                payload = verify_jwt(value.strip())
+                if payload and "fred_api_key" in payload:
+                    return str(payload["fred_api_key"])
+                return value.strip()
+    except RuntimeError:
+        pass
+
+    return ""
+
+
 class MCPAuthMiddleware(BaseHTTPMiddleware):
     """Starlette middleware to protect MCP endpoints in hosted deployments."""
 
@@ -807,6 +943,7 @@ def register_auth_routes(mcp: Any) -> None:
     async def authorize_post(request: Request) -> HTMLResponse | RedirectResponse:
         form = await request.form()
         fmp_api_key = str(form.get("fmp_api_key", "")).strip()
+        fred_api_key = str(form.get("fred_api_key", "")).strip()
         client_id = str(form.get("client_id", ""))
         redirect_uri = str(form.get("redirect_uri", ""))
         code_challenge = str(form.get("code_challenge", ""))
@@ -816,9 +953,12 @@ def register_auth_routes(mcp: Any) -> None:
         if not fmp_api_key:
             return HTMLResponse("FMP API Key is required", status_code=400)
 
-        # Generate PKCE code signed by server
+        # Generate PKCE code signed by server. fred_api_key is optional — it
+        # only unlocks the subset of Economics/FixedIncome tools that source
+        # US labor/activity/rates data from FRED.
         payload = {
             "fmp_api_key": fmp_api_key,
+            "fred_api_key": fred_api_key,
             "client_id": client_id,
             "redirect_uri": redirect_uri,
             "code_challenge": code_challenge,
@@ -931,6 +1071,7 @@ def register_auth_routes(mcp: Any) -> None:
         # Issue JWT Access Token
         token_payload = {
             "fmp_api_key": payload.get("fmp_api_key"),
+            "fred_api_key": payload.get("fred_api_key"),
             "client_id": client_id,
         }
         # Access token lasts 1 year

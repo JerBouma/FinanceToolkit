@@ -373,7 +373,7 @@ tool_groups:
   # confidence indices, house/rent prices, exchange rates, share prices.
   - tool_name:       "macroeconomics"
     display_name:    "General Economy"
-    description:     "Macroeconomic indicators by country (GDP, CPI, inflation rate, trade balance, imports, exports, investment, consumption, business/consumer confidence, house prices, rent prices, exchange rates, money supply). Requires countries='United States' — use comma-separated values for multiple countries. Do NOT use tickers= for this tool. Supports start_date/end_date and quarterly=true. Supports rolling=N (moving-average smoothing) and trailing=N (trailing N-period sum, e.g. a trailing-4-quarter sum) on the raw series."
+    description:     "Macroeconomic indicators by country (GDP, CPI, inflation rate, trade balance, imports, exports, investment, consumption, business/consumer confidence, house prices, rent prices, exchange rates, money supply, household savings rate, household debt-to-income ratio). Requires countries='United States' — use comma-separated values for multiple countries. Do NOT use tickers= for this tool. Supports start_date/end_date and quarterly=true. Supports rolling=N (moving-average smoothing) and trailing=N (trailing N-period sum, e.g. a trailing-4-quarter sum) on the raw series. get_consumer_price_index accepts oecd_source=true for monthly/quarterly OECD data instead of the default annual GMDB source. Also includes five US-only, FRED-backed indicators (get_retail_sales, get_industrial_production_index, get_housing_starts, get_real_personal_income, get_recession_indicator) — these require a FRED API key and only return a 'United States' column regardless of the countries= argument."
     module_name:     "economics"
     category:        "standalone"
     index_category:  "general_economy"
@@ -402,6 +402,13 @@ tool_groups:
       - "get_share_prices"
       - "get_total_consumption"
       - "get_total_consumption_to_gdp_ratio"
+      - "get_household_savings_rate"
+      - "get_household_debt_to_income_ratio"
+      - "get_retail_sales"
+      - "get_industrial_production_index"
+      - "get_housing_starts"
+      - "get_real_personal_income"
+      - "get_recession_indicator"
 
   # ── Environment & ESG (mixed: economics + toolkit) ───────────────────────
   # Carbon footprint and renewable energy come from Economics (use countries=).
@@ -432,7 +439,7 @@ tool_groups:
   # Unemployment, labour productivity, population, poverty, income inequality.
   - tool_name:       "jobs"
     display_name:    "Jobs & Society"
-    description:     "Labour and social metrics by country (unemployment rate, labour productivity, population statistics, poverty rate, income inequality). Requires countries='United States' — use comma-separated values for multiple countries. Do NOT use tickers= for this tool. Supports start_date/end_date and quarterly=true. Supports rolling=N (moving-average smoothing) and trailing=N (trailing N-period sum) on the raw series."
+    description:     "Labour and social metrics by country (unemployment rate, labour productivity, population statistics, poverty rate, income inequality). Requires countries='United States' — use comma-separated values for multiple countries. Do NOT use tickers= for this tool. Supports start_date/end_date and quarterly=true. Supports rolling=N (moving-average smoothing) and trailing=N (trailing N-period sum) on the raw series. Also includes two US-only, FRED-backed labor indicators (get_nonfarm_payrolls, get_initial_jobless_claims) — these require a FRED API key and only return a 'United States' column regardless of the countries= argument."
     module_name:     "economics"
     category:        "standalone"
     index_category:  "jobs_and_society"
@@ -442,6 +449,8 @@ tool_groups:
       - "get_population_statistics"
       - "get_poverty_rate"
       - "get_unemployment_rate"
+      - "get_nonfarm_payrolls"
+      - "get_initial_jobless_claims"
 
   # ── Interest Rates (mixed: economics + fixedincome) ──────────────────────
   # Short/long-term interest rates and central bank policy from Economics.
@@ -450,7 +459,7 @@ tool_groups:
   # All indicators use countries= (both modules are CATEGORY_STANDALONE).
   - tool_name:       "rates"
     display_name:    "Interest Rates"
-    description:     "Interest rate data (central bank policy rates, short/long-term rates, government bond yields, ICE BofA corporate bond series, EURIBOR, ECB rates, Federal Reserve rates). Requires countries='United States' — use comma-separated values for multiple countries. Do NOT use tickers= for this tool. Supports start_date/end_date and quarterly=true. The central bank policy rate and short/long-term rate indicators additionally support rolling=N (moving-average smoothing) and trailing=N (trailing N-period sum)."
+    description:     "Interest rate data (central bank policy rates, short/long-term rates, government bond yields, ICE BofA corporate bond series, EURIBOR, ECB rates, Federal Reserve rates). Requires countries='United States' — use comma-separated values for multiple countries. Do NOT use tickers= for this tool. Supports start_date/end_date and quarterly=true. The central bank policy rate and short/long-term rate indicators additionally support rolling=N (moving-average smoothing) and trailing=N (trailing N-period sum). Also includes get_mortgage_rate_30_year, a US-only FRED-backed indicator (Freddie Mac's 30-year fixed mortgage rate) — requires a FRED API key and only returns a 'United States' column regardless of the countries= argument."
     module_name:     "mixed"
     category:        "mixed"
     index_category:  "interest_rates"
@@ -466,6 +475,7 @@ tool_groups:
       - "get_ice_bofa_option_adjusted_spread"
       - "get_ice_bofa_total_return"
       - "get_ice_bofa_yield_to_worst"
+      - "get_mortgage_rate_30_year"
     method_to_module:
       get_central_bank_policy_rate:
         module:   "economics"
@@ -499,6 +509,9 @@ tool_groups:
         category: "standalone"
       get_ice_bofa_yield_to_worst:
         module:   "fixedincome"
+        category: "standalone"
+      get_mortgage_rate_30_year:
+        module:   "economics"
         category: "standalone"
 
   # ── Fixed Income: Bond & Derivative Valuations ───────────────────────────

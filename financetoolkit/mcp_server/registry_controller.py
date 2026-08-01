@@ -552,6 +552,7 @@ class ToolRegistry:
                         quarterly=quarterly,
                         benchmark_ticker=benchmark_ticker,
                         api_key=provider._api_key,
+                        fred_api_key=provider._fred_api_key,
                     )
                 formatted = format_result(result, notes=notes or None)
                 return formatted

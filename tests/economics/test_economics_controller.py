@@ -160,6 +160,11 @@ def test_get_trust_in_government(recorder, economics_module):
 def test_get_consumer_price_index(recorder, economics_module):
     recorder.capture(economics_module.get_consumer_price_index())
     recorder.capture(economics_module.get_consumer_price_index(growth=True))
+    recorder.capture(
+        economics_module.get_consumer_price_index(
+            countries=["United States"], oecd_source=True, period="monthly"
+        )
+    )
 
 
 def test_get_inflation_rate(recorder, economics_module):
@@ -195,6 +200,16 @@ def test_get_house_prices(recorder, economics_module):
 def test_get_rent_prices(recorder, economics_module):
     recorder.capture(economics_module.get_rent_prices())
     recorder.capture(economics_module.get_rent_prices(growth=True))
+
+
+def test_get_household_savings_rate(recorder, economics_module):
+    recorder.capture(economics_module.get_household_savings_rate())
+    recorder.capture(economics_module.get_household_savings_rate(growth=True))
+
+
+def test_get_household_debt_to_income_ratio(recorder, economics_module):
+    recorder.capture(economics_module.get_household_debt_to_income_ratio())
+    recorder.capture(economics_module.get_household_debt_to_income_ratio(growth=True))
 
 
 def test_get_share_prices(recorder, economics_module):
@@ -370,3 +385,55 @@ def test_get_banking_crisis(recorder, economics_module):
             countries=["United States", "United Kingdom"]
         )
     )
+
+
+def test_get_nonfarm_payrolls(recorder, economics_module):
+    recorder.capture(economics_module.get_nonfarm_payrolls())
+    recorder.capture(economics_module.get_nonfarm_payrolls(growth=True))
+
+
+def test_get_initial_jobless_claims(recorder, economics_module):
+    recorder.capture(economics_module.get_initial_jobless_claims())
+    recorder.capture(economics_module.get_initial_jobless_claims(growth=True))
+
+
+def test_get_retail_sales(recorder, economics_module):
+    recorder.capture(economics_module.get_retail_sales())
+    recorder.capture(economics_module.get_retail_sales(growth=True))
+
+
+def test_get_industrial_production_index(recorder, economics_module):
+    recorder.capture(economics_module.get_industrial_production_index())
+    recorder.capture(economics_module.get_industrial_production_index(growth=True))
+
+
+def test_get_housing_starts(recorder, economics_module):
+    recorder.capture(economics_module.get_housing_starts())
+    recorder.capture(economics_module.get_housing_starts(growth=True))
+
+
+def test_get_real_personal_income(recorder, economics_module):
+    recorder.capture(economics_module.get_real_personal_income())
+    recorder.capture(economics_module.get_real_personal_income(growth=True))
+
+
+def test_get_mortgage_rate_30_year(recorder, economics_module):
+    recorder.capture(economics_module.get_mortgage_rate_30_year())
+    recorder.capture(economics_module.get_mortgage_rate_30_year(growth=True))
+
+
+def test_get_recession_indicator(recorder, economics_module):
+    recorder.capture(economics_module.get_recession_indicator())
+    recorder.capture(economics_module.get_recession_indicator(growth=True))
+
+
+def test_get_nonfarm_payrolls_requires_fred_api_key():
+    from financetoolkit.economics.economics_controller import Economics
+
+    economics = Economics(start_date="2020-01-01", fred_api_key="")
+
+    # @handle_errors logs and swallows the ValueError raised by
+    # _require_fred_api_key, returning an empty Series instead of raising.
+    result = economics.get_nonfarm_payrolls()
+
+    assert result.empty

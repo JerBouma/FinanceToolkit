@@ -140,6 +140,22 @@ class FixedIncome:
         self._rounding: int | None = rounding
         self._fred_api_key = fred_api_key
 
+    def _require_fred_api_key(self) -> None:
+        if not self._fred_api_key:
+            logger.warning(
+                "No FRED API key found. ICE BofA bond index data is sourced from FRED "
+                "(Federal Reserve Economic Data) and requires a key to access — "
+                "registration is entirely free and takes about a minute at "
+                "https://fred.stlouisfed.org/docs/api/api_key.html. Once you have one, "
+                "pass it via the fred_api_key argument or set the FRED_API_KEY "
+                "environment variable."
+            )
+            raise ValueError(
+                "A FRED API key is required to retrieve ICE BofA data. Obtain a free key at "
+                "https://fred.stlouisfed.org/docs/api/api_key.html and pass it via the "
+                "fred_api_key argument or set the FRED_API_KEY environment variable."
+            )
+
     def collect_bond_statistics(
         self,
         par_value: float = 100,
@@ -1986,12 +2002,7 @@ class FixedIncome:
         | 2024-01-12 |          74 |          94 |       107   |          128 |         126   |         112 |
         | 2024-01-15 |          74 |          94 |       107   |          128 |         125   |         111 |
         """
-        if not self._fred_api_key:
-            raise ValueError(
-                "A FRED API key is required to retrieve ICE BofA data. Obtain a free key at "
-                "https://fred.stlouisfed.org/docs/api/api_key.html and pass it via the "
-                "fred_api_key argument or set the FRED_API_KEY environment variable."
-            )
+        self._require_fred_api_key()
 
         option_adjusted_spread = (
             fred_model.get_maturity_option_adjusted_spread(
@@ -2074,12 +2085,7 @@ class FixedIncome:
         | 2024-01-12 | 0.0451 | 0.0467 | 0.0502 | 0.0534 | 0.0613 | 0.0753 | 0.1338 |
         | 2024-01-15 | 0.0451 | 0.0467 | 0.0501 | 0.0533 | 0.0611 | 0.0751 | 0.1328 |
         """
-        if not self._fred_api_key:
-            raise ValueError(
-                "A FRED API key is required to retrieve ICE BofA data. Obtain a free key at "
-                "https://fred.stlouisfed.org/docs/api/api_key.html and pass it via the "
-                "fred_api_key argument or set the FRED_API_KEY environment variable."
-            )
+        self._require_fred_api_key()
 
         effective_yield = (
             fred_model.get_maturity_effective_yield(
@@ -2158,12 +2164,7 @@ class FixedIncome:
         | 2024-01-12 |     1922.1  |     2498.89 |      812.41 |      585.2   |       4213.47 |     4338.43 |
         | 2024-01-15 |     1922.67 |     2499.76 |      812.67 |      585.41  |       4215.34 |     4340.24 |
         """
-        if not self._fred_api_key:
-            raise ValueError(
-                "A FRED API key is required to retrieve ICE BofA data. Obtain a free key at "
-                "https://fred.stlouisfed.org/docs/api/api_key.html and pass it via the "
-                "fred_api_key argument or set the FRED_API_KEY environment variable."
-            )
+        self._require_fred_api_key()
 
         total_return = (
             fred_model.get_maturity_total_return(
@@ -2243,12 +2244,7 @@ class FixedIncome:
         | 2024-01-12 | 0.0453 | 0.0468 | 0.0499 | 0.0537 | 0.0642 | 0.0786 | 0.1335 |
         | 2024-01-15 | 0.0452 | 0.0468 | 0.0498 | 0.0537 | 0.064  | 0.0784 | 0.1325 |
         """
-        if not self._fred_api_key:
-            raise ValueError(
-                "A FRED API key is required to retrieve ICE BofA data. Obtain a free key at "
-                "https://fred.stlouisfed.org/docs/api/api_key.html and pass it via the "
-                "fred_api_key argument or set the FRED_API_KEY environment variable."
-            )
+        self._require_fred_api_key()
 
         yield_to_worst = (
             fred_model.get_maturity_yield_to_worst(

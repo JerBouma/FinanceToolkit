@@ -17,7 +17,7 @@ from financetoolkit import Toolkit
 from financetoolkit.discovery.discovery_controller import Discovery
 from financetoolkit.economics.economics_controller import Economics
 from financetoolkit.fixedincome.fixedincome_controller import FixedIncome
-from financetoolkit.mcp_server.auth_model import resolve_api_key
+from financetoolkit.mcp_server.auth_model import resolve_api_key, resolve_fred_api_key
 from financetoolkit.mcp_server.cache_model import SQLiteCache
 from financetoolkit.utilities.logger_model import get_logger
 
@@ -26,6 +26,9 @@ logger = get_logger()
 # In case the user has set an API key as an environment variable,
 # this will be used as the default API key for the Toolkit.
 API_KEY: str = os.environ.get("FINANCIAL_MODELING_PREP_API_KEY", "")
+
+# Optional — only gates the subset of Economics/FixedIncome tools backed by FRED.
+FRED_API_KEY: str = os.environ.get("FRED_API_KEY", "")
 
 
 class ToolkitProvider:
@@ -39,6 +42,7 @@ class ToolkitProvider:
         cache_ttl: int,
         database_location: str,
         api_key: str = API_KEY,
+        fred_api_key: str = FRED_API_KEY,
     ) -> None:
         """
         Initializes the ToolkitProvider.
@@ -51,8 +55,14 @@ class ToolkitProvider:
             api_key (str, optional): FinancialModelingPrep API key used to
                 initialize Toolkit and Discovery instances. Defaults to the value
                 of the FINANCIAL_MODELING_PREP_API_KEY environment variable.
+            fred_api_key (str, optional): FRED API key used to unlock the subset
+                of Economics/FixedIncome tools backed by FRED data (e.g. Nonfarm
+                Payrolls, ICE BofA bond indices). Optional — those specific tools
+                simply error informatively when it's absent. Defaults to the
+                value of the FRED_API_KEY environment variable.
         """
         self._api_key = api_key
+        self._fred_api_key = fred_api_key
         self._cache_ttl: int = cache_ttl
         self._sqlitecache: SQLiteCache = SQLiteCache(
             database_location=database_location
@@ -112,6 +122,7 @@ class ToolkitProvider:
         # the instance/env key (local stdio / uvx).  When running over stdio
         # there is no HTTP request and ``resolve_api_key`` returns "".
         effective_key = resolve_api_key() or self._api_key
+        effective_fred_key = resolve_fred_api_key() or self._fred_api_key
         current_time = time.time()
 
         if self._cache_ttl and (current_time - self._last_eviction) > self._cache_ttl:
@@ -177,6 +188,7 @@ class ToolkitProvider:
                 quarterly=quarterly,
                 benchmark_ticker=benchmark_ticker,
                 api_key=effective_key,
+                fred_api_key=effective_fred_key,
                 **method_kwargs,
             )
         elif category == "toolkit":
@@ -196,6 +208,7 @@ class ToolkitProvider:
                 quarterly=quarterly,
                 benchmark_ticker=benchmark_ticker,
                 api_key=effective_key,
+                fred_api_key=effective_fred_key,
                 **method_kwargs,
             )
         elif category == "standalone":
@@ -209,6 +222,7 @@ class ToolkitProvider:
                 quarterly=quarterly,
                 countries=countries,
                 api_key=effective_key,
+                fred_api_key=effective_fred_key,
                 **method_kwargs,
             )
         elif category == "discovery":
@@ -236,6 +250,7 @@ class ToolkitProvider:
         quarterly: bool,
         benchmark_ticker: str,
         api_key: str = "",
+        fred_api_key: str = "",
     ) -> list[str]:
         """Return human-readable notes describing data transformations applied to
         the most recent result for the given Toolkit instance (fiscal-year
@@ -247,6 +262,9 @@ class ToolkitProvider:
         notes: list[str] = []
         try:
             effective_key = resolve_api_key() or api_key or self._api_key
+            effective_fred_key = (
+                resolve_fred_api_key() or fred_api_key or self._fred_api_key
+            )
             toolkit = self.get_toolkit_instance(
                 tickers=tickers,
                 start_date=start_date,
@@ -254,6 +272,7 @@ class ToolkitProvider:
                 quarterly=quarterly,
                 benchmark_ticker=benchmark_ticker,
                 api_key=effective_key,
+                fred_api_key=effective_fred_key,
             )
         except Exception:
             return notes
@@ -294,6 +313,7 @@ class ToolkitProvider:
         quarterly: bool,
         benchmark_ticker: str,
         api_key: str = "",
+        fred_api_key: str = "",
     ) -> Toolkit:
         """
         Return a (potentially cached) Toolkit instance for the requested tickers and date range.
@@ -313,6 +333,9 @@ class ToolkitProvider:
             quarterly (bool): Whether to initialize the Toolkit for quarterly (True)
                 or yearly (False) statements.
             benchmark_ticker (str): Benchmark ticker symbol to use for comparative analysis.
+            api_key (str, optional): FinancialModelingPrep API key. Defaults to "".
+            fred_api_key (str, optional): FRED API key, used by the Toolkit's
+                `.economics`/`.fixedincome` properties. Optional. Defaults to "".
 
         Returns:
             Toolkit: A Toolkit instance configured for the requested tickers and parameters.
@@ -348,9 +371,14 @@ class ToolkitProvider:
 
         # The effective key may differ per request (hosted multi-user). Key the
         # instance cache by its hash so one user's Toolkit (built with their key)
-        # is never handed to another user.
+        # is never handed to another user. The FRED key is folded into the same
+        # hash so two users sharing an FMP key but differing FRED keys don't
+        # collide either.
         effective_key = api_key or self._api_key
-        key_hash = hashlib.sha256((effective_key or "").encode()).hexdigest()
+        effective_fred_key = fred_api_key or self._fred_api_key
+        key_hash = hashlib.sha256(
+            f"{effective_key or ''}|{effective_fred_key or ''}".encode()
+        ).hexdigest()
         cache_key = (
             f"{','.join(sorted(upper_tickers))}"
             f"|{start_date}|{end_date}|{quarterly}"
@@ -376,6 +404,7 @@ class ToolkitProvider:
             toolkit_instance: Toolkit = Toolkit(
                 tickers=tickers,
                 api_key=effective_key,
+                fred_api_key=effective_fred_key,
                 start_date=start_date,
                 end_date=end_date,
                 quarterly=quarterly,
@@ -395,6 +424,7 @@ class ToolkitProvider:
         quarterly: bool,
         benchmark_ticker: str,
         api_key: str = "",
+        fred_api_key: str = "",
         **kwargs: Any,
     ) -> pd.DataFrame | pd.Series | dict | float | int | str:
         """
@@ -410,6 +440,9 @@ class ToolkitProvider:
             quarterly (bool): If True, Toolkit is configured to use quarterly financial statements;
                     otherwise annual statements are used.
             benchmark_ticker (str): Ticker used as benchmark (e.g. "SPY"); passed to Toolkit initialization.
+            api_key (str, optional): FinancialModelingPrep API key. Defaults to "".
+            fred_api_key (str, optional): FRED API key, used by the Toolkit's
+                `.economics`/`.fixedincome` sub-modules. Optional. Defaults to "".
             **kwargs: Arbitrary keyword arguments forwarded to the resolved sub-module method.
 
         Returns:
@@ -423,6 +456,7 @@ class ToolkitProvider:
             quarterly=quarterly,
             benchmark_ticker=benchmark_ticker,
             api_key=api_key,
+            fred_api_key=fred_api_key,
         )
         module = getattr(toolkit_instance, module_name)
         method = getattr(module, method_name)
@@ -438,6 +472,7 @@ class ToolkitProvider:
         quarterly: bool,
         benchmark_ticker: str,
         api_key: str = "",
+        fred_api_key: str = "",
         **kwargs: Any,
     ) -> pd.DataFrame | pd.Series | dict | float | int | str:
         """
@@ -454,6 +489,8 @@ class ToolkitProvider:
             end_date (str): End date for the Toolkit data range in YYYY-MM-DD format.
             quarterly (bool): Whether to initialize the Toolkit for quarterly financial statements.
             benchmark_ticker (str): Benchmark ticker symbol used for comparative analyses (e.g., "SPY").
+            api_key (str, optional): FinancialModelingPrep API key. Defaults to "".
+            fred_api_key (str, optional): FRED API key. Optional. Defaults to "".
             **kwargs (Any): Additional keyword arguments forwarded to the invoked Toolkit method.
 
         Returns:
@@ -467,6 +504,7 @@ class ToolkitProvider:
             quarterly=quarterly,
             benchmark_ticker=benchmark_ticker,
             api_key=api_key,
+            fred_api_key=fred_api_key,
         )
         method = getattr(toolkit_instance, method_name)
 
@@ -481,6 +519,7 @@ class ToolkitProvider:
         quarterly: bool,
         countries: list[str] | None = None,
         api_key: str = "",
+        fred_api_key: str = "",
         **kwargs: Any,
     ) -> Any:
         """
@@ -500,6 +539,9 @@ class ToolkitProvider:
             countries (list[str] | None): Optional list of country identifiers to pass
                 to the called method or to use for post-call column filtering if the
                     method does not accept a 'countries' parameter.
+            api_key (str, optional): FinancialModelingPrep API key, used by Discovery. Defaults to "".
+            fred_api_key (str, optional): FRED API key, used by Economics and FixedIncome
+                for the subset of their tools backed by FRED data. Optional. Defaults to "".
             **kwargs: Additional keyword arguments forwarded to the target method.
 
         Returns:
@@ -508,14 +550,21 @@ class ToolkitProvider:
             pandas.DataFrame, a filtered DataFrame containing only the requested country
             columns (if present) is returned.
         """
-        # Discovery requires the API key, so key its cache by the effective key
-        # hash.  Economics/FixedIncome need no key; their cache stays key-agnostic.
+        # Discovery requires the FMP key; Economics/FixedIncome only need the
+        # (optional) FRED key. Key each module's cache by whichever key
+        # actually affects its behavior so different users/keys never collide.
         effective_key = api_key or self._api_key
-        key_hash = hashlib.sha256((effective_key or "").encode()).hexdigest()
+        effective_fred_key = fred_api_key or self._fred_api_key
         if module_name == "discovery":
+            key_hash = hashlib.sha256((effective_key or "").encode()).hexdigest()
             cache_key = f"discovery|{key_hash}"
         else:
-            cache_key = f"{module_name}|{start_date}|{end_date}|{quarterly}"
+            fred_key_hash = hashlib.sha256(
+                (effective_fred_key or "").encode()
+            ).hexdigest()
+            cache_key = (
+                f"{module_name}|{start_date}|{end_date}|{quarterly}|{fred_key_hash}"
+            )
 
         # Hold the lock for the full check-create-store sequence to prevent
         # TOCTOU races where two threads both see a cache miss and create
@@ -529,12 +578,14 @@ class ToolkitProvider:
                         start_date=start_date,
                         end_date=end_date,
                         quarterly=quarterly,
+                        fred_api_key=effective_fred_key,
                     )
                 elif module_name == "fixedincome":
                     instance = FixedIncome(
                         start_date=start_date,
                         end_date=end_date,
                         quarterly=quarterly,
+                        fred_api_key=effective_fred_key,
                     )
                 elif module_name == "discovery":
                     instance = Discovery(api_key=effective_key)

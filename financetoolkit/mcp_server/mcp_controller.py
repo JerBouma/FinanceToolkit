@@ -24,6 +24,7 @@ from financetoolkit.mcp_server.auth_model import (
     MCPAuthMiddleware,
     register_auth_routes,
     resolve_api_key,
+    resolve_fred_api_key,
 )
 from financetoolkit.mcp_server.inspection_controller import ControllerInspector
 from financetoolkit.mcp_server.provider_model import ToolkitProvider
@@ -92,6 +93,7 @@ def _build_mcp_app() -> FastMCP:
     _cache_ttl_env = os.environ.get("FINANCE_TOOLKIT_CACHE_TTL", "")
     provider = ToolkitProvider(
         api_key=os.environ.get("FINANCIAL_MODELING_PREP_API_KEY", ""),
+        fred_api_key=os.environ.get("FRED_API_KEY", ""),
         cache_ttl=(
             int(_cache_ttl_env)
             if _cache_ttl_env.isdigit()
@@ -163,6 +165,11 @@ def _build_mcp_app() -> FastMCP:
             report["resolved_present"] = bool(resolved)
             report["resolved_len"] = len(resolved)
             report["resolved_tail"] = resolved[-4:] if resolved else ""
+
+            resolved_fred = resolve_fred_api_key()
+            report["fred_resolved_present"] = bool(resolved_fred)
+            report["fred_resolved_len"] = len(resolved_fred)
+            report["fred_resolved_tail"] = resolved_fred[-4:] if resolved_fred else ""
             return str(report)
 
         mcp.add_tool(

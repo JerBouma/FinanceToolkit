@@ -8,6 +8,15 @@ import types
 def test_build_mcp_app_uses_global_cache_path(monkeypatch, tmp_path):
     """Ensure the MCP bootstrap points SQLite cache storage at the global config dir."""
 
+    # Force the real (third-party) `fastmcp` package to fully import and cache itself
+    # in sys.modules *before* we stub out the unrelated `mcp` (official SDK) package
+    # below. `fastmcp.server`'s own internals import from the real `mcp` package, and
+    # if that import is still pending when `mcp` has already been replaced with our
+    # bare stub, it fails and fastmcp mislabels the resulting ImportError as "FastMCP
+    # server support is not installed" — order-dependent and unrelated to a real
+    # missing install. Pre-importing here makes this test order-independent.
+    import fastmcp.server.dependencies  # noqa: F401
+
     captured = {}
 
     fastmcp_module = types.ModuleType("mcp.server.fastmcp")
@@ -37,8 +46,9 @@ def test_build_mcp_app_uses_global_cache_path(monkeypatch, tmp_path):
     mcp_controller = importlib.import_module("financetoolkit.mcp_server.mcp_controller")
 
     class DummyProvider:
-        def __init__(self, *, api_key, cache_ttl, database_location):
+        def __init__(self, *, api_key, fred_api_key, cache_ttl, database_location):
             captured["api_key"] = api_key
+            captured["fred_api_key"] = fred_api_key
             captured["cache_ttl"] = cache_ttl
             captured["database_location"] = database_location
 

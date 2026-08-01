@@ -1408,6 +1408,7 @@ class Toolkit:
             end_date=self._end_date,
             quarterly=self._quarterly,
             rounding=self._rounding,
+            fred_api_key=self._fred_api_key,
         )
 
     def get_profile(self):

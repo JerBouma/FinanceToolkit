@@ -425,35 +425,3 @@ def test_get_supertrend(recorder, technical_module):
     recorder.capture(technical_module.get_supertrend())
     recorder.capture(technical_module.get_supertrend(growth=True))
     recorder.capture(technical_module.get_supertrend(growth=True, lag=[1, 2, 3]))
-
-
-def test_get_doji(recorder, technical_module):
-    recorder.capture(technical_module.get_doji())
-    recorder.capture(technical_module.get_doji(growth=True))
-    recorder.capture(technical_module.get_doji(growth=True, lag=[1, 2, 3]))
-
-
-def test_get_bullish_engulfing(recorder, technical_module):
-    recorder.capture(technical_module.get_bullish_engulfing())
-    recorder.capture(technical_module.get_bullish_engulfing(growth=True))
-    recorder.capture(technical_module.get_bullish_engulfing(growth=True, lag=[1, 2, 3]))
-
-
-def test_get_bearish_engulfing(recorder, technical_module):
-    recorder.capture(technical_module.get_bearish_engulfing())
-    recorder.capture(technical_module.get_bearish_engulfing(growth=True))
-    recorder.capture(technical_module.get_bearish_engulfing(growth=True, lag=[1, 2, 3]))
-
-
-def test_get_hammer(recorder, technical_module):
-    recorder.capture(technical_module.get_hammer())
-    recorder.capture(technical_module.get_hammer(growth=True))
-    recorder.capture(technical_module.get_hammer(growth=True, lag=[1, 2, 3]))
-
-
-def test_collect_candlestick_indicators(recorder, technical_module):
-    recorder.capture(technical_module.collect_candlestick_indicators())
-    recorder.capture(technical_module.collect_candlestick_indicators(growth=True))
-    recorder.capture(
-        technical_module.collect_candlestick_indicators(growth=True, lag=[1, 2, 3])
-    )

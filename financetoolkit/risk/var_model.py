@@ -352,3 +352,176 @@ def get_var_cornish_fisher(
     )
 
     return returns.mean() + z_cornish_fisher * returns.std(ddof=0)
+
+
+def _get_portfolio_var(
+    portfolio_returns: pd.Series, alpha: float, distribution: str
+) -> float:
+    """
+    Dispatch to the requested single-asset VaR calculation for a portfolio return
+    series. Shared by `get_marginal_var` and, transitively, `get_component_var`.
+
+    Args:
+        portfolio_returns (pd.Series): The weighted portfolio return series.
+        alpha (float): The confidence level (e.g., 0.05 for 95% confidence).
+        distribution (str): One of "historic", "gaussian", "cornish-fisher" or
+            "studentt".
+
+    Returns:
+        float: The portfolio VaR.
+
+    Raises:
+        ValueError: If `distribution` is not one of the supported options.
+    """
+    if distribution == "historic":
+        return get_var_historic(portfolio_returns, alpha)
+    if distribution == "gaussian":
+        return get_var_gaussian(portfolio_returns, alpha)
+    if distribution == "cornish-fisher":
+        return get_var_cornish_fisher(portfolio_returns, alpha)
+    if distribution == "studentt":
+        return get_var_studentt(portfolio_returns, alpha)
+
+    raise ValueError(
+        "distribution must be historic, gaussian, cornish-fisher or studentt."
+    )
+
+
+def get_marginal_var(
+    returns: pd.DataFrame,
+    weights: pd.Series,
+    alpha: float,
+    distribution: str = "historic",
+) -> pd.Series:
+    """
+    Calculate the Marginal Value at Risk (Marginal VaR) of each asset in a portfolio.
+
+    Ordinary VaR (see `get_var_historic`) treats each asset in isolation. Marginal VaR
+    instead measures how much the *portfolio's* VaR would change for an infinitesimal
+    increase in a given asset's portfolio weight — i.e. the sensitivity of portfolio
+    risk to each holding, not the risk of the holding on its own. Because VaR is (to a
+    close approximation, exactly so for elliptical return distributions such as the
+    gaussian) homogeneous of degree one in the portfolio weights, this sensitivity has
+    a closed form in terms of each asset's beta against the portfolio:
+
+    - Portfolio Return = SUM(weight_i * Return_i)
+    - Beta_i = Cov(Return_i, Portfolio Return) / Var(Portfolio Return)
+    - Marginal VaR_i = Beta_i * Portfolio VaR
+
+    An asset with Beta_i > 1 contributes disproportionately to portfolio risk (adding
+    to it increases portfolio VaR by more than the asset's own weight would suggest),
+    while Beta_i < 1 (and especially Beta_i < 0) indicates a diversifying holding.
+
+    For more information about the method, see the following sources:
+
+    - Garman, M.B. (1997). "Taking VaR to Pieces." Risk, 10(10), 70-71.
+    - Litterman, R. (1996). "Hot Spots and Hedges." Goldman Sachs Risk Management
+    Series.
+    - Jorion, P. (2006). "Value at Risk: The New Benchmark for Managing Financial
+    Risk." 3rd ed., McGraw-Hill, Chapter 7.
+
+    Also known as: Marginal VaR, MVaR.
+
+    Args:
+        returns (pd.DataFrame): A DataFrame of asset returns, one column per asset.
+        weights (pd.Series): Portfolio weights, indexed by the same asset labels as
+            `returns`'s columns. Normalized internally to sum to 1.
+        alpha (float): The confidence level (e.g., 0.05 for 95% confidence).
+        distribution (str): The distribution to use for the underlying portfolio VaR
+            calculation (historic, gaussian, cornish-fisher or studentt). The
+            Beta-based decomposition below is exact for elliptical distributions
+            (e.g. gaussian) and an approximation otherwise. Defaults to "historic".
+
+    Returns:
+        pd.Series: The Marginal VaR of each asset, indexed the same as `returns`'s
+            columns.
+
+    Raises:
+        TypeError: If `returns` is not a pd.DataFrame or `weights` is not a pd.Series.
+        ValueError: If `weights` does not cover every column in `returns`, or if
+            `distribution` is not one of the supported options.
+    """
+    if not isinstance(returns, pd.DataFrame) or not isinstance(weights, pd.Series):
+        raise TypeError(
+            "returns must be a pd.DataFrame and weights must be a pd.Series."
+        )
+
+    weights = weights.reindex(returns.columns)
+
+    if weights.isna().any():
+        raise ValueError("weights must be provided for every column in returns.")
+
+    weights = weights / weights.sum()
+
+    portfolio_returns = returns.mul(weights, axis=1).sum(axis=1)
+    portfolio_var = _get_portfolio_var(portfolio_returns, alpha, distribution)
+    portfolio_variance = portfolio_returns.var()
+
+    if portfolio_variance == 0 or np.isnan(portfolio_variance):
+        return pd.Series(np.nan, index=returns.columns)
+
+    covariance_with_portfolio = returns.apply(
+        lambda column: column.cov(portfolio_returns)
+    )
+    beta = covariance_with_portfolio / portfolio_variance
+
+    return beta * portfolio_var
+
+
+def get_component_var(
+    returns: pd.DataFrame,
+    weights: pd.Series,
+    alpha: float,
+    distribution: str = "historic",
+) -> pd.Series:
+    """
+    Calculate the Component Value at Risk (Component VaR) of each asset in a portfolio.
+
+    Component VaR allocates total portfolio VaR across its constituent assets, such
+    that the allocations sum exactly back to the portfolio VaR — an "Euler" (or
+    "fully consistent") risk decomposition, following from the fact that VaR is
+    homogeneous of degree one in the portfolio weights:
+
+    - Component VaR_i = weight_i * Marginal VaR_i    (see `get_marginal_var`)
+    - SUM(Component VaR_i) = Portfolio VaR
+
+    Where Marginal VaR (see `get_marginal_var`) measures each asset's risk
+    *sensitivity*, Component VaR measures its actual *contribution* in the same units
+    as portfolio VaR, making it directly usable to identify which holdings account for
+    the largest share of portfolio risk.
+
+    For more information about the method, see the following sources:
+
+    - Garman, M.B. (1997). "Taking VaR to Pieces." Risk, 10(10), 70-71.
+    - Litterman, R. (1996). "Hot Spots and Hedges." Goldman Sachs Risk Management
+    Series.
+    - Jorion, P. (2006). "Value at Risk: The New Benchmark for Managing Financial
+    Risk." 3rd ed., McGraw-Hill, Chapter 7.
+
+    Also known as: Component VaR, CVaR (portfolio-decomposition sense, unrelated to
+    Conditional VaR / Expected Shortfall), risk contribution.
+
+    Args:
+        returns (pd.DataFrame): A DataFrame of asset returns, one column per asset.
+        weights (pd.Series): Portfolio weights, indexed by the same asset labels as
+            `returns`'s columns. Normalized internally to sum to 1.
+        alpha (float): The confidence level (e.g., 0.05 for 95% confidence).
+        distribution (str): The distribution to use for the underlying portfolio VaR
+            calculation (historic, gaussian, cornish-fisher or studentt). Defaults to
+            "historic".
+
+    Returns:
+        pd.Series: The Component VaR of each asset, indexed the same as `returns`'s
+            columns. Sums to the total portfolio VaR.
+
+    Raises:
+        TypeError: If `returns` is not a pd.DataFrame or `weights` is not a pd.Series.
+        ValueError: If `weights` does not cover every column in `returns`, or if
+            `distribution` is not one of the supported options.
+    """
+    marginal_var = get_marginal_var(returns, weights, alpha, distribution)
+
+    weights = weights.reindex(returns.columns)
+    weights = weights / weights.sum()
+
+    return weights * marginal_var

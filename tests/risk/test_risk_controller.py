@@ -330,6 +330,32 @@ def test_get_covar(recorder, risk_module):
     recorder.capture(risk_module.get_covar("AAPL", "MSFT", period="yearly"))
 
 
+def test_get_marginal_value_at_risk(recorder, risk_module):
+    recorder.capture(risk_module.get_marginal_value_at_risk(period="yearly"))
+    recorder.capture(
+        risk_module.get_marginal_value_at_risk(
+            weights={"AAPL": 0.7, "MSFT": 0.3}, period="yearly"
+        )
+    )
+    recorder.capture(
+        risk_module.get_marginal_value_at_risk(period="yearly", distribution="gaussian")
+    )
+
+
+def test_get_component_value_at_risk(recorder, risk_module):
+    recorder.capture(risk_module.get_component_value_at_risk(period="yearly"))
+    recorder.capture(
+        risk_module.get_component_value_at_risk(
+            weights={"AAPL": 0.7, "MSFT": 0.3}, period="yearly"
+        )
+    )
+    recorder.capture(
+        risk_module.get_component_value_at_risk(
+            period="yearly", distribution="gaussian"
+        )
+    )
+
+
 def test_get_acerbi_szekely_test(recorder, risk_module):
     recorder.capture(risk_module.get_acerbi_szekely_test(window_size=100))
     recorder.capture(

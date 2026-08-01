@@ -2502,6 +2502,217 @@ class Risk:
 
         return result.round(rounding if rounding is not None else self._rounding)
 
+    def _get_portfolio_weights(
+        self, returns: pd.DataFrame, weights: dict[str, float] | pd.Series | None
+    ) -> pd.Series:
+        if weights is None:
+            constituent_tickers = [
+                ticker
+                for ticker in returns.columns
+                if ticker not in ("Portfolio", "Benchmark")
+            ]
+            if not constituent_tickers:
+                raise ValueError(
+                    "No tickers available to build equal weights from. Please "
+                    "provide the `weights` argument explicitly."
+                )
+            return pd.Series(1 / len(constituent_tickers), index=constituent_tickers)
+
+        weights_series = (
+            pd.Series(weights) if isinstance(weights, dict) else weights.copy()
+        )
+        missing_tickers = [
+            ticker for ticker in weights_series.index if ticker not in returns.columns
+        ]
+        if missing_tickers:
+            raise ValueError(
+                f"weights contains tickers not present in the Toolkit: {missing_tickers}"
+            )
+
+        return weights_series
+
+    @handle_errors
+    def get_marginal_value_at_risk(
+        self,
+        weights: dict[str, float] | None = None,
+        period: str | None = None,
+        column: str = "Return",
+        alpha: float = 0.05,
+        distribution: str = "historic",
+        rounding: int | None = None,
+    ) -> pd.Series:
+        """
+        Calculate the Marginal Value at Risk (Marginal VaR) of each asset in a
+        portfolio.
+
+        Ordinary VaR (see `get_value_at_risk`) treats each asset in isolation.
+        Marginal VaR instead measures how much the *portfolio's* VaR would change for
+        an infinitesimal increase in a given asset's portfolio weight — i.e. the
+        sensitivity of portfolio risk to each holding, not the risk of the holding on
+        its own:
+
+        - Portfolio Return = SUM(weight_i * Return_i)
+        - Beta_i = Cov(Return_i, Portfolio Return) / Var(Portfolio Return)
+        - Marginal VaR_i = Beta_i * Portfolio VaR
+
+        An asset with Beta_i > 1 contributes disproportionately to portfolio risk,
+        while Beta_i < 1 (and especially Beta_i < 0) indicates a diversifying holding.
+
+        For more information about the method, see the following sources:
+
+        - Garman, M.B. (1997). "Taking VaR to Pieces." Risk, 10(10), 70-71.
+        - Litterman, R. (1996). "Hot Spots and Hedges." Goldman Sachs Risk Management
+        Series.
+        - Jorion, P. (2006). "Value at Risk: The New Benchmark for Managing Financial
+        Risk." 3rd ed., McGraw-Hill, Chapter 7.
+
+        Also known as: Marginal VaR, MVaR.
+
+        Args:
+            weights (dict[str, float] | None, optional): Portfolio weights
+            keyed by ticker. Normalized internally to sum to 1. Defaults to None, which
+            uses equal weights across every ticker in the Toolkit instance (excluding
+            the "Portfolio" and "Benchmark" pseudo-tickers, if present).
+            period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or
+            yearly). Defaults to "quarterly" or "yearly" depending on the Toolkit instance.
+            column (str, optional): The historical data column to use. Defaults to "Return".
+            alpha (float, optional): The confidence level (e.g., 0.05 for 95% confidence).
+            Defaults to 0.05.
+            distribution (str, optional): The distribution to use for the underlying portfolio
+            VaR calculation (historic, gaussian, cornish-fisher or studentt). Defaults to
+            "historic".
+            rounding (int | None, optional): The number of decimals to round the results to.
+            Defaults to None.
+
+        Returns:
+            pd.Series: The Marginal VaR of each asset.
+
+        Notes:
+        - The method retrieves historical return data based on the specified `period` for
+        every ticker in the Toolkit instance and computes each asset's Marginal VaR against
+        the weighted portfolio built from `weights`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AMZN", "TSLA", "MSFT"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.risk.get_marginal_value_at_risk(weights={"AMZN": 0.5, "TSLA": 0.3, "MSFT": 0.2})
+        ```
+
+        Which returns:
+
+        |      |   Marginal VaR |
+        |:-----|---------------:|
+        | AMZN |        -0.0512 |
+        | TSLA |        -0.0698 |
+        | MSFT |        -0.0331 |
+        """
+        period = period if period else "quarterly" if self._quarterly else "yearly"
+        returns = self._get_price_column(period, column)
+        weights_series = self._get_portfolio_weights(returns, weights)
+
+        marginal_var = var_model.get_marginal_var(
+            returns[weights_series.index], weights_series, alpha, distribution
+        )
+        marginal_var.name = "Marginal VaR"
+
+        return marginal_var.round(rounding if rounding is not None else self._rounding)
+
+    @handle_errors
+    def get_component_value_at_risk(
+        self,
+        weights: dict[str, float] | None = None,
+        period: str | None = None,
+        column: str = "Return",
+        alpha: float = 0.05,
+        distribution: str = "historic",
+        rounding: int | None = None,
+    ) -> pd.Series:
+        """
+        Calculate the Component Value at Risk (Component VaR) of each asset in a
+        portfolio.
+
+        Component VaR allocates total portfolio VaR across its constituent assets,
+        such that the allocations sum exactly back to the portfolio VaR — an "Euler"
+        (or "fully consistent") risk decomposition:
+
+        - Component VaR_i = weight_i * Marginal VaR_i    (see `get_marginal_value_at_risk`)
+        - SUM(Component VaR_i) = Portfolio VaR
+
+        Where Marginal VaR measures each asset's risk *sensitivity*, Component VaR
+        measures its actual *contribution* in the same units as portfolio VaR, making
+        it directly usable to identify which holdings account for the largest share of
+        portfolio risk.
+
+        For more information about the method, see the following sources:
+
+        - Garman, M.B. (1997). "Taking VaR to Pieces." Risk, 10(10), 70-71.
+        - Litterman, R. (1996). "Hot Spots and Hedges." Goldman Sachs Risk Management
+        Series.
+        - Jorion, P. (2006). "Value at Risk: The New Benchmark for Managing Financial
+        Risk." 3rd ed., McGraw-Hill, Chapter 7.
+
+        Also known as: Component VaR, risk contribution.
+
+        Args:
+            weights (dict[str, float] | None, optional): Portfolio weights
+            keyed by ticker. Normalized internally to sum to 1. Defaults to None, which
+            uses equal weights across every ticker in the Toolkit instance (excluding
+            the "Portfolio" and "Benchmark" pseudo-tickers, if present).
+            period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or
+            yearly). Defaults to "quarterly" or "yearly" depending on the Toolkit instance.
+            column (str, optional): The historical data column to use. Defaults to "Return".
+            alpha (float, optional): The confidence level (e.g., 0.05 for 95% confidence).
+            Defaults to 0.05.
+            distribution (str, optional): The distribution to use for the underlying portfolio
+            VaR calculation (historic, gaussian, cornish-fisher or studentt). Defaults to
+            "historic".
+            rounding (int | None, optional): The number of decimals to round the results to.
+            Defaults to None.
+
+        Returns:
+            pd.Series: The Component VaR of each asset, plus a "Portfolio" entry equal to
+            their sum (the total portfolio VaR), for validation.
+
+        Notes:
+        - The method retrieves historical return data based on the specified `period` for
+        every ticker in the Toolkit instance and computes each asset's Component VaR against
+        the weighted portfolio built from `weights`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AMZN", "TSLA", "MSFT"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.risk.get_component_value_at_risk(weights={"AMZN": 0.5, "TSLA": 0.3, "MSFT": 0.2})
+        ```
+
+        Which returns:
+
+        |           |   Component VaR |
+        |:----------|-----------------:|
+        | AMZN      |          -0.0256 |
+        | TSLA      |          -0.0209 |
+        | MSFT      |          -0.0066 |
+        | Portfolio |          -0.0531 |
+        """
+        period = period if period else "quarterly" if self._quarterly else "yearly"
+        returns = self._get_price_column(period, column)
+        weights_series = self._get_portfolio_weights(returns, weights)
+
+        component_var = var_model.get_component_var(
+            returns[weights_series.index], weights_series, alpha, distribution
+        )
+        component_var.loc["Portfolio"] = component_var.sum()
+        component_var.name = "Component VaR"
+
+        return component_var.round(rounding if rounding is not None else self._rounding)
+
     @handle_portfolio
     @handle_errors
     def get_var_backtest(

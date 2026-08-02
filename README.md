@@ -441,6 +441,26 @@ In which the weights and returns can be depicted as follows:
 
 ![Portfolio](https://github.com/user-attachments/assets/a5e05df5-a76a-42fa-bb30-f640cd48da62)
 
+### Applying Econometric Techniques
+
+Beyond ratios and risk/performance metrics, the `econometrics` module provides [regression](https://www.jeroenbouma.com/projects/financetoolkit/docs/econometrics#get_ols), [hypothesis testing](https://www.jeroenbouma.com/projects/financetoolkit/docs/econometrics#get_jarque_bera_test), [unit root and cointegration](https://www.jeroenbouma.com/projects/financetoolkit/docs/econometrics#get_augmented_dickey_fuller) and [panel data](https://www.jeroenbouma.com/projects/financetoolkit/docs/econometrics#get_fixed_effects) methods built on `statsmodels` and `linearmodels`. It requires the optional `financetoolkit[econometrics]` extra (`pip install financetoolkit[econometrics]`) and can be used via `companies.econometrics`.
+
+```python
+# Run a CAPM-style OLS regression of AAPL's returns on the Benchmark
+companies.econometrics.get_ols(
+    dependent_ticker="AAPL", independent_tickers=["Benchmark"], period="quarterly"
+)
+```
+
+Which returns the regression coefficient alongside its Standard Error, t-Statistic and P-Value, letting you judge statistical significance rather than only the point estimate:
+
+|           |   Coefficient |   Std. Error |   t-Statistic |   P-Value |
+|:----------|--------------:|-------------:|--------------:|----------:|
+| Intercept |        0.0299 |       0.0308 |        0.9711 |    0.3524 |
+| Benchmark |        1.3178 |       0.2768 |        4.7618 |    0.0006 |
+
+The `econometrics` module covers 45+ methods in total, including [unit root tests](https://www.jeroenbouma.com/projects/financetoolkit/docs/econometrics#get_augmented_dickey_fuller) (ADF, KPSS, Phillips-Perron), [cointegration and Granger causality](https://www.jeroenbouma.com/projects/financetoolkit/docs/econometrics#get_engle_granger_cointegration), [panel data estimators](https://www.jeroenbouma.com/projects/financetoolkit/docs/econometrics#get_fixed_effects) (Fixed/Random Effects), [causal inference](https://www.jeroenbouma.com/projects/financetoolkit/docs/econometrics#get_propensity_score_matching) (IV-2SLS, Difference-in-Differences, Regression Discontinuity, Propensity Score Matching, Synthetic Control) and [time-series forecasting](https://www.jeroenbouma.com/projects/financetoolkit/docs/econometrics#get_arima_forecast) (ARIMA, VAR, VECM). **Find the Notebook [here](https://www.jeroenbouma.com/projects/financetoolkit/econometrics-notebook) and the full econometrics documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/econometrics).**
+
 # MCP Server
 
 The Finance Toolkit MCP Server exposes 200+ financial metrics, models, and economic indicators directly to any AI assistant that supports the [Model Context Protocol](https://modelcontextprotocol.io) (MCP). Ask questions in plain English — the AI fetches live financial data on your behalf, backed by the transparent, open-source calculation methods of the Finance Toolkit.

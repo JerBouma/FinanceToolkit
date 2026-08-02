@@ -119,16 +119,21 @@ def get_gorden_growth_model(
     """
     Calculates the intrinsic value of a stock using the Gorden Growth Model.
 
-    The Gorden Growth Model is a method for calculating the intrinsic value of a stock,
-    based on a future series of dividends that grow at a constant rate. It is a popular
-    and straightforward variant of the dividend discount model (DDM). The Gorden Growth
-    Model assumes that dividends increase at a constant rate indefinitely. The model
-    is named after Myron J. Gorden of the University of Washington Foster School of
-    Business, who originally published it in 1959.
+    The Gordon Growth Model (note: this function's name retains the "Gorden" spelling for
+    backward-compatibility with earlier releases) is a method for calculating the intrinsic
+    value of a stock, based on a future series of dividends that grow at a constant rate. It
+    is a popular and straightforward variant of the dividend discount model (DDM). The Gordon
+    Growth Model assumes that dividends increase at a constant rate indefinitely. The model is
+    named after Myron J. Gordon, Professor Emeritus of Finance at the Rotman School of
+    Management, University of Toronto, who originally published it (with Eli Shapiro) in 1956
+    and developed it further in a 1959 paper.
 
     The formula is as follows:
 
     - Intrinsic Value = (Dividends Per Share * (1 + Growth Rate)) / (Rate of Return - Growth Rate)
+
+    Also known as: Gordon Growth Model, GGM, dividend discount model (single-stage/constant-growth
+    variant).
 
     Args:
         dividends_per_share (float): the dividends per share.
@@ -137,6 +142,14 @@ def get_gorden_growth_model(
 
     Returns:
         float: the intrinsic value of the stock.
+
+    Notes:
+    - The Rate of Return must be greater than the Growth Rate, otherwise the formula divides by a
+    non-positive number.
+
+    References:
+    - Gordon, Myron J. "Dividends, Earnings, and Stock Prices." The Review of Economics and
+    Statistics, Vol. 41, No. 2, 1959, pp. 99-105.
     """
     return (dividends_per_share * (1 + growth_rate)) / (rate_of_return - growth_rate)
 

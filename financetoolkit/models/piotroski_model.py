@@ -10,7 +10,6 @@ from financetoolkit.ratios import (
     profitability_model,
     solvency_model,
 )
-from financetoolkit.utilities import statistics_model
 
 
 def get_return_on_assets_criteria(
@@ -83,20 +82,19 @@ def get_change_in_return_on_asset_criteria(
     average_total_assets: float | pd.Series | pd.DataFrame,
 ) -> float | pd.Series | pd.DataFrame:
     """
-    Calculates the change in the return on assets criteria for a company based o
-    its net income and total assets.
+    Calculates the change in the return on assets (F_dROA) criteria for the Piotroski F-Score
+    model.
 
-    The function calculates the return on assets (ROA) for a company based on its
-    net income and total assets at the beginning and end of a period. It then calculates
-    the growth rate of the ROA over the period, and returns a boolean value indicating
-    whether the growth rate has increased compared to the previous period.
+    The function calculates the return on assets (ROA) for a company based on its net income
+    and total assets, and returns a boolean value indicating whether ROA in the current period
+    is higher than ROA in the prior period, matching Piotroski's (2000) original F_dROA signal.
 
     The formula is as follows:
 
         - Return on Assets (ROA) = (Net Income Beginning + Net Income End) /
         (Total Assets Beginning + Total Assets End)
-        - Return on Assets Growth = Return on Assets (ROA) / Return on Assets (ROA) Shifted
-        - Change in Return on Assets Criteria = Return on Assets Growth > 0
+        - Change in Return on Assets Criteria = Return on Assets (ROA, t) > Return on Assets
+        (ROA, t-1)
 
     Args:
         net_income (float | pd.Series | pd.DataFrame): The net income of the company for the period.
@@ -104,7 +102,7 @@ def get_change_in_return_on_asset_criteria(
         for the period.
 
     Returns:
-        float | pd.Series | pd.DataFrame: A boolean value indicating whether the growth rate of the ROA has increased
+        float | pd.Series | pd.DataFrame: A boolean value indicating whether the ROA has increased
         compared to the previous period.
 
     """
@@ -112,10 +110,8 @@ def get_change_in_return_on_asset_criteria(
         net_income=net_income, average_total_assets=average_total_assets
     )
 
-    return_on_assets_growth = statistics_model.calculate_growth(return_on_assets)
-
-    change_in_return_on_assets_criteria = (
-        return_on_assets_growth > return_on_assets_growth.shift(1, axis=1)
+    change_in_return_on_assets_criteria = return_on_assets > return_on_assets.shift(
+        1, axis=1
     )
 
     return change_in_return_on_assets_criteria
@@ -406,7 +402,7 @@ def get_piotroski_score(
 
     References:
     - Piotroski, Joseph D. "Value Investing: The Use of Historical Financial Statement Information to
-    Separate Winners from Losers." Journal of Accounting Research, Vol. 38, No. 3, 1999, pp. 1-41.
+    Separate Winners from Losers." Journal of Accounting Research, Vol. 38, Supplement, 2000, pp. 1-41.
     """
     if isinstance(return_on_assets_criteria, pd.Series | pd.DataFrame):
         return_on_assets_criteria = return_on_assets_criteria.astype(int)

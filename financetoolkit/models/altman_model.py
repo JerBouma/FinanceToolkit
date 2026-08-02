@@ -172,6 +172,19 @@ def get_altman_z_score(
 
     Returns:
         float | pd.Series | pd.DataFrame: The Altman Z-Score.
+
+    Notes:
+    - This is the original 1968 Z-Score, calibrated on publicly listed manufacturing companies and
+    using the Market Value of Equity (rather than Book Value of Equity, as used in the private-firm
+    Z'-Score variant). A Z-Score below 1.81 indicates a high likelihood of bankruptcy, a score above
+    2.99 indicates a low likelihood, and scores in between fall into a "gray area".
+    - As with the Beneish M-Score, Piotroski F-Score, Ohlson O-Score and other models in this module,
+    this is a probabilistic, not a definitive, indicator and should be combined with further
+    fundamental analysis.
+
+    References:
+    - Altman, Edward I. "Financial Ratios, Discriminant Analysis and the Prediction of Corporate
+    Bankruptcy." The Journal of Finance, Vol. 23, No. 4, 1968, pp. 589-609.
     """
     return (
         1.2 * working_capital_to_total_assets_ratio

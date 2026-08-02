@@ -129,8 +129,9 @@ def get_grover_score(
     should be combined with further fundamental analysis.
 
     References:
-    - Grover, Jeffrey S. "Validating the Grover Bankruptcy Model." Doctoral dissertation, University of North
-    Texas, 2003.
+    - Grover, Jeffrey S., and Adam Lavin. "Financial Ratios, Discriminant Analysis and the Prediction
+    of Corporate Bankruptcy: A Service Industry Extension of Altman's Z-Score Model of Bankruptcy
+    Prediction." Working Paper, Southern Finance Association Annual Meeting, 2001.
     """
     if not isinstance(
         working_capital_to_total_assets_ratio, int | float | pd.Series | pd.DataFrame

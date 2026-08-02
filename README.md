@@ -443,21 +443,33 @@ In which the weights and returns can be depicted as follows:
 
 ### Applying Econometric Techniques
 
-Beyond ratios and risk/performance metrics, the `econometrics` module provides [regression](https://www.jeroenbouma.com/projects/financetoolkit/docs/econometrics#get_ols), [hypothesis testing](https://www.jeroenbouma.com/projects/financetoolkit/docs/econometrics#get_jarque_bera_test), [unit root and cointegration](https://www.jeroenbouma.com/projects/financetoolkit/docs/econometrics#get_augmented_dickey_fuller) and [panel data](https://www.jeroenbouma.com/projects/financetoolkit/docs/econometrics#get_fixed_effects) methods built on `statsmodels` and `linearmodels`. It requires the optional `financetoolkit[econometrics]` extra (`pip install financetoolkit[econometrics]`) and can be used via `companies.econometrics`.
+Beyond ratios and risk/performance metrics, the `econometrics` module provides [regression](https://www.jeroenbouma.com/projects/financetoolkit/docs/econometrics#get_ols), [hypothesis testing](https://www.jeroenbouma.com/projects/financetoolkit/docs/econometrics#get_jarque_bera_test), [unit root and cointegration](https://www.jeroenbouma.com/projects/financetoolkit/docs/econometrics#get_augmented_dickey_fuller), [Granger causality](https://www.jeroenbouma.com/projects/financetoolkit/docs/econometrics#get_granger_causality) and [panel data](https://www.jeroenbouma.com/projects/financetoolkit/docs/econometrics#get_fixed_effects) methods built on `statsmodels` and `linearmodels`. It requires the optional `financetoolkit[econometrics]` extra (`pip install financetoolkit[econometrics]`) and can be used via `companies.econometrics`.
+
+As an example of a small investigation: is Apple's stock actually tied to its chip suppliers and megacap peers, or is that just eyeballed pairwise correlation? Regressing Apple's weekly returns on a deliberately wide set of tickers -- its RF/modem/foundry suppliers (`QCOM`, `SWKS`, `TSM`), other megacap tech (`MSFT`, `GOOGL`, `AMZN`, `META`, `NVDA`) and two unrelated names (`XOM`, `PG`) as a contrast, with the Benchmark deliberately left out -- shows which relationships actually hold up once every regressor is controlled for at once, rather than one at a time.
 
 ```python
-# Run a CAPM-style OLS regression of AAPL's returns on the Benchmark
 companies.econometrics.get_ols(
-    dependent_ticker="AAPL", independent_tickers=["Benchmark"], period="quarterly"
+    dependent_ticker="AAPL",
+    independent_tickers=["TSM", "QCOM", "SWKS", "MSFT", "GOOGL", "AMZN", "META", "NVDA", "XOM", "PG"],
+    period="weekly",
 )
 ```
 
-Which returns the regression coefficient alongside its Standard Error, t-Statistic and P-Value, letting you judge statistical significance rather than only the point estimate:
-
 |           |   Coefficient |   Std. Error |   t-Statistic |   P-Value |
 |:----------|--------------:|-------------:|--------------:|----------:|
-| Intercept |        0.0299 |       0.0308 |        0.9711 |    0.3524 |
-| Benchmark |        1.3178 |       0.2768 |        4.7618 |    0.0006 |
+| Intercept |        0.0028 |       0.0017 |        1.6815 |    0.0943 |
+| TSM       |       -0.0054 |       0.0523 |       -0.1028 |    0.9182 |
+| QCOM      |        0.1432 |       0.0361 |        3.9717 |    0.0001 |
+| SWKS      |        0.2141 |       0.0484 |        4.4221 |    0.0000 |
+| MSFT      |        0.3036 |       0.0864 |        3.5144 |    0.0005 |
+| GOOGL     |        0.1448 |       0.0689 |        2.1015 |    0.0369 |
+| AMZN      |        0.0617 |       0.0529 |        1.1664 |    0.2448 |
+| META      |       -0.0132 |       0.0389 |       -0.3398 |    0.7343 |
+| NVDA      |       -0.0024 |       0.0415 |       -0.0575 |    0.9542 |
+| XOM       |       -0.0291 |       0.0373 |       -0.7799 |    0.4364 |
+| PG        |        0.2858 |       0.0707 |        4.0393 |    0.0001 |
+
+Only some of the initially plausible relationships survive: `QCOM`, `SWKS`, `MSFT` and `GOOGL` come out significant, `AMZN`/`META`/`NVDA`/`XOM` do not, and -- counter-intuitively -- the unrelated `PG` is significant while Apple's own foundry partner `TSM` is not, a sign of multicollinearity between correlated regressors. The [notebook](https://www.jeroenbouma.com/projects/financetoolkit/econometrics-notebook) picks this apart further: `get_granger_causality` shows the strongest link (`SWKS`) is contemporaneous rather than predictive in either direction, `get_augmented_dickey_fuller` and `get_engle_granger_cointegration` check whether Apple and `TSM` share a long-run price relationship despite the return-level result (they don't, in this window), and `get_fixed_effects` reveals the whole panel's shared "sensitivity" to `SWKS` is really just proxying for the excluded market factor.
 
 The `econometrics` module covers 45+ methods in total, including [unit root tests](https://www.jeroenbouma.com/projects/financetoolkit/docs/econometrics#get_augmented_dickey_fuller) (ADF, KPSS, Phillips-Perron), [cointegration and Granger causality](https://www.jeroenbouma.com/projects/financetoolkit/docs/econometrics#get_engle_granger_cointegration), [panel data estimators](https://www.jeroenbouma.com/projects/financetoolkit/docs/econometrics#get_fixed_effects) (Fixed/Random Effects), [causal inference](https://www.jeroenbouma.com/projects/financetoolkit/docs/econometrics#get_propensity_score_matching) (IV-2SLS, Difference-in-Differences, Regression Discontinuity, Propensity Score Matching, Synthetic Control) and [time-series forecasting](https://www.jeroenbouma.com/projects/financetoolkit/docs/econometrics#get_arima_forecast) (ARIMA, VAR, VECM). **Find the Notebook [here](https://www.jeroenbouma.com/projects/financetoolkit/econometrics-notebook) and the full econometrics documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/econometrics).**
 

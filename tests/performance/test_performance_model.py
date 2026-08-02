@@ -252,6 +252,7 @@ def test_get_m2_ratio(recorder):
             asset_returns=pd.Series([0.3, 0.2, 0.1, 0, 0.06]),
             risk_free_rate=pd.Series([0.01, 0.02, 0.01, 0.0, 0.006]),
             asset_standard_deviation=pd.Series([0.01, 0.02, 0.01, 0.0, 0.006]),
+            benchmark_standard_deviation=pd.Series([0.02, 0.03, 0.015, 0.005, 0.01]),
         )
     )
 
@@ -261,6 +262,7 @@ def test_get_rolling_m2_ratio(recorder):
         performance_model.get_rolling_m2_ratio(
             asset_returns=pd.Series([0.3, 0.2, 0.1, 0, 0.06]),
             risk_free_rate=pd.Series([0.01, 0.02, 0.01, 0.0, 0.006]),
+            benchmark_returns=pd.Series([0.31, 0.19, 0.5, 0, 0.03]),
             window_size=2,
         ).round(4)
     )
@@ -270,6 +272,24 @@ def test_get_tracking_error(recorder):
     recorder.capture(
         performance_model.get_tracking_error(
             asset_returns=pd.Series([0.3, 0.2, 0.1, 0, 0.06]),
+            benchmark_returns=pd.Series([0.31, 0.19, 0.5, 0, 0.03]),
+        )
+    )
+
+
+def test_get_tracking_error_dataframe(recorder):
+    # Regression test: the plain (non "within period") DataFrame branch used to index
+    # into the whole asset_returns DataFrame instead of the individual column, which
+    # misaligned the resulting per-column Series against the (date-indexed) output
+    # DataFrame and silently produced all-NaN results.
+    recorder.capture(
+        performance_model.get_tracking_error(
+            asset_returns=pd.DataFrame(
+                {
+                    "AAPL": [0.3, 0.2, 0.1, 0, 0.06],
+                    "MSFT": [0.28, 0.22, 0.05, 0.01, 0.04],
+                }
+            ),
             benchmark_returns=pd.Series([0.31, 0.19, 0.5, 0, 0.03]),
         )
     )

@@ -160,6 +160,14 @@ def get_capital_asset_pricing_model(
 
     - Expected Return (ER) = Rf + β * (Rm — Rf)
 
+    For more information about the method, see the following papers:
+
+    - Sharpe, W.F. (1964). "Capital Asset Prices: A Theory of Market Equilibrium under
+    Conditions of Risk." Journal of Finance, 19(3), 425-442.
+    - Lintner, J. (1965). "The Valuation of Risk Assets and the Selection of Risky
+    Investments in Stock Portfolios and Capital Budgets." Review of Economics and
+    Statistics, 47(1), 13-37.
+
     Args:
         risk_free_rate (pd.Series | float): the risk free rate.
         beta (pd.Series | pd.DataFrame | float): the beta.
@@ -176,10 +184,12 @@ def get_capital_asset_pricing_model(
             capital_asset_pricing_model.loc[:, column] = risk_free_rate + beta[
                 column
             ] * (benchmark_returns - risk_free_rate)
-    if isinstance(beta, (pd.Series | float)):
+    elif isinstance(beta, (pd.Series | float)):
         capital_asset_pricing_model = risk_free_rate + beta * (
             benchmark_returns - risk_free_rate
         )
+    else:
+        raise TypeError("Expects pd.DataFrame, pd.Series or float, no other value.")
 
     return capital_asset_pricing_model
 
@@ -359,8 +369,14 @@ def get_fama_and_french_model_multi(
         excess_returns = excess_returns.ffill(limit=None)
 
     if factor_dataset.isna().any().any():
-        excess_returns = excess_returns.bfill(limit=None, axis=1)
-        factor_dataset = factor_dataset.ffill(limit=None, axis=1)
+        # Fill along the time axis (the default axis=0), mirroring how excess_returns
+        # is filled above. A previous version of this code passed axis=1 and applied
+        # bfill to excess_returns (a Series, which does not support axis=1 and raises
+        # "No axis named 1 for object type Series") instead of to factor_dataset --
+        # this both crashed whenever factor_dataset had any NaNs and filled in the
+        # wrong direction (across factors instead of across time) even if it hadn't.
+        factor_dataset = factor_dataset.bfill(limit=None)
+        factor_dataset = factor_dataset.ffill(limit=None)
 
     model = LinearRegression()
     model.fit(factor_dataset, excess_returns)
@@ -415,6 +431,15 @@ def get_fama_and_french_model_single(
 
         - Excess Return = Intercept + Slope * Factor Value + Residuals
 
+    Note that `scipy.stats.linregress(x, y)` fits `y = intercept + slope * x`, i.e. `x`
+    is the independent/predictor variable and `y` is the dependent/response variable.
+    Given the formula above, `factor` is `x` and `excess_returns` is `y`, so it must be
+    called as `linregress(factor, excess_returns)` -- calling it the other way around
+    (as an earlier version of this function did) fits the reverse regression (`factor`
+    as a function of `excess_returns`), which generally yields a different slope and
+    intercept (since OLS is not symmetric in `x` and `y`) and silently produces the
+    wrong regression parameters and residuals for this model.
+
     Args:
         excess_returns (pd.Series): the excess returns.
         factor (pd.Series): the factor series.
@@ -434,7 +459,7 @@ def get_fama_and_french_model_single(
         }
         return regression_results, excess_returns * np.nan
 
-    result = linregress(excess_returns, factor)
+    result = linregress(factor, excess_returns)
 
     regression_results = {
         "Intercept": result.intercept,
@@ -454,13 +479,23 @@ def get_alpha(
     benchmark_returns: pd.Series | float,
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate the Alpha.
+    Calculate the (arithmetic) Alpha, i.e. the asset's return in excess of the
+    benchmark's return.
+
+    This is the simple, model-free notion of Alpha (sometimes called "active return"):
+    it does not risk-adjust for market exposure at all. For the risk-adjusted version
+    that nets out the return attributable to Beta, see `get_jensens_alpha`.
+
+    The formula is as follows:
+
+        - Alpha = Asset Return - Benchmark Return
 
     Args:
-        excess_returns (pd.Series): A Series of returns with risk-free rate subtracted.
+        asset_returns (pd.Series | float): The asset's or portfolio's return.
+        benchmark_returns (pd.Series | float): The benchmark's return over the same period.
 
     Returns:
-        pd.Series: A Series of Sharpe ratios with time as index and assets as columns.
+        pd.Series | pd.DataFrame: Alpha values with time as index and assets as columns.
     """
     if isinstance(asset_returns, pd.DataFrame):
         alpha = pd.DataFrame(
@@ -468,8 +503,10 @@ def get_alpha(
         )
         for column in alpha.columns:
             alpha.loc[:, column] = asset_returns[column] - benchmark_returns
-    if isinstance(asset_returns, (pd.Series | float)):
+    elif isinstance(asset_returns, (pd.Series | float)):
         alpha = asset_returns - benchmark_returns
+    else:
+        raise TypeError("Expects pd.DataFrame, pd.Series or float, no other value.")
 
     return alpha
 
@@ -502,13 +539,34 @@ def get_jensens_alpha(
     benchmark_returns: pd.Series | float,
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate Jensen's Alpha.
+    Calculate Jensen's Alpha, i.e. the return earned above what CAPM would predict
+    given the asset's Beta (systematic risk exposure).
+
+    The formula is as follows:
+
+        - Jensen's Alpha = Asset Return - [Risk-Free Rate + Beta * (Benchmark Return - Risk-Free Rate)]
+
+    Where the bracketed term is the CAPM-predicted return (see
+    `get_capital_asset_pricing_model`). A positive Jensen's Alpha indicates the asset
+    outperformed what its market risk alone would justify (potential stock-picking or
+    timing skill); a negative value indicates underperformance relative to that
+    risk-adjusted benchmark.
+
+    For more information about the method, see the following paper:
+
+    - Jensen, M.C. (1968). "The Performance of Mutual Funds in the Period 1945-1964."
+    Journal of Finance, 23(2), 389-416.
 
     Args:
-        excess_returns (pd.Series): A Series of returns with risk-free rate subtracted.
+        asset_returns (pd.Series | float): The asset's or portfolio's return.
+        risk_free_rate (pd.Series | float): The risk-free rate over the same period.
+        beta (pd.Series | pd.DataFrame | float): The asset's or portfolio's Beta, see
+        `get_beta`.
+        benchmark_returns (pd.Series | float): The benchmark's return over the same period.
 
     Returns:
-        pd.Series: A Series of Sharpe ratios with time as index and assets as columns.
+        pd.Series | pd.DataFrame: A Series or DataFrame of Jensen's Alpha values with
+        time as index and assets as columns.
     """
     if isinstance(beta, pd.DataFrame) and isinstance(asset_returns, pd.DataFrame):
         jensens_alpha = pd.DataFrame(
@@ -539,11 +597,28 @@ def get_treynor_ratio(
     beta: pd.Series | pd.DataFrame | float,
 ) -> pd.Series:
     """
-    Calculate the Treynor ratio of returns.
+    Calculate the Treynor ratio of returns, i.e. the excess return earned per unit of
+    systematic (market) risk, as measured by Beta.
+
+    Unlike the Sharpe ratio, which divides by total volatility (standard deviation),
+    the Treynor ratio divides by Beta -- appropriate for an investor who holds this
+    asset as one position within an already-diversified portfolio, and therefore only
+    cares about compensation for market (non-diversifiable) risk, not idiosyncratic risk.
+
+    The formula is as follows:
+
+        - Treynor Ratio = (Asset Return - Risk-Free Rate) / Beta
+
+    For more information about the method, see the following paper:
+
+    - Treynor, J.L. (1965). "How to Rate Management of Investment Funds." Harvard
+    Business Review, 43(1), 63-75.
 
     Args:
-        excess_returns (pd.Series): A Series of returns with risk-free rate subtracted.
-        beta (float): The portfolio's beta (systematic risk).
+        asset_returns (pd.Series | float): The asset's or portfolio's return.
+        risk_free_rate (pd.Series | float): The risk-free rate over the same period.
+        beta (pd.Series | pd.DataFrame | float): The asset's or portfolio's Beta
+        (systematic risk), see `get_beta`.
 
     Returns:
         pd.Series: A Series of Treynor ratios with time as index and assets as columns.
@@ -571,13 +646,33 @@ def get_treynor_ratio(
 
 def get_sharpe_ratio(excess_returns: pd.Series | pd.DataFrame) -> pd.Series:
     """
-    Calculate the Sharpe ratio of returns.
+    Calculate the Sharpe ratio of returns, i.e. the mean excess return per unit of total
+    (upside and downside) volatility.
+
+    The formula is as follows:
+
+        - Sharpe Ratio = Mean(Excess Return) / Standard Deviation(Excess Return)
+
+    Where "Excess Return" is the return with the risk-free rate already subtracted (see
+    `get_excess_return`). When `excess_returns` has a "within period" (period, date) Multi
+    Index, the mean and standard deviation are computed from the daily observations within
+    each period, producing one Sharpe ratio per period; otherwise both are computed once
+    over the entire series (or once per column, for a plain DataFrame), producing a single
+    ratio (per column).
+
+    For more information about the method, see the following papers:
+
+    - Sharpe, W.F. (1966). "Mutual Fund Performance." Journal of Business, 39(1), 119-138.
+    - Sharpe, W.F. (1994). "The Sharpe Ratio." Journal of Portfolio Management, 21(1), 49-58.
 
     Args:
-        excess_returns (pd.Series): A Series of returns with risk-free rate subtracted.
+        excess_returns (pd.Series | pd.DataFrame): A Series or DataFrame of returns with
+        the risk-free rate subtracted.
 
     Returns:
-        pd.Series: A Series of Sharpe ratios with time as index and assets as columns.
+        pd.Series | pd.DataFrame: Sharpe Ratio values. If `excess_returns` has a "within
+        period" Multi Index, one value is returned per period (with time as index);
+        otherwise a single value is returned per column (or overall, for a Series).
     """
     if isinstance(excess_returns, pd.DataFrame):
         if excess_returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS:
@@ -587,11 +682,11 @@ def get_sharpe_ratio(excess_returns: pd.Series | pd.DataFrame) -> pd.Series:
             )
             return sharpe_ratios
 
-        return excess_returns / excess_returns.std()
+        return excess_returns.mean() / excess_returns.std()
 
     if isinstance(excess_returns, pd.Series):
         # Calculate Sharpe ratio for a single asset (ticker)
-        return excess_returns / excess_returns.std()
+        return excess_returns.mean() / excess_returns.std()
 
     raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
 
@@ -797,7 +892,34 @@ def get_deflated_sharpe_ratio(
 
 def get_sortino_ratio(excess_returns: pd.Series | pd.DataFrame) -> pd.Series:
     """
-    Calculate the Sortino ratio of returns.
+    Calculate the Sortino ratio of returns, i.e. the mean excess return per unit of
+    downside deviation.
+
+    Unlike the Sharpe ratio, which penalizes upside and downside volatility equally via
+    the standard deviation, the Sortino ratio only penalizes volatility below a Minimum
+    Acceptable Return (here, a MAR of 0, since `excess_returns` already has the risk-free
+    rate subtracted). This is achieved by replacing the standard deviation in the
+    denominator with the "downside deviation" (the target semi-deviation).
+
+    The formula is as follows:
+
+        - Sortino Ratio = Mean(Excess Return) / Downside Deviation
+        - Downside Deviation = sqrt( (1/N) * sum( min(Excess Return, 0)^2 ) )
+
+    Where N is the *total* number of observations (not just the number of negative
+    ones) -- periods with a non-negative excess return contribute 0 to the sum, but
+    still count towards N, exactly as in Sortino & Price (1994) and the equivalent
+    empyrical/pyfolio `downside_risk` implementation. This is deliberately not the same
+    as `excess_returns[excess_returns < 0].std()`: that alternative would divide by
+    (number of negative observations - 1) and measure the dispersion of the losses
+    around *their own mean*, rather than their root-mean-square distance below the MAR
+    of 0 -- a materially different (and non-standard) quantity that understates how
+    volatile the downside really is whenever there are few, large losses.
+
+    For more information about the method, see the following paper:
+
+    - Sortino, F.A., & Price, L.N. (1994). "Performance Measurement in a Downside Risk
+    Framework." Journal of Investing, 3(3), 59-64.
 
     Args:
         excess_returns (pd.Series | pd.DataFrame): A Series or DataFrame of returns with risk-free
@@ -810,20 +932,18 @@ def get_sortino_ratio(excess_returns: pd.Series | pd.DataFrame) -> pd.Series:
         if excess_returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS:
             # Calculate Sortino ratio for each asset (ticker) in the DataFrame
             sortino_ratios = excess_returns.groupby(level=0).apply(
-                lambda x: x.mean() / x[x < 0].std()
+                lambda x: x.mean() / np.sqrt((x.clip(upper=0) ** 2).mean())
             )
             return sortino_ratios
 
-        downside_returns = excess_returns[excess_returns < 0]
-        downside_volatility = downside_returns.std()
+        downside_deviation = np.sqrt((excess_returns.clip(upper=0) ** 2).mean())
 
-        return excess_returns.mean() / downside_volatility
+        return excess_returns.mean() / downside_deviation
 
     if isinstance(excess_returns, pd.Series):
         # Calculate Sortino ratio for a single asset (ticker)
-        downside_returns = excess_returns[excess_returns < 0]
-        downside_volatility = downside_returns.std()
-        return excess_returns.mean() / downside_volatility
+        downside_deviation = np.sqrt((excess_returns.clip(upper=0) ** 2).mean())
+        return excess_returns.mean() / downside_deviation
 
     raise TypeError("Expects pd.DataFrame, pd.Series inputs, no other value.")
 
@@ -832,7 +952,11 @@ def get_rolling_sortino_ratio(
     excess_returns: pd.Series | pd.DataFrame, window_size: int
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate the rolling Sortino ratio of returns.
+    Calculate the rolling Sortino ratio of returns. See `get_sortino_ratio` for the
+    formula and the Notes on why the downside deviation is computed as the root-mean-
+    square of the negative part of returns over the *entire* window (Sortino & Price,
+    1994), rather than as the standard deviation of only the negative observations
+    within that window.
 
     Args:
         excess_returns (pd.Series | pd.DataFrame): A Series or DataFrame of returns with risk-free rate subtracted.
@@ -842,28 +966,42 @@ def get_rolling_sortino_ratio(
         pd.Series | pd.DataFrame: Rolling Sortino ratio values with time as index.
     """
 
-    def _downside_volatility(window):
-        downside_returns = window[window < 0]
+    def _downside_deviation(window):
+        downside = np.minimum(window, 0.0)
 
-        return downside_returns.std() if len(downside_returns) > 1 else np.nan
+        return np.sqrt(np.mean(downside**2))
 
     rolling_mean = excess_returns.rolling(window=window_size).mean()
-    rolling_downside_volatility = excess_returns.rolling(window=window_size).apply(
-        _downside_volatility, raw=True
+    rolling_downside_deviation = excess_returns.rolling(window=window_size).apply(
+        _downside_deviation, raw=True
     )
 
-    return rolling_mean / rolling_downside_volatility
+    return rolling_mean / rolling_downside_deviation
 
 
 def get_ulcer_performance_index(
     excess_returns: pd.Series | pd.DataFrame, ulcer_index: pd.Series | pd.DataFrame
 ) -> pd.Series:
     """
-    Calculate the Ulcer Performance Index (UPI) of returns.
+    Calculate the Ulcer Performance Index (UPI) of returns, i.e. the mean excess return
+    per unit of Ulcer Index (a depth- and duration-weighted measure of drawdown pain).
+
+    The formula is as follows:
+
+        - Ulcer Performance Index = Excess Return / Ulcer Index
+
+    Also known as: Martin Ratio.
+
+    For more information about the method, see the following source:
+
+    - Martin, P.G., & McCann, B.B. (1989). "The Investor's Guide to Fidelity Funds:
+    Winning Strategies for Mutual Fund Investors." John Wiley & Sons. (Peter Martin's
+    Ulcer Index, on which this ratio is based, was originally introduced in 1987.)
 
     Args:
         excess_returns (pd.Series | pd.DataFrame): A Series of returns with risk-free rate subtracted.
-        ulcer_index (pd.Series | pd.DataFrame): The corresponding
+        ulcer_index (pd.Series | pd.DataFrame): The corresponding Ulcer Index values (see
+        `financetoolkit.risk.risk_model.get_ulcer_index`).
 
     Returns:
         pd.Series: A Series of Ulcer Performance Index values with time as index and assets as columns.
@@ -875,13 +1013,42 @@ def get_m2_ratio(
     asset_returns: pd.Series | pd.DataFrame,
     risk_free_rate: pd.Series,
     asset_standard_deviation: pd.Series | pd.DataFrame,
+    benchmark_standard_deviation: pd.Series | float,
 ) -> pd.Series:
     """
     Calculate the M2 Ratio (Modigliani-Modigliani Measure) of returns.
 
+    The Sharpe ratio is dimensionless (a ratio, not a return), which makes it awkward to
+    communicate intuitively -- a Sharpe ratio of 0.5 does not by itself say how much
+    return an investor gave up or gained. The M2 measure rescales the Sharpe ratio back
+    into return units by asking: what return would this portfolio have earned if it had
+    been leveraged (or de-leveraged) with risk-free borrowing/lending to match the
+    benchmark's volatility exactly? This yields a return-space number that can be
+    compared directly against the benchmark's actual return.
+
+    The formula is as follows:
+
+        - M2 Ratio = Risk-Free Rate + Sharpe Ratio * Benchmark Standard Deviation
+        - Sharpe Ratio = (Asset Return - Risk-Free Rate) / Asset Standard Deviation
+
+    Note that this requires the *benchmark's* standard deviation, not just the asset's
+    own -- without it, this collapses to the plain Sharpe ratio (dimensionless) rather
+    than M2 (a return, expressed in the same units as `asset_returns`). A previous
+    version of this function omitted `benchmark_standard_deviation` entirely and
+    returned the Sharpe ratio under the "M2 Ratio" name.
+
+    For more information about the method, see the following paper:
+
+    - Modigliani, F., & Modigliani, L. (1997). "Risk-Adjusted Performance." Journal of
+    Portfolio Management, 23(2), 45-54.
+
     Args:
-        excess_returns (pd.Series | pd.DataFrame): A Series or DataFrame of returns with risk-free
-        rate already subtracted.
+        asset_returns (pd.Series | pd.DataFrame): A Series or DataFrame of period returns.
+        risk_free_rate (pd.Series): The risk-free rate, aligned to the same period as the returns.
+        asset_standard_deviation (pd.Series | pd.DataFrame): The asset's (or portfolio's)
+        standard deviation, over the same window as `asset_returns`.
+        benchmark_standard_deviation (pd.Series | float): The benchmark's standard
+        deviation, over the same window as `asset_returns`.
 
     Returns:
         pd.Series: A Series of M2 ratios with time as index and assets as columns.
@@ -893,13 +1060,17 @@ def get_m2_ratio(
             index=asset_returns.index, columns=asset_returns.columns, dtype=np.float64
         )
         for column in m2_ratio.columns:
-            m2_ratio.loc[:, column] = (
+            sharpe_ratio = (
                 asset_returns[column] - risk_free_rate
             ) / asset_standard_deviation[column]
+            m2_ratio.loc[:, column] = (
+                risk_free_rate + sharpe_ratio * benchmark_standard_deviation
+            )
     elif isinstance(asset_returns, (pd.Series | float)) and isinstance(
         asset_standard_deviation, (pd.Series | float)
     ):
-        m2_ratio = (asset_returns - risk_free_rate) / asset_standard_deviation
+        sharpe_ratio = (asset_returns - risk_free_rate) / asset_standard_deviation
+        m2_ratio = risk_free_rate + sharpe_ratio * benchmark_standard_deviation
     else:
         raise TypeError(
             "Expects pd.DataFrame for both Asset Returns and Asset Standard Deviations or pd.Series / Float "
@@ -912,14 +1083,18 @@ def get_m2_ratio(
 def get_rolling_m2_ratio(
     asset_returns: pd.Series | pd.DataFrame,
     risk_free_rate: pd.Series,
+    benchmark_returns: pd.Series,
     window_size: int,
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate the rolling M2 Ratio (Modigliani-Modigliani Measure) of returns.
+    Calculate the rolling M2 Ratio (Modigliani-Modigliani Measure) of returns. See
+    `get_m2_ratio` for the formula.
 
     Args:
         asset_returns (pd.Series | pd.DataFrame): Asset returns.
         risk_free_rate (pd.Series): The risk free rate, aligned to the same period as the returns.
+        benchmark_returns (pd.Series): Benchmark returns, aligned to the same period as
+        the returns, from which the rolling benchmark standard deviation is derived.
         window_size (int): The size of the rolling window.
 
     Returns:
@@ -929,22 +1104,33 @@ def get_rolling_m2_ratio(
 
     rolling_mean = excess_returns.rolling(window=window_size).mean()
     rolling_std = asset_returns.rolling(window=window_size).std()
+    rolling_sharpe_ratio = rolling_mean / rolling_std
 
-    return rolling_mean / rolling_std
+    rolling_risk_free_rate = risk_free_rate.rolling(window=window_size).mean()
+    rolling_benchmark_std = benchmark_returns.rolling(window=window_size).std()
+
+    return rolling_sharpe_ratio.mul(rolling_benchmark_std, axis=0).add(
+        rolling_risk_free_rate, axis=0
+    )
 
 
 def get_tracking_error(
     asset_returns: pd.Series | pd.DataFrame, benchmark_returns: pd.Series
 ) -> pd.Series:
     """
-    Calculate the Tracking Error of returns.
+    Calculate the Tracking Error of returns, i.e. the standard deviation of the
+    difference between the asset's and the benchmark's return (the "active return").
+
+    The formula is as follows:
+
+        - Tracking Error = Standard Deviation(Asset Return - Benchmark Return)
 
     Args:
-        excess_returns (pd.Series | pd.DataFrame): A Series or DataFrame of returns with risk-free
-        rate already subtracted.
+        asset_returns (pd.Series | pd.DataFrame): A Series or DataFrame of asset returns.
+        benchmark_returns (pd.Series): The benchmark's returns over the same period.
 
     Returns:
-        pd.Series: A Series of Sortino ratios with time as index and assets as columns.
+        pd.Series: A Series of Tracking Error values with time as index and assets as columns.
     """
     if isinstance(asset_returns, pd.DataFrame):
         if asset_returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS:
@@ -958,7 +1144,9 @@ def get_tracking_error(
             index=asset_returns.index, columns=asset_returns.columns, dtype=np.float64
         )
         for column in tracking_error.columns:
-            tracking_error.loc[:, column] = (asset_returns - benchmark_returns).std()
+            tracking_error.loc[:, column] = (
+                asset_returns[column] - benchmark_returns
+            ).std()
 
     if isinstance(asset_returns, (pd.Series | float)):
         tracking_error = (asset_returns - benchmark_returns).std()
@@ -991,14 +1179,29 @@ def get_information_ratio(
     asset_returns: pd.Series | pd.DataFrame, benchmark_returns: pd.Series
 ) -> pd.Series:
     """
-    Calculate the Information Ratio of returns.
+    Calculate the Information Ratio of returns, i.e. the mean active return (asset
+    return minus benchmark return) per unit of Tracking Error.
+
+    The formula is as follows:
+
+        - Information Ratio = Mean(Asset Return - Benchmark Return) / Tracking Error
+
+    Where Tracking Error is the standard deviation of that same difference (see
+    `get_tracking_error`). The Information Ratio is the Sharpe ratio of "active"
+    (benchmark-relative) returns, and is closely tied to Grinold's "Fundamental Law of
+    Active Management" as a way of scoring active managers on a risk-adjusted basis.
+
+    For more information about the method, see the following paper:
+
+    - Grinold, R.C. (1989). "The Fundamental Law of Active Management." Journal of
+    Portfolio Management, 15(3), 30-37.
 
     Args:
-        excess_returns (pd.Series | pd.DataFrame): A Series or DataFrame of returns with risk-free
-        rate already subtracted.
+        asset_returns (pd.Series | pd.DataFrame): A Series or DataFrame of asset returns.
+        benchmark_returns (pd.Series): The benchmark's returns over the same period.
 
     Returns:
-        pd.Series: A Series of Sortino ratios with time as index and assets as columns.
+        pd.Series: A Series of Information Ratio values with time as index and assets as columns.
     """
     if isinstance(asset_returns, pd.DataFrame):
         if asset_returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS:
@@ -1053,7 +1256,19 @@ def get_calmar_ratio(
     returns: pd.Series | pd.DataFrame, maximum_drawdown: pd.Series | pd.DataFrame
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate the Calmar Ratio of returns.
+    Calculate the Calmar Ratio of returns, i.e. the (typically annualized) return per
+    unit of Maximum Drawdown.
+
+    The formula is as follows:
+
+        - Calmar Ratio = Return / |Maximum Drawdown|
+
+    Named after "California Managed Accounts Reports," the newsletter in which Terry W.
+    Young originally proposed it.
+
+    For more information about the method, see the following source:
+
+    - Young, T.W. (1991). "Calmar Ratio: A Smoother Tool." Futures, 20(1), 40.
 
     Args:
         returns (pd.Series | pd.DataFrame): A Series or DataFrame of period returns.
@@ -1068,18 +1283,31 @@ def get_calmar_ratio(
 
 def get_average_drawdown(
     returns: pd.Series | pd.DataFrame,
+    method: str = "return",
 ) -> pd.Series | pd.DataFrame:
     """
     Calculate the Average Drawdown of returns, i.e. the mean of all pointwise negative
     drawdowns in the cumulative return series.
 
     Args:
-        returns (pd.Series | pd.DataFrame): A Series or Dataframe of returns.
+        returns (pd.Series | pd.DataFrame): A Series or Dataframe of returns
+        (method="return") or of raw levels (method="level").
+        method (str, optional): Either "return" (default), which measures percentage
+        drawdowns of the compounded return series, or "level", which measures
+        absolute drawdowns of the raw level series directly -- use this when
+        `returns` is not a genuine percentage return (e.g. a series that can be zero
+        or negative). Defaults to "return".
 
     Returns:
         pd.Series | pd.DataFrame: Average Drawdown values as float if returns is a
         pd.Series, otherwise as pd.Series or pd.DataFrame with time as index.
+
+    Raises:
+        ValueError: If `method` is not one of "return" or "level".
     """
+    if method not in ("return", "level"):
+        raise ValueError("method must be 'return' or 'level'.")
+
     if (
         isinstance(returns, pd.DataFrame)
         and returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS
@@ -1088,7 +1316,7 @@ def get_average_drawdown(
         period_data_list = []
 
         for sub_period in periods:
-            period_data = get_average_drawdown(returns.loc[sub_period])
+            period_data = get_average_drawdown(returns.loc[sub_period], method=method)
             period_data.name = sub_period
 
             if not period_data.empty:
@@ -1098,8 +1326,11 @@ def get_average_drawdown(
 
         return average_drawdown.T
 
-    cum_returns = (1 + returns.fillna(0)).cumprod()
-    drawdowns = cum_returns / cum_returns.cummax() - 1
+    if method == "level":
+        drawdowns = returns - returns.cummax()
+    else:
+        cum_returns = (1 + returns.fillna(0)).cumprod()
+        drawdowns = cum_returns / cum_returns.cummax() - 1
 
     return drawdowns[drawdowns < 0].mean()
 
@@ -1127,18 +1358,32 @@ def get_sterling_ratio(
 
 def get_burke_drawdown_measure(
     returns: pd.Series | pd.DataFrame,
+    method: str = "return",
 ) -> pd.Series | pd.DataFrame:
     """
     Calculate the Burke Drawdown Measure of returns, i.e. the square root of the sum of
     squared pointwise negative drawdowns in the cumulative return series.
 
     Args:
-        returns (pd.Series | pd.DataFrame): A Series or Dataframe of returns.
+        returns (pd.Series | pd.DataFrame): A Series or Dataframe of returns
+        (method="return") or of raw levels (method="level").
+        method (str, optional): Either "return" (default), which measures percentage
+        drawdowns of the compounded return series, or "level", which measures
+        absolute drawdowns of the raw level series directly -- use this when
+        `returns` is not a genuine percentage return (e.g. a series that can be zero
+        or negative). Note that in "level" mode the result is in squared input units,
+        not a percentage. Defaults to "return".
 
     Returns:
         pd.Series | pd.DataFrame: Burke Drawdown Measure values as float if returns is a
         pd.Series, otherwise as pd.Series or pd.DataFrame with time as index.
+
+    Raises:
+        ValueError: If `method` is not one of "return" or "level".
     """
+    if method not in ("return", "level"):
+        raise ValueError("method must be 'return' or 'level'.")
+
     if (
         isinstance(returns, pd.DataFrame)
         and returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS
@@ -1147,7 +1392,9 @@ def get_burke_drawdown_measure(
         period_data_list = []
 
         for sub_period in periods:
-            period_data = get_burke_drawdown_measure(returns.loc[sub_period])
+            period_data = get_burke_drawdown_measure(
+                returns.loc[sub_period], method=method
+            )
             period_data.name = sub_period
 
             if not period_data.empty:
@@ -1157,8 +1404,11 @@ def get_burke_drawdown_measure(
 
         return burke_drawdown_measure.T
 
-    cum_returns = (1 + returns.fillna(0)).cumprod()
-    drawdowns = cum_returns / cum_returns.cummax() - 1
+    if method == "level":
+        drawdowns = returns - returns.cummax()
+    else:
+        cum_returns = (1 + returns.fillna(0)).cumprod()
+        drawdowns = cum_returns / cum_returns.cummax() - 1
 
     return np.sqrt((drawdowns[drawdowns < 0] ** 2).sum())
 
@@ -1298,8 +1548,27 @@ def get_kappa_ratio(
     excess_returns: pd.Series | pd.DataFrame, order: int = 3
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate the Kappa Ratio of returns. The Sortino Ratio is the special case of the Kappa
-    Ratio with order=2.
+    Calculate the Kappa Ratio of returns, i.e. the mean excess return per unit of the
+    n-th order Lower Partial Moment (LPM). The Sortino Ratio (see `get_sortino_ratio`)
+    is the special case of the Kappa Ratio with order=2.
+
+    The formula is as follows:
+
+        - Kappa Ratio = Mean(Excess Return) / LPM_order^(1/order)
+        - LPM_order = (1/N) * sum( max(-Excess Return, 0)^order )
+
+    Where N is the *total* number of observations (not just the number of negative
+    ones) -- periods with a non-negative excess return contribute 0 to the sum, but
+    still count towards N. This mirrors the same convention used in `get_sortino_ratio`
+    (order=2): dividing only by the count of negative observations instead of the total
+    N, or centering the moment on the downside subset's own mean instead of on the MAR
+    of 0, would compute a different (non-standard) quantity than the Lower Partial
+    Moment this ratio is defined against.
+
+    For more information about the method, see the following paper:
+
+    - Kaplan, P.D., & Knowles, J.A. (2004). "Kappa: A Generalized Downside Risk-Adjusted
+    Performance Measure." Journal of Performance Measurement, 8(3), 42-54.
 
     Args:
         excess_returns (pd.Series | pd.DataFrame): A Series or DataFrame of returns with
@@ -1314,17 +1583,16 @@ def get_kappa_ratio(
     if isinstance(excess_returns, pd.DataFrame):
         if excess_returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS:
             return excess_returns.groupby(level=0).apply(
-                lambda x: x.mean() / (x[x < 0].abs() ** order).mean() ** (1 / order)
+                lambda x: x.mean()
+                / (x.clip(upper=0).abs() ** order).mean() ** (1 / order)
             )
 
-        downside_returns = excess_returns[excess_returns < 0]
-        lower_partial_moment = (downside_returns.abs() ** order).mean()
+        lower_partial_moment = (excess_returns.clip(upper=0).abs() ** order).mean()
 
         return excess_returns.mean() / lower_partial_moment ** (1 / order)
 
     if isinstance(excess_returns, pd.Series):
-        downside_returns = excess_returns[excess_returns < 0]
-        lower_partial_moment = (downside_returns.abs() ** order).mean()
+        lower_partial_moment = (excess_returns.clip(upper=0).abs() ** order).mean()
 
         return excess_returns.mean() / lower_partial_moment ** (1 / order)
 
@@ -1337,6 +1605,22 @@ def get_omega_ratio(
     """
     Calculate the Omega Ratio of returns, i.e. the sum of gains above the minimum acceptable
     return (MAR) divided by the sum of losses below the MAR.
+
+    Unlike the Sharpe/Sortino ratios, which only use the first two (Sharpe) or a partial
+    (Sortino) moment of the return distribution, the Omega Ratio uses the entire
+    distribution: it is equivalent to the ratio of the areas above and below the MAR
+    under the return distribution's cumulative distribution function, so it implicitly
+    captures all higher moments (skewness, kurtosis, etc.) without needing to estimate
+    them explicitly.
+
+    The formula is as follows:
+
+        - Omega Ratio = sum(max(Return - MAR, 0)) / sum(max(MAR - Return, 0))
+
+    For more information about the method, see the following paper:
+
+    - Keating, C., & Shadwick, W.F. (2002). "A Universal Performance Measure." Journal
+    of Performance Measurement, 6(3), 59-84.
 
     Args:
         returns (pd.Series | pd.DataFrame): A Series or Dataframe of returns.
@@ -1414,6 +1698,19 @@ def get_gain_to_pain_ratio(
     Calculate the Gain-to-Pain Ratio of returns, i.e. the sum of all returns divided by the
     sum of the absolute value of all losses.
 
+    The formula is as follows:
+
+        - Gain-to-Pain Ratio = sum(Return) / sum(|Return| where Return < 0)
+
+    A value of 1 means gains exactly offset losses; a value below (above) 1 means losses
+    outweigh (are outweighed by) gains in aggregate.
+
+    For more information about the method, see the following source:
+
+    - Schwager, J.D. (2012). "Hedge Fund Market Wizards: How Winning Traders Win." John
+    Wiley & Sons. (Popularized this simple ratio as a robustness-focused alternative to
+    the Sharpe ratio for evaluating trading strategies.)
+
     Args:
         returns (pd.Series | pd.DataFrame): A Series or Dataframe of returns.
 
@@ -1466,7 +1763,10 @@ def get_compound_growth_rate(
 
 
 def get_returns(
-    returns: pd.Series | pd.DataFrame, period: str, cumulative: bool = False
+    returns: pd.Series | pd.DataFrame,
+    period: str,
+    groups: pd.Series | np.ndarray | None = None,
+    cumulative: bool = False,
 ) -> pd.Series | pd.DataFrame:
     """
     Calculates the Return for a given period (weekly, monthly, quarterly or
@@ -1485,14 +1785,18 @@ def get_returns(
     Args:
         returns (pd.Series | pd.DataFrame): A Series or Dataframe of daily returns.
         period (str): The period to calculate the Return for. Can be weekly,
-        monthly, quarterly or yearly.
+        monthly, quarterly or yearly. Ignored when `groups` is provided.
+        groups (pd.Series | np.ndarray | None, optional): Explicit group labels, one
+        per row of `returns`, to group by instead of deriving calendar periods from
+        `returns.index` via `.asfreq()`. Use this when `returns` does not have a
+        DatetimeIndex/PeriodIndex (e.g. a plain Series of simulated outcomes).
+        Defaults to None, which requires a DatetimeIndex/PeriodIndex on `returns`.
         cumulative (bool, optional): Whether to return the cumulative return over
         time instead of the discrete return per period. Defaults to False.
 
     Returns:
-        pd.Series | pd.DataFrame: Return values with time as the index, resampled
-        to the given period. If cumulative is True, the cumulative return is
-        returned instead.
+        pd.Series | pd.DataFrame: Return values with time (or `groups`) as the
+        index. If cumulative is True, the cumulative return is returned instead.
     """
     if period not in PERIOD_TRANSLATION:
         raise ValueError(
@@ -1503,8 +1807,11 @@ def get_returns(
     if not isinstance(returns, pd.Series | pd.DataFrame):
         raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
 
-    period_str = PERIOD_TRANSLATION[period]
-    dates = returns.index.asfreq(period_str)
+    dates = (
+        groups
+        if groups is not None
+        else returns.index.asfreq(PERIOD_TRANSLATION[period])
+    )
 
     period_returns = (1 + returns).groupby(dates).prod() - 1
 
@@ -1769,6 +2076,20 @@ def get_fama_decomposition(
 
     - Fama, E.F. (1972). "Components of Investment Performance." Journal of Finance,
     27(3), 551-567.
+
+    Notes:
+    - Terminology: in Fama's own (1972) notation, "Selectivity" refers specifically to
+    (Asset Return − Risk-Free Rate) − Beta * (Benchmark Return − Risk-Free Rate), which
+    is exactly Jensen's Alpha (see `get_jensens_alpha`). Fama then splits that quantity
+    into "Diversification" and "Net Selectivity", where Net Selectivity is what this
+    function returns as `selectivity`: (Asset Return − Risk-Free Rate) − (Sigma_Portfolio
+    / Sigma_Market) * (Benchmark Return − Risk-Free Rate). The `diversification` return
+    value matches Fama's "Diversification" term exactly. The reconstruction identity
+    (Net Selectivity + Diversification = Selectivity = Jensen's Alpha) holds regardless
+    of which of these two labels is used for the first term, but readers cross-checking
+    against the original paper's exact terminology should substitute "Net Selectivity"
+    wherever this function and its caller (`get_fama_decomposition` in
+    `performance_controller.py`) say "Selectivity".
 
     Args:
         asset_returns (pd.Series | pd.DataFrame | float): The asset's or portfolio's

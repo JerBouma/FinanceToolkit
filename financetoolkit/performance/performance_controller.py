@@ -2621,7 +2621,15 @@ class Performance:
 
         The formula is as follows:
 
-            - M2 Ratio = (Portfolio's Return — Risk-Free Rate) / Portfolio Standard Deviation
+            - M2 Ratio = Risk-Free Rate + [(Portfolio's Return — Risk-Free Rate) /
+              Portfolio Standard Deviation] × Benchmark Standard Deviation
+
+        This rescales the (dimensionless) Sharpe ratio back into return-space by asking
+        what return the portfolio would have earned had it been leveraged or
+        de-leveraged, via risk-free borrowing or lending, to match the benchmark's
+        volatility exactly -- producing a number directly comparable to the benchmark's
+        actual return. Requires a `benchmark_ticker` to be set on the Toolkit instance,
+        since the benchmark's standard deviation is part of the formula.
 
         See definition: https://en.wikipedia.org/wiki/Modigliani_risk-adjusted_performance
 
@@ -2677,20 +2685,32 @@ class Performance:
         period_returns = historical_period_data.loc[:, "Return"][
             self._tickers_without_portfolio
         ]
+        benchmark_period_returns = historical_period_data.loc[:, "Return"][
+            self._benchmark_name
+        ]
         risk_free_rate = self._risk_free_rate_data[period]
 
         if rolling:
             m2_ratio = performance_model.get_rolling_m2_ratio(
-                period_returns, risk_free_rate, rolling
+                period_returns, risk_free_rate, benchmark_period_returns, rolling
             )
         else:
             daily_returns = self._historical_data["daily"].loc[:, "Return"][
                 self._tickers_without_portfolio
             ]
+            benchmark_daily_returns = self._historical_data["daily"].loc[:, "Return"][
+                self._benchmark_name
+            ]
             period_standard_deviation = get_volatility(daily_returns, period)
+            benchmark_standard_deviation = get_volatility(
+                benchmark_daily_returns, period
+            )
 
             m2_ratio = performance_model.get_m2_ratio(
-                period_returns, risk_free_rate, period_standard_deviation
+                period_returns,
+                risk_free_rate,
+                period_standard_deviation,
+                benchmark_standard_deviation,
             )
 
         return finalize_dataset(

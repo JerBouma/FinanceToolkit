@@ -448,11 +448,9 @@ Beyond ratios and risk/performance metrics, the `econometrics` module provides [
 As an example of a small investigation: is Apple's stock actually tied to its chip suppliers and megacap peers, or is that just eyeballed pairwise correlation? Regressing Apple's weekly returns on a deliberately wide set of tickers -- its RF/modem/foundry suppliers (`QCOM`, `SWKS`, `TSM`), other megacap tech (`MSFT`, `GOOGL`, `AMZN`, `META`, `NVDA`) and two unrelated names (`XOM`, `PG`) as a contrast, with the Benchmark deliberately left out -- shows which relationships actually hold up once every regressor is controlled for at once, rather than one at a time.
 
 ```python
-companies.econometrics.get_ols(
-    dependent_ticker="AAPL",
-    independent_tickers=["TSM", "QCOM", "SWKS", "MSFT", "GOOGL", "AMZN", "META", "NVDA", "XOM", "PG"],
-    period="weekly",
-)
+# AAPL is the Toolkit's first ticker, so it's the default dependent ticker;
+# every other ticker becomes the default independent set
+companies.econometrics.get_ols(period="weekly")
 ```
 
 |           |   Coefficient |   Std. Error |   t-Statistic |   P-Value |

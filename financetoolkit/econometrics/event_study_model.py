@@ -75,8 +75,10 @@ def get_event_study(
 
     Raises:
         TypeError: If `returns` or `market_returns` is not a pd.Series.
-        ValueError: If `event_date` is not in `returns.index`, or there is not enough
-            history before/after the event date for the requested windows.
+        ValueError: If `event_date` is not in `returns.index`, there is not enough
+            history before/after the event date for the requested windows, or
+            `gap_days` is too small to keep the estimation window from overlapping
+            the event window (i.e. `pre_event_days > gap_days`).
     """
     if not isinstance(returns, pd.Series) or not isinstance(market_returns, pd.Series):
         raise TypeError("returns and market_returns must be pd.Series.")
@@ -86,6 +88,15 @@ def get_event_study(
 
     if event_date not in returns.index:
         raise ValueError(f"event_date {event_date} was not found in returns.index.")
+
+    if pre_event_days > gap_days:
+        raise ValueError(
+            f"pre_event_days ({pre_event_days}) must not exceed gap_days "
+            f"({gap_days}) -- otherwise the estimation window (which ends "
+            "gap_days before the event) would overlap the event window (which "
+            "starts pre_event_days before the event), contaminating the market "
+            "model's 'normal return' estimate with event-window observations."
+        )
 
     event_position = returns.index.get_loc(event_date)
 

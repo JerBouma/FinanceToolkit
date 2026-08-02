@@ -152,13 +152,21 @@ def _from_statsmodels_ols(
         standard_errors (np.ndarray): The standard errors of the coefficients, shape `(k,)`.
         t_statistics (np.ndarray): The coefficients divided by their standard errors.
         p_values (np.ndarray): Two-sided p-values from the Student-T(n - k) distribution.
-        residuals (np.ndarray): The (weighted, for WLS/GLS) residuals, shape `(n,)`.
+        residuals (np.ndarray): The residuals `y - X @ coefficients`, in `y`'s
+        original (unweighted) scale for every estimator including WLS/GLS --
+        `statsmodels` reserves its (internal, whitened-scale) `wresid` attribute for
+        the weighted residuals actually used to solve the normal equations, which is
+        NOT what is stored here. Shape `(n,)`.
         fitted_values (np.ndarray): The fitted values `X @ coefficients`, shape `(n,)`.
         covariance_matrix (np.ndarray): The estimated covariance matrix of the
         coefficients, shape `(k, k)`.
         r_squared (float): The coefficient of determination.
         adjusted_r_squared (float): R-squared adjusted for the number of regressors.
-        residual_variance (float): The estimated residual variance, `sigma^2 = SSR / (n - k)`.
+        residual_variance (float): The estimated residual variance,
+        `sigma^2 = SSR / (n - k)` for OLS -- for WLS/GLS this is the WEIGHTED
+        residual sum of squares divided by `(n - k)` (`statsmodels`' `mse_resid`),
+        consistent with `standard_errors`/`covariance_matrix` also being computed
+        on the weighted scale.
         degrees_of_freedom (int): `n - k`, the residual degrees of freedom.
         n_observations (int): The number of observations used, `n`.
         n_parameters (int): The number of estimated parameters (including the

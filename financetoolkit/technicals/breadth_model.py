@@ -2,6 +2,7 @@
 
 __docformat__ = "google"
 
+import numpy as np
 import pandas as pd
 
 
@@ -10,6 +11,30 @@ def get_mcclellan_oscillator(
 ) -> pd.Series:
     """
     Calculate the McClellan Oscillator for a given price series.
+
+    The McClellan Oscillator is traditionally a market-wide breadth indicator, calculated
+    from the daily count of advancing minus declining issues across an entire exchange or
+    index. It is the difference between a short-term and a long-term Exponential Moving
+    Average of that daily advance-decline figure, with the classic parameters (19 and 39
+    periods) chosen to approximate 10% and 5% trend weightings in Sherman McClellan's
+    original per-day smoothing constants.
+
+    The formula is a follows:
+
+    - McClellan Oscillator = EMA(Advancers — Decliners, short_ema_window) — EMA(Advancers —
+      Decliners, long_ema_window)
+
+    Also known as: McClellan Oscillator.
+
+    Reference: McClellan, S. & McClellan, M. (1969). "Patterns for Profit." Trade Levels Inc.
+
+    Notes:
+        - This implementation is applied to a single security's own daily up/down signal
+          (see `get_advancers_decliners`) rather than to a true cross-sectional count of
+          advancing versus declining issues across a market universe, which is how the
+          indicator was originally defined and is conventionally used. Treat the result as a
+          smoothed measure of that single security's own directional persistence rather than
+          broad market breadth.
 
     Args:
         prices_close (pd.Series): Series of closing prices.
@@ -32,23 +57,58 @@ def get_mcclellan_oscillator(
 
 def get_advancers_decliners(prices_close: pd.Series) -> pd.Series:
     """
-    Calculate the difference between advancers and decliners for a given price series.
+    Calculate a daily advance/decline signal for a given price series.
+
+    Traditionally, "advancers minus decliners" is a market-wide breadth statistic: the count
+    of stocks that rose minus the count of stocks that fell across an entire exchange or
+    index on a given day. Applied here to a single security's own price series, it instead
+    yields a simple directional signal for that security: +1 on a day it closed higher than
+    the prior day, -1 on a day it closed lower, and 0 on an unchanged day.
+
+    The formula is a follows:
+
+    - Signal = +1 if Close(t) > Close(t-1), -1 if Close(t) < Close(t-1), else 0
+
+    Also known as: advance/decline signal, market breadth (in its traditional, cross-
+    sectional form).
+
+    Notes:
+        - This is not the traditional cross-sectional advance/decline statistic (which
+          requires the full universe of constituent prices, as used by `get_trin` and
+          `get_new_highs_new_lows` elsewhere in this module); it is a per-security proxy
+          intended to feed `get_mcclellan_oscillator` for a single ticker.
 
     Args:
         prices_close (pd.Series): Series of closing prices.
 
     Returns:
-        pd.Series: Advancers - Decliners values.
+        pd.Series: Advance/decline signal values (+1, 0 or -1).
     """
-    advancers = prices_close.where(prices_close > prices_close.shift(1), 0)
-    decliners = -prices_close.where(prices_close < prices_close.shift(1), 0)
+    price_change = prices_close.diff(1)
 
-    return advancers - decliners
+    return np.sign(price_change).fillna(0)
 
 
 def get_on_balance_volume(prices_close: pd.Series, volumes: pd.Series) -> pd.Series:
     """
     Calculate the On-Balance Volume (OBV) of a given price series.
+
+    On-Balance Volume is a running total of volume that adds the period's volume when price
+    closes higher than the prior period, subtracts it when price closes lower, and leaves the
+    running total unchanged on a flat close. Granville's premise was that volume tends to
+    lead price: a rising OBV alongside flat or falling price signals accumulation that may
+    precede a price breakout, and vice versa for a falling OBV.
+
+    The formula is a follows:
+
+    - OBV(t) = OBV(t-1) + Volume(t), if Close(t) > Close(t-1)
+    - OBV(t) = OBV(t-1) — Volume(t), if Close(t) < Close(t-1)
+    - OBV(t) = OBV(t-1), if Close(t) = Close(t-1)
+
+    Also known as: OBV.
+
+    Reference: Granville, J.E. (1963). "Granville's New Key to Stock Market Profits."
+    Prentice-Hall.
 
     Args:
         prices_close (pd.Series): Series of closing prices.
@@ -58,7 +118,8 @@ def get_on_balance_volume(prices_close: pd.Series, volumes: pd.Series) -> pd.Ser
         pd.Series: OBV values.
     """
     price_diff = prices_close.diff(1)
-    obv = (price_diff / abs(price_diff)) * volumes
+    direction = np.sign(price_diff).fillna(0)
+    obv = direction * volumes
 
     return obv.cumsum()
 
@@ -101,6 +162,23 @@ def get_accumulation_distribution_line(
     """
     Calculate the Accumulation/Distribution Line for a given price series.
 
+    The Accumulation/Distribution Line is a running (cumulative) total of Money Flow Volume:
+    each period's volume, weighted by where the close settled within that period's high-low
+    range (the Money Flow Multiplier). A rising line suggests volume is flowing in on
+    up-weighted days (accumulation); a falling line suggests the opposite (distribution).
+
+    The formula is a follows:
+
+    - Money Flow Multiplier = ((Close — Low) — (High — Close)) / (High — Low)
+    - Money Flow Volume = Money Flow Multiplier * Volume
+    - Accumulation/Distribution Line = Cumulative Sum(Money Flow Volume)
+
+    Also known as: A/D Line, ADL.
+
+    Reference: Chaikin, M. (1980s). There is no formal journal citation; the standard
+    textbook treatment is Murphy, J.J. (1999). "Technical Analysis of the Financial Markets."
+    New York Institute of Finance.
+
     Args:
         prices_high (pd.Series): Series of high prices.
         prices_low (pd.Series): Series of low prices.
@@ -132,6 +210,10 @@ def get_trin(prices_close: pd.DataFrame, volumes: pd.DataFrame) -> pd.Series:
     - TRIN = (Advancing Issues / Declining Issues) / (Advancing Volume / Declining Volume)
 
     Also known as: Arms Index, TRIN.
+
+    Reference: Arms, R.W. (1967). Originally published as a short-term breadth/volume
+    indicator; see Arms, R.W. (1989). "The Arms Index (TRIN): An Introduction to the Volume
+    Analysis of Stock and Bond Markets." Business One Irwin, for the definitive treatment.
 
     Args:
         prices_close (pd.DataFrame): DataFrame of closing prices with tickers as columns.
@@ -169,6 +251,9 @@ def get_new_highs_new_lows(prices_close: pd.DataFrame, window: int) -> pd.Series
 
     Also known as: new highs minus new lows, record high percent.
 
+    Reference: A standard market-breadth statistic with no single named inventor; see Colby,
+    R.W. (2003). "The Encyclopedia of Technical Market Indicators." 2nd ed. McGraw-Hill.
+
     Args:
         prices_close (pd.DataFrame): DataFrame of closing prices with tickers as columns.
         window (int): Number of periods to consider for the new high / new low lookback.
@@ -195,6 +280,23 @@ def get_chaikin_oscillator(
 ) -> pd.Series:
     """
     Calculate the Chaikin Oscillator for a given price series.
+
+    The Chaikin Oscillator applies MACD-style momentum analysis to the Accumulation/
+    Distribution Line itself, taking the difference between a short-term and a long-term
+    EMA of the ADL rather than of price. This surfaces changes in the momentum of volume
+    flow before they necessarily show up in price, and is typically read as an early signal
+    of a change in accumulation/distribution pressure.
+
+    The formula is a follows:
+
+    - Chaikin Oscillator = EMA(Accumulation/Distribution Line, short_window) — EMA
+      (Accumulation/Distribution Line, long_window)
+
+    Also known as: Chaikin Oscillator.
+
+    Reference: Chaikin, M. (1980s). There is no formal journal citation; the standard
+    textbook treatment is Murphy, J.J. (1999). "Technical Analysis of the Financial Markets."
+    New York Institute of Finance.
 
     Args:
         prices_high (pd.Series): Series of high prices.

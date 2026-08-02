@@ -9,7 +9,22 @@ from scipy.signal import argrelextrema
 
 def get_moving_average(prices: pd.Series, window: int) -> pd.Series:
     """
-    Calculate the Moving Average (MA) of a given price series.
+    Calculate the Simple Moving Average (SMA) of a given price series.
+
+    The Simple Moving Average is the unweighted arithmetic mean of price over a trailing
+    window, used both as a standalone trend-following signal (e.g. price crossing above or
+    below the average) and as a building block for many other indicators in this module.
+
+    The formula is a follows:
+
+    - SMA = Mean(Close, window)
+
+    Also known as: SMA, moving average.
+
+    Reference: The academic literature testing moving-average trading rules (rather than
+    defining the SMA itself, which predates any single paper) includes Brock, W., Lakonishok,
+    J., & LeBaron, B. (1992). "Simple Technical Trading Rules and the Stochastic Properties of
+    Stock Returns." Journal of Finance, 47(5), 1731-1764.
 
     Args:
         prices (pd.Series): Series of prices.
@@ -25,6 +40,23 @@ def get_exponential_moving_average(prices: pd.Series, window: int) -> pd.Series:
     """
     Calculate the Exponential Moving Average (EMA) of a given price series.
 
+    The Exponential Moving Average weights recent observations more heavily than older
+    ones, with the weight decaying exponentially the further back in time an observation
+    is, so that it reacts to new price information faster than a Simple Moving Average of
+    the same window while still smoothing out noise.
+
+    The formula is a follows:
+
+    - Smoothing Factor (alpha) = 2 / (window + 1)
+    - EMA(t) = alpha * Close(t) + (1 — alpha) * EMA(t-1)
+
+    Also known as: EMA.
+
+    Reference: The exponential smoothing technique underlying the EMA originates in Brown,
+    R.G. (1956). "Exponential Smoothing for Predicting Demand." Arthur D. Little Inc.; the
+    standard technical-analysis treatment is Murphy, J.J. (1999). "Technical Analysis of the
+    Financial Markets." New York Institute of Finance.
+
     Args:
         prices (pd.Series): Series of prices.
         window (int): Number of periods to consider for EMA calculation.
@@ -38,6 +70,22 @@ def get_exponential_moving_average(prices: pd.Series, window: int) -> pd.Series:
 def get_double_exponential_moving_average(prices: pd.Series, window: int) -> pd.Series:
     """
     Calculate the Double Exponential Moving Average (DEMA) of a given price series.
+
+    DEMA combines a single and a double-smoothed EMA to reduce the lag inherent in moving
+    averages while retaining most of their smoothing benefit. Because the second EMA lags
+    the first, subtracting it out (after doubling the first) removes much of the delay a
+    plain EMA of the same window would have.
+
+    The formula is a follows:
+
+    - EMA1 = EMA(Close, window)
+    - EMA2 = EMA(EMA1, window)
+    - DEMA = 2 * EMA1 — EMA2
+
+    Also known as: DEMA.
+
+    Reference: Mulloy, P.G. (1994). "Smoothing Data with Faster Moving Averages." Technical
+    Analysis of Stocks & Commodities, 12(1).
 
     Args:
         prices (pd.Series): Series of prices.
@@ -56,6 +104,24 @@ def get_double_exponential_moving_average(prices: pd.Series, window: int) -> pd.
 def get_trix(prices_close: pd.Series, window: int) -> pd.Series:
     """
     Calculate the Trix Indicator for a given price series.
+
+    Trix applies an Exponential Moving Average three times in succession (triple smoothing)
+    to filter out short-term price fluctuations and insignificant cycles, then plots the
+    percentage rate of change of that triple-smoothed series. Because insignificant
+    fluctuations have already been smoothed away, the result oscillates around zero mainly
+    in response to genuine trend changes.
+
+    The formula is a follows:
+
+    - EMA1 = EMA(Close, window)
+    - EMA2 = EMA(EMA1, window)
+    - EMA3 = EMA(EMA2, window)
+    - Trix = ((EMA3(t) — EMA3(t-1)) / EMA3(t-1)) * 100
+
+    Also known as: TRIX, Triple Exponential Average.
+
+    Reference: Hutson, J. (1983). "TRIX — Triple Exponential Smoothing Oscillator."
+    Technical Analysis of Stocks & Commodities, 1(5).
 
     Args:
         prices_close (pd.Series): Series of closing prices.
@@ -77,9 +143,21 @@ def get_triangular_moving_average(prices: pd.Series, window: int) -> pd.Series:
     """
     Calculate the Triangular Moving Average (TRIMA) of a given price series.
 
-    The Triangular Moving Average is a type of moving average that provides
-    smoothed values by taking an average of the middle values within a specified window.
-    It reduces the impact of outliers and short-term fluctuations.
+    The Triangular Moving Average is a doubly-smoothed Simple Moving Average: taking an SMA
+    of an SMA produces a triangular weighting scheme where the middle observations of the
+    combined window carry the most weight and the oldest/newest observations carry the
+    least, which reduces the impact of outliers and short-term fluctuations more than a
+    single SMA of the same overall length.
+
+    The formula is a follows:
+
+    - Sub-window Length = round((window + 1) / 2)
+    - TRIMA = SMA(SMA(Close, Sub-window Length), Sub-window Length)
+
+    Also known as: TRIMA.
+
+    Reference: The standard textbook treatment is Colby, R.W. (2003). "The Encyclopedia of
+    Technical Market Indicators." 2nd ed. McGraw-Hill.
 
     Args:
         prices (pd.Series): Series of prices.
@@ -88,8 +166,10 @@ def get_triangular_moving_average(prices: pd.Series, window: int) -> pd.Series:
     Returns:
         pd.Series: TRIMA values.
     """
-    tri_sum = prices.rolling(window=window, min_periods=1).sum()
-    tri_ma = tri_sum / ((window + 1) / 2)
+    sub_window = max(round((window + 1) / 2), 1)
+
+    first_pass = prices.rolling(window=sub_window, min_periods=1).mean()
+    tri_ma = first_pass.rolling(window=sub_window, min_periods=1).mean()
 
     return tri_ma
 
@@ -101,6 +181,16 @@ def get_weighted_moving_average(prices: pd.Series, window: int) -> pd.Series:
     The Weighted Moving Average assigns a linearly increasing weight to more recent
     prices within the window, making it more responsive to recent price changes than
     a Simple Moving Average while remaining smoother than an Exponential Moving Average.
+
+    The formula is a follows:
+
+    - WMA = Sum(Price(i) * i, i = 1..window) / Sum(i, i = 1..window), where i = 1 is the
+      oldest price in the window and i = window is the most recent
+
+    Also known as: WMA, linearly weighted moving average.
+
+    Reference: The standard textbook treatment is Colby, R.W. (2003). "The Encyclopedia of
+    Technical Market Indicators." 2nd ed. McGraw-Hill.
 
     Args:
         prices (pd.Series): Series of prices.
@@ -211,6 +301,15 @@ def get_hull_moving_average(prices: pd.Series, window: int) -> pd.Series:
     while improving smoothing, by combining a WMA of half the window length, a WMA of
     the full window length, and a further WMA over the square root of the window length.
 
+    The formula is a follows:
+
+    - Raw HMA = 2 * WMA(Close, window / 2) — WMA(Close, window)
+    - HMA = WMA(Raw HMA, sqrt(window))
+
+    Also known as: HMA.
+
+    Reference: Hull, A. (2005). "Hull Moving Average."
+
     Args:
         prices (pd.Series): Series of prices.
         window (int): Number of periods to consider for the HMA calculation.
@@ -238,7 +337,20 @@ def get_volume_weighted_average_price(
 
     VWAP weighs the typical price of each period by its traded volume over a rolling
     window, giving a more volume-informed view of the average price than a plain
-    moving average.
+    moving average. It is widely used as an institutional execution benchmark: a trade
+    filled at or better than VWAP is generally considered to have avoided excess market
+    impact.
+
+    The formula is a follows:
+
+    - Typical Price = (High + Low + Close) / 3
+    - VWAP = Sum(Typical Price * Volume, window) / Sum(Volume, window)
+
+    Also known as: VWAP.
+
+    Reference: Berkowitz, S.A., Logue, D.E., & Noser, E.A. Jr. (1988). "The Total Cost of
+    Transactions on the NYSE." Journal of Finance, 43(1), 97-112 — the paper that introduced
+    the volume-weighted average price as a transaction-cost benchmark.
 
     Args:
         prices_high (pd.Series): Series of high prices.
@@ -272,6 +384,11 @@ def get_parabolic_sar(
     from below to above price (and vice versa) whenever the trend reverses. The
     acceleration factor increases as the trend extends, causing the SAR to converge
     towards price over time.
+
+    Also known as: SAR, Stop and Reverse.
+
+    Reference: Wilder, J.W. Jr. (1978). "New Concepts in Technical Trading Systems." Trend
+    Research.
 
     Args:
         prices_high (pd.Series): Series of high prices.

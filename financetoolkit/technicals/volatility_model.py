@@ -15,16 +15,30 @@ def get_true_range(
     prices_high: pd.Series, prices_low: pd.Series, prices_close: pd.Series
 ) -> pd.Series:
     """
-    Calculate the Average True Range (ATR) of a given price series.
+    Calculate the True Range (TR) of a given price series.
+
+    The True Range is the greatest of three measures of a single period's price movement,
+    designed to capture gaps between periods (e.g. an overnight gap) that a plain
+    High — Low range would miss: the current high-low range, the distance from the prior
+    close to the current high, and the distance from the prior close to the current low.
+    It is the building block for the Average True Range and the Average Directional Index.
+
+    The formula is a follows:
+
+    - True Range = Max[(High — Low), |High — Previous Close|, |Low — Previous Close|]
+
+    Also known as: TR.
+
+    Reference: Wilder, J.W. Jr. (1978). "New Concepts in Technical Trading Systems." Trend
+    Research.
 
     Args:
         prices_high (pd.Series): Series of high prices.
         prices_low (pd.Series): Series of low prices.
         prices_close (pd.Series): Series of closing prices.
-        window (int): Number of periods for ATR calculation.
 
     Returns:
-        pd.Series: ATR values.
+        pd.Series: True Range values.
     """
     true_range = pd.concat(
         [
@@ -38,11 +52,97 @@ def get_true_range(
     return true_range
 
 
+def get_wilder_moving_average(
+    values: pd.Series | pd.DataFrame, window: int
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate Wilder's Smoothed Moving Average of a given series.
+
+    Wilder's smoothing is the specific recursive smoothing method J. Welles Wilder Jr. used
+    for every one of his original indicators (the Relative Strength Index, the Average True
+    Range and the Average Directional Index). It is related to an Exponential Moving Average
+    but uses a slower smoothing constant of 1/window (equivalent to an EMA with
+    span = 2 * window — 1), rather than the standard EMA constant of 2/(window+1). Using a
+    plain Simple Moving Average, or a standard EMA, instead of Wilder's specific smoothing
+    is one of the most common sources of numerical discrepancies when re-implementing
+    Wilder's indicators.
+
+    The formula is a follows:
+
+    - First value = SMA(values, window) — a simple average seeds the recursion
+    - Value(t) = Value(t-1) + (1 / window) * (Series(t) — Value(t-1)), for every period after
+
+    Also known as: Wilder's Moving Average, Modified Moving Average, Running Moving Average,
+    Smoothed Moving Average.
+
+    Reference: Wilder, J.W. Jr. (1978). "New Concepts in Technical Trading Systems." Trend
+    Research.
+
+    Args:
+        values (pd.Series | pd.DataFrame): Series (or DataFrame with one column per ticker)
+            of values to smooth (e.g. True Range, +DM, -DM or DX).
+        window (int): Number of periods for the smoothing.
+
+    Returns:
+        pd.Series | pd.DataFrame: Wilder's Smoothed Moving Average values.
+    """
+    if isinstance(values, pd.DataFrame):
+        return pd.concat(
+            {
+                column: get_wilder_moving_average(values[column], window)
+                for column in values.columns
+            },
+            axis=1,
+        )
+
+    wilder_average = pd.Series(index=values.index, dtype="float64")
+
+    length = len(values)
+    if length == 0:
+        return wilder_average
+
+    seed = values.rolling(window=window).mean()
+    first_valid_index = seed.first_valid_index()
+    if first_valid_index is None:
+        return wilder_average
+
+    start_position = values.index.get_loc(first_valid_index)
+    wilder_average.iloc[start_position] = seed.iloc[start_position]
+
+    for i in range(start_position + 1, length):
+        current_value = values.iloc[i]
+        previous_average = wilder_average.iloc[i - 1]
+
+        if pd.isna(current_value):
+            wilder_average.iloc[i] = previous_average
+            continue
+
+        wilder_average.iloc[i] = previous_average + (1 / window) * (
+            current_value - previous_average
+        )
+
+    return wilder_average
+
+
 def get_average_true_range(
     prices_high: pd.Series, prices_low: pd.Series, prices_close: pd.Series, window: int
 ) -> pd.Series:
     """
     Calculate the Average True Range (ATR) of a given price series.
+
+    The Average True Range measures volatility by smoothing the True Range (a single
+    period's price movement that also accounts for gaps between periods) with Wilder's
+    smoothing method, rather than a plain moving average.
+
+    The formula is a follows:
+
+    - True Range = Max[(High — Low), |High — Previous Close|, |Low — Previous Close|]
+    - ATR = Wilder's Smoothed Moving Average of True Range over `window` periods
+
+    Also known as: ATR.
+
+    Reference: Wilder, J.W. Jr. (1978). "New Concepts in Technical Trading Systems." Trend
+    Research.
 
     Args:
         prices_high (pd.Series): Series of high prices.
@@ -55,7 +155,7 @@ def get_average_true_range(
     """
     true_range = get_true_range(prices_high, prices_low, prices_close)
 
-    atr = true_range.rolling(window=window, min_periods=1).mean()
+    atr = get_wilder_moving_average(true_range, window)
 
     return atr
 
@@ -206,6 +306,24 @@ def get_keltner_channels(
     """
     Calculate the Keltner Channels for a given price series.
 
+    Keltner Channels plot a volatility-based envelope around an Exponential Moving Average of
+    price, with the envelope width set by a multiple of the Average True Range rather than a
+    fixed percentage or a standard deviation. This makes the channel width adapt to the
+    asset's own volatility regime, similar in spirit to Bollinger Bands but based on true
+    range instead of standard deviation.
+
+    The formula is a follows:
+
+    - Middle Line = EMA(Close, window)
+    - Upper Line = Middle Line + atr_multiplier * ATR(atr_window)
+    - Lower Line = Middle Line — atr_multiplier * ATR(atr_window)
+
+    Also known as: Keltner Bands.
+
+    Reference: Keltner, C.W. (1960). "How to Make Money in Commodities." The Keltner
+    Statistical Service. The commonly used modern variant (EMA midline with an ATR-based
+    envelope, as implemented here) was popularized by Linda Bradford Raschke in the 1980s.
+
     Args:
         prices_high (pd.Series): Series of high prices.
         prices_low (pd.Series): Series of low prices.
@@ -242,6 +360,18 @@ def get_donchian_channels(
     with the middle line being the average of the two. They are used to identify
     breakouts and the overall volatility of the price range.
 
+    The formula is a follows:
+
+    - Upper Channel = Max(High, window)
+    - Lower Channel = Min(Low, window)
+    - Middle Channel = (Upper Channel + Lower Channel) / 2
+
+    Also known as: Donchian Bands, price channel.
+
+    Reference: Donchian, R.D. (1960s). Popularized through his "5- and 20-Day Moving Average
+    Trading Rule" commodity trading system; the channel itself is described in Kaufman, P.J.
+    (2013). "Trading Systems and Methods." 5th ed. Wiley.
+
     Args:
         prices_high (pd.Series): Series of high prices.
         prices_low (pd.Series): Series of low prices.
@@ -272,6 +402,11 @@ def get_volatility_cone(
     volatility for each window compares to its own historical range. It is commonly
     used to judge whether current (or implied) volatility is cheap or expensive
     relative to history.
+
+    Reference: Burghardt, G. & Lane, M. (1990). "How to Tell if Options are Cheap." Journal
+    of Portfolio Management, and the related treatment in Natenberg, S. (1994). "Option
+    Volatility and Pricing." McGraw-Hill — the volatility cone is a standard tool in options
+    trading practice for comparing realized volatility across lookback windows.
 
     Args:
         prices_close (pd.Series): Series of closing prices.
@@ -320,6 +455,31 @@ def get_bollinger_bands(
 ) -> pd.DataFrame:
     """
     Calculate the Bollinger Bands of a given price series.
+
+    Bollinger Bands plot an envelope around a Simple Moving Average of price, with the
+    envelope width set to a multiple of the rolling standard deviation of price over the
+    same window. Because the bands widen and narrow with the security's own volatility,
+    they are commonly used to gauge whether price is relatively high or low versus its
+    recent range, and periods of unusually narrow bands ("the squeeze") are read as a sign
+    that a volatility expansion may be imminent.
+
+    The formula is a follows:
+
+    - Middle Band = SMA(Close, window)
+    - Upper Band = Middle Band + num_std_dev * StdDev(Close, window)
+    - Lower Band = Middle Band — num_std_dev * StdDev(Close, window)
+
+    Also known as: Bollinger Bands.
+
+    Reference: Bollinger, J. (2001). "Bollinger on Bollinger Bands." McGraw-Hill.
+
+    Notes:
+        - The rolling standard deviation here uses pandas' default (sample standard
+          deviation, dividing by n-1), consistent with the calculation in Bollinger's own
+          reference spreadsheet. Some other implementations instead use the population
+          standard deviation (dividing by n); for the default 20-period window, the two
+          conventions differ by roughly 2.5%, which mainly matters when trying to reproduce
+          another platform's values exactly rather than for interpreting the bands.
 
     Args:
         prices (pd.Series): Series of prices.

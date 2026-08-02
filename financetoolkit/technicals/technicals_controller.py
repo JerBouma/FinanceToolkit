@@ -2150,9 +2150,13 @@ class Technicals:
 
         The formula is a follows:
 
-        - RVI = SMA(Upward Change) / (SMA(Upward Change) + SMA(Downward Change))
+        - RVI = Sum(Upward Close-Open Movement, window) / (Sum(Upward Close-Open Movement, window)
+          + Sum(Downward Close-Open Movement, window))
 
-        Also known as: RVI, vigor index.
+        Also known as: vigor index. Note this is a bounded [0, 1] measure of the proportion
+        of upward close-open movement, related in spirit to (but not numerically the same
+        as) John Ehlers' published Relative Vigor Index. See `momentum_model.get_relative_vigor_index`
+        for the full formula and caveats.
 
         Args:
             period (str, optional): The time period to consider for historical data.
@@ -2228,7 +2232,6 @@ class Technicals:
         relative_vigor_index = momentum_model.get_relative_vigor_index(
             historical_data["Open"],
             historical_data[close_column],
-            historical_data["Volume"],
             window,
         ).loc[self._start_date : self._end_date]
 
@@ -2264,9 +2267,10 @@ class Technicals:
 
         The formula is a follows:
 
-        - Force Index = SMA(Periods) * (Close — Close(1))
+        - Raw Force Index = (Close — Close(1)) * Volume
+        - Force Index = EMA(Raw Force Index, window)
 
-        Also known as: price volume trend indicator.
+        Also known as: FI, Elder's Force Index.
 
         Args:
             period (str, optional): The time period to consider for historical data.
@@ -2380,9 +2384,12 @@ class Technicals:
 
         The formula is a follows:
 
-        - Ultimate Oscillator = 100 * ((4 * SMA(Periods)) / (SMA(Periods) + SMA(Periods) + SMA(Periods)))
+        - Average(i) = Sum(Buying Pressure, window_i) / Sum(True Range, window_i)
+        - Ultimate Oscillator = 100 * [(4 * Average_1) + (2 * Average_2) + Average_3] / 7
 
-        Also known as: UO, ultimate momentum oscillator.
+        Also known as: UO, ultimate momentum oscillator. See
+        `momentum_model.get_ultimate_oscillator` for the Buying Pressure and True Range
+        definitions.
 
         Args:
             period (str, optional): The time period to consider for historical data.
@@ -2622,9 +2629,12 @@ class Technicals:
 
         The formula is a follows:
 
-        - DPO = Close — SMA(Close, (Number of Periods / 2) + 1)
+        - Displacement = floor(Number of Periods / 2) + 1
+        - DPO = Close(t — Displacement) — SMA(Close, Number of Periods)(t)
 
-        Also known as: DPO, detrended price oscillator.
+        Also known as: DPO, detrended price oscillator. Note the moving average itself is not
+        shifted — only the close price used for the comparison is looked up further back in
+        time; see `momentum_model.get_detrended_price_oscillator` for the full explanation.
 
         Args:
             period (str, optional): The time period to consider for historical data.
@@ -2734,9 +2744,10 @@ class Technicals:
 
         The formula is a follows:
 
-        - ADX = SMA(DMI) / (SMA(DMI) + SMA(DMI))
+        - ADX = Wilder's Smoothed Moving Average of DX, where DX = 100 * |+DI — -DI| / (+DI + -DI)
 
-        Also known as: ADX, trend strength indicator.
+        Also known as: ADX, trend strength indicator. See `momentum_model.get_average_directional_index`
+        for the full formula, which uses Wilder's smoothing (not a plain SMA) throughout.
 
         Args:
             period (str, optional): The time period to consider for historical data.
@@ -2955,8 +2966,8 @@ class Technicals:
         period: str = "daily",
         close_column: str = "Adj Close",
         conversion_window: int = 9,
-        base_window: int = 20,
-        lead_span_b_window: int = 40,
+        base_window: int = 26,
+        lead_span_b_window: int = 52,
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
@@ -2971,9 +2982,15 @@ class Technicals:
 
         The formula is a follows:
 
-        - Conversion Line = (Highest High + Lowest Low) / 2
+        - Conversion Line = (Highest High + Lowest Low) / 2, over conversion_window periods
+        - Base Line = (Highest High + Lowest Low) / 2, over base_window periods
+        - Leading Span A = ((Conversion Line + Base Line) / 2), shifted forward base_window periods
+        - Leading Span B = (Highest High + Lowest Low) / 2 over lead_span_b_window periods,
+          shifted forward base_window periods
 
-        Also known as: Ichimoku Kinko Hyo, cloud indicator.
+        Also known as: Ichimoku Kinko Hyo, cloud indicator. The default windows (9, 26, 52)
+        are Goichi Hosoda's original values, both leading spans are conventionally displaced
+        forward by the base (Kijun-sen) period.
 
         Args:
             period (str, optional): The time period to consider for historical data.
@@ -2981,9 +2998,10 @@ class Technicals:
             conversion_window (int, optional): The number of periods to consider for the
                 Conversion Line (Tenkan-sen) calculation. Defaults to 9.
             base_window (int, optional): The number of periods to consider for the Base Line
-                (Kijun-sen) calculation. Defaults to 20.
-            lead_span_b_window (int, optional): The number of periods to shift forward for the
-                Lead Span B calculation. Defaults to 40.
+                (Kijun-sen) calculation, also used as the forward displacement for both
+                Leading Spans. Defaults to 26.
+            lead_span_b_window (int, optional): The number of periods to consider for the
+                Lead Span B (Senkou Span B) calculation. Defaults to 52.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the indicator values.
@@ -5113,7 +5131,8 @@ class Technicals:
 
         The formula is a follows:
 
-        - TMA = SMA(SMA(Close, Window), Window)
+        - Sub-window Length = round((Window + 1) / 2)
+        - TMA = SMA(SMA(Close, Sub-window Length), Sub-window Length)
 
         Also known as: TMA, triangular MA.
 
@@ -6535,9 +6554,11 @@ class Technicals:
         The formula is a follows:
 
         - TR = max(high — low, abs(high — previous_close), abs(low — previous_close))
-        - ATR = EMA(TR, Window)
+        - ATR = Wilder's Smoothed Moving Average of TR over `window` periods
 
-        Also known as: ATR, volatility indicator.
+        Also known as: ATR, volatility indicator. See `volatility_model.get_average_true_range`
+        for the full formula; Wilder's smoothing constant (1/window) is slower than a
+        standard EMA's (2/(window+1)) of the same window.
 
         Args:
             period (str): Period for which to calculate the ATR.

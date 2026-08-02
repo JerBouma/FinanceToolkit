@@ -56,7 +56,6 @@ def test_get_relative_vigor_index(recorder):
         momentum_model.get_relative_vigor_index(
             pd.Series([0.01, -0.03, 0.05, 0.01, -0.02]),
             pd.Series([0.005, -0.02, 0.06, 0.005, 0.0]),
-            pd.Series([0.005, -0.02, 0.06, 0.005, 0.0]),
             20,
         ).round(3)
     )

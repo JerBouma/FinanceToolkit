@@ -18,17 +18,35 @@ MULTI_PERIOD_INDEX_LEVELS = 2
 
 def get_max_drawdown(
     returns: pd.Series | pd.DataFrame,
+    method: str = "return",
 ) -> pd.Series | pd.DataFrame:
     """
     Calculate the Maximum Drawdown (MDD) of returns.
 
     Args:
-        returns (pd.Series | pd.DataFrame): A Series or Dataframe of returns.
+        returns (pd.Series | pd.DataFrame): A Series or Dataframe of returns
+        (method="return") or of raw levels (method="level"), e.g. prices, portfolio
+        value, or any other level series for which a percentage return is not
+        meaningful (interest rates, or any series that can be zero or negative).
+        method (str, optional): Either "return" (default), which compounds `returns`
+        via `(1 + returns).cumprod()` before measuring the percentage decline from
+        the running peak, or "level", which treats `returns` as already being a
+        level series and measures the absolute (same units as the input) decline
+        from the running peak directly -- well-defined even when the series can be
+        zero or negative, where a percentage decline is not. Defaults to "return".
 
     Returns:
         pd.Series | pd.DataFrame | float: MDD values as float if returns is a pd.Series,
-        otherwise as pd.Series or pd.DataFrame with time as index.
+        otherwise as pd.Series or pd.DataFrame with time as index. In "return" mode
+        this is a percentage (e.g. -0.5 for a 50% decline); in "level" mode it is in
+        the same units as the input.
+
+    Raises:
+        ValueError: If `method` is not one of "return" or "level".
     """
+    if method not in ("return", "level"):
+        raise ValueError("method must be 'return' or 'level'.")
+
     if (
         isinstance(returns, pd.DataFrame)
         and returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS
@@ -37,7 +55,7 @@ def get_max_drawdown(
         period_data_list = []
 
         for sub_period in periods:
-            period_data = get_max_drawdown(returns.loc[sub_period])
+            period_data = get_max_drawdown(returns.loc[sub_period], method=method)
             period_data.name = sub_period
 
             if not period_data.empty:
@@ -47,13 +65,18 @@ def get_max_drawdown(
 
         return max_drawdown.T
 
+    if method == "level":
+        return (returns - returns.cummax()).min()
+
     cum_returns = (1 + returns.fillna(0)).cumprod()  # type: ignore
 
     return (cum_returns / cum_returns.cummax() - 1).min()
 
 
 def get_ui(
-    returns: pd.Series | pd.DataFrame, rolling: int = 14
+    returns: pd.Series | pd.DataFrame,
+    rolling: int | None = 14,
+    method: str = "return",
 ) -> pd.Series | pd.DataFrame:
     """
     Calculates the Ulcer Index (UI), a measure of downside volatility.
@@ -63,23 +86,47 @@ def get_ui(
      - https://en.wikipedia.org/wiki/Ulcer_index
 
     Args:
-        returns (pd.Series | pd.DataFrame): A Series or Dataframe of returns.
-        rolling (int, optional): The rolling period to use for the calculation.
-        If you select period = 'monthly' and set rolling to 12 you obtain the rolling
-        12-month Ulcer Index. If no value is given, then it calculates it for the
-        entire period. Defaults to None.
+        returns (pd.Series | pd.DataFrame): A Series or Dataframe of returns
+        (method="return") or of raw levels (method="level").
+        rolling (int | None, optional): The trailing lookback window used as the
+        high-water mark reference for each day's drawdown. If you select
+        period='monthly' and set rolling to 12 you obtain the rolling 12-month
+        Ulcer Index. Pass None for an expanding (since-inception) high-water mark
+        instead of a fixed trailing window -- this matches the running-peak
+        convention used by `get_max_drawdown`/`get_conditional_drawdown_at_risk`/etc.
+        Note a fixed int window is NOT a substitute for "the entire period": pandas'
+        `.rolling(window=N)` only produces a value once N observations exist, so
+        passing `rolling=len(returns)` degenerates to just the final row's drawdown
+        rather than a true full-history calculation -- pass None instead. Defaults
+        to 14.
+        method (str, optional): Either "return" (default), the textbook Ulcer Index
+        computed on percentage drawdowns of the compounded return series (a
+        dimensionless, cross-asset-comparable figure), or "level", computed on
+        absolute drawdowns of the raw level series directly -- use this when
+        `returns` is not a genuine percentage return (e.g. a series that can be zero
+        or negative). Note that in "level" mode the result is in squared input units,
+        not the dimensionless index the name implies, so it is not comparable across
+        assets/series with different scales. Defaults to "return".
 
     Returns:
         pd.Series | pd.DataFrame: UI values as float if returns is a pd.Series,
         otherwise as pd.Series or pd.DataFrame with time as index, if.
+
+    Raises:
+        ValueError: If `method` is not one of "return" or "level".
     """
+    if method not in ("return", "level"):
+        raise ValueError("method must be 'return' or 'level'.")
+
     if isinstance(returns, pd.DataFrame):
         if returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS:
             periods = returns.index.get_level_values(0).unique()
             period_data_list = []
 
             for sub_period in periods:
-                period_data = returns.loc[sub_period].aggregate(get_ui)
+                period_data = returns.loc[sub_period].aggregate(
+                    get_ui, rolling=rolling, method=method
+                )
                 period_data.name = sub_period
 
                 if not period_data.empty:
@@ -89,12 +136,24 @@ def get_ui(
 
             return ulcer_index.T
 
-        return returns.aggregate(get_ui)
+        return returns.aggregate(get_ui, rolling=rolling, method=method)
 
     if isinstance(returns, pd.Series):
-        cumulative_returns = (1 + returns.fillna(0)).cumprod()
-        cumulative_max = cumulative_returns.rolling(window=rolling).max()
-        drawdowns = (cumulative_returns - cumulative_max) / cumulative_max
+        if method == "level":
+            reference_max = (
+                returns.expanding().max()
+                if rolling is None
+                else returns.rolling(window=rolling).max()
+            )
+            drawdowns = returns - reference_max
+        else:
+            cumulative_returns = (1 + returns.fillna(0)).cumprod()
+            reference_max = (
+                cumulative_returns.expanding().max()
+                if rolling is None
+                else cumulative_returns.rolling(window=rolling).max()
+            )
+            drawdowns = (cumulative_returns - reference_max) / reference_max
 
         ulcer_index_value = np.sqrt((drawdowns**2).mean())
 
@@ -174,7 +233,9 @@ def get_kurtosis(
 
 
 def get_variance(
-    returns: pd.Series | pd.DataFrame, period: str
+    returns: pd.Series | pd.DataFrame,
+    period: str,
+    groups: pd.Series | np.ndarray | None = None,
 ) -> pd.Series | pd.DataFrame:
     """
     Calculates the Variance of returns for a given period (weekly, monthly,
@@ -186,11 +247,17 @@ def get_variance(
     Args:
         returns (pd.Series | pd.DataFrame): A Series or Dataframe of daily returns.
         period (str): The period to calculate the Variance for. Can be weekly,
-        monthly, quarterly or yearly.
+        monthly, quarterly or yearly. Only used to look up the scaling multiplier
+        when `groups` is not provided.
+        groups (pd.Series | np.ndarray | None, optional): Explicit group labels, one
+        per row of `returns`, to group by instead of deriving calendar periods from
+        `returns.index` via `.asfreq()`. Use this when `returns` does not have a
+        DatetimeIndex/PeriodIndex (e.g. a plain Series of simulated outcomes).
+        Defaults to None, which requires a DatetimeIndex/PeriodIndex on `returns`.
 
     Returns:
-        pd.Series | pd.DataFrame: Variance values with time as the index, resampled
-        to the given period.
+        pd.Series | pd.DataFrame: Variance values with time (or `groups`) as the
+        index.
     """
     if period not in PERIOD_TRANSLATION:
         raise ValueError(
@@ -201,9 +268,12 @@ def get_variance(
     if not isinstance(returns, pd.Series | pd.DataFrame):
         raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
 
-    period_str = PERIOD_TRANSLATION[period]
     volatility_window = VOLATILITY_WINDOW_TRANSLATION[period]
-    dates = returns.index.asfreq(period_str)
+    dates = (
+        groups
+        if groups is not None
+        else returns.index.asfreq(PERIOD_TRANSLATION[period])
+    )
 
     return returns.groupby(dates).var() * volatility_window
 
@@ -263,7 +333,9 @@ def get_rolling_volatility(
 
 
 def get_volatility(
-    returns: pd.Series | pd.DataFrame, period: str
+    returns: pd.Series | pd.DataFrame,
+    period: str,
+    groups: pd.Series | np.ndarray | None = None,
 ) -> pd.Series | pd.DataFrame:
     """
     Calculates the Volatility of returns for a given period (weekly, monthly,
@@ -276,11 +348,17 @@ def get_volatility(
     Args:
         returns (pd.Series | pd.DataFrame): A Series or Dataframe of daily returns.
         period (str): The period to calculate the Volatility for. Can be weekly,
-        monthly, quarterly or yearly.
+        monthly, quarterly or yearly. Only used to look up the scaling multiplier
+        when `groups` is not provided.
+        groups (pd.Series | np.ndarray | None, optional): Explicit group labels, one
+        per row of `returns`, to group by instead of deriving calendar periods from
+        `returns.index` via `.asfreq()`. Use this when `returns` does not have a
+        DatetimeIndex/PeriodIndex (e.g. a plain Series of simulated outcomes).
+        Defaults to None, which requires a DatetimeIndex/PeriodIndex on `returns`.
 
     Returns:
-        pd.Series | pd.DataFrame: Volatility values with time as the index, resampled
-        to the given period.
+        pd.Series | pd.DataFrame: Volatility values with time (or `groups`) as the
+        index.
     """
     if period not in PERIOD_TRANSLATION:
         raise ValueError(
@@ -291,15 +369,18 @@ def get_volatility(
     if not isinstance(returns, pd.Series | pd.DataFrame):
         raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
 
-    period_str = PERIOD_TRANSLATION[period]
     volatility_window = VOLATILITY_WINDOW_TRANSLATION[period]
-    dates = returns.index.asfreq(period_str)
+    dates = (
+        groups
+        if groups is not None
+        else returns.index.asfreq(PERIOD_TRANSLATION[period])
+    )
 
     return returns.groupby(dates).std() * np.sqrt(volatility_window)
 
 
 def get_conditional_drawdown_at_risk(
-    returns: pd.Series | pd.DataFrame, alpha: float
+    returns: pd.Series | pd.DataFrame, alpha: float, method: str = "return"
 ) -> pd.Series | pd.DataFrame:
     """
     Calculate the Conditional Drawdown at Risk (CDaR) of returns.
@@ -310,13 +391,25 @@ def get_conditional_drawdown_at_risk(
     severe as the DaR.
 
     Args:
-        returns (pd.Series | pd.DataFrame): A Series or Dataframe of returns.
+        returns (pd.Series | pd.DataFrame): A Series or Dataframe of returns
+        (method="return") or of raw levels (method="level").
         alpha (float): The confidence level (e.g., 0.05 for 95% confidence).
+        method (str, optional): Either "return" (default), which measures percentage
+        drawdowns of the compounded return series, or "level", which measures
+        absolute drawdowns of the raw level series directly -- use this when
+        `returns` is not a genuine percentage return (e.g. a series that can be zero
+        or negative). Defaults to "return".
 
     Returns:
         pd.Series | pd.DataFrame: CDaR values as float if returns is a pd.Series,
         otherwise as pd.Series or pd.DataFrame with time as index.
+
+    Raises:
+        ValueError: If `method` is not one of "return" or "level".
     """
+    if method not in ("return", "level"):
+        raise ValueError("method must be 'return' or 'level'.")
+
     if (
         isinstance(returns, pd.DataFrame)
         and returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS
@@ -326,7 +419,7 @@ def get_conditional_drawdown_at_risk(
 
         for sub_period in periods:
             period_data = get_conditional_drawdown_at_risk(
-                returns.loc[sub_period], alpha
+                returns.loc[sub_period], alpha, method=method
             )
             period_data.name = sub_period
 
@@ -337,8 +430,11 @@ def get_conditional_drawdown_at_risk(
 
         return conditional_drawdown_at_risk.T
 
-    cum_returns = (1 + returns.fillna(0)).cumprod()  # type: ignore
-    drawdowns = cum_returns / cum_returns.cummax() - 1
+    if method == "level":
+        drawdowns = returns - returns.cummax()
+    else:
+        cum_returns = (1 + returns.fillna(0)).cumprod()  # type: ignore
+        drawdowns = cum_returns / cum_returns.cummax() - 1
 
     drawdown_at_risk = drawdowns.quantile(alpha)
 
@@ -419,7 +515,10 @@ def get_rolling_tail_ratio(
 
 
 def get_rolling_conditional_drawdown_at_risk(
-    returns: pd.Series | pd.DataFrame, alpha: float, window_size: int
+    returns: pd.Series | pd.DataFrame,
+    alpha: float,
+    window_size: int,
+    method: str = "return",
 ) -> pd.Series | pd.DataFrame:
     """
     Calculate the rolling Conditional Drawdown at Risk (CDaR) of returns.
@@ -429,17 +528,31 @@ def get_rolling_conditional_drawdown_at_risk(
     that window.
 
     Args:
-        returns (pd.Series | pd.DataFrame): A Series or Dataframe of returns.
+        returns (pd.Series | pd.DataFrame): A Series or Dataframe of returns
+        (method="return") or of raw levels (method="level").
         alpha (float): The confidence level (e.g., 0.05 for 95% confidence).
         window_size (int): The size of the rolling window.
+        method (str, optional): Either "return" (default), which rebuilds the
+        cumulative return path within each window, or "level", which uses the raw
+        level values within each window directly -- use this when `returns` is not
+        a genuine percentage return (e.g. a series that can be zero or negative).
+        Defaults to "return".
 
     Returns:
         pd.Series | pd.DataFrame: Rolling CDaR values with time as index.
+
+    Raises:
+        ValueError: If `method` is not one of "return" or "level".
     """
+    if method not in ("return", "level"):
+        raise ValueError("method must be 'return' or 'level'.")
 
     def _cdar(window):
-        cum_returns = np.cumprod(1 + np.nan_to_num(window))
-        drawdowns = cum_returns / np.maximum.accumulate(cum_returns) - 1
+        if method == "level":
+            drawdowns = window - np.maximum.accumulate(window)
+        else:
+            cum_returns = np.cumprod(1 + np.nan_to_num(window))
+            drawdowns = cum_returns / np.maximum.accumulate(cum_returns) - 1
 
         drawdown_at_risk = np.percentile(drawdowns, alpha * 100)
         tail_drawdowns = drawdowns[drawdowns <= drawdown_at_risk]
@@ -451,18 +564,32 @@ def get_rolling_conditional_drawdown_at_risk(
 
 def get_max_drawdown_duration(
     returns: pd.Series | pd.DataFrame,
+    method: str = "return",
 ) -> pd.Series | pd.DataFrame:
     """
     Calculates the duration of the Maximum Drawdown, i.e. the number of periods between the
     peak and the lowest point of the largest drawdown.
 
     Args:
-        returns (pd.Series | pd.DataFrame): A Series or Dataframe of returns.
+        returns (pd.Series | pd.DataFrame): A Series or Dataframe of returns
+        (method="return") or of raw levels (method="level").
+        method (str, optional): Either "return" (default), which finds the trough via
+        the percentage decline of the compounded return series, or "level", which
+        finds it via the absolute decline of the raw level series directly -- use
+        this when `returns` is not a genuine percentage return (e.g. a series that
+        can be zero or negative, where the percentage-decline ratio can pick the
+        wrong trough entirely). Defaults to "return".
 
     Returns:
         pd.Series | pd.DataFrame: Maximum Drawdown Duration values, in number of periods, as
         float if returns is a pd.Series, otherwise as pd.Series or pd.DataFrame with time as index.
+
+    Raises:
+        ValueError: If `method` is not one of "return" or "level".
     """
+    if method not in ("return", "level"):
+        raise ValueError("method must be 'return' or 'level'.")
+
     if isinstance(returns, pd.DataFrame):
         if returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS:
             periods = returns.index.get_level_values(0).unique()
@@ -470,7 +597,7 @@ def get_max_drawdown_duration(
 
             for sub_period in periods:
                 period_data = returns.loc[sub_period].aggregate(
-                    get_max_drawdown_duration
+                    get_max_drawdown_duration, method=method
                 )
                 period_data.name = sub_period
 
@@ -481,15 +608,23 @@ def get_max_drawdown_duration(
 
             return max_drawdown_duration.T
 
-        return returns.aggregate(get_max_drawdown_duration)
+        return returns.aggregate(get_max_drawdown_duration, method=method)
     if isinstance(returns, pd.Series):
-        cum_returns = (1 + returns.fillna(0)).cumprod()
-        running_max = cum_returns.cummax()
-        drawdowns = cum_returns / running_max - 1
+        series = returns if method == "level" else (1 + returns.fillna(0)).cumprod()
+        running_max = series.cummax()
+        drawdowns = (
+            series - running_max if method == "level" else series / running_max - 1
+        )
 
-        trough_position = drawdowns.to_numpy().argmin()
+        if drawdowns.isna().all():
+            return np.nan
+
+        # nanargmin (rather than argmin) so a leading/embedded NaN in a "level" series
+        # -- which, unlike "return" mode, is not fillna(0)'d upstream, since 0 is not a
+        # neutral value for a level -- doesn't crash the trough search.
+        trough_position = np.nanargmin(drawdowns.to_numpy())
         peak_position = np.flatnonzero(
-            cum_returns.to_numpy()[: trough_position + 1]
+            series.to_numpy()[: trough_position + 1]
             == running_max.to_numpy()[trough_position]
         )[-1]
 
@@ -500,6 +635,7 @@ def get_max_drawdown_duration(
 
 def get_max_drawdown_recovery_time(
     returns: pd.Series | pd.DataFrame,
+    method: str = "return",
 ) -> pd.Series | pd.DataFrame:
     """
     Calculates the Recovery Time of the Maximum Drawdown, i.e. the number of periods it takes
@@ -507,12 +643,25 @@ def get_max_drawdown_recovery_time(
     the drawdown has not yet been recovered from, this returns NaN.
 
     Args:
-        returns (pd.Series | pd.DataFrame): A Series or Dataframe of returns.
+        returns (pd.Series | pd.DataFrame): A Series or Dataframe of returns
+        (method="return") or of raw levels (method="level").
+        method (str, optional): Either "return" (default), which finds the trough via
+        the percentage decline of the compounded return series, or "level", which
+        finds it via the absolute decline of the raw level series directly -- use
+        this when `returns` is not a genuine percentage return (e.g. a series that
+        can be zero or negative, where the percentage-decline ratio can pick the
+        wrong trough entirely). Defaults to "return".
 
     Returns:
         pd.Series | pd.DataFrame: Maximum Drawdown Recovery Time values, in number of periods,
         as float if returns is a pd.Series, otherwise as pd.Series or pd.DataFrame with time as index.
+
+    Raises:
+        ValueError: If `method` is not one of "return" or "level".
     """
+    if method not in ("return", "level"):
+        raise ValueError("method must be 'return' or 'level'.")
+
     if isinstance(returns, pd.DataFrame):
         if returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS:
             periods = returns.index.get_level_values(0).unique()
@@ -520,7 +669,7 @@ def get_max_drawdown_recovery_time(
 
             for sub_period in periods:
                 period_data = returns.loc[sub_period].aggregate(
-                    get_max_drawdown_recovery_time
+                    get_max_drawdown_recovery_time, method=method
                 )
                 period_data.name = sub_period
 
@@ -531,15 +680,24 @@ def get_max_drawdown_recovery_time(
 
             return max_drawdown_recovery_time.T
 
-        return returns.aggregate(get_max_drawdown_recovery_time)
+        return returns.aggregate(get_max_drawdown_recovery_time, method=method)
     if isinstance(returns, pd.Series):
-        cum_returns = (1 + returns.fillna(0)).cumprod()
-        running_max = cum_returns.cummax()
+        series = returns if method == "level" else (1 + returns.fillna(0)).cumprod()
+        running_max = series.cummax()
+        drawdowns = (
+            series - running_max if method == "level" else series / running_max - 1
+        )
 
-        trough_position = (cum_returns / running_max - 1).to_numpy().argmin()
+        if drawdowns.isna().all():
+            return np.nan
+
+        # nanargmin (rather than argmin) so a leading/embedded NaN in a "level" series
+        # -- which, unlike "return" mode, is not fillna(0)'d upstream, since 0 is not a
+        # neutral value for a level -- doesn't crash the trough search.
+        trough_position = np.nanargmin(drawdowns.to_numpy())
         peak_value = running_max.to_numpy()[trough_position]
 
-        post_trough = cum_returns.to_numpy()[trough_position:]
+        post_trough = series.to_numpy()[trough_position:]
         recovered = np.flatnonzero(post_trough >= peak_value)
 
         if recovered.size == 0:
@@ -722,7 +880,9 @@ def get_rolling_excess_volatility(
 
 
 def get_mean_absolute_deviation(
-    returns: pd.Series | pd.DataFrame, period: str
+    returns: pd.Series | pd.DataFrame,
+    period: str,
+    groups: pd.Series | np.ndarray | None = None,
 ) -> pd.Series | pd.DataFrame:
     """
     Calculates the Mean Absolute Deviation (MAD) of returns for a given period (weekly,
@@ -735,11 +895,15 @@ def get_mean_absolute_deviation(
     Args:
         returns (pd.Series | pd.DataFrame): A Series or Dataframe of daily returns.
         period (str): The period to calculate the MAD for. Can be weekly,
-        monthly, quarterly or yearly.
+        monthly, quarterly or yearly. Ignored when `groups` is provided.
+        groups (pd.Series | np.ndarray | None, optional): Explicit group labels, one
+        per row of `returns`, to group by instead of deriving calendar periods from
+        `returns.index` via `.asfreq()`. Use this when `returns` does not have a
+        DatetimeIndex/PeriodIndex (e.g. a plain Series of simulated outcomes).
+        Defaults to None, which requires a DatetimeIndex/PeriodIndex on `returns`.
 
     Returns:
-        pd.Series | pd.DataFrame: MAD values with time as the index, resampled
-        to the given period.
+        pd.Series | pd.DataFrame: MAD values with time (or `groups`) as the index.
     """
     if period not in PERIOD_TRANSLATION:
         raise ValueError(
@@ -750,14 +914,19 @@ def get_mean_absolute_deviation(
     if not isinstance(returns, pd.Series | pd.DataFrame):
         raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
 
-    period_str = PERIOD_TRANSLATION[period]
-    dates = returns.index.asfreq(period_str)
+    dates = (
+        groups
+        if groups is not None
+        else returns.index.asfreq(PERIOD_TRANSLATION[period])
+    )
 
     return returns.groupby(dates).apply(lambda x: (x - x.mean()).abs().mean())
 
 
 def get_coefficient_of_variation(
-    returns: pd.Series | pd.DataFrame, period: str
+    returns: pd.Series | pd.DataFrame,
+    period: str,
+    groups: pd.Series | np.ndarray | None = None,
 ) -> pd.Series | pd.DataFrame:
     """
     Calculates the Coefficient of Variation (CV) of returns for a given period (weekly,
@@ -773,11 +942,16 @@ def get_coefficient_of_variation(
     Args:
         returns (pd.Series | pd.DataFrame): A Series or Dataframe of daily returns.
         period (str): The period to calculate the CV for. Can be weekly,
-        monthly, quarterly or yearly.
+        monthly, quarterly or yearly. Ignored when `groups` is provided.
+        groups (pd.Series | np.ndarray | None, optional): Explicit group labels, one
+        per row of `returns`, to group by instead of deriving calendar periods from
+        `returns.index` via `.asfreq()`. Use this when `returns` does not have a
+        DatetimeIndex/PeriodIndex (e.g. a plain Series of simulated outcomes).
+        Defaults to None, which requires a DatetimeIndex/PeriodIndex on `returns`.
 
     Returns:
-        pd.Series | pd.DataFrame: Coefficient of Variation values with time as the index,
-        resampled to the given period.
+        pd.Series | pd.DataFrame: Coefficient of Variation values with time (or
+        `groups`) as the index.
     """
     if period not in PERIOD_TRANSLATION:
         raise ValueError(
@@ -788,8 +962,11 @@ def get_coefficient_of_variation(
     if not isinstance(returns, pd.Series | pd.DataFrame):
         raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
 
-    period_str = PERIOD_TRANSLATION[period]
-    dates = returns.index.asfreq(period_str)
+    dates = (
+        groups
+        if groups is not None
+        else returns.index.asfreq(PERIOD_TRANSLATION[period])
+    )
 
     grouped = returns.groupby(dates)
 
@@ -811,6 +988,18 @@ def get_ewma_volatility(
 
     - EWMA Variance(t) = lambda * EWMA Variance(t-1) + (1 - lambda) * Return(t-1) ** 2
 
+    Note that, per RiskMetrics' original methodology, this recursion assumes a zero
+    mean return (i.e. it is built directly from squared, non-demeaned returns) and
+    uses the *lagged* return to forecast the current period's Variance -- it is
+    therefore computed here directly from that recursion rather than via a generic
+    `pandas.Series.ewm(...).std()`, which would instead subtract each point's own
+    exponentially weighted mean and use the *contemporaneous* (not lagged) return,
+    neither of which matches the RiskMetrics definition above.
+
+    For more information about the method, see the following paper:
+
+    - J.P. Morgan/Reuters (1996). "RiskMetrics -- Technical Document." 4th ed.
+
     Also known as: RiskMetrics volatility, exponentially weighted volatility.
 
     Args:
@@ -821,11 +1010,14 @@ def get_ewma_volatility(
 
     Returns:
         pd.Series | pd.DataFrame: Daily EWMA Volatility values with time as the index.
+        The first value is NaN, since the recursion has no prior period to seed from.
     """
     if not isinstance(returns, pd.Series | pd.DataFrame):
         raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
 
-    return returns.ewm(alpha=1 - lambda_).std()
+    ewma_variance = (returns**2).shift(1).ewm(alpha=1 - lambda_, adjust=False).mean()
+
+    return np.sqrt(ewma_variance)
 
 
 def get_autocorrelation(data: pd.Series, lags: int = 10) -> pd.Series:
@@ -998,8 +1190,21 @@ def get_hurst_exponent(data: pd.Series, max_lag: int = 20) -> float:
     - H = 0.5: the series is a random walk (no memory).
     - H > 0.5: the series is trending (persistent).
 
-    It is estimated here via the rescaled range (R/S) method, regressing the log of
-    the rescaled range against the log of the lag.
+    It is estimated here via the generalized Hurst exponent (structure function)
+    method: for a self-affine process (e.g. fractional Brownian motion), the standard
+    deviation of the lagged differences scales as a power law of the lag,
+    Std(X_(t+lag) - X_t) ~ lag^H, so H is recovered directly as the slope of a linear
+    regression of the log of that standard deviation against the log of the lag --
+    no further rescaling of the slope is needed, since the square root in the standard
+    deviation already converts the lag^(2H) scaling of the underlying Variance into
+    lag^H.
+
+    Also known as: generalized Hurst exponent, structure-function Hurst estimator.
+
+    For more information about the method, see the following paper:
+
+    - Weron, R. (2002). "Estimating Long-Range Dependence: Finite Sample Properties
+    and Confidence Intervals." Physica A, 312(1-2), 285-299.
 
     Args:
         data (pd.Series): A Series of values (e.g. prices) to calculate the Hurst
@@ -1016,8 +1221,10 @@ def get_hurst_exponent(data: pd.Series, max_lag: int = 20) -> float:
     values = data.dropna().to_numpy()
     lags = range(2, max_lag)
 
-    tau = [np.std(np.subtract(values[lag:], values[:-lag])) for lag in lags]
+    standard_deviations = [
+        np.std(np.subtract(values[lag:], values[:-lag])) for lag in lags
+    ]
 
-    poly = np.polyfit(np.log(list(lags)), np.log(tau), 1)
+    poly = np.polyfit(np.log(list(lags)), np.log(standard_deviations), 1)
 
-    return poly[0] * 2.0
+    return poly[0]

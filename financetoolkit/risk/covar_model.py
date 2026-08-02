@@ -93,12 +93,15 @@ def get_covar(
     - returns = a_alpha + b_alpha * conditioning_returns + e   (fit at quantile alpha)
     - CoVaR = a_alpha + b_alpha * VaR_alpha(conditioning_returns)
 
-    The Delta-CoVaR isolates the marginal, distress-specific contribution by
-    subtracting the same construction evaluated in the "normal" (median) state
-    instead of the distressed one -- i.e. the same regression re-fit at the median
-    (tau=0.5) and evaluated at `conditioning_returns`'s median:
+    The Delta-CoVaR isolates the marginal, distress-specific contribution by holding
+    the *same* (single) alpha-quantile regression fixed and instead comparing what it
+    predicts when `conditioning_returns` is at its own distress VaR versus at its
+    median -- i.e. the same `a_alpha`/`b_alpha` used above, evaluated at two different
+    values of `conditioning_returns` (this is the construction in Adrian & Brunnermeier
+    (2016), Section II.B: they do not re-fit a separate median-quantile regression):
 
-    - Delta-CoVaR = CoVaR - (a_50 + b_50 * median(conditioning_returns))
+    - Delta-CoVaR = CoVaR - (a_alpha + b_alpha * median(conditioning_returns))
+    - = b_alpha * (VaR_alpha(conditioning_returns) - median(conditioning_returns))
 
     A large (negative) Delta-CoVaR means `conditioning_returns` being in distress
     meaningfully worsens the tail risk of `returns` beyond their typical (median-state)
@@ -151,14 +154,15 @@ def get_covar(
     x = aligned.iloc[:, 1].to_numpy()
 
     intercept_alpha, slope_alpha = _quantile_regression(y, x, alpha)
-    intercept_median, slope_median = _quantile_regression(y, x, MEDIAN_QUANTILE)
 
     var_conditioning_alpha = np.percentile(x, alpha * 100)
-    var_conditioning_median = np.percentile(x, MEDIAN_QUANTILE * 100)
+    median_conditioning = np.percentile(x, MEDIAN_QUANTILE * 100)
 
     covar = intercept_alpha + slope_alpha * var_conditioning_alpha
-    covar_median_state = intercept_median + slope_median * var_conditioning_median
-    delta_covar = covar - covar_median_state
+    # Same (single) alpha-quantile regression, evaluated at the conditioning
+    # variable's median instead of its distress VaR -- not a separately refit
+    # median-quantile regression. See the docstring above.
+    delta_covar = slope_alpha * (var_conditioning_alpha - median_conditioning)
 
     return pd.Series(
         {

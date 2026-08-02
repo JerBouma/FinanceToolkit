@@ -1256,7 +1256,7 @@ class Risk:
     def get_ulcer_index(
         self,
         period: str | None = None,
-        rolling: int = 14,
+        rolling: int | None = 14,
         rounding: int | None = 4,
         growth: bool = False,
         lag: int | list[int] = 1,
@@ -1280,7 +1280,16 @@ class Risk:
         Args:
             period (str, optional): The data frequency for returns (daily, weekly, quarterly, or yearly).
             Defaults to "yearly".
-            rolling (int, optional): The rolling period to use for the calculation. Defaults to 14.
+            rolling (int | None, optional): The trailing lookback window used as the high-water
+                mark reference for each day's drawdown. Pass None for an expanding
+                (since-inception) high-water mark instead -- this is what the "Highest High"
+                in the formula above literally refers to; a fixed int window is a common,
+                distinct variant (e.g. a 14-day trailing high) rather than a substitute for
+                "the entire period". Note that passing `rolling=` the full length of your
+                return series does NOT give you the since-inception result -- pandas only
+                starts producing a rolling value once the full window is filled, so it would
+                silently degenerate to just the final period's drawdown; use `rolling=None`
+                instead. Defaults to 14.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the UI values over time. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.

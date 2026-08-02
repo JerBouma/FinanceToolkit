@@ -31,6 +31,7 @@ def _group_and_scale(
     daily_term: pd.Series | pd.DataFrame,
     period: str,
     aggregation: str = "mean",
+    groups: pd.Series | np.ndarray | None = None,
 ) -> pd.Series | pd.DataFrame:
     """
     Groups a daily estimator "term" (e.g. a squared log high/low ratio) by the given
@@ -40,18 +41,27 @@ def _group_and_scale(
 
     Args:
         daily_term (pd.Series | pd.DataFrame): The daily estimator term to group.
-        period (str): The period to group and scale for.
+        period (str): The period to group and scale for. Ignored when `groups` is
+        provided.
         aggregation (str, optional): Either "mean" (the default, used when the term
         already represents a per-day variance contribution) or "var" (used when the
         term is itself a return series whose Variance needs to be taken, as is the case
         for the overnight and open-to-close components of the Yang-Zhang estimator).
         Defaults to "mean".
+        groups (pd.Series | np.ndarray | None, optional): Explicit group labels, one
+        per row of `daily_term`, to group by instead of deriving calendar periods from
+        `daily_term.index` via `.asfreq()`. Use this when `daily_term` does not have a
+        DatetimeIndex/PeriodIndex. Defaults to None, which requires a
+        DatetimeIndex/PeriodIndex on `daily_term`.
 
     Returns:
         pd.Series | pd.DataFrame: The period Variance (not yet annualized).
     """
-    period_str = PERIOD_TRANSLATION[period]
-    dates = daily_term.index.asfreq(period_str)
+    dates = (
+        groups
+        if groups is not None
+        else daily_term.index.asfreq(PERIOD_TRANSLATION[period])
+    )
     grouped = daily_term.groupby(dates)
 
     if aggregation == "var":
@@ -64,6 +74,7 @@ def get_parkinson_volatility(
     high_prices: pd.Series | pd.DataFrame,
     low_prices: pd.Series | pd.DataFrame,
     period: str,
+    groups: pd.Series | np.ndarray | None = None,
 ) -> pd.Series | pd.DataFrame:
     """
     Calculate the Parkinson Volatility of an asset for a given period (weekly, monthly,
@@ -96,11 +107,16 @@ def get_parkinson_volatility(
         high_prices (pd.Series | pd.DataFrame): A Series or Dataframe of daily High prices.
         low_prices (pd.Series | pd.DataFrame): A Series or Dataframe of daily Low prices.
         period (str): The period to calculate the Volatility for. Can be weekly, monthly,
-        quarterly or yearly.
+        quarterly or yearly. Ignored when `groups` is provided.
+        groups (pd.Series | np.ndarray | None, optional): Explicit group labels, one
+        per row of `high_prices`/`low_prices`, to group by instead of deriving
+        calendar periods from the index via `.asfreq()`. Use this when the prices do
+        not have a DatetimeIndex/PeriodIndex. Defaults to None, which requires a
+        DatetimeIndex/PeriodIndex.
 
     Returns:
-        pd.Series | pd.DataFrame: Parkinson Volatility values with time as the index,
-        resampled to the given period.
+        pd.Series | pd.DataFrame: Parkinson Volatility values with time (or `groups`)
+        as the index.
     """
     _validate_period(period)
 
@@ -113,7 +129,9 @@ def get_parkinson_volatility(
 
     log_high_low_squared = np.log(high_prices / low_prices) ** 2
 
-    variance = _group_and_scale(log_high_low_squared, period) / (4 * LN_2)
+    variance = _group_and_scale(log_high_low_squared, period, groups=groups) / (
+        4 * LN_2
+    )
 
     return np.sqrt(variance) * np.sqrt(volatility_window)
 
@@ -124,6 +142,7 @@ def get_garman_klass_volatility(
     low_prices: pd.Series | pd.DataFrame,
     close_prices: pd.Series | pd.DataFrame,
     period: str,
+    groups: pd.Series | np.ndarray | None = None,
 ) -> pd.Series | pd.DataFrame:
     """
     Calculate the Garman-Klass Volatility of an asset for a given period (weekly,
@@ -156,11 +175,16 @@ def get_garman_klass_volatility(
         low_prices (pd.Series | pd.DataFrame): A Series or Dataframe of daily Low prices.
         close_prices (pd.Series | pd.DataFrame): A Series or Dataframe of daily Close prices.
         period (str): The period to calculate the Volatility for. Can be weekly, monthly,
-        quarterly or yearly.
+        quarterly or yearly. Ignored when `groups` is provided.
+        groups (pd.Series | np.ndarray | None, optional): Explicit group labels, one
+        per row of the price inputs, to group by instead of deriving calendar periods
+        from the index via `.asfreq()`. Use this when the prices do not have a
+        DatetimeIndex/PeriodIndex. Defaults to None, which requires a
+        DatetimeIndex/PeriodIndex.
 
     Returns:
-        pd.Series | pd.DataFrame: Garman-Klass Volatility values with time as the index,
-        resampled to the given period.
+        pd.Series | pd.DataFrame: Garman-Klass Volatility values with time (or
+        `groups`) as the index.
     """
     _validate_period(period)
 
@@ -177,7 +201,7 @@ def get_garman_klass_volatility(
 
     daily_term = 0.5 * log_high_low**2 - (2 * LN_2 - 1) * log_close_open**2
 
-    variance = _group_and_scale(daily_term, period)
+    variance = _group_and_scale(daily_term, period, groups=groups)
 
     return np.sqrt(variance) * np.sqrt(volatility_window)
 
@@ -188,6 +212,7 @@ def get_rogers_satchell_volatility(
     low_prices: pd.Series | pd.DataFrame,
     close_prices: pd.Series | pd.DataFrame,
     period: str,
+    groups: pd.Series | np.ndarray | None = None,
 ) -> pd.Series | pd.DataFrame:
     """
     Calculate the Rogers-Satchell Volatility of an asset for a given period (weekly,
@@ -219,11 +244,16 @@ def get_rogers_satchell_volatility(
         low_prices (pd.Series | pd.DataFrame): A Series or Dataframe of daily Low prices.
         close_prices (pd.Series | pd.DataFrame): A Series or Dataframe of daily Close prices.
         period (str): The period to calculate the Volatility for. Can be weekly, monthly,
-        quarterly or yearly.
+        quarterly or yearly. Ignored when `groups` is provided.
+        groups (pd.Series | np.ndarray | None, optional): Explicit group labels, one
+        per row of the price inputs, to group by instead of deriving calendar periods
+        from the index via `.asfreq()`. Use this when the prices do not have a
+        DatetimeIndex/PeriodIndex. Defaults to None, which requires a
+        DatetimeIndex/PeriodIndex.
 
     Returns:
-        pd.Series | pd.DataFrame: Rogers-Satchell Volatility values with time as the index,
-        resampled to the given period.
+        pd.Series | pd.DataFrame: Rogers-Satchell Volatility values with time (or
+        `groups`) as the index.
     """
     _validate_period(period)
 
@@ -239,7 +269,7 @@ def get_rogers_satchell_volatility(
         high_prices / open_prices
     ) + np.log(low_prices / close_prices) * np.log(low_prices / open_prices)
 
-    variance = _group_and_scale(daily_term, period)
+    variance = _group_and_scale(daily_term, period, groups=groups)
 
     return np.sqrt(variance) * np.sqrt(volatility_window)
 
@@ -250,6 +280,7 @@ def get_yang_zhang_volatility(
     low_prices: pd.Series | pd.DataFrame,
     close_prices: pd.Series | pd.DataFrame,
     period: str,
+    groups: pd.Series | np.ndarray | None = None,
 ) -> pd.Series | pd.DataFrame:
     """
     Calculate the Yang-Zhang Volatility of an asset for a given period (weekly, monthly,
@@ -292,11 +323,16 @@ def get_yang_zhang_volatility(
         low_prices (pd.Series | pd.DataFrame): A Series or Dataframe of daily Low prices.
         close_prices (pd.Series | pd.DataFrame): A Series or Dataframe of daily Close prices.
         period (str): The period to calculate the Volatility for. Can be weekly, monthly,
-        quarterly or yearly.
+        quarterly or yearly. Ignored when `groups` is provided.
+        groups (pd.Series | np.ndarray | None, optional): Explicit group labels, one
+        per row of the price inputs, to group by instead of deriving calendar periods
+        from the index via `.asfreq()`. Use this when the prices do not have a
+        DatetimeIndex/PeriodIndex. Defaults to None, which requires a
+        DatetimeIndex/PeriodIndex.
 
     Returns:
-        pd.Series | pd.DataFrame: Yang-Zhang Volatility values with time as the index,
-        resampled to the given period.
+        pd.Series | pd.DataFrame: Yang-Zhang Volatility values with time (or `groups`)
+        as the index.
     """
     _validate_period(period)
 
@@ -320,14 +356,22 @@ def get_yang_zhang_volatility(
         high_prices / open_prices
     ) + np.log(low_prices / close_prices) * np.log(low_prices / open_prices)
 
-    overnight_variance = _group_and_scale(overnight_returns, period, "var")
-    open_to_close_variance = _group_and_scale(open_to_close_returns, period, "var")
-    rogers_satchell_variance = _group_and_scale(rogers_satchell_term, period)
+    overnight_variance = _group_and_scale(
+        overnight_returns, period, "var", groups=groups
+    )
+    open_to_close_variance = _group_and_scale(
+        open_to_close_returns, period, "var", groups=groups
+    )
+    rogers_satchell_variance = _group_and_scale(
+        rogers_satchell_term, period, groups=groups
+    )
 
-    period_str = PERIOD_TRANSLATION[period]
-    number_of_days = open_to_close_returns.groupby(
-        open_to_close_returns.index.asfreq(period_str)
-    ).count()
+    dates = (
+        groups
+        if groups is not None
+        else open_to_close_returns.index.asfreq(PERIOD_TRANSLATION[period])
+    )
+    number_of_days = open_to_close_returns.groupby(dates).count()
 
     k = 0.34 / (1.34 + (number_of_days + 1) / (number_of_days - 1))
 

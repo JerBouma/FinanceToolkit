@@ -169,19 +169,27 @@ def get_receivables_turnover(
     net_credit_sales: pd.Series,
 ) -> pd.Series:
     """
-    Calculate the receivables turnover, a ratio that measures how efficiently a
-    company uses its assets by comparing the amount of credit extended to customers to
-    the amount of sales generated.
+    Calculate the receivables turnover, an efficiency ratio that measures how many
+    times per period a company collects its average accounts receivable, i.e. how
+    efficiently it extends credit to and collects cash from its customers.
+
+    Note that this is the reciprocal (times per period, rather than days) of the
+    days of sales outstanding: Receivables Turnover = Days in Period /
+    Days of Sales Outstanding.
+
+    The formula is as follows:
+
+        Receivables Turnover = Net Credit Sales / Average Accounts Receivable
 
     Args:
         average_accounts_receivable (float or pd.Series): Average accounts receivable of the company.
         This is typically calculated as (beginning accounts receivable + ending accounts receivable) / 2.
-        revenue (float or pd.Series): The total annual sales generated during the period.
+        net_credit_sales (float or pd.Series): The total net credit sales generated during the period.
 
     Returns:
         float | pd.Series: The receivables turnover value.
     """
-    return average_accounts_receivable / net_credit_sales
+    return net_credit_sales / average_accounts_receivable
 
 
 def get_sga_to_revenue_ratio(sga_expenses: pd.Series, revenue: pd.Series) -> pd.Series:

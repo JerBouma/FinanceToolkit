@@ -17,9 +17,9 @@ AAPL,Book Value per Share,Lag 3,,,,0.0544
 AAPL,Price-to-Book,Lag 1,,0.3417,-0.113,0.0
 AAPL,Price-to-Book,Lag 2,,,0.1901,-0.113
 AAPL,Price-to-Book,Lag 3,,,,0.1901
-AAPL,Interest Debt per Share,Lag 1,,-0.2066,0.1054,0.55
-AAPL,Interest Debt per Share,Lag 2,,,-0.123,0.7134
-AAPL,Interest Debt per Share,Lag 3,,,,0.3594
+AAPL,Interest Debt per Share,Lag 1,,0.1557,0.0051,-0.123
+AAPL,Interest Debt per Share,Lag 2,,,0.1617,-0.1185
+AAPL,Interest Debt per Share,Lag 3,,,,0.0188
 AAPL,CAPEX per Share,Lag 1,,0.5763,-0.0021,0.0567
 AAPL,CAPEX per Share,Lag 2,,,0.5729,0.0545
 AAPL,CAPEX per Share,Lag 3,,,,0.6621
@@ -98,9 +98,9 @@ MSFT,Book Value per Share,Lag 3,,,,0.7924
 MSFT,Price-to-Book,Lag 1,,0.2581,-0.3918,0.0
 MSFT,Price-to-Book,Lag 2,,,-0.2349,-0.3918
 MSFT,Price-to-Book,Lag 3,,,,-0.2349
-MSFT,Interest Debt per Share,Lag 1,,-0.0608,-0.036,-0.0341
-MSFT,Interest Debt per Share,Lag 2,,,-0.0945,-0.0688
-MSFT,Interest Debt per Share,Lag 3,,,,-0.1254
+MSFT,Interest Debt per Share,Lag 1,,-0.0377,-0.0887,-0.0132
+MSFT,Interest Debt per Share,Lag 2,,,-0.1231,-0.1007
+MSFT,Interest Debt per Share,Lag 3,,,,-0.1346
 MSFT,CAPEX per Share,Lag 1,,0.3487,0.1687,0.1874
 MSFT,CAPEX per Share,Lag 2,,,0.5762,0.3877
 MSFT,CAPEX per Share,Lag 3,,,,0.8716

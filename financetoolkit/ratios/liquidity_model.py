@@ -166,21 +166,26 @@ def get_operating_cash_flow_sales_ratio(
 
 def get_short_term_coverage_ratio(
     operating_cash_flow: pd.Series,
-    accounts_receivable: pd.Series,
-    inventory: pd.Series,
-    accounts_payable: pd.Series,
+    short_term_debt: pd.Series,
 ) -> pd.Series:
     """
-    Calculate the short term coverage ratio, a liquidity ratio that measures a company's ability to pay off its
-    short-term obligations with its operating cash flow.
+    Calculate the short term coverage ratio, a liquidity ratio that measures a company's
+    ability to pay off its short-term (current portion of) debt with its operating cash flow.
+
+    The formula is as follows:
+
+        Short Term Coverage Ratio = Cash Flow from Operations / Short Term Debt
+
+    Also known as: short-term debt coverage.
+
+    For more information about the method, see the following source:
+    https://site.financialmodelingprep.com/developer/docs/formula
 
     Args:
         operating_cash_flow (float or pd.Series): Operating cash flow of the company.
-        accounts_receivable (float or pd.Series): Accounts receivable of the company.
-        inventory (float or pd.Series): Inventory of the company.
-        accounts_payable (float or pd.Series): Accounts payable of the company.
+        short_term_debt (float or pd.Series): Short term (current) debt of the company.
 
     Returns:
         float | pd.Series: The short term coverage ratio value.
     """
-    return operating_cash_flow / (accounts_receivable + inventory - accounts_payable)
+    return operating_cash_flow / short_term_debt

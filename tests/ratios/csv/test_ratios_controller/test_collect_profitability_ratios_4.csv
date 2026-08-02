@@ -12,7 +12,7 @@ AAPL,Cash Return on Assets,,,0.1743,0.0264
 AAPL,Return on Equity,,,0.4436,0.0204
 AAPL,Return on Invested Capital,,,0.2533,0.0878
 AAPL,Return on Capital Employed,,,0.3462,0.0709
-AAPL,Return on Tangible Assets,,,0.2067,0.009
+AAPL,Return on Tangible Assets,,,0.4436,0.0204
 AAPL,Income Quality Ratio,,,-0.0424,0.0167
 AAPL,Net Income per EBT,,,-0.0126,-0.0077
 AAPL,Free Cash Flow to Operating Cash Flow Ratio,,-0.0175,0.021,-0.0125
@@ -33,7 +33,7 @@ MSFT,Cash Return on Assets,,0.6975,0.0968,-0.0419
 MSFT,Return on Equity,,2.1816,0.0711,-0.1038
 MSFT,Return on Invested Capital,,1.6979,0.121,-0.0388
 MSFT,Return on Capital Employed,,1.1361,0.1359,-0.0087
-MSFT,Return on Tangible Assets,,-0.1918,0.1743,-0.0017
+MSFT,Return on Tangible Assets,,2.3743,0.0766,-0.1099
 MSFT,Income Quality Ratio,,4.1075,-0.0499,-0.016
 MSFT,Net Income per EBT,,2.3358,0.018,-0.0312
 MSFT,Free Cash Flow to Operating Cash Flow Ratio,,-0.019,0.0005,-0.0719

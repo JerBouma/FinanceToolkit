@@ -17,9 +17,9 @@ AAPL,Operating Cash Flow Ratio,Lag 3,,,,-0.0063
 AAPL,Operating Cash Flow to Sales Ratio,Lag 1,,-0.0323,0.0893,-0.0691
 AAPL,Operating Cash Flow to Sales Ratio,Lag 2,,,0.0541,0.0141
 AAPL,Operating Cash Flow to Sales Ratio,Lag 3,,,,-0.0187
-AAPL,Short Term Coverage Ratio,Lag 1,,0.302,-0.17,0.0474
-AAPL,Short Term Coverage Ratio,Lag 2,,,0.0807,-0.1306
-AAPL,Short Term Coverage Ratio,Lag 3,,,,0.1319
+AAPL,Short Term Coverage Ratio,Lag 1,,0.1373,-0.1316,0.2086
+AAPL,Short Term Coverage Ratio,Lag 2,,,-0.0124,0.0495
+AAPL,Short Term Coverage Ratio,Lag 3,,,,0.1936
 AAPL,Defensive Interval Ratio,Lag 1,,-0.2931,-0.3083,0.112
 AAPL,Defensive Interval Ratio,Lag 2,,,-0.511,-0.2308
 AAPL,Defensive Interval Ratio,Lag 3,,,,-0.4563
@@ -41,9 +41,9 @@ MSFT,Operating Cash Flow Ratio,Lag 3,,,,0.0021
 MSFT,Operating Cash Flow to Sales Ratio,Lag 1,,0.0759,-0.0162,-0.0797
 MSFT,Operating Cash Flow to Sales Ratio,Lag 2,,,0.0584,-0.0946
 MSFT,Operating Cash Flow to Sales Ratio,Lag 3,,,,-0.0259
-MSFT,Short Term Coverage Ratio,Lag 1,,0.0595,0.0207,-0.1379
-MSFT,Short Term Coverage Ratio,Lag 2,,,0.0815,-0.12
-MSFT,Short Term Coverage Ratio,Lag 3,,,,-0.0676
+MSFT,Short Term Coverage Ratio,Lag 1,,-0.4126,2.4068,-0.4846
+MSFT,Short Term Coverage Ratio,Lag 2,,,1.0012,0.7558
+MSFT,Short Term Coverage Ratio,Lag 3,,,,0.0314
 MSFT,Defensive Interval Ratio,Lag 1,,-0.091,-0.1972,-0.0714
 MSFT,Defensive Interval Ratio,Lag 2,,,-0.2702,-0.2545
 MSFT,Defensive Interval Ratio,Lag 3,,,,-0.3223

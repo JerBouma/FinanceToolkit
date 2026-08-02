@@ -17,8 +17,8 @@ AAPL,Cash Conversion Cycle,Lag 3,,,,
 AAPL,Cash Conversion Efficiency,Lag 1,,-0.0323,0.0893,-0.0691
 AAPL,Cash Conversion Efficiency,Lag 2,,,0.0541,0.0141
 AAPL,Cash Conversion Efficiency,Lag 3,,,,-0.0187
-AAPL,Receivables Turnover,Lag 1,,,0.1934,0.0897
-AAPL,Receivables Turnover,Lag 2,,,,0.3005
+AAPL,Receivables Turnover,Lag 1,,,-0.1608,-0.0824
+AAPL,Receivables Turnover,Lag 2,,,,-0.23
 AAPL,Receivables Turnover,Lag 3,,,,
 AAPL,Inventory Turnover Ratio,Lag 1,,,-0.031,-0.0209
 AAPL,Inventory Turnover Ratio,Lag 2,,,,-0.0513
@@ -74,8 +74,8 @@ MSFT,Cash Conversion Cycle,Lag 3,,,,
 MSFT,Cash Conversion Efficiency,Lag 1,,0.0759,-0.0162,-0.0797
 MSFT,Cash Conversion Efficiency,Lag 2,,,0.0584,-0.0946
 MSFT,Cash Conversion Efficiency,Lag 3,,,,-0.0259
-MSFT,Receivables Turnover,Lag 1,,,-0.0038,0.0564
-MSFT,Receivables Turnover,Lag 2,,,,0.0523
+MSFT,Receivables Turnover,Lag 1,,,0.004,-0.0536
+MSFT,Receivables Turnover,Lag 2,,,,-0.0498
 MSFT,Receivables Turnover,Lag 3,,,,
 MSFT,Inventory Turnover Ratio,Lag 1,,,-0.1479,0.0742
 MSFT,Inventory Turnover Ratio,Lag 2,,,,-0.0847
@@ -131,9 +131,9 @@ AAPL,Operating Cash Flow Ratio,Lag 3,,,,-0.0063
 AAPL,Operating Cash Flow to Sales Ratio,Lag 1,,-0.0323,0.0893,-0.0691
 AAPL,Operating Cash Flow to Sales Ratio,Lag 2,,,0.0541,0.0141
 AAPL,Operating Cash Flow to Sales Ratio,Lag 3,,,,-0.0187
-AAPL,Short Term Coverage Ratio,Lag 1,,0.302,-0.17,0.0474
-AAPL,Short Term Coverage Ratio,Lag 2,,,0.0807,-0.1306
-AAPL,Short Term Coverage Ratio,Lag 3,,,,0.1319
+AAPL,Short Term Coverage Ratio,Lag 1,,0.1373,-0.1316,0.2086
+AAPL,Short Term Coverage Ratio,Lag 2,,,-0.0124,0.0495
+AAPL,Short Term Coverage Ratio,Lag 3,,,,0.1936
 AAPL,Defensive Interval Ratio,Lag 1,,-0.2931,-0.3083,0.112
 AAPL,Defensive Interval Ratio,Lag 2,,,-0.511,-0.2308
 AAPL,Defensive Interval Ratio,Lag 3,,,,-0.4563
@@ -155,9 +155,9 @@ MSFT,Operating Cash Flow Ratio,Lag 3,,,,0.0021
 MSFT,Operating Cash Flow to Sales Ratio,Lag 1,,0.0759,-0.0162,-0.0797
 MSFT,Operating Cash Flow to Sales Ratio,Lag 2,,,0.0584,-0.0946
 MSFT,Operating Cash Flow to Sales Ratio,Lag 3,,,,-0.0259
-MSFT,Short Term Coverage Ratio,Lag 1,,0.0595,0.0207,-0.1379
-MSFT,Short Term Coverage Ratio,Lag 2,,,0.0815,-0.12
-MSFT,Short Term Coverage Ratio,Lag 3,,,,-0.0676
+MSFT,Short Term Coverage Ratio,Lag 1,,-0.4126,2.4068,-0.4846
+MSFT,Short Term Coverage Ratio,Lag 2,,,1.0012,0.7558
+MSFT,Short Term Coverage Ratio,Lag 3,,,,0.0314
 MSFT,Defensive Interval Ratio,Lag 1,,-0.091,-0.1972,-0.0714
 MSFT,Defensive Interval Ratio,Lag 2,,,-0.2702,-0.2545
 MSFT,Defensive Interval Ratio,Lag 3,,,,-0.3223
@@ -200,8 +200,8 @@ AAPL,Return on Invested Capital,Lag 3,,,,
 AAPL,Return on Capital Employed,Lag 1,,0.549,0.2377,-0.0753
 AAPL,Return on Capital Employed,Lag 2,,,0.9172,0.1446
 AAPL,Return on Capital Employed,Lag 3,,,,0.773
-AAPL,Return on Tangible Assets,Lag 1,,,-0.0045,-0.0311
-AAPL,Return on Tangible Assets,Lag 2,,,,-0.0355
+AAPL,Return on Tangible Assets,Lag 1,,,0.19,-0.02
+AAPL,Return on Tangible Assets,Lag 2,,,,0.1662
 AAPL,Return on Tangible Assets,Lag 3,,,,
 AAPL,Income Quality Ratio,Lag 1,,-0.218,0.1139,-0.0688
 AAPL,Income Quality Ratio,Lag 2,,,-0.129,0.0372
@@ -263,8 +263,8 @@ MSFT,Return on Invested Capital,Lag 3,,,,
 MSFT,Return on Capital Employed,Lag 1,,0.2334,0.0614,-0.0676
 MSFT,Return on Capital Employed,Lag 2,,,0.3092,-0.0103
 MSFT,Return on Capital Employed,Lag 3,,,,0.2207
-MSFT,Return on Tangible Assets,Lag 1,,,0.0978,-0.083
-MSFT,Return on Tangible Assets,Lag 2,,,,0.0067
+MSFT,Return on Tangible Assets,Lag 1,,,0.0068,-0.1823
+MSFT,Return on Tangible Assets,Lag 2,,,,-0.1767
 MSFT,Return on Tangible Assets,Lag 3,,,,
 MSFT,Income Quality Ratio,Lag 1,,-0.0859,-0.0227,-0.0113
 MSFT,Income Quality Ratio,Lag 2,,,-0.1066,-0.0337
@@ -389,9 +389,9 @@ AAPL,Book Value per Share,Lag 3,,,,0.0544
 AAPL,Price-to-Book,Lag 1,,0.3417,-0.113,0.0
 AAPL,Price-to-Book,Lag 2,,,0.1901,-0.113
 AAPL,Price-to-Book,Lag 3,,,,0.1901
-AAPL,Interest Debt per Share,Lag 1,,-0.2066,0.1054,0.55
-AAPL,Interest Debt per Share,Lag 2,,,-0.123,0.7134
-AAPL,Interest Debt per Share,Lag 3,,,,0.3594
+AAPL,Interest Debt per Share,Lag 1,,0.1557,0.0051,-0.123
+AAPL,Interest Debt per Share,Lag 2,,,0.1617,-0.1185
+AAPL,Interest Debt per Share,Lag 3,,,,0.0188
 AAPL,CAPEX per Share,Lag 1,,0.5763,-0.0021,0.0567
 AAPL,CAPEX per Share,Lag 2,,,0.5729,0.0545
 AAPL,CAPEX per Share,Lag 3,,,,0.6621
@@ -470,9 +470,9 @@ MSFT,Book Value per Share,Lag 3,,,,0.7924
 MSFT,Price-to-Book,Lag 1,,0.2581,-0.3918,0.0
 MSFT,Price-to-Book,Lag 2,,,-0.2349,-0.3918
 MSFT,Price-to-Book,Lag 3,,,,-0.2349
-MSFT,Interest Debt per Share,Lag 1,,-0.0608,-0.036,-0.0341
-MSFT,Interest Debt per Share,Lag 2,,,-0.0945,-0.0688
-MSFT,Interest Debt per Share,Lag 3,,,,-0.1254
+MSFT,Interest Debt per Share,Lag 1,,-0.0377,-0.0887,-0.0132
+MSFT,Interest Debt per Share,Lag 2,,,-0.1231,-0.1007
+MSFT,Interest Debt per Share,Lag 3,,,,-0.1346
 MSFT,CAPEX per Share,Lag 1,,0.3487,0.1687,0.1874
 MSFT,CAPEX per Share,Lag 2,,,0.5762,0.3877
 MSFT,CAPEX per Share,Lag 3,,,,0.8716

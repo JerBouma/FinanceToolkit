@@ -68,9 +68,23 @@ def get_debt_service_coverage_ratio(
     Calculate the debt service coverage ratio, a solvency ratio that measures a company's
     ability to service its debt with its net operating income.
 
+    The textbook formula divides operating income by "total debt service" (the sum of
+    the current portion of long-term debt due plus interest expense for the period).
+    Since that figure is not separately reported on the financial statements, this
+    implementation uses total current liabilities as a readily available proxy for
+    near-term debt obligations, which is a common simplification when the precise debt
+    service schedule is unavailable but tends to understate the ratio somewhat, since
+    current liabilities also include non-debt items (e.g. accounts payable, accrued
+    expenses).
+
+    The formula is as follows:
+
+        Debt Service Coverage Ratio = Operating Income / Total Current Liabilities
+
     Args:
-        net_operating_income (float or pd.Series): Net operating income of the company.
-        current_liabilities (float or pd.Series): Total debt service of the company.
+        operating_income (float or pd.Series): Operating income of the company.
+        current_liabilities (float or pd.Series): Total current liabilities of the company,
+            used here as a proxy for total debt service.
 
     Returns:
         float | pd.Series: The debt service coverage ratio value.

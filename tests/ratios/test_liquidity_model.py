@@ -67,8 +67,6 @@ def test_get_short_term_coverage_ratio(recorder):
     recorder.capture(
         liquidity_model.get_short_term_coverage_ratio(
             operating_cash_flow=pd.Series([400, 300, 350, 200, 150]),
-            accounts_receivable=pd.Series([50, 100, 30, 130, 100]),
-            inventory=pd.Series([30, 50, 50, 30, 10]),
-            accounts_payable=pd.Series([20, 15, 10, 13, 10]),
+            short_term_debt=pd.Series([60, 135, 70, 147, 100]),
         )
     )

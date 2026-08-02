@@ -3254,7 +3254,7 @@ class Ratios:
 
         The formula is as follows:
 
-        - Short Term Coverage Ratio = Cash Flow from Operations / (Accounts Receivable + Inventory — Accounts Payable)
+        - Short Term Coverage Ratio = Cash Flow from Operations / Short Term Debt
 
         Also known as: short-term debt coverage.
 
@@ -3291,15 +3291,7 @@ class Ratios:
                 .T.rolling(trailing)
                 .sum()
                 .T,
-                self._balance_sheet_statement.loc[:, "Accounts Receivable", :]
-                .T.rolling(trailing)
-                .mean()
-                .T,
-                self._balance_sheet_statement.loc[:, "Inventory", :]
-                .T.rolling(trailing)
-                .mean()
-                .T,
-                self._balance_sheet_statement.loc[:, "Accounts Payable", :]
+                self._balance_sheet_statement.loc[:, "Short Term Debt", :]
                 .T.rolling(trailing)
                 .mean()
                 .T,
@@ -3307,9 +3299,7 @@ class Ratios:
         else:
             short_term_coverage_ratio = liquidity_model.get_short_term_coverage_ratio(
                 self._cash_flow_statement.loc[:, "Cash Flow from Operations", :],
-                self._balance_sheet_statement.loc[:, "Accounts Receivable", :],
-                self._balance_sheet_statement.loc[:, "Inventory", :],
-                self._balance_sheet_statement.loc[:, "Accounts Payable", :],
+                self._balance_sheet_statement.loc[:, "Short Term Debt", :],
             )
 
         return finalize_dataset(
@@ -8283,7 +8273,7 @@ class Ratios:
 
         The formula is as follows:
 
-        - Interest Debt per Share = (Interest Expense / Total Debt) / Weighted Average (Diluted) Shares
+        - Interest Debt per Share = (Interest Expense + Total Debt) / Weighted Average (Diluted) Shares
 
         Args:
             diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.

@@ -154,7 +154,15 @@ def get_interest_debt_per_share(
 ) -> pd.Series:
     """
     Calculate the interest debt per share, a valuation ratio that measures the
-    amount of interest expense incurred per outstanding share of a company's stock.
+    combined interest expense and debt burden of a company per outstanding share
+    of its stock.
+
+    The formula is as follows:
+
+        Interest Debt per Share = (Interest Expense + Total Debt) / Shares Outstanding
+
+    For more information about the method, see the following source:
+    https://site.financialmodelingprep.com/developer/docs/formula
 
     Args:
         interest_expense (float or pd.Series): Interest expense of the company.
@@ -164,7 +172,7 @@ def get_interest_debt_per_share(
     Returns:
         float | pd.Series: The interest debt per share value.
     """
-    return (interest_expense / total_debt) * shares_outstanding
+    return (interest_expense + total_debt) / shares_outstanding
 
 
 def get_capex_per_share(

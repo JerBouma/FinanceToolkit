@@ -17,6 +17,7 @@ from financetoolkit.fixedincome import (
     ecb_model,
     euribor_model,
     fed_model,
+    fmp_model,
     fred_model,
     yieldcurve_model,
 )
@@ -73,6 +74,7 @@ class FixedIncome:
         quarterly: bool = True,
         rounding: int | None = 4,
         fred_api_key: str = FRED_API_KEY,
+        api_key: str = "",
     ):
         """
         Initializes the Fixed Income Controller Class.
@@ -86,6 +88,8 @@ class FixedIncome:
                 (option-adjusted spread, effective yield, total return, yield to worst). Obtain a free key at
                 https://fred.stlouisfed.org/docs/api/api_key.html. Can also be set via the FRED_API_KEY
                 environment variable. Defaults to the value of FRED_API_KEY if set, otherwise an empty string.
+            api_key (str, optional): A FinancialModelingPrep API key used to retrieve the Treasury par yield
+                curve rates. Obtain one at https://www.jeroenbouma.com/fmp. Defaults to an empty string.
 
         As an example:
 
@@ -139,6 +143,7 @@ class FixedIncome:
         self._quarterly = quarterly
         self._rounding: int | None = rounding
         self._fred_api_key = fred_api_key
+        self._api_key = api_key
 
     def _require_fred_api_key(self) -> None:
         if not self._fred_api_key:
@@ -154,6 +159,20 @@ class FixedIncome:
                 "A FRED API key is required to retrieve ICE BofA data. Obtain a free key at "
                 "https://fred.stlouisfed.org/docs/api/api_key.html and pass it via the "
                 "fred_api_key argument or set the FRED_API_KEY environment variable."
+            )
+
+    def _require_api_key(self) -> None:
+        if not self._api_key:
+            logger.warning(
+                "No FinancialModelingPrep API key found. Treasury par yield curve rates "
+                "require a key to access, obtain one (with 15% off) at "
+                "https://www.jeroenbouma.com/fmp. Once you have one, pass it via the "
+                "api_key argument."
+            )
+            raise ValueError(
+                "A FinancialModelingPrep API key is required to retrieve Treasury rates. "
+                "Obtain one at https://www.jeroenbouma.com/fmp and pass it via the "
+                "api_key argument."
             )
 
     def collect_bond_statistics(
@@ -1933,6 +1952,85 @@ class FixedIncome:
 
         return finalize_dataset(
             dataset=government_bond_yield,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            rounding=rounding,
+            growth=growth,
+            lag=lag,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+        )
+
+    @handle_errors
+    def get_treasury_rates(
+        self,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int = 1,
+        standardize: bool = False,
+    ):
+        """
+        Retrieves the daily U.S. Treasury par yield curve rates as officially published by the
+        U.S. Department of the Treasury, covering every maturity from 1 Month through 30 Year in
+        a single dataset. This is the official, risk-free curve widely used as the discount curve
+        for bond valuation and as the benchmark for credit spreads.
+
+        Also known as: the Treasury yield curve, the risk-free curve.
+
+        Args:
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            growth (bool, optional): Whether to return the growth data or the actual data.
+            lag (int, optional): The number of periods to lag the data by.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+
+        Notes:
+            The underlying endpoint caps each request at 90 calendar days of data, so this method
+            paginates in 90-day windows to cover the full start_date to end_date range the class
+            was initialized with. A long range therefore issues many requests -- be mindful of
+            this on a Free plan's daily request limit and consider a narrower start_date where
+            possible.
+
+        Returns:
+            pd.DataFrame: A DataFrame containing the Treasury par yield curve rates, in percentage
+            points, with one column per maturity.
+
+        As an example:
+
+        ```python
+        from financetoolkit import FixedIncome
+
+        fixedincome = FixedIncome(
+            start_date='2024-01-01',
+            end_date='2024-01-15',
+            api_key='FINANCIAL_MODELING_PREP_KEY',
+        )
+
+        fixedincome.get_treasury_rates()
+        ```
+
+        Which returns:
+
+        | Date       |   1 Month |   3 Month |   1 Year |   2 Year |   10 Year |   30 Year |
+        |:-----------|----------:|----------:|---------:|---------:|----------:|----------:|
+        | 2024-01-02 |      5.55 |      5.46 |     4.8  |     4.33 |      3.95 |      4.08 |
+        | 2024-01-03 |      5.54 |      5.48 |     4.81 |     4.33 |      3.91 |      4.05 |
+        | 2024-01-04 |      5.56 |      5.48 |     4.85 |     4.38 |      3.99 |      4.13 |
+        | 2024-01-05 |      5.54 |      5.47 |     4.84 |     4.4  |      4.05 |      4.21 |
+        """
+        self._require_api_key()
+
+        treasury_rates = fmp_model.get_treasury_rates(
+            api_key=self._api_key,
+            start_date=self._start_date,
+            end_date=self._end_date,
+        )
+
+        return finalize_dataset(
+            dataset=treasury_rates,
             start_date=self._start_date,
             end_date=self._end_date,
             default_rounding=self._rounding,

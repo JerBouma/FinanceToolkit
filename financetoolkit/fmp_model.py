@@ -1681,3 +1681,195 @@ def get_esg_scores(
         )
 
     return pd.DataFrame(), no_data
+
+
+def get_market_risk_premium(
+    api_key: str,
+    user_subscription: str = "Free",
+) -> pd.DataFrame:
+    """
+    Obtains the equity market risk premium by country -- the country default spread plus the
+    equity risk premium, following the approach popularized by Aswath Damodaran -- which is
+    widely used to calibrate country-specific costs of equity and discount rates in a
+    multi-country setting.
+
+    Also known as: country risk premium, Damodaran equity risk premium.
+
+    Args:
+        api_key (string): the API Key obtained from
+        https://www.jeroenbouma.com/fmp
+        user_subscription (str): The subscription type of the user. Defaults to "Free".
+
+    Returns:
+        pd.DataFrame: the market risk premium by country, indexed by country and including
+        the continent, Country Risk Premium and Total Equity Risk Premium (both in
+        percentage points).
+    """
+    if not api_key:
+        raise ValueError(
+            "Please enter an API key from FinancialModelingPrep. "
+            "For more information, look here: https://www.jeroenbouma.com/fmp"
+        )
+
+    url = (
+        f"https://financialmodelingprep.com/stable/market-risk-premium?apikey={api_key}"
+    )
+
+    market_risk_premium = get_financial_data(url=url)
+
+    if "country" not in market_risk_premium.columns:
+        return market_risk_premium
+
+    market_risk_premium = market_risk_premium.rename(
+        columns={
+            "country": "Country",
+            "continent": "Continent",
+            "countryRiskPremium": "Country Risk Premium",
+            "totalEquityRiskPremium": "Total Equity Risk Premium",
+        }
+    )
+
+    market_risk_premium = market_risk_premium.set_index("Country").sort_index()
+
+    return market_risk_premium
+
+
+def get_commitment_of_traders(
+    tickers: list[str] | str,
+    api_key: str,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    user_subscription: str = "Free",
+) -> pd.DataFrame:
+    """
+    Obtains the CFTC Commitment of Traders (COT) report for a selection of tickers. Published
+    weekly by the U.S. Commodity Futures Trading Commission, it breaks down open interest in
+    futures markets by trader type -- Non-Commercial (large speculators), Commercial (hedgers)
+    and Non-Reportable (small traders) -- and is widely used to gauge positioning and sentiment
+    in commodity, currency, interest rate and stock index futures markets.
+
+    Note that this data is only available for CFTC-tracked futures markets. Tickers without a
+    corresponding futures contract (e.g. most individual equities) return no data for that ticker.
+
+    Also known as: COT report, CFTC positioning data, speculator/hedger positioning.
+
+    Args:
+        ticker (list or string): the ticker (for example: "NG" for Natural Gas futures)
+        api_key (string): the API Key obtained from
+        https://www.jeroenbouma.com/fmp
+        start_date (str): The start date to filter data with.
+        end_date (str): The end date to filter data with.
+        user_subscription (str): The subscription type of the user. Defaults to "Free".
+
+    Returns:
+        pd.DataFrame: the Commitment of Traders report data.
+    """
+
+    def worker(ticker, cot_dict):
+        url = (
+            "https://financialmodelingprep.com/stable/commitment-of-traders-report?"
+            f"symbol={ticker}&apikey={api_key}"
+        )
+        cot_report = get_financial_data(
+            url=url, sleep_timer=sleep_timer, user_subscription=user_subscription
+        )
+
+        try:
+            if "date" not in cot_report.columns:
+                no_data.append(ticker)
+                cot_dict[ticker] = cot_report
+            else:
+                cot_report["date"] = pd.to_datetime(cot_report["date"])
+                cot_report = cot_report.set_index("date").sort_index()
+
+                cot_report = cot_report.rename(columns=naming)
+
+                cot_report = cot_report.truncate(
+                    before=start_date, after=end_date, axis=0
+                )
+
+                cot_report = cot_report[~cot_report.index.duplicated()]
+
+                columns = [
+                    column for column in naming.values() if column in cot_report.columns
+                ]
+
+                cot_dict[ticker] = cot_report[columns]
+        except KeyError:
+            no_data.append(ticker)
+            cot_dict[ticker] = cot_report
+
+    naming: dict = {
+        "name": "Name",
+        "sector": "Sector",
+        "openInterestAll": "Open Interest",
+        "noncommPositionsLongAll": "Non-Commercial Long",
+        "noncommPositionsShortAll": "Non-Commercial Short",
+        "noncommPositionsSpreadAll": "Non-Commercial Spread",
+        "commPositionsLongAll": "Commercial Long",
+        "commPositionsShortAll": "Commercial Short",
+        "totReptPositionsLongAll": "Total Reportable Long",
+        "totReptPositionsShortAll": "Total Reportable Short",
+        "nonreptPositionsLongAll": "Non-Reportable Long",
+        "nonreptPositionsShortAll": "Non-Reportable Short",
+        "changeInOpenInterestAll": "Change in Open Interest",
+        "changeInNoncommLongAll": "Change in Non-Commercial Long",
+        "changeInNoncommShortAll": "Change in Non-Commercial Short",
+        "changeInCommLongAll": "Change in Commercial Long",
+        "changeInCommShortAll": "Change in Commercial Short",
+        "pctOfOiNoncommLongAll": "% OI Non-Commercial Long",
+        "pctOfOiNoncommShortAll": "% OI Non-Commercial Short",
+        "pctOfOiCommLongAll": "% OI Commercial Long",
+        "pctOfOiCommShortAll": "% OI Commercial Short",
+    }
+
+    if isinstance(tickers, str):
+        ticker_list = [tickers]
+    elif isinstance(tickers, list):
+        ticker_list = tickers
+    else:
+        raise ValueError(f"Type for the tickers ({type(tickers)}) variable is invalid.")
+
+    if not api_key:
+        raise ValueError(
+            "Please enter an API key from FinancialModelingPrep. "
+            "For more information, look here: https://www.jeroenbouma.com/fmp"
+        )
+
+    sleep_timer = user_subscription != "Free"
+
+    cot_dict: dict = {}
+    no_data: list[str] = []
+    threads = []
+
+    logger.info(
+        "Obtaining Commitment of Traders data for %d ticker(s)", len(ticker_list)
+    )
+    for ticker in ticker_list:
+        # Introduce a sleep timer to prevent rate limit errors
+        time.sleep(0.1)
+
+        thread = threading.Thread(
+            target=worker,
+            args=(ticker, cot_dict),
+        )
+        thread.start()
+        threads.append(thread)
+
+    for thread in threads:
+        thread.join()
+
+    # Checks if any errors are in the dataset and if this is the case, reports them
+    cot_dict = error_model.check_for_error_messages(
+        dataset_dictionary=cot_dict, user_subscription=user_subscription
+    )
+
+    if cot_dict:
+        cot_total = pd.concat(cot_dict, axis=0).unstack(level=0)
+
+        return (
+            cot_total,
+            no_data,
+        )
+
+    return pd.DataFrame(), no_data

@@ -21,10 +21,12 @@ from financetoolkit.economics.economics_controller import Economics
 from financetoolkit.fixedincome.fixedincome_controller import FixedIncome
 from financetoolkit.fmp_model import (
     get_analyst_estimates as _get_analyst_estimates,
+    get_commitment_of_traders as _get_commitment_of_traders,
     get_dividend_calendar as _get_dividend_calendar,
     get_earnings_calendar as _get_earnings_calendar,
     get_esg_scores as _get_esg_scores,
     get_financial_data as _get_financial_data,
+    get_market_risk_premium as _get_market_risk_premium,
     get_profile as _get_profile,
     get_quote as _get_quote,
     get_rating as _get_rating,
@@ -460,6 +462,8 @@ class Toolkit:
             self._revenue_product_segmentation: pd.DataFrame = pd.DataFrame()
             self._revenue_geographic_segmentation_growth: pd.DataFrame = pd.DataFrame()
             self._revenue_product_segmentation_growth: pd.DataFrame = pd.DataFrame()
+            self._market_risk_premium: pd.DataFrame = pd.DataFrame()
+            self._commitment_of_traders: pd.DataFrame = pd.DataFrame()
 
             # Define attributes and their corresponding cache file names
             cached_attributes = {
@@ -473,6 +477,8 @@ class Toolkit:
                 "_esg_scores": "esg_scores.pickle",
                 "_revenue_geographic_segmentation": "revenue_geographic_segmentation.pickle",
                 "_revenue_product_segmentation": "revenue_product_segmentation.pickle",
+                "_market_risk_premium": "market_risk_premium.pickle",
+                "_commitment_of_traders": "commitment_of_traders.pickle",
             }
 
             # Initialize FinancialModelingPrep Variables
@@ -1362,6 +1368,7 @@ class Toolkit:
             quarterly=self._quarterly,
             rounding=self._rounding,
             fred_api_key=self._fred_api_key,
+            api_key=self._api_key,
         )
 
     @property
@@ -2806,6 +2813,152 @@ class Toolkit:
             return esg_scores.xs(self._tickers[0], axis=1, level=1)
 
         return esg_scores
+
+    def get_market_risk_premium(self, overwrite: bool = False):
+        """
+        Obtains the equity market risk premium by country -- the country default spread plus the
+        equity risk premium, following the approach popularized by Aswath Damodaran -- which is
+        widely used to calibrate country-specific costs of equity and discount rates in a
+        multi-country setting.
+
+        Also known as: country risk premium, Damodaran equity risk premium.
+
+        Args:
+            overwrite (bool): Defines whether to overwrite the existing data.
+
+        Raises:
+            ValueError: If an API key is not defined for FinancialModelingPrep.
+
+        Returns:
+            pd.DataFrame: The market risk premium by country, including the continent, Country
+            Risk Premium and Total Equity Risk Premium (both in percentage points).
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AMZN", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        market_risk_premium = toolkit.get_market_risk_premium()
+
+        market_risk_premium.loc[['United States', 'Germany', 'Brazil']]
+        ```
+
+        Which returns:
+
+        | Country       | Continent     |   Country Risk Premium |   Total Equity Risk Premium |
+        |:--------------|:--------------|------------------------:|-----------------------------:|
+        | United States | North America |                    0.23 |                          4.46 |
+        | Germany       | Europe        |                    0    |                          4.23 |
+        | Brazil        | South America |                    3.24 |                          7.47 |
+        """
+        if not self._api_key:
+            logger.error(
+                "The requested data requires the api_key parameter to be set, consider obtaining a key with the "
+                "following link: https://www.jeroenbouma.com/fmp"
+            )
+            return None
+
+        if self._market_risk_premium.empty or overwrite:
+            self._market_risk_premium = _get_market_risk_premium(
+                api_key=self._api_key,
+                user_subscription=self._fmp_plan,
+            )
+
+            if self._use_cached_data:
+                cache_model.save_cached_data(
+                    cached_data=self._market_risk_premium,
+                    cached_data_location=self._cached_data_location,
+                    file_name="market_risk_premium.pickle",
+                )
+
+        return self._market_risk_premium
+
+    def get_commitment_of_traders(self, overwrite: bool = False):
+        """
+        Obtains the CFTC Commitment of Traders (COT) report for the tickers the Toolkit was
+        initialized with. Published weekly by the U.S. Commodity Futures Trading Commission, it
+        breaks down open interest in futures markets by trader type -- Non-Commercial (large
+        speculators), Commercial (hedgers) and Non-Reportable (small traders) -- and is widely
+        used to gauge positioning and sentiment in commodity, currency, interest rate and stock
+        index futures markets.
+
+        Note that this data is only available for CFTC-tracked futures markets. Tickers without a
+        corresponding futures contract (e.g. most individual equities) return no data.
+
+        Also known as: COT report, CFTC positioning data, speculator/hedger positioning.
+
+        Args:
+            overwrite (bool): Defines whether to overwrite the existing data.
+
+        Raises:
+            ValueError: If an API key is not defined for FinancialModelingPrep.
+
+        Returns:
+            pd.DataFrame: The Commitment of Traders report for the specified tickers.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["NG", "GC"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        commitment_of_traders = toolkit.get_commitment_of_traders()
+
+        commitment_of_traders.xs("NG", level=1, axis=1)[
+            ["Open Interest", "Non-Commercial Long", "Non-Commercial Short", "Commercial Long", "Commercial Short"]
+        ].tail()
+        ```
+
+        Which returns:
+
+        | date                |   Open Interest |   Non-Commercial Long |   Non-Commercial Short |   Commercial Long |   Commercial Short |
+        |:--------------------|-----------------:|----------------------:|------------------------:|-------------------:|--------------------:|
+        | 2024-01-30 00:00:00 |          1471807 |                 279539 |                  382722 |              526952 |               450698 |
+        | 2024-02-06 00:00:00 |          1533041 |                 301020 |                  415251 |              539246 |               456560 |
+        | 2024-02-13 00:00:00 |          1554063 |                 334504 |                  471061 |              552780 |               453300 |
+        | 2024-02-20 00:00:00 |          1592460 |                 356334 |                  510206 |              567791 |               452247 |
+        | 2024-02-27 00:00:00 |          1500882 |                 326328 |                  467881 |              545380 |               433185 |
+        """
+        if not self._api_key:
+            logger.error(
+                "The requested data requires the api_key parameter to be set, consider obtaining a key with the "
+                "following link: https://www.jeroenbouma.com/fmp"
+            )
+            return None
+
+        if self._commitment_of_traders.empty or overwrite:
+            (
+                self._commitment_of_traders,
+                self._invalid_tickers,
+            ) = _get_commitment_of_traders(
+                tickers=self._tickers,
+                api_key=self._api_key,
+                start_date=self._start_date,
+                end_date=self._end_date,
+                user_subscription=self._fmp_plan,
+            )
+
+            if self._use_cached_data:
+                cache_model.save_cached_data(
+                    cached_data=self._commitment_of_traders,
+                    cached_data_location=self._cached_data_location,
+                    file_name="commitment_of_traders.pickle",
+                )
+
+        if self._remove_invalid_tickers:
+            self._tickers = [
+                ticker
+                for ticker in self._tickers
+                if ticker not in self._invalid_tickers
+            ]
+
+        if len(self._tickers) == 1 and not self._commitment_of_traders.empty:
+            return self._commitment_of_traders.xs(self._tickers[0], axis=1, level=1)
+
+        return self._commitment_of_traders
 
     def get_historical_statistics(self):
         """

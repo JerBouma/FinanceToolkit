@@ -145,21 +145,22 @@ def get_macaulays_duration(
     present_value_sum = 0
     cash_flow_weighted_sum = 0
 
-    # Calculate present value of each cash flow and the sum of present values
+    # Calculate present value of each cash flow and the sum of present values.
+    # Cash flows are discounted using the period count (t) as the exponent since
+    # the per-period rate is yield_to_maturity / frequency — matching get_bond_price.
+    # Each cash flow is then weighted by the time it is received, in years (t / frequency).
     for t in range(1, total_periods + 1):
         coupon_payment = (par_value * coupon_rate) / frequency
-        present_value = coupon_payment / (
-            (1 + yield_to_maturity / frequency) ** (t / frequency)
-        )
+        present_value = coupon_payment / ((1 + yield_to_maturity / frequency) ** t)
         present_value_sum += present_value
         cash_flow_weighted_sum += (t / frequency) * present_value
 
     # Add the present value of the face value (at maturity)
     present_value_sum += par_value / (
-        (1 + yield_to_maturity / frequency) ** years_to_maturity
+        (1 + yield_to_maturity / frequency) ** total_periods
     )
     cash_flow_weighted_sum += years_to_maturity * (
-        par_value / ((1 + yield_to_maturity / frequency) ** years_to_maturity)
+        par_value / ((1 + yield_to_maturity / frequency) ** total_periods)
     )
 
     # Calculate Macaulay's duration
@@ -287,56 +288,21 @@ def get_dv01(par_value, coupon_rate, years_to_maturity, yield_to_maturity, frequ
     Returns:
         float: The DV01 of the bond.
     """
-    # Calculate present value of each cash flow
-    total_periods = int(years_to_maturity * frequency)
-    present_value_sum = 0
-
-    for t in range(1, total_periods + 1):
-        coupon_payment = (par_value * coupon_rate) / frequency
-        present_value = coupon_payment / (
-            (1 + yield_to_maturity / frequency) ** (t / frequency)
-        )
-        present_value_sum += present_value
-
-    # Add the present value of the face value (at maturity)
-    present_value_sum += par_value / (
-        (1 + yield_to_maturity / frequency) ** years_to_maturity
-    )
-
-    # Calculate bond price when yield decreases by 1 basis point
+    # DV01 is the average absolute price change resulting from a symmetric 1 basis
+    # point (0.0001) shift of the yield to maturity up and down. Reuses get_bond_price
+    # so the discounting is guaranteed to be consistent with the rest of the module.
     yield_decreased = yield_to_maturity - 0.0001  # 1 basis point decrease
-    present_value_sum_decreased = 0
-
-    for t in range(1, total_periods + 1):
-        coupon_payment = (par_value * coupon_rate) / frequency
-        present_value = coupon_payment / (
-            (1 + yield_decreased / frequency) ** (t / frequency)
-        )
-        present_value_sum_decreased += present_value
-
-    # Add the present value of the face value (at maturity)
-    present_value_sum_decreased += par_value / (
-        (1 + yield_decreased / frequency) ** years_to_maturity
-    )
-
-    # Calculate bond price when yield increases by 1 basis point
     yield_increased = yield_to_maturity + 0.0001  # 1 basis point increase
-    present_value_sum_increased = 0
 
-    for t in range(1, total_periods + 1):
-        coupon_payment = (par_value * coupon_rate) / frequency
-        present_value = coupon_payment / (
-            (1 + yield_increased / frequency) ** (t / frequency)
-        )
-        present_value_sum_increased += present_value
-
-    # Add the present value of the face value (at maturity)
-    present_value_sum_increased += par_value / (
-        (1 + yield_increased / frequency) ** years_to_maturity
+    price_decreased = get_bond_price(
+        par_value, coupon_rate, years_to_maturity, yield_decreased, frequency
+    )
+    price_increased = get_bond_price(
+        par_value, coupon_rate, years_to_maturity, yield_increased, frequency
     )
 
     # Calculate the change in bond price for a 1 basis point change in yield
-    dv01 = -0.01 * (present_value_sum_increased - present_value_sum_decreased) / 2
+    dv01 = (price_decreased - price_increased) / 2
 
     return dv01
 

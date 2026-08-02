@@ -437,9 +437,11 @@ def get_house_prices(
         of countries over time.
     """
     if inflation_adjusted:
+        # RHP = Real house price indices (inflation-adjusted)
         oecd_data_string = f"OECD.ECO.MPD,DSD_AN_HOUSE_PRICES@DF_HOUSE_PRICES,1.0/.{'Q' if quarterly else 'A'}.RHP."
     else:
-        oecd_data_string = f"OECD.ECO.MPD,DSD_AN_HOUSE_PRICES@DF_HOUSE_PRICES,1.0/.{'Q' if quarterly else 'A'}.RHP."
+        # HPI = Nominal house price indices
+        oecd_data_string = f"OECD.ECO.MPD,DSD_AN_HOUSE_PRICES@DF_HOUSE_PRICES,1.0/.{'Q' if quarterly else 'A'}.HPI."
 
     house_prices = collect_oecd_data(
         oecd_data_string, "Q" if quarterly else "Y", start_date, end_date

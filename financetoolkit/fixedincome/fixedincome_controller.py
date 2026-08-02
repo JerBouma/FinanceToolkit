@@ -858,11 +858,12 @@ class FixedIncome:
 
         The par yield is calculated using the following formula:
 
-        - Par Yield = frequency * (1 - DF(T)) / SUM(DF(t))
+        - Par Yield = frequency * (1 - DF(n)) / SUM(DF(k))
 
-        where DF(t) = 1 / (1 + spot_rate(t))^t is the discount factor for a cash flow
-        at time t, spot_rate(t) is obtained by interpolating the spot curve, and T is
-        the years to maturity.
+        where DF(k) = 1 / (1 + spot_rate(k / frequency) / frequency)^k is the discount
+        factor for the cash flow at period k, spot_rate(t) is obtained by interpolating
+        the spot curve at time t (in years), and n = years_to_maturity * frequency is
+        the number of coupon periods.
 
         Also known as: par rate, par coupon rate.
 

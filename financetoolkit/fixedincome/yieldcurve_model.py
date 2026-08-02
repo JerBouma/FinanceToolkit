@@ -91,12 +91,14 @@ def get_par_yield(
 
     The formula is as follows:
 
-        Par Yield = frequency * (1 - DF(T)) / SUM_(t=1)^(n) [ DF(t / frequency) ]
+        Par Yield = frequency * (1 - DF(n)) / SUM_(k=1)^(n) [ DF(k) ]
 
-    where DF(t) = 1 / (1 + spot_rate(t))^t is the discount factor for a cash flow
-    received at time t, spot_rate(t) is obtained by linearly interpolating the
-    provided spot curve at time t, n = years_to_maturity * frequency is the number of
-    coupon periods and T = years_to_maturity.
+    where DF(k) = 1 / (1 + spot_rate(k / frequency) / frequency)^k is the discount
+    factor for a cash flow received at period k, spot_rate(t) is obtained by linearly
+    interpolating the provided spot curve at time t (in years), n = years_to_maturity
+    * frequency is the number of coupon periods. Spot rates are treated as nominal
+    annual rates compounded at `frequency`, consistent with the convention used by
+    `bond_model._get_bond_price_from_curve`.
 
     For more information, see: https://en.wikipedia.org/wiki/Par_yield
 
@@ -142,18 +144,22 @@ def get_par_yield(
     spot_rates_sorted = spot_rates.sort_index()
     total_periods = int(round(years_to_maturity * frequency))
 
+    # Spot rates are nominal annual rates compounded at `frequency` (consistent with
+    # `bond_model._get_bond_price_from_curve`), so each period's discount factor uses
+    # the per-period rate (period_rate / frequency) raised to the period count —
+    # not the interpolated annual rate raised to the time in years.
     discount_factor_sum = 0.0
     for period in range(1, total_periods + 1):
         period_time = period / frequency
         period_rate = np.interp(
             period_time, spot_rates_sorted.index, spot_rates_sorted.to_numpy()
         )
-        discount_factor_sum += 1 / (1 + period_rate) ** period
+        discount_factor_sum += 1 / (1 + period_rate / frequency) ** period
 
     maturity_rate = np.interp(
         years_to_maturity, spot_rates_sorted.index, spot_rates_sorted.to_numpy()
     )
-    maturity_discount_factor = 1 / (1 + maturity_rate) ** total_periods
+    maturity_discount_factor = 1 / (1 + maturity_rate / frequency) ** total_periods
 
     par_yield = frequency * (1 - maturity_discount_factor) / discount_factor_sum
 

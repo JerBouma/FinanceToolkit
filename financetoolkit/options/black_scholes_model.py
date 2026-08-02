@@ -111,7 +111,12 @@ def get_black_scholes(
         float | pd.Series: The Black-Scholes value.
     """
     d1 = get_d1(
-        stock_price, strike_price, risk_free_rate, volatility, time_to_expiration
+        stock_price,
+        strike_price,
+        risk_free_rate,
+        volatility,
+        time_to_expiration,
+        dividend_yield,
     )
     d2 = get_d2(d1, volatility, time_to_expiration)
 

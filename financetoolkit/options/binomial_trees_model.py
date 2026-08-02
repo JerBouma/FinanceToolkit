@@ -130,7 +130,16 @@ def calculate_stock_prices(
             }
         )
 
-        unique_movements = scoring.drop_duplicates(keep="first")
+        # keep="last" picks, for each unique net up/down score (i.e. each terminal
+        # node), the representative path that front-loads its down-moves before its
+        # up-moves (given the generation order above runs from all-ups to all-downs).
+        # This matters for anything beyond the terminal column: with a "downs-first"
+        # representative path, row k (k total down-moves) correctly shows the price
+        # of the actual k-down node at every intermediate time step t >= k, which is
+        # required for get_option_payoffs' backward induction (and American
+        # early-exercise checks) to reference genuine tree nodes rather than an
+        # arbitrary path that happens to share the same terminal payoff.
+        unique_movements = scoring.drop_duplicates(keep="last")
 
         combinations_df = combinations_df.loc[unique_movements.index]
 
@@ -191,7 +200,7 @@ def calculate_option_value(
     Returns:
     float: Option value
     """
-    option_value = np.exp(-risk_free_rate * time_to_expiration / (timestep - 1)) * (
+    option_value = np.exp(-risk_free_rate * time_to_expiration / timestep) * (
         risk_neutral_probability * up_option_payoff
         + (1 - risk_neutral_probability) * down_option_payoff
     )
@@ -265,11 +274,19 @@ def get_option_payoffs(
 
     periods = len(option_payoffs.columns)
 
-    # Calculate put option prices for earlier periods
+    # Calculate put option prices for earlier periods.
+    #
+    # Rows are ordered/labelled by row k = number of down-moves in the (now
+    # downs-first) representative path, so row k at column i represents the node
+    # with (i - k) up-moves and k down-moves, for i >= k (see calculate_stock_prices).
+    # Its children at column i + 1 are: the up-child, which keeps the same number of
+    # down-moves k, i.e. row k's own (unshifted) value; and the down-child, which has
+    # one extra down-move, i.e. row (k + 1)'s value, obtained here via shift(-1)
+    # (row k is assigned what was originally stored in row k + 1).
     for i in range(periods - 2, -1, -1):
         option_value = calculate_option_value(
-            up_option_payoff=option_payoffs.iloc[:, i + 1].shift(-1),
-            down_option_payoff=option_payoffs.iloc[:, i + 1],
+            up_option_payoff=option_payoffs.iloc[:, i + 1],
+            down_option_payoff=option_payoffs.iloc[:, i + 1].shift(-1),
             risk_free_rate=risk_free_rate,
             time_to_expiration=years,
             timestep=timesteps,
@@ -277,18 +294,17 @@ def get_option_payoffs(
         )
 
         if american_option:
+            # Use the actual node price at this timestep/row (stock_prices.iloc[:, i])
+            # rather than the initial stock_price, so early exercise is compared
+            # against the option's true intrinsic value at each node, not at t=0.
             if put_option:
-                exercise_value = [
-                    get_put_option_payoffs(
-                        stock_price=stock_price, strike_price=strike_price
-                    )
-                ]
+                exercise_value = get_put_option_payoffs(
+                    stock_price=stock_prices.iloc[:, i], strike_price=strike_price
+                )
             else:
-                exercise_value = [
-                    get_call_option_payoffs(
-                        stock_price=stock_price, strike_price=strike_price
-                    )
-                ]
+                exercise_value = get_call_option_payoffs(
+                    stock_price=stock_prices.iloc[:, i], strike_price=strike_price
+                )
 
             option_payoffs.iloc[:, i] = np.maximum(option_value, exercise_value)
         else:

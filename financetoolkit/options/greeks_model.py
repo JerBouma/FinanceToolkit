@@ -173,8 +173,9 @@ def get_theta(
     )
 
     if put_option:
-        theta = -np.exp(-dividend_yield * time_to_expiration) * (
-            (stock_price * norm.pdf(d1) * volatility)
+        theta = (
+            -np.exp(-dividend_yield * time_to_expiration)
+            * (stock_price * norm.pdf(d1) * volatility)
             / (2 * np.sqrt(time_to_expiration))
             + risk_free_rate
             * strike_price
@@ -386,6 +387,7 @@ def get_gamma(
         risk_free_rate=risk_free_rate,
         volatility=volatility,
         time_to_expiration=time_to_expiration,
+        dividend_yield=dividend_yield,
     )
     gamma = np.exp(-dividend_yield * time_to_expiration) * (
         norm.pdf(d1) / (stock_price * volatility * np.sqrt(time_to_expiration))
@@ -519,7 +521,7 @@ def get_charm(
     if put_option:
         charm = -dividend_yield * np.exp(
             -dividend_yield * time_to_expiration
-        ) * norm.cdf(-d1) + np.exp(-dividend_yield * time_to_expiration) * norm.pdf(
+        ) * norm.cdf(-d1) - np.exp(-dividend_yield * time_to_expiration) * norm.pdf(
             -d1
         ) * (
             2 * (risk_free_rate - dividend_yield) * time_to_expiration
@@ -797,6 +799,7 @@ def get_zomma(
         risk_free_rate=risk_free_rate,
         volatility=volatility,
         time_to_expiration=time_to_expiration,
+        dividend_yield=dividend_yield,
     )
     d2 = black_scholes_model.get_d2(
         d1=d1, volatility=volatility, time_to_expiration=time_to_expiration
@@ -847,7 +850,7 @@ def get_color(
     )
 
     color = (
-        -np.exp(-dividend_yield * time_to_expiration)
+        np.exp(-dividend_yield * time_to_expiration)
         * (
             norm.pdf(d1)
             / (
@@ -911,13 +914,18 @@ def get_ultima(
         time_to_expiration=time_to_expiration,
     )
 
-    vega = get_vega(
-        stock_price=stock_price,
-        strike_price=strike_price,
-        time_to_expiration=time_to_expiration,
-        risk_free_rate=risk_free_rate,
-        volatility=volatility,
-        dividend_yield=dividend_yield,
+    # get_vega returns vega scaled by 1/100 (per 1% change in volatility); Ultima's
+    # formula requires the raw (unscaled) vega, so the scaling is undone here.
+    vega = (
+        get_vega(
+            stock_price=stock_price,
+            strike_price=strike_price,
+            time_to_expiration=time_to_expiration,
+            risk_free_rate=risk_free_rate,
+            volatility=volatility,
+            dividend_yield=dividend_yield,
+        )
+        * 100
     )
 
     ultima = (-vega / volatility**2) * (d1 * d2 * (1 - d1 * d2) + d1**2 + d2**2)

@@ -9,6 +9,11 @@ import pandas as pd
 # Yahoo Finance's notation of currencies. E.g. EURUSD=X
 CURRENCY_CODE_LENGTH = 3
 
+# The number of trading days used to annualize a daily covariance matrix, matching
+# the convention used throughout the Risk module (see VOLATILITY_WINDOW_TRANSLATION
+# in financetoolkit/utilities/statistics_model.py).
+TRADING_DAYS_PER_YEAR = 252
+
 
 def create_transactions_overview(
     portfolio_volume: pd.Series,
@@ -73,6 +78,71 @@ def create_transactions_overview(
     return new_columns
 
 
+def _calculate_portfolio_volatility(
+    weights: pd.Series,
+    fallback_volatilities: pd.Series,
+    asset_returns: pd.DataFrame | None,
+) -> float:
+    """
+    Calculate the annualized portfolio volatility using the full covariance matrix of
+    asset returns, i.e. Var_p = w^T * Cov * w (Markowitz, 1952).
+
+    This is the theoretically correct way to combine individual asset volatilities into a
+    single portfolio-level volatility because variance is not linear in weights -- unlike a
+    weighted average, it captures diversification benefits from imperfectly correlated
+    (or negatively correlated) assets. A naive weighted average of individual volatilities
+    (sum_i w_i * sigma_i) is only equal to the true portfolio volatility when every pair of
+    assets is perfectly correlated (rho_ij = 1); in every other case it overstates the true
+    portfolio volatility.
+
+    Args:
+        weights (pd.Series): The portfolio weight of each asset (e.g. based on latest value),
+            indexed by ticker.
+        fallback_volatilities (pd.Series): Individual annualized asset volatilities, indexed by
+            ticker. Used only when `asset_returns` is not available, as a documented approximation.
+        asset_returns (pd.DataFrame | None): Daily returns for each asset, indexed by date/period,
+            with one column per ticker. When available, the most recent calendar year of returns is
+            used to build the covariance matrix, consistent with how individual asset volatilities
+            are annualized elsewhere (see risk_model.get_volatility with period="yearly").
+
+    Returns:
+        float: The annualized portfolio volatility (standard deviation).
+
+    References:
+        Markowitz, H. (1952). Portfolio Selection. The Journal of Finance, 7(1), 77-91.
+    """
+    if asset_returns is not None and not asset_returns.empty:
+        returns_for_covariance = asset_returns.reindex(columns=weights.index)
+
+        # Restrict to the most recent calendar year, matching the annualization window used
+        # for the individual asset "Volatility" column (risk_model.get_volatility(..., "yearly")).
+        periods = returns_for_covariance.index.asfreq("Y")
+        recent_returns = returns_for_covariance[periods == periods[-1]]
+
+        # Only assets with at least two observations in the window contribute a meaningful
+        # covariance estimate; drop columns that are entirely missing to avoid propagating NaNs
+        # into every entry of the covariance matrix.
+        recent_returns = recent_returns.dropna(axis=1, how="all")
+
+        if not recent_returns.empty and len(recent_returns.columns) > 0:
+            annualized_covariance = recent_returns.cov() * TRADING_DAYS_PER_YEAR
+            aligned_weights = weights.reindex(annualized_covariance.index).fillna(0.0)
+
+            portfolio_variance = (
+                aligned_weights.to_numpy()
+                @ annualized_covariance.to_numpy()
+                @ aligned_weights.to_numpy()
+            )
+
+            if portfolio_variance >= 0:
+                return float(np.sqrt(portfolio_variance))
+
+    # Fallback: weighted average of individual volatilities. This ignores cross-asset
+    # correlation and therefore overstates true portfolio volatility unless every pair of
+    # assets is perfectly correlated -- it is used only when return series are unavailable.
+    return float(sum(fallback_volatilities * weights))
+
+
 def create_portfolio_overview(
     portfolio_name: pd.Series,
     portfolio_volume: pd.Series,
@@ -84,6 +154,7 @@ def create_portfolio_overview(
     volatilities: pd.Series,
     betas: pd.Series,
     include_portfolio: bool = True,
+    asset_returns: pd.DataFrame | None = None,
 ):
     """
     Generate a comprehensive overview of portfolio positions and related performance metrics.
@@ -102,6 +173,13 @@ def create_portfolio_overview(
         benchmark_latest_prices (pd.Series): A Series containing the latest benchmark prices for each asset.
         include_portfolio (bool): A flag indicating whether to include an aggregated portfolio summary row.
             Defaults to True.
+        asset_returns (pd.DataFrame | None, optional): Daily returns for each portfolio ticker, indexed by
+            date/period. When provided, the portfolio-level "Volatility" is computed from the full
+            covariance matrix of these returns (Markowitz, 1952), which correctly accounts for
+            diversification across imperfectly-correlated assets. When omitted, the portfolio
+            volatility falls back to a weighted average of individual asset volatilities, which
+            ignores cross-asset correlation and therefore overstates true portfolio volatility unless
+            all assets are perfectly correlated. Defaults to None.
 
     Returns:
         pd.DataFrame: A DataFrame containing the following metrics for each asset:
@@ -125,6 +203,20 @@ def create_portfolio_overview(
         - Metrics such as "Alpha" and "Weight" are calculated based on individual asset performance
           relative to benchmarks and the portfolio total, respectively.
         - All financial values are aggregated or weighted appropriately for the portfolio row.
+        - The portfolio "Return" is computed directly from aggregated invested/current-value totals
+          (Latest Value / Invested - 1), which is algebraically identical to a weight-of-invested-amount
+          weighted average of individual asset returns.
+        - The portfolio "Beta" is a weighted average of individual betas, which is mathematically exact
+          because beta is linear in portfolio weights: Cov(sum_i w_i * R_i, R_m) / Var(R_m)
+          = sum_i w_i * Beta_i.
+        - The portfolio "Volatility" is fundamentally different: variance is NOT linear in weights, so a
+          weighted average of individual volatilities is only an upper-bound approximation (exact only
+          if all assets are perfectly correlated). The correct formula is the full covariance matrix
+          form Var_p = w^T * Cov * w (Markowitz, H. (1952). "Portfolio Selection". The Journal of
+          Finance, 7(1), 77-91.). This is used whenever `asset_returns` is supplied.
+
+    References:
+        Markowitz, H. (1952). Portfolio Selection. The Journal of Finance, 7(1), 77-91.
     """
     portfolio_overview = pd.DataFrame(index=portfolio_name.index)
 
@@ -217,9 +309,10 @@ def create_portfolio_overview(
         benchmark_invested = totals["Benchmark Invested"]
         benchmark_latest_value_sum = benchmark_latest_value.sum()
 
-        portfolio_volatility = sum(
-            portfolio_overview_grouped["Volatility"]
-            * portfolio_overview_grouped["Weight"]
+        portfolio_volatility = _calculate_portfolio_volatility(
+            weights=portfolio_overview_grouped["Weight"],
+            fallback_volatilities=portfolio_overview_grouped["Volatility"],
+            asset_returns=asset_returns,
         )
         portfolio_beta = sum(
             portfolio_overview_grouped["Beta"] * portfolio_overview_grouped["Weight"]

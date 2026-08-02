@@ -1038,7 +1038,10 @@ class Portfolio:
         - Return Value: The absolute return value of the asset based on the latest value and invested amount.
         - Benchmark Return: The return of the asset's benchmark based on the latest value and invested amount.
         - Volatility: The annualized volatility of the asset over the most recent year, calculated via the
-        Risk module (risk_model.get_volatility).
+        Risk module (risk_model.get_volatility). For the aggregated "Portfolio" row, this is derived from
+        the full covariance matrix of the underlying asset returns (Var_p = w^T * Cov * w, Markowitz, 1952)
+        rather than a weighted average of individual volatilities, since the latter ignores diversification
+        from imperfectly correlated assets.
         - Benchmark Volatility: The annualized volatility of the asset's benchmark over the most recent year,
         calculated via the Risk module (risk_model.get_volatility).
         - Alpha: The alpha is based on the difference between the asset's return and the benchmark return.
@@ -1166,6 +1169,7 @@ class Portfolio:
                 volatilities=self._portfolio_volatilities,
                 betas=self._portfolio_beta,
                 include_portfolio=include_portfolio,
+                asset_returns=self._daily_historical_data["Return"],
             )
         except ValueError as error:
             raise ValueError(f"Failed to create portfolio overview: {error}") from error

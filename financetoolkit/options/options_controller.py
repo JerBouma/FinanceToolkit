@@ -4,8 +4,8 @@ __docformat__ = "google"
 
 from datetime import datetime
 
+import numpy as np
 import pandas as pd
-from scipy.optimize import minimize
 
 from financetoolkit.options import (
     binomial_trees_model,
@@ -14,6 +14,8 @@ from financetoolkit.options import (
     greeks_model,
     helpers,
     options_model,
+    risk_neutral_density_model,
+    svi_model,
 )
 from financetoolkit.ratios import valuation_model
 from financetoolkit.risk import risk_model
@@ -25,6 +27,9 @@ from financetoolkit.utilities.statistics_model import calculate_standardization
 # ruff: noqa: E501
 
 logger = logger_model.get_logger()
+
+MINIMUM_OBSERVATIONS_FOR_SVI_FIT = 5
+MINIMUM_EXPIRATIONS_FOR_CALENDAR_CHECK = 2
 
 
 class Options:
@@ -542,26 +547,18 @@ class Options:
                 # which serves as input for the time to expiration parameter in the Black Scholes Model.
                 days_to_expiration = (pd.to_datetime(option_chains.name) - today).days
 
-                def objective_function(sigma: float):
-                    return (
-                        black_scholes_model.get_black_scholes(
-                            stock_price=stock_price.loc[ticker],
-                            strike_price=strike_price,
-                            risk_free_rate=risk_free_rate,
-                            time_to_expiration=days_to_expiration / 365,
-                            volatility=sigma,
-                            dividend_yield=dividend_yield_value[ticker],
-                            put_option=put_option,
-                        )
-                        - row["Last Price"]
-                    ) ** 2
-
-                # The minimize function is used to find the implied volatility value that minimizes
-                # the objective function. This means that the difference between the output of the
-                # Black Scholes Model and the market option price is minimized.
-                implied_volatility_value = minimize(
-                    objective_function, volatility.loc[ticker]
-                ).x[0]
+                # Numerically finds the volatility that minimizes the difference
+                # between the Black Scholes Model output and the market option price.
+                implied_volatility_value = black_scholes_model.get_implied_volatility(
+                    market_price=row["Last Price"],
+                    stock_price=stock_price.loc[ticker],
+                    strike_price=strike_price,
+                    risk_free_rate=risk_free_rate,
+                    time_to_expiration=days_to_expiration / 365,
+                    dividend_yield=dividend_yield_value[ticker],
+                    put_option=put_option,
+                    initial_guess=volatility.loc[ticker],
+                )
 
                 # Values that are equal to the current volatility refer to not being able to resolve
                 # and thus are not added to the implied volatility dictionary.
@@ -596,6 +593,427 @@ class Options:
             )
 
         return implied_volatility_df
+
+    def get_volatility_surface(
+        self,
+        expiration_dates: list[str] | None = None,
+        put_option: bool = False,
+        risk_free_rate: float | None = None,
+        dividend_yield: float | None = None,
+        number_of_expirations: int = 6,
+        outlier_threshold: float = 5.0,
+        rounding: int | None = None,
+    ):
+        """
+        Calibrate an arbitrage-checked implied volatility surface across multiple
+        expiries, by fitting a raw SVI (Stochastic Volatility Inspired, Gatheral
+        2004) curve to the market-implied smile (see `get_implied_volatility`) at
+        each expiry, and checking the fitted surface for calendar-spread arbitrage.
+
+        A single per-expiry smile only tells you the shape of the market's
+        volatility skew at that one maturity. Stitching several calibrated SVI
+        slices together instead gives a full surface, which is what is needed to
+        price/interpolate options at maturities or strikes that don't trade
+        directly, and to check for term-structure inconsistencies (see Notes).
+
+        Before fitting, strikes whose market-implied volatility is a statistical
+        outlier relative to its neighbors (a common symptom of a stale or
+        wide-bid/ask illiquid quote) are dropped via a median-absolute-deviation
+        filter, since a single bad quote can otherwise dominate the least-squares
+        SVI fit for that whole expiry.
+
+        See: Gatheral, J. (2004), "A parsimonious arbitrage-free implied volatility
+        parameterization with application to the valuation of volatility
+        derivatives", and Gatheral, J., & Jacquier, A. (2014), "Arbitrage-free SVI
+        volatility surfaces", Quantitative Finance, 14(1), 59-71.
+
+        Also known as: SVI surface, implied volatility surface.
+
+        Notes:
+            A warning is logged (not raised) if the fitted surface has any
+            calendar-spread arbitrage violations, i.e. total implied variance
+            decreasing with time to expiration at some log-moneyness -- this
+            reflects genuine inconsistency in the underlying market quotes across
+            expiries, not a fitting error, and is only checked, not corrected.
+
+        Args:
+            expiration_dates (list[str] | None, optional): The expiration dates to
+                fit the surface over. Defaults to None, meaning the first
+                `number_of_expirations` available expiration dates.
+            put_option (bool, optional): Whether to use put options instead of call
+                options. Defaults to False.
+            risk_free_rate (float, optional): The risk free rate to use for the
+                calculation. Defaults to None which means it will use the current
+                risk free rate.
+            dividend_yield (float, optional): The dividend yield to use for the
+                calculation. Defaults to None which means it will use the dividend
+                yield as obtained through annual historical data.
+            number_of_expirations (int, optional): The number of near-term
+                expiration dates to fit when `expiration_dates` is not given.
+                Defaults to 6.
+            outlier_threshold (float, optional): The number of median absolute
+                deviations from the median implied volatility beyond which a quote
+                is treated as an outlier and dropped before fitting. Defaults to
+                5.0.
+            rounding (int | None, optional): The number of decimals to round the
+                results to. Defaults to None.
+
+        Returns:
+            pd.DataFrame: The SVI-fitted implied volatility, indexed by (ticker,
+            strike price), with one column per expiration date. NaN where a given
+            strike wasn't part of that expiry's calibration.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        volatility_surface = toolkit.options.get_volatility_surface(number_of_expirations=3)
+
+        volatility_surface.loc["AAPL"]
+        ```
+
+        Which returns:
+
+        |   Strike Price |   2026-08-05 |   2026-08-07 |
+        |----------------:|-------------:|-------------:|
+        |            277.5 |       0.5647 |     nan      |
+        |            285   |       0.5235 |     nan      |
+        |            287.5 |       0.5136 |     nan      |
+        |            290   |       0.5057 |       0.4245 |
+        |            292.5 |       0.5001 |       0.4166 |
+        |            295   |       0.4968 |       0.4098 |
+        |            297.5 |       0.4958 |       0.4043 |
+        |            300   |       0.4971 |       0.4001 |
+        """
+        all_expiration_dates = self.get_option_chains(show_expiration_dates=True)
+
+        if expiration_dates is None:
+            expiration_dates = list(all_expiration_dates[:number_of_expirations])
+        else:
+            invalid_dates = [
+                expiration_date
+                for expiration_date in expiration_dates
+                if expiration_date not in all_expiration_dates
+            ]
+            if invalid_dates:
+                raise ValueError(
+                    f"The expiration date(s) {', '.join(invalid_dates)} are not valid. "
+                    f"Choose from {', '.join(all_expiration_dates)}"
+                )
+
+        current_period = self._daily_historical.index[-1]
+        stock_price = self._prices.loc[current_period]
+        risk_free_rate = (
+            risk_free_rate
+            if risk_free_rate is not None
+            else self._risk_free_rate.loc[current_period]
+        )
+        today = datetime.today()
+
+        surface: dict[str, dict[float, dict[str, float]]] = {}
+        svi_parameters_per_ticker: dict[str, dict[float, dict[str, float]]] = {
+            ticker: {} for ticker in self._tickers
+        }
+
+        for expiration_date in expiration_dates:
+            time_to_expiration = (pd.to_datetime(expiration_date) - today).days / 365
+
+            if time_to_expiration <= 0:
+                continue
+
+            implied_volatility = self.get_implied_volatility(
+                expiration_date=expiration_date,
+                put_option=put_option,
+                risk_free_rate=risk_free_rate,
+                dividend_yield=dividend_yield,
+            )
+
+            if implied_volatility.empty:
+                continue
+
+            for ticker in implied_volatility.index.get_level_values(0).unique():
+                ticker_iv = implied_volatility.loc[ticker]
+
+                median_iv = ticker_iv.median()
+                deviation = (ticker_iv - median_iv).abs()
+                mad = deviation.median()
+                if mad > 0:
+                    ticker_iv = ticker_iv[deviation <= outlier_threshold * mad]
+
+                if len(ticker_iv) < MINIMUM_OBSERVATIONS_FOR_SVI_FIT:
+                    continue
+
+                dividend_yield_value = (
+                    dividend_yield
+                    if dividend_yield is not None
+                    else self._dividend_yield[ticker].iloc[-1]
+                )
+
+                forward_price = stock_price.loc[ticker] * np.exp(
+                    (risk_free_rate - dividend_yield_value) * time_to_expiration
+                )
+
+                log_moneyness = np.log(
+                    ticker_iv.index.to_numpy(dtype=float) / forward_price
+                )
+                total_variance = (ticker_iv.to_numpy() ** 2) * time_to_expiration
+
+                try:
+                    fitted_parameters = svi_model.get_svi_parameters(
+                        log_moneyness, total_variance
+                    )
+                except ValueError:
+                    continue
+
+                svi_parameters_per_ticker[ticker][
+                    time_to_expiration
+                ] = fitted_parameters
+
+                fitted_volatility = svi_model.get_svi_implied_volatility(
+                    log_moneyness, time_to_expiration, **fitted_parameters
+                )
+
+                surface.setdefault(ticker, {})
+                for strike_price, volatility in zip(ticker_iv.index, fitted_volatility):
+                    surface[ticker].setdefault(strike_price, {})[
+                        expiration_date
+                    ] = volatility
+
+        for ticker, expirations in svi_parameters_per_ticker.items():
+            if len(expirations) < MINIMUM_EXPIRATIONS_FOR_CALENDAR_CHECK:
+                continue
+
+            violations = svi_model.check_calendar_arbitrage(expirations)
+
+            if not violations.empty:
+                logger.warning(
+                    "The calibrated volatility surface for %s has %d calendar-spread "
+                    "arbitrage violation(s) across the checked log-moneyness grid -- "
+                    "this reflects genuine inconsistency in the underlying market "
+                    "quotes across expiries, not a fitting error.",
+                    ticker,
+                    len(violations),
+                )
+
+        if not surface:
+            return pd.DataFrame()
+
+        volatility_surface = pd.concat(
+            {
+                ticker: pd.DataFrame(strikes).T.sort_index()
+                for ticker, strikes in surface.items()
+            }
+        )
+        volatility_surface.index.names = ["Ticker", "Strike Price"]
+
+        return volatility_surface.round(rounding if rounding else self._rounding)
+
+    def get_risk_neutral_density(
+        self,
+        expiration_date: str | None = None,
+        put_option: bool = False,
+        risk_free_rate: float | None = None,
+        dividend_yield: float | None = None,
+        strike_price_range: float = 0.5,
+        number_of_strikes: int = 200,
+        outlier_threshold: float = 5.0,
+        rounding: int | None = None,
+    ):
+        """
+        Extract the market-implied risk-neutral probability density of the
+        underlying's price at expiration, via the Breeden-Litzenberger (1978)
+        theorem, applied to a volatility smile calibrated to real market option
+        prices (see `get_implied_volatility`) rather than a single flat assumed
+        volatility.
+
+        `get_partial_derivative` computes the same second-derivative relationship
+        but with one flat volatility value applied at every strike -- with a flat
+        volatility input, the second derivative can only ever recover a lognormal
+        density regardless of what the real market smile looks like, which defeats
+        the entire purpose of the theorem. This method instead first calibrates a
+        raw SVI (Gatheral 2004) curve to the actual market smile (see
+        `get_volatility_surface`) and evaluates the density from that.
+
+        The formula is as follows:
+
+        - f(K) = e^(r * t) * d^2 C(K) / dK^2
+
+        Where C(K) is the Black-Scholes call price at strike K, using the
+        SVI-smoothed implied volatility at that strike, r is the risk-free rate and
+        t is the time to expiration. The second derivative is approximated
+        numerically via a central finite difference on a fine, evenly-spaced strike
+        grid, since the smile only gives implied volatility at a sparse set of
+        traded strikes.
+
+        See the paper: Breeden, D.T., & Litzenberger, R.H. (1978), "Prices of
+        State-Contingent Claims Implicit in Option Prices", Journal of Business,
+        51(4), 621-651. https://www.jstor.org/stable/2352653
+
+        Also known as: Breeden-Litzenberger, implied risk-neutral distribution.
+
+        Notes:
+            A warning is logged (not raised) for any ticker whose density goes
+            negative at some strike -- this indicates a butterfly-arbitrage
+            violation (the call price is not convex in the strike) in the
+            underlying market quotes or the SVI fit, which a well-calibrated,
+            liquid smile should not produce.
+
+        Args:
+            expiration_date (str | None, optional): The expiration date to use.
+                Defaults to None which means it will use the first available
+                expiration date.
+            put_option (bool, optional): Whether to use put options instead of call
+                options. Defaults to False.
+            risk_free_rate (float, optional): The risk free rate to use for the
+                calculation. Defaults to None which means it will use the current
+                risk free rate.
+            dividend_yield (float, optional): The dividend yield to use for the
+                calculation. Defaults to None which means it will use the dividend
+                yield as obtained through annual historical data.
+            strike_price_range (float, optional): The range of strikes to evaluate
+                the density over, as a fraction of the forward price in each
+                direction. Defaults to 0.5, i.e. from 50% to 150% of the forward
+                price.
+            number_of_strikes (int, optional): The number of strikes in the
+                evaluation grid. Defaults to 200.
+            outlier_threshold (float, optional): The number of median absolute
+                deviations from the median implied volatility beyond which a quote
+                is treated as an outlier and dropped before fitting. Defaults to
+                5.0.
+            rounding (int | None, optional): The number of decimals to round the
+                results to. Defaults to None.
+
+        Raises:
+            ValueError: If no implied volatility could be determined for the given
+                expiration date.
+
+        Returns:
+            pd.DataFrame: The risk-neutral probability density, indexed by strike
+            price, with one column per ticker.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        risk_neutral_density = toolkit.options.get_risk_neutral_density()
+        ```
+
+        Which returns:
+
+        |   Strike Price |   AAPL |
+        |----------------:|-------:|
+        |          277.238 | 0.0001 |
+        |          278.774 | 0.0002 |
+        |          280.31  | 0.0004 |
+        |          281.846 | 0.0007 |
+        |          283.382 | 0.0012 |
+        """
+        if expiration_date is not None:
+            candidate_dates = [expiration_date]
+        else:
+            # Same-day or otherwise illiquid near-term expiries can yield no
+            # resolvable implied volatility at all, so when the caller hasn't
+            # pinned down a specific date, the earliest date that actually has
+            # usable quotes is used instead of blindly taking the very first one.
+            candidate_dates = self.get_option_chains(show_expiration_dates=True)
+
+        for candidate_date in candidate_dates:
+            implied_volatility = self.get_implied_volatility(
+                expiration_date=candidate_date,
+                put_option=put_option,
+                risk_free_rate=risk_free_rate,
+                dividend_yield=dividend_yield,
+            )
+
+            if not implied_volatility.empty:
+                expiration_date = candidate_date
+                break
+        else:
+            raise ValueError(
+                f"No implied volatility could be determined for expiration date(s) "
+                f"{', '.join(candidate_dates)}."
+            )
+
+        current_period = self._daily_historical.index[-1]
+        stock_price = self._prices.loc[current_period]
+        risk_free_rate = (
+            risk_free_rate
+            if risk_free_rate is not None
+            else self._risk_free_rate.loc[current_period]
+        )
+        today = datetime.today()
+        time_to_expiration = (pd.to_datetime(expiration_date) - today).days / 365
+
+        density: dict[str, pd.Series] = {}
+
+        for ticker in implied_volatility.index.get_level_values(0).unique():
+            ticker_iv = implied_volatility.loc[ticker]
+
+            median_iv = ticker_iv.median()
+            deviation = (ticker_iv - median_iv).abs()
+            mad = deviation.median()
+            if mad > 0:
+                ticker_iv = ticker_iv[deviation <= outlier_threshold * mad]
+
+            if len(ticker_iv) < MINIMUM_OBSERVATIONS_FOR_SVI_FIT:
+                logger.warning(
+                    "Not enough option quotes remain for %s after outlier "
+                    "filtering to calibrate a smile, skipping.",
+                    ticker,
+                )
+                continue
+
+            dividend_yield_value = (
+                dividend_yield
+                if dividend_yield is not None
+                else self._dividend_yield[ticker].iloc[-1]
+            )
+
+            forward_price = stock_price.loc[ticker] * np.exp(
+                (risk_free_rate - dividend_yield_value) * time_to_expiration
+            )
+
+            log_moneyness = np.log(
+                ticker_iv.index.to_numpy(dtype=float) / forward_price
+            )
+            total_variance = (ticker_iv.to_numpy() ** 2) * time_to_expiration
+
+            svi_parameters = svi_model.get_svi_parameters(log_moneyness, total_variance)
+
+            ticker_density = risk_neutral_density_model.get_risk_neutral_density(
+                stock_price=stock_price.loc[ticker],
+                forward_price=forward_price,
+                time_to_expiration=time_to_expiration,
+                risk_free_rate=risk_free_rate,
+                dividend_yield=dividend_yield_value,
+                svi_parameters=svi_parameters,
+                strike_price_range=strike_price_range,
+                number_of_strikes=number_of_strikes,
+            )
+
+            if (ticker_density < 0).any():
+                logger.warning(
+                    "The risk-neutral density for %s has negative values at some "
+                    "strikes, indicating a butterfly-arbitrage violation in the "
+                    "underlying market quotes or the SVI fit.",
+                    ticker,
+                )
+
+            density[ticker] = ticker_density
+
+        if not density:
+            return pd.DataFrame()
+
+        density_df = pd.concat(density, axis=1)
+        density_df.index.name = "Strike Price"
+
+        return density_df.round(rounding if rounding else self._rounding)
 
     def get_binomial_model(
         self,
@@ -5117,11 +5535,13 @@ class Options:
         is a mathematical model used to estimate the price of European—style options. The partial derivative is
         the rate of change of the option price with respect to the strike price.
 
-        The partial derivative is used in the Breeden-Litzenberger theorem is used for risk-neutral valuation and
-        was developed by Fischer Black and Robert Litzenberger in 1978. The theorem states that the price of any
-        derivative security can be calculated by finding the expected value of the derivative under a risk-neutral
-        measure. The theorem is based on the Black-Scholes model and the assumption that the underlying asset
-        follows a lognormal distribution. See the paper: https://www.jstor.org/stable/2352653
+        Note that this uses a single, flat assumed volatility (the same value at every strike price) rather than
+        the market's actual implied volatility smile. This means it is NOT the Breeden-Litzenberger risk-neutral
+        density -- with a flat volatility input the second derivative can only ever recover a lognormal density,
+        regardless of what the real market smile looks like, which defeats the entire purpose of that theorem. For
+        the actual market-implied (smile-consistent) risk-neutral density, see `get_risk_neutral_density`, which
+        uses this same second-derivative relationship but applied to a volatility surface calibrated to real
+        market option prices instead of a flat assumption.
 
         The formula is as follows:
 

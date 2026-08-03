@@ -4,6 +4,7 @@ __docformat__ = "google"
 
 import numpy as np
 import pandas as pd
+from scipy.optimize import minimize
 from scipy.stats import norm
 
 # pylint: disable=too-many-arguments,too-many-locals
@@ -128,6 +129,52 @@ def get_black_scholes(
     return stock_price * np.exp(-dividend_yield * time_to_expiration) * norm.cdf(
         d1
     ) - strike_price * np.exp(-risk_free_rate * time_to_expiration) * norm.cdf(d2)
+
+
+def get_implied_volatility(
+    market_price: float,
+    stock_price: float,
+    strike_price: float,
+    risk_free_rate: float,
+    time_to_expiration: float,
+    dividend_yield: float = 0,
+    put_option: bool = False,
+    initial_guess: float = 0.3,
+) -> float:
+    """
+    Numerically solve for the Black-Scholes implied volatility that reprices a
+    single observed market option price, by minimizing the squared difference
+    between the Black-Scholes theoretical price and the market price.
+
+    Args:
+        market_price (float): The observed market price of the option.
+        stock_price (float): The current stock price.
+        strike_price (float): The option's strike price.
+        risk_free_rate (float): The risk-free interest rate.
+        time_to_expiration (float): The time to expiration of the option, in years.
+        dividend_yield (float): The dividend yield of the stock. Defaults to 0.
+        put_option (bool): Whether the option is a put option or not.
+        initial_guess (float): The starting volatility guess for the numerical
+            solver. Defaults to 0.3.
+
+    Returns:
+        float: The implied volatility.
+    """
+
+    def objective(volatility: float) -> float:
+        theoretical_price = get_black_scholes(
+            stock_price=stock_price,
+            strike_price=strike_price,
+            risk_free_rate=risk_free_rate,
+            time_to_expiration=time_to_expiration,
+            volatility=volatility,
+            dividend_yield=dividend_yield,
+            put_option=put_option,
+        )
+
+        return (theoretical_price - market_price) ** 2
+
+    return minimize(objective, x0=initial_guess).x[0]
 
 
 def get_put_call_parity(

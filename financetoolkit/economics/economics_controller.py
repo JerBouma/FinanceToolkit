@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 
 import pandas as pd
 
-from financetoolkit.economics import fred_model, gmdb_model, oecd_model
+from financetoolkit.economics import fred_model, gmdb_model, oecd_model, yfinance_model
 from financetoolkit.utilities.error_model import handle_errors
 from financetoolkit.utilities.logger_model import get_logger
 from financetoolkit.utilities.statistics_model import finalize_dataset
@@ -383,6 +383,16 @@ class Economics:
 
         economics.get_real_gross_domestic_product_usd(countries=['United States', 'Japan', 'Germany'])
         ```
+
+        Which returns:
+
+        |      |     Germany |       Japan |   United States |
+        |:-----|------------:|------------:|----------------:|
+        | 2020 | 3.52029e+06 | 4.3728e+06  |     1.97236e+07 |
+        | 2021 | 3.6495e+06  | 4.49117e+06 |     2.09179e+07 |
+        | 2022 | 3.6994e+06  | 4.54319e+06 |     2.14434e+07 |
+        | 2023 | 3.68964e+06 | 4.61947e+06 |     2.20626e+07 |
+        | 2024 | 3.6899e+06  | 4.63432e+06 |     2.26726e+07 |
         """
         if self._gmbd_dataset.empty:
             self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
@@ -463,6 +473,16 @@ class Economics:
 
         economics.get_real_gross_domestic_product_per_capita(countries=['Netherlands', 'Germany', 'China'])
         ```
+
+        Which returns:
+
+        |      |   Germany |   China |   Netherlands |
+        |:-----|----------:|--------:|--------------:|
+        | 2022 |   43259.3 | 72327.1 |       53219.9 |
+        | 2023 |   42779.5 | 76236.4 |       52600.7 |
+        | 2024 |   42621.7 | 79949   |       52603.8 |
+        | 2025 |   42882.3 | 83590.8 |       53142.2 |
+        | 2026 |   43422.6 | 87097.8 |       53735.2 |
         """
         if self._gmbd_dataset.empty:
             self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
@@ -1506,6 +1526,15 @@ class Economics:
 
         economics.get_trade_balance(countries=['United States', 'Germany', 'China'])
         ```
+
+        Which returns:
+
+        |      |   Germany |       China |   United States |
+        |:-----|----------:|------------:|----------------:|
+        | 2020 |    184386 | 2.45079e+06 |         -626202 |
+        | 2021 |    189652 | 2.97188e+06 |         -860029 |
+        | 2022 |     98724 | 3.89305e+06 |         -958935 |
+        | 2023 |    167656 | 2.73467e+06 |         -797342 |
         """
         if self._gmbd_dataset.empty:
             self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
@@ -3424,6 +3453,16 @@ class Economics:
             countries=['United States', 'Germany'],
             quarterly=False)
         ```
+
+        Which returns:
+
+        |      |   United States |   Germany |
+        |:-----|----------------:|----------:|
+        | 2018 |          0.1222 |    0.182  |
+        | 2019 |          0.1305 |    0.1793 |
+        | 2020 |          0.2063 |    0.2324 |
+        | 2021 |          0.1707 |    0.2199 |
+        | 2022 |          0.0981 |    0.189  |
         """
         quarterly = quarterly if quarterly is not None else self._quarterly
 
@@ -3506,6 +3545,16 @@ class Economics:
             countries=['United States', 'Australia'],
             quarterly=False)
         ```
+
+        Which returns:
+
+        |      |   United States |   Australia |
+        |:-----|----------------:|------------:|
+        | 2018 |          1.0014 |      1.9888 |
+        | 2019 |          0.9955 |      1.9676 |
+        | 2020 |          0.9532 |      1.8811 |
+        | 2021 |          0.9624 |      1.9168 |
+        | 2022 |          1.0162 |      1.9253 |
         """
         quarterly = quarterly if quarterly is not None else self._quarterly
 
@@ -3788,6 +3837,16 @@ class Economics:
 
         economics.get_real_effective_exchange_rate(countries=['United States', 'Japan', 'Netherlands'])
         ```
+
+        Which returns:
+
+        |      |   Japan |   Netherlands |   United States |
+        |:-----|--------:|--------------:|----------------:|
+        | 2021 | 70.6912 |       102.098 |         115.627 |
+        | 2022 | 61.011  |       102.238 |         126.626 |
+        | 2023 | 58.1149 |       103.352 |         127.54  |
+        | 2024 | 55.9376 |       104.859 |         134.572 |
+        | 2025 | 55.5007 |       104.174 |         134.22  |
         """
         if self._gmbd_dataset.empty:
             self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
@@ -5328,6 +5387,16 @@ class Economics:
 
         economics.get_sovereign_debt_crisis(countries='Argentina')
         ```
+
+        Which returns:
+
+        |      |   Argentina |
+        |:-----|------------:|
+        | 2016 |           0 |
+        | 2017 |           0 |
+        | 2018 |         nan |
+        | 2019 |         nan |
+        | 2020 |         nan |
         """
         if self._gmbd_dataset.empty:
             self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
@@ -5389,6 +5458,16 @@ class Economics:
 
         economics.get_currency_crisis(countries='Turkey')
         ```
+
+        Which returns:
+
+        |      |   Turkey |
+        |:-----|---------:|
+        | 2015 |        0 |
+        | 2016 |        0 |
+        | 2017 |        0 |
+        | 2018 |      nan |
+        | 2019 |      nan |
         """
         if self._gmbd_dataset.empty:
             self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
@@ -5448,6 +5527,16 @@ class Economics:
 
         economics.get_banking_crisis(countries=['United States', 'United Kingdom'])
         ```
+
+        Which returns:
+
+        |      |   United Kingdom |   United States |
+        |:-----|-----------------:|----------------:|
+        | 2016 |                0 |               0 |
+        | 2017 |                0 |               0 |
+        | 2018 |                0 |               0 |
+        | 2019 |                0 |               0 |
+        | 2020 |                0 |               0 |
         """
         if self._gmbd_dataset.empty:
             self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
@@ -5523,6 +5612,16 @@ class Economics:
 
         economics.get_nonfarm_payrolls()
         ```
+
+        Which returns:
+
+        | Date       |   United States |
+        |:-----------|----------------:|
+        | 2026-02-01 |          158436 |
+        | 2026-03-01 |          158650 |
+        | 2026-04-01 |          158798 |
+        | 2026-05-01 |          158927 |
+        | 2026-06-01 |          158984 |
         """
         self._require_fred_api_key()
 
@@ -5598,6 +5697,16 @@ class Economics:
 
         economics.get_initial_jobless_claims()
         ```
+
+        Which returns:
+
+        | Date       |   United States |
+        |:-----------|----------------:|
+        | 2026-06-27 |          217000 |
+        | 2026-07-04 |          217000 |
+        | 2026-07-11 |          209000 |
+        | 2026-07-18 |          188000 |
+        | 2026-07-25 |          197000 |
         """
         self._require_fred_api_key()
 
@@ -5672,6 +5781,16 @@ class Economics:
 
         economics.get_retail_sales()
         ```
+
+        Which returns:
+
+        | Date       |   United States |
+        |:-----------|----------------:|
+        | 2026-02-01 |          741278 |
+        | 2026-03-01 |          754013 |
+        | 2026-04-01 |          759097 |
+        | 2026-05-01 |          766876 |
+        | 2026-06-01 |          768553 |
         """
         self._require_fred_api_key()
 
@@ -5748,6 +5867,16 @@ class Economics:
 
         economics.get_industrial_production_index()
         ```
+
+        Which returns:
+
+        | Date       |   United States |
+        |:-----------|----------------:|
+        | 2026-02-01 |         101.926 |
+        | 2026-03-01 |         101.617 |
+        | 2026-04-01 |         102.42  |
+        | 2026-05-01 |         102.561 |
+        | 2026-06-01 |         102.639 |
         """
         self._require_fred_api_key()
 
@@ -5823,6 +5952,16 @@ class Economics:
 
         economics.get_housing_starts()
         ```
+
+        Which returns:
+
+        | Date       |   United States |
+        |:-----------|----------------:|
+        | 2026-02-01 |            1346 |
+        | 2026-03-01 |            1522 |
+        | 2026-04-01 |            1414 |
+        | 2026-05-01 |            1199 |
+        | 2026-06-01 |            1427 |
         """
         self._require_fred_api_key()
 
@@ -5903,6 +6042,16 @@ class Economics:
 
         economics.get_real_personal_income()
         ```
+
+        Which returns:
+
+        | Date       |   United States |
+        |:-----------|----------------:|
+        | 2026-02-01 |         16601.6 |
+        | 2026-03-01 |         16598.1 |
+        | 2026-04-01 |         16526.5 |
+        | 2026-05-01 |         16567   |
+        | 2026-06-01 |         16606.1 |
         """
         self._require_fred_api_key()
 
@@ -5981,6 +6130,16 @@ class Economics:
 
         economics.get_mortgage_rate_30_year()
         ```
+
+        Which returns:
+
+        | Date       |   United States |
+        |:-----------|----------------:|
+        | 2026-07-02 |            6.43 |
+        | 2026-07-09 |            6.49 |
+        | 2026-07-16 |            6.55 |
+        | 2026-07-23 |            6.58 |
+        | 2026-07-30 |            6.66 |
         """
         self._require_fred_api_key()
 
@@ -6060,6 +6219,16 @@ class Economics:
 
         economics.get_recession_indicator()
         ```
+
+        Which returns:
+
+        | Date       |   United States |
+        |:-----------|----------------:|
+        | 2026-02-01 |               0 |
+        | 2026-03-01 |               0 |
+        | 2026-04-01 |               0 |
+        | 2026-05-01 |               0 |
+        | 2026-06-01 |               0 |
         """
         self._require_fred_api_key()
 
@@ -6078,6 +6247,344 @@ class Economics:
             lag=lag,
             rounding=rounding,
             standardize=standardize,
+            axis="rows",
+            row_slice=True,
+        )
+
+    @handle_errors
+    def get_commercial_real_estate_prices(
+        self,
+        rolling: int | None = None,
+        trailing: int | None = None,
+        growth: bool = False,
+        lag: int = 1,
+        standardize: bool = False,
+        rounding: int | None = None,
+    ) -> pd.DataFrame:
+        """
+        Get the quarterly Commercial Real Estate Price Index for the United States
+        from FRED (sourced from the IMF's Financial Soundness Indicators).
+
+        This tracks commercial (office, retail, industrial, apartment) property
+        prices, as distinct from residential house prices (see `get_house_prices`,
+        which tracks a completely different asset class/market). It is a
+        transaction-based index rather than the appraisal-smoothed methodology used
+        by institutional benchmarks like the NCREIF Property Index -- which is not
+        freely available anywhere -- so expect more volatility and less
+        autocorrelation than an appraisal-based series would show.
+
+        Requires a free FRED API key, see the `fred_api_key` parameter of the
+        `Economics` class.
+
+        See definition: https://fred.stlouisfed.org/series/COMREPUSQ159N
+
+        Also known as: commercial property price index, CRE price index.
+
+        Args:
+            rolling (int, optional): The rolling window size to use for smoothing the data (simple
+            moving average). Defaults to None.
+            trailing (int, optional): The trailing window size to use for summing the data over
+            trailing periods. Defaults to None.
+            growth (bool, optional): Whether to return the growth data or the actual data.
+            lag (int, optional): The number of periods to lag the data by.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+
+        Returns:
+            pd.DataFrame: A single-column ("United States") DataFrame of the
+            quarterly Commercial Real Estate Price Index, as a year-over-year
+            percent change.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Economics
+
+        economics = Economics(start_date='2015-01-01', fred_api_key='FRED_API_KEY')
+
+        economics.get_commercial_real_estate_prices()
+        ```
+
+        Which returns:
+
+        | Date       |   United States |
+        |:-----------|-----------------:|
+        | 2024-04-01 |         -10.6651 |
+        | 2024-07-01 |         -10.5779 |
+        | 2024-10-01 |          -2.7294 |
+        | 2025-01-01 |          -3.0080 |
+        | 2025-04-01 |          -7.0128 |
+        """
+        self._require_fred_api_key()
+
+        commercial_real_estate_prices = fred_model.get_commercial_real_estate_prices(
+            self._start_date, self._end_date, self._fred_api_key
+        )
+
+        return finalize_dataset(
+            dataset=commercial_real_estate_prices,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+        )
+
+    @handle_errors
+    def get_real_yield_curve(
+        self,
+        rolling: int | None = None,
+        trailing: int | None = None,
+        growth: bool = False,
+        lag: int = 1,
+        standardize: bool = False,
+        rounding: int | None = None,
+    ) -> pd.DataFrame:
+        """
+        Get the daily real (TIPS-implied) U.S. Treasury yield curve from FRED -- the
+        Market Yield on Treasury Inflation-Protected Securities at Constant
+        Maturity, for the 5, 7, 10, 20 and 30-Year maturities.
+
+        This is genuine market-observed data, as distinct from
+        `fixedincome.get_breakeven_inflation_rate`, which is a pure formula applied
+        to a hand-specified sample curve rather than real TIPS market data. Use this
+        together with `get_breakeven_inflation_expectations` to get the
+        market-implied (Q-measure) inflation expectation at each maturity.
+
+        Requires a free FRED API key, see the `fred_api_key` parameter of the
+        `Economics` class.
+
+        See definition: https://fred.stlouisfed.org/series/DFII10
+
+        Also known as: TIPS yield curve, real Treasury yield curve.
+
+        Args:
+            rolling (int, optional): The rolling window size to use for smoothing the data (simple
+            moving average). Defaults to None.
+            trailing (int, optional): The trailing window size to use for summing the data over
+            trailing periods. Defaults to None.
+            growth (bool, optional): Whether to return the growth data or the actual data.
+            lag (int, optional): The number of periods to lag the data by.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+
+        Returns:
+            pd.DataFrame: A DataFrame with one column per maturity (5, 7, 10, 20, 30
+            Year), in percent.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Economics
+
+        economics = Economics(start_date='2024-01-01', end_date='2024-01-15', fred_api_key='FRED_API_KEY')
+
+        economics.get_real_yield_curve()
+        ```
+
+        Which returns:
+
+        | Date       |   5 Year |   7 Year |   10 Year |   20 Year |   30 Year |
+        |:-----------|---------:|---------:|----------:|----------:|----------:|
+        | 2024-01-02 |     1.76 |     1.75 |      1.74 |      1.84 |      1.91 |
+        | 2024-01-03 |     1.73 |     1.71 |      1.71 |      1.81 |      1.89 |
+        | 2024-01-04 |     1.79 |     1.78 |      1.77 |      1.88 |      1.96 |
+        | 2024-01-05 |     1.83 |     1.83 |      1.83 |      1.94 |      2.02 |
+        | 2024-01-08 |     1.78 |     1.79 |      1.79 |      1.9  |      1.98 |
+        """
+        self._require_fred_api_key()
+
+        real_yield_curve = fred_model.get_real_yield_curve(
+            self._start_date, self._end_date, self._fred_api_key
+        )
+
+        return finalize_dataset(
+            dataset=real_yield_curve,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+        )
+
+    @handle_errors
+    def get_breakeven_inflation_expectations(
+        self,
+        rolling: int | None = None,
+        trailing: int | None = None,
+        growth: bool = False,
+        lag: int = 1,
+        standardize: bool = False,
+        rounding: int | None = None,
+    ) -> pd.DataFrame:
+        """
+        Get the daily market-implied (Q-measure) breakeven inflation expectations
+        from FRED -- nominal Treasury yield minus real TIPS yield -- at the 5, 7,
+        10, 20 and 30-Year maturities, plus the 5-Year, 5-Year Forward Inflation
+        Expectation Rate (the market's implied average inflation rate for the five
+        years starting five years from now).
+
+        FRED only publishes ready-made daily breakeven series for the 5 and 10-Year
+        maturities; its 7, 20 and 30-Year breakeven series only exist at monthly
+        frequency, so those three points are instead computed as nominal minus real
+        from FRED's own daily Treasury and TIPS series, keeping every maturity on a
+        daily frequency. See `get_real_yield_curve` for the underlying real yields
+        on their own.
+
+        Requires a free FRED API key, see the `fred_api_key` parameter of the
+        `Economics` class.
+
+        See definition: https://fred.stlouisfed.org/series/T10YIE
+
+        Also known as: breakeven inflation rate, market-implied inflation expectations.
+
+        Args:
+            rolling (int, optional): The rolling window size to use for smoothing the data (simple
+            moving average). Defaults to None.
+            trailing (int, optional): The trailing window size to use for summing the data over
+            trailing periods. Defaults to None.
+            growth (bool, optional): Whether to return the growth data or the actual data.
+            lag (int, optional): The number of periods to lag the data by.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+
+        Returns:
+            pd.DataFrame: A DataFrame with one column per maturity (5, 7, 10, 20, 30
+            Year) plus the 5-Year, 5-Year Forward Rate, in percent.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Economics
+
+        economics = Economics(start_date='2024-01-01', end_date='2024-01-15', fred_api_key='FRED_API_KEY')
+
+        economics.get_breakeven_inflation_expectations()
+        ```
+
+        Which returns:
+
+        | Date       |   5 Year |   7 Year |   10 Year |   20 Year |   30 Year |   5 Year, 5 Year Forward |
+        |:-----------|---------:|---------:|----------:|----------:|----------:|-------------------------:|
+        | 2024-01-02 |     2.17 |     2.2  |      2.21 |      2.41 |      2.17 |                     2.25 |
+        | 2024-01-03 |     2.17 |     2.21 |      2.2  |      2.4  |      2.16 |                     2.23 |
+        | 2024-01-04 |     2.18 |     2.21 |      2.22 |      2.42 |      2.17 |                     2.26 |
+        | 2024-01-05 |     2.19 |     2.21 |      2.22 |      2.43 |      2.19 |                     2.25 |
+        | 2024-01-08 |     2.19 |     2.2  |      2.22 |      2.43 |      2.19 |                     2.25 |
+        """
+        self._require_fred_api_key()
+
+        breakeven_inflation_expectations = (
+            fred_model.get_breakeven_inflation_expectations(
+                self._start_date, self._end_date, self._fred_api_key
+            )
+        )
+
+        return finalize_dataset(
+            dataset=breakeven_inflation_expectations,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+        )
+
+    @handle_errors
+    def get_commodity_forward_curve(
+        self,
+        commodity: str,
+        contracts: int = 12,
+        rounding: int | None = None,
+    ) -> pd.DataFrame:
+        """
+        Get the forward/futures curve for a commodity from Yahoo Finance -- the
+        historical daily closing price of each dated futures contract over the next
+        `contracts` calendar months (e.g. Crude Oil's December 2026, January 2027,
+        ... contracts), rather than a single flat continuous/spot price.
+
+        This is what a Schwartz-Smith (2000) two-factor commodity price model needs
+        to back out the convenience-yield term structure under the risk-neutral (Q)
+        measure -- the curve's shape (contango or backwardation) at each point in
+        time is exactly what a single spot price series cannot reveal.
+
+        Not every commodity has a listed contract for every calendar month (grains
+        in particular only trade specific delivery months), so months with no
+        listed contract are silently skipped -- the number of columns returned can
+        be fewer than `contracts`.
+
+        Also known as: futures term structure, forward curve.
+
+        Args:
+            commodity (str): The commodity to retrieve the curve for. One of "Crude
+                Oil", "Natural Gas", "Gold", "Silver", "Copper", "Corn", "Wheat" or
+                "Soybeans".
+            contracts (int, optional): The number of sequential monthly contracts
+                ahead of today to attempt to fetch. Defaults to 12.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+
+        Raises:
+            ValueError: If `commodity` is not one of the supported names.
+
+        Returns:
+            pd.DataFrame: A DataFrame indexed by date, with one column per contract
+            labeled by its delivery month (e.g. "2026-12"), containing that
+            contract's daily closing price over its trading life. Columns are NaN
+            outside the date range the contract actually traded in.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Economics
+
+        economics = Economics(start_date='2026-01-01', end_date='2026-08-01')
+
+        economics.get_commodity_forward_curve("Crude Oil", contracts=6)
+        ```
+
+        Which returns:
+
+        | Date       |   2026-09 |   2026-10 |   2026-11 |   2026-12 |   2027-01 |
+        |:-----------|----------:|----------:|----------:|----------:|----------:|
+        | 2026-07-27 |     82.61 |     80.25 |     78.17 |     76.53 |     75.31 |
+        | 2026-07-28 |     79.26 |     77.17 |     75.33 |     73.85 |     72.74 |
+        | 2026-07-29 |     84.46 |     82.04 |     79.68 |     77.74 |     76.28 |
+        | 2026-07-30 |     83.59 |     80.8  |     78.19 |     76.12 |     74.65 |
+        | 2026-07-31 |     84.67 |     81.49 |     78.65 |     76.44 |     74.88 |
+        """
+        commodity_forward_curve = yfinance_model.get_commodity_forward_curve(
+            commodity, self._start_date, self._end_date, contracts
+        )
+
+        return finalize_dataset(
+            dataset=commodity_forward_curve,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            rounding=rounding,
             axis="rows",
             row_slice=True,
         )

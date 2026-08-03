@@ -12,7 +12,7 @@ from financetoolkit.econometrics import regression_model
 def get_event_study(
     returns: pd.Series,
     market_returns: pd.Series,
-    event_date,
+    event_date: str,
     estimation_window: int = 250,
     gap_days: int = 30,
     pre_event_days: int = 10,
@@ -56,7 +56,7 @@ def get_event_study(
             date. Must cover both the estimation and event windows.
         market_returns (pd.Series): Daily returns of the market/benchmark used to
             estimate normal returns. Reindexed to `returns`'s index.
-        event_date: The date of the event. Must be present in `returns.index`.
+        event_date (str): The date of the event. Must be present in `returns.index`.
         estimation_window (int): Number of trading days used to estimate the market
             model. Defaults to 250 (approximately one trading year).
         gap_days (int): Number of trading days between the end of the estimation

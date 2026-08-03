@@ -9,6 +9,8 @@ import pandas as pd
 from scipy import stats
 from statsmodels.tools.eval_measures import meanabs, rmse
 
+from financetoolkit.risk import risk_model
+
 MINIMUM_OBSERVATIONS_FOR_DM_TEST = 3
 
 
@@ -191,6 +193,34 @@ def get_diebold_mariano_test(
         )
 
     raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
+
+
+def get_volatility_forecast(
+    returns: pd.Series,
+    method: str,
+    window_size: int,
+    lambda_: float,
+) -> pd.Series:
+    """
+    One-period-ahead Variance forecast, lagged by one period so it can be compared
+    to the realized squared return out-of-sample -- the forecast half of the
+    Diebold-Mariano test in `get_diebold_mariano_test`.
+
+    Args:
+        returns (pd.Series): The asset's return series.
+        method (str): The forecasting method, one of "ewma" or "rolling".
+        window_size (int): The rolling window size used by the "rolling" method.
+        lambda_ (float): The decay factor used by the "ewma" method.
+
+    Returns:
+        pd.Series: The lagged Variance forecast.
+    """
+    if method == "ewma":
+        volatility = risk_model.get_ewma_volatility(returns, lambda_)
+    else:
+        volatility = returns.rolling(window=window_size).std()
+
+    return (volatility**2).shift(1)
 
 
 def get_rmse(

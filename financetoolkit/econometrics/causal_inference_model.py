@@ -872,7 +872,7 @@ def synthetic_control_summary(result: dict) -> pd.Series:
 def get_synthetic_control(
     treated: pd.Series,
     donors: pd.DataFrame,
-    treatment_period,
+    treatment_period: str,
 ) -> dict:
     """
     Construct a Synthetic Control for `treated` from a weighted combination of
@@ -919,7 +919,7 @@ def get_synthetic_control(
         treated (pd.Series): The treated unit's outcome path, indexed by period.
         donors (pd.DataFrame): The donor pool's outcome paths, one column per donor
         unit, aligned to `treated`'s index.
-        treatment_period: The first post-treatment period -- periods in
+        treatment_period (str): The first post-treatment period -- periods in
         `treated.index` at or after this value are treated as post-treatment,
         everything before as pre-treatment (used to fit the weights).
 

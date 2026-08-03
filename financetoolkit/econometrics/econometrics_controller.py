@@ -24,7 +24,6 @@ from financetoolkit.econometrics import (
     unitroot_model,
 )
 from financetoolkit.helpers import handle_portfolio
-from financetoolkit.risk import risk_model
 from financetoolkit.risk.helpers import determine_within_historical_data
 from financetoolkit.utilities.error_model import handle_errors
 from financetoolkit.utilities.logger_model import get_logger
@@ -1083,8 +1082,8 @@ class Econometrics:
         toolkit.econometrics.get_engle_granger_cointegration(period="quarterly")
         ```
 
-        Which returns (the 1%/10% critical value columns follow the same pattern as 5%,
-        omitted here for width):
+        Which returns: (the 1%/10% critical value columns follow the same pattern as
+        5%, omitted here for width)
 
         | Dependent   | Independent   |   EG Statistic |   P-Value |   Crit. 5% | Cointegrated (5%)   |
         |:------------|:--------------|---------------:|----------:|-----------:|:--------------------|
@@ -1176,8 +1175,8 @@ class Econometrics:
         toolkit.econometrics.get_johansen_cointegration(period="quarterly")
         ```
 
-        Which returns (showing the trace-statistic columns; the max-eigenvalue-statistic
-        columns follow the same pattern):
+        Which returns: (showing the trace-statistic columns; the max-eigenvalue-statistic
+        columns follow the same pattern)
 
         |        |   Eigenvalue |   Trace Statistic |   Trace Critical Value 95% |   Reject (Trace, 5%)   |
         |:-------|-------------:|-------------------:|-----------------------------:|:------------------------|
@@ -1373,17 +1372,13 @@ class Econometrics:
             include_benchmark=include_benchmark,
         )
 
-        def _forecast(method: str) -> pd.DataFrame:
-            if method == "ewma":
-                volatility = risk_model.get_ewma_volatility(returns, lambda_)
-            else:
-                volatility = returns.rolling(window=window_size).std()
-
-            return (volatility**2).shift(1)
-
         actual = returns**2
-        forecast_a = _forecast(method_a)
-        forecast_b = _forecast(method_b)
+        forecast_a = forecast_evaluation_model.get_volatility_forecast(
+            returns, method_a, window_size, lambda_
+        )
+        forecast_b = forecast_evaluation_model.get_volatility_forecast(
+            returns, method_b, window_size, lambda_
+        )
 
         result = forecast_evaluation_model.get_diebold_mariano_test(
             actual, forecast_a, forecast_b, loss=loss, horizon=1
@@ -1471,6 +1466,13 @@ class Econometrics:
         # where errors may be both heteroskedastic and autocorrelated:
         toolkit.econometrics.get_ols(period="quarterly", cov_type="HAC", maxlags=4)
         ```
+
+        Which returns: (for the first call, AMZN regressed on TSLA)
+
+        |           |   Coefficient |   Std. Error |   t-Statistic |   P-Value |
+        |:----------|--------------:|-------------:|--------------:|----------:|
+        | Intercept |        0.0134 |       0.026  |        0.5143 |    0.6119 |
+        | TSLA      |        0.2479 |       0.0817 |        3.0331 |    0.0059 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
         returns = self._get_price_column(period, column)
@@ -2004,6 +2006,12 @@ class Econometrics:
             period="weekly", add_constant=False
         )
         ```
+
+        Which returns:
+
+        |           |   Risk Premium |   Std. Error |   t-Statistic |   P-Value |
+        |:----------|---------------:|-------------:|--------------:|----------:|
+        | Benchmark |         0.0032 |       0.0016 |        1.9798 |    0.0486 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
         returns = self._get_price_column(period, column)
@@ -3451,7 +3459,7 @@ class Econometrics:
     def get_synthetic_control(
         self,
         treated_ticker: str,
-        treatment_period,
+        treatment_period: str,
         donor_tickers: str | list[str] | None = None,
         period: str | None = None,
         column: str = "Return",
@@ -3472,8 +3480,8 @@ class Econometrics:
         Args:
             treated_ticker (str): The asset believed to be affected by an event/
             intervention starting at `treatment_period`.
-            treatment_period: The first post-treatment period -- periods at or after
-            this value (within `period`'s index) are treated as post-treatment,
+            treatment_period (str): The first post-treatment period -- periods at or
+            after this value (within `period`'s index) are treated as post-treatment,
             everything before as pre-treatment (used to fit the synthetic control's
             weights).
             donor_tickers (str | list[str] | None, optional): The ticker(s) forming
@@ -4725,7 +4733,7 @@ class Econometrics:
     @handle_errors
     def get_event_study(
         self,
-        event_date,
+        event_date: str,
         dependent_ticker: str | None = None,
         column: str = "Return",
         estimation_window: int = 250,
@@ -4755,8 +4763,8 @@ class Econometrics:
         study.
 
         Args:
-            event_date: The date of the event (e.g. "2023-05-04"). Must fall within
-                the Toolkit instance's daily historical data.
+            event_date (str): The date of the event (e.g. "2023-05-04"). Must fall
+                within the Toolkit instance's daily historical data.
             dependent_ticker (str | None, optional): The ticker being studied.
                 Defaults to the first ticker in the Toolkit instance.
             column (str, optional): The historical data column to use. Defaults to
@@ -4792,6 +4800,17 @@ class Econometrics:
 
         toolkit.econometrics.get_event_study(event_date="2023-05-04")
         ```
+
+        Which returns:
+
+        |                                |    Value |
+        |:-------------------------------|---------:|
+        | Cumulative Abnormal Return     |   0.0181 |
+        | CAR t-statistic                |   0.3693 |
+        | CAR p-value                    |   0.7122 |
+        | Alpha                          |   0.0005 |
+        | Beta                           |   1.294  |
+        | Estimation Window Observations | 250      |
         """
         # Bypasses `_get_price_column` on purpose: its "daily" branch checks
         # `self._historical_data["intraday"]` for emptiness rather than

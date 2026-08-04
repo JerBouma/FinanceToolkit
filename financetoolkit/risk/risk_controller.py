@@ -2803,8 +2803,8 @@ class Risk:
             pd.DataFrame: For a single given pair, one row per copula family, sorted by AIC (best fit
             first), with each family's fitted parameter(s), Lower and Upper Tail Dependence,
             Log-Likelihood, AIC and the number of observations used, indexed by "Copula". When neither
-            ticker is given, one row per pair instead, with a "Ticker A", "Ticker B" and "Best Copula"
-            column identifying the winning family for that pair.
+            ticker is given, one row per pair instead, indexed by (Ticker A, Ticker B), with a
+            "Best Copula" column identifying the winning family for that pair.
 
         Notes:
         - The method retrieves historical data based on the specified `period` and calibrates every
@@ -2865,7 +2865,7 @@ class Risk:
             }
         )
         comparison_df.index.names = ["Ticker A", "Ticker B", "Best Copula"]
-        comparison_df = comparison_df.reset_index()
+        comparison_df = comparison_df.reset_index(level="Best Copula")
 
         return comparison_df.round(rounding if rounding is not None else self._rounding)
 

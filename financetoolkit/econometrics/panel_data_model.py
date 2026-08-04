@@ -14,7 +14,7 @@ from scipy import stats
 # (period, sub-period) "within period" one used throughout `risk_model.py`/
 # `diagnostics_model.py` (see `MULTI_PERIOD_INDEX_LEVELS` there): here the two
 # levels are simultaneously meaningful (which entity, which point in time) rather
-# than one level being a nested nesting of the other, so it is kept as its own
+# than one level being nested inside the other, so it is kept as its own
 # constant rather than reused from those modules.
 ENTITY_TIME_INDEX_LEVELS = 2
 
@@ -113,7 +113,7 @@ def _effect_intercepts(
     y_panel: pd.Series, x_panel: pd.DataFrame, coefficients: np.ndarray, level: str
 ) -> pd.Series:
     """
-    Recovers the fixed-effect intercepts implied a fitted within-regression:
+    Recovers the fixed-effect intercepts implied by a fitted within-regression:
     `alpha_g = mean_{within g}(y - X @ beta)`, which (since the mean is linear) is
     algebraically identical to `mean(y) - mean(X) @ beta` for each group `g` of the
     given `level` ("entity" or "time"). `linearmodels.panel.PanelOLS`'s own

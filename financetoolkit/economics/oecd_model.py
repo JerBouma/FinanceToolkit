@@ -429,6 +429,8 @@ def get_house_prices(
 
     Args:
         quarterly (bool): Whether to return the quarterly data or the yearly data.
+        inflation_adjusted (bool): Whether to return the real (inflation-adjusted) house
+            price indices (RHP) or the nominal house price indices (HPI). Defaults to True.
         start_date (str | None): Restrict the query to this start date (YYYY-MM-DD).
         end_date (str | None): Restrict the query to this end date (YYYY-MM-DD).
 
@@ -486,6 +488,7 @@ def get_unemployment_rate(
     The unemployment rate is the percentage of the total labor force that is unemployed.
 
     Args:
+        period (str): The period of the data. Can be 'monthly', 'quarterly' or 'yearly'.
         start_date (str | None): Restrict the query to this start date (YYYY-MM-DD).
         end_date (str | None): Restrict the query to this end date (YYYY-MM-DD).
 
@@ -511,7 +514,7 @@ def get_unemployment_rate(
         end_date,
     )
 
-    # Divide by 100 to get percentage
+    # Divide by 100 to convert the percentage into a decimal
     unemployment_rate = unemployment_rate / 100
 
     return unemployment_rate
@@ -552,7 +555,7 @@ def get_long_term_interest_rate(
         end_date,
     )
 
-    # Divide by 100 to get percentage
+    # Divide by 100 to convert the percentage into a decimal
     long_term_interest_rate = long_term_interest_rate / 100
 
     return long_term_interest_rate
@@ -593,7 +596,7 @@ def get_short_term_interest_rate(
         end_date,
     )
 
-    # Divide by 100 to get percentage
+    # Divide by 100 to convert the percentage into a decimal
     short_term_interest_rate = short_term_interest_rate / 100
 
     return short_term_interest_rate
@@ -679,7 +682,7 @@ def get_household_savings_rate(
         oecd_data_string, "Q" if quarterly else "Y", start_date, end_date
     )
 
-    # Divide by 100 to get percentage
+    # Divide by 100 to convert the percentage into a decimal
     household_savings_rate = household_savings_rate / 100
 
     return household_savings_rate
@@ -723,7 +726,7 @@ def get_household_debt_to_income_ratio(
         oecd_data_string, "Q" if quarterly else "Y", start_date, end_date
     )
 
-    # Divide by 100 to get percentage
+    # Divide by 100 to convert the percentage into a decimal
     household_debt_to_income_ratio = household_debt_to_income_ratio / 100
 
     return household_debt_to_income_ratio
@@ -968,7 +971,7 @@ def get_poverty_rate(start_date: str | None = None, end_date: str | None = None)
         end_date (str | None): Restrict the query to this end date (YYYY-MM-DD).
 
     Returns:
-       pd.DataFrame: A DataFrame containing the income inequality
+       pd.DataFrame: A DataFrame containing the poverty rate
         for a variety of countries over time
     """
     oecd_data_string = "OECD.WISE.INE,DSD_WISE_IDD@DF_IDD,/.A.PR_INC_DISP..._T..."
@@ -995,7 +998,7 @@ def get_trust_in_goverment(start_date: str | None = None, end_date: str | None =
 
     trust_in_government = collect_oecd_data(oecd_data_string, "Y", start_date, end_date)
 
-    # Divide by 100 to get percentage
+    # Divide by 100 to convert the percentage into a decimal
     trust_in_government = trust_in_government / 100
 
     return trust_in_government
@@ -1018,7 +1021,7 @@ def get_renewable_energy(start_date: str | None = None, end_date: str | None = N
 
     renewable_energy = collect_oecd_data(oecd_data_string, "Y", start_date, end_date)
 
-    # Divide by 100 to get percentage
+    # Divide by 100 to convert the percentage into a decimal
     renewable_energy = renewable_energy / 100
 
     return renewable_energy
@@ -1026,15 +1029,16 @@ def get_renewable_energy(start_date: str | None = None, end_date: str | None = N
 
 def get_carbon_footprint(start_date: str | None = None, end_date: str | None = None):
     """
-    Environmentally related taxes are an important instrument for
-    governments to shape relative prices of goods and services.
+    The carbon footprint is a measure of the total amount of greenhouse gases
+    produced to directly and indirectly support human activities, usually
+    expressed in equivalent tons of carbon dioxide (CO2) per capita.
 
     Args:
         start_date (str | None): Restrict the query to this start date (YYYY-MM-DD).
         end_date (str | None): Restrict the query to this end date (YYYY-MM-DD).
 
     Returns:
-       pd.DataFrame: A DataFrame containing the environmental tax
+       pd.DataFrame: A DataFrame containing the carbon footprint
         for a variety of countries over time
     """
     oecd_data_string = "OECD.WISE.WDP,DSD_HSL@DF_HSL_FWB,/.12_9.._T..."

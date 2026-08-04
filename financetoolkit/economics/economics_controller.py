@@ -152,10 +152,13 @@ class Economics:
         time from the OECD. The Gross Domestic Product is the total value
         of goods produced and services provided in a country during one year.
 
-        The data is available in two forms: compared to the previous year's value or
-        compared to the previous period. The year on year data is the GDP compared to
-        the same quarter in the previous year. The quarter on quarter data is the GDP
-        compared to the previous quarter.
+        Note that the OECD source reports GDP on a per capita basis, i.e. the total
+        Gross Domestic Product divided by the population of the country, whereas the
+        Global Macro Database (GMDB) source reports the total (not per capita) figure.
+
+        The data is returned as levels. To obtain period-on-period changes (e.g. year
+        on year or quarter on quarter growth), set `growth=True` and use `lag` to
+        control how many periods back the comparison is made.
 
         See definition: https://data.oecd.org/gdp/gross-domestic-product-gdp.htm
 
@@ -1430,7 +1433,7 @@ class Economics:
         ```python
         from financetoolkit import Economics
 
-        economics = Economics(start_date='2015-01-01')
+        economics = Economics(start_date='2010-01-01')
 
         economics.get_imports_to_gdp_ratio(countries=['United States', 'Canada', 'Mexico'])
         ```
@@ -2090,6 +2093,7 @@ class Economics:
         Also known as: tax revenue, fiscal revenue.
 
         Args:
+            countries (list[str] | str | None, optional): A list of countries or a single country to include in the results. Defaults to None.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
@@ -2598,8 +2602,8 @@ class Economics:
         """
         Trust in government refers to the share of people who report having confidence
         in the national government. The data shown reflect the share of respondents
-        answering “yes” (the other response categories being “no”, and “dont know”)
-        to the survey question: “In this country, do you have confidence in… national government?
+        answering “yes” (the other response categories being “no”, and “don’t know”)
+        to the survey question: “In this country, do you have confidence in… national government?”
 
         Due to small sample sizes, country averages for horizontal inequalities (by age,
         gender and education) are pooled between 2010-18 to improve the accuracy of the
@@ -3165,7 +3169,8 @@ class Economics:
 
         economics = Economics(start_date='2023-06-01', end_date='2023-12-01')
 
-        economics.get_composite_leading_indicator(countries=['United States', 'United Kingdom', 'Japan'])    ```
+        economics.get_composite_leading_indicator(countries=['United States', 'United Kingdom', 'Japan'])
+        ```
 
         Which returns:
 
@@ -3222,7 +3227,7 @@ class Economics:
         to the consumers' expenditure deflator in each country from the OECD national
         accounts database. Both indices are seasonally adjusted.
 
-        Both are based on an 2015 = 100 as an index.
+        Both are an index based on 2015 = 100.
 
         See definition: https://data.oecd.org/price/housing-prices.htm
 
@@ -3324,11 +3329,12 @@ class Economics:
         rounding: int | None = None,
     ):
         """
-        The price to rent ratio is the nominal house price index divided by
-        the housing rent price index and can be considered as a measure of
-        the profitability of house ownership.
+        The housing rent price index measures the prices paid for renting
+        residential properties over time. Together with the house price index
+        it is a key input into affordability and house ownership profitability
+        measures such as the price to rent ratio.
 
-        This is based on an 2015 = 100 as an index.
+        This is an index based on 2015 = 100.
 
         See definition: https://data.oecd.org/price/housing-prices.htm
 
@@ -3347,7 +3353,7 @@ class Economics:
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
 
         Returns:
-            pd.DataFrame: A DataFrame containing the House Prices.
+            pd.DataFrame: A DataFrame containing the Rent Prices.
 
         As an example:
 
@@ -3627,7 +3633,7 @@ class Economics:
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
 
         Returns:
-            pd.DataFrame: A DataFrame containing the Exchange Rates.
+            pd.DataFrame: A DataFrame containing the Share Prices.
 
         As an example:
 
@@ -3697,7 +3703,7 @@ class Economics:
         rounding: int | None = None,
     ):
         """
-        Exchange rates are defined as the price of one country's' currency in relation
+        Exchange rates are defined as the price of one country's currency in relation
         to another country's currency. This indicator is measured in terms of
         national currency per US dollar.
 
@@ -3890,7 +3896,7 @@ class Economics:
         converted into cash. Money supply is an important economic indicator that the
         Federal Reserve uses to implement its monetary policy.
 
-        Money supply can be divided into four categories: M0, M1, M2, M3 and M4.
+        Money supply can be divided into five categories: M0, M1, M2, M3 and M4.
             - M0: The total of all physical currency, plus accounts at the central bank that can be exchanged for physical currency.
             - M1: The total of all physical currency part of bank reserves + the amount in demand accounts ("checking" or "current" accounts).
             - M2: M1 + most savings accounts, money market accounts, retail money market mutual funds, and small denomination time deposits.
@@ -4159,6 +4165,8 @@ class Economics:
             if period is not None
             else "quarterly" if self._quarterly else "yearly"
         )
+
+        gmdb_source = gmdb_source if gmdb_source is not None else self._gmdb_source
 
         if gmdb_source:
             if self._gmbd_dataset.empty:
@@ -4672,7 +4680,9 @@ class Economics:
         be measured by undertaking a GHG emissions assessment or other calculative activities
         denoted as carbon accounting.
 
-        See definition: https://data.oecd.org/envpolicy/environmental-tax.htm
+        The data is sourced from the greenhouse gas emissions per capita indicator of the
+        OECD's How's Life? well-being database (dataset ``DSD_HSL@DF_HSL_FWB``, indicator
+        ``12_9``), so the figures are expressed in tonnes of CO2 equivalent per person.
 
         Also known as: CO2 emissions, carbon emissions, greenhouse gas.
 
@@ -4688,7 +4698,7 @@ class Economics:
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
 
         Returns:
-            pd.DataFrame: A DataFrame containing the Environmental Tax.
+            pd.DataFrame: A DataFrame containing the Carbon Footprint.
 
         As an example:
 
@@ -5087,7 +5097,7 @@ class Economics:
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
 
         Returns:
-            pd.DataFrame: A DataFrame containing the Population Statistics.
+            pd.DataFrame: A DataFrame containing the Income Inequality.
 
         As an example:
 
@@ -5169,14 +5179,9 @@ class Economics:
         statistical projections, helping governments in their decision making. This indicator is
         measured in terms of thousands of people.
 
-        Furthermore the following statistics are provided:
-
-            - The youth population is defined as those people aged less than 15 as a percentage
-            of the total population.
-            - The working age population is defined as those aged 15 to 64 as a percentage of
-            the total population.
-            - The elderly population is defined as those aged 65 and over as a percentage of
-            the total population.
+        The Global Macro Database (GMDB) source returns a single total population series
+        per country. The OECD source additionally breaks the total down by gender, giving
+        a Population, Men and Women series for each country.
 
         See definition: https://data.oecd.org/pop/population.htm
 
@@ -5212,18 +5217,18 @@ class Economics:
 
         Which returns:
 
-        |      |   Population |   Young Population |   Working Age Population |   Elderly Population |
-        |:-----|-------------:|-------------------:|-------------------------:|---------------------:|
-        | 2010 |      128.057 |             0.1315 |                   0.6383 |               0.2302 |
-        | 2011 |      127.834 |             0.1307 |                   0.6365 |               0.2328 |
-        | 2012 |      127.593 |             0.1298 |                   0.6288 |               0.2415 |
-        | 2013 |      127.414 |             0.1288 |                   0.6207 |               0.2506 |
-        | 2014 |      127.237 |             0.1277 |                   0.6126 |               0.2597 |
-        | 2015 |      127.095 |             0.1255 |                   0.6081 |               0.2665 |
-        | 2016 |      127.042 |             0.1244 |                   0.6035 |               0.272  |
-        | 2017 |      126.918 |             0.1232 |                   0.6003 |               0.2765 |
-        | 2018 |      126.749 |             0.1221 |                   0.598  |               0.2799 |
-        | 2019 |      126.555 |             0.1206 |                   0.5969 |               0.2825 |
+        |      |   Japan |
+        |:-----|--------:|
+        | 2010 | 127.594 |
+        | 2011 | 127.831 |
+        | 2012 | 127.552 |
+        | 2013 | 127.333 |
+        | 2014 | 127.12  |
+        | 2015 | 126.978 |
+        | 2016 | 126.96  |
+        | 2017 | 126.746 |
+        | 2018 | 126.495 |
+        | 2019 | 126.221 |
         """
         gmdb_source = gmdb_source if gmdb_source is not None else self._gmdb_source
 

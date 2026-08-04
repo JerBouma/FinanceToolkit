@@ -139,14 +139,14 @@ class Risk:
         Calculates and collects all risk metrics.
 
         Args:
+            period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
+                Defaults to "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int): Defines whether to select a trailing period.
-            E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
         Returns:
             pd.Series or pd.DataFrame: Risk metrics calculated based on the specified parameters.
@@ -357,8 +357,8 @@ class Risk:
         Also known as: VaR, maximum expected loss, portfolio loss risk.
 
         Args:
-            period (str, optional): The data frequency for returns (daily, weekly, quarterly, or yearly).
-            Defaults to "yearly".
+            period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
+                Defaults to "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
             alpha (float, optional): The confidence level for VaR calculation (e.g., 0.05 for 95% confidence).
             Defaults to 0.05.
             within_period (bool, optional): Whether to calculate VaR within the specified period or for the entire
@@ -495,13 +495,13 @@ class Risk:
         informed decisions about risk tolerance.
 
         The CVaR is calculated as the expected loss given that the loss threshold (VaR) with a given confidence
-        level (e.g., 5% for alpha=0.05) is excceeded.
+        level (e.g., 5% for alpha=0.05) is exceeded.
 
         Also known as: CVaR, expected shortfall, ES, tail risk.
 
         Args:
-            period (str, optional): The data frequency for returns (daily, weekly, quarterly, or yearly).
-            Defaults to "yearly".
+            period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
+                Defaults to "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
             alpha (float, optional): The confidence level for CVaR calculation (e.g., 0.05 for 95% confidence).
             Defaults to 0.05.
             within_period (bool, optional): Whether to calculate CVaR within the specified period or for the entire
@@ -645,8 +645,8 @@ class Risk:
         Also known as: EVaR.
 
         Args:
-            period (str, optional): The data frequency for returns (daily, weekly, quarterly, or yearly).
-            Defaults to "yearly".
+            period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
+                Defaults to "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
             alpha (float, optional): The confidence level for EVaR calculation (e.g., 0.05 for 95% confidence).
             Defaults to 0.05.
             within_period (bool, optional): Whether to calculate EVaR within the specified period or for the entire
@@ -754,8 +754,8 @@ class Risk:
         Also known as: CDaR.
 
         Args:
-            period (str, optional): The data frequency for returns (daily, weekly, quarterly, or yearly).
-            Defaults to "yearly".
+            period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
+                Defaults to "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
             alpha (float, optional): The confidence level for CDaR calculation (e.g., 0.05 for 95% confidence).
             Defaults to 0.05.
             within_period (bool, optional): Whether to calculate CDaR within the specified period or for the entire
@@ -869,8 +869,8 @@ class Risk:
         Also known as: gain-to-pain tail ratio.
 
         Args:
-            period (str, optional): The data frequency for returns (daily, weekly, quarterly, or yearly).
-            Defaults to "yearly".
+            period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
+                Defaults to "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
             alpha (float, optional): The percentile used to define each tail (e.g., 0.05 uses the 5th and
             95th percentile). Defaults to 0.05.
             within_period (bool, optional): Whether to calculate the Tail Ratio within the specified period or
@@ -968,22 +968,21 @@ class Risk:
         Calculate the Maximum Drawdown (MDD) of an investment portfolio or asset's returns.
 
         Maximum Drawdown (MDD) is a risk management metric that quantifies the largest historical loss of
-        n investment portfolio or asset experienced over a specified time horizon. It provides insights into
+        an investment portfolio or asset experienced over a specified time horizon. It provides insights into
         the downside risk associated with an investment and helps investors make informed decisions about
         risk tolerance.
 
         Also known as: max drawdown, peak-to-trough decline.
 
         Args:
-            period (str, optional): The data frequency for returns (daily, weekly, quarterly, or yearly).
-            Defaults to "yearly".
-            alpha (float, optional): The confidence level for CVaR calculation (e.g., 0.05 for 95% confidence).
-            Defaults to 0.05.
-            within_period (bool, optional): Whether to calculate CVaR within the specified period or for the entire
-            period. Thus whether to look at the CVaR within a specific year (if period = 'yearly') or look at the entirety
-            of all years. Defaults to True.
+            period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
+                Defaults to "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
+            within_period (bool, optional): Whether to calculate the Maximum Drawdown within the specified period
+            or for the entire period. Thus whether to look at the Maximum Drawdown within a specific year
+            (if period = 'yearly') or look at the entirety of all years. Defaults to True.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
-            growth (bool, optional): Whether to calculate the growth of the CVaR values over time. Defaults to False.
+            growth (bool, optional): Whether to calculate the growth of the Maximum Drawdown values over time.
+            Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
@@ -1077,8 +1076,8 @@ class Risk:
         Also known as: drawdown length.
 
         Args:
-            period (str, optional): The data frequency for returns (daily, weekly, quarterly, or yearly).
-            Defaults to "yearly".
+            period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
+                Defaults to "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
             within_period (bool, optional): Whether to calculate the duration within the specified period or
             for the entire period. Thus whether to look at the duration within a specific year (if period =
             'yearly') or look at the entirety of all years. Defaults to True.
@@ -1174,8 +1173,8 @@ class Risk:
         Also known as: time to recovery, drawdown recovery.
 
         Args:
-            period (str, optional): The data frequency for returns (daily, weekly, quarterly, or yearly).
-            Defaults to "yearly".
+            period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
+                Defaults to "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
             within_period (bool, optional): Whether to calculate the recovery time within the specified period
             or for the entire period. Thus whether to look at the recovery time within a specific year (if
             period = 'yearly') or look at the entirety of all years. Defaults to True.
@@ -1274,15 +1273,15 @@ class Risk:
         because it focuses on the depth and duration of drawdowns rather than the dispersion of
         returns.
 
-        The formula is a follows:
+        The formula is as follows:
 
-        Ulcer Index = SQRT(SUM[(Pn / Highest High)^2] / n)
+        Ulcer Index = SQRT(SUM[((Pn - Highest High) / Highest High)^2] / n)
 
         Also known as: UI, drawdown risk.
 
         Args:
-            period (str, optional): The data frequency for returns (daily, weekly, quarterly, or yearly).
-            Defaults to "yearly".
+            period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
+                Defaults to "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
             rolling (int | None, optional): The trailing lookback window used as the high-water
                 mark reference for each day's drawdown. Pass None for an expanding
                 (since-inception) high-water mark instead -- this is what the "Highest High"
@@ -1386,10 +1385,10 @@ class Risk:
         Also known as: GARCH, volatility clustering, conditional heteroscedasticity.
 
         Args:
-            period (str, optional): The data frequency for returns (daily, weekly, quarterly, or yearly).
-            Defaults to "weekly".
-            t (int, optional): Time steps to calculate GARCH for.
-            optimization_t (int, optional): Time steps to optimize GRACH for. It is only used if no weights are given.
+            period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
+                Defaults to "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
+            time_steps (int, optional): Time steps to calculate GARCH for.
+            optimization_t (int, optional): Time steps to optimize GARCH for. It is only used if no weights are given.
             within_period (bool, optional): Whether to calculate GARCH within the specified period or for the entire
             period. Thus whether to look at the GARCH within a specific year (if period = 'yearly') or look at the
             entirety of all years. Defaults to False.
@@ -1504,9 +1503,9 @@ class Risk:
         Also known as: volatility forecast, predicted volatility.
 
         Args:
-            period (str, optional): The data frequency for returns (daily, weekly, quarterly, or yearly).
-            Defaults to "quarterly".
-            t (int, optional): Time steps to calculate GARCH and to forecast sigma_2 values for.
+            period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
+                Defaults to "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
+            time_steps (int, optional): Time steps to calculate GARCH and to forecast sigma_2 values for.
             within_period (bool, optional): Whether to calculate GARCH within each specified period or all
             at once. Thus whether to look at the GARCH within each specific year (if period = 'yearly') or
             look at the entirety of all years. Defaults to False.
@@ -1524,7 +1523,7 @@ class Risk:
         Notes:
         - The method retrieves historical return data based on the specified `period` and calculates the sigma_2
         forecast for each asset in the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of the forecasted simga_2 values using
+        - If `growth` is set to True, the method calculates the growth of the forecasted sigma_2 values using
         the specified `lag`.
 
         As an example:
@@ -1637,8 +1636,8 @@ class Risk:
         Also known as: GARCH weights, GARCH coefficients, conditional variance parameters.
 
         Args:
-            period (str, optional): The data frequency for returns (daily, weekly, quarterly, or yearly).
-            Defaults to "quarterly".
+            period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
+                Defaults to "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
             optimization_t (int, optional): Time steps of the returns series to use for the optimization.
             Defaults to the full length of the returns series.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
@@ -1720,8 +1719,8 @@ class Risk:
         Also known as: GJR-GARCH, threshold GARCH, TGARCH.
 
         Args:
-            period (str, optional): The data frequency for returns (daily, weekly, quarterly, or yearly).
-            Defaults to "quarterly".
+            period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
+                Defaults to "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
             time_steps (int, optional): Time steps to calculate GJR-GARCH for.
             optimization_t (int, optional): Time steps to optimize GJR-GARCH for. It is only used if no
             weights are given.
@@ -1834,8 +1833,8 @@ class Risk:
         Also known as: volatility forecast, predicted volatility.
 
         Args:
-            period (str, optional): The data frequency for returns (daily, weekly, quarterly, or yearly).
-            Defaults to "quarterly".
+            period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
+                Defaults to "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
             time_steps (int, optional): Time steps to calculate GJR-GARCH and to forecast sigma_2 values for.
             within_period (bool, optional): Whether to calculate GJR-GARCH within each specified period or
             all at once. Defaults to False.
@@ -1960,8 +1959,8 @@ class Risk:
         Also known as: GJR-GARCH weights, GJR-GARCH coefficients, leverage parameters.
 
         Args:
-            period (str, optional): The data frequency for returns (daily, weekly, quarterly, or yearly).
-            Defaults to "quarterly".
+            period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
+                Defaults to "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
             optimization_t (int, optional): Time steps of the returns series to use for the optimization.
             Defaults to the full length of the returns series.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to
@@ -2045,8 +2044,8 @@ class Risk:
         Also known as: exponential GARCH, log-GARCH.
 
         Args:
-            period (str, optional): The data frequency for returns (daily, weekly, quarterly, or yearly).
-            Defaults to "quarterly".
+            period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
+                Defaults to "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
             time_steps (int, optional): Time steps to calculate EGARCH for.
             optimization_t (int, optional): Time steps to optimize EGARCH for. It is only used if no
             weights are given.
@@ -2158,8 +2157,8 @@ class Risk:
         Also known as: volatility forecast, predicted volatility.
 
         Args:
-            period (str, optional): The data frequency for returns (daily, weekly, quarterly, or yearly).
-            Defaults to "quarterly".
+            period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
+                Defaults to "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
             time_steps (int, optional): Time steps to calculate EGARCH and to forecast sigma_2 values for.
             within_period (bool, optional): Whether to calculate EGARCH within each specified period or
             all at once. Defaults to False.
@@ -2282,8 +2281,8 @@ class Risk:
         Also known as: EGARCH weights, EGARCH coefficients, leverage parameters.
 
         Args:
-            period (str, optional): The data frequency for returns (daily, weekly, quarterly, or yearly).
-            Defaults to "quarterly".
+            period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
+                Defaults to "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
             optimization_t (int, optional): Time steps of the returns series to use for the optimization.
             Defaults to the full length of the returns series.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to
@@ -2406,8 +2405,8 @@ class Risk:
         Args:
             ticker_a (str): The first asset.
             ticker_b (str): The second asset.
-            period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly).
-            Defaults to "quarterly".
+            period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly). Defaults to
+                "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
             column (str, optional): The historical data column to use. Defaults to "Return", since
             tail dependence between return series is the standard risk management application.
             q (float, optional): The threshold quantile used for the "empirical" method, in (0.5, 1).
@@ -2511,8 +2510,8 @@ class Risk:
             ticker_b (str, optional): The second asset. Defaults to None, see `ticker_a`.
             copula (str, optional): The copula family to fit, one of "gaussian",
             "student-t", "clayton", "gumbel" or "frank". Defaults to "gaussian".
-            period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly).
-            Defaults to "quarterly".
+            period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly). Defaults to
+                "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
             column (str, optional): The historical data column to use. Defaults to "Return".
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to
             None.
@@ -2623,8 +2622,8 @@ class Risk:
             ticker_b (str, optional): The second asset. Defaults to None, see `ticker_a`.
             copula (str, optional): The copula family to fit and simulate from, one of "gaussian",
             "student-t", "clayton", "gumbel" or "frank". Defaults to "gaussian".
-            period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly).
-            Defaults to "quarterly".
+            period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly). Defaults to
+                "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
             column (str, optional): The historical data column to use. Defaults to "Return".
             n_simulations (int, optional): The number of joint draws to simulate. Defaults to 10,000.
             random_state (int, optional): The seed for the random number generator. Defaults to 42.
@@ -2790,8 +2789,8 @@ class Risk:
             ticker_a (str, optional): The first asset. Defaults to None, meaning every unique pair of
             tickers in the Toolkit instance is compared (requires `ticker_b` to also be None).
             ticker_b (str, optional): The second asset. Defaults to None, see `ticker_a`.
-            period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly).
-            Defaults to "quarterly".
+            period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly). Defaults to
+                "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
             column (str, optional): The historical data column to use. Defaults to "Return".
             show_full_results (bool, optional): Only relevant when neither ticker is given. When False
             (the default), returns a square ticker-by-ticker grid of just the winning copula family
@@ -2939,8 +2938,8 @@ class Risk:
             ticker (str): The asset whose conditional VaR is being measured.
             conditioning_ticker (str): The asset (or e.g. a benchmark/index) whose distress
             `ticker` is conditioned on.
-            period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly).
-            Defaults to "quarterly".
+            period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly). Defaults to
+                "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
             column (str, optional): The historical data column to use. Defaults to "Return".
             alpha (float, optional): The confidence level for both the tail quantile regression and
             the VaR of `conditioning_ticker` (e.g., 0.05 for 95% confidence). Defaults to 0.05.
@@ -3055,8 +3054,8 @@ class Risk:
             keyed by ticker. Normalized internally to sum to 1. Defaults to None, which
             uses equal weights across every ticker in the Toolkit instance (excluding
             the "Portfolio" and "Benchmark" pseudo-tickers, if present).
-            period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or
-            yearly). Defaults to "quarterly" or "yearly" depending on the Toolkit instance.
+            period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly). Defaults to
+                "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
             column (str, optional): The historical data column to use. Defaults to "Return".
             alpha (float, optional): The confidence level (e.g., 0.05 for 95% confidence).
             Defaults to 0.05.
@@ -3144,8 +3143,8 @@ class Risk:
             keyed by ticker. Normalized internally to sum to 1. Defaults to None, which
             uses equal weights across every ticker in the Toolkit instance (excluding
             the "Portfolio" and "Benchmark" pseudo-tickers, if present).
-            period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or
-            yearly). Defaults to "quarterly" or "yearly" depending on the Toolkit instance.
+            period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly). Defaults to
+                "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
             column (str, optional): The historical data column to use. Defaults to "Return".
             alpha (float, optional): The confidence level (e.g., 0.05 for 95% confidence).
             Defaults to 0.05.
@@ -3462,30 +3461,29 @@ class Risk:
         Also known as: return distribution asymmetry, tail skew.
 
         Args:
-            period (str, optional): The data frequency for returns (daily, weekly, quarterly, or yearly).
-            Defaults to "yearly".
-            alpha (float, optional): The confidence level for CVaR calculation (e.g., 0.05 for 95% confidence).
-            Defaults to 0.05.
-            within_period (bool, optional): Whether to calculate CVaR within the specified period or for the entire
-            period. Thus whether to look at the CVaR within a specific year (if period = 'yearly') or look at the entirety
-            of all years. Defaults to True.
+            period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
+                Defaults to "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
+            within_period (bool, optional): Whether to calculate the Skewness within the specified period or for the
+            entire period. Thus whether to look at the Skewness within a specific year (if period = 'yearly') or look
+            at the entirety of all years. Defaults to True.
             rolling (int, optional): The rolling window size to use for the calculation. If set, Skewness is
             calculated over a rolling window of this many periods across the full return history instead of
             per `period`. Defaults to None.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
-            growth (bool, optional): Whether to calculate the growth of the CVaR values over time. Defaults to False.
+            growth (bool, optional): Whether to calculate the growth of the Skewness values over time.
+            Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
 
         Returns:
-            pd.Series: CVaR values with time as the index.
+            pd.Series: Skewness values with time as the index.
 
         Notes:
         - The method retrieves historical return data based on the specified `period` and calculates Skew for each
         asset in the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of VaR values using the specified `lag`.
+        - If `growth` is set to True, the method calculates the growth of Skewness values using the specified `lag`.
 
         As an example:
 
@@ -3574,38 +3572,38 @@ class Risk:
         Also known as: tail heaviness, fat tails, leptokurtosis.
 
         Args:
-            period (str, optional): The data frequency for returns (daily, weekly, quarterly, or yearly).
-            Defaults to "yearly".
-            within_period (bool, optional): Whether to calculate CVaR within the specified period or for the entire
-            period. Thus whether to look at the CVaR within a specific year (if period = 'yearly') or look at
-            the entirety of all years. Defaults to True.
+            period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
+                Defaults to "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
+            within_period (bool, optional): Whether to calculate the Kurtosis within the specified period or for the
+            entire period. Thus whether to look at the Kurtosis within a specific year (if period = 'yearly') or look
+            at the entirety of all years. Defaults to True.
             fisher (bool, optional): Whether to use Fisher's definition of kurtosis (kurtosis = 0.0
-            for a normal distribution).
+            for a normal distribution). Defaults to False.
             rolling (int, optional): The rolling window size to use for the calculation. If set, Kurtosis is
             calculated over a rolling window of this many periods across the full return history instead of
             per `period`. Defaults to None.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
-            growth (bool, optional): Whether to calculate the growth of the CVaR values over time.
-            efaults to False.
+            growth (bool, optional): Whether to calculate the growth of the Kurtosis values over time.
+            Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
 
         Returns:
-            pd.Series: CVaR values with time as the index.
+            pd.Series: Kurtosis values with time as the index.
 
         Notes:
-        - The method retrieves historical return data based on the specified `period` and calculates VaR for each
+        - The method retrieves historical return data based on the specified `period` and calculates Kurtosis for each
         asset in the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of VaR values using the specified `lag`.
+        - If `growth` is set to True, the method calculates the growth of Kurtosis values using the specified `lag`.
 
         As an example:
 
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["MSFT", "AAPL", "TSLA"]], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(["MSFT", "AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         toolkit.risk.get_kurtosis()
         ```
@@ -3686,8 +3684,8 @@ class Risk:
         Also known as: Hill tail index estimator, Hill's estimator.
 
         Args:
-            period (str, optional): The data frequency for returns (daily, weekly, quarterly, or yearly).
-            Defaults to "quarterly".
+            period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
+                Defaults to "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
             within_period (bool, optional): Whether to calculate the estimator within the specified period
             or for the entire period. Defaults to True.
             k (int | float, optional): The number of upper order statistics to use. If a float in (0, 1)
@@ -3769,8 +3767,8 @@ class Risk:
         Also known as: dispersion, spread.
 
         Args:
-            period (str, optional): The data frequency for returns (weekly, monthly,
-            quarterly, or yearly). Defaults to "yearly".
+            period (str, optional): The data frequency for returns (weekly, monthly, quarterly, or yearly). Defaults
+                to "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
             rolling (int, optional): The rolling window size to use for the calculation. If set,
             Variance is calculated over a rolling window of this many periods (e.g. period='monthly'
             and rolling=6 gives the rolling 6-month Variance) instead of one value per `period`.
@@ -3863,8 +3861,8 @@ class Risk:
         Also known as: standard deviation of returns.
 
         Args:
-            period (str, optional): The data frequency for returns (weekly, monthly,
-            quarterly, or yearly). Defaults to "yearly".
+            period (str, optional): The data frequency for returns (weekly, monthly, quarterly, or yearly). Defaults
+                to "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
             rolling (int, optional): The rolling window size to use for the calculation. If set,
             Volatility is calculated over a rolling window of this many periods (e.g. period='monthly'
             and rolling=6 gives the rolling 6-month Volatility) instead of one value per `period`.
@@ -3967,8 +3965,8 @@ class Risk:
         Rate of Return." Journal of Business, 53(1), 61-65.
 
         Args:
-            period (str, optional): The data frequency for returns (weekly, monthly,
-            quarterly, or yearly). Defaults to "yearly".
+            period (str, optional): The data frequency for returns (weekly, monthly, quarterly, or yearly). Defaults
+                to "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the Parkinson Volatility values
             over time. Defaults to False.
@@ -4063,8 +4061,8 @@ class Risk:
         Volatilities from Historical Data." Journal of Business, 53(1), 67-78.
 
         Args:
-            period (str, optional): The data frequency for returns (weekly, monthly,
-            quarterly, or yearly). Defaults to "yearly".
+            period (str, optional): The data frequency for returns (weekly, monthly, quarterly, or yearly). Defaults
+                to "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the Garman-Klass Volatility
             values over time. Defaults to False.
@@ -4162,8 +4160,8 @@ class Risk:
         Close Prices." Annals of Applied Probability, 1(4), 504-512.
 
         Args:
-            period (str, optional): The data frequency for returns (weekly, monthly,
-            quarterly, or yearly). Defaults to "yearly".
+            period (str, optional): The data frequency for returns (weekly, monthly, quarterly, or yearly). Defaults
+                to "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the Rogers-Satchell
             Volatility values over time. Defaults to False.
@@ -4264,8 +4262,8 @@ class Risk:
         High, Low, Open, and Close Prices." Journal of Business, 73(3), 477-491.
 
         Args:
-            period (str, optional): The data frequency for returns (weekly, monthly,
-            quarterly, or yearly). Defaults to "yearly".
+            period (str, optional): The data frequency for returns (weekly, monthly, quarterly, or yearly). Defaults
+                to "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the Yang-Zhang Volatility
             values over time. Defaults to False.
@@ -4499,8 +4497,8 @@ class Risk:
         Also known as: Amihud illiquidity ratio, ILLIQ, price impact ratio.
 
         Args:
-            period (str, optional): The data frequency for returns (daily, weekly, quarterly, or yearly).
-            Defaults to "quarterly".
+            period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
+                Defaults to "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
             within_period (bool, optional): Whether to calculate the ratio within the specified period or
             for the entire period. Defaults to True.
             scale (float, optional): A multiplier applied to the resulting ratio purely for readability.
@@ -4610,8 +4608,8 @@ class Risk:
         Also known as: Roll's implied spread, Roll measure.
 
         Args:
-            period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly).
-            Defaults to "quarterly".
+            period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly). Defaults to
+                "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
             within_period (bool, optional): Whether to calculate the spread within the specified period or
             for the entire period. Defaults to True.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to
@@ -4687,8 +4685,8 @@ class Risk:
         Also known as: standard deviation of excess returns.
 
         Args:
-            period (str, optional): The data frequency for returns (weekly, monthly,
-            quarterly, or yearly). Defaults to "yearly".
+            period (str, optional): The data frequency for returns (weekly, monthly, quarterly, or yearly). Defaults
+                to "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
             rolling (int, optional): The rolling window size to use for the calculation. If set,
             Excess Volatility is calculated over a rolling window of this many periods (e.g.
             period='monthly' and rolling=6 gives the rolling 6-month Excess Volatility) instead of
@@ -4790,8 +4788,8 @@ class Risk:
         Also known as: semi-deviation, downside risk, downside volatility.
 
         Args:
-            period (str, optional): The data frequency for returns (daily, weekly, quarterly, or yearly).
-            Defaults to "yearly".
+            period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
+                Defaults to "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
             minimum_acceptable_return (float, optional): The minimum acceptable return (MAR) used as the
             threshold below which returns are considered downside. Defaults to 0.0.
             within_period (bool, optional): Whether to calculate the Downside Deviation within the specified
@@ -4900,8 +4898,8 @@ class Risk:
         outliers.
 
         Args:
-            period (str, optional): The data frequency for returns (weekly, monthly,
-            quarterly, or yearly). Defaults to "yearly".
+            period (str, optional): The data frequency for returns (weekly, monthly, quarterly, or yearly). Defaults
+                to "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the MAD values over time. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
@@ -4988,8 +4986,8 @@ class Risk:
         Also known as: relative standard deviation.
 
         Args:
-            period (str, optional): The data frequency for returns (weekly, monthly,
-            quarterly, or yearly). Defaults to "yearly".
+            period (str, optional): The data frequency for returns (weekly, monthly, quarterly, or yearly). Defaults
+                to "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the CV values over time. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.

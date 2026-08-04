@@ -220,7 +220,7 @@ def get_consumer_price_index(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
 
 
 def get_house_price_index(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
-    """Retrieves house price index ('houseprice'), removing rows with all NaNs."""
+    """Retrieves house price index ('HPI'), removing rows with all NaNs."""
     return gmd_dataset["HPI"].dropna(axis="rows", how="all")
 
 

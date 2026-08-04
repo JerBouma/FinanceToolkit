@@ -73,9 +73,9 @@ def get_augmented_dickey_fuller(
     Student-T distribution, so it must be compared against Dickey-Fuller specific
     critical values rather than a standard significance table.
 
-    The number of lags `p` is chosen automatically (up to `max_lag`) by minimizing the
-    Akaike Information Criterion (AIC) across candidate lag lengths, unless `max_lag`
-    is given explicitly.
+    The number of lags `p` is always chosen automatically by minimizing the Akaike
+    Information Criterion (AIC) across candidate lag lengths; `max_lag` only caps the
+    upper end of the range that search considers.
 
     For more information about the method, see the following paper:
 
@@ -271,9 +271,11 @@ def get_phillips_perron_test(
 
     - t_rho = (rho_hat - 1) / se(rho_hat)
     - gamma_0 = (1/n) * SUM(u_hat_t^2)      (short-run residual variance)
+    - s = sqrt(SUM(u_hat_t^2) / (n - k))    (degrees-of-freedom corrected residual
+    standard error, with `k` the number of estimated coefficients)
     - lambda^2 = Newey-West long-run variance of u_hat_t, `lags` truncation lag
     - Z_t = sqrt(gamma_0 / lambda^2) * t_rho
-            - (lambda^2 - gamma_0) / (2 * sqrt(lambda^2) * sqrt(gamma_0)) * (n * se(rho_hat))
+            - (lambda^2 - gamma_0) / (2 * sqrt(lambda^2) * s) * (n * se(rho_hat))
 
     This "Z_t" variant (as opposed to the "Z_rho" variant, which corrects `n * (rho_hat
     - 1)` directly rather than the t-statistic) is implemented here because it is

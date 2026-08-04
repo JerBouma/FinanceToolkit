@@ -61,7 +61,10 @@ def get_var_gaussian(
     """
     Calculate the Value at Risk (VaR) of returns based on the gaussian distribution.
 
-    Adjust za according to the Cornish-Fischer expansion of the quantiles if
+    Adjusts za according to the Cornish-Fisher expansion of the quantiles if
+    cornish_fisher is set to True, which corrects the Gaussian quantile for the skewness
+    and kurtosis of the returns.
+
     Formula for quantile from "Finance Compact Plus" by Zimmerman; Part 1, page 130-131
     More material/resources:
      - "Numerical Methods and Optimization in Finance" by Gilli, Maringer & Schumann;
@@ -73,7 +76,7 @@ def get_var_gaussian(
         returns (pd.Series | pd.DataFrame): A Series or Dataframe of returns.
         alpha (float): The confidence level (e.g., 0.05 for 95% confidence).
         cornish_fisher (bool): Whether to adjust the distribution for the skew and kurtosis of the returns
-        based on the Cornish-Fischer quantile expansion. Defaults to False.
+        based on the Cornish-Fisher quantile expansion. Defaults to False.
 
     Returns:
         pd.Series | pd.DataFrame: VaR values as float if returns is a pd.Series,

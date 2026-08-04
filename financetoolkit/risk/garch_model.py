@@ -115,13 +115,13 @@ def get_garch(
         returns (pd.Series | pd.DataFrame | np.ndarray): A Series or Dataframe or np.ndarray of returns.
         weights (list): List with the values for omega, alpha and beta. Note that these are used all columns
         in the returns.
-        t (int): Time steps to calculate GARCH for.
-        optimization_t (int): Time steps to optimize GRACH for. It is only used if no weights are given.
+        time_steps (int): Time steps to calculate GARCH for.
+        optimization_t (int): Time steps to optimize GARCH for. It is only used if no weights are given.
         p (int): Number of u_t datapoints to use. Note that currently only p=1 is supported.
         q: (int): Number of sigma_t datapoints to use. Note that currently only q=1 is supported.
 
     Returns:
-        np.array | pd.Series | pd.DataFrame: A object with sigma_2 values
+        np.array | pd.Series | pd.DataFrame: An object with sigma_2 values
     """
     # TODO: support GARCH(p, q), for any p and q  # pylint: disable=W0511
     if p != 1 or q != 1:
@@ -377,7 +377,7 @@ def get_gjr_garch(
         q: (int): Number of sigma_t datapoints to use. Note that currently only q=1 is supported.
 
     Returns:
-        np.array | pd.Series | pd.DataFrame: A object with sigma_2 values
+        np.array | pd.Series | pd.DataFrame: An object with sigma_2 values
     """
     if p != 1 or q != 1:
         raise ValueError(
@@ -643,7 +643,7 @@ def get_egarch(
         q: (int): Number of sigma_t datapoints to use. Note that currently only q=1 is supported.
 
     Returns:
-        np.array | pd.Series | pd.DataFrame: A object with sigma_2 values
+        np.array | pd.Series | pd.DataFrame: An object with sigma_2 values
     """
     if p != 1 or q != 1:
         raise ValueError(

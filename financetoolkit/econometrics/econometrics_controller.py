@@ -144,8 +144,8 @@ class Econometrics:
         Also known as: ARCH-LM test, Engle's ARCH test.
 
         Args:
-            period (str, optional): The data frequency for returns (daily, weekly, quarterly, or yearly).
-            Defaults to "quarterly".
+            period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
+                Defaults to "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
             within_period (bool, optional): Whether to calculate the test within the specified period or for
             the entire period. Thus whether to look at the test within a specific year (if period = 'yearly')
             or look at the entirety of all years. Defaults to True.
@@ -227,8 +227,8 @@ class Econometrics:
         Also known as: JB test, normality test.
 
         Args:
-            period (str, optional): The data frequency for returns (daily, weekly, quarterly, or yearly).
-            Defaults to "quarterly".
+            period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
+                Defaults to "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
             within_period (bool, optional): Whether to calculate the test within the specified period or for
             the entire period. Thus whether to look at the test within a specific year (if period = 'yearly')
             or look at the entirety of all years. Defaults to True.
@@ -311,8 +311,8 @@ class Econometrics:
         Also known as: Ljung-Box Q test, portmanteau test.
 
         Args:
-            period (str, optional): The data frequency for returns (daily, weekly, quarterly, or yearly).
-            Defaults to "quarterly".
+            period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
+                Defaults to "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
             within_period (bool, optional): Whether to calculate the test within the specified period or for
             the entire period. Thus whether to look at the test within a specific year (if period = 'yearly')
             or look at the entirety of all years. Defaults to True.
@@ -396,8 +396,8 @@ class Econometrics:
         Also known as: Lo-MacKinlay test, VR test.
 
         Args:
-            period (str, optional): The data frequency for returns (daily, weekly, quarterly, or yearly).
-            Defaults to "quarterly".
+            period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
+                Defaults to "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
             within_period (bool, optional): Whether to calculate the test within the specified period or for
             the entire period. Thus whether to look at the test within a specific year (if period = 'yearly')
             or look at the entirety of all years. Defaults to True.
@@ -466,25 +466,23 @@ class Econometrics:
         """
         Calculate the CUSUM test for the stability of the mean of returns over time.
 
-        The test builds a standardized cumulative sum of recursive (expanding-window)
-        residuals, which behaves like a Brownian motion under the null hypothesis of a
-        stable mean. A stable mean keeps the path close to zero, while a mean shift
-        partway through the series (a structural break, e.g. a regime change) drags
-        the path away from zero and keeps it there, since later residuals are
-        computed against a recursive mean contaminated by the pre-break observations.
+        The test fits a constant-mean model to the returns and cumulates the (scaled)
+        OLS residuals into a path that behaves like a Brownian Bridge under the null
+        hypothesis of a stable mean. A stable mean keeps the path close to zero, while
+        a mean shift partway through the series (a structural break, e.g. a regime
+        change) drags the path away from zero; the test statistic is the maximum
+        absolute value of that path.
 
         For more information about the method, see the following paper:
 
-        - Brown, R.L., Durbin, J., & Evans, J.M. (1975). "Techniques for Testing the
-        Constancy of Regression Relationships over Time." Journal of the Royal
-        Statistical Society, Series B, 37(2), 149-192.
+        - Ploberger, W., & Kramer, W. (1992). "The CUSUM Test with OLS Residuals."
+        Econometrica, 60(2), 271-285.
 
-        Also known as: CUSUM test, CUSUM of recursive residuals test, Brown-Durbin-Evans
-        test.
+        Also known as: CUSUM test, CUSUM of OLS residuals test, Ploberger-Kramer test.
 
         Args:
-            period (str, optional): The data frequency for returns (daily, weekly, quarterly, or yearly).
-            Defaults to "quarterly".
+            period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
+                Defaults to "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
             within_period (bool, optional): Whether to calculate the test within the specified period or for
             the entire period. Thus whether to look at the test within a specific year (if period = 'yearly')
             or look at the entirety of all years. Defaults to True.
@@ -506,7 +504,7 @@ class Econometrics:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AMZN", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(["AAPL", "MSFT"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         toolkit.econometrics.get_cusum_test(period="quarterly", within_period=False)
         ```
@@ -687,8 +685,8 @@ class Econometrics:
         Also known as: ADF test, unit root test, stationarity test.
 
         Args:
-            period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly).
-            Defaults to "quarterly".
+            period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly). Defaults to
+                "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
             column (str, optional): The historical data column to test. Defaults to "Adj Close".
             max_lag (int, optional): The maximum number of lagged differences to consider. Defaults to
             the Schwert (1989) rule of thumb.
@@ -775,14 +773,14 @@ class Econometrics:
         Also known as: KPSS test, stationarity test.
 
         Args:
-            period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly).
-            Defaults to "quarterly".
+            period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly). Defaults to
+                "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
             column (str, optional): The historical data column to test. Defaults to "Adj Close".
             regression (str, optional): Which deterministic term to remove before testing, one of "c"
             (constant, level-stationarity) or "ct" (constant and trend, trend-stationarity).
             Defaults to "c".
-            lags (int, optional): The truncation lag for the Newey-West long-run variance estimate.
-            Defaults to the Schwert (1989) rule of thumb.
+            lags (int, optional): The truncation lag for the long-run variance estimate. Defaults
+            to `statsmodels`' automatic (Hobijn, Franses & Ooms, 2004) bandwidth selection.
             include_benchmark (bool, optional): Whether to include "Benchmark" among the
             assets tested. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to
@@ -864,8 +862,8 @@ class Econometrics:
         Also known as: PP test, Z_t test.
 
         Args:
-            period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly).
-            Defaults to "quarterly".
+            period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly). Defaults to
+                "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
             column (str, optional): The historical data column to test. Defaults to "Adj Close".
             regression (str, optional): Which deterministic term to include, one of "c" (constant) or
             "ct" (constant and trend). Defaults to "c". Note "n" (no constant) is not supported, see
@@ -961,8 +959,8 @@ class Econometrics:
         Also known as: ZA test, structural break unit root test.
 
         Args:
-            period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly).
-            Defaults to "quarterly".
+            period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly). Defaults to
+                "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
             column (str, optional): The historical data column to test. Defaults to "Adj Close".
             max_lag (int, optional): The maximum number of lagged differences to consider when
             selecting the (single, reused) lag length. Defaults to the Schwert (1989) rule of thumb.
@@ -990,7 +988,7 @@ class Econometrics:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AMZN", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(["AAPL", "MSFT"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         toolkit.econometrics.get_zivot_andrews_test(period="weekly")
         ```
@@ -1052,8 +1050,8 @@ class Econometrics:
         Also known as: EG test, residual-based cointegration test, pairs-trading test.
 
         Args:
-            period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly).
-            Defaults to "quarterly".
+            period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly). Defaults to
+                "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
             column (str, optional): The historical data column to test. Defaults to "Adj Close".
             max_lag (int, optional): The maximum number of lagged differences to consider in the
             underlying ADF test on the residuals. Defaults to `statsmodels`' automatic selection.
@@ -1142,8 +1140,8 @@ class Econometrics:
         Also known as: Johansen test, Johansen procedure, VECM rank test.
 
         Args:
-            period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly).
-            Defaults to "quarterly".
+            period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly). Defaults to
+                "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
             column (str, optional): The historical data column to test. Defaults to "Adj Close".
             det_order (int, optional): Which deterministic term to include: -1 (none), 0 (a
             constant, restricted to lie in the cointegrating relation) or 1 (a constant plus a
@@ -1220,8 +1218,8 @@ class Econometrics:
         Also known as: Granger causality test, predictive causality, lead-lag test.
 
         Args:
-            period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly).
-            Defaults to "quarterly".
+            period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly). Defaults to
+                "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
             column (str, optional): The historical data column to test. Defaults to "Return", since
             Granger causality assumes a stationary series (unlike the ADF/Engle-Granger tests, which
             operate on price levels on purpose).
@@ -1343,7 +1341,7 @@ class Econometrics:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AMZN", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(["AAPL", "MSFT"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         toolkit.econometrics.get_diebold_mariano_test(method_a="ewma", method_b="rolling")
         ```
@@ -1417,8 +1415,8 @@ class Econometrics:
             include_benchmark (bool, optional): Whether to include "Benchmark" in the
             default independent ticker(s) (has no effect when independent_tickers is given
             explicitly). Defaults to False.
-            period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly).
-            Defaults to "quarterly".
+            period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly). Defaults to
+                "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
             column (str, optional): The historical data column to regress on. Defaults to "Return".
             add_constant (bool, optional): Whether to include an intercept. Defaults to True.
             cov_type (str, optional): Which covariance estimator to use for the standard errors --
@@ -1530,8 +1528,8 @@ class Econometrics:
             include_benchmark (bool, optional): Whether to include "Benchmark" in the
             default independent ticker(s) (has no effect when independent_tickers is given
             explicitly). Defaults to False.
-            period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly).
-            Defaults to "quarterly".
+            period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly). Defaults to
+                "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
             column (str, optional): The historical data column to regress on. Defaults to "Return".
             add_constant (bool, optional): Whether to include an intercept. Defaults to True.
             cov_type (str, optional): Which covariance estimator to use, applied to the weighted/
@@ -1632,8 +1630,8 @@ class Econometrics:
             include_benchmark (bool, optional): Whether to include "Benchmark" in the
             default independent ticker(s) (has no effect when independent_tickers is given
             explicitly). Defaults to False.
-            period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly).
-            Defaults to "quarterly".
+            period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly). Defaults to
+                "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
             column (str, optional): The historical data column to regress on. Defaults to "Return".
             add_constant (bool, optional): Whether to include an intercept. Defaults to True.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to
@@ -1716,8 +1714,8 @@ class Econometrics:
             include_benchmark (bool, optional): Whether to include "Benchmark" in the
             default independent ticker(s) (has no effect when independent_tickers is given
             explicitly). Defaults to False.
-            period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly).
-            Defaults to "quarterly".
+            period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly). Defaults to
+                "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
             column (str, optional): The historical data column to derive returns from. Defaults to
             "Return".
             add_constant (bool, optional): Whether to include an intercept. Defaults to True.
@@ -1802,8 +1800,8 @@ class Econometrics:
             include_benchmark (bool, optional): Whether to include "Benchmark" in the
             default independent ticker(s) (has no effect when independent_tickers is given
             explicitly). Defaults to False.
-            period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly).
-            Defaults to "quarterly".
+            period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly). Defaults to
+                "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
             column (str, optional): The historical data column to derive returns from. Defaults to
             "Return".
             add_constant (bool, optional): Whether to include an intercept. Defaults to True.
@@ -1890,8 +1888,8 @@ class Econometrics:
             default independent ticker(s) (has no effect when independent_tickers is given
             explicitly). Defaults to False.
             tau (float, optional): The quantile to fit, in (0, 1). Defaults to 0.5 (the median).
-            period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly).
-            Defaults to "quarterly".
+            period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly). Defaults to
+                "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
             column (str, optional): The historical data column to regress on. Defaults to "Return".
             add_constant (bool, optional): Whether to include an intercept. Defaults to True.
             n_bootstrap (int, optional): The number of bootstrap resamples used for coefficient
@@ -1973,8 +1971,8 @@ class Econometrics:
             asset_tickers (str | list[str] | None, optional): The ticker(s) forming the
             cross-section of test assets. Defaults to None, meaning every Toolkit
             ticker (including "Benchmark") not already used as a factor.
-            period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly).
-            Defaults to "quarterly".
+            period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly). Defaults to
+                "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
             column (str, optional): The historical data column to regress on. Defaults to "Return".
             add_constant (bool, optional): Whether to include an intercept in the
             second-pass cross-sectional regression. Defaults to True.
@@ -2098,8 +2096,8 @@ class Econometrics:
         For more information about the method, see `hypothesis_testing_model.get_two_sample_t_test`.
 
         Args:
-            period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly).
-            Defaults to "quarterly".
+            period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly). Defaults to
+                "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
             column (str, optional): The historical data column to compare. Defaults to "Return".
             equal_variance (bool, optional): Whether to assume the two samples share a common
             variance (Student's pooled t-test) instead of Welch's (unequal-variance) t-test.
@@ -2457,8 +2455,8 @@ class Econometrics:
             with `dependent_ticker`'s error term.
             other_independent_tickers (str | list[str] | None, optional): Any other (assumed
             exogenous) independent asset(s) to include. Defaults to None.
-            period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly).
-            Defaults to "quarterly".
+            period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly). Defaults to
+                "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
             column (str, optional): The historical data column to regress on. Defaults to "Return".
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to
             None.
@@ -2802,8 +2800,8 @@ class Econometrics:
         For more information about the method, see `specification_tests_model.get_vif`.
 
         Args:
-            period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly).
-            Defaults to "quarterly".
+            period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly). Defaults to
+                "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
             column (str, optional): The historical data column to use. Defaults to "Return".
             include_benchmark (bool, optional): Whether to include "Benchmark" among the
             regressors tested. Defaults to False.
@@ -2956,8 +2954,8 @@ class Econometrics:
             include_benchmark (bool, optional): Whether to include "Benchmark" in the
             default independent ticker(s) (has no effect when independent_tickers is given
             explicitly). Defaults to False.
-            period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly).
-            Defaults to "quarterly".
+            period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly). Defaults to
+                "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
             column (str, optional): The historical data column to regress on. Defaults to "Return".
             add_constant (bool, optional): Whether to include an intercept in the underlying
             regression(s). Defaults to True.
@@ -3069,8 +3067,8 @@ class Econometrics:
             term. Must supply at least as many instruments as endogenous regressors.
             exogenous_tickers (str | list[str] | None, optional): Other, non-instrumented
             control asset(s) included as-is in both stages. Defaults to None.
-            period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or
-            yearly). Defaults to "quarterly".
+            period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly). Defaults to
+                "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
             column (str, optional): The historical data column to regress on. Defaults to
             "Return".
             add_constant (bool, optional): Whether to include an intercept. Defaults to True.
@@ -3171,8 +3169,8 @@ class Econometrics:
             control_tickers (str | list[str] | None, optional): The untreated comparison
             asset(s). Defaults to None, which uses every ticker (and "Benchmark", if
             present) NOT in `treated_tickers`.
-            period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or
-            yearly). Defaults to "quarterly".
+            period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly). Defaults to
+                "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
             column (str, optional): The historical data column to use as the outcome.
             Defaults to "Return".
             add_constant (bool, optional): Whether to include an intercept. Defaults to True.
@@ -3295,8 +3293,8 @@ class Econometrics:
             which side of `cutoff` an observation falls on.
             cutoff (float): The threshold value of `running_variable_ticker` at which the
             discontinuity is estimated.
-            period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or
-            yearly). Defaults to "quarterly".
+            period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly). Defaults to
+                "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
             column (str, optional): The historical data column to use for both series.
             Defaults to "Return".
             bandwidth (float | None, optional): The maximum distance from `cutoff` an
@@ -3393,8 +3391,8 @@ class Econometrics:
             selection into "treatment".
             treatment_threshold (float, optional): The return threshold defining
             treatment. Defaults to 0.0.
-            period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or
-            yearly). Defaults to "quarterly".
+            period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly). Defaults to
+                "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
             column (str, optional): The historical data column to use. Defaults to "Return".
             caliper (float | None, optional): The maximum allowed logit-propensity-score
             matching distance. Defaults to None, which uses Austin's (2011) rule of thumb
@@ -3487,8 +3485,8 @@ class Econometrics:
             donor_tickers (str | list[str] | None, optional): The ticker(s) forming
             the donor pool the synthetic control is built from. Defaults to None,
             meaning every other Toolkit ticker (subject to `include_benchmark`).
-            period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly).
-            Defaults to "quarterly".
+            period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly). Defaults to
+                "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
             column (str, optional): The historical data column to use. Defaults to "Return".
             include_benchmark (bool, optional): Whether to include "Benchmark" in the
             default donor pool (has no effect when donor_tickers is given explicitly).
@@ -3503,10 +3501,9 @@ class Econometrics:
         Notes:
         - Needs at least 2 donor tickers -- with only 1-2 Toolkit tickers loaded,
         pass `donor_tickers` explicitly (e.g. including "Benchmark") or (better)
-        construct the Toolkit with more tickers, since Fama-MacBeth-style small
-        donor pools give both a poorly-identified synthetic control and a very coarse
-        placebo p-value (with `k` donors, the smallest achievable p-value is
-        `1 / (k + 1)`).
+        construct the Toolkit with more tickers, since small donor pools give both a
+        poorly-identified synthetic control and a very coarse placebo p-value (with
+        `k` donors, the smallest achievable p-value is `1 / (k + 1)`).
 
         As an example:
 
@@ -4014,12 +4011,12 @@ class Econometrics:
         An ARIMA(p, d, q) model differences the series `d` times to remove a
         (stochastic) trend, then fits an autoregressive-moving-average model to the
         result -- see `time_series_model.get_arima_forecast` for the full formula,
-        estimation method (Conditional Sum of Squares, not exact Maximum Likelihood --
-        an important, deliberately documented limitation) and its practical caveats.
+        estimation method (exact Maximum Likelihood via the Kalman filter) and its
+        practical caveats.
 
         Args:
-            period (str, optional): The data frequency (daily, weekly, monthly,
-            quarterly, or yearly). Defaults to "quarterly".
+            period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly). Defaults to
+                "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
             column (str, optional): The historical data column to fit. Defaults to
             "Adj Close".
             p (int, optional): The autoregressive order. Defaults to 1.
@@ -4111,8 +4108,8 @@ class Econometrics:
         method (equation-by-equation OLS, reusing `regression_model.get_ols`).
 
         Args:
-            period (str, optional): The data frequency (daily, weekly, monthly,
-            quarterly, or yearly). Defaults to "quarterly".
+            period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly). Defaults to
+                "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
             column (str, optional): The historical data column to model. Defaults to
             "Return".
             lags (int, optional): The VAR order. Defaults to 1.
@@ -4195,8 +4192,8 @@ class Econometrics:
         shocks, and why the ordering of tickers is an identifying assumption.
 
         Args:
-            period (str, optional): The data frequency (daily, weekly, monthly,
-            quarterly, or yearly). Defaults to "quarterly".
+            period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly). Defaults to
+                "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
             column (str, optional): The historical data column to model. Defaults to
             "Return".
             lags (int, optional): The VAR order. Defaults to 1.
@@ -4216,11 +4213,11 @@ class Econometrics:
             ticker, indexed `0, ..., periods` (horizon, `0` = impact response).
 
         Notes:
-        - The ordering of tickers modeled (Toolkit ticker order, or `independent_tickers`-
-        style ordering is not configurable here -- reorder the Toolkit instance's
-        tickers themselves to change the Cholesky identification order) determines
-        which ticker is treated as contemporaneously prior to the others -- see
-        `time_series_model.get_impulse_response_function`'s `Notes`.
+        - The ordering of the tickers modeled determines which ticker is treated as
+        contemporaneously prior to the others. That ordering follows the Toolkit
+        instance's own ticker order and is not configurable here -- reorder the
+        Toolkit instance's tickers themselves to change the Cholesky identification
+        order -- see `time_series_model.get_impulse_response_function`'s `Notes`.
 
         As an example:
 
@@ -4285,8 +4282,8 @@ class Econometrics:
         explained by the rest of the system over time.
 
         Args:
-            period (str, optional): The data frequency (daily, weekly, monthly,
-            quarterly, or yearly). Defaults to "quarterly".
+            period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly). Defaults to
+                "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
             column (str, optional): The historical data column to model. Defaults to
             "Return".
             lags (int, optional): The VAR order. Defaults to 1.
@@ -4368,8 +4365,8 @@ class Econometrics:
         and verification notes.
 
         Args:
-            period (str, optional): The data frequency (daily, weekly, monthly,
-            quarterly, or yearly). Defaults to "quarterly".
+            period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly). Defaults to
+                "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
             column (str, optional): The historical data column to model. Defaults to
             "Adj Close" -- a VECM needs price LEVELS (non-stationary, cointegrated
             series), not returns, the same input `get_johansen_cointegration` expects.
@@ -4463,8 +4460,8 @@ class Econometrics:
         `get_out_of_sample_validation` instead.
 
         Args:
-            period (str, optional): The data frequency (daily, weekly, monthly,
-            quarterly, or yearly). Defaults to "quarterly".
+            period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly). Defaults to
+                "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
             column (str, optional): The historical data column to compare. Defaults to
             "Return".
             include_benchmark (bool, optional): Whether to include "Benchmark" among the
@@ -4528,8 +4525,8 @@ class Econometrics:
         `get_out_of_sample_validation` for that).
 
         Args:
-            period (str, optional): The data frequency (daily, weekly, monthly,
-            quarterly, or yearly). Defaults to "quarterly".
+            period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly). Defaults to
+                "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
             column (str, optional): The historical data column to compare. Defaults to
             "Return".
             include_benchmark (bool, optional): Whether to include "Benchmark" among the
@@ -4613,8 +4610,8 @@ class Econometrics:
           is scored against its holdout.
 
         Args:
-            period (str, optional): The data frequency (daily, weekly, monthly,
-            quarterly, or yearly). Defaults to "quarterly".
+            period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly). Defaults to
+                "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
             column (str, optional): The historical data column to validate. Defaults
             to "Adj Close".
             model (str, optional): Either "arima" or "var". Defaults to "arima".

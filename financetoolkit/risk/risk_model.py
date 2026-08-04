@@ -109,8 +109,9 @@ def get_ui(
         assets/series with different scales. Defaults to "return".
 
     Returns:
-        pd.Series | pd.DataFrame: UI values as float if returns is a pd.Series,
-        otherwise as pd.Series or pd.DataFrame with time as index, if.
+        pd.Series | pd.DataFrame: UI values as a float if returns is a pd.Series, as
+        a pd.Series indexed by column if returns is a single index pd.DataFrame, or as
+        a pd.DataFrame with the sub-periods as index if returns has a multi-index.
 
     Raises:
         ValueError: If `method` is not one of "return" or "level".
@@ -167,7 +168,7 @@ def get_skewness(returns: pd.Series | pd.DataFrame) -> pd.Series | pd.DataFrame:
     Computes the skewness of dataset.
 
     Args:
-        dataset (pd.Series | pd.Dataframe): A single index dataframe or series
+        returns (pd.Series | pd.Dataframe): A single index dataframe or series
 
     Returns:
         pd.Series | pd.Dataframe: Skewness of the dataset
@@ -201,7 +202,10 @@ def get_kurtosis(
     Computes the kurtosis of dataset.
 
     Args:
-        dataset (pd.Series | pd.Dataframe): A single index dataframe or series
+        returns (pd.Series | pd.Dataframe): A single index dataframe or series
+        fisher (bool, optional): Whether to return Fisher's definition of kurtosis
+        (excess kurtosis, i.e. normal distribution equals 0.0) instead of Pearson's
+        definition (normal distribution equals 3.0). Defaults to True.
 
     Returns:
         pd.Series | pd.Dataframe: Kurtosis of the dataset

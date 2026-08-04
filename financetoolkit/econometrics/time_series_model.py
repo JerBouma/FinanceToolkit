@@ -351,7 +351,7 @@ def get_var_forecast(data: pd.DataFrame, lags: int, forecast_steps: int = 1) -> 
 
     For more information about the method, see the following paper:
 
-    - Sims, C.A. (1980). "Macroeconomic and Reality." Econometrica, 48(1), 1-48.
+    - Sims, C.A. (1980). "Macroeconomics and Reality." Econometrica, 48(1), 1-48.
 
     Args:
         data (pd.DataFrame): One column per series (e.g. several assets' returns),

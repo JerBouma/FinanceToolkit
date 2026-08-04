@@ -104,7 +104,7 @@ def get_overnight_banking_funding_rate() -> pd.DataFrame:
     can borrow money that are required to meet overnight balances.
 
     Returns:
-       pd.DataFrame: A DataFrame containing the Main Refinancing Operations over time.
+       pd.DataFrame: A DataFrame containing the overnight banking funding rate over time.
     """
     fed_code = CODES["OBFR"]
 

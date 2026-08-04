@@ -194,10 +194,13 @@ class FixedIncome:
             - Frequency: The number of coupon payments per year.
             - Present Value: The present value of the bond.
             - Current Yield: The annual coupon payment divided by the bond price.
+            - Effective Yield: The annualised yield that accounts for the compounding of the coupon
+                payments made within the year.
             - Macaulay's Duration: The weighted average time to receive the bond's cash flows.
-            - Modified Duration: The Macaulay's duration divided by 1 plus the yield to maturity.
+            - Modified Duration: The Macaulay's duration divided by 1 plus the per-period yield
+                (yield to maturity divided by the frequency).
             - Effective Duration: The percentage change in the bond price for a 1% change in the yield to maturity.
-            - Dollar Duration: The modified duration multiplied by the bond price.
+            - Dollar Duration: The modified duration multiplied by the bond price, divided by 100.
             - DV01: The dollar value of a 0.01% change in yield to maturity.
             - Convexity: The second derivative of the bond price with respect to the yield to maturity.
 
@@ -372,7 +375,7 @@ class FixedIncome:
             par_value (float): The par value (face value) of the bond.
             coupon_rate (float, optional): The coupon rate of the bond. If not provided, a range of coupon rates will be used.
             years_to_maturity (float, optional): The years to maturity of the bond in years. If not provided, a range of years to maturity will be used.
-            yield_to_maturity (float, optional): The yield to maturity of the bond. If not provided, a default value of 0.05 will be used.
+            yield_to_maturity (float, optional): The yield to maturity of the bond. Defaults to 0.08.
             frequency (int, optional): The frequency of coupon payments per year. Defaults to 1.
             show_input_info (bool, optional): Whether to display input information. Defaults to True.
 
@@ -469,27 +472,28 @@ class FixedIncome:
         type of bond durations:
 
         - Macaulay's Duration: The weighted average time to receive the bond's cash flows.
-        - Modified Duration: The Macaulay's duration divided by 1 plus the yield to maturity.
+        - Modified Duration: The Macaulay's duration divided by 1 plus the per-period yield (yield to maturity divided by the frequency).
         - Effective Duration: The percentage change in the bond price for a 1% change in the yield to maturity.
-        - Dollar Duration: The modified duration multiplied by the bond price.
+        - Dollar Duration: The modified duration multiplied by the bond price, divided by 100.
 
         These duration measures can be used to estimate the sensitivity of a bond's price to changes in interest rates as well as
         to compare the risk of different bonds. The modified duration is particularly useful for estimating the percentage change
-        in the bond price for a 1% change in the yield to maturity. This is also known as the bond's price value of a basis point (PVBP),
-        or the bond's dollar duration (DD) or dollar value of a .01% change (DV01).
+        in the bond price for a 1% change in the yield to maturity. Note that it is a percentage sensitivity and therefore not the
+        same as the dollar duration, the price value of a basis point (PVBP) or the dollar value of a 0.01% change (DV01), which are
+        all expressed as a currency amount instead. The dollar duration is available through this method via `duration_type='dollar'`
+        and the DV01 is calculated separately, see `collect_bond_statistics`.
 
         Also known as: Macaulay duration, modified duration, bond price sensitivity.
 
         Args:
             duration_type (str, optional): The type of duration to calculate. Defaults to 'modified' but can also
                 be 'macaulay', 'effective' or 'dollar'.
-            par_value (float, optional): The par value (face value) of the bond. Defaults to None.
+            par_value (float, optional): The par value (face value) of the bond. Defaults to 100.
             coupon_rate (float, optional): The coupon rate of the bond. If not provided, a range of coupon
                 rates will be used. Defaults to None.
             years_to_maturity (float, optional): The years to maturity of the bond in years. If not provided, a range of years
                 to maturity will be used. Defaults to None.
-            yield_to_maturity (float, optional): The yield to maturity of the bond. If not provided, a default
-                value of 0.05 will be used. Defaults to None.
+            yield_to_maturity (float, optional): The yield to maturity of the bond. Defaults to 0.08.
             frequency (int, optional): The frequency of coupon payments per year. Defaults to 1.
             show_input_info (bool, optional): Whether to display input information. Defaults to True.
 
@@ -632,14 +636,14 @@ class FixedIncome:
         - n = Number of periods
         - F = Face value of the bond
 
-        The goal is to find the yield to maturity that satisfies the equation above. This is done using the Newton-Raphson method
+        The goal is to find the yield to maturity that satisfies the equation above. This is done using the secant method
         which is an iterative method that converges to the root of a function.
 
         Also known as: YTM, bond return to maturity.
 
         Args:
             par_value (float): The par value (face value) of the bond. This is the original price when it was issued by the issuer.
-            coupon_rate (float, optional): The coupon rate of the bond. Defaults to None.
+            coupon_rate (float, optional): The coupon rate of the bond. Defaults to 0.05.
             years_to_maturity (float, optional): The years to maturity of the bond in years. Defaults to None.
             bond_price (float, optional): The price of the bond. Defaults to None.
             frequency (int, optional): The number of coupon payments per year. Defaults to 1.
@@ -1881,7 +1885,7 @@ class FixedIncome:
         In all cases, they refer to bonds whose capital repayment is guaranteed by governments.
         Long-term interest rates are one of the determinants of business investment. Low long
         term interest rates encourage investment in new equipment and high interest rates
-        discourage it. Investment is, in turn, a major source of economic growth
+        discourage it. Investment is, in turn, a major source of economic growth.
 
         See definition: https://data.oecd.org/interest/long-term-interest-rates.htm
 
@@ -2135,10 +2139,12 @@ class FixedIncome:
         This data represents the effective yield of the ICE BofA Indices, When the last calendar day of the month
         takes place on the weekend, weekend observations will occur as a result of month ending accrued interest adjustments.
 
-        The Effective Yield is the yield of a bond, calculated by dividing the bond's coupon payments by its market price.
-        The effective yield is not the same as the stated yield, which is the yield on the bond's coupon payments divided
-        by the bond's principal value. The effective yield is a more accurate measure of a bond's return, as it takes into
-        account the fact that the investor will not hold the bond to maturity and will likely sell it before it matures.
+        The Effective Yield is the annualised yield of a bond that accounts for the compounding of the coupon payments
+        that are made within the year, i.e. (1 + coupon rate / frequency) ^ frequency - 1. It is therefore not the same
+        as the nominal (stated) coupon rate, which ignores compounding, nor the same as the current yield, which simply
+        divides the annual coupon payment by the bond's market price. Whenever coupons are paid more than once a year,
+        the effective yield exceeds the nominal coupon rate because each coupon can be reinvested for the remainder of
+        the year.
 
         See definitions:
 
@@ -2223,8 +2229,8 @@ class FixedIncome:
 
         See definitions:
 
-        - Ratings: https://fred.stlouisfed.org/series/BAMLC0A4CBBBEY
-        - Maturity: https://fred.stlouisfed.org/series/BAMLC1A0C13YEY
+        - Ratings: https://fred.stlouisfed.org/series/BAMLCC0A4BBBTRIV
+        - Maturity: https://fred.stlouisfed.org/series/BAMLCC1A013YTRIV
 
         Args:
             maturity (bool, optional): Whether to return the maturity total return or the rating total return.
@@ -2303,8 +2309,8 @@ class FixedIncome:
 
         See definitions:
 
-        - Ratings: https://fred.stlouisfed.org/series/BAMLC0A4CBBBEY
-        - Maturity: https://fred.stlouisfed.org/series/BAMLC1A0C13YEY
+        - Ratings: https://fred.stlouisfed.org/series/BAMLC0A4CBBBSYTW
+        - Maturity: https://fred.stlouisfed.org/series/BAMLC1A0C13YSYTW
 
         Args:
             maturity (bool, optional): Whether to return the maturity yield to worst or the rating yield to worst.
@@ -2312,7 +2318,7 @@ class FixedIncome:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. Defaults to False.
 
         Returns:
-            pd.DataFrame: A DataFrame containing the Gross Domestic Product
+            pd.DataFrame: A DataFrame containing the ICE BofA Yield to Worst
 
         As an example:
 
@@ -2324,7 +2330,7 @@ class FixedIncome:
             end_date='2024-01-15',
         )
 
-        fixedincome.get_yield_to_worst(maturity=False)
+        fixedincome.get_ice_bofa_yield_to_worst(maturity=False)
         ```
 
         Which returns:
@@ -2380,7 +2386,7 @@ class FixedIncome:
         daily by the European Money Markets Institute (EMMI) and serve as a benchmark for various
         financial products and contracts, including mortgages, loans, and derivatives, across the Eurozone.
 
-        The Euribor rates are determined for different maturities, typically ranging from overnight to 12 months
+        The Euribor rates are determined for different maturities, typically ranging from overnight to 12 months.
         The most common maturities are 1 month, 3 months, 6 months, and 12 months. Each maturity represents
         the time period for which the funds are borrowed, with longer maturities generally implying higher
         interest rates due to increased uncertainty and risk over longer time horizons.

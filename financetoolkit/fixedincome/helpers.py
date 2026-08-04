@@ -21,6 +21,10 @@ def collect_ecb_data(
     Args:
         ecb_data_string (str): The string that is appended to the base URL to
             get the data from the ECB API.
+        dataset (str): The ECB dataset (dataflow) to query, e.g. 'FM' for the
+            Financial Markets dataset.
+        frequency (str): The frequency of the returned observations, used to build
+            the PeriodIndex, e.g. 'D' for daily or 'M' for monthly. Defaults to 'D'.
 
     Returns:
        pd.DataFrame: A DataFrame containing the data from the ECB API.

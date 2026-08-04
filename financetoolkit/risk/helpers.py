@@ -27,19 +27,23 @@ def determine_within_historical_data(
     intraday_period: str | None,
 ):
     """
-    This function is a specific function solely related to the Ratios controller. It
-    therefore also requires a self instance to exists with specific parameters.
+    This function is a specific function solely related to the Risk controller. It
+    reshapes the historical data into a multi-index (period, observation) format for
+    each period defined in PERIOD_TRANSLATION, which is what the "within period"
+    calculations in the Risk controller operate on.
 
     Args:
-        period (str): the period to return the data for.
-        within_period (bool): whether to return the data within the period or the
-        entire period.
-
-    Raises:
-        ValueError: if the period is not daily, monthly, weekly, quarterly, or yearly.
+        daily_historical_data (pd.DataFrame): the daily historical data used for the
+        weekly, monthly, quarterly and yearly periods.
+        intraday_historical_data (pd.DataFrame): the intraday historical data used for
+        the intraday period. When empty, the daily historical data is used instead.
+        intraday_period (str | None): the intraday frequency (e.g. "1min", "1hour")
+        used to look up the outer resampling symbol. When None, the intraday period is
+        skipped entirely.
 
     Returns:
-        pd.Series: the returns for the period.
+        dict[str, pd.DataFrame]: a dictionary with the period name as key and the
+        historical data with a (period, observation) multi-index as value.
     """
     within_historical_data = {}
 

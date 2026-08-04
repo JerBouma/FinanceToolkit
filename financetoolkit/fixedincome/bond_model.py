@@ -17,8 +17,9 @@ def get_bond_price(
     Args:
         par_value (float): The face value of the bond.
         coupon_rate (float): The annual coupon rate (in decimal).
-        years_to_maturity (int): The number of years until the bond matures.
+        years_to_maturity (float): The number of years until the bond matures.
         yield_to_maturity (float): The yield to maturity of the bond (in decimal).
+        frequency (int): The number of coupon payments per year. Defaults to 1.
 
     Returns:
         float: The price of the bond.
@@ -247,6 +248,8 @@ def get_dollar_duration(
     Calculate the bond's dollar duration.
 
     The dollar duration is calculated by multiplying the bond's modified duration by the bond's price
+    and dividing the result by 100, so that it expresses the price change for a 1 percentage point
+    change in the yield to maturity.
 
     Args:
         par_value (float): The face value of the bond.

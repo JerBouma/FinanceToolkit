@@ -2,6 +2,7 @@
 
 __docformat__ = "google"
 
+import itertools
 import warnings
 
 import numpy as np
@@ -28,6 +29,8 @@ from financetoolkit.utilities.statistics_model import finalize_dataset
 # sometimes leading to division by zero or other mathematical errors. This is however
 # for financial analysis purposes not an issue and should not be considered as a bug.
 warnings.filterwarnings("ignore", category=RuntimeWarning)
+
+MINIMUM_TICKERS_FOR_ALL_PAIRS = 2
 
 # pylint: disable=too-many-instance-attributes,too-few-public-methods,too-many-lines,too-many-locals
 # pylint: disable=too-many-boolean-expressions
@@ -2348,6 +2351,26 @@ class Risk:
 
         return self._historical_data[period][column].dropna()
 
+    def _resolve_ticker_pairs(
+        self, ticker_a: str | None, ticker_b: str | None
+    ) -> list[tuple[str, str]]:
+        if ticker_a is None and ticker_b is None:
+            if len(self._tickers) < MINIMUM_TICKERS_FOR_ALL_PAIRS:
+                raise ValueError(
+                    "At least 2 tickers are required in the Toolkit instance to "
+                    "calibrate a copula between every pair."
+                )
+
+            return list(itertools.combinations(self._tickers, 2))
+
+        if ticker_a is None or ticker_b is None:
+            raise ValueError(
+                "Either provide both ticker_a and ticker_b, or neither (to use "
+                "every pair of tickers in the Toolkit instance)."
+            )
+
+        return [(ticker_a, ticker_b)]
+
     @handle_errors
     def get_tail_dependence_coefficient(
         self,
@@ -2435,16 +2458,19 @@ class Risk:
     @handle_errors
     def get_copula_parameters(
         self,
-        ticker_a: str,
-        ticker_b: str,
+        ticker_a: str | None = None,
+        ticker_b: str | None = None,
         copula: str = "gaussian",
         period: str | None = None,
         column: str = "Return",
         rounding: int | None = None,
-    ) -> pd.Series:
+    ) -> pd.Series | pd.DataFrame:
         """
         Calibrate a bivariate copula between `ticker_a` and `ticker_b`, via
         maximum likelihood.
+
+        When `ticker_a`/`ticker_b` are not given, every unique pair among the
+        Toolkit's tickers is calibrated instead.
 
         A copula separates the dependence structure between two assets from
         their individual (marginal) return distributions (Sklar's theorem),
@@ -2480,8 +2506,9 @@ class Risk:
         Also known as: copula calibration, copula fit, dependence modeling.
 
         Args:
-            ticker_a (str): The first asset.
-            ticker_b (str): The second asset.
+            ticker_a (str, optional): The first asset. Defaults to None, meaning every unique pair of
+            tickers in the Toolkit instance is calibrated (requires `ticker_b` to also be None).
+            ticker_b (str, optional): The second asset. Defaults to None, see `ticker_a`.
             copula (str, optional): The copula family to fit, one of "gaussian",
             "student-t", "clayton", "gumbel" or "frank". Defaults to "gaussian".
             period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly).
@@ -2492,15 +2519,18 @@ class Risk:
 
         Raises:
             ValueError: If `copula` is not one of "gaussian", "student-t", "clayton", "gumbel" or "frank",
-            or if fewer than 10 paired, non-missing observations are available.
+            if only one of `ticker_a`/`ticker_b` is given, if fewer than 2 tickers are available to pair
+            up when neither is given, or if fewer than 10 paired, non-missing observations are available.
 
         Returns:
-            pd.Series: The fitted copula parameter(s), the Lower and Upper Tail Dependence implied by
-            them, the Log-Likelihood, the AIC and the number of observations used.
+            pd.Series | pd.DataFrame: The fitted copula parameter(s), the Lower and Upper Tail
+            Dependence implied by them, the Log-Likelihood, the AIC and the number of observations used
+            -- a Series for a single given pair, or a DataFrame indexed by every (Ticker A, Ticker B)
+            pair when neither ticker is given.
 
         Notes:
-        - The method retrieves historical data based on the specified `period` for the two given
-        assets and calibrates the requested copula between them.
+        - The method retrieves historical data based on the specified `period` and calibrates the
+        requested copula between the given pair, or every pair, of tickers.
 
         As an example:
 
@@ -2537,15 +2567,31 @@ class Risk:
         if copula not in fit_functions:
             raise ValueError(f"copula must be one of {', '.join(fit_functions)}.")
 
-        result = pd.Series(fit_functions[copula](returns[ticker_a], returns[ticker_b]))
+        ticker_pairs = self._resolve_ticker_pairs(ticker_a, ticker_b)
 
-        return result.round(rounding if rounding is not None else self._rounding)
+        if len(ticker_pairs) == 1:
+            ticker_a, ticker_b = ticker_pairs[0]
+            result = pd.Series(
+                fit_functions[copula](returns[ticker_a], returns[ticker_b])
+            )
+
+            return result.round(rounding if rounding is not None else self._rounding)
+
+        results = {
+            (pair_a, pair_b): fit_functions[copula](returns[pair_a], returns[pair_b])
+            for pair_a, pair_b in ticker_pairs
+        }
+
+        result_df = pd.DataFrame(results).T
+        result_df.index.names = ["Ticker A", "Ticker B"]
+
+        return result_df.round(rounding if rounding is not None else self._rounding)
 
     @handle_errors
     def get_copula_simulation(
         self,
-        ticker_a: str,
-        ticker_b: str,
+        ticker_a: str | None = None,
+        ticker_b: str | None = None,
         copula: str = "gaussian",
         period: str | None = None,
         column: str = "Return",
@@ -2558,6 +2604,10 @@ class Risk:
         Calibrate a bivariate copula (see `get_copula_parameters`) between
         `ticker_a` and `ticker_b`, and simulate joint scenarios from it.
 
+        When `ticker_a`/`ticker_b` are not given, every unique pair among the
+        Toolkit's tickers is calibrated and simulated instead, as columns
+        grouped under a top-level (Ticker A, Ticker B) column per pair.
+
         This is what a copula-based portfolio Monte Carlo simulation needs: draws
         that preserve the calibrated dependence structure -- including tail
         dependence, for the "student-t", "clayton" and "gumbel" families -- rather
@@ -2568,8 +2618,9 @@ class Risk:
         generation.
 
         Args:
-            ticker_a (str): The first asset.
-            ticker_b (str): The second asset.
+            ticker_a (str, optional): The first asset. Defaults to None, meaning every unique pair of
+            tickers in the Toolkit instance is used (requires `ticker_b` to also be None).
+            ticker_b (str, optional): The second asset. Defaults to None, see `ticker_a`.
             copula (str, optional): The copula family to fit and simulate from, one of "gaussian",
             "student-t", "clayton", "gumbel" or "frank". Defaults to "gaussian".
             period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly).
@@ -2586,15 +2637,17 @@ class Risk:
 
         Raises:
             ValueError: If `copula` is not one of "gaussian", "student-t", "clayton", "gumbel" or "frank",
-            or if fewer than 10 paired, non-missing observations are available to calibrate it.
+            if only one of `ticker_a`/`ticker_b` is given, if fewer than 2 tickers are available to pair
+            up when neither is given, or if fewer than 10 paired, non-missing observations are available.
 
         Returns:
             pd.DataFrame: `n_simulations` simulated joint draws, one column per asset (or "U"/"V" when
-            `empirical_margins=False`).
+            `empirical_margins=False`) for a single given pair, or with columns grouped by
+            (Ticker A, Ticker B) pair when neither ticker is given.
 
         Notes:
-        - The method retrieves historical data based on the specified `period` for the two given
-        assets, calibrates the requested copula, and simulates from it.
+        - The method retrieves historical data based on the specified `period`, calibrates the
+        requested copula, and simulates from it, for the given pair or every pair of tickers.
 
         As an example:
 
@@ -2655,24 +2708,68 @@ class Risk:
         if copula not in fit_functions:
             raise ValueError(f"copula must be one of {', '.join(fit_functions)}.")
 
-        fitted_parameters = fit_functions[copula](returns[ticker_a], returns[ticker_b])
-        simulation = simulate_functions[copula](fitted_parameters)
+        ticker_pairs = self._resolve_ticker_pairs(ticker_a, ticker_b)
+
+        if len(ticker_pairs) == 1:
+            ticker_a, ticker_b = ticker_pairs[0]
+            simulation = self._simulate_copula_pair(
+                ticker_a,
+                ticker_b,
+                returns,
+                fit_functions[copula],
+                simulate_functions[copula],
+                empirical_margins,
+            )
+
+            return simulation.round(
+                rounding if rounding is not None else self._rounding
+            )
+
+        simulation = pd.concat(
+            {
+                (pair_a, pair_b): self._simulate_copula_pair(
+                    pair_a,
+                    pair_b,
+                    returns,
+                    fit_functions[copula],
+                    simulate_functions[copula],
+                    empirical_margins,
+                )
+                for pair_a, pair_b in ticker_pairs
+            },
+            axis=1,
+        )
+        simulation.columns.names = ["Ticker A / Ticker B", None]
+
+        return simulation.round(rounding if rounding is not None else self._rounding)
+
+    @staticmethod
+    def _simulate_copula_pair(
+        pair_a: str,
+        pair_b: str,
+        returns: pd.DataFrame,
+        fit_function,
+        simulate_function,
+        empirical_margins: bool,
+    ) -> pd.DataFrame:
+        fitted_parameters = fit_function(returns[pair_a], returns[pair_b])
+        simulation = simulate_function(fitted_parameters)
 
         if empirical_margins:
             simulation = pd.DataFrame(
                 {
-                    ticker_a: np.quantile(returns[ticker_a].dropna(), simulation["U"]),
-                    ticker_b: np.quantile(returns[ticker_b].dropna(), simulation["V"]),
+                    pair_a: np.quantile(returns[pair_a].dropna(), simulation["U"]),
+                    pair_b: np.quantile(returns[pair_b].dropna(), simulation["V"]),
                 }
             )
 
-        return simulation.round(rounding if rounding is not None else self._rounding)
+        return simulation
 
     @handle_errors
     def get_best_fitting_copula(
         self,
-        ticker_a: str,
-        ticker_b: str,
+        ticker_a: str | None = None,
+        ticker_b: str | None = None,
         period: str | None = None,
         column: str = "Return",
         rounding: int | None = None,
@@ -2683,25 +2780,34 @@ class Risk:
         Information Criterion) -- the lower the AIC, the better the fit relative
         to its number of parameters, so the top row is the best-fitting family.
 
+        When `ticker_a`/`ticker_b` are not given, every unique pair among the
+        Toolkit's tickers is compared instead.
+
         Also known as: copula selection, copula comparison.
 
         Args:
-            ticker_a (str): The first asset.
-            ticker_b (str): The second asset.
+            ticker_a (str, optional): The first asset. Defaults to None, meaning every unique pair of
+            tickers in the Toolkit instance is compared (requires `ticker_b` to also be None).
+            ticker_b (str, optional): The second asset. Defaults to None, see `ticker_a`.
             period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly).
             Defaults to "quarterly".
             column (str, optional): The historical data column to use. Defaults to "Return".
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to
             None.
 
+        Raises:
+            ValueError: If only one of `ticker_a`/`ticker_b` is given, or if fewer than 2 tickers are
+            available to pair up when neither is given.
+
         Returns:
-            pd.DataFrame: One row per copula family, sorted by AIC (best fit first), with each
-            family's fitted parameter(s), Lower and Upper Tail Dependence, Log-Likelihood, AIC and
-            the number of observations used.
+            pd.DataFrame: One row per copula family, sorted by AIC (best fit first) within each pair,
+            with each family's fitted parameter(s), Lower and Upper Tail Dependence, Log-Likelihood,
+            AIC and the number of observations used. Indexed by (Ticker A, Ticker B, Copula) when
+            neither ticker is given.
 
         Notes:
-        - The method retrieves historical data based on the specified `period` for the two given
-        assets and calibrates every supported copula family between them.
+        - The method retrieves historical data based on the specified `period` and calibrates every
+        supported copula family for the given pair, or every pair, of tickers.
 
         As an example:
 
@@ -2734,15 +2840,43 @@ class Risk:
             "Frank": copula_model.get_frank_copula_parameters,
         }
 
+        ticker_pairs = self._resolve_ticker_pairs(ticker_a, ticker_b)
+
+        if len(ticker_pairs) == 1:
+            ticker_a, ticker_b = ticker_pairs[0]
+            comparison_df = self._compare_copula_pair(
+                ticker_a, ticker_b, returns, fit_functions
+            )
+
+            return comparison_df.round(
+                rounding if rounding is not None else self._rounding
+            )
+
+        comparison_df = pd.concat(
+            {
+                (pair_a, pair_b): self._compare_copula_pair(
+                    pair_a, pair_b, returns, fit_functions
+                )
+                for pair_a, pair_b in ticker_pairs
+            }
+        )
+        comparison_df.index.names = ["Ticker A", "Ticker B", "Copula"]
+
+        return comparison_df.round(rounding if rounding is not None else self._rounding)
+
+    @staticmethod
+    def _compare_copula_pair(
+        pair_a: str, pair_b: str, returns: pd.DataFrame, fit_functions: dict
+    ) -> pd.DataFrame:
         comparison = {
-            copula_name: fit_function(returns[ticker_a], returns[ticker_b])
+            copula_name: fit_function(returns[pair_a], returns[pair_b])
             for copula_name, fit_function in fit_functions.items()
         }
 
-        comparison_df = pd.DataFrame(comparison).T.sort_values("AIC")
-        comparison_df.index.name = "Copula"
+        pair_df = pd.DataFrame(comparison).T.sort_values("AIC")
+        pair_df.index.name = "Copula"
 
-        return comparison_df.round(rounding if rounding is not None else self._rounding)
+        return pair_df
 
     @handle_errors
     def get_covar(

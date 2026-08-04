@@ -1094,7 +1094,7 @@ class Econometrics:
         prices = self._get_price_column(period, column)
 
         pairs = self._all_ordered_pairs(include_benchmark=include_benchmark)
-        logger.info("Dependent/Independent ticker pairs: %s", pairs)
+        logger.info("Computing %d dependent/independent ticker pairs", len(pairs))
 
         rows = {
             (ticker_a, ticker_b): cointegration_model.get_engle_granger_cointegration(
@@ -1263,7 +1263,7 @@ class Econometrics:
         returns = self._get_price_column(period, column)
 
         pairs = self._all_ordered_pairs(include_benchmark=include_benchmark)
-        logger.info("Dependent/Independent ticker pairs: %s", pairs)
+        logger.info("Computing %d dependent/independent ticker pairs", len(pairs))
 
         rows = {
             (ticker_a, ticker_b): causality_model.get_granger_causality(

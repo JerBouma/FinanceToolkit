@@ -406,8 +406,8 @@ class Performance:
         Also known as: market sensitivity, systematic risk.
 
         Args:
-            period (str, optional): The period to use for the calculation. Defaults to None which
-            results in basing it off the quarterly parameter as defined in the class instance.
+            period (str, optional): The period to use for the calculation. Defaults to "quarterly" if the Toolkit is
+                initialised with quarterly=True, otherwise "yearly".
             rolling (int, optional): The rolling period to use for the calculation. If you select
             period = 'monthly' and set rolling to 12 you obtain the rolling 12-month Sharpe Ratio.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
@@ -523,8 +523,8 @@ class Performance:
         Also known as: CAPM, expected return model.
 
         Args:
-            period (str, optional): The period to use for the calculation. Defaults to None which
-            results in basing it off the quarterly parameter as defined in the class instance.
+            period (str, optional): The period to use for the calculation. Defaults to "quarterly" if the Toolkit is
+                initialised with quarterly=True, otherwise "yearly".
             rolling (int, optional): The rolling window size to use for the Beta component of the
             calculation. If set, Beta is estimated over a rolling window of this many periods across
             the full return history instead of per `period`. Defaults to None.
@@ -632,8 +632,8 @@ class Performance:
         Also known as: factor exposure, asset correlations.
 
         Args:
-            period (str, optional): The period to use for the calculation. Defaults to None which
-            results in basing it off the quarterly parameter as defined in the class instance.
+            period (str, optional): The period to use for the calculation. Defaults to "quarterly" if the Toolkit is
+                initialised with quarterly=True, otherwise "yearly".
             factors_to_calculate (list of str, optional): List of factors to calculate scores and residuals for.
                 Defaults to ["Mkt-RF", "SMB", "HML", "RMW", "CMA"].
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
@@ -763,8 +763,8 @@ class Performance:
         Also known as: factor model correlations.
 
         Args:
-            period (str, optional): The period to use for the calculation. Defaults to None which
-            results in basing it off the quarterly parameter as defined in the class instance.
+            period (str, optional): The period to use for the calculation. Defaults to "quarterly" if the Toolkit is
+                initialised with quarterly=True, otherwise "yearly".
             factors_to_calculate (list of str, optional): List of factors to calculate scores and residuals for.
                 Defaults to ["Mkt-RF", "SMB", "HML", "RMW", "CMA"].
             exclude_risk_free (bool, optional): Whether to exclude the risk-free rate from the results. Defaults to True.
@@ -889,7 +889,7 @@ class Performance:
 
         Args:
             period (str, optional): The period for the calculation (e.g., "weekly", "monthly", "quarterly", "yearly").
-                Defaults to None, using class-defined quarterly or yearly period.
+                Defaults to "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
             method (str, optional): The regression method to use for the calculation. Defaults to 'multi'.
             factors_to_calculate (list of str, optional): List of factors to calculate scores and residuals for.
                 Defaults to ["Mkt-RF", "SMB", "HML", "RMW", "CMA"].
@@ -1197,7 +1197,7 @@ class Performance:
 
         Args:
             period (str, optional): The period for the calculation (e.g., "weekly", "monthly", "quarterly", "yearly").
-                Defaults to None, using class-defined quarterly or yearly period.
+                Defaults to "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratio values. Defaults to False.
             lag (int or list of int, optional): The lag to use for the growth calculation. Defaults to 1.
@@ -1352,8 +1352,8 @@ class Performance:
         Also known as: excess return, outperformance, active return.
 
         Args:
-            period (str, optional): The period to use for the calculation. Defaults to None which
-            results in basing it off the quarterly parameter as defined in the class instance.
+            period (str, optional): The period to use for the calculation. Defaults to "quarterly" if the Toolkit is
+                initialised with quarterly=True, otherwise "yearly".
             rolling (int, optional): The rolling window size to use for the calculation. If set,
             Alpha is calculated as the rolling mean excess return over this many periods across
             the full return history instead of per `period`. Defaults to None.
@@ -1466,8 +1466,8 @@ class Performance:
         Also known as: Jensen alpha, risk-adjusted excess return.
 
         Args:
-            period (str, optional): The period to use for the calculation. Defaults to None which
-            results in basing it off the quarterly parameter as defined in the class instance.
+            period (str, optional): The period to use for the calculation. Defaults to "quarterly" if the Toolkit is
+                initialised with quarterly=True, otherwise "yearly".
             rolling (int, optional): The rolling window size to use for the Beta component of the
             calculation. If set, Beta is estimated over a rolling window of this many periods across
             the full return history instead of per `period`. Defaults to None.
@@ -1584,8 +1584,8 @@ class Performance:
         Also known as: reward-to-volatility ratio.
 
         Args:
-            period (str, optional): The period to use for the calculation. Defaults to None which
-            results in basing it off the quarterly parameter as defined in the class instance.
+            period (str, optional): The period to use for the calculation. Defaults to "quarterly" if the Toolkit is
+                initialised with quarterly=True, otherwise "yearly".
             rolling (int, optional): The rolling window size to use for the Beta component of the
             calculation. If set, Beta is estimated over a rolling window of this many periods across
             the full return history instead of per `period`. Defaults to None.
@@ -1712,8 +1712,8 @@ class Performance:
         Also known as: risk-adjusted return, reward-to-variability ratio.
 
         Args:
-            period (str, optional): The period to use for the calculation. Defaults to None which
-            results in basing it off the quarterly parameter as defined in the class instance.
+            period (str, optional): The period to use for the calculation. Defaults to "quarterly" if the Toolkit is
+                initialised with quarterly=True, otherwise "yearly".
             rolling (int, optional): The rolling period to use for the calculation. If you select
             period = 'monthly' and set rolling to 12 you obtain the rolling 12-month Sharpe Ratio.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
@@ -1823,8 +1823,8 @@ class Performance:
         Also known as: PSR, Sharpe ratio significance probability.
 
         Args:
-            period (str, optional): The period to use for the calculation. Defaults to None which
-            results in basing it off the quarterly parameter as defined in the class instance.
+            period (str, optional): The period to use for the calculation. Defaults to "quarterly" if the Toolkit is
+                initialised with quarterly=True, otherwise "yearly".
             rolling (int, optional): The rolling period to use for the calculation. If you select
             period = 'monthly' and set rolling to 12 you obtain the rolling 12-month Probabilistic
             Sharpe Ratio.
@@ -1967,8 +1967,8 @@ class Performance:
         Also known as: DSR, backtest overfitting correction, selection-bias-adjusted Sharpe ratio.
 
         Args:
-            period (str, optional): The period to use for the calculation. Defaults to None which
-            results in basing it off the quarterly parameter as defined in the class instance.
+            period (str, optional): The period to use for the calculation. Defaults to "quarterly" if the Toolkit is
+                initialised with quarterly=True, otherwise "yearly".
             rolling (int, optional): The rolling period to use for the primary Sharpe ratio
             being tested. If you select period = 'monthly' and set rolling to 12 you obtain the
             rolling 12-month Deflated Sharpe Ratio.
@@ -2116,8 +2116,8 @@ class Performance:
         See definition: https://en.wikipedia.org/wiki/Sortino_ratio
 
         Args:
-            period (str, optional): The period to use for the calculation. Defaults to None which
-            results in basing it off the quarterly parameter as defined in the class instance.
+            period (str, optional): The period to use for the calculation. Defaults to "quarterly" if the Toolkit is
+                initialised with quarterly=True, otherwise "yearly".
             rolling (int, optional): The rolling window size to use for the calculation. If set,
             the Sortino ratio is calculated over a rolling window of this many periods across the
             full return history instead of per `period`. Defaults to None.
@@ -2215,8 +2215,8 @@ class Performance:
         Also known as: UPI, Martin ratio.
 
         Args:
-            period (str, optional): The period to use for the calculation. Defaults to None which
-            results in basing it off the quarterly parameter as defined in the class instance.
+            period (str, optional): The period to use for the calculation. Defaults to "quarterly" if the Toolkit is
+                initialised with quarterly=True, otherwise "yearly".
             rolling (int): The rolling period to use to calculate the Ulcer Index. Defaults to 14.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
@@ -2318,8 +2318,8 @@ class Performance:
         Also known as: Drawdown ratio.
 
         Args:
-            period (str, optional): The period to use for the calculation. Defaults to None which
-            results in basing it off the quarterly parameter as defined in the class instance.
+            period (str, optional): The period to use for the calculation. Defaults to "quarterly" if the Toolkit is
+                initialised with quarterly=True, otherwise "yearly".
             within_period (bool, optional): Whether to calculate the Maximum Drawdown within the
             specified period or for the entire period. Thus whether to look at the Maximum Drawdown
             within a specific year (if period = 'yearly') or look at the entirety of all years.
@@ -2420,8 +2420,8 @@ class Performance:
         Also known as: Sterling-Calmar ratio.
 
         Args:
-            period (str, optional): The period to use for the calculation. Defaults to None which
-            results in basing it off the quarterly parameter as defined in the class instance.
+            period (str, optional): The period to use for the calculation. Defaults to "quarterly" if the Toolkit is
+                initialised with quarterly=True, otherwise "yearly".
             within_period (bool, optional): Whether to calculate the Average Drawdown within the
             specified period or for the entire period. Thus whether to look at the Average Drawdown
             within a specific year (if period = 'yearly') or look at the entirety of all years.
@@ -2521,8 +2521,8 @@ class Performance:
         - Burke Ratio = (Return — Risk-Free Rate) / SQRT(SUM(Drawdowns^2))
 
         Args:
-            period (str, optional): The period to use for the calculation. Defaults to None which
-            results in basing it off the quarterly parameter as defined in the class instance.
+            period (str, optional): The period to use for the calculation. Defaults to "quarterly" if the Toolkit is
+                initialised with quarterly=True, otherwise "yearly".
             within_period (bool, optional): Whether to calculate the drawdowns within the specified
             period or for the entire period. Thus whether to look at the drawdowns within a specific
             year (if period = 'yearly') or look at the entirety of all years. Defaults to True.
@@ -2636,8 +2636,8 @@ class Performance:
         Also known as: Modigliani-Modigliani measure, M2, risk-adjusted performance.
 
         Args:
-            period (str, optional): The period to use for the calculation. Defaults to None which
-            results in basing it off the quarterly parameter as defined in the class instance.
+            period (str, optional): The period to use for the calculation. Defaults to "quarterly" if the Toolkit is
+                initialised with quarterly=True, otherwise "yearly".
             rolling (int, optional): The rolling window size to use for the calculation. If set,
             the M2 ratio is calculated over a rolling window of this many periods across the full
             return history instead of per `period`. Defaults to None.
@@ -2755,8 +2755,8 @@ class Performance:
         Also known as: active risk, benchmark deviation.
 
         Args:
-            period (str, optional): The period to use for the calculation. Defaults to None which
-            results in basing it off the quarterly parameter as defined in the class instance.
+            period (str, optional): The period to use for the calculation. Defaults to "quarterly" if the Toolkit is
+                initialised with quarterly=True, otherwise "yearly".
             rolling (int, optional): The rolling window size to use for the calculation. If set,
             Tracking Error is calculated over a rolling window of this many periods across the
             full return history instead of per `period`. Defaults to None.
@@ -2868,8 +2868,8 @@ class Performance:
         Also known as: active return per risk.
 
         Args:
-            period (str, optional): The period to use for the calculation. Defaults to None which
-            results in basing it off the quarterly parameter as defined in the class instance.
+            period (str, optional): The period to use for the calculation. Defaults to "quarterly" if the Toolkit is
+                initialised with quarterly=True, otherwise "yearly".
             rolling (int, optional): The rolling window size to use for the calculation. If set,
             the Information Ratio is calculated over a rolling window of this many periods across
             the full return history instead of per `period`. Defaults to None.
@@ -2966,8 +2966,8 @@ class Performance:
         - Upside Capture Ratio = Average Return in Up Periods / Average Benchmark Return in Up Periods
 
         Args:
-            period (str, optional): The period to use for the calculation. Defaults to None which
-            results in basing it off the quarterly parameter as defined in the class instance.
+            period (str, optional): The period to use for the calculation. Defaults to "quarterly" if the Toolkit is
+                initialised with quarterly=True, otherwise "yearly".
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
@@ -3051,8 +3051,8 @@ class Performance:
         - Downside Capture Ratio = Average Return in Down Periods / Average Benchmark Return in Down Periods
 
         Args:
-            period (str, optional): The period to use for the calculation. Defaults to None which
-            results in basing it off the quarterly parameter as defined in the class instance.
+            period (str, optional): The period to use for the calculation. Defaults to "quarterly" if the Toolkit is
+                initialised with quarterly=True, otherwise "yearly".
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
@@ -3132,8 +3132,8 @@ class Performance:
         Also known as: batting average.
 
         Args:
-            period (str, optional): The period to use for the calculation. Defaults to None which
-            results in basing it off the quarterly parameter as defined in the class instance.
+            period (str, optional): The period to use for the calculation. Defaults to "quarterly" if the Toolkit is
+                initialised with quarterly=True, otherwise "yearly".
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
@@ -3213,8 +3213,8 @@ class Performance:
         Note that this already subtracts the Risk Free Rate.
 
         Args:
-            period (str, optional): The period to use for the calculation. Defaults to None which
-            results in basing it off the quarterly parameter as defined in the class instance.
+            period (str, optional): The period to use for the calculation. Defaults to "quarterly" if the Toolkit is
+                initialised with quarterly=True, otherwise "yearly".
             order (int, optional): The order of the lower partial moment used in the denominator.
             Defaults to 3.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
@@ -3308,8 +3308,8 @@ class Performance:
         See definition: https://en.wikipedia.org/wiki/Omega_ratio
 
         Args:
-            period (str, optional): The period to use for the calculation. Defaults to None which
-            results in basing it off the quarterly parameter as defined in the class instance.
+            period (str, optional): The period to use for the calculation. Defaults to "quarterly" if the Toolkit is
+                initialised with quarterly=True, otherwise "yearly".
             within_period (bool, optional): Whether to calculate the Omega Ratio within the specified
             period or for the entire period. Thus whether to look at the Omega Ratio within a specific
             year (if period = 'yearly') or look at the entirety of all years. Defaults to True.
@@ -3411,8 +3411,8 @@ class Performance:
         - Gain-to-Pain Ratio = SUM(Returns) / SUM(|Losses|)
 
         Args:
-            period (str, optional): The period to use for the calculation. Defaults to None which
-            results in basing it off the quarterly parameter as defined in the class instance.
+            period (str, optional): The period to use for the calculation. Defaults to "quarterly" if the Toolkit is
+                initialised with quarterly=True, otherwise "yearly".
             within_period (bool, optional): Whether to calculate the Gain-to-Pain Ratio within the
             specified period or for the entire period. Thus whether to look at the Gain-to-Pain Ratio
             within a specific year (if period = 'yearly') or look at the entirety of all years.
@@ -3615,8 +3615,8 @@ class Performance:
         Also known as: periodic return.
 
         Args:
-            period (str, optional): The data frequency for returns (weekly, monthly,
-            quarterly, or yearly). Defaults to "yearly".
+            period (str, optional): The data frequency for returns (weekly, monthly, quarterly, or yearly). Defaults
+                to "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
             cumulative (bool, optional): Whether to return the cumulative return over time
             instead of the discrete return per period. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
@@ -3707,8 +3707,8 @@ class Performance:
         Also known as: return minus the risk-free rate.
 
         Args:
-            period (str, optional): The data frequency for returns (weekly, monthly,
-            quarterly, or yearly). Defaults to "yearly".
+            period (str, optional): The data frequency for returns (weekly, monthly, quarterly, or yearly). Defaults
+                to "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
             cumulative (bool, optional): Whether to return the cumulative excess return over time
             instead of the discrete excess return per period. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
@@ -3795,8 +3795,8 @@ class Performance:
         portfolio variance calculations and any mean-variance optimization work.
 
         Args:
-            period (str, optional): The data frequency for returns (weekly, monthly,
-            quarterly, or yearly). Defaults to "yearly".
+            period (str, optional): The data frequency for returns (weekly, monthly, quarterly, or yearly). Defaults
+                to "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
 
         Returns:
@@ -3847,8 +3847,8 @@ class Performance:
         optimization work.
 
         Args:
-            period (str, optional): The data frequency for returns (weekly, monthly,
-            quarterly, or yearly). Defaults to "yearly".
+            period (str, optional): The data frequency for returns (weekly, monthly, quarterly, or yearly). Defaults
+                to "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
 
         Returns:
@@ -3920,8 +3920,8 @@ class Performance:
         Also known as: Treynor-Black Appraisal Ratio.
 
         Args:
-            period (str, optional): The period to use for the calculation. Defaults to None which
-            results in basing it off the quarterly parameter as defined in the class instance.
+            period (str, optional): The period to use for the calculation. Defaults to "quarterly" if the Toolkit is
+                initialised with quarterly=True, otherwise "yearly".
             rolling (int, optional): The rolling window size to use for the Beta component of the
             calculation. If set, Beta is estimated over a rolling window of this many periods across
             the full return history instead of per `period`. Defaults to None.
@@ -4079,8 +4079,8 @@ class Performance:
         Also known as: Fama's Net Selectivity, Fama performance decomposition.
 
         Args:
-            period (str, optional): The period to use for the calculation. Defaults to None which
-            results in basing it off the quarterly parameter as defined in the class instance.
+            period (str, optional): The period to use for the calculation. Defaults to "quarterly" if the Toolkit is
+                initialised with quarterly=True, otherwise "yearly".
             rolling (int, optional): The rolling window size to use for the Beta component of the
             calculation. If set, Beta is estimated over a rolling window of this many periods across
             the full return history instead of per `period`. Defaults to None.
@@ -4225,8 +4225,8 @@ class Performance:
         Also known as: Pezier and White Adjusted Sharpe Ratio.
 
         Args:
-            period (str, optional): The period to use for the calculation. Defaults to None which
-            results in basing it off the quarterly parameter as defined in the class instance.
+            period (str, optional): The period to use for the calculation. Defaults to "quarterly" if the Toolkit is
+                initialised with quarterly=True, otherwise "yearly".
             rolling (int, optional): The rolling period to use for the calculation. If you select
             period = 'monthly' and set rolling to 12 you obtain the rolling 12-month Adjusted
             Sharpe Ratio.
@@ -4343,8 +4343,8 @@ class Performance:
         Also known as: Stable Tail Adjusted Return Ratio, Conditional Sharpe Ratio.
 
         Args:
-            period (str, optional): The period to use for the calculation. Defaults to None which
-            results in basing it off the quarterly parameter as defined in the class instance.
+            period (str, optional): The period to use for the calculation. Defaults to "quarterly" if the Toolkit is
+                initialised with quarterly=True, otherwise "yearly".
             within_period (bool, optional): Whether to calculate the CVaR within the specified
             period or for the entire period. Thus whether to look at the CVaR within a specific
             year (if period = 'yearly') or look at the entirety of all years. Defaults to True.
@@ -4453,8 +4453,8 @@ class Performance:
         Also known as: R-Ratio.
 
         Args:
-            period (str, optional): The period to use for the calculation. Defaults to None which
-            results in basing it off the quarterly parameter as defined in the class instance.
+            period (str, optional): The period to use for the calculation. Defaults to "quarterly" if the Toolkit is
+                initialised with quarterly=True, otherwise "yearly".
             within_period (bool, optional): Whether to calculate the Rachev Ratio within the
             specified period or for the entire period. Thus whether to look at the return
             distribution within a specific year (if period = 'yearly') or look at the entirety of
@@ -4551,8 +4551,8 @@ class Performance:
         Also known as: Treynor-Mazuy quadratic timing model, TM model.
 
         Args:
-            period (str, optional): The period to use for the calculation. Defaults to None which
-            results in basing it off the quarterly parameter as defined in the class instance.
+            period (str, optional): The period to use for the calculation. Defaults to "quarterly" if the Toolkit is
+                initialised with quarterly=True, otherwise "yearly".
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
@@ -4666,8 +4666,8 @@ class Performance:
         Also known as: Henriksson-Merton piecewise timing model, HM model.
 
         Args:
-            period (str, optional): The period to use for the calculation. Defaults to None which
-            results in basing it off the quarterly parameter as defined in the class instance.
+            period (str, optional): The period to use for the calculation. Defaults to "quarterly" if the Toolkit is
+                initialised with quarterly=True, otherwise "yearly".
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.

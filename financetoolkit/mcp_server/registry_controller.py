@@ -34,7 +34,16 @@ from financetoolkit.utilities.logger_model import get_logger
 logger = get_logger()
 
 # Types that are not representable in JSON Schema — dropped during normalization.
-_OPAQUE_TYPES = {"list", "dict", "set", "tuple", "range", "ndarray"}
+_OPAQUE_TYPES = {
+    "list",
+    "dict",
+    "set",
+    "tuple",
+    "range",
+    "ndarray",
+    "Series",
+    "DataFrame",
+}
 
 # Human-readable descriptions injected into each tool's Args docstring so that
 # FastMCP can surface them as parameter descriptions in Smithery and other clients.
@@ -140,6 +149,13 @@ def _simplify_annotation(ann: Any) -> Any:
     # Bare list[T] → T
     if origin is list:
         return args[0] if args else str
+
+    # Bare opaque type, not part of a union (e.g. a plain `pd.DataFrame` param) →
+    # fall back to str, same as the all-opaque-union case below.
+    if origin is None:
+        name = getattr(ann, "__name__", "")
+        if name in _OPAQUE_TYPES:
+            return str
 
     # Union types (both `X | Y` and `Union[X, Y]`)
     is_union = origin is typing.Union or (

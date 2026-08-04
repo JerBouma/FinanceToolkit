@@ -39,15 +39,20 @@ setup_logger()
 
 
 def _load_dotenv_configuration() -> None:
-    """Load dotenv configuration only when an API key is not already present.
+    """Load dotenv configuration unless both API keys are already present.
 
-    MCP clients can inject ``FINANCIAL_MODELING_PREP_API_KEY`` directly into
-    the server process environment (the ``env`` block in their config).  When
-    that key is present the server uses it immediately without reading any file.
-    Otherwise the server falls back to ``FINANCETOOLKIT_ENV_FILE`` (a path to a
-    ``.env`` file) and then to the global Finance Toolkit ``.env`` location.
+    MCP clients can inject ``FINANCIAL_MODELING_PREP_API_KEY`` and/or the
+    optional ``FRED_API_KEY`` directly into the server process environment
+    (the ``env`` block in their config).  When a key is present the server
+    uses it immediately without reading any file. Otherwise the server falls
+    back to ``FINANCETOOLKIT_ENV_FILE`` (a path to a ``.env`` file) and then
+    to the global Finance Toolkit ``.env`` location. Both keys are checked
+    (rather than short-circuiting on FMP alone) so that a client which embeds
+    the FMP key directly but leaves FRED to the env file still picks up FRED.
     """
-    if os.environ.get("FINANCIAL_MODELING_PREP_API_KEY"):
+    if os.environ.get("FINANCIAL_MODELING_PREP_API_KEY") and os.environ.get(
+        "FRED_API_KEY"
+    ):
         return
 
     # Resolution order:
@@ -316,6 +321,7 @@ def _setup_cli(client: str, overwrite: bool) -> None:
     setup_model.print_banner()
 
     api_key, key_source = setup_model.discover_api_key()
+    fred_api_key, fred_key_source = setup_model.discover_fred_api_key()
     global_env = setup_model.get_global_env_path()
 
     if api_key:
@@ -343,9 +349,42 @@ def _setup_cli(client: str, overwrite: bool) -> None:
             "--client to use the interactive wizard."
         )
 
+    if fred_api_key:
+        masked_fred = (
+            f"{fred_api_key[:4]}...{fred_api_key[-4:]}"
+            if len(fred_api_key) > 8  # noqa
+            else "****"
+        )
+        setup_model.ok(
+            f"FRED API key found (optional)  [dim]·[/]  [dim]{fred_key_source}[/]"
+            f"  [dim]·[/]  [dim cyan]{masked_fred}[/]"
+        )
+        if client != "claude-desktop" and (
+            not global_env.exists() or fred_key_source != "global config"
+        ):
+            global_values = dotenv_values(global_env) if global_env.exists() else {}
+            if global_values.get("FRED_API_KEY") != fred_api_key:
+                setup_model.info(f"Syncing FRED key to global config ({global_env})…")
+                if not setup_model.write_global_env_fred_key(fred_api_key):
+                    setup_model.warn(
+                        "Could not write the global config file — "
+                        "the FRED API key will be embedded directly in the client config instead."
+                    )
+    else:
+        setup_model.info(
+            "No FRED API key found — optional, free, only unlocks a handful of "
+            "US-only economic indicators. Set FRED_API_KEY in your environment "
+            "to include it, or get one at "
+            "https://fred.stlouisfed.org/docs/api/api_key.html"
+        )
+
     setup_model.console.print()
     setup_model.write_client_config_uvx(
-        client, pathlib.Path.cwd(), overwrite, api_key=api_key
+        client,
+        pathlib.Path.cwd(),
+        overwrite,
+        api_key=api_key,
+        fred_api_key=fred_api_key,
     )
 
     setup_model.console.print()
@@ -357,6 +396,7 @@ def _setup_interactive() -> None:
 
     # Discover an existing key from all known sources before prompting.
     api_key, key_source = setup_model.discover_api_key()
+    fred_api_key, fred_key_source = setup_model.discover_fred_api_key()
     global_env = setup_model.get_global_env_path()
 
     if api_key:
@@ -383,6 +423,37 @@ def _setup_interactive() -> None:
             )
 
     setup_model.console.print()
+
+    if fred_api_key:
+        masked_fred_key = (
+            f"{fred_api_key[:4]}...{fred_api_key[-4:]}"
+            if len(fred_api_key) > 8  # noqa
+            else "****"
+        )
+        setup_model.ok(
+            f"FRED API key found (optional)  [dim]·[/]  [dim]{fred_key_source}[/]"
+            f"  [dim]·[/]  [dim cyan]{masked_fred_key}[/]"
+        )
+    else:
+        setup_model.info(
+            "FRED API key — [bold]optional[/], free, unlocks a handful of "
+            "US-only economic indicators (nonfarm payrolls, jobless claims, "
+            "the real TIPS yield curve, and similar). Get one at "
+            "[cyan]https://fred.stlouisfed.org/docs/api/api_key.html[/]"
+        )
+        setup_model.info("Press [bold]Enter[/] to skip — everything else still works.")
+        setup_model.console.print()
+        fred_api_key = setup_model.console.input(
+            "  [bold]FRED API Key (optional)[/]  [dim cyan]›[/] "
+        ).strip()
+
+        if fred_api_key and not setup_model.write_global_env_fred_key(fred_api_key):
+            setup_model.warn(
+                "Could not write the global config file — "
+                "the FRED API key will be embedded directly in the client config instead."
+            )
+
+    setup_model.console.print()
     setup_model.print_menu()
     setup_model.console.print()
     choice_str = setup_model.console.input("  [cyan]›[/] ").strip()
@@ -404,8 +475,14 @@ def _setup_interactive() -> None:
     valid_map = {
         "1": ("Claude Desktop", setup_model.write_claude_config),
         "2": ("Claude Code", setup_model.write_claude_code_config),
-        "3": ("VS Code", lambda k: setup_model.write_vscode_config(k, cwd)),
-        "4": ("Cursor", lambda k: setup_model.write_cursor_config(k, cwd)),
+        "3": (
+            "VS Code",
+            lambda k, fk: setup_model.write_vscode_config(k, cwd, fk),
+        ),
+        "4": (
+            "Cursor",
+            lambda k, fk: setup_model.write_cursor_config(k, cwd, fk),
+        ),
         "5": ("Gemini", setup_model.write_gemini_config),
         "6": ("Windsurf", setup_model.write_windsurf_config),
     }
@@ -433,11 +510,25 @@ def _setup_interactive() -> None:
                     "the API key will be embedded directly in the client config instead."
                 )
 
+    if (
+        fred_api_key
+        and needs_global_env
+        and (not global_env.exists() or fred_key_source != "global config")
+    ):
+        global_values = dotenv_values(global_env) if global_env.exists() else {}
+        if global_values.get("FRED_API_KEY") != fred_api_key:
+            setup_model.info(f"Syncing FRED key to global config ({global_env})…")
+            if not setup_model.write_global_env_fred_key(fred_api_key):
+                setup_model.warn(
+                    "Could not write the global config file — "
+                    "the FRED API key will be embedded directly in the client config instead."
+                )
+
     setup_model.console.print()
     for char in to_process:
         name, func = valid_map[char]
         try:
-            func(api_key)
+            func(api_key, fred_api_key)
         except Exception as e:
             setup_model.err(f"Error configuring {name}: {e}")
 

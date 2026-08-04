@@ -135,6 +135,8 @@ direct_methods:
   - "get_revenue_product_segmentation"
   - "get_statistics_statement"
   - "get_treasury_data"
+  - "get_market_risk_premium"
+  - "get_commitment_of_traders"
   # - "get_exchange_rates"
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -203,13 +205,13 @@ category_descriptions:
   technicals:              "Technical indicators (RSI, MACD, Bollinger Bands, moving averages). Applied to price data automatically."
   options:                 "Option pricing and Greeks (Black-Scholes, binomial, delta, gamma, theta, vega, implied vol)."
   government_economy:      "Government fiscal metrics by country (debt, deficit, expenditure, revenue, tax). Use countries= param. Supports rolling= (moving-average) and trailing= (trailing-period sum)."
-  general_economy:         "Macroeconomic indicators by country (GDP, CPI, inflation, trade, investment, consumption, confidence, money supply). Use countries= param. Supports rolling= (moving-average) and trailing= (trailing-period sum)."
+  general_economy:         "Macroeconomic indicators by country (GDP, real GDP, CPI, inflation, trade, investment, consumption, confidence, money supply, output gap, real interest rate, crisis indicators, commodity forward curves). Use countries= param (commodity forward curve uses commodity= instead). Supports rolling= (moving-average) and trailing= (trailing-period sum)."
   environment:             "Environmental and ESG data. Carbon footprint and renewable energy use countries= (supports rolling=/trailing=); ESG scores use tickers=."
   jobs_and_society:        "Labour and social metrics by country (unemployment, population, poverty, income inequality). Use countries= param. Supports rolling= (moving-average) and trailing= (trailing-period sum)."
-  interest_rates:          "Interest rate data — central bank rates, government/corporate bond yields, EURIBOR, short/long-term rates. Use countries= param. Economics-sourced rates support rolling=/trailing=."
-  fixed_income_valuations: "Bond and derivative valuation calculations (duration, present value, yield-to-maturity, derivative pricing)."
+  interest_rates:          "Interest rate data — central bank rates, government/corporate bond yields, EURIBOR, short/long-term rates, U.S. Treasury par yield curve, real (TIPS) yield curve, breakeven inflation. Use countries= param. Economics-sourced rates support rolling=/trailing=."
+  fixed_income_valuations: "Bond and derivative valuation calculations (duration, present value, yield-to-maturity, derivative pricing, par yield, forward rate, key rate duration, yield curve spread, Z-spread, bond-equivalent yield)."
   discovery:               "Market discovery (stock/ETF/crypto lists, screener, gainers/losers, sector performance). No tickers needed."
-  toolkit:                 "Raw data (historical prices, financial statements, company profile, quotes). Use ratios/performance/risk tools for computed metrics."
+  toolkit:                 "Raw data (historical prices, financial statements, company profile, quotes, market risk premium, Commitment of Traders). Use ratios/performance/risk tools for computed metrics."
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Router group specifications
@@ -286,6 +288,7 @@ tool_groups:
       - "get_buyback_yield"
       - "get_shareholder_yield"
       - "get_sbc_adjusted_free_cash_flow"
+      - "get_price_to_sales_ratio"
 
   # ── Technicals (4 sub-groups) ────────────────────────────────────────────
   - tool_name:      "breadth"
@@ -373,7 +376,7 @@ tool_groups:
   # confidence indices, house/rent prices, exchange rates, share prices.
   - tool_name:       "macroeconomics"
     display_name:    "General Economy"
-    description:     "Macroeconomic indicators by country (GDP, CPI, inflation rate, trade balance, imports, exports, investment, consumption, business/consumer confidence, house prices, rent prices, exchange rates, money supply, household savings rate, household debt-to-income ratio). Requires countries='United States' — use comma-separated values for multiple countries. Do NOT use tickers= for this tool. Supports start_date/end_date and quarterly=true. Supports rolling=N (moving-average smoothing) and trailing=N (trailing N-period sum, e.g. a trailing-4-quarter sum) on the raw series. get_consumer_price_index accepts oecd_source=true for monthly/quarterly OECD data instead of the default annual GMDB source. Also includes five US-only, FRED-backed indicators (get_retail_sales, get_industrial_production_index, get_housing_starts, get_real_personal_income, get_recession_indicator) — these require a FRED API key and only return a 'United States' column regardless of the countries= argument."
+    description:     "Macroeconomic indicators by country (GDP, real GDP, CPI, inflation rate, trade balance, imports, exports, investment, consumption, business/consumer confidence, house prices, rent prices, exchange rates, real effective exchange rate, money supply, household savings rate, household debt-to-income ratio, output gap, real interest rate, misery index, banking/currency/sovereign debt crisis indicators, commercial real estate prices, commodity forward curves). Requires countries='United States' — use comma-separated values for multiple countries. Do NOT use tickers= for this tool. Supports start_date/end_date and quarterly=true. Supports rolling=N (moving-average smoothing) and trailing=N (trailing N-period sum, e.g. a trailing-4-quarter sum) on the raw series. get_consumer_price_index accepts oecd_source=true for monthly/quarterly OECD data instead of the default annual GMDB source. get_commodity_forward_curve requires a commodity= argument instead of countries= (e.g. 'Crude Oil', 'Gold') and returns dated futures contracts, not a country series. Also includes six US-only, FRED-backed indicators (get_retail_sales, get_industrial_production_index, get_housing_starts, get_real_personal_income, get_recession_indicator, get_commercial_real_estate_prices) — these require a free FRED API key (optional; get one at https://fred.stlouisfed.org/docs/api/api_key.html) and only return a 'United States' column regardless of the countries= argument."
     module_name:     "economics"
     category:        "standalone"
     index_category:  "general_economy"
@@ -409,6 +412,18 @@ tool_groups:
       - "get_housing_starts"
       - "get_real_personal_income"
       - "get_recession_indicator"
+      - "get_commercial_real_estate_prices"
+      - "get_commodity_forward_curve"
+      - "get_output_gap"
+      - "get_real_interest_rate"
+      - "get_real_effective_exchange_rate"
+      - "get_misery_index"
+      - "get_banking_crisis"
+      - "get_currency_crisis"
+      - "get_sovereign_debt_crisis"
+      - "get_real_gross_domestic_product_usd"
+      - "get_real_gross_domestic_product_per_capita"
+      - "get_trade_balance"
 
   # ── Environment & ESG (mixed: economics + toolkit) ───────────────────────
   # Carbon footprint and renewable energy come from Economics (use countries=).
@@ -459,7 +474,7 @@ tool_groups:
   # All indicators use countries= (both modules are CATEGORY_STANDALONE).
   - tool_name:       "rates"
     display_name:    "Interest Rates"
-    description:     "Interest rate data (central bank policy rates, short/long-term rates, government bond yields, ICE BofA corporate bond series, EURIBOR, ECB rates, Federal Reserve rates). Requires countries='United States' — use comma-separated values for multiple countries. Do NOT use tickers= for this tool. Supports start_date/end_date and quarterly=true. The central bank policy rate and short/long-term rate indicators additionally support rolling=N (moving-average smoothing) and trailing=N (trailing N-period sum). Also includes get_mortgage_rate_30_year, a US-only FRED-backed indicator (Freddie Mac's 30-year fixed mortgage rate) — requires a FRED API key and only returns a 'United States' column regardless of the countries= argument."
+    description:     "Interest rate data (central bank policy rates, short/long-term rates, government bond yields, ICE BofA corporate bond series, EURIBOR, ECB rates, Federal Reserve rates, official U.S. Treasury par yield curve, yield curve slope). Requires countries='United States' — use comma-separated values for multiple countries. Do NOT use tickers= for this tool. Supports start_date/end_date and quarterly=true. The central bank policy rate, short/long-term rate, and yield curve slope indicators additionally support rolling=N (moving-average smoothing) and trailing=N (trailing N-period sum). Also includes get_mortgage_rate_30_year, get_real_yield_curve (FRED TIPS real yields) and get_breakeven_inflation_expectations — three US-only FRED-backed indicators. A FRED API key is optional and free (get one at https://fred.stlouisfed.org/docs/api/api_key.html); without it these three return no data, while get_treasury_rates and every other indicator in this tool work without one. FRED-backed indicators only return a 'United States' column regardless of the countries= argument."
     module_name:     "mixed"
     category:        "mixed"
     index_category:  "interest_rates"
@@ -476,6 +491,10 @@ tool_groups:
       - "get_ice_bofa_total_return"
       - "get_ice_bofa_yield_to_worst"
       - "get_mortgage_rate_30_year"
+      - "get_real_yield_curve"
+      - "get_breakeven_inflation_expectations"
+      - "get_treasury_rates"
+      - "get_yield_curve_slope"
     method_to_module:
       get_central_bank_policy_rate:
         module:   "economics"
@@ -513,13 +532,25 @@ tool_groups:
       get_mortgage_rate_30_year:
         module:   "economics"
         category: "standalone"
+      get_real_yield_curve:
+        module:   "economics"
+        category: "standalone"
+      get_breakeven_inflation_expectations:
+        module:   "economics"
+        category: "standalone"
+      get_treasury_rates:
+        module:   "fixedincome"
+        category: "standalone"
+      get_yield_curve_slope:
+        module:   "economics"
+        category: "standalone"
 
   # ── Fixed Income: Bond & Derivative Valuations ───────────────────────────
   # Computational valuation tools: bond duration, present value,
   # yield-to-maturity, and derivative pricing models.
   - tool_name:       "fixed_income"
     display_name:    "Bond & Derivative Valuations"
-    description:     "Bond and derivative valuation calculations (bond duration, present value, yield-to-maturity, derivative pricing). No tickers or countries needed — provide bond/derivative parameters (e.g. face_value, coupon_rate, maturity) directly as arguments."
+    description:     "Bond and derivative valuation calculations (bond duration, present value, yield-to-maturity, derivative pricing, par yield, forward rate, breakeven inflation rate, key rate duration, yield curve spread, Z-spread, bond-equivalent yield, Taylor-series price change estimate). No tickers or countries needed — provide bond/derivative parameters (e.g. face_value, coupon_rate, maturity, spot_rates) directly as arguments."
     module_name:     "fixedincome"
     category:        "standalone"
     index_category:  "fixed_income_valuations"
@@ -528,6 +559,14 @@ tool_groups:
       - "get_duration"
       - "get_present_value"
       - "get_yield_to_maturity"
+      - "get_par_yield"
+      - "get_forward_rate"
+      - "get_breakeven_inflation_rate"
+      - "get_key_rate_duration"
+      - "get_yield_curve_spread"
+      - "get_z_spread"
+      - "get_bond_equivalent_yield"
+      - "get_taylor_price_change"
 
   # ── Discovery ────────────────────────────────────────────────────────────
   - tool_name:    "discovery"
@@ -540,7 +579,7 @@ tool_groups:
   # Method list is populated at startup from toolkit_direct_methods above.
   - tool_name:                    "market_data"
     display_name:                 "Raw Financial Data"
-    description:                  "Raw financial data (historical prices, income statement, balance sheet, cash flow statement, company profile, quotes, analyst estimates, dividend/earnings calendars, statistics). Use this ONLY for raw data needs — for pre-computed ratios, performance, risk, or model metrics use the dedicated tools instead. Requires tickers='AAPL' — use comma-separated values for multiple tickers."
+    description:                  "Raw financial data (historical prices, income statement, balance sheet, cash flow statement, company profile, quotes, analyst estimates, dividend/earnings calendars, statistics, market risk premium by country, CFTC Commitment of Traders report). Use this ONLY for raw data needs — for pre-computed ratios, performance, risk, or model metrics use the dedicated tools instead. Requires tickers='AAPL' — use comma-separated values for multiple tickers. get_market_risk_premium and get_commitment_of_traders are ticker/country-agnostic snapshots and ignore most other parameters."
     module_name:                  "toolkit"
     category:                     "toolkit"
     use_direct_methods:   true

@@ -2772,6 +2772,7 @@ class Risk:
         ticker_b: str | None = None,
         period: str | None = None,
         column: str = "Return",
+        show_full_results: bool = False,
         rounding: int | None = None,
     ) -> pd.DataFrame:
         """
@@ -2792,6 +2793,11 @@ class Risk:
             period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly).
             Defaults to "quarterly".
             column (str, optional): The historical data column to use. Defaults to "Return".
+            show_full_results (bool, optional): Only relevant when neither ticker is given. When False
+            (the default), returns a square ticker-by-ticker grid of just the winning copula family
+            per pair. When True, returns one row per pair instead, with the winning family's fitted
+            parameter(s), Lower and Upper Tail Dependence, Log-Likelihood, AIC and the number of
+            observations used. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to
             None.
 
@@ -2803,8 +2809,9 @@ class Risk:
             pd.DataFrame: For a single given pair, one row per copula family, sorted by AIC (best fit
             first), with each family's fitted parameter(s), Lower and Upper Tail Dependence,
             Log-Likelihood, AIC and the number of observations used, indexed by "Copula". When neither
-            ticker is given, one row per pair instead, indexed by (Ticker A, Ticker B), with a
-            "Best Copula" column identifying the winning family for that pair.
+            ticker is given, a square ticker-by-ticker grid of the winning copula family per pair (or,
+            with `show_full_results=True`, one row per pair instead, indexed by (Ticker A, Ticker B),
+            with a "Best Copula" column and that family's fitted stats).
 
         Notes:
         - The method retrieves historical data based on the specified `period` and calibrates every
@@ -2867,7 +2874,22 @@ class Risk:
         comparison_df.index.names = ["Ticker A", "Ticker B", "Best Copula"]
         comparison_df = comparison_df.reset_index(level="Best Copula")
 
-        return comparison_df.round(rounding if rounding is not None else self._rounding)
+        if show_full_results:
+            return comparison_df.round(
+                rounding if rounding is not None else self._rounding
+            )
+
+        tickers = sorted({ticker for pair in ticker_pairs for ticker in pair})
+        grid = pd.DataFrame(index=tickers, columns=tickers, dtype=object)
+
+        for (pair_a, pair_b), best_copula in comparison_df["Best Copula"].items():
+            grid.loc[pair_a, pair_b] = best_copula
+            grid.loc[pair_b, pair_a] = best_copula
+
+        grid.index.name = "Ticker A"
+        grid.columns.name = "Ticker B"
+
+        return grid
 
     @staticmethod
     def _compare_copula_pair(

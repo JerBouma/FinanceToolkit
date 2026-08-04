@@ -2739,7 +2739,7 @@ class Risk:
             },
             axis=1,
         )
-        simulation.columns.names = ["Ticker A / Ticker B", None]
+        simulation.columns.names = ["Ticker A", "Ticker B", None]
 
         return simulation.round(rounding if rounding is not None else self._rounding)
 

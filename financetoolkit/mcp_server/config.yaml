@@ -62,9 +62,15 @@ module_class_map:
 # redundant options it has to filter before being able to answer the question
 # Also excluded get_normalization_files given that it it is purely meant for your own
 # data sources and not relevant for users of the MCP tools.
+#
+# Discovery's search_* methods are not reachable either, since method discovery
+# only picks up get_* names. That is deliberate: search_instruments is already
+# registered as a utility tool, and the search_*_news methods duplicate the
+# get_*_news ones with a ticker filter the LLM can apply itself.
 # ──────────────────────────────────────────────────────────────────────────────
 skip_methods:
   - "get_normalization_files"
+  - "collect_bond_statistics"
   - "collect_all_ratios"
   - "collect_custom_ratios"
   - "collect_efficiency_ratios"
@@ -205,7 +211,7 @@ category_descriptions:
   technicals:              "Technical indicators (RSI, MACD, Bollinger Bands, moving averages). Applied to price data automatically."
   options:                 "Option pricing and Greeks (Black-Scholes, binomial, delta, gamma, theta, vega, implied vol)."
   government_economy:      "Government fiscal metrics by country (debt, deficit, expenditure, revenue, tax). Use countries= param. Supports rolling= (moving-average) and trailing= (trailing-period sum)."
-  general_economy:         "Macroeconomic indicators by country (GDP, real GDP, CPI, inflation, trade, investment, consumption, confidence, money supply, output gap, real interest rate, crisis indicators, commodity forward curves). Use countries= param (commodity forward curve uses commodity= instead). Supports rolling= (moving-average) and trailing= (trailing-period sum)."
+  general_economy:         "Macroeconomic indicators by country (GDP, real GDP, CPI, PPI, inflation, trade, investment, consumption, confidence, money supply, output gap, real interest rate, crisis indicators, commodity forward curves). Use countries= param (commodity forward curve uses commodity= instead). Supports rolling= (moving-average) and trailing= (trailing-period sum)."
   environment:             "Environmental and ESG data. Carbon footprint and renewable energy use countries= (supports rolling=/trailing=); ESG scores use tickers=."
   jobs_and_society:        "Labour and social metrics by country (unemployment, population, poverty, income inequality). Use countries= param. Supports rolling= (moving-average) and trailing= (trailing-period sum)."
   interest_rates:          "Interest rate data — central bank rates, government/corporate bond yields, EURIBOR, short/long-term rates, U.S. Treasury par yield curve, real (TIPS) yield curve, breakeven inflation. Use countries= param. Economics-sourced rates support rolling=/trailing=."
@@ -238,7 +244,34 @@ tool_groups:
     description:    "Pre-computed profitability ratios (gross margin, operating margin, net margin, ROE, ROA, ROIC, ROCE). Requires tickers='AAPL' — use comma-separated values for multiple tickers. Use instead of raw financial statements. Supports quarterly=true and start_date/end_date."
     module_name:    "ratios"
     category:       "ticker"
-    collect_method: "collect_profitability_ratios"
+    # Interest/Tax Burden are DuPont components that collect_profitability_ratios does not call,
+    # but each is a standalone metric, so the full list is given explicitly here.
+    # method_override replaces the discovered list wholesale, so anything added to
+    # that collect_* method in future must be added here too.
+    method_override:
+      - "get_gross_margin"
+      - "get_operating_margin"
+      - "get_net_profit_margin"
+      - "get_ebitda_margin"
+      - "get_free_cash_flow_margin"
+      - "get_interest_coverage_ratio"
+      - "get_income_before_tax_profit_margin"
+      - "get_effective_tax_rate"
+      - "get_return_on_assets"
+      - "get_cash_return_on_assets"
+      - "get_return_on_equity"
+      - "get_return_on_invested_capital"
+      - "get_return_on_capital_employed"
+      - "get_return_on_tangible_assets"
+      - "get_income_quality_ratio"
+      - "get_net_income_per_ebt"
+      - "get_free_cash_flow_operating_cash_flow_ratio"
+      - "get_EBT_to_EBIT"
+      - "get_EBIT_to_revenue"
+      - "get_cash_tax_rate"
+      - "get_tax_rate_divergence"
+      - "get_interest_burden_ratio"
+      - "get_tax_burden_ratio"
 
   - tool_name:      "solvency"
     display_name:   "Solvency Ratios"
@@ -289,6 +322,7 @@ tool_groups:
       - "get_shareholder_yield"
       - "get_sbc_adjusted_free_cash_flow"
       - "get_price_to_sales_ratio"
+      - "get_reinvestment_rate"
 
   # ── Technicals (4 sub-groups) ────────────────────────────────────────────
   - tool_name:      "breadth"
@@ -310,14 +344,42 @@ tool_groups:
     description:    "Overlap technical indicators (SMA, EMA, Bollinger Bands, Keltner Channels). Applied to price data automatically — no need to fetch prices first. Requires tickers='AAPL' — use comma-separated values for multiple tickers."
     module_name:    "technicals"
     category:       "ticker"
-    collect_method: "collect_overlap_indicators"
+    # Support/Resistance returns one row per level so collect_overlap_indicators cannot include it,
+    # but each is a standalone metric, so the full list is given explicitly here.
+    # method_override replaces the discovered list wholesale, so anything added to
+    # that collect_* method in future must be added here too.
+    method_override:
+      - "get_moving_average"
+      - "get_exponential_moving_average"
+      - "get_double_exponential_moving_average"
+      - "get_trix"
+      - "get_triangular_moving_average"
+      - "get_weighted_moving_average"
+      - "get_hull_moving_average"
+      - "get_kaufman_adaptive_moving_average"
+      - "get_volume_weighted_average_price"
+      - "get_parabolic_sar"
+      - "get_pivot_points"
+      - "get_fibonacci_retracement_levels"
+      - "get_support_resistance_levels"
 
   - tool_name:      "volatility"
     display_name:   "Volatility Indicators"
     description:    "Volatility technical indicators (ATR, True Range). Applied to price data automatically — no need to fetch prices first. Requires tickers='AAPL' — use comma-separated values for multiple tickers."
     module_name:    "technicals"
     category:       "ticker"
-    collect_method: "collect_volatility_indicators"
+    # The Volatility Cone is indexed by rolling window so collect_volatility_indicators cannot include it,
+    # but each is a standalone metric, so the full list is given explicitly here.
+    # method_override replaces the discovered list wholesale, so anything added to
+    # that collect_* method in future must be added here too.
+    method_override:
+      - "get_bollinger_bands"
+      - "get_true_range"
+      - "get_average_true_range"
+      - "get_supertrend"
+      - "get_keltner_channels"
+      - "get_donchian_channels"
+      - "get_volatility_cone"
 
   # ── Single-module ticker tools ───────────────────────────────────────────
   - tool_name:    "models"
@@ -376,7 +438,7 @@ tool_groups:
   # confidence indices, house/rent prices, exchange rates, share prices.
   - tool_name:       "macroeconomics"
     display_name:    "General Economy"
-    description:     "Macroeconomic indicators by country (GDP, real GDP, CPI, inflation rate, trade balance, imports, exports, investment, consumption, business/consumer confidence, house prices, rent prices, exchange rates, real effective exchange rate, money supply, household savings rate, household debt-to-income ratio, output gap, real interest rate, misery index, banking/currency/sovereign debt crisis indicators, commercial real estate prices, commodity forward curves). Requires countries='United States' — use comma-separated values for multiple countries. Do NOT use tickers= for this tool. Supports start_date/end_date and quarterly=true. Supports rolling=N (moving-average smoothing) and trailing=N (trailing N-period sum, e.g. a trailing-4-quarter sum) on the raw series. get_consumer_price_index accepts oecd_source=true for monthly/quarterly OECD data instead of the default annual GMDB source. get_commodity_forward_curve requires a commodity= argument instead of countries= (e.g. 'Crude Oil', 'Gold') and returns dated futures contracts, not a country series. Also includes six US-only, FRED-backed indicators (get_retail_sales, get_industrial_production_index, get_housing_starts, get_real_personal_income, get_recession_indicator, get_commercial_real_estate_prices) — these require a free FRED API key (optional; get one at https://fred.stlouisfed.org/docs/api/api_key.html) and only return a 'United States' column regardless of the countries= argument."
+    description:     "Macroeconomic indicators by country (GDP, real GDP, CPI, PPI, inflation rate, trade balance, imports, exports, investment, consumption, business/consumer confidence, house prices, rent prices, exchange rates, real effective exchange rate, money supply, household savings rate, household debt-to-income ratio, output gap, real interest rate, misery index, banking/currency/sovereign debt crisis indicators, commercial real estate prices, commodity forward curves). Requires countries='United States' — use comma-separated values for multiple countries. Do NOT use tickers= for this tool. Supports start_date/end_date and quarterly=true. Supports rolling=N (moving-average smoothing) and trailing=N (trailing N-period sum, e.g. a trailing-4-quarter sum) on the raw series. get_consumer_price_index accepts oecd_source=true for monthly/quarterly OECD data instead of the default annual GMDB source. get_commodity_forward_curve requires a commodity= argument instead of countries= (e.g. 'Crude Oil', 'Gold') and returns dated futures contracts, not a country series. Also includes six US-only, FRED-backed indicators (get_retail_sales, get_industrial_production_index, get_housing_starts, get_real_personal_income, get_recession_indicator, get_commercial_real_estate_prices) — these require a free FRED API key (optional; get one at https://fred.stlouisfed.org/docs/api/api_key.html) and only return a 'United States' column regardless of the countries= argument."
     module_name:     "economics"
     category:        "standalone"
     index_category:  "general_economy"
@@ -401,6 +463,7 @@ tool_groups:
       - "get_investment"
       - "get_investment_to_gdp_ratio"
       - "get_money_supply"
+      - "get_producer_price_index"
       - "get_rent_prices"
       - "get_share_prices"
       - "get_total_consumption"

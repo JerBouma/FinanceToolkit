@@ -2433,6 +2433,318 @@ class Risk:
         return result.round(rounding if rounding is not None else self._rounding)
 
     @handle_errors
+    def get_copula_parameters(
+        self,
+        ticker_a: str,
+        ticker_b: str,
+        copula: str = "gaussian",
+        period: str | None = None,
+        column: str = "Return",
+        rounding: int | None = None,
+    ) -> pd.Series:
+        """
+        Calibrate a bivariate copula between `ticker_a` and `ticker_b`, via
+        maximum likelihood.
+
+        A copula separates the dependence structure between two assets from
+        their individual (marginal) return distributions (Sklar's theorem),
+        letting the two be modeled independently. Five families are supported,
+        each capturing a different shape of dependence:
+
+        - "gaussian": zero tail dependence -- crashes and rallies are no more
+        likely to happen together than the correlation alone implies. Included
+        mainly as a baseline, since real asset returns typically show more
+        joint tail risk than this.
+        - "student-t": symmetric, nonzero tail dependence in both tails.
+        - "clayton": nonzero *lower* tail dependence only -- assets crash
+        together more than they rally together. The most common choice for
+        equity return pairs.
+        - "gumbel": nonzero *upper* tail dependence only -- assets rally
+        together more than they crash together.
+        - "frank": zero tail dependence in both tails, but (unlike gaussian) can
+        represent negative dependence and is symmetric around independence.
+
+        See `get_best_fitting_copula` to compare all five by AIC on the same
+        pair of assets, and see `get_copula_simulation` to draw joint scenarios
+        from the fitted copula.
+
+        For more information about the method, see:
+
+        - Sklar, A. (1959). Publications de l'Institut de Statistique de
+        l'Universite de Paris, 8, 229-231.
+        - McNeil, A.J., Frey, R., & Embrechts, P. (2015). "Quantitative Risk
+        Management: Concepts, Techniques and Tools." Princeton University Press.
+        - Demarta, S., & McNeil, A.J. (2005). "The T Copula and Related
+        Copulas." International Statistical Review, 73(1), 111-129.
+
+        Also known as: copula calibration, copula fit, dependence modeling.
+
+        Args:
+            ticker_a (str): The first asset.
+            ticker_b (str): The second asset.
+            copula (str, optional): The copula family to fit, one of "gaussian",
+            "student-t", "clayton", "gumbel" or "frank". Defaults to "gaussian".
+            period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly).
+            Defaults to "quarterly".
+            column (str, optional): The historical data column to use. Defaults to "Return".
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to
+            None.
+
+        Raises:
+            ValueError: If `copula` is not one of "gaussian", "student-t", "clayton", "gumbel" or "frank",
+            or if fewer than 10 paired, non-missing observations are available.
+
+        Returns:
+            pd.Series: The fitted copula parameter(s), the Lower and Upper Tail Dependence implied by
+            them, the Log-Likelihood, the AIC and the number of observations used.
+
+        Notes:
+        - The method retrieves historical data based on the specified `period` for the two given
+        assets and calibrates the requested copula between them.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AMZN", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.risk.get_copula_parameters("AAPL", "MSFT", copula="clayton", period="weekly")
+        ```
+
+        Which returns:
+
+        |                       |    Value |
+        |:----------------------|---------:|
+        | Theta                 |   0.7342 |
+        | Lower Tail Dependence |   0.389  |
+        | Upper Tail Dependence |   0      |
+        | Log-Likelihood        |  33.6247 |
+        | AIC                   | -65.2495 |
+        | Observations          | 314      |
+        """
+        period = period if period else "quarterly" if self._quarterly else "yearly"
+        returns = self._get_price_column(period, column)
+
+        fit_functions = {
+            "gaussian": copula_model.get_gaussian_copula_parameters,
+            "student-t": copula_model.get_student_t_copula_parameters,
+            "clayton": copula_model.get_clayton_copula_parameters,
+            "gumbel": copula_model.get_gumbel_copula_parameters,
+            "frank": copula_model.get_frank_copula_parameters,
+        }
+
+        if copula not in fit_functions:
+            raise ValueError(f"copula must be one of {', '.join(fit_functions)}.")
+
+        result = pd.Series(fit_functions[copula](returns[ticker_a], returns[ticker_b]))
+
+        return result.round(rounding if rounding is not None else self._rounding)
+
+    @handle_errors
+    def get_copula_simulation(
+        self,
+        ticker_a: str,
+        ticker_b: str,
+        copula: str = "gaussian",
+        period: str | None = None,
+        column: str = "Return",
+        n_simulations: int = 10_000,
+        random_state: int = 42,
+        empirical_margins: bool = True,
+        rounding: int | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calibrate a bivariate copula (see `get_copula_parameters`) between
+        `ticker_a` and `ticker_b`, and simulate joint scenarios from it.
+
+        This is what a copula-based portfolio Monte Carlo simulation needs: draws
+        that preserve the calibrated dependence structure -- including tail
+        dependence, for the "student-t", "clayton" and "gumbel" families -- rather
+        than the (typically understated) joint crash risk a plain multivariate
+        gaussian simulation would produce.
+
+        Also known as: copula Monte Carlo, dependence simulation, scenario
+        generation.
+
+        Args:
+            ticker_a (str): The first asset.
+            ticker_b (str): The second asset.
+            copula (str, optional): The copula family to fit and simulate from, one of "gaussian",
+            "student-t", "clayton", "gumbel" or "frank". Defaults to "gaussian".
+            period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly).
+            Defaults to "quarterly".
+            column (str, optional): The historical data column to use. Defaults to "Return".
+            n_simulations (int, optional): The number of joint draws to simulate. Defaults to 10,000.
+            random_state (int, optional): The seed for the random number generator. Defaults to 42.
+            empirical_margins (bool, optional): Whether to map the simulated pseudo-observations back
+            to realistic returns via each asset's own empirical (historical) quantile function.
+            Defaults to True. When False, the raw pseudo-observations (each in (0, 1)) are returned
+            instead.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to
+            None.
+
+        Raises:
+            ValueError: If `copula` is not one of "gaussian", "student-t", "clayton", "gumbel" or "frank",
+            or if fewer than 10 paired, non-missing observations are available to calibrate it.
+
+        Returns:
+            pd.DataFrame: `n_simulations` simulated joint draws, one column per asset (or "U"/"V" when
+            `empirical_margins=False`).
+
+        Notes:
+        - The method retrieves historical data based on the specified `period` for the two given
+        assets, calibrates the requested copula, and simulates from it.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AMZN", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.risk.get_copula_simulation(
+            "AAPL", "MSFT", copula="clayton", period="weekly", n_simulations=5000
+        ).describe()
+        ```
+
+        Which returns:
+
+        |       |          AAPL |         MSFT |
+        |:------|--------------:|-------------:|
+        | count | 5000          | 5000         |
+        | mean  |    0.00357512 |    0.0028215 |
+        | std   |    0.0371953  |    0.0365134 |
+        | min   |   -0.1316     |   -0.0764    |
+        | 25%   |   -0.0196     |   -0.0211    |
+        | 50%   |    0.0019     |    0.00145   |
+        | 75%   |    0.0261     |    0.0213    |
+        | max   |    0.1315     |    0.2169    |
+        """
+        period = period if period else "quarterly" if self._quarterly else "yearly"
+        returns = self._get_price_column(period, column)
+
+        fit_functions = {
+            "gaussian": copula_model.get_gaussian_copula_parameters,
+            "student-t": copula_model.get_student_t_copula_parameters,
+            "clayton": copula_model.get_clayton_copula_parameters,
+            "gumbel": copula_model.get_gumbel_copula_parameters,
+            "frank": copula_model.get_frank_copula_parameters,
+        }
+        simulate_functions = {
+            "gaussian": lambda parameters: copula_model.get_gaussian_copula_simulation(
+                parameters["Rho"], n_simulations, random_state
+            ),
+            "student-t": lambda parameters: copula_model.get_student_t_copula_simulation(
+                parameters["Rho"],
+                parameters["Degrees of Freedom"],
+                n_simulations,
+                random_state,
+            ),
+            "clayton": lambda parameters: copula_model.get_clayton_copula_simulation(
+                parameters["Theta"], n_simulations, random_state
+            ),
+            "gumbel": lambda parameters: copula_model.get_gumbel_copula_simulation(
+                parameters["Theta"], n_simulations, random_state
+            ),
+            "frank": lambda parameters: copula_model.get_frank_copula_simulation(
+                parameters["Theta"], n_simulations, random_state
+            ),
+        }
+
+        if copula not in fit_functions:
+            raise ValueError(f"copula must be one of {', '.join(fit_functions)}.")
+
+        fitted_parameters = fit_functions[copula](returns[ticker_a], returns[ticker_b])
+        simulation = simulate_functions[copula](fitted_parameters)
+
+        if empirical_margins:
+            simulation = pd.DataFrame(
+                {
+                    ticker_a: np.quantile(returns[ticker_a].dropna(), simulation["U"]),
+                    ticker_b: np.quantile(returns[ticker_b].dropna(), simulation["V"]),
+                }
+            )
+
+        return simulation.round(rounding if rounding is not None else self._rounding)
+
+    @handle_errors
+    def get_best_fitting_copula(
+        self,
+        ticker_a: str,
+        ticker_b: str,
+        period: str | None = None,
+        column: str = "Return",
+        rounding: int | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calibrate all five supported copula families (see `get_copula_parameters`)
+        between `ticker_a` and `ticker_b`, and compare them by AIC (Akaike
+        Information Criterion) -- the lower the AIC, the better the fit relative
+        to its number of parameters, so the top row is the best-fitting family.
+
+        Also known as: copula selection, copula comparison.
+
+        Args:
+            ticker_a (str): The first asset.
+            ticker_b (str): The second asset.
+            period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly).
+            Defaults to "quarterly".
+            column (str, optional): The historical data column to use. Defaults to "Return".
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to
+            None.
+
+        Returns:
+            pd.DataFrame: One row per copula family, sorted by AIC (best fit first), with each
+            family's fitted parameter(s), Lower and Upper Tail Dependence, Log-Likelihood, AIC and
+            the number of observations used.
+
+        Notes:
+        - The method retrieves historical data based on the specified `period` for the two given
+        assets and calibrates every supported copula family between them.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AMZN", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.risk.get_best_fitting_copula("AAPL", "MSFT", period="weekly")
+        ```
+
+        Which returns:
+
+        | Copula    |   Lower Tail Dependence |   Upper Tail Dependence |   Log-Likelihood |      AIC |
+        |:----------|------------------------:|------------------------:|------------------:|---------:|
+        | Student-T |                  0.1915 |                  0.1915 |            51.9971 | -99.9942 |
+        | Frank     |                  0      |                  0      |            49.2452 | -96.4903 |
+        | Gumbel    |                  0      |                  0.4256 |            48.9139 | -95.8277 |
+        | Gaussian  |                  0      |                  0      |            42.908  | -83.816  |
+        | Clayton   |                  0.389  |                  0      |            33.6247 | -65.2495 |
+        """
+        period = period if period else "quarterly" if self._quarterly else "yearly"
+        returns = self._get_price_column(period, column)
+
+        fit_functions = {
+            "Gaussian": copula_model.get_gaussian_copula_parameters,
+            "Student-T": copula_model.get_student_t_copula_parameters,
+            "Clayton": copula_model.get_clayton_copula_parameters,
+            "Gumbel": copula_model.get_gumbel_copula_parameters,
+            "Frank": copula_model.get_frank_copula_parameters,
+        }
+
+        comparison = {
+            copula_name: fit_function(returns[ticker_a], returns[ticker_b])
+            for copula_name, fit_function in fit_functions.items()
+        }
+
+        comparison_df = pd.DataFrame(comparison).T.sort_values("AIC")
+        comparison_df.index.name = "Copula"
+
+        return comparison_df.round(rounding if rounding is not None else self._rounding)
+
+    @handle_errors
     def get_covar(
         self,
         ticker: str,

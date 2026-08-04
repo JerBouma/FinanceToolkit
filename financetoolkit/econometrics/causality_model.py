@@ -2,6 +2,9 @@
 
 __docformat__ = "google"
 
+import contextlib
+import io
+
 import numpy as np
 import pandas as pd
 from statsmodels.tsa.stattools import grangercausalitytests
@@ -51,7 +54,12 @@ def get_granger_causality(
     data = aligned.to_numpy()
 
     try:
-        result = grangercausalitytests(data, maxlag=[max_lag])
+        # Older statsmodels versions print a results table to stdout by default,
+        # with no way to silence it other than the (now deprecated, soon to be
+        # removed) verbose parameter -- redirecting stdout works regardless of
+        # which behavior the installed version has.
+        with contextlib.redirect_stdout(io.StringIO()):
+            result = grangercausalitytests(data, maxlag=[max_lag])
         f_statistic, p_value, _, _ = result[max_lag][0]["ssr_ftest"]
     except (ValueError, np.linalg.LinAlgError):
         return pd.Series(

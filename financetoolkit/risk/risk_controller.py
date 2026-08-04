@@ -2800,10 +2800,11 @@ class Risk:
             available to pair up when neither is given.
 
         Returns:
-            pd.DataFrame: One row per copula family, sorted by AIC (best fit first) within each pair,
-            with each family's fitted parameter(s), Lower and Upper Tail Dependence, Log-Likelihood,
-            AIC and the number of observations used. Indexed by (Ticker A, Ticker B, Copula) when
-            neither ticker is given.
+            pd.DataFrame: For a single given pair, one row per copula family, sorted by AIC (best fit
+            first), with each family's fitted parameter(s), Lower and Upper Tail Dependence,
+            Log-Likelihood, AIC and the number of observations used, indexed by "Copula". When neither
+            ticker is given, one row per pair instead, with a "Ticker A", "Ticker B" and "Best Copula"
+            column identifying the winning family for that pair.
 
         Notes:
         - The method retrieves historical data based on the specified `period` and calibrates every
@@ -2852,15 +2853,19 @@ class Risk:
                 rounding if rounding is not None else self._rounding
             )
 
+        # Only the best (lowest-AIC, i.e. first, since _compare_copula_pair
+        # already sorts by AIC) family per pair is kept -- one row per pair
+        # rather than one row per pair per family.
         comparison_df = pd.concat(
             {
                 (pair_a, pair_b): self._compare_copula_pair(
                     pair_a, pair_b, returns, fit_functions
-                )
+                ).iloc[[0]]
                 for pair_a, pair_b in ticker_pairs
             }
         )
-        comparison_df.index.names = ["Ticker A", "Ticker B", "Copula"]
+        comparison_df.index.names = ["Ticker A", "Ticker B", "Best Copula"]
+        comparison_df = comparison_df.reset_index()
 
         return comparison_df.round(rounding if rounding is not None else self._rounding)
 

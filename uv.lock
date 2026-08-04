@@ -780,7 +780,7 @@ server = [
 
 [[package]]
 name = "financetoolkit"
-version = "2.1.4"
+version = "2.1.5"
 source = { editable = "." }
 dependencies = [
     { name = "openpyxl" },
@@ -797,10 +797,12 @@ econometrics = [
 ]
 mcp = [
     { name = "fastmcp" },
+    { name = "linearmodels" },
     { name = "mcp", extra = ["cli"] },
     { name = "python-dotenv" },
     { name = "pyyaml" },
     { name = "rich" },
+    { name = "statsmodels" },
     { name = "tabulate" },
 ]
 
@@ -824,6 +826,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "fastmcp", marker = "extra == 'mcp'", specifier = ">=3.4.2" },
+    { name = "financetoolkit", extras = ["econometrics"], marker = "extra == 'mcp'", editable = "." },
     { name = "linearmodels", marker = "extra == 'econometrics'", specifier = ">=6.0" },
     { name = "mcp", extras = ["cli"], marker = "extra == 'mcp'", specifier = ">=1.27.0" },
     { name = "openpyxl", specifier = ">=3.1" },

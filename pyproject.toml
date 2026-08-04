@@ -1,6 +1,6 @@
 [project]
 name = "financetoolkit"
-version = "2.1.4"
+version = "2.1.5"
 description = "Transparent and Efficient Financial Analysis"
 license = {text = "MIT"}
 authors = [
@@ -55,6 +55,9 @@ econometrics = [
     "linearmodels>=6.0",
 ]
 mcp = [
+    # The MCP server exposes every module, econometrics included, so it pulls
+    # in the optional extra rather than leaving those tools failing at runtime.
+    "financetoolkit[econometrics]",
     "fastmcp>=3.4.2",
     "mcp[cli]>=1.27.0",
     "tabulate>=0.9.0",

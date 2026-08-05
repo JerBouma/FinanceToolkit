@@ -3041,6 +3041,10 @@ class Toolkit:
             fill_nan (bool): Defines whether to forward fill NaN values. This defaults
             to True to prevent holes in the dataset. This is especially relevant for
             technical indicators.
+            enforce_source (str | None, optional): Forces this specific call to use a given
+                source, either "FinancialModelingPrep" or "YahooFinance". This takes precedence
+                over the source set on the Toolkit itself. Defaults to None, which falls back to
+                the Toolkit's own enforce_source.
 
         Returns:
             pd.DataFrame: A DataFrame containing the treasury data.
@@ -3502,8 +3506,12 @@ class Toolkit:
         Also known as: assets, liabilities, shareholders equity, financial position.
 
         Args:
-            enforce_source (bool): Defines whether to enforce the source of the data. This can be
-                either "FinancialModelingPrep" or "YahooFinance". Defaults to None.
+            enforce_source (str | None, optional): Forces this specific call to use a given
+                source, either "FinancialModelingPrep" or "YahooFinance". This takes precedence
+                over the source set on the Toolkit itself, so one instance can pull historical
+                data from the free Yahoo Finance source while still using a FinancialModelingPrep
+                key for the financial statements (or the other way around). Defaults to None,
+                which falls back to the Toolkit's own enforce_source.
             overwrite (bool): Defines whether to overwrite the existing data.
             rounding (int): Defines the number of decimal places to round the data to.
             growth (bool): Defines whether to return the growth of the data.
@@ -3578,10 +3586,23 @@ class Toolkit:
             and (self._balance_sheet_statement.empty or overwrite)
         )
 
+        if enforce_source is not None and enforce_source not in [
+            "FinancialModelingPrep",
+            "YahooFinance",
+        ]:
+            raise ValueError(
+                "The enforce_source parameter must be either 'FinancialModelingPrep' or 'YahooFinance'."
+            )
+
+        # A per-call enforce_source takes precedence over whatever the Toolkit was
+        # initialised with, so a single instance can pull statements from one source
+        # and historical data from the other.
+        source = enforce_source if enforce_source is not None else self._enforce_source
+
         if (
             not self._api_key
             and self._balance_sheet_statement.empty
-            and self._enforce_source == "FinancialModelingPrep"
+            and source == "FinancialModelingPrep"
         ):
             logger.error(
                 "The requested data requires the api_key parameter to be set or the enforce_source "
@@ -3592,14 +3613,6 @@ class Toolkit:
                 "above affiliate link which also supports the project."
             )
             return None
-
-        if enforce_source is not None and enforce_source not in [
-            "FinancialModelingPrep",
-            "YahooFinance",
-        ]:
-            raise ValueError(
-                "The enforce_source parameter must be either 'FinancialModelingPrep' or 'YahooFinance'."
-            )
 
         # Correct for the case where a Portfolio ticker exists
         ticker_list = [ticker for ticker in self._tickers if ticker != "Portfolio"]
@@ -3623,11 +3636,7 @@ class Toolkit:
                 yf_statement_format=self._yf_balance_sheet_statement_generic,
                 sleep_timer=self._sleep_timer,
                 user_subscription=self._fmp_plan,
-                enforce_source=(
-                    enforce_source
-                    if enforce_source is not None
-                    else self._enforce_source
-                ),
+                enforce_source=source,
             )
             self._fiscal_year_adjustments.update(_fy_adj)
 
@@ -3714,8 +3723,12 @@ class Toolkit:
         Also known as: profit and loss, revenue, net income, earnings, P&L statement.
 
         Args:
-            enforce_source (bool): Defines whether to enforce the source of the data. This can be
-                either "FinancialModelingPrep" or "YahooFinance". Defaults to None.
+            enforce_source (str | None, optional): Forces this specific call to use a given
+                source, either "FinancialModelingPrep" or "YahooFinance". This takes precedence
+                over the source set on the Toolkit itself, so one instance can pull historical
+                data from the free Yahoo Finance source while still using a FinancialModelingPrep
+                key for the financial statements (or the other way around). Defaults to None,
+                which falls back to the Toolkit's own enforce_source.
             overwrite (bool): Defines whether to overwrite the existing data.
             rounding (int): Defines the number of decimal places to round the data to.
             growth (bool): Defines whether to return the growth of the data.
@@ -3775,10 +3788,23 @@ class Toolkit:
             self._convert_currency and (self._income_statement.empty or overwrite)
         )
 
+        if enforce_source is not None and enforce_source not in [
+            "FinancialModelingPrep",
+            "YahooFinance",
+        ]:
+            raise ValueError(
+                "The enforce_source parameter must be either 'FinancialModelingPrep' or 'YahooFinance'."
+            )
+
+        # A per-call enforce_source takes precedence over whatever the Toolkit was
+        # initialised with, so a single instance can pull statements from one source
+        # and historical data from the other.
+        source = enforce_source if enforce_source is not None else self._enforce_source
+
         if (
             not self._api_key
             and self._income_statement.empty
-            and self._enforce_source == "FinancialModelingPrep"
+            and source == "FinancialModelingPrep"
         ):
             logger.error(
                 "The requested data requires the api_key parameter to be set or the enforce_source "
@@ -3789,14 +3815,6 @@ class Toolkit:
                 "above affiliate link which also supports the project."
             )
             return None
-
-        if enforce_source is not None and enforce_source not in [
-            "FinancialModelingPrep",
-            "YahooFinance",
-        ]:
-            raise ValueError(
-                "The enforce_source parameter must be either 'FinancialModelingPrep' or 'YahooFinance'."
-            )
 
         # Correct for the case where a Portfolio ticker exists
         ticker_list = [ticker for ticker in self._tickers if ticker != "Portfolio"]
@@ -3820,11 +3838,7 @@ class Toolkit:
                 yf_statement_format=self._yf_income_statement_generic,
                 sleep_timer=self._sleep_timer,
                 user_subscription=self._fmp_plan,
-                enforce_source=(
-                    enforce_source
-                    if enforce_source is not None
-                    else self._enforce_source
-                ),
+                enforce_source=source,
             )
             self._fiscal_year_adjustments.update(_fy_adj)
 
@@ -3933,7 +3947,12 @@ class Toolkit:
         Also known as: operating cash flow, investing activities, financing activities.
 
         Args:
-            enforce_source (bool): Defines whether to enforce the source of the data. This can be
+            enforce_source (str | None, optional): Forces this specific call to use a given
+                source, either "FinancialModelingPrep" or "YahooFinance". This takes precedence
+                over the source set on the Toolkit itself, so one instance can pull historical
+                data from the free Yahoo Finance source while still using a FinancialModelingPrep
+                key for the financial statements (or the other way around). Defaults to None,
+                which falls back to the Toolkit's own enforce_source.
             overwrite (bool): Defines whether to overwrite the existing data.
             rounding (int): Defines the number of decimal places to round the data to.
             growth (bool): Defines whether to return the growth of the data.
@@ -3995,10 +4014,23 @@ class Toolkit:
             self._convert_currency and (self._cash_flow_statement.empty or overwrite)
         )
 
+        if enforce_source is not None and enforce_source not in [
+            "FinancialModelingPrep",
+            "YahooFinance",
+        ]:
+            raise ValueError(
+                "The enforce_source parameter must be either 'FinancialModelingPrep' or 'YahooFinance'."
+            )
+
+        # A per-call enforce_source takes precedence over whatever the Toolkit was
+        # initialised with, so a single instance can pull statements from one source
+        # and historical data from the other.
+        source = enforce_source if enforce_source is not None else self._enforce_source
+
         if (
             not self._api_key
             and self._cash_flow_statement.empty
-            and self._enforce_source == "FinancialModelingPrep"
+            and source == "FinancialModelingPrep"
         ):
             logger.error(
                 "The requested data requires the api_key parameter to be set or the enforce_source "
@@ -4009,14 +4041,6 @@ class Toolkit:
                 "above affiliate link which also supports the project."
             )
             return None
-
-        if enforce_source is not None and enforce_source not in [
-            "FinancialModelingPrep",
-            "YahooFinance",
-        ]:
-            raise ValueError(
-                "The enforce_source parameter must be either 'FinancialModelingPrep' or 'YahooFinance'."
-            )
 
         # Correct for the case where a Portfolio ticker exists
         ticker_list = [ticker for ticker in self._tickers if ticker != "Portfolio"]
@@ -4040,11 +4064,7 @@ class Toolkit:
                 yf_statement_format=self._yf_cash_flow_statement_generic,
                 sleep_timer=self._sleep_timer,
                 user_subscription=self._fmp_plan,
-                enforce_source=(
-                    enforce_source
-                    if enforce_source is not None
-                    else self._enforce_source
-                ),
+                enforce_source=source,
             )
             self._fiscal_year_adjustments.update(_fy_adj)
 
@@ -4127,8 +4147,12 @@ class Toolkit:
         Also known as: key stats, shares outstanding, float data.
 
         Args:
-            enforce_source (bool): Defines whether to enforce the source of the data. This can be
-                either "FinancialModelingPrep" or "YahooFinance". Defaults to None.
+            enforce_source (str | None, optional): Forces this specific call to use a given
+                source, either "FinancialModelingPrep" or "YahooFinance". This takes precedence
+                over the source set on the Toolkit itself, so one instance can pull historical
+                data from the free Yahoo Finance source while still using a FinancialModelingPrep
+                key for the financial statements (or the other way around). Defaults to None,
+                which falls back to the Toolkit's own enforce_source.
             overwrite (bool): Defines whether to overwrite the existing data.
             rounding (int): Defines the number of decimal places to round the data to.
 
@@ -4200,7 +4224,7 @@ class Toolkit:
                 sleep_timer=self._sleep_timer,
                 user_subscription=self._fmp_plan,
                 enforce_source=(
-                    self._enforce_source
+                    enforce_source
                     if enforce_source is not None
                     else self._enforce_source
                 ),

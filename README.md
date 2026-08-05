@@ -77,6 +77,20 @@ Through the link you are able to subscribe for the free plan and also premium pl
 
 **By default, the Finance Toolkit prioritizes Financial Modeling Prep for data retrieval. If data acquisition from Financial Modeling Prep is unsuccessful (e.g., due to plan restrictions or API key issues), the toolkit automatically switches to Yahoo Finance as a secondary source.** To disable this fallback behavior and exclusively use Financial Modeling Prep, set `enforce_source="FinancialModelingPrep"` during Toolkit initialization. This configuration ensures that an error is raised if Financial Modeling Prep data cannot be accessed. Alternatively, you can set `enforce_source="YahooFinance"` to exclusively use Yahoo Finance as the data source.
 
+The same `enforce_source` argument is also accepted per call on `get_historical_data`, `get_treasury_data` and the four statement functions (`get_balance_sheet_statement`, `get_income_statement`, `get_cash_flow_statement` and `get_statistics_statement`), where it overrides whatever the Toolkit was initialised with. Because Yahoo Finance is free and its historical prices go back a long way, a common setup is to take historical data from Yahoo Finance and spend the Financial Modeling Prep requests on the financial statements instead:
+
+```python
+from financetoolkit import Toolkit
+
+companies = Toolkit(["AAPL", "MSFT"], api_key=API_KEY)
+
+# Free and long history, no API requests consumed
+historical = companies.get_historical_data(enforce_source="YahooFinance")
+
+# Still uses Financial Modeling Prep
+balance_sheet = companies.get_balance_sheet_statement()
+```
+
 # Functionality
 
 This section is an introduction to the Finance Toolkit. Find with the link below fully-fledged code documentation as well as Jupyter Notebooks in which you can see many examples ranging from basic examples to creating custom ratios to working with your own datasets.

@@ -666,7 +666,7 @@ utility_tools:
     description: "List all metrics within a specific category by name."
 
   - tool_name: "search_metrics"
-    description: "Fuzzy keyword search across all 200+ available metrics."
+    description: "Fuzzy keyword search across all 470+ available metrics."
 
   - tool_name: "search_instruments"
     description: "Look up ticker symbols by company name, ISIN, CIK, CUSIP, or keyword."

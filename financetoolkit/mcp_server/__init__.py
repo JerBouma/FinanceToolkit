@@ -1,1 +1,1 @@
-"""Finance Toolkit MCP Server — 200+ metric financial analyst."""
+"""Finance Toolkit MCP Server — 470+ metric financial analyst."""

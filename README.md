@@ -1,3 +1,5 @@
+[![MCP Toplist](https://mcptoplist.com/badge/io.github.JerBouma%2Ffinancetoolkit.svg)](https://mcptoplist.com/server/io.github.JerBouma%2Ffinancetoolkit)
+
 <!-- mcp-name: io.github.JerBouma/financetoolkit -->
 [![FinanceToolkit](https://github.com/JerBouma/FinanceToolkit/assets/46355364/198d47bd-e1b3-492d-acc4-5d9f02d1d009)](https://github.com/JerBouma/FinanceToolkit)
 

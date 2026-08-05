@@ -223,7 +223,7 @@ class Portfolio:
         Converts the Portfolio to a Finance Toolkit object.
 
         This method converts the Portfolio object to a Finance Toolkit object, enabling the
-        use of the Toolkit's 500+ financial metrics and indicators for the portfolio's assets.
+        use of the Toolkit's 500+ financial methods for the portfolio's assets.
 
         Next to the historical data, the portfolio weights are also
         loaded in the Toolkit class. This, together with the "Portfolio" ticker, enables

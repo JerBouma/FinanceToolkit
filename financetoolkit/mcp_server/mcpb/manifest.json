@@ -3,8 +3,8 @@
   "name": "finance-toolkit",
   "display_name": "Finance Toolkit",
   "version": "2.1.4",
-  "description": "Give AI assistants access to 470+ financial metrics calculated transparently from raw financial statements, not pulled from third-party endpoints.",
-  "long_description": "The Finance Toolkit gives AI assistants access to 470+ financial metrics calculated transparently from raw financial statements. This includes financial statements, historical prices, analyst estimates, 100+ fundamental ratios, 55+ technical indicators, 85+ risk and performance metrics, 45+ econometric tests and estimators, and 90+ macro and fixed income indicators.\n\nA Financial Modeling Prep API key is required to access 30+ years of financial data. Obtain one at [jeroenbouma.com/fmp](https://jeroenbouma.com/fmp). Authenticate once via OAuth, no key is stored on the server. Rate limit fallback to Yahoo Finance is built in, and macro databases from OECD and GMDB are accessed independently.",
+  "description": "Give AI assistants access to 500+ financial methods calculated transparently from raw financial statements, not pulled from third-party endpoints.",
+  "long_description": "The Finance Toolkit gives AI assistants access to 500+ financial methods calculated transparently from raw financial statements. This includes financial statements, historical prices, analyst estimates, 100+ fundamental ratios, 55+ technical indicators, 85+ risk and performance metrics, 45+ econometric tests and estimators, and 90+ macro and fixed income indicators.\n\nA Financial Modeling Prep API key is required to access 30+ years of financial data. Obtain one at [jeroenbouma.com/fmp](https://jeroenbouma.com/fmp). Authenticate once via OAuth, no key is stored on the server. Rate limit fallback to Yahoo Finance is built in, and macro databases from OECD and GMDB are accessed independently.",
   "author": {
     "name": "Jeroen Bouma",
     "email": "jer.bouma@gmail.com",
@@ -155,7 +155,7 @@
     },
     {
       "name": "search_metrics",
-      "description": "Fuzzy keyword search across all 470+ available metrics."
+      "description": "Fuzzy keyword search across all 500+ available methods."
     },
     {
       "name": "search_instruments",

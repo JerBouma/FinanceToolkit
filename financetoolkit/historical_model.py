@@ -123,6 +123,7 @@ def get_historical_data(
                 interval=interval,
                 return_column=return_column,
                 sleep_timer=sleep_timer,
+                user_subscription=user_subscription,
             )
 
         elif not api_key and interval in [
@@ -153,6 +154,7 @@ def get_historical_data(
                     include_dividends=include_dividends,
                     divide_ohlc_by=divide_ohlc_by,
                     sleep_timer=sleep_timer,
+                    user_subscription=user_subscription,
                 )
 
                 if not historical_data.empty:

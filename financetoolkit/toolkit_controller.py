@@ -2304,6 +2304,7 @@ class Toolkit:
                 sleep_timer=self._sleep_timer,
                 show_ticker_seperation=show_ticker_seperation,
                 show_errors=True,
+                user_subscription=self._fmp_plan,
             )
 
             # Change the benchmark ticker name to Benchmark
@@ -2553,6 +2554,7 @@ class Toolkit:
                 sleep_timer=self._sleep_timer,
                 show_errors=True,
                 log_message="Obtaining intraday data",
+                user_subscription=self._fmp_plan,
             )
 
             if self._use_cached_data:
@@ -3139,6 +3141,7 @@ class Toolkit:
                 fill_nan=fill_nan,
                 sleep_timer=self._sleep_timer,
                 log_message="Obtaining treasury data",
+                user_subscription=self._fmp_plan,
             )
 
             if not self._daily_treasury_data.empty:
@@ -3340,6 +3343,7 @@ class Toolkit:
                     sleep_timer=self._sleep_timer,
                     show_ticker_seperation=show_ticker_seperation,
                     log_message="Obtaining currency exchange data",
+                    user_subscription=self._fmp_plan,
                 )
             else:
                 # In case there is no conversion needed, it should create a placeholder

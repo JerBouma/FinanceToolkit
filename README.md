@@ -546,23 +546,37 @@ Most functions will have the option to define the `trailing` parameter. This let
 
 > **How can I save the data periodically so that I don't have to retrieve it every single time again?**
 
-The Toolkit has the option to work with cached data through `use_cached_data=True` when initializing the Toolkit class. If you then use any of the functionalities of the Toolkit itself (e.g. `get_balance_sheet_statement`) it will store the data in a pickle file. When initializing the Toolkit class again with `use_cached_data=True`, it will load the data from the pickle file including all other previously set parameters (e.g. start_date and quarterly). You are also able to select a specific location to store the cached data by providing a string to the `use_cached_data` parameter. This will store the data in the provided location (with the assumption the folder exists).
+The Toolkit has the option to work with cached data through `use_cached_data=True` when initializing the Toolkit class. Any data that comes from an external source (financial statements, historical prices, economic indicators, and so on) is then stored in a local SQLite database and reused on the next run. Anything the Toolkit calculates itself is never cached, it is always derived from that data on demand.
 
-As an example:
+The cache keeps track of what it already holds per ticker and per date range, which means changing a parameter does not throw the rest away:
 
-<img width="1000" alt="image" src="https://github.com/user-attachments/assets/943a1cfb-95ad-4455-90f0-0b33dcd7b0df" />
+- Repeating the same request retrieves nothing at all.
+- Widening the period only retrieves the years that were missing.
+- Adding a ticker only retrieves that one ticker.
 
-If I wish to receive this data again, I no longer need an API key or set the tickers and can simply keep `use_cached_data=True`.
+By default the database lives in your user configuration directory, which is the same one the MCP server uses, so both share a single cache. You can also select a specific location by providing a string to the `use_cached_data` parameter, which will store the database in the provided folder.
 
-<img width="1000" alt="image" src="https://github.com/user-attachments/assets/29ef58ca-e208-4c9a-b663-f66b299d3188" />
+To see what is currently stored, use `toolkit.get_cache_contents()`. It reports the entries grouped by source and dataset:
 
-Please note that it will force the settings as found in the pickle files so if you wish to use a different time period, you will have to recollect.
+| source                | dataset    | entities | entries | oldest_write        | newest_write        |
+|:----------------------|:-----------|---------:|--------:|:--------------------|:--------------------|
+| FinancialModelingPrep | historical |        2 |       2 | 2025-01-14 09:12:03 | 2025-01-14 09:12:05 |
+| FinancialModelingPrep | statements |        2 |       2 | 2025-01-14 09:12:01 | 2025-01-14 09:12:02 |
 
-<img width="1000" alt="image" src="https://github.com/user-attachments/assets/40229dcb-18f0-4e73-8a43-017b1b25d33f" />
+The Finance Toolkit never clears the cache on its own, not even when its own internal structure changes. Removing data is always something you ask for explicitly with `toolkit.clear_cache()`, and it can be narrowed instead of wholesale:
 
-You can also change the folder by entering a string instead of a boolean for the `use_cached_data` parameter.
+```python
+# Remove only the price history of a single ticker
+toolkit.clear_cache(source="FinancialModelingPrep", ticker="AAPL")
 
-<img width="1000" alt="image" src="https://github.com/user-attachments/assets/a6710d20-55b9-48f1-812e-4ff4fbe06a15" />
+# Remove everything retrieved from the OECD
+toolkit.clear_cache(source="OECD")
+
+# Remove the entire cache, which has to be confirmed
+toolkit.clear_cache(confirm=True)
+```
+
+The `source` names match the ones used by the `enforce_source` parameter, so "FinancialModelingPrep" and "YahooFinance" mean the same thing in both places.
 
 > **What is the "Benchmark" that is automatically obtained when acquiring historical data?**
 

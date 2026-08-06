@@ -1,5 +1,7 @@
 """Regression Model Tests"""
 
+import warnings
+
 import numpy as np
 import pandas as pd
 
@@ -40,6 +42,19 @@ def test_get_ols_no_constant():
 
     assert result["feature_names"] == ["X1"]
     assert abs(result["coefficients"][0] - 2.0) < 1e-8
+
+
+def test_get_ols_r_squared_is_nan_when_there_is_nothing_to_explain():
+    # An all-zero outcome through the origin leaves a zero total sum of squares,
+    # so R-squared is undefined rather than 0 -- and must not warn on the way.
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        result = regression_model.get_ols(
+            pd.Series([0.0, 0.0, 0.0]), pd.Series([1.0, 2.0, 3.0]), add_constant=False
+        )
+
+    assert np.isnan(result["r_squared"])
+    assert np.isnan(result["adjusted_r_squared"])
 
 
 def test_get_ols_multivariate(recorder):
@@ -293,6 +308,23 @@ def test_get_quantile_regression_with_bootstrap_standard_errors():
     assert result["standard_errors"] is not None
     assert len(result["standard_errors"]) == 2
     assert np.all(result["standard_errors"] > 0)
+
+
+def test_get_quantile_regression_bootstrap_rejects_unconverged_replicates(monkeypatch):
+    # A replicate that runs out of iterations stopped short of the requested
+    # quantile, so it is dropped rather than folded into the standard error.
+    rng = np.random.default_rng(8)
+    n = 300
+    x = pd.Series(rng.standard_normal(n), name="X")
+    y = 1 + 2 * x + rng.standard_normal(n) * 0.3
+
+    monkeypatch.setattr(regression_model, "BOOTSTRAP_MAX_ITERATIONS", 1)
+
+    try:
+        regression_model.get_quantile_regression(y, x, n_bootstrap=50, seed=1)
+        raise AssertionError("Expected ValueError")
+    except ValueError as error:
+        assert "converged" in str(error)
 
 
 def test_get_quantile_regression_invalid_tau():

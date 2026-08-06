@@ -30,16 +30,13 @@ from financetoolkit.utilities.logger_model import get_logger
 
 logger = get_logger()
 
-# Runtime errors are ignored on purpose given the nature of the calculations
-# sometimes leading to division by zero or other mathematical errors. This is however
-# for financial analysis purposes not an issue and should not be considered as a bug.
+# Division by zero is normal in these calculations, not a bug.
 warnings.filterwarnings("ignore", category=RuntimeWarning)
 
 # pylint: disable=too-many-instance-attributes,too-few-public-methods,too-many-lines,too-many-locals
 # pylint: disable=too-many-boolean-expressions
 
-# The synthetic benchmark series added to every Toolkit instance's historical data --
-# excluded from default ticker-set derivation unless `include_benchmark=True`.
+# The synthetic benchmark series, excluded unless `include_benchmark=True`.
 BENCHMARK_TICKER = "Benchmark"
 
 
@@ -2773,8 +2770,7 @@ class Econometrics:
 
         test_result = specification_tests_model.get_durbin_watson_test(result)
 
-        # The "Interpretation" entry is a string, so `.round()` (used elsewhere in this
-        # module) is not applicable to the Series as a whole -- round only the statistic.
+        # The 'Interpretation' entry is a string, so only the statistic is rounded.
         rounding_value = rounding if rounding is not None else self._rounding
         if rounding_value is not None:
             test_result["Durbin-Watson Statistic"] = round(
@@ -3630,13 +3626,7 @@ class Econometrics:
         if period == "daily" and self._historical_data["intraday"].empty:
             raise ValueError("Intraday data is required for daily calculations.")
 
-        # Deliberately does NOT reuse `_get_price_column` (which drops any row
-        # missing data for ANY ticker in the `Toolkit` instance): panel methods
-        # need each entity's own NaN pattern preserved (e.g. a ticker that IPO'd
-        # partway through the sample), so that `panel_data_model`'s internal
-        # alignment step can drop only the genuinely missing `(entity, time)`
-        # pairs, rather than every entity's observations on any date where a
-        # single ticker anywhere in the `Toolkit` instance happens to be missing.
+        # Not `_get_price_column`: panel methods need each entity's own NaN pattern.
         prices = self._historical_data[period][column]
 
         if independent_tickers is not None:
@@ -4809,10 +4799,7 @@ class Econometrics:
         | Beta                           |   1.294  |
         | Estimation Window Observations | 250      |
         """
-        # Bypasses `_get_price_column` on purpose: its "daily" branch checks
-        # `self._historical_data["intraday"]` for emptiness rather than
-        # `self._historical_data["daily"]`, which would reject perfectly valid daily
-        # data whenever no separate intraday dataset was supplied to the Toolkit.
+        # Not `_get_price_column`: its daily branch checks intraday for emptiness.
         returns = self._historical_data["daily"][column].dropna()
 
         dependent_ticker = dependent_ticker or self._get_tickers()[0]

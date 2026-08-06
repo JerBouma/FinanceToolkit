@@ -8,15 +8,8 @@ from financetoolkit.econometrics import time_series_model
 # pylint: disable=missing-function-docstring
 
 
-# ---------------------------------------------------------------------------
-# ARIMA
-# ---------------------------------------------------------------------------
-
-
 def test_get_arima_forecast_recovers_ar1_coefficients(recorder):
-    # y_t = 0.5 + 0.6 * y_(t-1) + e_t -- a large sample AR(1) should recover phi
-    # close to 0.6 and forecasts should decay towards the unconditional mean
-    # (0.5 / (1 - 0.6) = 1.25), not explode.
+    # y_t = 0.5 + 0.6 * y_(t-1) + e_t, so phi is near 0.6 and forecasts decay to 1.25.
     rng = np.random.default_rng(1)
     n = 3000
     phi_true, const_true = 0.6, 0.5
@@ -31,14 +24,9 @@ def test_get_arima_forecast_recovers_ar1_coefficients(recorder):
     assert abs(result["ar_coefficients"][0] - phi_true) < 0.05
     assert result["converged"]
 
-    # For d=0, `result["constant"]` is the unconditional mean directly (as `statsmodels`
-    # reports it), not the recursion intercept `c` -- see `get_arima_forecast`'s
-    # `"constant"` key.
+    # For d=0 the constant is the unconditional mean, not the recursion intercept.
     unconditional_mean = result["constant"]
-    # A stationary AR(1) forecast's distance from the unconditional mean decays
-    # geometrically (|distance_h| = |distance_0| * phi^h) -- it should be much closer
-    # to the mean at the end of a 20-step horizon than at the start, and essentially
-    # converged by then.
+    # The distance to the mean decays geometrically, so it converges by step 20.
     distance_first_step = abs(result["forecast"].iloc[0] - unconditional_mean)
     distance_last_step = abs(result["forecast"].iloc[-1] - unconditional_mean)
     assert distance_last_step < distance_first_step
@@ -67,9 +55,7 @@ def test_get_arima_forecast_recovers_arma11_coefficients():
 
 
 def test_get_arima_forecast_differencing_undoes_correctly():
-    # A pure random walk (d=1, differences are i.i.d. noise -- AR(1) on the noise
-    # should find phi close to 0) -- the un-differenced forecast should stay close
-    # to the last observed level, not run away.
+    # A pure random walk, so the forecast should stay near the last observed level.
     rng = np.random.default_rng(3)
     n = 500
     y = np.cumsum(rng.standard_normal(n)) + 50
@@ -79,8 +65,7 @@ def test_get_arima_forecast_differencing_undoes_correctly():
     )
 
     assert abs(result["ar_coefficients"][0]) < 0.15
-    # The forecast should stay in the neighborhood of the last actual value (a
-    # driftless random walk's best forecast is roughly the last observed level).
+    # A driftless random walk's best forecast is roughly the last observed level.
     assert abs(result["forecast"].iloc[-1] - y[-1]) < 5 * np.std(np.diff(y))
 
 
@@ -126,11 +111,6 @@ def test_get_arima_forecast_too_few_observations():
         pass
 
 
-# ---------------------------------------------------------------------------
-# VAR
-# ---------------------------------------------------------------------------
-
-
 def test_get_var_forecast_recovers_known_coefficients(recorder):
     rng = np.random.default_rng(5)
     n = 5000
@@ -154,11 +134,7 @@ def test_get_var_forecast_recovers_known_coefficients(recorder):
 
 
 def test_get_var_forecast_one_step_matches_hand_computed_recursion():
-    # Two independent (noiseless), non-collinear AR(1)-shaped recursions:
-    # Y1_t = 1 + 0.5 * Y1_(t-1), Y2_t = 2 - 0.3 * Y2_(t-1). Since the generating
-    # process is an exact, noiseless VAR(1), the fitted equations should recover it
-    # (near) exactly and the one-step forecast should exactly match one more turn of
-    # the same recursion applied to the last observed row.
+    # An exact, noiseless VAR(1), so the fit and one-step forecast should match it.
     n = 30
     y1 = [0.0]
     y2 = [0.0]
@@ -220,11 +196,6 @@ def test_get_var_forecast_invalid_forecast_steps():
         pass
 
 
-# ---------------------------------------------------------------------------
-# IRF / FEVD
-# ---------------------------------------------------------------------------
-
-
 def _fit_bivariate_var(seed: int = 5, n: int = 5000) -> dict:
     rng = np.random.default_rng(seed)
     phi = np.array([[0.5, 0.2], [0.1, 0.6]])
@@ -238,10 +209,7 @@ def _fit_bivariate_var(seed: int = 5, n: int = 5000) -> dict:
 
 
 def test_get_impulse_response_function_impact_response_matches_shock_std(recorder):
-    # At horizon 0 (impact), the orthogonalized response of a variable to its OWN
-    # shock equals that shock's standard deviation (the Cholesky factor's diagonal),
-    # and the first (Cholesky-ordered) variable has zero impact response to every
-    # OTHER shock -- it is, by construction, contemporaneously prior to them.
+    # At impact, the own-shock response is the Cholesky diagonal and cross ones are 0.
     var_result = _fit_bivariate_var()
     irf = time_series_model.get_impulse_response_function(var_result, periods=5)
 
@@ -255,8 +223,7 @@ def test_get_impulse_response_function_impact_response_matches_shock_std(recorde
 
 
 def test_get_impulse_response_function_reduced_form_impact_is_identity():
-    # Non-orthogonalized IRF at horizon 0 is Psi_0 = I -- a unit reduced-form shock
-    # to one equation has, by definition, no contemporaneous effect on the others.
+    # The non-orthogonalized IRF at horizon 0 is the identity, by definition.
     var_result = _fit_bivariate_var()
     irf = time_series_model.get_impulse_response_function(
         var_result, periods=3, orthogonalized=False
@@ -295,9 +262,7 @@ def test_get_variance_decomposition_rows_sum_to_one(recorder):
 
 
 def test_get_variance_decomposition_horizon_one_first_variable_is_all_own_shock():
-    # At horizon 1, the first (Cholesky-ordered) variable's forecast error variance
-    # is entirely attributable to its own shock -- it has no contemporaneous exposure
-    # to the others (same identifying assumption as the IRF's impact response).
+    # At horizon 1 the first Cholesky-ordered variable owns all of its error variance.
     var_result = _fit_bivariate_var()
     fevd = time_series_model.get_variance_decomposition(var_result, periods=5)
 
@@ -306,9 +271,7 @@ def test_get_variance_decomposition_horizon_one_first_variable_is_all_own_shock(
 
 
 def test_get_variance_decomposition_matches_irf_manual_computation():
-    # Cross-check against the IRF directly: horizon h's share for shock j is
-    # SUM_{n=0}^{h-1} Theta_n[i, j]^2 divided by that same sum across every shock --
-    # recompute it by hand from `irf["responses"]` and confirm it matches the FEVD.
+    # Recompute the share by hand from irf['responses'] and confirm it matches.
     var_result = _fit_bivariate_var()
     periods = 6
     irf = time_series_model.get_impulse_response_function(var_result, periods=periods)
@@ -346,17 +309,8 @@ def test_get_variance_decomposition_invalid_periods():
         pass
 
 
-# ---------------------------------------------------------------------------
-# VECM
-# ---------------------------------------------------------------------------
-
-
 def test_get_vecm_forecast_identifies_rank_one_and_mean_reverts(recorder):
-    # Same construction as tests/econometrics/test_cointegration_model.py's Johansen
-    # tests: A and B share a common stochastic trend -- exactly one cointegrating
-    # relation should be found, and the forecasted spread (A - beta_ratio * B) should
-    # converge to a fixed equilibrium and stay there (mean reversion), rather than
-    # drift indefinitely.
+    # A and B share a trend, so one relation is found and the spread mean-reverts.
     rng = np.random.default_rng(3)
     n = 500
     common_trend = np.cumsum(rng.standard_normal(n))
@@ -372,8 +326,7 @@ def test_get_vecm_forecast_identifies_rank_one_and_mean_reverts(recorder):
     beta = result["cointegrating_vectors"].to_numpy()
     spread_forecast = (result["forecast"].to_numpy() @ beta).flatten()
 
-    # The spread should stabilize: the change over the last few forecast steps
-    # should be much smaller than the change over the first few steps.
+    # The spread should stabilize, moving far less at the end than at the start.
     early_movement = abs(spread_forecast[2] - spread_forecast[0])
     late_movement = abs(spread_forecast[-1] - spread_forecast[-3])
     assert late_movement < early_movement
@@ -385,9 +338,7 @@ def test_get_vecm_forecast_identifies_rank_one_and_mean_reverts(recorder):
 
 
 def test_get_vecm_forecast_mean_reverts_more_than_naive_var_in_differences():
-    # Own-consistency check: a VECM's forecasted spread should converge to a fixed
-    # equilibrium faster/more tightly than a naive VAR-in-differences forecast (which
-    # has no error-correction term and can keep drifting).
+    # A VECM should converge more tightly than a VAR-in-differences, which can drift.
     rng = np.random.default_rng(3)
     n = 500
     common_trend = np.cumsum(rng.standard_normal(n))

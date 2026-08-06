@@ -17,13 +17,10 @@ from financetoolkit.risk import cvar_model
 from financetoolkit.utilities.requests_model import get_request
 from financetoolkit.utilities.statistics_model import PERIOD_TRANSLATION
 
-# This is meant for calculations in which a Multi Index exists. This is the case
-# when calculating a "within period" in which the first index represents the period
-# (e.g. 2020Q1) and the second index the days within that period (January to March)
+# Two levels when a 'within period' index nests days inside a period (2020Q1).
 MULTI_PERIOD_INDEX_LEVELS = 2
 
-# The Euler-Mascheroni constant, used in the Expected Maximum Sharpe Ratio
-# formula underlying the Deflated Sharpe Ratio.
+# The Euler-Mascheroni constant, used by the Deflated Sharpe Ratio.
 EULER_MASCHERONI_CONSTANT = 0.5772156649015329
 
 # pylint: disable=isinstance-second-argument-not-valid-type
@@ -317,9 +314,7 @@ def obtain_carhart_momentum_dataset(momentum_url: str | None = None) -> pd.DataF
             # Skip the descriptive header rows; the "Mom" data starts right after
             momentum_dataset = pd.read_csv(csv_file, skiprows=13, index_col=0)
 
-        # The raw CSV has a trailing comma on every data row, which pandas turns into
-        # an all-NaN "Unnamed" column; drop it before dropping NaN rows, otherwise
-        # every row (including valid ones) would be dropped as "having a NaN".
+        # A trailing comma makes an all-NaN column that would drop every valid row.
         momentum_dataset = momentum_dataset.loc[
             :, ~momentum_dataset.columns.str.contains("Unnamed")
         ]
@@ -409,12 +404,7 @@ def get_fama_and_french_model_multi(
         excess_returns = excess_returns.ffill(limit=None)
 
     if factor_dataset.isna().any().any():
-        # Fill along the time axis (the default axis=0), mirroring how excess_returns
-        # is filled above. A previous version of this code passed axis=1 and applied
-        # bfill to excess_returns (a Series, which does not support axis=1 and raises
-        # "No axis named 1 for object type Series") instead of to factor_dataset --
-        # this both crashed whenever factor_dataset had any NaNs and filled in the
-        # wrong direction (across factors instead of across time) even if it hadn't.
+        # Filled along time (axis=0), mirroring how excess_returns is filled above.
         factor_dataset = factor_dataset.bfill(limit=None)
         factor_dataset = factor_dataset.ffill(limit=None)
 
@@ -913,10 +903,7 @@ def get_deflated_sharpe_ratio(
             1 - 1 / n_trials_array
         ) + EULER_MASCHERONI_CONSTANT * stats.norm.ppf(1 - 1 / (n_trials_array * np.e))
 
-    # The asymptotic expected-maximum-of-N approximation above is undefined (it
-    # evaluates to -inf) for N = 1, since there is no "maximum" to speak of with a
-    # single trial. The true expected maximum of a single draw from a Normal
-    # distribution is 0, so no deflation is applied in that case.
+    # The expected maximum of a single draw is 0, so N = 1 gets no deflation.
     expected_max_z_score = np.where(n_trials_array <= 1, 0.0, expected_max_z_score)
 
     benchmark_sharpe_ratio = np.sqrt(sharpe_ratio_variance) * expected_max_z_score
@@ -1997,9 +1984,7 @@ def get_capm_residuals(
 
         period_residuals_list.append(period_residuals)
 
-    # Using pd.concat with keys rebuilds the (period, date) Multi Index rather than
-    # writing into a pre-allocated Multi Index DataFrame via partial `.loc` assignment,
-    # since the latter is unreliable under pandas' Copy-on-Write semantics.
+    # pd.concat rebuilds the Multi Index; partial .loc is unreliable under CoW.
     return pd.concat(
         period_residuals_list, keys=periods, names=excess_returns.index.names
     )

@@ -5,9 +5,7 @@ import pandas as pd
 
 ALPHA_CONSTRAINT = 0.5
 
-# This is meant for calculations in which a Multi Index exists. This is the case
-# when calculating a "within period" in which the first index represents the period
-# (e.g. 2020Q1) and the second index the days within that period (January to March)
+# Two levels when a 'within period' index nests days inside a period (2020Q1).
 MULTI_PERIOD_INDEX_LEVELS = 2
 
 

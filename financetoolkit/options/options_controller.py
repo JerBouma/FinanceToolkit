@@ -129,8 +129,7 @@ class Options:
             ]
 
             if dividend_yield_cleaned.empty:
-                # If empty, it doesn't matter that the value is 0
-                # given that this implies the company doesn't pay dividends
+                # An empty value means the company pays no dividends, so 0 is correct.
                 dividend_yield_cleaned = dividend_yield.loc[ticker]
 
             self._dividend_yield[ticker] = dividend_yield_cleaned
@@ -543,12 +542,10 @@ class Options:
             )
 
             for strike_price, row in option_chain.iterrows():
-                # The expiration date is used to calculate the days to expiration
-                # which serves as input for the time to expiration parameter in the Black Scholes Model.
+                # Days to expiration feed the time to expiration in the Black-Scholes model.
                 days_to_expiration = (pd.to_datetime(option_chains.name) - today).days
 
-                # Numerically finds the volatility that minimizes the difference
-                # between the Black Scholes Model output and the market option price.
+                # Numerically finds the volatility matching the market option price.
                 implied_volatility_value = black_scholes_model.get_implied_volatility(
                     market_price=row["Last Price"],
                     stock_price=stock_price.loc[ticker],
@@ -560,8 +557,7 @@ class Options:
                     initial_guess=volatility.loc[ticker],
                 )
 
-                # Values that are equal to the current volatility refer to not being able to resolve
-                # and thus are not added to the implied volatility dictionary.
+                # A value equal to the current volatility means it could not be resolved.
                 if round(implied_volatility_value, 4) != round(
                     volatility.loc[ticker], 4
                 ):
@@ -917,10 +913,7 @@ class Options:
         if expiration_date is not None:
             candidate_dates = [expiration_date]
         else:
-            # Same-day or otherwise illiquid near-term expiries can yield no
-            # resolvable implied volatility at all, so when the caller hasn't
-            # pinned down a specific date, the earliest date that actually has
-            # usable quotes is used instead of blindly taking the very first one.
+            # Illiquid near-term expiries resolve nothing, so pick the first usable date.
             candidate_dates = self.get_option_chains(show_expiration_dates=True)
 
         for candidate_date in candidate_dates:

@@ -22,8 +22,7 @@ def test_enrich_historical_data_basic():
     assert "Return" in result.columns
     assert "Cumulative Return" in result.columns
 
-    # Volatility is intentionally no longer calculated here, it lives in the Risk
-    # module instead (risk_model.get_volatility)
+    # Volatility lives in the Risk module now (risk_model.get_volatility).
     assert "Volatility" not in result.columns
 
     # Check return calculation

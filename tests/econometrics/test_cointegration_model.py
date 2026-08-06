@@ -28,8 +28,7 @@ def test_get_engle_granger_cointegration_cointegrated(recorder):
 
 
 def test_get_johansen_cointegration_independent(recorder):
-    # Three fully independent random walks -- no shared stochastic trend, so the
-    # Johansen procedure should fail to reject rank 0 (no cointegration).
+    # Three independent random walks, so Johansen should fail to reject rank 0.
     rng = np.random.default_rng(3)
     data = pd.DataFrame(
         np.column_stack([np.cumsum(rng.standard_normal(500)) for _ in range(3)]),
@@ -43,9 +42,7 @@ def test_get_johansen_cointegration_independent(recorder):
 
 
 def test_get_johansen_cointegration_one_cointegrating_relation(recorder):
-    # A and B share a common stochastic trend (B is a scaled/shifted version of A
-    # plus noise), C is an independent random walk -- exactly one cointegrating
-    # relation should be detected: reject rank <= 0, fail to reject rank <= 1.
+    # A and B share a trend, C does not, so exactly one relation should be found.
     rng = np.random.default_rng(7)
     common_trend = np.cumsum(rng.standard_normal(500))
     series_a = common_trend + rng.standard_normal(500) * 0.1

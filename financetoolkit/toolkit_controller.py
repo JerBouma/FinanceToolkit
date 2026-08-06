@@ -56,23 +56,14 @@ from financetoolkit.utilities.requests_model import convert_isin_to_ticker
 from financetoolkit.utilities.statistics_model import calculate_growth
 
 if TYPE_CHECKING:
-    # The Econometrics module depends on the optional `financetoolkit[econometrics]`
-    # extra (statsmodels/linearmodels) -- imported lazily inside the `econometrics`
-    # property below (with a friendly error if the extra isn't installed) so that
-    # `import financetoolkit` itself never requires those dependencies. This
-    # TYPE_CHECKING-only import keeps the `-> Econometrics` type hint working for
-    # static type checkers/IDEs without triggering that import at runtime.
+    # TYPE_CHECKING only: the econometrics extra is imported lazily at runtime.
     from financetoolkit.econometrics.econometrics_controller import Econometrics
 
-# Set up logger, this is meant to display useful messages, warnings or errors when
-# the Finance Toolkit runs into issues or does something that might not be entirely
-# logical at first
+# Displays messages, warnings and errors when the Finance Toolkit hits issues.
 logger_model.setup_logger()
 logger = logger_model.get_logger()
 
-# Runtime errors are ignored on purpose given the nature of the calculations
-# sometimes leading to division by zero or other mathematical errors. This is however
-# for financial analysis purposes not an issue and should not be considered as a bug.
+# Division by zero is normal in these calculations, not a bug.
 warnings.filterwarnings("ignore", category=RuntimeWarning)
 
 # pylint: disable=too-many-instance-attributes,too-many-lines,line-too-long,too-many-locals
@@ -81,8 +72,7 @@ warnings.filterwarnings("ignore", category=RuntimeWarning)
 
 TICKER_LIMIT = 20
 
-# In case the user has set an API key as an environment variable,
-# this will be used as the default API key for the Toolkit.
+# Used as the Toolkit's default API key when set as an environment variable.
 API_KEY: str = os.environ.get("FINANCIAL_MODELING_PREP_API_KEY", "")
 FRED_API_KEY: str = os.environ.get("FRED_API_KEY", "")
 
@@ -253,8 +243,7 @@ class Toolkit:
             location=self._cache_location, enabled=self._use_cached_data
         )
 
-        # Published so the OECD, FRED, ECB and Federal Reserve collectors, which are
-        # free functions rather than methods, pick up this Toolkit's cache as well.
+        # Published so the OECD/FRED/ECB/Fed free functions pick up this cache too.
         cache_controller.set_active_cache(self._cache)
         self._allow_stale_oecd_cache = allow_stale_oecd_cache
         self._benchmark_ticker = benchmark_ticker
@@ -292,9 +281,7 @@ class Toolkit:
         self._end_date = end_date if end_date else datetime.now().strftime("%Y-%m-%d")
         self._quarterly = quarterly
 
-        # Fetch one extra period before the user's start date so that metrics
-        # averaging two consecutive periods (e.g. Return on Equity) always have
-        # a prior-period value and do not return NaN for the first requested year.
+        # One extra period so two-period metrics have a prior value for the first year.
         if quarterly:
             _lookback_dt = datetime.strptime(self._start_date, "%Y-%m-%d") - timedelta(
                 days=92
@@ -305,10 +292,7 @@ class Toolkit:
             )
         self._lookback_start_date = _lookback_dt.strftime("%Y-%m-%d")
 
-        # Earlier versions stored the tickers, dates and periodicity of the first
-        # cached run and silently applied them to every later run against the same
-        # cache directory. The cache now tracks each ticker and date range in its
-        # own right, so the arguments given here are always the ones that are used.
+        # The cache tracks each ticker and range, so these arguments are always used.
 
         if isinstance(tickers, str):
             tickers = [tickers.upper()]
@@ -364,9 +348,7 @@ class Toolkit:
             )
 
         if sleep_timer is None:
-            # This tests the API key to determine the subscription plan. This is relevant for the sleep timer
-            # but also for other components of the Toolkit. This prevents wait timers from occurring while
-            # it wouldn't result to any other answer than a rate limit error.
+            # Determines the plan, which drives the sleep timer and other components.
             self._fmp_plan, invalid_api_key = _determine_subscription_plan(
                 api_key=api_key
             )
@@ -404,10 +386,7 @@ class Toolkit:
             self._market_risk_premium: pd.DataFrame = pd.DataFrame()
             self._commitment_of_traders: pd.DataFrame = pd.DataFrame()
 
-            # These are no longer pre-loaded from cache as one pre-assembled block
-            # per dataset. Each is resolved per ticker when it is actually asked for,
-            # so a different ticker list reuses the tickers it has in common instead
-            # of being handed a frame assembled for a different set of companies.
+            # Resolved per ticker on request, so a different list reuses what it shares.
 
         if intraday_period and intraday_period not in [
             "1min",
@@ -422,10 +401,7 @@ class Toolkit:
 
         self._intraday_period = intraday_period
 
-        # Price data is no longer loaded here as one pre-assembled block. It is
-        # resolved per ticker and per date range when it is actually requested, so
-        # that a different ticker list or period reuses whatever overlaps instead
-        # of discarding the cache.
+        # Resolved per ticker and range on request, so an overlap is reused.
         self._intraday_historical_data: pd.DataFrame = pd.DataFrame()
 
         # Use provided historical data if available, otherwise start empty.
@@ -504,9 +480,7 @@ class Toolkit:
         # Initialization of the Portfolio Variables
         self._portfolio_weights: dict | None = None
 
-        # Shared across every `toolkit.ratios` access (each access constructs a fresh Ratios
-        # instance) so that analyst estimates used by the forward-looking ratios are only
-        # ever fetched once per Toolkit instance instead of once per method call.
+        # Shared across every `toolkit.ratios` access so estimates are fetched once.
         self._analyst_estimates_cache: dict = {}
 
         pd.set_option("display.float_format", str)
@@ -2779,8 +2753,7 @@ class Toolkit:
             return None
 
         if self._market_risk_premium.empty or overwrite:
-            # The market risk premium is published per country rather than per
-            # ticker, so there is nothing to split it by; it is cached as one entry.
+            # Published per country rather than per ticker, so it is one cache entry.
             cached_premium = (
                 None
                 if overwrite
@@ -3058,8 +3031,7 @@ class Toolkit:
             )
 
         if self._daily_treasury_data.empty or False in specific_rates:
-            # It collects data in the scenarios where the treasury data is empty or only contains one column which generally
-            # means the data was collected for the historical data functionality which only requires a subselection
+            # Collects when treasury data is empty or holds only the historical subselection.
             (
                 self._daily_treasury_data,
                 _,
@@ -3257,8 +3229,7 @@ class Toolkit:
                     historical_currencies=self._historical_statistics.loc["Currency"],
                 )
 
-        # Separate currencies that are merely a comparison between the same currency
-        # and currencies that are actual exchange rates.
+        # Separate same-currency comparisons from actual exchange rates.
         currencies_to_collect_data_for = [
             currency for currency in self._currencies if currency[:3] != currency[3:6]
         ]
@@ -3286,8 +3257,7 @@ class Toolkit:
                     cache=self._cache,
                 )
             else:
-                # In case there is no conversion needed, it should create a placeholder
-                # DataFrame that works with the rest of the Toolkit.
+                # A placeholder DataFrame for when no conversion is needed.
                 self._daily_exchange_rate_data = pd.DataFrame(
                     data=1,
                     index=pd.PeriodIndex(
@@ -3311,8 +3281,7 @@ class Toolkit:
                     ),
                 )
 
-            # For exchange data, it is possible that a ticker such as USDUSD=X
-            # exists which should always be 1. This data is added here.
+            # A ticker such as USDUSD=X should always be 1, added here.
             if currencies_to_fill_to_one:
                 upper_columns = self._daily_exchange_rate_data.columns.get_level_values(
                     level=0
@@ -3530,9 +3499,7 @@ class Toolkit:
                 "The enforce_source parameter must be either 'FinancialModelingPrep' or 'YahooFinance'."
             )
 
-        # A per-call enforce_source takes precedence over whatever the Toolkit was
-        # initialised with, so a single instance can pull statements from one source
-        # and historical data from the other.
+        # A per-call enforce_source overrides the one the Toolkit was initialised with.
         source = enforce_source if enforce_source is not None else self._enforce_source
 
         if (
@@ -3726,9 +3693,7 @@ class Toolkit:
                 "The enforce_source parameter must be either 'FinancialModelingPrep' or 'YahooFinance'."
             )
 
-        # A per-call enforce_source takes precedence over whatever the Toolkit was
-        # initialised with, so a single instance can pull statements from one source
-        # and historical data from the other.
+        # A per-call enforce_source overrides the one the Toolkit was initialised with.
         source = enforce_source if enforce_source is not None else self._enforce_source
 
         if (
@@ -3810,8 +3775,7 @@ class Toolkit:
         income_statement = self._income_statement
 
         if trailing:
-            # This is a special case where the trailing period does not make sense
-            # for the Weighted Average Shares and Weighted Average Shares Diluted.
+            # The trailing period does not apply to the Weighted Average Shares rows.
             weighted_average_shares = income_statement.loc[
                 :, ["Weighted Average Shares", "Weighted Average Shares Diluted"], :
             ]
@@ -3819,8 +3783,7 @@ class Toolkit:
             # The rolling window is calculated for the rest of the income statement.
             income_statement = self._income_statement.T.rolling(trailing).sum().T
 
-            # The Weighted Average Shares and Weighted Average Shares Diluted should
-            # not be summed up but rather kept equal to the current value.
+            # Weighted Average Shares are kept at the current value rather than summed.
             income_statement.loc[weighted_average_shares.index] = (
                 weighted_average_shares
             )
@@ -3946,9 +3909,7 @@ class Toolkit:
                 "The enforce_source parameter must be either 'FinancialModelingPrep' or 'YahooFinance'."
             )
 
-        # A per-call enforce_source takes precedence over whatever the Toolkit was
-        # initialised with, so a single instance can pull statements from one source
-        # and historical data from the other.
+        # A per-call enforce_source overrides the one the Toolkit was initialised with.
         source = enforce_source if enforce_source is not None else self._enforce_source
 
         if (

@@ -191,16 +191,13 @@ def _uvx_server_entry(
     }
 
 
-# Maps the canonical --client name to
-#   (config_path_fn, outer_json_key, display_name)
-# Used by write_client_config_uvx().
+# Maps --client name to (config_path_fn, outer_json_key, display_name).
 _CLIENT_CONFIG: dict[str, tuple] = {
     "claude-desktop": (get_claude_config_path, "mcpServers", "Claude Desktop"),
     "claude-code": (get_claude_code_config_path, "mcpServers", "Claude Code"),
     "gemini": (get_gemini_config_path, "mcpServers", "Gemini"),
     "windsurf": (get_windsurf_config_path, "mcpServers", "Windsurf"),
-    # VS Code and Cursor are workspace-local; their paths are resolved at
-    # call time by passing target_dir.
+    # VS Code and Cursor are workspace-local, so paths resolve at call time.
     "vscode": (None, "servers", "VS Code"),
     "cursor": (None, "mcpServers", "Cursor"),
 }
@@ -729,8 +726,7 @@ def write_client_config_uvx(
         cfg_fn, outer_key, _ = _CLIENT_CONFIG[client]
         config_path = cfg_fn()
         if not config_path.parent.exists():
-            # Parent directory doesn't exist — client is not installed.
-            # Print the raw block so the user can paste it manually.
+            # Parent directory missing means the client is not installed; print the block.
             console.print()
             warn(
                 f"Config directory not found for [bold]{_CLIENT_CONFIG[client][2]}[/].  "

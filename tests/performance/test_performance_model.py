@@ -53,9 +53,7 @@ def test_get_capital_asset_pricing_model(recorder):
 def test_obtain_fama_and_french_dataset(recorder):
     dataset = performance_model.obtain_fama_and_french_dataset()
 
-    # This is done given that the dataset can change over time
-    # it is only important to check if the data remains the same
-    # for a short period of time
+    # The dataset changes over time, so only short-term stability is checked.
     recorder.capture(dataset.round(0).iloc[:100])
 
 
@@ -193,8 +191,7 @@ def test_get_deflated_sharpe_ratio(recorder):
             4,
         )
     )
-    # With a single trial, the Deflated Sharpe Ratio must reduce exactly to
-    # the Probabilistic Sharpe Ratio against a benchmark of 0.
+    # A single trial must reduce exactly to the Probabilistic Sharpe Ratio at 0.
     recorder.capture(
         round(
             performance_model.get_deflated_sharpe_ratio(
@@ -278,10 +275,7 @@ def test_get_tracking_error(recorder):
 
 
 def test_get_tracking_error_dataframe(recorder):
-    # Regression test: the plain (non "within period") DataFrame branch used to index
-    # into the whole asset_returns DataFrame instead of the individual column, which
-    # misaligned the resulting per-column Series against the (date-indexed) output
-    # DataFrame and silently produced all-NaN results.
+    # Regression test: the plain DataFrame branch used to index the whole frame.
     recorder.capture(
         performance_model.get_tracking_error(
             asset_returns=pd.DataFrame(
@@ -369,8 +363,7 @@ def test_get_capm_residuals(recorder):
         excess_returns, beta, benchmark_excess_returns
     )
 
-    # The residual for each row must equal Excess Return - Beta * Benchmark Excess
-    # Return, using that row's *own period's* Beta (not a single global Beta).
+    # Each row's residual must use its own period's Beta, not one global Beta.
     for sub_period in ["2020", "2021"]:
         expected = (
             excess_returns.loc[sub_period, "AAPL"]
@@ -443,12 +436,10 @@ def test_get_fama_decomposition_type_error():
 
 
 def test_get_adjusted_sharpe_ratio(recorder):
-    # A Sharpe Ratio of 0 should always produce an Adjusted Sharpe Ratio of 0,
-    # regardless of skewness or kurtosis.
+    # A Sharpe Ratio of 0 stays 0 whatever the skewness or kurtosis.
     assert performance_model.get_adjusted_sharpe_ratio(0.0, -1.5, 6.0) == 0.0
 
-    # Normal-distribution-like skew (0) and raw kurtosis (3) should leave the
-    # Sharpe Ratio (almost) unadjusted, since the correction terms vanish.
+    # Skew 0 and raw kurtosis 3 make the correction terms vanish.
     unadjusted = performance_model.get_adjusted_sharpe_ratio(0.2, 0.0, 3.0)
     assert unadjusted == pytest.approx(0.2, abs=1e-9)
 
@@ -470,8 +461,7 @@ def test_get_adjusted_sharpe_ratio(recorder):
 
 
 def test_get_starr_ratio(recorder):
-    # excess_returns represents already-aggregated (e.g. one value per period) excess
-    # returns, divided elementwise by the (period-level) CVaR of the raw returns.
+    # Aggregated excess returns divided elementwise by the period-level CVaR.
     periods = ["2020", "2021", "2022"]
     excess_returns = pd.Series([0.05, -0.02, 0.08], index=periods)
     returns = pd.Series(
@@ -487,8 +477,7 @@ def test_get_starr_ratio(recorder):
 
 
 def test_get_starr_ratio_series_denominator():
-    # When both excess_returns and returns are plain (non-period) Series, the CVaR
-    # denominator collapses to a scalar and the result stays Series-shaped.
+    # Plain Series on both sides collapse the CVaR denominator to a scalar.
     returns = pd.Series(
         [0.05, -0.10, 0.02, 0.03, -0.08, 0.07, -0.02, 0.01, 0.04, -0.15]
     )

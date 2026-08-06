@@ -23,8 +23,7 @@ def test_get_ols_recovers_known_coefficients(recorder):
 
 
 def test_get_ols_matches_hand_solved_two_point_case():
-    # Two points define a line exactly: y = 1 + 2x through (0, 1) and (1, 3),
-    # a third point (2, 5) lies exactly on it too -- perfect fit, R^2 = 1.
+    # y = 1 + 2x through three collinear points, so the fit is perfect and R^2 = 1.
     x = pd.Series([0.0, 1.0, 2.0])
     y = pd.Series([1.0, 3.0, 5.0])
     result = regression_model.get_ols(y, x)
@@ -82,8 +81,7 @@ def test_get_ols_too_few_observations():
 
 
 def test_get_ols_hac_matches_nonrobust_coefficients():
-    # HAC only reweights the standard errors, not the point estimates -- the
-    # coefficients themselves must be identical to the nonrobust fit.
+    # HAC reweights only the standard errors, so the coefficients must be identical.
     rng = np.random.default_rng(6)
     x = pd.Series(rng.standard_normal(200), name="X")
     y = 1 + 2 * x + rng.standard_normal(200) * 0.1
@@ -98,9 +96,7 @@ def test_get_ols_hac_matches_nonrobust_coefficients():
 
 
 def test_get_ols_hac_reweights_standard_errors():
-    # Construct positively autocorrelated errors (AR(1), rho close to 1) -- HAC
-    # accounts for the serial correlation the nonrobust estimator ignores, so
-    # the two should disagree on the standard errors (point estimates stay equal).
+    # AR(1) errors with rho near 1, so HAC and nonrobust must disagree on the errors.
     rng = np.random.default_rng(7)
     n = 300
     errors = np.zeros(n)
@@ -154,9 +150,7 @@ def test_get_wls_hac_matches_nonrobust_coefficients():
 
 
 def test_get_wls_downweights_noisy_observations():
-    # Two groups: a precise group tightly on y=x, a noisy group scattered around
-    # y=x+10. Weighting the precise group heavily should pull the fit close to
-    # the precise group's true relationship, unlike unweighted OLS.
+    # Weighting the precise group heavily should pull the fit toward its relationship.
     x = pd.Series([1.0, 2.0, 3.0, 4.0, 1.0, 2.0, 3.0, 4.0])
     y = pd.Series([1.0, 2.0, 3.0, 4.0, 15.0, -5.0, 20.0, -10.0])
     weights = pd.Series([100.0, 100.0, 100.0, 100.0, 1.0, 1.0, 1.0, 1.0])
@@ -268,8 +262,7 @@ def test_get_quantile_regression_median_close_to_ols_for_symmetric_noise(recorde
     ols_result = regression_model.get_ols(y, x)
     qr_result = regression_model.get_quantile_regression(y, x, tau=0.5)
 
-    # For symmetric (Gaussian) noise, the median and mean regression coincide
-    # asymptotically -- coefficients should be close.
+    # For Gaussian noise the median and mean regression coincide asymptotically.
     assert np.allclose(ols_result["coefficients"], qr_result["coefficients"], atol=0.1)
     recorder.capture(
         regression_model.quantile_regression_summary_table(qr_result).round(4)
@@ -277,8 +270,7 @@ def test_get_quantile_regression_median_close_to_ols_for_symmetric_noise(recorde
 
 
 def test_get_quantile_regression_upper_tail_shifted():
-    # Heteroskedastic case: spread grows with x, so the upper (0.9) quantile
-    # line should have a visibly steeper slope than the lower (0.1) quantile line.
+    # Spread grows with x, so the 0.9 quantile line should be steeper than the 0.1.
     rng = np.random.default_rng(7)
     n = 2000
     x = pd.Series(rng.uniform(0, 10, n), name="X")

@@ -9,28 +9,17 @@ from statsmodels.tsa.vector_ar.vecm import VECM
 
 from financetoolkit.econometrics import cointegration_model, regression_model
 
-# A minimal safety margin (beyond the number of parameters actually being estimated)
-# required for the ARIMA/VAR estimators below to be well-identified -- not a hard
-# statistical requirement, just a guard against a degenerate (n <= k) fit that would
-# otherwise fail deep inside `np.linalg`/`statsmodels` with an unhelpful error. VECM
-# delegates this kind of validation to `statsmodels` itself (see its `except` block).
+# A margin beyond the estimated parameters, guarding against a degenerate fit.
 MINIMUM_ARIMA_OBSERVATIONS_BUFFER = 5
 MINIMUM_VAR_OBSERVATIONS_BUFFER = 5
 MINIMUM_VAR_SERIES = 2
 
-# Significance levels tabulated by `cointegration_model.get_johansen_cointegration`
-# and therefore the only ones `get_vecm_forecast` can determine a cointegrating rank
-# at without inventing untabulated critical values.
+# The only levels get_johansen_cointegration tabulates, so the only usable ones.
 JOHANSEN_TRACE_CRITICAL_VALUE_COLUMNS: dict[float, str] = {
     0.10: "Trace Critical Value 90%",
     0.05: "Trace Critical Value 95%",
     0.01: "Trace Critical Value 99%",
 }
-
-
-# ---------------------------------------------------------------------------
-# ARIMA
-# ---------------------------------------------------------------------------
 
 
 def arima_summary_table(result: dict) -> pd.DataFrame:
@@ -182,10 +171,7 @@ def get_arima_forecast(
     elif d == 0:
         trend = "c"
     else:
-        # A plain constant is eliminated by d rounds of differencing -- a trend
-        # polynomial of order d (only its highest-order term) is `statsmodels`'
-        # equivalent of "a nonzero mean/drift on the differenced series", which is
-        # what `include_constant=True` means for d >= 1.
+        # A trend polynomial of order d is statsmodels' drift on the differenced series.
         trend = [0] * d + [1]
 
     try:
@@ -234,11 +220,6 @@ def get_arima_forecast(
         "n_observations": int(sm_result.nobs),
         "converged": bool(sm_result.mle_retvals.get("converged", True)),
     }
-
-
-# ---------------------------------------------------------------------------
-# VAR
-# ---------------------------------------------------------------------------
 
 
 def _build_lagged_design(
@@ -478,11 +459,6 @@ def get_var_forecast(data: pd.DataFrame, lags: int, forecast_steps: int = 1) -> 
         "n_observations": len(design),
         "variable_names": variable_names,
     }
-
-
-# ---------------------------------------------------------------------------
-# IRF / FEVD
-# ---------------------------------------------------------------------------
 
 
 def _wold_ma_matrices(
@@ -770,9 +746,7 @@ def get_variance_decomposition(var_result: dict, periods: int = 10) -> dict:
     squared_theta = np.stack([t**2 for t in theta])  # shape (periods + 1, k, k)
     cumulative = np.cumsum(squared_theta, axis=0)  # cumulative over horizon
 
-    # h-step-ahead forecast error variance sums n = 0, ..., h - 1 -- i.e. horizon h
-    # (1-indexed) reads off `cumulative[h - 1]`, so horizons 1..periods are
-    # `cumulative[0:periods]`.
+    # Horizon h (1-indexed) reads cumulative[h - 1], so 1..periods is [0:periods].
     horizon_index = pd.RangeIndex(1, periods + 1, name="Horizon")
     decomposition = {
         variable_names[i]: pd.DataFrame(
@@ -789,11 +763,6 @@ def get_variance_decomposition(var_result: dict, periods: int = 10) -> dict:
         "decomposition": decomposition,
         "variable_names": variable_names,
     }
-
-
-# ---------------------------------------------------------------------------
-# VECM
-# ---------------------------------------------------------------------------
 
 
 def vecm_summary_table(result: dict) -> pd.DataFrame:

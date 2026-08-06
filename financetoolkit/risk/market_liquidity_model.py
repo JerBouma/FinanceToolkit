@@ -5,13 +5,10 @@ __docformat__ = "google"
 import numpy as np
 import pandas as pd
 
-# This is meant for calculations in which a Multi Index exists. This is the case
-# when calculating a "within period" in which the first index represents the period
-# (e.g. 2020Q1) and the second index the days within that period (January to March)
+# Two levels when a 'within period' index nests days inside a period (2020Q1).
 MULTI_PERIOD_INDEX_LEVELS = 2
 
-# The Roll Spread needs at least a handful of consecutive price changes to form a
-# meaningful lag-1 autocovariance estimate.
+# The Roll Spread needs a few consecutive changes for a lag-1 autocovariance.
 MINIMUM_ROLL_OBSERVATIONS = 3
 
 

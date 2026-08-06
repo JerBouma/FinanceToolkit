@@ -2727,10 +2727,7 @@ class Models:
             .reindex(self._tickers, level=0)
         )
 
-        # The first column is taken out because calculating the change of the
-        # first date will always result in NaN which means that any criteria
-        # looking at the change over time will return a 0. This is a meaningless
-        # result for the analysis
+        # The first column's change is always NaN, which would score a meaningless 0.
         piotroski_results = piotroski_results[piotroski_results.columns[1:]]
 
         return filter_columns(

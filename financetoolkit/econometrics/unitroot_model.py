@@ -12,13 +12,7 @@ from statsmodels.tsa.stattools import adfuller, kpss, zivot_andrews
 # The conventional 5% significance level used for the boolean "reject" flags.
 SIGNIFICANCE_LEVEL = 0.05
 
-# Asymptotic critical values for the (A)DF tau statistic, by regression type. Needed
-# only by `get_phillips_perron_test` below (which has no `statsmodels`/`linearmodels`
-# equivalent, see its docstring), since its "Z_t" statistic is asymptotically pivotal
-# to the same Dickey-Fuller tau distribution `statsmodels.tsa.stattools.adfuller`
-# already returns critical values for directly.
-# Source: MacKinnon, J.G. (1996). "Numerical Distribution Functions for Unit Root
-# and Cointegration Tests." Journal of Applied Econometrics, 11(6), 601-618.
+# MacKinnon (1996) asymptotic DF tau values, needed only by Phillips-Perron.
 ADF_CRITICAL_VALUES: dict[str, dict[float, float]] = {
     "c": {0.01: -3.43, 0.05: -2.86, 0.10: -2.57},
     "ct": {0.01: -3.96, 0.05: -3.41, 0.10: -3.13},

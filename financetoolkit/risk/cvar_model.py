@@ -8,9 +8,7 @@ from financetoolkit.risk import risk_model, var_model
 
 ALPHA_CONSTRAINT = 0.5
 
-# This is meant for calculations in which a Multi Index exists. This is the case
-# when calculating a "within period" in which the first index represents the period
-# (e.g. 2020Q1) and the second index the days within that period (January to March)
+# Two levels when a 'within period' index nests days inside a period (2020Q1).
 MULTI_PERIOD_INDEX_LEVELS = 2
 
 
@@ -191,8 +189,7 @@ def get_cvar_laplace(
 
     # For formula see: https://en.wikipedia.org/wiki/Expected_shortfall#Laplace_distribution
 
-    # Fitting b (scale parameter) to the variance of the data
-    # Since variance of the Laplace dist.: var = 2*b**2
+    # Laplace variance is 2*b**2, so b is fitted to the data's variance.
     b = np.sqrt(returns.std(ddof=0) ** 2 / 2)
 
     if alpha <= ALPHA_CONSTRAINT:
@@ -237,8 +234,7 @@ def get_cvar_logistic(
 
     # For formula see: https://en.wikipedia.org/wiki/Expected_shortfall#Logistic_distribution
 
-    # Fitting b (scale parameter) to the variance of the data
-    # Since variance of the Logistic dist.: var = b**2*pi**2/3
+    # Logistic variance is b**2*pi**2/3, so the scale is fitted to it.
     scale = np.sqrt(3 * returns.std(ddof=0) ** 2 / np.pi**2)
 
     return -scale * np.log(((1 - alpha) ** (1 - 1 / alpha)) / alpha) + returns.mean()
@@ -312,8 +308,7 @@ def get_cvar_cornish_fisher(
     skewness = risk_model.get_skewness(returns)
     excess_kurtosis = risk_model.get_kurtosis(returns, fisher=True)
 
-    # A fine grid of tail probabilities in (0, alpha] used to numerically integrate the
-    # Cornish-Fisher quantile function, approximating the Expected Shortfall.
+    # A fine grid in (0, alpha] to integrate the Cornish-Fisher quantile function.
     probabilities = np.linspace(alpha / number_of_quantiles, alpha, number_of_quantiles)
     za = stats.norm.ppf(probabilities)
 
@@ -412,8 +407,7 @@ def get_cvar_evt(
         (alpha / exceedance_probability) ** (-shape) - 1
     )
 
-    # Closed-form Expected Shortfall of a GPD tail (McNeil & Frey, 2000). Not defined for
-    # shape >= 1, since the GPD's mean is then infinite/undefined.
+    # Closed-form GPD Expected Shortfall (McNeil & Frey, 2000), undefined at shape >= 1.
     expected_shortfall_loss = np.where(
         shape < 1,
         value_at_risk_loss / (1 - shape) + (scale - shape * threshold) / (1 - shape),

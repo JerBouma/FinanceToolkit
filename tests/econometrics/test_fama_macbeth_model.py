@@ -37,8 +37,7 @@ def test_get_fama_macbeth_regression_recovers_known_risk_premium(recorder):
 
 
 def test_get_fama_macbeth_regression_noise_factor_is_insignificant():
-    # A factor uncorrelated with returns should produce a risk premium
-    # indistinguishable from zero -- the classic "is this factor priced" null.
+    # A factor uncorrelated with returns should give a premium indistinguishable from 0.
     rng = np.random.default_rng(2)
     n_periods, n_assets = 200, 25
     returns = pd.DataFrame(

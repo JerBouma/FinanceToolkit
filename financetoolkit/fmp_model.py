@@ -116,8 +116,7 @@ def get_financial_data(
             requests.exceptions.SSLError,
             requests.exceptions.ConnectionError,
         ):
-            # When the connection is refused, retry the request 12 times
-            # and if it doesn't work, then return an empty dataframe
+            # Retry a refused connection up to RETRY_LIMIT times, then return empty.
             if error_retry_counter == RETRY_LIMIT:
                 return pd.DataFrame(columns=["NO ERRORS"])
 
@@ -277,12 +276,7 @@ def get_financial_statement(
     if not financial_statement.empty:
         financial_statement = financial_statement.drop("symbol", axis=1)
 
-        # One day is deducted from the date because it could be that
-        # the date is reported as 2023-07-01 while the data is about the
-        # second quarter of 2023. This usually happens when companies
-        # have a different financial year than the calendar year. It doesn't
-        # matter for others that are correctly reporting since 2023-06-31
-        # minus one day is still 2023Q2
+        # One day is deducted: a period reported as 2023-07-01 is really 2023Q2.
         financial_statement["date"] = pd.to_datetime(
             financial_statement["date"]
         ) - pd.offsets.Day(1)
@@ -290,10 +284,7 @@ def get_financial_statement(
         if quarter:
             financial_statement["date"] = financial_statement["date"].dt.to_period("Q")
         else:
-            # Derive the calendar year the fiscal period mostly represents.
-            # If the fiscal year ends in months 1-5 (Jan-May), more than half the period
-            # falls in the prior calendar year (e.g. NVDA Jan 31 end → label as prior year).
-            # Months 6-12 (Jun-Dec) stay as-is (current year is majority or tied).
+            # A fiscal year ending in Jan-May mostly falls in the prior calendar year.
             end_month = financial_statement["date"].dt.month
             end_year = financial_statement["date"].dt.year
             calendar_year = end_year - (end_month < 6).astype(int)  # noqa
@@ -314,9 +305,7 @@ def get_financial_statement(
         financial_statement = financial_statement.set_index("date").T
 
         if financial_statement.columns.duplicated().any():
-            # This happens in the rare case that a company has two financial statements for the same period.
-            # Browsing through the data has shown that these financial statements are equal therefore
-            # one of the columns can be dropped.
+            # Duplicate statements for one period are equal, so one copy can be dropped.
             financial_statement = financial_statement.loc[
                 :, ~financial_statement.columns.duplicated()
             ]
@@ -455,8 +444,7 @@ def get_historical_data(
     ]
 
     if divide_ohlc_by:
-        # Set divide by zero and invalid value warnings to ignore as it is fine that
-        # dividing NaN by divide_ohlc_by results in NaN
+        # NaN divided by divide_ohlc_by is fine, so those warnings are ignored.
         np.seterr(divide="ignore", invalid="ignore")
         # In case tickers are presented in percentages or similar
         historical_data = historical_data.div(divide_ohlc_by)
@@ -754,9 +742,7 @@ def get_revenue_segmentation(
                     )
 
                 if revenue_segmentation.columns.duplicated().any():
-                    # This happens in the rare case that a company has two financial statements for the same period.
-                    # Browsing through the data has shown that these financial statements are equal therefore
-                    # one of the columns can be dropped.
+                    # Duplicate statements for one period are equal, so one copy can be dropped.
                     revenue_segmentation = revenue_segmentation.loc[
                         :, ~revenue_segmentation.columns.duplicated()
                     ]
@@ -875,8 +861,7 @@ def get_revenue_segmentation(
                 revenue_segmentation_total.columns, freq="Y"
             )
 
-        # Check whether the rows sum to zero, if so with the current start and end date there is no data
-        # for those rows and thus they can be dropped out of the dataset to clean it up
+        # Rows summing to zero have no data in this window, so drop them.
         revenue_segmentation_total = revenue_segmentation_total[
             revenue_segmentation_total.sum(axis=1) != 0
         ]
@@ -947,12 +932,7 @@ def get_analyst_estimates(
         try:
             analyst_estimates = analyst_estimates.drop("symbol", axis=1)
 
-            # One day is deducted from the date because it could be that
-            # the date is reported as 2023-07-01 while the data is about the
-            # second quarter of 2023. This usually happens when companies
-            # have a different financial year than the calendar year. It doesn't
-            # matter for others that are correctly reporting since 2023-06-31
-            # minus one day is still 2023
+            # One day is deducted: a period reported as 2023-07-01 is really 2023Q2.
             analyst_estimates["date"] = pd.to_datetime(
                 analyst_estimates["date"]
             ) - pd.offsets.Day(1)
@@ -969,9 +949,7 @@ def get_analyst_estimates(
             analyst_estimates = analyst_estimates.set_index("date").T
 
             if analyst_estimates.columns.duplicated().any():
-                # This happens in the rare case that a company has two financial statements for the same period.
-                # Browsing through the data has shown that these financial statements are equal therefore
-                # one of the columns can be dropped.
+                # Duplicate statements for one period are equal, so one copy can be dropped.
                 analyst_estimates = analyst_estimates.loc[
                     :, ~analyst_estimates.columns.duplicated()
                 ]
@@ -1441,9 +1419,7 @@ def get_earnings_calendar(
             earnings_calendar = earnings_calendar.set_index("date").sort_index()
 
             if earnings_calendar.columns.duplicated().any():
-                # This happens in the rare case that a company has two financial statements for the same period.
-                # Browsing through the data has shown that these financial statements are equal therefore
-                # one of the columns can be dropped.
+                # Duplicate statements for one period are equal, so one copy can be dropped.
                 earnings_calendar = earnings_calendar.loc[
                     :, ~earnings_calendar.columns.duplicated()
                 ]
@@ -1673,12 +1649,7 @@ def get_esg_scores(
                 no_data.append(ticker)
                 esg_scores_dict[ticker] = esg_scores
             else:
-                # One day is deducted from the date because it could be that
-                # the date is reported as 2023-07-01 while the data is about the
-                # second quarter of 2023. This usually happens when companies
-                # have a different financial year than the calendar year. It doesn't
-                # matter for others that are correctly reporting since 2023-06-31
-                # minus one day is still 2023 Q2.
+                # One day is deducted: a period reported as 2023-07-01 is really 2023Q2.
                 esg_scores["date"] = pd.to_datetime(
                     esg_scores["date"]
                 ) - pd.offsets.Day(1)

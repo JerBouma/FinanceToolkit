@@ -120,9 +120,7 @@ class Economics:
 
         self._cache = cache
 
-        # The OECD and FRED get_* functions are free functions rather than methods
-        # on this class, so the cache is published once here for them to read back
-        # instead of being threaded through every one of them and their callers.
+        # Published once here so the OECD and FRED free functions read it back.
         set_active_cache(cache)
         oecd_model.configure_oecd_cache(allow_stale_oecd_cache)
 
@@ -4444,8 +4442,7 @@ class Economics:
                 )
             )
 
-            # OECD interest rates are expressed as a fraction (e.g. 0.05 for 5%), rescale to a
-            # percentage so that they are on the same scale as the GMDB inflation rate below.
+            # OECD interest rates are fractions, so rescale to match the GMDB percentage.
             nominal_interest_rate = nominal_interest_rate * 100
 
         inflation_rate = gmdb_model.get_inflation_rate(gmd_dataset=self._gmbd_dataset)
@@ -4963,8 +4960,7 @@ class Economics:
                 period="yearly", start_date=self._start_date, end_date=self._end_date
             )
 
-            # OECD unemployment rate is expressed as a fraction (e.g. 0.05 for 5%), rescale to
-            # a percentage so that it is on the same scale as the GMDB inflation rate below.
+            # OECD unemployment is a fraction, so rescale to match the GMDB percentage.
             unemployment_rate = unemployment_rate * 100
 
         inflation_rate = gmdb_model.get_inflation_rate(gmd_dataset=self._gmbd_dataset)

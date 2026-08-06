@@ -347,12 +347,10 @@ def test_auth_middleware_protection() -> None:
     assert "WWW-Authenticate" in sse_resp.headers
     assert "resource_metadata=" in sse_resp.headers["WWW-Authenticate"]
 
-    # SSE/Messages endpoints should allow access when valid headers or token are present.
-    # We test with POST /messages/ instead of GET /sse to prevent the test client from hanging on a streaming connection.
+    # POST /messages/ rather than GET /sse, which would hang on the stream.
     jwt_token = sign_jwt({"fmp_api_key": "my-fmp-key"})
 
-    # We test with X-FMP-API-KEY header (should bypass middleware and proceed to FastMCP,
-    # ielding 404 or 450 instead of 401)
+    # The X-FMP-API-KEY header should bypass the middleware and reach FastMCP.
     resp = client.post("/messages/", headers={"X-FMP-API-KEY": "my-key"})
     assert resp.status_code != 401  # noqa
 

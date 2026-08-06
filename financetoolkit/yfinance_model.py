@@ -95,17 +95,13 @@ def get_financial_statement(
         )
         return pd.DataFrame(columns=[error_code])
 
-    # yfinance returns the statements with dates as columns and items as rows
-    # Convert dates to period format
+    # yfinance returns dates as columns and items as rows; convert to periods.
     if quarter:
         financial_statement.columns = pd.PeriodIndex(
             financial_statement.columns, freq="Q"
         )
     else:
-        # Derive the calendar year the fiscal period mostly represents.
-        # If the fiscal year ends in months 1-5 (Jan-May), more than half the period
-        # falls in the prior calendar year (e.g. NVDA Jan 31 end → label as prior year).
-        # Months 6-12 (Jun-Dec) stay as-is (current year is majority or tied).
+        # A fiscal year ending in Jan-May mostly falls in the prior calendar year.
         col_dates = pd.DatetimeIndex(financial_statement.columns)
         end_month = col_dates.month
         end_year = col_dates.year
@@ -201,8 +197,7 @@ def get_historical_data(
             repair=True,
         )
 
-        # Due to an odd error, it can sometimes occur that the columns are duplicated
-        # which is why a check is performed here to ensure these don't stay in the DataFrame
+        # Columns can occasionally be duplicated, so they are checked and dropped.
         historical_data = historical_data.loc[:, ~historical_data.columns.duplicated()]
 
         if "Adj Close" not in historical_data and historical_data.columns.nlevels == 1:
@@ -229,8 +224,7 @@ def get_historical_data(
         historical_data.index = historical_data.index.to_period(freq="D")
 
     if divide_ohlc_by:
-        # Set divide by zero and invalid value warnings to ignore as it is fine that
-        # dividing NaN by divide_ohlc_by results in NaN
+        # NaN divided by divide_ohlc_by is fine, so those warnings are ignored.
         np.seterr(divide="ignore", invalid="ignore")
         # In case tickers are presented in percentages or similar
         historical_data = historical_data.div(divide_ohlc_by)

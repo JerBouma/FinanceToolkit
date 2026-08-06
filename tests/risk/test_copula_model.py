@@ -62,8 +62,7 @@ def test_get_tail_dependence_coefficient_student_t_method(recorder):
     result_formula = copula_model.get_tail_dependence_coefficient(
         ta, tb, q=0.99, method="student-t", dof=v
     )
-    # A Student-T copula has nonzero tail dependence, unlike the gaussian one, and
-    # the closed-form value should roughly agree with the empirical estimate.
+    # A Student-T copula has nonzero tail dependence, unlike the gaussian one.
     assert result_formula["Upper Tail Dependence"] > STUDENT_T_TAIL_DEPENDENCE_MINIMUM
     assert (
         abs(

@@ -153,8 +153,7 @@ def test_get_number_of_shares_criteria(sample_financial_data):
 
     assert isinstance(result, pd.Series)
     assert len(result) == 5
-    # Shares were issued in early years (positive), bought back in later years (negative)
-    # Criteria should be 0 for positive values, 1 for negative values (buybacks)
+    # Shares issued early and bought back later, so 0 for positive and 1 for negative.
     expected = pd.Series(
         [False, False, True, False, False],
         index=["2019", "2020", "2021", "2022", "2023"],

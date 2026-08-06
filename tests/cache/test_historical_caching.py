@@ -114,9 +114,7 @@ def test_cumulative_return_is_recomputed_over_the_merged_window(
 
     cumulative_return = historical_data["Cumulative Return"]["AAPL"]
 
-    # The series is flat, so every cumulative return is 1. What matters is that the
-    # column is populated across the whole merged window rather than only over the
-    # part that was fetched in the second call.
+    # The series is flat, so what matters is the column spanning the merged window.
     assert cumulative_return.notna().all()
     assert cumulative_return.loc[pd.Period("2018-06-01", freq="D")] == 1.0
 

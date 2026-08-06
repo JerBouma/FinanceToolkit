@@ -26,20 +26,13 @@ logger = logger_model.get_logger()
 
 DATABASE_FILE_NAME = "financetoolkit_cache.db"
 
-# Coverage rows accumulate one per fetch. Compacting them into merged intervals
-# once an entity passes this many rows keeps the table from growing without bound
-# for datasets that are refreshed daily.
+# Compacted into merged intervals past this many rows, to bound table growth.
 COVERAGE_COMPACTION_THRESHOLD = 16
 
 _CACHE_REGISTRY: dict[str, "Cache"] = {}
 _REGISTRY_LOCK = Lock()
 
-# Several data sources are reached through free functions rather than through a
-# controller instance: the OECD, FRED, ECB and Federal Reserve modules each expose
-# a few dozen module level get_* functions. Threading a cache argument through all
-# of them and every one of their callers would be a large amount of plumbing for a
-# setting that is uniform per process, so controllers publish the cache here once
-# and those functions read it back.
+# Published once per process: OECD/FRED/ECB/Fed reach the cache via free functions.
 _ACTIVE_CACHE: "Cache | None" = None
 
 
@@ -244,9 +237,7 @@ class Cache:
             try:
                 self._backend = SQLiteBackend(self._location)
             except Exception as error:  # pylint: disable=broad-except
-                # A cache is an optimization. A database that cannot be opened -- it
-                # is corrupt, the directory is read only, the disk is full -- must
-                # degrade to no caching rather than take the caller down with it.
+                # A cache is an optimization, so a database that cannot be opened just disables it.
                 self._enabled = False
 
                 logger.warning(
@@ -375,10 +366,7 @@ class Cache:
         minimum_fetched_at = time.time() - policy.ttl_seconds
         request = (requested_start, requested_end)
 
-        # Refreshing a stale range is limited to the revision window measured back
-        # from the end of the request. A revision window of zero means the source
-        # cannot be asked for a sub-range anyway, so the whole stale part is asked
-        # for again.
+        # A revision window of 0 means the source takes no sub-range, so refetch it whole.
         revision_tail = (
             (
                 max(requested_start, requested_end - timedelta(policy.revision_days)),
@@ -515,10 +503,7 @@ class Cache:
         if coverage_start is None or coverage_end is None:
             return
 
-        # Sources routinely return more than was asked for: the price endpoints
-        # deliberately over-fetch a year on either side so that returns at the edges
-        # of the window are correct. That surplus is genuinely held, so claiming it
-        # as covered stops the next widening from requesting it all over again.
+        # Sources over-fetch (prices by a year either side); claim what is genuinely held.
         if bounds is not None:
             coverage_start = min(coverage_start, bounds[0])
             coverage_end = max(coverage_end, bounds[1])
@@ -564,8 +549,7 @@ class Cache:
 
         merged = coverage_model.merge_intervals(intervals)
 
-        # Compaction must not make old data look freshly fetched, so the merged
-        # rows inherit the oldest timestamp of the rows they replace.
+        # Merged rows inherit the oldest timestamp so old data never looks freshly fetched.
         oldest = self._backend.get_oldest_coverage_timestamp(key, entity)
 
         self._backend.replace_coverage(
@@ -628,8 +612,7 @@ class Cache:
 
             return serialization_model.decode_object(payload)
         except Exception as error:  # pylint: disable=broad-except
-            # Anything that goes wrong reading the cache is reported as a miss, so
-            # the caller falls back to the source instead of failing outright.
+            # Any read failure is reported as a miss, so the caller falls back to the source.
             logger.debug(
                 "Could not read cached %s.%s for %s: %s", source, dataset, entity, error
             )
@@ -777,8 +760,7 @@ class Cache:
                 ttl, source=source, dataset=dataset
             )
         except Exception as error:  # pylint: disable=broad-except
-            # Eviction runs on a timer rather than on request, so a failure here is
-            # housekeeping that did not happen, not something to surface to a caller.
+            # Eviction is housekeeping on a timer, so a failure here is not surfaced.
             logger.debug("Could not evict expired cache entries: %s", error)
 
             return 0

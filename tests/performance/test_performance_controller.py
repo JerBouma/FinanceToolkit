@@ -190,8 +190,7 @@ def test_get_deflated_sharpe_ratio(recorder, performance_module):
         performance_module.get_deflated_sharpe_ratio(growth=True, lag=[1, 2, 3])
     )
 
-    # Deflating for more trials should never raise the probability relative to
-    # fewer trials, holding everything else fixed.
+    # More trials should never raise the probability, all else held fixed.
     fewer_trials = performance_module.get_deflated_sharpe_ratio(n_trials=1)
     more_trials = performance_module.get_deflated_sharpe_ratio(n_trials=50)
     assert (more_trials.fillna(0) <= fewer_trials.fillna(0) + 1e-9).all().all()

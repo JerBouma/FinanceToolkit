@@ -13,11 +13,7 @@ logger = logger_model.get_logger()
 
 # pylint: disable=comparison-with-itself,too-many-locals
 
-# This is used to translate a period to the corresponding Pandas frequency string
-# which is required to resample daily historical data to a lower frequency. This is
-# shared across historical_model.py, risk_model.py and performance_model.py so that
-# every period-based calculation (Return, Variance, Volatility, ...) agrees on the
-# same frequency mapping.
+# Period to pandas frequency, shared so every period calculation agrees.
 PERIOD_TRANSLATION = {
     "weekly": "W",
     "monthly": "M",
@@ -25,8 +21,7 @@ PERIOD_TRANSLATION = {
     "yearly": "Y",
 }
 
-# This is used to scale a daily Variance or Volatility to the corresponding
-# period by multiplying it with the number of trading days within that period.
+# Scales a daily Variance or Volatility by the trading days in a period.
 VOLATILITY_WINDOW_TRANSLATION = {
     "weekly": 252 / 52,
     "monthly": 252 / 12,
@@ -137,9 +132,7 @@ def finalize_dataset(
         )
 
     if countries:
-        # Solely meant for economic indicators, which are indexed by date with countries as columns. If the
-        # user requests a country that is not available, this function can log a warning and return
-        # the available countries instead of raising an error.
+        # Economic indicators are indexed by date with countries as columns.
         if isinstance(countries, str):
             countries = [countries]
         missing_countries = [
@@ -170,9 +163,7 @@ def calculate_growth(
     Returns:
         pd.Series | pd.DataFrame: _description_
     """
-    # With Pandas 2.1, pct_change will no longer automatically forward fill
-    # given that this has been solved within the code already but the warning
-    # still appears, this is a temporary fix to ignore the warning
+    # pandas 2.1 warns about pct_change fill even though the code handles it.
     warnings.simplefilter(action="ignore", category=FutureWarning)
 
     if isinstance(lag, list):

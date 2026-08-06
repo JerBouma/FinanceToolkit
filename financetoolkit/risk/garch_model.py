@@ -6,9 +6,7 @@ from scipy import optimize
 
 ALPHA_CONSTRAINT = 0.5
 
-# This is meant for calculations in which a Multi Index exists. This is the case
-# when calculating a "within period" in which the first index represents the period
-# (e.g. 2020Q1) and the second index the days within that period (January to March)
+# Two levels when a 'within period' index nests days inside a period (2020Q1).
 MULTI_PERIOD_INDEX_LEVELS = 2
 
 
@@ -34,9 +32,7 @@ def garch_log_maximization(
     # Compute GARCH values using a vectorized function
     garch = get_garch(returns, weights_array, t, p=p, q=q)
 
-    # Compute the log-likelihood in a vectorized manner. garch[i] is the conditional
-    # variance for period i (built from returns[i - 1]), so it must be paired with
-    # returns[i] itself, not returns[i - 1]'s variance.
+    # garch[i] is built from returns[i - 1], so it pairs with returns[i] itself.
     u = returns[1:t]
     v = garch[1:t]
 
@@ -85,8 +81,7 @@ def get_garch_weights(
             return np.inf  # Return a large number to represent an invalid solution
         return garch_log_maximization(parameters, returns, t, p, q)
 
-    # Perform the optimization using simulated annealing. Seeded so that fitted
-    # parameters (and anything derived from them) are reproducible across runs.
+    # Seeded so fitted parameters are reproducible across runs.
     result = optimize.dual_annealing(wrapper_func, bounds, x0=initial_guess, seed=42)
 
     return result.x
@@ -255,10 +250,7 @@ def get_garch_forecast(
 
         garch_values = get_garch(returns, weights, time_steps, p=p, q=q)
 
-        # weights[0] / (1 - alpha - beta) is already the long-run VARIANCE (not a
-        # std-dev), so it must not be squared again. The forecast is seeded from the
-        # most recently fitted conditional variance, not the initial (arbitrary)
-        # first value of the fitted series.
+        # Already a variance, so never squared; seeded from the last fitted value.
         long_run_variance = weights[0] / (1 - weights[1] - weights[2])
         current_variance = garch_values[-1]
         sigma_2 = np.zeros(time_steps)
@@ -586,13 +578,7 @@ def get_egarch_weights(
     if t is None:
         t = len(returns)
 
-    # Alpha, gamma and beta are kept tight around typical empirical EGARCH
-    # magnitudes (Nelson, 1991, and the applied EGARCH literature since) -- wider
-    # bounds let a global optimizer wander into numerically pathological corners of
-    # the log-variance recursion on small samples. Omega needs a much wider range:
-    # since omega ~= (1 - beta) * long_run_log_variance and daily-return-scale
-    # variances are small (e.g. ln(0.0002) =~ -8.5), omega genuinely sits well below
-    # -1 for realistic return data even though it stays close to zero on a log scale.
+    # Omega sits well below -1 on a log scale; the rest stay near empirical EGARCH.
     bounds = [(-15, 5), (-1, 1), (-1, 1), (-0.999, 0.999)]
     initial_guess = [0.0, 0.1, -0.1, 0.9]
 
@@ -713,10 +699,7 @@ def get_egarch(
                 + alpha * (abs(standardized_shock) - expected_absolute_z)
                 + gamma * standardized_shock
             )
-            # Clip to a generous but finite range. Without this, a simulated-annealing
-            # exploration step that pushes the recursion toward overflow can make the
-            # (otherwise well-behaved) likelihood spuriously attractive at extreme
-            # parameter values, pulling the optimizer toward the edge of its bounds.
+            # Without clipping, an overflow step makes the likelihood spuriously attractive.
             log_sigma2[i] = np.clip(log_sigma2[i], -20, 20)
             sigma2[i] = np.exp(log_sigma2[i])
 

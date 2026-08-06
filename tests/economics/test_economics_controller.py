@@ -432,8 +432,7 @@ def test_get_nonfarm_payrolls_requires_fred_api_key():
 
     economics = Economics(start_date="2020-01-01", fred_api_key="")
 
-    # @handle_errors logs and swallows the ValueError raised by
-    # _require_fred_api_key, returning an empty Series instead of raising.
+    # @handle_errors swallows the ValueError and returns an empty Series.
     result = economics.get_nonfarm_payrolls()
 
     assert result.empty

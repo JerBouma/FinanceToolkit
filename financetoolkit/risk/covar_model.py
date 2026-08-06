@@ -39,8 +39,7 @@ def _quantile_regression(
     n = len(y)
     number_of_variables = 2 + 2 * n
 
-    # Objective: no cost on the intercept/slope themselves, asymmetric cost on the
-    # positive (u_plus) and negative (u_minus) residual parts.
+    # No cost on intercept/slope, asymmetric cost on the positive/negative parts.
     c = np.concatenate([[0.0, 0.0], np.full(n, tau), np.full(n, 1 - tau)])
 
     rows = np.repeat(np.arange(n), 4)
@@ -159,9 +158,7 @@ def get_covar(
     median_conditioning = np.percentile(x, MEDIAN_QUANTILE * 100)
 
     covar = intercept_alpha + slope_alpha * var_conditioning_alpha
-    # Same (single) alpha-quantile regression, evaluated at the conditioning
-    # variable's median instead of its distress VaR -- not a separately refit
-    # median-quantile regression. See the docstring above.
+    # The same alpha-quantile regression at the median, not a refit median one.
     delta_covar = slope_alpha * (var_conditioning_alpha - median_conditioning)
 
     return pd.Series(

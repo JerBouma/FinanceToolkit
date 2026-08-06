@@ -10,12 +10,10 @@ from financetoolkit.utilities.statistics_model import (
     VOLATILITY_WINDOW_TRANSLATION,
 )
 
-# The natural logarithm of 2, used throughout the Parkinson, Garman-Klass and
-# Yang-Zhang formulas below.
+# The natural logarithm of 2, used by Parkinson, Garman-Klass and Yang-Zhang.
 LN_2 = np.log(2)
 
-# The HAR-RV regression needs enough overlap between the monthly rolling window, the
-# forecast horizon and a handful of estimation observations to be meaningful.
+# HAR-RV needs overlap between the monthly window, horizon and observations.
 MINIMUM_HAR_RV_OBSERVATIONS = 10
 
 
@@ -344,10 +342,7 @@ def get_yang_zhang_volatility(
 
     volatility_window = VOLATILITY_WINDOW_TRANSLATION[period]
 
-    # The overnight (close-to-open) log-return is computed on the full series first,
-    # before grouping by period, so that the transition from the last trading day of one
-    # period into the first trading day of the next (e.g. across a weekend or a
-    # month-end) is correctly captured as part of the following period's estimate.
+    # Computed before grouping so a period transition lands in the next period.
     previous_close = close_prices.shift(1)
     overnight_returns = np.log(open_prices / previous_close)
     open_to_close_returns = np.log(close_prices / open_prices)

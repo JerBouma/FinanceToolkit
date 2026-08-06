@@ -40,8 +40,7 @@ def determine_currencies(
         )
 
         for currency in statement_currencies[period].unique():
-            # Identify the currencies that are not in the list yet
-            # and that are not NaN (the currency == currency check)
+            # Skip currencies already listed and NaN (the currency == currency check).
             if currency not in currencies and currency == currency:  # noqa
                 currencies.append(currency)
 
@@ -81,8 +80,7 @@ def convert_currencies(
     """
     no_data = []
 
-    # Currency conversion always yields floats; cast upfront so `.loc` assignment
-    # below doesn't hit pandas' post-3.0 ban on silently upcasting int columns.
+    # Cast upfront: pandas 3.0 bans silently upcasting int columns on `.loc`.
     financial_statement_data = financial_statement_data.astype("float64")
 
     periods = financial_statement_data.columns

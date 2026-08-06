@@ -42,8 +42,7 @@ def test_get_grover_score(recorder):
             return_on_assets_ratio=pd.Series([0.1, -0.05]),
         )
     )
-    # Synthetic ground-truth: a healthy company (well above the -0.02 cutoff)
-    # and a distressed company (at or below it).
+    # Synthetic ground truth: healthy is well above the -0.02 cutoff, distressed below.
     healthy = grover_model.get_grover_score(
         working_capital_to_total_assets_ratio=0.2,
         ebit_to_total_assets_ratio=0.15,

@@ -36,8 +36,7 @@ def test_get_covar_tail_linked(recorder):
     result = covar_model.get_covar(returns, conditioning, alpha=0.05)
     unconditional_var = np.percentile(returns, 5)
 
-    # CoVaR conditional on distress should be materially worse than the plain
-    # (unconditional) VaR when there is genuine tail linkage.
+    # With genuine tail linkage, CoVaR should be materially worse than plain VaR.
     assert result["CoVaR"] < unconditional_var
     assert result["Quantile Regression Slope"] > TAIL_LINKED_SLOPE_MINIMUM
     recorder.capture(result.round(4))

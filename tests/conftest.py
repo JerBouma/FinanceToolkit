@@ -131,9 +131,7 @@ class Record:
         if recorded == captured:
             return False
 
-        # For JSON records, fall back to approximate float comparison so that
-        # differences in float string representation (e.g. 0.011710000000000002
-        # vs 0.01171) don't cause spurious failures across Python versions.
+        # JSON floats are compared approximately, so repr differences do not fail.
         if self.__record_path.endswith(".json"):
             return not self._json_strings_approx_equal(recorded, captured)
 

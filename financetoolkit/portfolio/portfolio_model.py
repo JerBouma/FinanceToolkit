@@ -12,8 +12,7 @@ logger = logger_model.get_logger()
 
 # pylint: disable=too-many-locals
 
-# Matches up with currency codes EUR, USD, JPY etc. This is used for
-# Yahoo Finance's notation of currencies. E.g. EURUSD=X
+# Matches currency codes (EUR, USD) in Yahoo Finance notation, e.g. EURUSD=X.
 CURRENCY_CODE_LENGTH = 3
 
 
@@ -125,8 +124,7 @@ def read_portfolio_dataset(
                 )
             )
 
-            # It shouldn't add together the prices as this falsely indicates a higher investment
-            # than actually made and result in false return calculations.
+            # Summing prices would falsely indicate a higher investment than made.
             number_columns.remove(selected_price_column)  # type: ignore
 
             duplicates.loc[:, number_columns] = duplicates.loc[:, number_columns].add(
@@ -238,8 +236,7 @@ def format_portfolio_dataset(
     dataset = dataset.set_index(date_column_first)
 
     for date_format in date_format_options:
-        # An attempt is made to format the date column to a datetime object. If this fails, the next format is tried.
-        # This is done to ensure that the date column is correctly formatted.
+        # Each date format is tried in turn until one parses the column.
         try:
             dataset.index = pd.to_datetime(dataset.index, format=date_format).to_period(
                 freq="D"
@@ -367,8 +364,7 @@ def format_portfolio_dataset(
             )
             dataset[currency_column_first] = dataset[currency_column_first].str.upper()
 
-            # This is mostly done given that Unnamed columns could exist in the dataset, specifically in
-            # the DEGIRO dataset and are automatically dropped. This prevents this column from being dropped.
+            # Prevents the currency column being dropped with DEGIRO's Unnamed columns.
             dataset = dataset.rename(columns={currency_column_first: "currency"})
             currency_column_first = "currency"
 
@@ -381,8 +377,7 @@ def format_portfolio_dataset(
     else:
         currency_column_first = None
 
-    # Rename all columns that are relevant and drop the others. This is done so that any type of file
-    # can be added to your portfolio and it will still work.
+    # Rename what is relevant and drop the rest, so any file type still works.
     dataset = dataset.rename(
         columns={
             date_column_first: column_mapping["date"],
@@ -395,8 +390,7 @@ def format_portfolio_dataset(
         }
     )
 
-    # Drop out any other columns, this is done so that any type of file can be added to your portfolio
-    # and it will still work.
+    # Drop the other columns, so any file type can be added and still work.
     dataset = dataset[column_mapping.values()]
 
     return (

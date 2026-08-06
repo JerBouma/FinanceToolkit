@@ -15,17 +15,7 @@ from financetoolkit.utilities.requests_model import get_request
 
 logger = get_logger()
 
-# The OECD API enforces a hard limit of 60 downloads/hour (see
-# https://data-explorer.oecd.org, "API rate limiting"), well within reach of
-# a single multi-country/multi-indicator FinanceScenarios-style run. Every
-# successful OECD response is cached (see collect_oecd_data) so a later run
-# has something to fall back to -- _ALLOW_STALE_CACHE_ON_RATE_LIMIT only
-# controls whether a 429 is allowed to actually *serve* that cache past its
-# freshness window, since doing so means the caller knowingly accepts data
-# that may not be current. Module-level, not a parameter threaded through
-# every one of this module's ~20 get_* functions and their callers, since
-# it's a cross-cutting policy set once per process (configure_oecd_cache(),
-# called from EconomicsController.__init__).
+# Module-level cross-cutting policy: the OECD allows 60 downloads/hour.
 _ALLOW_STALE_CACHE_ON_RATE_LIMIT = True
 
 
@@ -230,13 +220,7 @@ CODE_TO_COUNTRY = {
 }
 
 
-# Number of periods subtracted from `start_date` before it is sent to the OECD API as
-# `startPeriod`, per frequency. This exists solely so that `finalize_dataset`'s
-# rolling/trailing smoothing and growth/lag calculations (which need history from
-# before the display window to compute the first rows in it correctly) still have
-# enough prior observations once the underlying fetch is date-scoped. There is no
-# equivalent buffer needed for `endPeriod`, since future data has no bearing on
-# growth/rolling calculations.
+# Extra history before start_date so rolling and growth rows compute correctly.
 START_BUFFER_PERIODS = {"Y": 10, "Q": 16, "M": 24}
 
 
@@ -308,18 +292,13 @@ def collect_oecd_data(
     if end_date:
         extensions += f"&endPeriod={_format_oecd_period(end_date, period_code)}"
 
-    # The dataset id together with its filters is what identifies an OECD query;
-    # the requested period is tracked as coverage instead, so narrowing or widening
-    # the date range reuses what was already downloaded for the same indicator.
+    # The dataset id and filters identify a query; the period is tracked as coverage.
     cache = get_active_cache()
     cache_entity = oecd_data_string
     cache_parameters = {"period_code": period_code}
     cached_data = None
 
-    # An absent start or end date means "everything the OECD has", which has to be
-    # expressed as a concrete range on both sides. Otherwise the plan would measure
-    # against today while the stored coverage would end at the last observation,
-    # leaving a gap that can never be closed and defeating the cache entirely.
+    # Both ends need a concrete date, or the coverage gap can never be closed.
     coverage_start = buffered_start_date or "1900-01-01"
     coverage_end = end_date or datetime.today().strftime("%Y-%m-%d")
 
@@ -380,9 +359,7 @@ def collect_oecd_data(
     oecd_data = oecd_data.dropna(axis=1, how="all")
     oecd_data = oecd_data[~oecd_data.index.isna()]
 
-    # Stored on every successful fetch, since this is also what a later rate-limit
-    # fallback serves back. Merging keeps whatever was downloaded for an earlier,
-    # different period rather than replacing it.
+    # Stored on every success, since a later rate-limit fallback serves this back.
     if cache is not None and not oecd_data.empty:
         cache.store(
             source=policy_model.OECD,

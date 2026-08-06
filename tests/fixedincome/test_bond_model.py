@@ -136,8 +136,7 @@ def test_get_key_rate_duration_sums_to_approx_effective_duration(recorder):
         yield_to_maturity=approx_flat_rate,
         frequency=1,
     )
-    # Key rate durations, summed across the curve, should approximate the
-    # parallel-shift effective duration (same order of magnitude).
+    # Summed key rate durations should approximate the parallel-shift duration.
     recorder.capture(bool(abs(total_krd - effective_duration) < 1))
 
 
@@ -193,8 +192,7 @@ def test_get_taylor_price_change_matches_actual_repricing(recorder):
     )
     actual_pct = (price_after - price_before) / price_before
 
-    # For a small yield shift, the Taylor approximation should closely match
-    # the actual repriced bond value.
+    # For a small yield shift the Taylor approximation should match the reprice.
     recorder.capture(
         bool(abs(taylor_pct - actual_pct) < TAYLOR_APPROXIMATION_TOLERANCE)
     )

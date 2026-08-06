@@ -657,16 +657,14 @@ class Portfolio:
             period="yearly"
         )
 
-        # It could be that a specific date does not exist for the given benchmark. In that case,
-        # the previous value is used instead.
+        # A date missing for the benchmark falls back to the previous value.
         self._benchmark_prices = self._daily_benchmark_data["Adj Close"].iloc[
             self._daily_benchmark_data["Adj Close"].index.get_indexer(
                 self._portfolio_dataset.index.get_level_values(0), method="backfill"
             )
         ]
 
-        # The index of the benchmark prices is set to the dates of the portfolio dataset
-        # so that they are matched up again.
+        # Reindexed onto the portfolio dates so the two line up again.
         self._benchmark_prices.index = self._portfolio_dataset.index
 
         self._benchmark_prices = self._benchmark_prices.sort_index()
@@ -681,8 +679,7 @@ class Portfolio:
             original_ticker = self._original_ticker_combinations[ticker]
             benchmark_ticker = self._benchmark_tickers[original_ticker]
 
-            # Add the specific benchmark price and, if multiple orders of the same ticker are made on the same day
-            # (e.g. buying and selling), only report the benchmark price once.
+            # Report the benchmark price once even with several orders on the same day.
             benchmark_specific_price = self._benchmark_prices.loc[(date, ticker)]
 
             if isinstance(benchmark_specific_price, float):
@@ -792,8 +789,7 @@ class Portfolio:
                 historical=self._daily_historical_data,
             )
 
-        # This is used in case ISIN codes are provided and therefore ISIN codes need to
-        # be matched to the corresponding tickers
+        # Used when ISIN codes are provided and must be matched to tickers.
         self._ticker_combinations = dict(zip(self._toolkit._tickers, self._tickers))  # type: ignore
         self._original_ticker_combinations = dict(
             zip(self._tickers, self._original_tickers)  # type: ignore
@@ -828,9 +824,7 @@ class Portfolio:
                 ].items():
                     data_currency = self._historical_statistics.loc["Currency", ticker]
 
-                    # Skip when either currency code is missing or NaN,
-                    # otherwise a bogus symbol like "NAN=X" gets sent to
-                    # Yahoo Finance and triggers a 404.
+                    # A missing or NaN currency code would send a bogus 'NAN=X' and 404.
                     if (
                         not currency
                         or not data_currency

@@ -26,8 +26,7 @@ logger = get_logger()
 
 _JWT_PART_COUNT = 3
 
-# Header names checked in order. Custom ``x-*`` headers are forwarded by
-# FastMCP's ``get_http_headers`` by default; ``authorization`` must be opted in.
+# Checked in order. FastMCP forwards `x-*`; `authorization` must be opted in.
 _HEADER_NAMES: tuple[str, ...] = (
     "x-fmp-api-key",
     "x-financial-modeling-prep-api-key",
@@ -40,8 +39,7 @@ _QUERY_NAMES: tuple[str, ...] = (
     "fmp_key",
 )
 
-# Header names checked in order for the (optional) FRED API key, used by the
-# Economics and FixedIncome modules' US labor/activity/rates indicators.
+# Checked in order for the optional FRED key used by Economics/FixedIncome.
 _FRED_HEADER_NAMES: tuple[str, ...] = ("x-fred-api-key",)
 
 # Query-string parameter names checked in order for the FRED API key.
@@ -729,8 +727,7 @@ def get_fred_api_key_from_headers(headers: Any) -> str:
                 return str(payload["fred_api_key"])
             return value.strip()
 
-    # A signed FMP bearer token carries the FRED key alongside it, if the
-    # caller authorized with one via the OAuth flow.
+    # A signed FMP bearer token carries the FRED key alongside it, if authorized.
     auth_header = headers.get("authorization", "")
     if auth_header.lower().startswith("bearer "):
         token = auth_header[7:].strip()
@@ -811,8 +808,7 @@ class MCPAuthMiddleware(BaseHTTPMiddleware):
         ):
             return await call_next(request)
 
-        # Protect MCP endpoints — SSE transport (/sse, /messages) and
-        # streamable-HTTP transport (/mcp)
+        # Protect the MCP endpoints: SSE (/sse, /messages) and streamable-HTTP (/mcp).
         if path == "/sse" or path.startswith("/messages") or path == "/mcp":
             # If the server has a global default API key, allow access
             if os.environ.get("FINANCIAL_MODELING_PREP_API_KEY"):
@@ -953,9 +949,7 @@ def register_auth_routes(mcp: Any) -> None:
         if not fmp_api_key:
             return HTMLResponse("FMP API Key is required", status_code=400)
 
-        # Generate PKCE code signed by server. fred_api_key is optional — it
-        # only unlocks the subset of Economics/FixedIncome tools that source
-        # US labor/activity/rates data from FRED.
+        # PKCE code signed by the server; fred_api_key only unlocks the FRED subset.
         payload = {
             "fmp_api_key": fmp_api_key,
             "fred_api_key": fred_api_key,

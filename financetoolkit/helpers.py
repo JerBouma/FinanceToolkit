@@ -131,11 +131,7 @@ def handle_portfolio(func):
             if isinstance(result.columns, pd.PeriodIndex) and not isinstance(
                 result.columns, pd.MultiIndex
             ):
-                # A period can be missing from weights when the price history used to
-                # derive them doesn't reach as far back as the period covered by result
-                # (e.g. financial statement data can predate available price data).
-                # reindex fills these with NaN instead of raising, so the weighted
-                # average for that period simply comes out as NaN.
+                # reindex fills periods missing from weights with NaN rather than raising.
                 weights = weights.reindex(result_without_benchmark.columns).T
 
                 weighted_averages = round(

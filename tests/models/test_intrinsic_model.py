@@ -98,10 +98,7 @@ def test_get_two_stage_dividend_discount_model(recorder):
             high_growth_periods=3,
         )
     )
-    # Synthetic ground-truth computed by hand (see task verification):
-    # dividends grow 2.0 -> 2.4 -> 2.88 -> 3.456, discounted at 10% gives a
-    # high-growth phase PV of ~7.1585, a terminal value of ~50.8526 (PV ~38.2063),
-    # for a total intrinsic value of ~45.3648.
+    # Ground truth by hand: PV 7.1585 plus a terminal 38.2063 gives about 45.3648.
     result = intrinsic_model.get_two_stage_dividend_discount_model(
         dividends_per_share=2.0,
         rate_of_return=0.10,

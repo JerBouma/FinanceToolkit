@@ -69,9 +69,7 @@ def test_get_white_test_homoskedastic_not_flagged(recorder):
 
 
 def test_get_white_test_detects_nonlinear_heteroskedasticity_missed_by_bp():
-    # Variance depends on x^2 (a curved, non-linear pattern) -- White's polynomial
-    # expansion should catch this more decisively than Breusch-Pagan's linear-only
-    # auxiliary regression.
+    # Variance depends on x^2, which White should catch more decisively than BP.
     rng = np.random.default_rng(11)
     n = 500
     x1 = rng.standard_normal(n)
@@ -102,8 +100,7 @@ def test_get_durbin_watson_test_no_autocorrelation(recorder):
 
 
 def test_get_durbin_watson_test_detects_positive_autocorrelation(recorder):
-    # AR(1) errors with a high persistence coefficient -- classic positive
-    # autocorrelation, DW should fall well below 2.
+    # AR(1) errors with high persistence, so DW should fall well below 2.
     rng = np.random.default_rng(7)
     n = 300
     x = rng.standard_normal(n)
@@ -122,8 +119,7 @@ def test_get_durbin_watson_test_detects_positive_autocorrelation(recorder):
 
 
 def test_get_durbin_watson_test_detects_negative_autocorrelation(recorder):
-    # Alternating-sign errors -- classic negative autocorrelation, DW should
-    # fall well above 2.
+    # Alternating-sign errors, so DW should fall well above 2.
     rng = np.random.default_rng(7)
     n = 300
     x = rng.standard_normal(n)
@@ -217,8 +213,7 @@ def test_get_ramsey_reset_test_linear_not_flagged(recorder):
 
 
 def test_get_ramsey_reset_test_detects_misspecification(recorder):
-    # True relationship is quadratic; fit with a linear model -- RESET should
-    # pick up the missing non-linear term via the fitted-value powers.
+    # A quadratic truth fit linearly, so RESET should pick up the missing term.
     rng = np.random.default_rng(11)
     n = 400
     x = rng.uniform(-3, 3, n)

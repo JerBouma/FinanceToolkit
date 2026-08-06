@@ -914,8 +914,7 @@ def get_ultima(
         time_to_expiration=time_to_expiration,
     )
 
-    # get_vega returns vega scaled by 1/100 (per 1% change in volatility); Ultima's
-    # formula requires the raw (unscaled) vega, so the scaling is undone here.
+    # get_vega is scaled by 1/100, and Ultima's formula needs the raw vega.
     vega = (
         get_vega(
             stock_price=stock_price,

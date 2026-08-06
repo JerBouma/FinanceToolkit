@@ -16,14 +16,11 @@ from financetoolkit.utilities.error_model import handle_errors
 # pylint: disable=too-many-locals,line-too-long,too-many-public-methods
 # ruff: noqa: E501
 
-# Set up logger, this is meant to display useful messages, warnings or errors when
-# the Finance Toolkit runs into issues or does something that might not be entirely
-# logical at first
+# Displays messages, warnings and errors when the Finance Toolkit hits issues.
 logger_model.setup_logger()
 logger = logger_model.get_logger()
 
-# In case the user has set an API key as an environment variable,
-# this will be used as the default API key for the Toolkit.
+# Used as the Toolkit's default API key when set as an environment variable.
 API_KEY: str = os.environ.get("FINANCIAL_MODELING_PREP_API_KEY", None)
 
 
@@ -98,9 +95,7 @@ class Discovery:
 
             cache_controller.set_active_cache(self._cache)
 
-        # This tests the API key to determine the subscription plan. This is relevant for the sleep timer
-        # but also for other components of the Toolkit. This prevents wait timers from occurring while
-        # it wouldn't result to any other answer than a rate limit error.
+        # Determines the plan, which drives the sleep timer and other components.
         self._fmp_plan, _ = fmp_model.determine_subscription_plan(api_key=api_key)
 
     @handle_errors

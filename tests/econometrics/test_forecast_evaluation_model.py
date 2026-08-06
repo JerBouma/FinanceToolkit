@@ -173,8 +173,7 @@ def _naive_last_value_forecast(train: pd.Series, forecast_steps: int) -> pd.Seri
 
 
 def test_get_out_of_sample_validation_no_leakage():
-    # Confirm the split is purely chronological and the training portion excludes
-    # every holdout index.
+    # Confirm the split is chronological and training excludes every holdout index.
     series = pd.Series(np.arange(20.0), index=pd.RangeIndex(20))
     result = forecast_evaluation_model.get_out_of_sample_validation(
         series, _naive_last_value_forecast, train_fraction=0.8
@@ -189,9 +188,7 @@ def test_get_out_of_sample_validation_no_leakage():
 
 
 def test_get_out_of_sample_validation_naive_forecaster_hand_computed():
-    # series = [0, 1, ..., 19], train_fraction=0.8 -> train=[0..15], holdout=[16..19].
-    # The naive forecaster repeats the last training value (15) for every holdout
-    # step, so errors are [1, 2, 3, 4].
+    # train=[0..15], holdout=[16..19]; repeating 15 gives errors [1, 2, 3, 4].
     series = pd.Series(np.arange(20.0))
     result = forecast_evaluation_model.get_out_of_sample_validation(
         series, _naive_last_value_forecast, train_fraction=0.8

@@ -32,9 +32,7 @@ from financetoolkit.mcp_server.registry_controller import ToolRegistry
 from financetoolkit.mcp_server.tools_model import UtilityToolRegistry
 from financetoolkit.utilities.logger_model import get_logger, setup_logger
 
-# Attach the stderr handler immediately — before any module-level log calls
-# and before FastMCP is imported/initialised.  Mirrors the pattern used by
-# toolkit_controller.py and discovery_controller.py.
+# Attached before any module-level log call and before FastMCP is imported.
 setup_logger()
 
 
@@ -55,10 +53,7 @@ def _load_dotenv_configuration() -> None:
     ):
         return
 
-    # Resolution order:
-    #   1. Local cwd .env (highest priority — wins over everything)
-    #   2. FINANCETOOLKIT_ENV_FILE (global path written by setup wizard)
-    #   3. Global config dir fallback (~/.config/financetoolkit/.env)
+    # Order: cwd .env, then FINANCETOOLKIT_ENV_FILE, then the global config dir.
     local_env = pathlib.Path.cwd() / ".env"
     if local_env.exists():
         load_dotenv(local_env, override=True)
@@ -181,10 +176,7 @@ def _build_mcp_app() -> FastMCP:
     toolkit_count = toolkit_registry.register_all_tools()
     utility_count = utility_registry.register_all_tools()
 
-    # Optional diagnostic tool — only registered when FT_MCP_DIAG is set.  Used to
-    # inspect what the (possibly proxied / worker-restored) HTTP request carries
-    # at tool-call time on hosted platforms such as fastmcp.app.  Never exposes
-    # the full key.
+    # Diagnostic tool for hosted platforms; never exposes the full key.
     if os.environ.get("FT_MCP_DIAG"):
 
         def diagnostics() -> str:

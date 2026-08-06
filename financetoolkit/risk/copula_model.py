@@ -13,10 +13,7 @@ MINIMUM_TAIL_OBSERVATIONS = 2
 MEDIAN_QUANTILE = 0.5
 MINIMUM_OBSERVATIONS_FOR_COPULA_FIT = 10
 
-# Bounds used when profiling the Student-T copula's degrees of freedom via
-# `optimize.minimize_scalar`. Below ~2 the second moment is undefined (an
-# unreasonable dependence assumption); above ~60 the T copula is
-# indistinguishable from the gaussian copula in practice.
+# Below ~2 the second moment is undefined; above ~60 it matches the gaussian.
 STUDENT_T_DOF_BOUNDS = (2.05, 60.0)
 
 
@@ -140,9 +137,7 @@ def get_tail_dependence_coefficient(
             else np.nan
         )
     elif method == "gaussian":
-        # A gaussian copula has zero asymptotic tail dependence for any correlation
-        # strictly below 1 -- see the Embrechts, McNeil & Straumann (1999) reference
-        # in the docstring above.
+        # A gaussian copula has zero tail dependence for any correlation below 1.
         upper_tail_dependence = 0.0 if correlation < 1 else 1.0
         lower_tail_dependence = upper_tail_dependence
     else:

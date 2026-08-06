@@ -10,9 +10,7 @@ from financetoolkit.utilities.statistics_model import (
 
 ALPHA_CONSTRAINT = 0.5
 
-# This is meant for calculations in which a Multi Index exists. This is the case
-# when calculating a "within period" in which the first index represents the period
-# (e.g. 2020Q1) and the second index the days within that period (January to March)
+# Two levels when a 'within period' index nests days inside a period (2020Q1).
 MULTI_PERIOD_INDEX_LEVELS = 2
 
 
@@ -623,9 +621,7 @@ def get_max_drawdown_duration(
         if drawdowns.isna().all():
             return np.nan
 
-        # nanargmin (rather than argmin) so a leading/embedded NaN in a "level" series
-        # -- which, unlike "return" mode, is not fillna(0)'d upstream, since 0 is not a
-        # neutral value for a level -- doesn't crash the trough search.
+        # nanargmin so a NaN in a 'level' series, never fillna(0)'d, does not crash.
         trough_position = np.nanargmin(drawdowns.to_numpy())
         peak_position = np.flatnonzero(
             series.to_numpy()[: trough_position + 1]
@@ -695,9 +691,7 @@ def get_max_drawdown_recovery_time(
         if drawdowns.isna().all():
             return np.nan
 
-        # nanargmin (rather than argmin) so a leading/embedded NaN in a "level" series
-        # -- which, unlike "return" mode, is not fillna(0)'d upstream, since 0 is not a
-        # neutral value for a level -- doesn't crash the trough search.
+        # nanargmin so a NaN in a 'level' series, never fillna(0)'d, does not crash.
         trough_position = np.nanargmin(drawdowns.to_numpy())
         peak_value = running_max.to_numpy()[trough_position]
 

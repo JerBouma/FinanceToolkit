@@ -9,14 +9,8 @@ from financetoolkit.econometrics import hypothesis_testing_model, regression_mod
 # pylint: disable=missing-function-docstring
 
 
-# ---------------------------------------------------------------------------
-# get_two_sample_t_test
-# ---------------------------------------------------------------------------
-
-
 def test_get_two_sample_t_test_detects_known_large_difference(recorder):
-    # Two samples with a known, large true mean difference (5 vs 0, unit variance)
-    # should be flagged as significantly different, and should exactly match scipy.
+    # A known 5 vs 0 mean difference should be flagged and match scipy exactly.
     rng = np.random.default_rng(0)
     sample_a = pd.Series(rng.normal(loc=5.0, scale=1.0, size=200))
     sample_b = pd.Series(rng.normal(loc=0.0, scale=1.0, size=200))
@@ -33,8 +27,7 @@ def test_get_two_sample_t_test_detects_known_large_difference(recorder):
 
 
 def test_get_two_sample_t_test_no_true_difference():
-    # Two samples drawn from the identical distribution should not be flagged as
-    # significantly different.
+    # Two samples from the identical distribution should not be flagged.
     rng = np.random.default_rng(1)
     sample_a = pd.Series(rng.normal(loc=0.0, scale=1.0, size=200))
     sample_b = pd.Series(rng.normal(loc=0.0, scale=1.0, size=200))
@@ -70,11 +63,6 @@ def test_get_two_sample_t_test_accepts_numpy_arrays():
     assert result["P-Value"] < 0.05
 
 
-# ---------------------------------------------------------------------------
-# get_f_test / get_likelihood_ratio_test -- shared synthetic nested-model setup
-# ---------------------------------------------------------------------------
-
-
 def _fit_nested_models(y: np.ndarray, x1: np.ndarray, x2: np.ndarray, x3: np.ndarray):
     restricted = regression_model.get_ols(y, pd.DataFrame({"x1": x1}))
     unrestricted = regression_model.get_ols(
@@ -84,8 +72,7 @@ def _fit_nested_models(y: np.ndarray, x1: np.ndarray, x2: np.ndarray, x3: np.nda
 
 
 def test_get_f_test_fails_to_reject_when_coefficients_are_truly_zero(recorder):
-    # x2, x3 are pure noise regressors -- the true model only depends on x1, so the
-    # F-test should NOT reject the (correct) restriction that x2, x3 are jointly zero.
+    # x2 and x3 are pure noise, so the F-test should not reject the restriction.
     rng = np.random.default_rng(4)
     n = 500
     x1 = rng.standard_normal(n)
@@ -186,8 +173,7 @@ def test_get_likelihood_ratio_test_rejects_when_coefficients_are_truly_nonzero()
 
 
 def test_get_likelihood_ratio_test_agrees_with_f_test_direction():
-    # For large samples the F-test and LR-test should agree on the decision, even
-    # though their exact statistics/distributions differ.
+    # For large samples the F-test and LR-test should agree on the decision.
     rng = np.random.default_rng(8)
     n = 2000
     x1 = rng.standard_normal(n)
@@ -220,15 +206,8 @@ def test_get_likelihood_ratio_test_invalid_nesting_direction():
         pass
 
 
-# ---------------------------------------------------------------------------
-# get_wald_test
-# ---------------------------------------------------------------------------
-
-
 def test_get_wald_test_single_restriction_equals_t_squared_exactly():
-    # The core algebraic identity: a chi-sq(1) Wald statistic for a single
-    # coefficient restriction must exactly equal that coefficient's own squared
-    # t-statistic, since both use the identical Cov(beta_hat) estimate.
+    # A chi-sq(1) Wald statistic must equal that coefficient's squared t exactly.
     rng = np.random.default_rng(9)
     n = 500
     x1 = rng.standard_normal(n)
@@ -308,8 +287,7 @@ def test_get_wald_test_custom_restriction_value():
 
 
 def test_get_wald_test_equality_restriction_between_two_coefficients():
-    # H0: coefficient on x2 equals coefficient on x3 -- true here (both = 3), should
-    # not reject; a second case with hugely different true coefficients should reject.
+    # H0 holds here (both = 3), so it should not reject; a far apart pair should.
     rng = np.random.default_rng(11)
     n = 500
     x1 = rng.standard_normal(n)
@@ -366,15 +344,8 @@ def test_get_wald_test_invalid_restriction_values_length():
         pass
 
 
-# ---------------------------------------------------------------------------
-# get_hausman_wu_test
-# ---------------------------------------------------------------------------
-
-
 def _endogenous_setup(rng, n=1000):
-    # A textbook endogeneity setup: an instrument z drives x, an unobserved
-    # confounder u drives both x and y's error -- x is therefore correlated with
-    # y's error term (endogenous), while z is not (a valid instrument).
+    # Textbook endogeneity: z drives x, an unobserved u drives both x and y's error.
     z = rng.standard_normal(n)
     u = rng.standard_normal(n)
     x = 0.8 * z + 0.6 * u + rng.standard_normal(n) * 0.3

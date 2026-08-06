@@ -802,6 +802,7 @@ def get_quantile_regression(
     if n_bootstrap > 0:
         rng = np.random.default_rng(seed)
         bootstrap_coefficients = np.empty((n_bootstrap, k))
+
         for i in range(n_bootstrap):
             sample_indices = rng.integers(0, n, size=n)
 

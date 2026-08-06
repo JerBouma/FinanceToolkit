@@ -52,8 +52,7 @@ def test_get_springate_score(recorder):
             sales_to_total_assets_ratio=pd.Series([1.2, 0.4]),
         )
     )
-    # Synthetic ground-truth: a healthy company (well above the 0.862 cutoff)
-    # and a distressed company (below it, even negative).
+    # Synthetic ground truth: healthy is well above the 0.862 cutoff, distressed below.
     healthy = springate_model.get_springate_score(
         working_capital_to_total_assets_ratio=0.2,
         ebit_to_total_assets_ratio=0.15,

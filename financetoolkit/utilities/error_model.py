@@ -277,8 +277,7 @@ def check_for_error_messages(
         )
 
     if delete_tickers:
-        # If any of the errors are found, remove the tickers from the dataset dictionary so that
-        # the user can continue using the program without having to worry about the errors.
+        # Tickers that errored are removed so the rest of the program continues.
         removed_tickers = set(
             premium_query_parameter
             + exclusive_endpoint

@@ -7,9 +7,7 @@ from financetoolkit.econometrics import unitroot_model
 
 # pylint: disable=missing-function-docstring
 
-# The simulated structural break in test_get_zivot_andrews_test_stationary_with_break
-# is placed at index 150, so the endogenously selected break should land one index
-# before it (the last pre-break observation).
+# The simulated break sits at index 150, so the last pre-break index is expected.
 EXPECTED_BREAK_INDEX = 149
 
 
@@ -73,18 +71,7 @@ def test_get_kpss_test_stationary(recorder):
 
 
 def test_get_kpss_test_agrees_with_adf(recorder):
-    # ADF fails to reject a unit root on a random walk and rejects it on a
-    # stationary series, so KPSS should reach the opposite (complementary)
-    # conclusion on both -- rejecting stationarity on the random walk, and failing
-    # to reject it on the stationary series -- demonstrating the two tests'
-    # agreement. Note: seed=1 (used for the standalone KPSS snapshot tests above,
-    # to mirror the ADF tests' exact series 1:1) happens to land on a known KPSS
-    # finite-sample quirk -- with the Schwert (1989) truncation lag (17, for n=500)
-    # the test's actual size can exceed its nominal 5% on some draws of an AR(0.5)
-    # series (cross-checked against statsmodels.tsa.stattools.kpss, which reproduces
-    # the same 0.6965 statistic on that exact series, confirming this is a property
-    # of the test rather than an implementation bug). seed=2 is used here instead to
-    # demonstrate the intended (and far more typical) agreement cleanly.
+    # seed=2 rather than 1: at n=500 the Schwert lag makes KPSS oversized on that draw.
     rng = np.random.default_rng(2)
     random_walk = pd.Series(np.cumsum(rng.standard_normal(500)))
 
@@ -158,9 +145,7 @@ def test_get_phillips_perron_test_stationary(recorder):
 
 
 def test_get_phillips_perron_test_agrees_with_adf(recorder):
-    # PP and ADF test the same null hypothesis (a unit root) with different
-    # corrections for serial correlation/heteroskedasticity, so on the same series
-    # they should broadly agree.
+    # PP and ADF test the same null differently, so they should broadly agree.
     rng = np.random.default_rng(1)
     random_walk = pd.Series(np.cumsum(rng.standard_normal(500)))
 

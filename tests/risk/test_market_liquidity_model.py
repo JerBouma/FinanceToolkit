@@ -70,8 +70,7 @@ def test_get_amihud_illiquidity_invalid_type():
 
 
 def test_get_roll_spread_bid_ask_bounce(recorder):
-    # Simulate a constant efficient price with pure bid-ask bounce -- the recovered
-    # spread should be close to the true (simulated) spread.
+    # A constant efficient price with pure bid-ask bounce should recover the spread.
     rng = np.random.default_rng(1)
     n = 5000
     efficient_price = 100.0
@@ -86,8 +85,7 @@ def test_get_roll_spread_bid_ask_bounce(recorder):
 
 
 def test_get_roll_spread_positive_autocovariance(recorder):
-    # A deterministic momentum-like price path has clearly positive lag-1
-    # autocovariance in its price changes, which is invalid for Roll's model.
+    # A momentum path has positive lag-1 autocovariance, invalid for Roll's model.
     changes = [1, 1, 1, 1, -1, -1, -1, -1] * 10
     prices = pd.Series(np.cumsum([100, *changes]))
     result = market_liquidity_model.get_roll_spread(prices)

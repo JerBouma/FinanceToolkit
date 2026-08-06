@@ -209,8 +209,7 @@ def test_get_cvar_evt_at_least_as_extreme_as_var_evt(recorder):
 
 
 def test_get_cvar_evt_insufficient_exceedances(recorder):
-    # Too few exceedances above the threshold to fit a GPD, should return NaN rather
-    # than raise.
+    # Too few exceedances to fit a GPD, so this returns NaN rather than raising.
     returns = pd.Series([0.01, 0.02, -0.01, 0.015, -0.005])
     recorder.capture(
         cvar_model.get_cvar_evt(returns=returns, alpha=0.05, threshold_percentile=0.95)

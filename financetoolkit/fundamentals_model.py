@@ -81,18 +81,13 @@ def collect_financial_statements(
             - no_data (list[str]): A list of tickers for which no data could be retrieved from any source.
     """
 
-    # Statements are cached per ticker and per source. The reporting periods sit on
-    # the column axis rather than the index, hence date_axis=1 throughout.
-    # The subscription plan changes how many reporting periods the endpoint
-    # returns, so it belongs in the key. Without it a shallow Free-plan response
-    # would be served to a Premium caller, which matters on a shared cache.
+    # Periods sit on the column axis, and the plan changes how many are returned.
     cache_parameters = {
         "statement": statement,
         "quarter": quarter,
         "user_subscription": user_subscription,
     }
-    # The cache source is the provider name as `enforce_source` spells it, which is
-    # also the key this function already groups its per-provider results under.
+    # The provider name as `enforce_source` spells it, also the group key here.
     cache_sources = (
         policy_model.FINANCIAL_MODELING_PREP,
         policy_model.YAHOO_FINANCE,
@@ -113,9 +108,7 @@ def collect_financial_statements(
 
             financial_statement_dict[source][ticker] = cached_statement
 
-            # Fiscal year relabelling is a side effect of the fetch rather than
-            # part of the frame, so it is restored alongside it. Without this a
-            # cached run would silently drop the fiscal year notes.
+            # Fiscal year relabelling is a side effect of the fetch, so restore it too.
             adjustments = cache.get(
                 source=source,
                 dataset="fiscal_year_adjustments",
@@ -231,14 +224,11 @@ def collect_financial_statements(
     no_data: list[str] = []
     threads = []
 
-    # Shared registry populated by worker threads (dict writes per unique ticker key are
-    # effectively atomic under the GIL, so no explicit lock is needed here).
+    # Shared registry; per-key dict writes are effectively atomic under the GIL.
     if fiscal_year_adjustments is None:
         fiscal_year_adjustments = {}
 
-    # Coverage needs a concrete range on both ends. Without one the plan would
-    # measure against today while the stored range would end at the last reported
-    # period, leaving a gap that could never be closed.
+    # Coverage needs a concrete range on both ends or the gap never closes.
     coverage_start = start_date or "1900-01-01"
     coverage_end = end_date or datetime.today().strftime("%Y-%m-%d")
 
@@ -400,8 +390,7 @@ def collect_financial_statements(
         before=start_date, after=end_date, axis=1
     )
 
-    # In the case there are columns that have no data over the entire period,
-    # these are dropped automatically
+    # Columns with no data over the entire period are dropped automatically.
     financial_statement_total = financial_statement_total.dropna(axis=1, how="all")
 
     # Round the financial statement total if rounding is specified

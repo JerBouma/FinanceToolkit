@@ -12,8 +12,7 @@ def test_get_arch_lm_test(recorder, econometrics_module):
 
 
 def test_get_arch_lm_test_include_benchmark(recorder, econometrics_module):
-    # Benchmark is excluded by default -- include_benchmark=True brings it back as a
-    # third column.
+    # Benchmark is excluded by default; include_benchmark=True adds a third column.
     default = econometrics_module.get_arch_lm_test(period="monthly", lags=3)
     with_benchmark = econometrics_module.get_arch_lm_test(
         period="monthly", lags=3, include_benchmark=True
@@ -75,8 +74,7 @@ def test_get_engle_granger_cointegration(recorder, econometrics_module):
 def test_get_engle_granger_cointegration_include_benchmark(
     recorder, econometrics_module
 ):
-    # 2 ordered pairs (AAPL, MSFT) by default -- Benchmark brings the ordered pair
-    # count up to 6 (3 tickers, permutations of 2).
+    # 2 ordered pairs by default; Benchmark takes the count up to 6.
     default = econometrics_module.get_engle_granger_cointegration(period="quarterly")
     with_benchmark = econometrics_module.get_engle_granger_cointegration(
         period="quarterly", include_benchmark=True
@@ -126,8 +124,7 @@ def test_get_diebold_mariano_test(recorder, econometrics_module):
 
 
 def test_get_diebold_mariano_test_invalid_method(econometrics_module):
-    # @handle_errors catches the ValueError and returns an empty Series rather than
-    # propagating it.
+    # @handle_errors returns an empty Series rather than propagating the ValueError.
     result = econometrics_module.get_diebold_mariano_test(method_a="bad")
     assert result.empty
 
@@ -137,8 +134,7 @@ def test_get_ols(recorder, econometrics_module):
 
 
 def test_get_ols_include_benchmark(recorder, econometrics_module):
-    # Benchmark is excluded from the default independent ticker(s) unless
-    # include_benchmark=True is passed.
+    # Benchmark is excluded from the default independent tickers.
     default = econometrics_module.get_ols(period="weekly")
     with_benchmark = econometrics_module.get_ols(
         period="weekly", include_benchmark=True
@@ -157,8 +153,7 @@ def test_get_ols_explicit_independent_tickers(recorder, econometrics_module):
 
 
 def test_get_ols_explicit_dependent_ticker(recorder, econometrics_module):
-    # Overriding dependent_ticker to MSFT should give the same result as manually
-    # passing independent_tickers as every other non-benchmark Toolkit ticker (AAPL).
+    # Overriding dependent_ticker should match passing the others explicitly.
     override = econometrics_module.get_ols(dependent_ticker="MSFT", period="weekly")
     manual = econometrics_module.get_ols(
         dependent_ticker="MSFT",
@@ -240,8 +235,7 @@ def test_get_fama_macbeth_regression_explicit_tickers(recorder, econometrics_mod
 
 
 def test_get_fama_macbeth_regression_too_few_assets(econometrics_module):
-    # Default add_constant=True needs strictly more assets than factors + 1 -- only
-    # 2 non-benchmark tickers are in the fixture, so this is under-identified.
+    # add_constant=True needs more assets than factors + 1, so this is unidentified.
     result = econometrics_module.get_fama_macbeth_regression(period="weekly")
     assert result.empty
 
@@ -273,8 +267,7 @@ def test_get_f_test(recorder, econometrics_module):
 
 
 def test_get_f_test_invalid_nesting(econometrics_module):
-    # @handle_errors catches the ValueError (unrestricted has fewer/equal parameters
-    # than restricted) and returns an empty Series rather than propagating it.
+    # @handle_errors returns an empty Series rather than propagating the ValueError.
     result = econometrics_module.get_f_test(
         "AAPL", ["MSFT", "Benchmark"], "MSFT", period="weekly"
     )
@@ -300,8 +293,7 @@ def test_get_wald_test(recorder, econometrics_module):
 
 
 def test_get_wald_test_single_coefficient_matches_ols_t_test(econometrics_module):
-    # Testing a single coefficient via the Wald test's F-statistic should exactly
-    # match that coefficient's own squared t-statistic from get_ols.
+    # A single-coefficient Wald F should equal that coefficient's squared t.
     ols_summary = econometrics_module.get_ols(
         independent_tickers=["MSFT", "Benchmark"], period="weekly", rounding=10
     )
@@ -336,10 +328,7 @@ def test_get_hausman_wu_test(recorder, econometrics_module):
 def test_get_hausman_wu_test_reversed_dependent_and_suspect(
     recorder, econometrics_module
 ):
-    # The 3-ticker test fixture (AAPL, MSFT, Benchmark) doesn't leave room for a
-    # genuinely distinct `other_independent_tickers` on top of the dependent/suspect/
-    # instrument roles, so this exercises a different dependent/suspect/period
-    # combination and monthly data instead.
+    # The 3-ticker fixture has no room for a distinct other_independent_tickers.
     recorder.capture(
         econometrics_module.get_hausman_wu_test(
             "MSFT", "AAPL", "Benchmark", period="monthly"
@@ -399,8 +388,7 @@ def test_get_ramsey_reset_test(recorder, econometrics_module):
 
 
 def test_get_ramsey_reset_test_invalid_power(econometrics_module):
-    # @handle_errors catches the ValueError (power < 2) and returns an empty Series
-    # rather than propagating it.
+    # @handle_errors returns an empty Series rather than propagating the ValueError.
     result = econometrics_module.get_ramsey_reset_test(
         independent_tickers=["MSFT", "Benchmark"], period="weekly", power=1
     )
@@ -418,8 +406,7 @@ def test_get_chow_test(recorder, econometrics_module):
 
 
 def test_get_chow_test_break_date_near_edge_of_sample(econometrics_module):
-    # @handle_errors catches the ValueError (too few observations on one side of the
-    # split) and returns an empty Series rather than propagating it.
+    # @handle_errors returns an empty Series rather than propagating the ValueError.
     result = econometrics_module.get_chow_test(
         break_date="2019-12-31",
         independent_tickers=["MSFT", "Benchmark"],
@@ -447,8 +434,7 @@ def test_get_iv_2sls_with_exogenous(recorder, econometrics_module):
 
 
 def test_get_iv_2sls_underidentified(econometrics_module):
-    # @handle_errors catches the ValueError (fewer instruments than endogenous
-    # regressors) and returns an empty Series rather than propagating it.
+    # @handle_errors returns an empty Series rather than propagating the ValueError.
     result = econometrics_module.get_iv_2sls(
         "AAPL",
         ["MSFT", "Benchmark"],
@@ -494,8 +480,7 @@ def test_get_regression_discontinuity_triangular_kernel(recorder, econometrics_m
 
 
 def test_get_regression_discontinuity_invalid_kernel(econometrics_module):
-    # @handle_errors catches the ValueError (invalid kernel) and returns an empty
-    # Series rather than propagating it.
+    # @handle_errors returns an empty Series rather than propagating the ValueError.
     result = econometrics_module.get_regression_discontinuity(
         "AAPL", "MSFT", cutoff=0.0, period="weekly", kernel="gaussian"
     )
@@ -534,9 +519,7 @@ def test_get_synthetic_control(recorder, econometrics_module):
 
 
 def test_get_synthetic_control_default_donor_tickers(recorder, econometrics_module):
-    # Default donor pool with include_benchmark=True brings in both MSFT and
-    # Benchmark (2 donors) -- enough to satisfy the minimum donor requirement with
-    # this fixture's 2 real tickers.
+    # include_benchmark=True brings in MSFT and Benchmark, meeting the 2-donor floor.
     recorder.capture(
         econometrics_module.get_synthetic_control(
             "AAPL",
@@ -548,8 +531,7 @@ def test_get_synthetic_control_default_donor_tickers(recorder, econometrics_modu
 
 
 def test_get_synthetic_control_too_few_donors(econometrics_module):
-    # Default donor pool with include_benchmark=False leaves only 1 non-benchmark
-    # ticker (MSFT) -- under the minimum of 2 donors.
+    # include_benchmark=False leaves only MSFT, under the minimum of 2 donors.
     result = econometrics_module.get_synthetic_control(
         "AAPL", treatment_period="2021-07-01", period="weekly"
     )
@@ -569,8 +551,7 @@ def test_get_arima_forecast_no_constant(recorder, econometrics_module):
 
 
 def test_get_arima_forecast_invalid_order(econometrics_module):
-    # @handle_errors catches the ValueError (p and q both 0) and returns an empty
-    # DataFrame rather than propagating it.
+    # @handle_errors returns an empty DataFrame rather than propagating the ValueError.
     result = econometrics_module.get_arima_forecast(period="quarterly", p=0, q=0)
     assert result.empty
 
@@ -623,9 +604,7 @@ def test_get_variance_decomposition_invalid_periods(econometrics_module):
 
 
 def test_get_vecm_forecast_not_cointegrated_returns_empty(econometrics_module):
-    # The test fixture's AAPL/MSFT prices are not (reliably) cointegrated at the 5%
-    # level -- @handle_errors catches the resulting ValueError and returns an empty
-    # DataFrame rather than propagating it.
+    # The fixture's prices are not reliably cointegrated, so this returns empty.
     result = econometrics_module.get_vecm_forecast(period="weekly")
     assert result.empty
 
@@ -644,8 +623,7 @@ def test_get_mae(recorder, econometrics_module):
 
 
 def test_get_out_of_sample_validation_arima(recorder, econometrics_module):
-    # q=0: weekly price differences are near white noise, so an ARMA(1, 1) on them
-    # has near-canceling AR and MA roots and is not identified on this fixture.
+    # q=0: ARMA(1, 1) on near-white-noise differences is unidentified on this fixture.
     recorder.capture(
         econometrics_module.get_out_of_sample_validation(
             period="weekly", model="arima", p=1, d=1, q=0
@@ -662,10 +640,7 @@ def test_get_out_of_sample_validation_var(recorder, econometrics_module):
 
 
 def test_get_out_of_sample_validation_var_missing_other_tickers(econometrics_module):
-    # Explicitly passing an empty other_tickers override (rather than relying on the
-    # default, which derives every other Toolkit ticker automatically) exercises the
-    # "no other series to model jointly with" ValueError -- @handle_errors catches it
-    # and returns an empty DataFrame rather than propagating it.
+    # An explicit empty other_tickers exercises the 'nothing to model jointly' error.
     result = econometrics_module.get_out_of_sample_validation(
         period="weekly", model="var", other_tickers=[]
     )
@@ -707,17 +682,13 @@ def test_get_fixed_effects_time_effects(recorder, econometrics_module):
 
 
 def test_get_fixed_effects_missing_regressor_args(econometrics_module):
-    # @handle_errors catches the ValueError (neither independent_tickers nor
-    # independent_column given) and returns an empty result rather than
-    # propagating it.
+    # @handle_errors returns an empty result rather than propagating the ValueError.
     result = econometrics_module.get_fixed_effects(period="weekly")
     assert result.empty
 
 
 def test_get_fixed_effects_both_regressor_args(econometrics_module):
-    # @handle_errors catches the ValueError (both independent_tickers and
-    # independent_column given) and returns an empty result rather than
-    # propagating it.
+    # @handle_errors returns an empty result rather than propagating the ValueError.
     result = econometrics_module.get_fixed_effects(
         independent_tickers="Benchmark", independent_column="Volume", period="weekly"
     )
@@ -733,8 +704,7 @@ def test_get_random_effects(recorder, econometrics_module):
 
 
 def test_get_random_effects_not_enough_entities(econometrics_module):
-    # @handle_errors catches the ValueError (only 2 entities for 1 regressor plus
-    # an intercept) and returns an empty result rather than propagating it.
+    # @handle_errors returns an empty result rather than propagating the ValueError.
     result = econometrics_module.get_random_effects(
         independent_column="Volume",
         dependent_tickers=["AAPL", "MSFT"],

@@ -8,13 +8,10 @@ from scipy import stats
 
 from financetoolkit.econometrics import regression_model
 
-# Cross-sectional (second-pass) identification requires strictly more assets than
-# estimated coefficients (factors, plus an intercept if add_constant=True).
+# Second-pass identification needs strictly more assets than coefficients.
 MINIMUM_ASSET_BUFFER = 1
 
-# The Fama-MacBeth standard error is the time-series standard deviation of the
-# per-period cross-sectional coefficients -- undefined (or degenerate) with fewer
-# than 2 periods.
+# The standard error is a time-series std of the per-period coefficients.
 MINIMUM_PERIODS = 2
 
 
@@ -190,9 +187,7 @@ def get_fama_macbeth_regression(
             f"regression -- need at least {minimum_assets}."
         )
 
-    # First pass: one full-sample time-series regression per asset, to estimate each
-    # asset's factor loadings (beta). The intercept (alpha) is estimated but not
-    # carried forward -- only the factor loadings feed the second pass.
+    # First pass: one time-series regression per asset for its factor loadings.
     betas = pd.DataFrame(
         {
             asset: regression_model.get_ols(
@@ -203,8 +198,7 @@ def get_fama_macbeth_regression(
         index=factor_names,
     ).T
 
-    # Second pass: one cross-sectional regression per period, of that period's asset
-    # returns on the (time-invariant) first-pass betas.
+    # Second pass: one cross-sectional regression of returns on first-pass betas.
     coefficient_names = (["Intercept"] if add_constant else []) + factor_names
     cross_sectional_rows = {
         date: regression_model.get_ols(

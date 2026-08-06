@@ -28,8 +28,7 @@ def test_get_tobins_q_ratio(recorder):
             total_assets=pd.Series([2000, 2000, 2500, 2000]),
         )
     )
-    # Synthetic ground-truth: a high-growth firm trading well above the book
-    # cost of its assets, and a mature/undervalued firm trading below it.
+    # Synthetic ground truth: one firm well above book cost, one below it.
     assert (
         enterprise_model.get_tobins_q_ratio(
             market_value_of_equity=5000,

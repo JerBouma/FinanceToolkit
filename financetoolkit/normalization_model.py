@@ -220,8 +220,7 @@ def convert_financial_statements(
                 if name not in financial_statements.loc[ticker].index:
                     financial_statements.loc[(ticker, name), :] = 0
 
-        # Given that all the columns are now present, it is possible to
-        # simply overwrite the naming variable with the original statement format
+        # All columns are present now, so the original statement format can be reused.
         naming = statement_format
 
     # Select only the columns it could trace back to the format
@@ -262,9 +261,7 @@ def convert_date_label(
     )
 
     if financial_statement.columns.duplicated().any():
-        # This happens in the rare case that a company has two financial statements for the same period.
-        # Browsing through the data has shown that these financial statements are equal therefore
-        # one of the columns can be dropped.
+        # Duplicate statements for one period are equal, so one copy can be dropped.
         financial_statement = financial_statement.loc[
             :, ~financial_statement.columns.duplicated()
         ]

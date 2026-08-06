@@ -54,10 +54,7 @@ def get_granger_causality(
     data = aligned.to_numpy()
 
     try:
-        # Older statsmodels versions print a results table to stdout by default,
-        # with no way to silence it other than the (now deprecated, soon to be
-        # removed) verbose parameter -- redirecting stdout works regardless of
-        # which behavior the installed version has.
+        # Older statsmodels print a results table to stdout with no way to silence it.
         with contextlib.redirect_stdout(io.StringIO()):
             result = grangercausalitytests(data, maxlag=[max_lag])
         f_statistic, p_value, _, _ = result[max_lag][0]["ssr_ftest"]

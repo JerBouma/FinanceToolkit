@@ -11,11 +11,7 @@ import pandas as pd
 if TYPE_CHECKING:
     from financetoolkit.cache.cache_controller import Cache
 
-# Where the ticker sits in a per-ticker dataset. The company endpoints assemble
-# their results in two different layouts: profiles, quotes, ESG scores and the
-# commitment of traders end up with the ticker as the last column level, while
-# ratings, analyst estimates, calendars and segmentation keep it as the first
-# index level. Caching them per ticker means being explicit about which.
+# Company endpoints put the ticker on the columns or the index, so be explicit.
 TICKER_ON_COLUMNS = "columns"
 TICKER_ON_INDEX = "index"
 
@@ -116,8 +112,7 @@ def reorder_tickers(
     if data.empty:
         return data
 
-    # Reordering is presentational, so a layout that does not take it (an unusual
-    # index, a ticker that produced no rows) is left as it is rather than raised on.
+    # Reordering is presentational, so an unusual layout is left as it is.
     with contextlib.suppress(Exception):
         if ticker_axis == TICKER_ON_COLUMNS:
             present = [

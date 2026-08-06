@@ -202,9 +202,7 @@ def get_maturity_option_adjusted_spread(
         "15+ Years",
     ]
 
-    # Convert OAS data to basis points. Given that the
-    # value is in percentages, the value is multiplied by
-    # 100 to convert to basis points.
+    # OAS is a percentage, so multiply by 100 to get basis points.
     oas_data = oas_data * 100
 
     return oas_data
@@ -245,8 +243,7 @@ def get_maturity_effective_yield(
         "15+ Years",
     ]
 
-    # Yield data is a percentage, so it is divided by 100
-    # to get the actual numeric value
+    # Yield data is a percentage, so divide by 100 for the numeric value.
     yield_data = yield_data / 100
 
     return yield_data
@@ -324,8 +321,7 @@ def get_maturity_yield_to_worst(
         "15+ Years",
     ]
 
-    # Yield data is a percentage, so it is divided by 100
-    # to get the actual numeric value
+    # Yield data is a percentage, so divide by 100 for the numeric value.
     yield_data = yield_data / 100
 
     return yield_data
@@ -360,9 +356,7 @@ def get_rating_option_adjusted_spread(
 
     oas_data.columns = ["AAA", "AA", "A", "BBB", "BB", "B", "CCC"]
 
-    # Convert OAS data to basis points. Given that the
-    # value is in percentages, the value is multiplied by
-    # 100 to convert to basis points.
+    # OAS is a percentage, so multiply by 100 to get basis points.
     oas_data = oas_data * 100
 
     return oas_data
@@ -397,8 +391,7 @@ def get_rating_effective_yield(
 
     yield_data.columns = ["AAA", "AA", "A", "BBB", "BB", "B", "CCC"]
 
-    # Yield data is a percentage, so it is divided by 100
-    # to get the actual numeric value
+    # Yield data is a percentage, so divide by 100 for the numeric value.
     yield_data = yield_data / 100
 
     return yield_data
@@ -464,8 +457,7 @@ def get_rating_yield_to_worst(
 
     yield_data.columns = ["AAA", "AA", "A", "BBB", "BB", "B", "CCC"]
 
-    # Yield data is a percentage, so it is divided by 100
-    # to get the actual numeric value
+    # Yield data is a percentage, so divide by 100 for the numeric value.
     yield_data = yield_data / 100
 
     return yield_data

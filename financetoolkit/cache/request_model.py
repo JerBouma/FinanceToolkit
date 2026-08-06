@@ -4,10 +4,7 @@ __docformat__ = "google"
 
 import re
 
-# Credentials appear as query parameters on nearly every request the toolkit makes.
-# They identify the caller, not the data, so they are stripped before a URL is used
-# to identify a cache entry: two users asking the same question must share an entry,
-# and a credential must never be written into the cache.
+# Credentials identify the caller, not the data, so they never reach a cache key.
 CREDENTIAL_PARAMETERS = ("apikey", "api_key", "token")
 
 _CREDENTIAL_PATTERN = re.compile(

@@ -30,9 +30,7 @@ from financetoolkit.utilities.statistics_model import (
 
 logger = logger_model.get_logger()
 
-# Runtime errors are ignored on purpose given the nature of the calculations
-# sometimes leading to division by zero or other mathematical errors. This is however
-# for financial analysis purposes not an issue and should not be considered as a bug.
+# Division by zero is normal in these calculations, not a bug.
 warnings.filterwarnings("ignore", category=RuntimeWarning)
 
 # pylint: disable=too-many-lines,too-many-instance-attributes,too-many-public-methods,too-many-locals,eval-used
@@ -258,8 +256,7 @@ class Ratios:
             rounding if rounding else self._rounding
         )
 
-        # In case sorting accidentally fails, the index is sorted again
-        # to follow the same order as the financial statements
+        # Sorted again so the index follows the financial statements' order.
         available_columns = [
             column
             for column in self._income_statement.columns
@@ -431,8 +428,7 @@ class Ratios:
 
         formula_dict = {}
         for name, formula in custom_ratios_dict.items():  # type: ignore
-            # Rearrange the formula dict in case a formula is dependent on another formula
-            # and the order would result into errors
+            # Reordered so a formula depending on another is evaluated after it.
             for sub_name, sub_formula in custom_ratios_dict.items():  # type: ignore
                 if sub_name in formula:
                     formula_dict[sub_name] = sub_formula
@@ -682,8 +678,7 @@ class Ratios:
             rounding if rounding else self._rounding
         )
 
-        # In case sorting accidentally fails, the index is sorted again
-        # to follow the same order as the financial statements
+        # Sorted again so the index follows the financial statements' order.
         available_columns = [
             column
             for column in self._income_statement.columns
@@ -2640,8 +2635,7 @@ class Ratios:
             rounding if rounding else self._rounding
         )
 
-        # In case sorting accidentally fails, the index is sorted again
-        # to follow the same order as the financial statements
+        # Sorted again so the index follows the financial statements' order.
         available_columns = [
             column
             for column in self._income_statement.columns
@@ -3575,8 +3569,7 @@ class Ratios:
             rounding if rounding else self._rounding
         )
 
-        # In case sorting accidentally fails, the index is sorted again
-        # to follow the same order as the financial statements
+        # Sorted again so the index follows the financial statements' order.
         available_columns = [
             column
             for column in self._income_statement.columns
@@ -5755,8 +5748,7 @@ class Ratios:
             rounding if rounding else self._rounding
         )
 
-        # In case sorting accidentally fails, the index is sorted again
-        # to follow the same order as the financial statements
+        # Sorted again so the index follows the financial statements' order.
         available_columns = [
             column
             for column in self._income_statement.columns
@@ -7363,8 +7355,7 @@ class Ratios:
             rounding if rounding else self._rounding
         )
 
-        # In case sorting accidentally fails, the index is sorted again
-        # to follow the same order as the financial statements
+        # Sorted again so the index follows the financial statements' order.
         available_columns = [
             column
             for column in self._income_statement.columns
@@ -7842,9 +7833,7 @@ class Ratios:
             provided or the fetch failed (e.g. no Premium FMP subscription).
         """
         if "data" not in self._analyst_estimates_cache and self._api_key:
-            # Routed through the persistent cache under the same source, dataset and
-            # parameters that Toolkit.get_analyst_estimates uses, so the two share
-            # entries instead of each paying for the same request.
+            # Same source, dataset and parameters as Toolkit.get_analyst_estimates.
             fetched_analyst_estimates, _ = ticker_model.collect_per_ticker(
                 cache=get_active_cache(),
                 source=policy_model.FINANCIAL_MODELING_PREP,

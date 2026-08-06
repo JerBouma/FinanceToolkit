@@ -240,9 +240,7 @@ def get_barrier_option(
     y2 = np.log(barrier / stock_price) / volatility_time + (1 + mu) * volatility_time
     z = np.log(barrier / stock_price) / volatility_time + lambda_ * volatility_time
 
-    # E and F are rebate terms: E pays out the rebate at expiration for a knock-in
-    # option that never touches the barrier, F pays out the rebate at the moment a
-    # knock-out option touches the barrier. Both are zero when rebate is zero.
+    # Rebate terms: E pays at expiration for a knock-in, F on a knock-out touch.
     E = (
         rebate
         * np.exp(-risk_free_rate * time_to_expiration)

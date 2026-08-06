@@ -58,8 +58,7 @@ def test_get_fixed_effects_recovers_entity_intercepts():
 
 
 def test_get_fixed_effects_is_invariant_to_true_alpha_values():
-    # The whole point of Fixed Effects: however wildly the true entity intercepts
-    # differ, the recovered slope beta should barely move.
+    # However wildly the true entity intercepts differ, the slope should barely move.
     y, x = _make_panel(6, 40, beta=2.0, alpha={f"E{i}": 0.0 for i in range(6)}, seed=1)
     y_shifted, x_shifted = _make_panel(
         6, 40, beta=2.0, alpha={f"E{i}": (i - 2) * 1000.0 for i in range(6)}, seed=1
@@ -78,9 +77,7 @@ def test_get_fixed_effects_is_invariant_to_true_alpha_values():
 
 
 def test_get_fixed_effects_matches_dummy_variable_ols():
-    # Fixed Effects (the within/demeaned estimator) is algebraically identical to
-    # running OLS with one dummy regressor per entity (LSDV) -- verify that exact
-    # identity by hand on a small dataset, without any panel-data library.
+    # Fixed Effects is algebraically identical to OLS with one dummy per entity.
     rng = np.random.default_rng(3)
     entities = ["A", "B", "C"]
     times = range(8)
@@ -112,9 +109,7 @@ def test_get_fixed_effects_matches_dummy_variable_ols():
 
 
 def test_get_fixed_effects_degrees_of_freedom_correction():
-    # A naive OLS on the demeaned data (without correcting for the absorbed entity
-    # dummies) would report n - k residual degrees of freedom; Fixed Effects must
-    # additionally subtract the number of entities.
+    # Fixed Effects must subtract the entities on top of the n - k residual df.
     y, x = _make_panel(
         6, 40, beta=2.0, alpha={f"E{i}": float(i) for i in range(6)}, seed=7
     )
@@ -186,8 +181,7 @@ def test_get_fixed_effects_invalid_type():
 
 
 def test_get_fixed_effects_too_few_observations():
-    # 2 entities, 1 observation each: 1 regressor + 2 absorbed entity intercepts
-    # cannot be estimated from only 2 observations.
+    # 1 regressor plus 2 absorbed intercepts cannot come from only 2 observations.
     index = pd.MultiIndex.from_tuples([("A", 0), ("B", 0)], names=["entity", "time"])
     y = pd.Series([1.0, 2.0], index=index)
     x = pd.Series([1.0, 2.0], index=index)
@@ -199,11 +193,7 @@ def test_get_fixed_effects_too_few_observations():
 
 
 def test_get_fixed_effects_perfect_within_fit_raises():
-    # Exactly 2 observations per entity: the within-transformed data has exactly
-    # one usable data point per entity, so the fit is a perfect fit with zero
-    # residual variance. `linearmodels.panel.PanelOLS` itself divides by zero
-    # computing its internal pooled F-statistic post-estimation diagnostic for
-    # this degenerate case, which this wraps into a ValueError.
+    # Two per entity is a perfect fit, and PanelOLS then divides by zero internally.
     index = pd.MultiIndex.from_tuples(
         [("A", 0), ("A", 1), ("B", 0), ("B", 1)], names=["entity", "time"]
     )
@@ -232,9 +222,7 @@ def test_get_random_effects_recovers_known_beta(recorder):
 
 
 def test_get_random_effects_matches_pooled_ols_when_no_entity_variance():
-    # If entity effects are identical across entities (zero between-entity
-    # variance), Random Effects' theta should collapse to 0 (no demeaning at all),
-    # reducing exactly to pooled OLS on the raw (undemeaned) panel.
+    # Zero between-entity variance collapses theta to 0, reducing to pooled OLS.
     y, x = _make_panel(
         10, 20, beta=1.5, alpha={f"E{i}": 0.0 for i in range(10)}, seed=9
     )
@@ -270,8 +258,7 @@ def test_get_random_effects_not_enough_entities():
 
 
 def test_get_hausman_test_fails_to_reject_when_exogenous(recorder):
-    # Entity effects are drawn independently of X -- Random Effects' exogeneity
-    # assumption holds, so the Hausman test should NOT reject at the 5% level.
+    # Entity effects drawn independently of X, so Hausman should not reject at 5%.
     rng = np.random.default_rng(1)
     entities = [f"E{i}" for i in range(300)]
     times = range(8)
@@ -297,10 +284,7 @@ def test_get_hausman_test_fails_to_reject_when_exogenous(recorder):
 
 
 def test_get_hausman_test_rejects_when_endogenous(recorder):
-    # Entity effects are a function of X's own entity-mean (plus independent
-    # noise) -- this violates Random Effects' exogeneity assumption, so the
-    # Hausman test should reject at the 5% level, correctly flagging that Fixed
-    # Effects should be preferred.
+    # Entity effects depend on X's entity-mean, so Hausman should reject at 5%.
     rng = np.random.default_rng(1)
     entities = [f"E{i}" for i in range(300)]
     times = range(8)

@@ -24,17 +24,13 @@ from financetoolkit.utilities.logger_model import get_logger
 
 logger = get_logger()
 
-# In case the user has set an API key as an environment variable,
-# this will be used as the default API key for the Toolkit.
+# Used as the Toolkit's default API key when set as an environment variable.
 API_KEY: str = os.environ.get("FINANCIAL_MODELING_PREP_API_KEY", "")
 
 # Optional — only gates the subset of Economics/FixedIncome tools backed by FRED.
 FRED_API_KEY: str = os.environ.get("FRED_API_KEY", "")
 
-# Tool responses are computed output rather than source data, so they live under
-# their own source in the shared cache. That keeps them separable: they can be
-# evicted on the server's own schedule without touching the downloaded data
-# underneath them, and a user can clear them on their own.
+# Tool responses are computed output, so they sit under their own source.
 MCP_CACHE_SOURCE = policy_model.MCP
 MCP_CACHE_DATASET = "tool"
 
@@ -80,22 +76,16 @@ class ToolkitProvider:
         self._fred_api_key = fred_api_key
         self._cache_enabled = cache_enabled
 
-        # Both cache layers hang off this: the tool-response TTL below, and the
-        # location handed to Toolkit/Discovery for the source data underneath.
-        # Zeroing the TTL and withholding the location is what turns them off.
+        # Zeroing the TTL and withholding the location is what turns both layers off.
         self._cache_ttl: int = cache_ttl if cache_enabled else 0
         self._cache_location = database_location
 
-        # The same cache the library uses. Tool responses are stored under their
-        # own source, one layer above the per-ticker source data, so a response
-        # served from here still benefits from source data another process warmed.
-        # A disabled cache never opens the database, so nothing is written to disk.
+        # The same cache the library uses; a disabled one never opens the database.
         self._cache: Cache = cache_controller.get_cache(
             location=database_location, enabled=cache_enabled
         )
 
-        # What Toolkit and Discovery receive as ``use_cached_data``: the shared
-        # database path, or False to opt them out entirely.
+        # What Toolkit and Discovery get as `use_cached_data`: the path, or False.
         self._use_cached_data: bool | str = (
             database_location if cache_enabled else False
         )
@@ -103,8 +93,7 @@ class ToolkitProvider:
         if cache_enabled:
             cache_controller.set_active_cache(self._cache)
         else:
-            # set_active_cache deliberately refuses to let a disabled cache
-            # replace an enabled one, so withdrawing has to be explicit.
+            # set_active_cache refuses a downgrade, so withdrawing has to be explicit.
             cache_controller.clear_active_cache()
 
         self._toolkit_cache: dict[str, Any] = {}
@@ -158,17 +147,13 @@ class ToolkitProvider:
             Any: The raw result from the underlying Finance Toolkit method —
                 typically a ``pd.DataFrame``, ``pd.Series``, scalar, or dict.
         """
-        # Resolve the per-request key (hosted HTTP transport) and fall back to
-        # the instance/env key (local stdio / uvx).  When running over stdio
-        # there is no HTTP request and ``resolve_api_key`` returns "".
+        # Per-request key for hosted HTTP, falling back to the env key on stdio.
         effective_key = resolve_api_key() or self._api_key
         effective_fred_key = resolve_fred_api_key() or self._fred_api_key
         current_time = time.time()
 
         if self._cache_ttl and (current_time - self._last_eviction) > self._cache_ttl:
-            # Scoped to this server's own tool responses. The same database holds
-            # the price history and filings the library accumulated, which have
-            # their own, much longer lifetimes and must not be evicted here.
+            # Scoped to this server's responses: the same database holds price history.
             evicted_count = self._cache.remove_expired_entries(
                 ttl=self._cache_ttl, source=MCP_CACHE_SOURCE
             )
@@ -195,8 +180,7 @@ class ToolkitProvider:
             },
         }
 
-        # When TTL is 0 or falsy, caching is explicitly disabled — skip both
-        # the cache read and the subsequent write to avoid pointless I/O.
+        # A falsy TTL disables caching, so skip both the read and the write.
         if not self._cache_ttl:
             pass  # fall through directly to the live call below
         else:
@@ -218,9 +202,7 @@ class ToolkitProvider:
         )
 
         if category == "ticker":
-            # All functionalities that come from a sub-module accessed via
-            # a property on the Toolkit instance (e.g. ratios, models,
-            # options, performance)
+            # Functionality reached through a sub-module property (ratios, models, options).
             if not tickers:
                 raise ValueError(
                     f"'{method_name}' requires one or more ticker symbols. "
@@ -239,9 +221,7 @@ class ToolkitProvider:
                 **method_kwargs,
             )
         elif category == "toolkit":
-            # All functionalities that come directly from the Toolkit class
-            # itself (e.g. get_historical_data) rather than from a sub-module
-            # accessed via a property (e.g. ratios, technicals)
+            # Functionality on the Toolkit class itself rather than a sub-module property.
             if not tickers:
                 raise ValueError(
                     f"'{method_name}' requires one or more ticker symbols. "
@@ -259,8 +239,7 @@ class ToolkitProvider:
                 **method_kwargs,
             )
         elif category == "standalone":
-            # Module such as Economics or FixedIncome that can be initialised
-            # without needing to call the Toolkit class first
+            # Module such as Economics or FixedIncome, initialised without the Toolkit.
             result = self.call_standalone_module_functionality(
                 module_name=module_name,
                 method_name=method_name,
@@ -273,8 +252,7 @@ class ToolkitProvider:
                 **method_kwargs,
             )
         elif category == "discovery":
-            # Module that can also be initialized with the Toolkit class
-            # but doesn't require any parameters other than the API key
+            # Also initialisable with the Toolkit, but needs nothing beyond the API key.
             instance = Discovery(
                 api_key=effective_key, use_cached_data=self._use_cached_data
             )
@@ -397,10 +375,7 @@ class ToolkitProvider:
         """
         upper_tickers = [t.upper() for t in tickers]
 
-        # Auto-resolve benchmark conflict: the Toolkit silently removes a ticker from
-        # the tickers list when it also appears as the benchmark_ticker.  To ensure
-        # every requested ticker returns data, pick an alternative benchmark from a
-        # prioritised fallback list whenever the current benchmark_ticker collides.
+        # The Toolkit drops a ticker that is also the benchmark, so pick another one.
         if benchmark_ticker and benchmark_ticker.upper() in upper_tickers:
             fallback_benchmarks = ["SPY", "QQQ", "^GSPC", "IWM", "DIA", "VTI"]
             resolved_benchmark: str | None = None
@@ -424,11 +399,7 @@ class ToolkitProvider:
                 )
                 benchmark_ticker = None  # type: ignore[assignment]
 
-        # The effective key may differ per request (hosted multi-user). Key the
-        # instance cache by its hash so one user's Toolkit (built with their key)
-        # is never handed to another user. The FRED key is folded into the same
-        # hash so two users sharing an FMP key but differing FRED keys don't
-        # collide either.
+        # Keyed by hashed FMP+FRED key so one user's Toolkit never reaches another.
         effective_key = api_key or self._api_key
         effective_fred_key = fred_api_key or self._fred_api_key
         key_hash = hashlib.sha256(
@@ -440,9 +411,7 @@ class ToolkitProvider:
             f"|{benchmark_ticker or 'none'}|{key_hash}"
         )
 
-        # Hold the lock for the full check-create-store sequence to prevent
-        # TOCTOU races where two threads both see a cache miss and each create
-        # a separate Toolkit instance for the same key.
+        # Locked across check-create-store to stop two threads building duplicates.
         with self._lock:
             if cache_key in self._toolkit_cache:
                 return self._toolkit_cache[cache_key]
@@ -464,9 +433,7 @@ class ToolkitProvider:
                 end_date=end_date,
                 quarterly=quarterly,
                 benchmark_ticker=benchmark_ticker,
-                # Points at the same database the provider opened, so the source
-                # data behind a tool response is cached too, not just the response.
-                # False when this server runs uncached.
+                # The same database the provider opened, or False when running uncached.
                 use_cached_data=self._use_cached_data,
             )
             self._toolkit_cache[cache_key] = toolkit_instance
@@ -609,9 +576,7 @@ class ToolkitProvider:
             pandas.DataFrame, a filtered DataFrame containing only the requested country
             columns (if present) is returned.
         """
-        # Discovery requires the FMP key; Economics/FixedIncome only need the
-        # (optional) FRED key. Key each module's cache by whichever key
-        # actually affects its behavior so different users/keys never collide.
+        # Keyed by whichever key affects the module, so users and keys never collide.
         effective_key = api_key or self._api_key
         effective_fred_key = fred_api_key or self._fred_api_key
         if module_name == "discovery":
@@ -625,9 +590,7 @@ class ToolkitProvider:
                 f"{module_name}|{start_date}|{end_date}|{quarterly}|{fred_key_hash}"
             )
 
-        # Hold the lock for the full check-create-store sequence to prevent
-        # TOCTOU races where two threads both see a cache miss and create
-        # duplicate standalone module instances for the same cache key.
+        # Locked across check-create-store to stop two threads building duplicates.
         with self._lock:
             instance = self._standalone_cache.get(cache_key)
 
@@ -669,8 +632,7 @@ class ToolkitProvider:
 
         result = method(**kwargs)
 
-        # If countries were requested but the method doesn't accept them and returned a DataFrame,
-        # filter columns post-call.
+        # Countries requested but not accepted by the method, so filter post-call.
         if countries and not countries_handled and isinstance(result, pd.DataFrame):
             available = [c for c in countries if c in result.columns]
             if available:

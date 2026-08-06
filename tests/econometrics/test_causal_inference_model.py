@@ -12,10 +12,7 @@ from financetoolkit.econometrics import causal_inference_model, regression_model
 
 
 def test_get_iv_2sls_recovers_true_effect_unlike_naive_ols(recorder):
-    # x is endogenous: driven by both the instrument and a confounder that also
-    # affects y directly, so naive OLS of y on x is biased. The instrument is
-    # correlated with x but (by construction) uncorrelated with the confounder, so
-    # 2SLS should recover the true slope of 2.0 while naive OLS does not.
+    # x is endogenous, so 2SLS should recover the true slope of 2.0 and OLS should not.
     rng = np.random.default_rng(42)
     n = 3000
     confounder = rng.standard_normal(n)
@@ -47,9 +44,7 @@ def test_get_iv_2sls_recovers_true_effect_unlike_naive_ols(recorder):
 
 
 def test_get_iv_2sls_corrected_standard_errors_differ_from_naive_stage_two():
-    # The naive "just run OLS on the Stage-1 fitted values and read off its own
-    # standard errors" approach gives WRONG standard errors -- confirm our corrected
-    # standard errors are materially different from that naive approach's.
+    # The naive Stage-2 OLS standard errors are wrong; confirm ours differ from them.
     rng = np.random.default_rng(11)
     n = 1000
     confounder = rng.standard_normal(n)
@@ -68,17 +63,11 @@ def test_get_iv_2sls_corrected_standard_errors_differ_from_naive_stage_two():
 
     corrected = causal_inference_model.get_iv_2sls(y, x, instrument)
 
-    # Coefficients should match (the naive two-OLS-calls approach gets the point
-    # estimate right)...
+    # Coefficients match: the naive two-OLS approach gets the point estimate right.
     assert np.isclose(
         corrected["coefficients"][1], naive_second_stage["coefficients"][1], atol=1e-6
     )
-    # ...but the standard error should NOT match the naive (wrong) one -- the naive
-    # approach both uses the wrong residuals (y - fitted(x_hat) instead of
-    # y - fitted(x_actual)) and ignores the extra estimation uncertainty introduced by
-    # Stage 1, so it is generically biased (in either direction, depending on the sign
-    # of the correlation between the first-stage residuals and the structural error)
-    # rather than simply "too small" or "too large".
+    # The naive standard error uses the wrong residuals and ignores Stage 1.
     assert not np.isclose(
         corrected["standard_errors"][1],
         naive_second_stage["standard_errors"][1],
@@ -170,9 +159,7 @@ def test_get_difference_in_differences_recovers_treatment_effect(recorder):
 
 
 def test_get_difference_in_differences_placebo_test_is_insignificant():
-    # Placebo: apply a FAKE treatment date that lies entirely within the pre-period
-    # (before the true treatment ever occurs) -- since there is no real effect before
-    # the true treatment date, the placebo DiD estimate should be small/insignificant.
+    # A placebo date inside the pre-period should give a small, insignificant effect.
     rng = np.random.default_rng(2)
     n_units, n_periods = 200, 4
     unit = np.repeat(np.arange(n_units), n_periods)
@@ -189,8 +176,7 @@ def test_get_difference_in_differences_placebo_test_is_insignificant():
         + rng.standard_normal(n_units * n_periods) * 0.2
     )
 
-    # Restrict to the genuinely pre-treatment periods (0 and 1) and apply a placebo
-    # "post" cutoff at period >= 1.
+    # Restrict to pre-treatment periods 0 and 1 with a placebo cutoff at >= 1.
     pre_mask = period < 2
     placebo_post = (period >= 1).astype(float)
 
@@ -368,10 +354,7 @@ def test_get_regression_discontinuity_too_few_observations():
 
 
 def test_get_propensity_score_matching_recovers_true_effect_unlike_naive(recorder):
-    # Treatment assignment is correlated with the covariate (selection bias), and the
-    # covariate ALSO drives the outcome directly -- so a naive mean difference between
-    # treated and control is biased, but PSM (matching on similar propensity scores)
-    # should recover the true, constant treatment effect of 2.0.
+    # Selection bias plus a direct covariate effect, so PSM should recover 2.0.
     rng = np.random.default_rng(3)
     n = 2000
     covariate = pd.Series(rng.standard_normal(n), name="Size")
@@ -493,8 +476,7 @@ def test_get_synthetic_control_recovers_known_treatment_effect(recorder):
 
 
 def test_get_synthetic_control_weights_concentrate_on_close_match():
-    # One donor is (deliberately) an almost-exact pre-treatment match for the
-    # treated unit -- the fitted weights should concentrate heavily on it.
+    # One donor is an almost-exact pre-treatment match, so weights concentrate on it.
     rng = np.random.default_rng(2)
     n_periods, treatment_period = 30, 20
     base = np.cumsum(rng.standard_normal(n_periods) * 0.5)
@@ -517,8 +499,7 @@ def test_get_synthetic_control_weights_concentrate_on_close_match():
 
 
 def test_get_synthetic_control_no_effect_gives_small_ratio():
-    # No treatment effect at all -- the post-treatment gap should look like the
-    # pre-treatment gap, so the RMSPE ratio should be close to 1, not large.
+    # No treatment effect, so the RMSPE ratio should be close to 1 rather than large.
     rng = np.random.default_rng(5)
     n_periods, treatment_period = 40, 30
     common_trend = np.cumsum(rng.standard_normal(n_periods) * 0.5)

@@ -746,8 +746,7 @@ def get_propensity_score_matching(
     )
     propensity_scores = propensity_model["fitted_probabilities"]
 
-    # Match on the LOGIT of the propensity score, not the raw probability -- see
-    # docstring ("Austin, 2011") for why this materially improves match quality.
+    # Matched on the logit of the score, not the raw probability (Austin, 2011).
     clipped_scores = np.clip(propensity_scores, 1e-6, 1 - 1e-6)
     logit_scores = np.log(clipped_scores / (1 - clipped_scores))
 
@@ -1044,9 +1043,7 @@ def get_synthetic_control(
     post_treatment_rmspe = _root_mean_squared_prediction_error(gap_values[post_mask])
     rmspe_ratio = post_treatment_rmspe / pre_treatment_rmspe
 
-    # Placebo/permutation inference: rerun the identical procedure with each donor as
-    # the "placebo treated" unit against the remaining donors, and rank the actual
-    # treated unit's ratio against this reference distribution.
+    # Placebo inference: rerun with each donor as treated and rank the real ratio.
     placebo_ratios: dict[str, float] = {}
     for placebo_donor in donor_names:
         other_donors = [name for name in donor_names if name != placebo_donor]

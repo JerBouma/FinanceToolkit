@@ -6,10 +6,7 @@ from dataclasses import dataclass
 
 DAY = 86400
 
-# Source names are spelled exactly as the user spells them elsewhere in the toolkit.
-# For the two equity providers that means matching the `enforce_source` argument
-# verbatim, so that "everything I have from Yahoo Finance" is expressible with the
-# same word in `Toolkit(enforce_source=...)` and in `Toolkit.clear_cache(source=...)`.
+# Spelled exactly as `enforce_source` spells them, so one word works in both.
 FINANCIAL_MODELING_PREP = "FinancialModelingPrep"
 YAHOO_FINANCE = "YahooFinance"
 FRED = "FRED"
@@ -51,25 +48,20 @@ class CachePolicy:
     revision_days: int = 0
 
 
-# Point-in-time data (a profile, a quote) has no date range at all, so only the
-# TTL applies. Time series carry both a TTL and a revision window.
+# Point-in-time data has no date range, so only the TTL applies.
 DEFAULT_POLICY = CachePolicy(ttl_seconds=DAY)
 
 POLICIES: dict[str, CachePolicy] = {
-    # Price history is immutable once a session closes, but splits and dividend
-    # adjustments restate recent bars, so a refresh re-requests the last week
-    # rather than the whole history.
+    # Splits and dividends restate recent bars, so only the last week is re-requested.
     f"{FINANCIAL_MODELING_PREP}.historical": CachePolicy(
         ttl_seconds=DAY, revision_days=7
     ),
     f"{YAHOO_FINANCE}.historical": CachePolicy(ttl_seconds=DAY, revision_days=7),
-    # Intraday bars change continuously while the session is open. Only
-    # FinancialModelingPrep publishes them, so there is no Yahoo Finance equivalent.
+    # Intraday bars move continuously; only FinancialModelingPrep publishes them.
     f"{FINANCIAL_MODELING_PREP}.intraday": CachePolicy(
         ttl_seconds=900, revision_days=2
     ),
-    # Filings are restated, and the statement endpoints cannot be queried by date
-    # range at all, so a refresh simply asks for everything again.
+    # Filings are restated and take no date range, so a refresh asks for everything.
     f"{FINANCIAL_MODELING_PREP}.statements": CachePolicy(ttl_seconds=DAY),
     f"{YAHOO_FINANCE}.statements": CachePolicy(ttl_seconds=DAY),
     # Company descriptors barely move.
@@ -91,29 +83,22 @@ POLICIES: dict[str, CachePolicy] = {
     f"{FINANCIAL_MODELING_PREP}.treasury_rates": CachePolicy(
         ttl_seconds=DAY, revision_days=7
     ),
-    # Screeners, listings, calendars and news. Short lived because several of them
-    # are intraday movers (biggest gainers, most active) rather than static lists.
+    # Short lived because several are intraday movers rather than static lists.
     f"{FINANCIAL_MODELING_PREP}.discovery": CachePolicy(ttl_seconds=3600),
-    # Only changes when a subscription changes, but probed on every construction,
-    # so a short lifetime already removes almost all of those calls.
+    # Probed on every construction, so a short lifetime removes almost all the calls.
     f"{FINANCIAL_MODELING_PREP}.subscription_plan": CachePolicy(ttl_seconds=3600),
-    # Describes the instrument (currency, exchange, listing date) rather than its
-    # price, so it barely changes.
+    # Describes the instrument rather than its price, so it barely changes.
     f"{YAHOO_FINANCE}.historical_statistics": CachePolicy(ttl_seconds=30 * DAY),
-    # Option quotes move continuously while the market is open, so a chain is only
-    # reused for a few minutes. The list of expiry dates is stable for far longer.
+    # Chains move continuously while open; the expiry list is stable far longer.
     f"{YAHOO_FINANCE}.option_chain": CachePolicy(ttl_seconds=900),
     f"{YAHOO_FINANCE}.option_expiries": CachePolicy(ttl_seconds=DAY),
-    # Futures contracts settle daily, and a forward curve fetches one contract per
-    # delivery month, so caching them per contract avoids a dozen calls per rerun.
+    # A forward curve fetches one contract per delivery month, so cache per contract.
     f"{YAHOO_FINANCE}.futures": CachePolicy(ttl_seconds=DAY, revision_days=7),
-    # Macroeconomic sources revise heavily and publish on a lag, so a refresh
-    # re-requests a long tail even though the deep history is settled.
+    # Macro sources revise heavily and publish on a lag, so the tail stays long.
     f"{FRED}.series": CachePolicy(ttl_seconds=DAY, revision_days=365),
     f"{OECD}.query": CachePolicy(ttl_seconds=DAY, revision_days=1095),
     f"{GLOBAL_MACRO_DATABASE}.dataset": CachePolicy(ttl_seconds=7 * DAY),
-    # The ECB and Federal Reserve endpoints return a full history per series and
-    # accept no date range, so there is nothing to append to and only a TTL applies.
+    # Full history per series and no date range accepted, so only a TTL applies.
     f"{EUROPEAN_CENTRAL_BANK}.series": CachePolicy(ttl_seconds=DAY),
     f"{FEDERAL_RESERVE}.rate": CachePolicy(ttl_seconds=DAY),
     # The Ken French factor files are published monthly as a single zip archive.

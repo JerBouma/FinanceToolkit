@@ -13,19 +13,7 @@ from financetoolkit.cache.coverage_model import Interval, normalize_date
 
 SCHEMA_VERSION = 1
 
-# The cache is deliberately split into three tables. ``series`` holds the payload
-# for one entity (a ticker, a country, a FRED series id) of one dataset, so that
-# adding a ticker never invalidates the others. ``coverage`` records which date
-# ranges were actually requested from the source, which is what allows a widened
-# date range to fetch only the missing years. Recording coverage separately from
-# the payload also distinguishes "we asked and the source had nothing" from "we
-# never asked", preventing endless refetches of ranges that predate a listing.
-# ``blobs`` stores datasets that have no date dimension at all.
-#
-# The source and dataset are stored as plain columns next to the hashed key. The
-# key alone is opaque, so without them a user could only ever clear the entire
-# cache; with them "drop everything I have for OECD" or "drop AAPL" is a single
-# statement.
+# Three tables; source and dataset stay plain columns so clearing can be scoped.
 SCHEMA_STATEMENTS = (
     """
     CREATE TABLE IF NOT EXISTS series (

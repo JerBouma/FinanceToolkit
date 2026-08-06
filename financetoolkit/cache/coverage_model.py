@@ -6,9 +6,7 @@ from datetime import date, datetime, timedelta
 
 import pandas as pd
 
-# An interval is an inclusive (start, end) pair of dates. The cache records which
-# intervals it has already fetched from a source so that a later request only has
-# to ask the API for the parts it is missing, rather than the entire range again.
+# Inclusive (start, end) pair recording what was already fetched from a source.
 Interval = tuple[date, date]
 
 ONE_DAY = timedelta(days=1)

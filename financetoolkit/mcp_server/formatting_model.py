@@ -117,8 +117,7 @@ def _df_to_records(dataframe: pd.DataFrame) -> list[dict]:
         dataframe.index.names = level_names
         flat = dataframe.reset_index()
 
-        # When show_columns narrows to one metric the last-level column repeats
-        # the same value in every row — drop it so records stay concise.
+        # One metric means the last column level repeats, so drop it to stay concise.
         last_level = level_names[-1] if level_names else None
         if last_level and len(flat[last_level].unique()) == 1:
             flat = flat.drop(columns=[last_level])

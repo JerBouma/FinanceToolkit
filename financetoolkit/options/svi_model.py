@@ -128,8 +128,7 @@ def get_svi_parameters(
             "to calibrate the 5 raw SVI parameters."
         )
 
-    # A reasonable, scale-aware starting point: a flat curve at the smallest
-    # observed variance, centered at the money, with a modest, symmetric wing.
+    # A flat curve at the smallest observed variance, at the money, modest wings.
     initial_guess = [
         total_variance.min() * 0.9,
         0.1,

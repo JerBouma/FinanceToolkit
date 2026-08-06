@@ -34,9 +34,7 @@ logger = logger_model.get_logger()
 
 FRED_API_KEY: str = os.environ.get("FRED_API_KEY", "")
 
-# A sample nominal zero-coupon (spot) yield curve, indexed by maturity in years, used
-# as the default input for the yield-curve methods below when the user does not
-# supply their own curve.
+# A sample nominal spot curve by maturity, the default for the yield-curve methods.
 DEFAULT_SPOT_CURVE: dict[float, float] = {
     1: 0.03,
     2: 0.032,
@@ -48,8 +46,7 @@ DEFAULT_SPOT_CURVE: dict[float, float] = {
     30: 0.05,
 }
 
-# A sample real (inflation-protected) zero-coupon yield curve, indexed by maturity in
-# years, used as the default input for `get_breakeven_inflation_rate`.
+# A sample real spot curve, the default for get_breakeven_inflation_rate.
 DEFAULT_REAL_SPOT_CURVE: dict[float, float] = {
     1: 0.008,
     2: 0.009,
@@ -150,9 +147,7 @@ class FixedIncome:
         self._api_key = api_key
         self._cache = cache
 
-        # The FRED, ECB and Federal Reserve collectors are free functions rather than
-        # methods on this class, so the cache is published once here for them to read
-        # back instead of being threaded through every one of them.
+        # Published once here so the FRED, ECB and Fed free functions read it back.
         set_active_cache(cache)
 
     def _require_fred_api_key(self) -> None:

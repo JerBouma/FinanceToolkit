@@ -147,10 +147,7 @@ def _filter_dataframe_columns(
         if valid_idx:
             mask = level_values.isin([idx_map[c] for c in valid_idx])
             filtered = df[mask]
-            # When the filter reduces the last index level to one unique value
-            # (e.g. show_columns=['Revenue'] on a multi-ticker statement), that
-            # level repeats the same label in every row — drop it so the result
-            # is indexed by ticker alone.
+            # A last level reduced to one value repeats, so drop it and index by ticker.
             if len(filtered.index.get_level_values(-1).unique()) == 1:
                 filtered.index = filtered.index.droplevel(-1)
             return filtered
@@ -160,9 +157,7 @@ def _filter_dataframe_columns(
         valid_idx = [c for c in show_columns if c in available_idx]
         if valid_idx:
             filtered = df.loc[[idx_map[c] for c in valid_idx]]
-            # When only one metric row remains the index label is known from the
-            # filter — squeeze to a Series so the caller gets a clean period →
-            # value mapping without the redundant metric label.
+            # One metric row means the label is known, so squeeze to period to value.
             if len(filtered) == 1:
                 return filtered.squeeze()
             return filtered

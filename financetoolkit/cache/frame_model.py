@@ -107,8 +107,7 @@ def slice_frame(
         try:
             label_date = normalize_date(label)
         except (TypeError, ValueError):
-            # Non-date labels are structural rather than temporal, so they are
-            # never filtered out by a date window.
+            # Non-date labels are structural, so a date window never filters them out.
             mask.append(True)
             continue
 
@@ -154,8 +153,7 @@ def merge_frames(
         merged = merged[~merged.index.duplicated(keep="last")]
         sort_axis = 0
 
-    # Axes holding a mix of dates and structural labels are not orderable; leaving
-    # them in concatenation order is preferable to failing the merge outright.
+    # Axes mixing dates and labels are not orderable; keep concatenation order.
     with contextlib.suppress(TypeError):
         merged = merged.sort_index(axis=sort_axis)
 

@@ -7,8 +7,7 @@ from financetoolkit.risk import var_model
 
 # pylint: disable=missing-function-docstring
 
-# Tolerance used to assert that the Cornish-Fisher VaR is close to the gaussian VaR for
-# near-normal data, kept as a named constant to avoid a PLR2004 "magic value" warning.
+# A named constant so PLR2004 does not flag this as a magic value.
 CLOSE_TO_GAUSSIAN_TOLERANCE = 0.001
 
 
@@ -188,8 +187,7 @@ def test_get_var_evt_dataframe(recorder):
 
 
 def test_get_var_evt_insufficient_exceedances(recorder):
-    # Too few exceedances above the threshold to fit a GPD, should return NaN
-    # rather than raise.
+    # Too few exceedances to fit a GPD, so this returns NaN rather than raising.
     returns = pd.Series([0.01, 0.02, -0.01, 0.015, -0.005])
     recorder.capture(
         var_model.get_var_evt(returns=returns, alpha=0.05, threshold_percentile=0.95)
@@ -236,8 +234,7 @@ def test_get_var_cornish_fisher_dataframe(recorder):
 
 
 def test_get_var_cornish_fisher_close_to_gaussian_for_normal_data(recorder):
-    # For near-normal (unskewed, mesokurtic) data, the Cornish-Fisher VaR should be very
-    # close to the plain gaussian VaR, since skewness and excess kurtosis are both ~0.
+    # Near-normal data has skewness and excess kurtosis near 0, so the two agree.
     rng = np.random.default_rng(42)
     returns = pd.Series(rng.standard_normal(2000) * 0.01)
 
@@ -250,8 +247,7 @@ def test_get_var_cornish_fisher_close_to_gaussian_for_normal_data(recorder):
 
 
 def test_get_var_cornish_fisher_more_extreme_for_skewed_fat_tailed_data(recorder):
-    # For negatively skewed, fat-tailed returns, the Cornish-Fisher VaR should show more
-    # tail risk (a more negative VaR) than the plain gaussian VaR.
+    # Negatively skewed, fat-tailed returns should give a more negative VaR.
     rng = np.random.default_rng(42)
     returns = pd.Series(
         np.concatenate(

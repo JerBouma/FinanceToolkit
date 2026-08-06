@@ -25,9 +25,7 @@ from financetoolkit.risk.helpers import determine_within_historical_data
 from financetoolkit.utilities.error_model import handle_errors
 from financetoolkit.utilities.statistics_model import finalize_dataset
 
-# Runtime errors are ignored on purpose given the nature of the calculations
-# sometimes leading to division by zero or other mathematical errors. This is however
-# for financial analysis purposes not an issue and should not be considered as a bug.
+# Division by zero is normal in these calculations, not a bug.
 warnings.filterwarnings("ignore", category=RuntimeWarning)
 
 MINIMUM_TICKERS_FOR_ALL_PAIRS = 2
@@ -2859,9 +2857,7 @@ class Risk:
                 rounding if rounding is not None else self._rounding
             )
 
-        # Only the best (lowest-AIC, i.e. first, since _compare_copula_pair
-        # already sorts by AIC) family per pair is kept -- one row per pair
-        # rather than one row per pair per family.
+        # One row per pair: only the lowest-AIC family, which sorts first, is kept.
         comparison_df = pd.concat(
             {
                 (pair_a, pair_b): self._compare_copula_pair(

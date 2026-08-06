@@ -144,10 +144,7 @@ def get_par_yield(
     spot_rates_sorted = spot_rates.sort_index()
     total_periods = int(round(years_to_maturity * frequency))
 
-    # Spot rates are nominal annual rates compounded at `frequency` (consistent with
-    # `bond_model._get_bond_price_from_curve`), so each period's discount factor uses
-    # the per-period rate (period_rate / frequency) raised to the period count —
-    # not the interpolated annual rate raised to the time in years.
+    # Nominal annual rates compounded at `frequency`, so discount per period.
     discount_factor_sum = 0.0
     for period in range(1, total_periods + 1):
         period_time = period / frequency

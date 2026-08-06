@@ -12,22 +12,14 @@ from statsmodels.stats.stattools import durbin_watson
 
 from financetoolkit.econometrics import regression_model
 
-# The conventional 5% significance level used for the boolean "reject" flags
-# returned by every hypothesis-testing function in this module.
+# The conventional 5% level for the boolean 'reject' flags in this module.
 SIGNIFICANCE_LEVEL = 0.05
 
-# Durbin-Watson has no closed-form p-value (classical Durbin-Watson tables give
-# upper/lower bounds instead) -- these are the widely used rule-of-thumb bands
-# around the "no autocorrelation" value of 2 used for the approximate
-# interpretation flag instead. Source: Durbin, J., & Watson, G.S. (1951).
-# "Testing for Serial Correlation in Least Squares Regression II." Biometrika,
-# 38(1/2), 159-177 (the original bounds test, of which this is a widely used
-# informal simplification -- see the function docstring for the caveat).
+# Rule-of-thumb bands around 2; Durbin-Watson has no closed-form p-value.
 DURBIN_WATSON_LOWER_BAND = 1.5
 DURBIN_WATSON_UPPER_BAND = 2.5
 
-# `get_ramsey_reset_test` needs at least one added power term (`fitted^2`) beyond
-# the original linear fit for the nested F-test to be meaningful.
+# The nested F-test needs at least one added power term beyond the linear fit.
 MINIMUM_RESET_POWER = 2
 
 
@@ -319,9 +311,7 @@ def get_ramsey_reset_test(result: dict, power: int = 3) -> pd.Series:
             f"power must be at least {MINIMUM_RESET_POWER}, received {power}."
         )
 
-    # `y` is not stored on `result` directly, but is exactly recoverable from
-    # `result["fitted_values"] + result["residuals"]` (residuals = y - fitted_values
-    # by construction).
+    # y is recoverable as fitted_values + residuals, by construction.
     target = result["fitted_values"] + result["residuals"]
 
     try:

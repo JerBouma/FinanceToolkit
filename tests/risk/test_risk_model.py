@@ -240,8 +240,7 @@ def test_get_rolling_volatility(recorder):
 
 
 def test_get_hill_estimator_pareto_recovery(recorder):
-    # Simulate a Pareto(alpha=3) tail and check the Hill estimator recovers a tail
-    # index reasonably close to the true value.
+    # A Pareto(alpha=3) tail, whose index the Hill estimator should recover.
     rng = np.random.default_rng(42)
     alpha_true = 3.0
     n = 20000

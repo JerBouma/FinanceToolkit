@@ -45,8 +45,7 @@ _OPAQUE_TYPES = {
     "DataFrame",
 }
 
-# Human-readable descriptions injected into each tool's Args docstring so that
-# FastMCP can surface them as parameter descriptions in Smithery and other clients.
+# Injected into each tool's Args docstring so FastMCP can surface them.
 _PARAM_DESCRIPTIONS: dict[str, str] = {
     "indicator": (
         "Name of the specific metric to calculate, e.g. 'get_asset_turnover_ratio'. "
@@ -150,8 +149,7 @@ def _simplify_annotation(ann: Any) -> Any:
     if origin is list:
         return args[0] if args else str
 
-    # Bare opaque type, not part of a union (e.g. a plain `pd.DataFrame` param) →
-    # fall back to str, same as the all-opaque-union case below.
+    # A bare opaque type outside a union falls back to str, as the union case does.
     if origin is None:
         name = getattr(ann, "__name__", "")
         if name in _OPAQUE_TYPES:
@@ -469,9 +467,7 @@ class ToolRegistry:
                 else None
             )
 
-            # Validate that tickers are present for ticker/toolkit-category tools
-            # (methods that require a Toolkit instance).  Return an actionable
-            # error early rather than letting a confusing AttributeError propagate.
+            # Return an actionable error rather than a confusing AttributeError later.
             effective_category = category
             if method_dispatch and method_name in method_dispatch:
                 _, effective_category = method_dispatch[method_name]
@@ -638,8 +634,7 @@ class ToolRegistry:
                 )
             )
 
-        # Universal show_columns parameter — appended last so it doesn't
-        # interfere with positional argument ordering of method-specific params.
+        # Appended last so it does not disturb positional ordering of other params.
         sig_params.append(
             P(
                 "show_columns",

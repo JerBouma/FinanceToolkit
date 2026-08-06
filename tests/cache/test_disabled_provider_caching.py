@@ -32,8 +32,7 @@ def test_a_disabled_provider_never_creates_the_database(tmp_path):
     assert provider._cache.enabled is False
     assert provider._cache_ttl == 0
 
-    # Writes are accepted and discarded rather than raising, so no call site has
-    # to branch on whether caching is on.
+    # Writes are accepted and discarded, so no call site branches on caching.
     provider._cache.set(
         source="MCP",
         dataset="tool",

@@ -9,17 +9,10 @@ from scipy import stats
 
 # pylint: disable=too-many-locals
 
-# The number of index levels a "panel" (entity, time) Series/DataFrame is expected
-# to have -- this is a genuinely different multi-index convention from the
-# (period, sub-period) "within period" one used throughout `risk_model.py`/
-# `diagnostics_model.py` (see `MULTI_PERIOD_INDEX_LEVELS` there): here the two
-# levels are simultaneously meaningful (which entity, which point in time) rather
-# than one level being nested inside the other, so it is kept as its own
-# constant rather than reused from those modules.
+# (entity, time) levels are simultaneously meaningful, unlike the nested case.
 ENTITY_TIME_INDEX_LEVELS = 2
 
-# The conventional 5% significance level used to flag whether the Hausman test
-# rejects Random Effects' exogeneity assumption in favor of Fixed Effects.
+# The 5% level for flagging whether Hausman rejects Random Effects.
 SIGNIFICANCE_LEVEL = 0.05
 
 
@@ -560,10 +553,7 @@ def get_hausman_test(
     try:
         inverse_variance_difference = np.linalg.inv(variance_difference)
     except np.linalg.LinAlgError:
-        # A non-invertible (e.g. singular, or not positive definite due to small-
-        # sample noise) Var(b_FE) - Var(b_RE) is a well known practical issue with
-        # the Hausman test -- fall back to the Moore-Penrose pseudo-inverse rather
-        # than raising, matching how e.g. Stata's `hausman` degrades in this case.
+        # A singular Var(b_FE) - Var(b_RE) falls back to the pseudo-inverse, as Stata does.
         inverse_variance_difference = np.linalg.pinv(variance_difference)
 
     statistic = float(difference @ inverse_variance_difference @ difference)

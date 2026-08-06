@@ -116,30 +116,22 @@ def get_historical_data(
         ],
     )
 
-    # The cache is keyed on everything that changes the per ticker frame itself.
-    # The requested period is deliberately excluded: it is tracked as coverage so
-    # that a wider period reuses the narrower one already stored. Post-processing
-    # that happens after this function (fill_nan, rounding) is excluded too.
+    # Keyed on what changes the frame; the period is tracked as coverage instead.
     cache_parameters = {
         "interval": interval,
         "return_column": return_column,
         "include_dividends": include_dividends,
         "divide_ohlc_by": divide_ohlc_by,
-        # The dividend endpoint's limit depends on the plan, so a Free-plan frame
-        # is not interchangeable with a Premium one.
+        # The dividend endpoint's limit depends on the plan, so plans are not equal.
         "user_subscription": user_subscription,
     }
     cache_dataset = (
         "intraday" if interval not in ("1d", "1wk", "1mo", "1y") else "historical"
     )
 
-    # Price data is cached under the provider that actually served it, named exactly
-    # as `enforce_source` names it. A ticker that falls back to Yahoo Finance is
-    # therefore stored as Yahoo Finance data, which is both what the user would
-    # expect to clear and what they would expect to see listed.
+    # Stored under the provider that served it, as `enforce_source` names it.
     candidate_sources = (
-        # Intraday bars are only published by FinancialModelingPrep, so there is no
-        # second provider to consult for them.
+        # Only FinancialModelingPrep publishes intraday bars, so there is no second.
         (policy_model.FINANCIAL_MODELING_PREP,)
         if cache_dataset == "intraday"
         else (policy_model.FINANCIAL_MODELING_PREP, policy_model.YAHOO_FINANCE)
@@ -188,8 +180,7 @@ def get_historical_data(
         attempted_fmp = False
 
         if api_key and interval in ["1min", "5min", "15min", "30min", "1hour", "4hour"]:
-            # Intraday bars are only available from FinancialModelingPrep, so there
-            # is no fallback to attribute this to.
+            # Intraday comes only from FinancialModelingPrep, so there is no fallback.
             historical_data = fmp_model.get_intraday_data(
                 ticker=ticker,
                 api_key=api_key,
@@ -261,10 +252,7 @@ def get_historical_data(
                     cache_source = policy_model.YAHOO_FINANCE
 
         if cache is not None and cache_source and not historical_data.empty:
-            # Coverage is only recorded for a non-empty response. An empty frame is
-            # indistinguishable from a rate limited or failed request here, and
-            # caching that would mean permanently remembering a transient outage as
-            # "this ticker has no data".
+            # Only for a non-empty response: an empty frame may just be a rate limit.
             cache.store(
                 source=cache_source,
                 dataset=cache_dataset,
@@ -275,9 +263,7 @@ def get_historical_data(
                 parameters=cache_parameters,
             )
 
-        # Only merge with what was cached when the same provider served both halves.
-        # A ticker that fell back to the other provider mid-run carries different
-        # split and dividend adjustments, so splicing the two would be wrong.
+        # Merge only when one provider served both halves; adjustments differ.
         if (
             cached_data is not None
             and not cached_data.empty
@@ -286,9 +272,7 @@ def get_historical_data(
             historical_data = frame_model.merge_frames(cached_data, historical_data)
 
         if not historical_data.empty:
-            # Return and Cumulative Return depend on the window they are computed
-            # over, so they are recalculated once the cached and freshly fetched
-            # parts have been combined rather than trusted from either half.
+            # Return and Cumulative Return depend on the window, so recompute after merging.
             historical_data = helpers.enrich_historical_data(
                 historical_data=frame_model.slice_frame(historical_data, start, end),
                 start=start,
@@ -318,8 +302,7 @@ def get_historical_data(
     no_data: list[str] = []
     threads = []
 
-    # One plan per provider the request is allowed to use, since a ticker may have
-    # been served by either of them on an earlier run.
+    # One plan per allowed provider, since either may have served an earlier run.
     cache_plans = (
         {
             source: cache.plan(
@@ -399,9 +382,7 @@ def get_historical_data(
             )
 
     if len(historical_data_dict) == 0:
-        # Fill the DataFrame with zeros to ensure the DataFrame is returned
-        # even if no data is found. This is mostly applicable when nothing
-        # can be found at all.
+        # Zero-filled so a DataFrame is returned even when nothing is found.
         for ticker in tickers:
             historical_data_dict[ticker] = empty_historical_data
 
@@ -415,9 +396,7 @@ def get_historical_data(
             historical_data["Dividends"] = historical_data["Dividends"].fillna(0)
 
         if fill_nan:
-            # Interpolation is done when there are NaN values in the DataFrame
-            # while technically, that specific date doesn't have a value, it
-            # smoothens the result with limited impact on any metric.
+            # Interpolation smooths NaN gaps with limited impact on any metric.
             historical_data = historical_data.interpolate(limit_area="inside")
 
         if rounding:

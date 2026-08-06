@@ -7,12 +7,10 @@ from financetoolkit.risk import realized_volatility_model
 
 # pylint: disable=missing-function-docstring
 
-# The four range-based estimators should agree within this factor of each other on a
-# calm synthetic price path, kept as a named constant to avoid a PLR2004 warning.
+# A named constant so PLR2004 does not flag this as a magic value.
 MAGNITUDE_AGREEMENT_RATIO = 2
 
-# The HAR-RV fitted forecast should track a genuinely HAR-structured synthetic RV
-# series with at least this much correlation.
+# The HAR-RV forecast should track a HAR-structured series at least this closely.
 HAR_RV_MINIMUM_CORRELATION = 0.9
 
 
@@ -77,8 +75,7 @@ def test_get_yang_zhang_volatility(recorder):
 
 
 def test_estimators_agree_in_magnitude(recorder):
-    # All four range-based estimators should broadly agree in magnitude with each
-    # other on the same, reasonably calm synthetic price path.
+    # The four range-based estimators should agree in magnitude on a calm path.
     ohlc = _generate_ohlc(n=500)
 
     parkinson = realized_volatility_model.get_parkinson_volatility(
@@ -126,9 +123,7 @@ def test_invalid_type_raises():
 
 
 def test_too_few_observations(recorder):
-    # A single day means the overnight/open-to-close Variance components have zero
-    # degrees of freedom (only one, NaN-shifted, observation), which should yield NaN
-    # rather than raise.
+    # One day leaves the Variance components with zero degrees of freedom.
     ohlc = _generate_ohlc(n=1)
     result = realized_volatility_model.get_yang_zhang_volatility(
         ohlc["Open"], ohlc["High"], ohlc["Low"], ohlc["Close"], period="yearly"
@@ -137,9 +132,7 @@ def test_too_few_observations(recorder):
 
 
 def test_get_har_rv_forecast_recovers_relationship(recorder):
-    # Simulate a Realized Variance series with a genuine daily/weekly/monthly HAR
-    # structure and check the fitted forecast tracks the actual next-day RV well
-    # (high correlation, roughly unbiased), which is what the model is meant to do.
+    # A genuine daily/weekly/monthly HAR structure, which the forecast should track.
     rng = np.random.default_rng(4)
     n = 2000
     dates = pd.date_range("2020-01-01", periods=n, freq="D")

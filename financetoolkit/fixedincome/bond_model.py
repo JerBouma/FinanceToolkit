@@ -146,10 +146,7 @@ def get_macaulays_duration(
     present_value_sum = 0
     cash_flow_weighted_sum = 0
 
-    # Calculate present value of each cash flow and the sum of present values.
-    # Cash flows are discounted using the period count (t) as the exponent since
-    # the per-period rate is yield_to_maturity / frequency — matching get_bond_price.
-    # Each cash flow is then weighted by the time it is received, in years (t / frequency).
+    # Discounted by period count as get_bond_price does, then weighted by t/frequency.
     for t in range(1, total_periods + 1):
         coupon_payment = (par_value * coupon_rate) / frequency
         present_value = coupon_payment / ((1 + yield_to_maturity / frequency) ** t)
@@ -291,9 +288,7 @@ def get_dv01(par_value, coupon_rate, years_to_maturity, yield_to_maturity, frequ
     Returns:
         float: The DV01 of the bond.
     """
-    # DV01 is the average absolute price change resulting from a symmetric 1 basis
-    # point (0.0001) shift of the yield to maturity up and down. Reuses get_bond_price
-    # so the discounting is guaranteed to be consistent with the rest of the module.
+    # Average absolute price change over a symmetric 1bp shift, via get_bond_price.
     yield_decreased = yield_to_maturity - 0.0001  # 1 basis point decrease
     yield_increased = yield_to_maturity + 0.0001  # 1 basis point increase
 

@@ -8,13 +8,7 @@ import types
 def test_build_mcp_app_uses_global_cache_path(monkeypatch, tmp_path):
     """Ensure the MCP bootstrap points SQLite cache storage at the global config dir."""
 
-    # Force the real (third-party) `fastmcp` package to fully import and cache itself
-    # in sys.modules *before* we stub out the unrelated `mcp` (official SDK) package
-    # below. `fastmcp.server`'s own internals import from the real `mcp` package, and
-    # if that import is still pending when `mcp` has already been replaced with our
-    # bare stub, it fails and fastmcp mislabels the resulting ImportError as "FastMCP
-    # server support is not installed" — order-dependent and unrelated to a real
-    # missing install. Pre-importing here makes this test order-independent.
+    # Pre-imported so the real `mcp` is cached before the stub below replaces it.
     import fastmcp.server.dependencies  # noqa: F401
 
     captured = {}

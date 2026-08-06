@@ -26,9 +26,7 @@ _MONTH_CODES: dict[int, str] = {
     12: "Z",
 }
 
-# (root symbol, exchange suffix) for each supported commodity, matching Yahoo
-# Finance's dated futures contract ticker convention (e.g. "CLZ26.NYM" for the
-# December 2026 Crude Oil contract).
+# (root, exchange suffix) in Yahoo's dated futures notation, e.g. CLZ26.NYM.
 COMMODITY_TICKERS: dict[str, tuple[str, str]] = {
     "Crude Oil": ("CL", "NYM"),
     "Natural Gas": ("NG", "NYM"),
@@ -98,9 +96,7 @@ def get_commodity_forward_curve(
 
         ticker = f"{root}{_MONTH_CODES[month]}{year % 100:02d}.{exchange}"
 
-        # Each contract is cached in its own right, so building the curve a second
-        # time, or over a slightly different window, does not re-request all twelve
-        # delivery months from scratch.
+        # Each contract is cached separately, so a rebuild re-requests only what moved.
         cached_contract = None
         fetch_start, fetch_end = start_date, end_date
 
@@ -154,8 +150,7 @@ def get_commodity_forward_curve(
     forward_curve = pd.DataFrame(curve)
     forward_curve.index = pd.to_datetime(forward_curve.index)
 
-    # Contracts served from the cache are already tz-naive, and tz_localize(None)
-    # rejects an index that carries no timezone, so only strip one when present.
+    # Cached contracts are already tz-naive, and tz_localize(None) rejects those.
     if forward_curve.index.tz is not None:
         forward_curve.index = forward_curve.index.tz_localize(None)
 

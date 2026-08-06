@@ -121,8 +121,7 @@ def test_get_fulmer_h_score(recorder):
             ),
         )
     )
-    # Synthetic ground-truth computed by hand (see task verification): a
-    # healthy company scores well above 0, a distressed company below 0.
+    # Synthetic ground truth: a healthy company above 0, a distressed one below.
     healthy = fulmer_model.get_fulmer_h_score(
         retained_earnings_to_total_assets_ratio=0.3,
         sales_to_total_assets_ratio=1.2,

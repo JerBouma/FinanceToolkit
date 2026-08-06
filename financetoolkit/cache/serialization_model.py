@@ -10,11 +10,7 @@ from typing import Any
 
 import pandas as pd
 
-# Payloads are stored as zlib compressed pickles rather than Parquet. The toolkit
-# leans heavily on index types Parquet cannot round-trip (PeriodIndex on historical
-# data, MultiIndex columns on financial statements) and on object columns holding
-# mixed types. Pickle preserves all of those exactly, which matters because the
-# cached frame has to be indistinguishable from a freshly fetched one.
+# Pickle, not Parquet: PeriodIndex and MultiIndex columns must round-trip exactly.
 COMPRESSION_LEVEL = 6
 
 

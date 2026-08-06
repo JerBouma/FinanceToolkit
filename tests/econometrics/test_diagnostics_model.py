@@ -7,8 +7,7 @@ from financetoolkit.econometrics import diagnostics_model
 
 # pylint: disable=missing-function-docstring
 
-# Thresholds used to assert statistical significance (or lack thereof) in the tests
-# below, kept as named constants to avoid PLR2004 "magic value" lint warnings.
+# Named constants so PLR2004 does not flag these as magic values.
 HIGH_P_VALUE_THRESHOLD = 0.05
 LOW_P_VALUE_THRESHOLD = 0.001
 SIGNIFICANCE_LEVEL = 0.05
@@ -56,8 +55,7 @@ def test_get_jarque_bera_test_dataframe(recorder):
 
 
 def test_get_ljung_box_test_white_noise(recorder):
-    # White noise should fail to reject the null hypothesis of no autocorrelation,
-    # i.e. a high p-value.
+    # White noise should fail to reject no autocorrelation, so a high p-value.
     rng = np.random.default_rng(42)
     returns = pd.Series(rng.standard_normal(500) * 0.01)
     result = diagnostics_model.get_ljung_box_test(returns, lags=10).round(4)
@@ -66,8 +64,7 @@ def test_get_ljung_box_test_white_noise(recorder):
 
 
 def test_get_ljung_box_test_autocorrelated(recorder):
-    # A strongly autocorrelated AR(1) series should reject the null hypothesis,
-    # i.e. a low p-value.
+    # A strongly autocorrelated AR(1) should reject, so a low p-value.
     rng = np.random.default_rng(42)
     values = [0.0]
     for _ in range(500):
@@ -111,8 +108,7 @@ def test_get_variance_ratio_test_iid(recorder):
 
 
 def test_get_variance_ratio_test_momentum(recorder):
-    # A positively autocorrelated (momentum) series should give a Variance Ratio > 1
-    # and a significant (low) p-value.
+    # A momentum series should give a Variance Ratio > 1 and a low p-value.
     rng = np.random.default_rng(42)
     values = [0.0]
     for _ in range(1000):
@@ -127,8 +123,7 @@ def test_get_variance_ratio_test_momentum(recorder):
 
 
 def test_get_variance_ratio_test_mean_reversion(recorder):
-    # A negatively autocorrelated (mean-reverting) series should give a Variance Ratio
-    # < 1 and a significant (low) p-value.
+    # A mean-reverting series should give a Variance Ratio < 1 and a low p-value.
     rng = np.random.default_rng(42)
     values = [0.0]
     for _ in range(1000):

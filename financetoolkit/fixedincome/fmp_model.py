@@ -14,9 +14,7 @@ from financetoolkit.utilities import logger_model
 
 logger = logger_model.get_logger()
 
-# The stable treasury-rates endpoint only returns a maximum of 90 calendar days of data
-# per request regardless of the from/to range requested, so longer histories are
-# paginated by requesting successive 90-day windows and concatenating the results.
+# The endpoint returns at most 90 days per request, so longer ranges paginate.
 WINDOW_DAYS = 90
 
 NAMING: dict[str, str] = {
@@ -110,8 +108,7 @@ def get_treasury_rates(
         if fetch_span is None:
             return cached_rates if cached_rates is not None else pd.DataFrame()
 
-        # Only the outstanding part of the range is paginated over, so a rerun that
-        # extends the window by a few days costs a request or two rather than forty.
+        # Only the outstanding part is paginated, so a small extension costs a request.
         requested_start, requested_end = start_date_value, end_date_value
         start_date_value = datetime.combine(fetch_span[0], datetime.min.time())
         end_date_value = datetime.combine(fetch_span[1], datetime.min.time())

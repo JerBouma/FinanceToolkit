@@ -334,10 +334,7 @@ def get_garman_kohlhagen(
         time_to_expiration=time_to_expiration,
     )
 
-    # The Garman-Kohlhagen model is the Black-Scholes model with the foreign risk-free
-    # rate playing the role of the dividend yield. Note: get_d1 and get_d2 are used
-    # directly (instead of delegating to get_black_scholes) because they correctly
-    # discount d1 by the foreign_risk_free_rate, see the module notes for details.
+    # Black-Scholes with the foreign rate as the dividend yield, which d1 discounts.
     d1 = get_d1(
         stock_price=stock_price,
         strike_price=strike_price,
@@ -555,11 +552,7 @@ def _bjerksund_stensland_call(
         float: The value of the American call option.
     """
     if cost_of_carry >= risk_free_rate:
-        # It is never optimal to exercise an American call early when the cost of
-        # carry is greater than or equal to the risk-free rate, the American call
-        # is therefore worth the same as its European counterpart. get_d1/get_d2 are
-        # used directly (rather than get_black_scholes) so that the dividend yield
-        # (risk_free_rate - cost_of_carry) is correctly reflected in d1.
+        # Never optimal to exercise early when cost of carry >= the risk-free rate.
         dividend_yield = risk_free_rate - cost_of_carry
         d1 = get_d1(
             stock_price=stock_price,
@@ -732,8 +725,7 @@ def get_bjerksund_stensland(
     cost_of_carry = risk_free_rate - dividend_yield
 
     if put_option:
-        # American put via the put-call transformation:
-        # P(S, K, T, r, b, v) = C(K, S, T, r - b, -b, v)
+        # American put via P(S, K, T, r, b, v) = C(K, S, T, r - b, -b, v).
         return _bjerksund_stensland_call(
             stock_price=strike_price,
             strike_price=stock_price,

@@ -49,9 +49,7 @@ def get_cached_financial_data(
         url=url, sleep_timer=sleep_timer, user_subscription=user_subscription
     )
 
-    # An empty frame is either a genuinely empty result or one of the error frames
-    # the API returns for a rate limit or a plan restriction, which must not be
-    # remembered as though it were the answer.
+    # An empty frame may be a rate limit or plan error, not a genuine result.
     if cache is not None and isinstance(response, pd.DataFrame) and not response.empty:
         cache.set(
             source=policy_model.FINANCIAL_MODELING_PREP,

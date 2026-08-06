@@ -5,13 +5,10 @@ import pandas as pd
 
 # pylint: disable=too-many-locals
 
-# Matches up with currency codes EUR, USD, JPY etc. This is used for
-# Yahoo Finance's notation of currencies. E.g. EURUSD=X
+# Matches currency codes (EUR, USD) in Yahoo Finance notation, e.g. EURUSD=X.
 CURRENCY_CODE_LENGTH = 3
 
-# The number of trading days used to annualize a daily covariance matrix, matching
-# the convention used throughout the Risk module (see VOLATILITY_WINDOW_TRANSLATION
-# in financetoolkit/utilities/statistics_model.py).
+# Trading days used to annualize, matching the Risk module's convention.
 TRADING_DAYS_PER_YEAR = 252
 
 
@@ -114,14 +111,11 @@ def _calculate_portfolio_volatility(
     if asset_returns is not None and not asset_returns.empty:
         returns_for_covariance = asset_returns.reindex(columns=weights.index)
 
-        # Restrict to the most recent calendar year, matching the annualization window used
-        # for the individual asset "Volatility" column (risk_model.get_volatility(..., "yearly")).
+        # The most recent calendar year, matching the individual Volatility column.
         periods = returns_for_covariance.index.asfreq("Y")
         recent_returns = returns_for_covariance[periods == periods[-1]]
 
-        # Only assets with at least two observations in the window contribute a meaningful
-        # covariance estimate; drop columns that are entirely missing to avoid propagating NaNs
-        # into every entry of the covariance matrix.
+        # Columns that are entirely missing would propagate NaNs across the matrix.
         recent_returns = recent_returns.dropna(axis=1, how="all")
 
         if not recent_returns.empty and len(recent_returns.columns) > 0:
@@ -137,9 +131,7 @@ def _calculate_portfolio_volatility(
             if portfolio_variance >= 0:
                 return float(np.sqrt(portfolio_variance))
 
-    # Fallback: weighted average of individual volatilities. This ignores cross-asset
-    # correlation and therefore overstates true portfolio volatility unless every pair of
-    # assets is perfectly correlated -- it is used only when return series are unavailable.
+    # Ignores correlation and so overstates it; used only when no series exist.
     return float(sum(fallback_volatilities * weights))
 
 
@@ -241,8 +233,7 @@ def create_portfolio_overview(
         }
     )
 
-    # volatilities is expected to already be annualized (see risk_model.get_volatility),
-    # this function no longer performs the annualization itself.
+    # volatilities is already annualized, so no annualization happens here.
     benchmark_volatility = volatilities.loc["Benchmark"]
     asset_volatilities = volatilities.drop("Benchmark")
     asset_volatilities = asset_volatilities.reindex(portfolio_overview_grouped.index)
@@ -448,11 +439,7 @@ def create_transactions_performance(
     last_benchmark_prices = []
 
     for period in period_performance_grouped.index:
-        # A period/ticker combination can be missing from period_prices when the price
-        # history available for that ticker doesn't reach back as far as the transaction
-        # (e.g. a demo dataset with a transaction dated before the ticker's actual price
-        # history starts). Treat this as unknown rather than raising, since the Return
-        # and Alpha for that period are simply not computable.
+        # A transaction predating the ticker's price history is unknown, not an error.
         try:
             last_prices.append(period_prices.loc[period[0], period[1]])
         except KeyError:

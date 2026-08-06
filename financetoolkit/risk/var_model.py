@@ -8,9 +8,7 @@ from financetoolkit.risk import risk_model
 
 ALPHA_CONSTRAINT = 0.5
 
-# This is meant for calculations in which a Multi Index exists. This is the case
-# when calculating a "within period" in which the first index represents the period
-# (e.g. 2020Q1) and the second index the days within that period (January to March)
+# Two levels when a 'within period' index nests days inside a period (2020Q1).
 MULTI_PERIOD_INDEX_LEVELS = 2
 
 
@@ -106,8 +104,7 @@ def get_var_gaussian(
 
     if cornish_fisher:
         S = risk_model.get_skewness(returns)
-        # get_kurtosis defaults to fisher=True, i.e. this is already excess kurtosis
-        # (normal = 0), so it must not be shifted by another -3 here.
+        # get_kurtosis already returns excess kurtosis, so do not shift by -3 again.
         K = risk_model.get_kurtosis(returns)
         za = (
             za

@@ -60,9 +60,7 @@ def test_get_conditional_value_at_risk(recorder, risk_module):
 
 
 def test_get_conditional_value_at_risk_studentt_differs_from_var(recorder, risk_module):
-    # Regression test: distribution="studentt" previously dispatched to
-    # var_model.get_var_studentt instead of cvar_model.get_cvar_studentt, silently
-    # returning VaR instead of CVaR. CVaR must be at least as extreme as VaR.
+    # Regression test: studentt used to dispatch to VaR, so CVaR must be as extreme.
     var = risk_module.get_value_at_risk(
         period="monthly", within_period=False, distribution="studentt"
     )
@@ -309,8 +307,7 @@ def test_get_har_rv_forecast(recorder, risk_module):
 
 
 def test_get_har_rv_forecast_invalid_estimator(risk_module):
-    # @handle_errors catches the ValueError and returns an empty Series rather than
-    # propagating it.
+    # @handle_errors returns an empty Series rather than propagating the ValueError.
     result = risk_module.get_har_rv_forecast(estimator="bad")
     assert result.empty
 

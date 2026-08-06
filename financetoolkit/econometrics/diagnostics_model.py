@@ -9,9 +9,7 @@ from scipy import stats
 from statsmodels.stats.diagnostic import acorr_ljungbox, breaks_cusumolsresid, het_arch
 from statsmodels.stats.stattools import jarque_bera
 
-# This is meant for calculations in which a Multi Index exists. This is the case
-# when calculating a "within period" in which the first index represents the period
-# (e.g. 2020Q1) and the second index the days within that period (January to March)
+# Two levels when a 'within period' index nests days inside a period (2020Q1).
 MULTI_PERIOD_INDEX_LEVELS = 2
 
 # The Variance Ratio test requires at least a two-period compounding horizon.
@@ -315,8 +313,7 @@ def get_variance_ratio_test(
 
         single_period_variance = values.var(ddof=1)
 
-        # q-period overlapping compounded (summed log/simple) returns, following the
-        # standard overlapping-sample implementation of the Lo-MacKinlay test.
+        # q-period overlapping compounded returns, as the Lo-MacKinlay test defines them.
         q_period_returns = pd.Series(values).rolling(window=q).sum().dropna().to_numpy()
         q_period_variance = q_period_returns.var(ddof=1)
 

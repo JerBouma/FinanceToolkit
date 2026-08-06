@@ -3,6 +3,7 @@
 __docformat__ = "google"
 
 
+import hashlib
 import importlib.util
 import threading
 import time
@@ -17,6 +18,8 @@ import requests
 from urllib3.exceptions import MaxRetryError
 
 from financetoolkit import helpers
+from financetoolkit.cache import policy_model
+from financetoolkit.cache.cache_controller import get_active_cache
 from financetoolkit.utilities import error_model, logger_model
 from financetoolkit.utilities.requests_model import get_request
 
@@ -120,6 +123,74 @@ def get_financial_data(
 
             error_retry_counter += 1
             time.sleep(5)
+
+
+PLAN_RESTRICTION_MESSAGES = (
+    "PREMIUM QUERY PARAMETER",
+    "EXCLUSIVE ENDPOINT",
+    "NO DATA",
+    "BANDWIDTH LIMIT REACH",
+    "INVALID API KEY",
+    "LIMIT REACH",
+)
+
+
+def determine_subscription_plan(api_key: str) -> tuple[str, bool]:
+    """
+    Probe the API key to establish which FinancialModelingPrep plan it belongs to.
+
+    The plan governs the sleep timer and several other decisions, so it is needed
+    before any real request is made. Because the answer only changes when a
+    subscription changes, it is cached briefly rather than probed on every single
+    Toolkit or Discovery construction. The key itself is never stored: the cache
+    entry is identified by a digest of it, so two processes using the same key share
+    the answer while the key stays out of the database.
+
+    Args:
+        api_key (str): The FinancialModelingPrep API key to probe.
+
+    Returns:
+        tuple[str, bool]: The plan ("Premium" or "Free"), and whether the key was
+            rejected as invalid.
+    """
+    cache = get_active_cache()
+    entity = hashlib.sha256(api_key.encode()).hexdigest()[:16] if api_key else "no_key"
+
+    if cache is not None:
+        cached_plan = cache.get(
+            source=policy_model.FINANCIAL_MODELING_PREP,
+            dataset="subscription_plan",
+            entity=entity,
+        )
+
+        if cached_plan is not None:
+            return cached_plan["plan"], cached_plan["invalid_key"]
+
+    determine_plan = get_financial_data(
+        url=f"https://financialmodelingprep.com/stable/income-statement?symbol=AAPL&apikey={api_key}&limit=10",
+        sleep_timer=False,
+        user_subscription="Free",
+    )
+
+    plan = "Premium"
+    invalid_key = False
+
+    for option in PLAN_RESTRICTION_MESSAGES:
+        if option in determine_plan:
+            invalid_key = option == "INVALID API KEY"
+            plan = "Free"
+            break
+
+    # A rate limited probe says nothing about the plan, so that answer is not stored.
+    if cache is not None and "LIMIT REACH" not in determine_plan:
+        cache.set(
+            source=policy_model.FINANCIAL_MODELING_PREP,
+            dataset="subscription_plan",
+            entity=entity,
+            data={"plan": plan, "invalid_key": invalid_key},
+        )
+
+    return plan, invalid_key
 
 
 def get_financial_statement(

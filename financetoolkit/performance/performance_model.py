@@ -11,6 +11,8 @@ from scipy.stats import linregress
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import mean_squared_error
 
+from financetoolkit.cache import policy_model
+from financetoolkit.cache.cache_controller import get_active_cache
 from financetoolkit.risk import cvar_model
 from financetoolkit.utilities.requests_model import get_request
 from financetoolkit.utilities.statistics_model import PERIOD_TRANSLATION
@@ -226,6 +228,18 @@ def obtain_fama_and_french_dataset(fama_and_french_url: str | None = None):
         else "https://mba.tuck.dartmouth.edu/pages/faculty/ken.french/ftp/F-F_Research_Data_5_Factors_2x3_daily_CSV.zip"
     )
 
+    cache = get_active_cache()
+
+    if cache is not None:
+        cached_dataset = cache.get(
+            source=policy_model.KEN_FRENCH,
+            dataset="factors",
+            entity=fama_and_french_url,
+        )
+
+        if cached_dataset is not None:
+            return cached_dataset
+
     response = get_request(fama_and_french_url, timeout=10)
     zip_data = response.content
 
@@ -245,6 +259,14 @@ def obtain_fama_and_french_dataset(fama_and_french_url: str | None = None):
             fama_and_french_dataset.index, format="%Y%m%d"
         ).to_period(freq="D")
         fama_and_french_dataset.index.name = "Date"
+
+    if cache is not None and not fama_and_french_dataset.empty:
+        cache.set(
+            source=policy_model.KEN_FRENCH,
+            dataset="factors",
+            entity=fama_and_french_url,
+            data=fama_and_french_dataset,
+        )
 
     return fama_and_french_dataset
 
@@ -273,6 +295,16 @@ def obtain_carhart_momentum_dataset(momentum_url: str | None = None) -> pd.DataF
         else "https://mba.tuck.dartmouth.edu/pages/faculty/ken.french/ftp/F-F_Momentum_Factor_daily_CSV.zip"
     )
 
+    cache = get_active_cache()
+
+    if cache is not None:
+        cached_dataset = cache.get(
+            source=policy_model.KEN_FRENCH, dataset="factors", entity=momentum_url
+        )
+
+        if cached_dataset is not None:
+            return cached_dataset
+
     response = get_request(momentum_url, timeout=10)
     zip_data = response.content
 
@@ -298,6 +330,14 @@ def obtain_carhart_momentum_dataset(momentum_url: str | None = None) -> pd.DataF
         ).to_period(freq="D")
         momentum_dataset.index.name = "Date"
         momentum_dataset.columns = momentum_dataset.columns.str.strip()
+
+    if cache is not None and not momentum_dataset.empty:
+        cache.set(
+            source=policy_model.KEN_FRENCH,
+            dataset="factors",
+            entity=momentum_url,
+            data=momentum_dataset,
+        )
 
     return momentum_dataset
 

@@ -7,6 +7,8 @@ from datetime import datetime, timedelta
 
 import pandas as pd
 
+from financetoolkit.cache import frame_model, policy_model
+from financetoolkit.cache.cache_controller import get_active_cache
 from financetoolkit.fmp_model import get_financial_data
 from financetoolkit.utilities import logger_model
 
@@ -62,6 +64,9 @@ def get_treasury_rates(
         therefore issues roughly 40 requests -- be mindful of this on a Free plan's daily request
         limit and consider passing an explicit, narrower start_date where possible.
 
+        When a cache is active only the part of the range that is not already stored is
+        paginated over, which is what makes the 40-request default bearable on repeat runs.
+
     Returns:
         pd.DataFrame: the Treasury par yield curve rates, in percentage points, indexed by date
         with one column per maturity.
@@ -87,6 +92,31 @@ def get_treasury_rates(
         raise ValueError(
             f"Start date ({start_date_value}) must be before end date ({end_date_value}))"
         )
+
+    cache = get_active_cache()
+    cached_rates = None
+
+    if cache is not None:
+        plan = cache.plan(
+            source=policy_model.FINANCIAL_MODELING_PREP,
+            dataset="treasury_rates",
+            entities=["united_states"],
+            start=start_date_value.strftime("%Y-%m-%d"),
+            end=end_date_value.strftime("%Y-%m-%d"),
+        )
+        cached_rates = plan.cached.get("united_states")
+        fetch_span = plan.get_fetch_span("united_states")
+
+        if fetch_span is None:
+            return cached_rates if cached_rates is not None else pd.DataFrame()
+
+        # Only the outstanding part of the range is paginated over, so a rerun that
+        # extends the window by a few days costs a request or two rather than forty.
+        requested_start, requested_end = start_date_value, end_date_value
+        start_date_value = datetime.combine(fetch_span[0], datetime.min.time())
+        end_date_value = datetime.combine(fetch_span[1], datetime.min.time())
+    else:
+        requested_start, requested_end = start_date_value, end_date_value
 
     logger.info(
         "Obtaining Treasury rates from %s to %s",
@@ -137,5 +167,23 @@ def get_treasury_rates(
     treasury_rates = treasury_rates[
         [column for column in NAMING.values() if column in treasury_rates.columns]
     ]
+
+    if cache is not None and not treasury_rates.empty:
+        cache.store(
+            source=policy_model.FINANCIAL_MODELING_PREP,
+            dataset="treasury_rates",
+            entity="united_states",
+            data=treasury_rates,
+            start=start_date_value.strftime("%Y-%m-%d"),
+            end=end_date_value.strftime("%Y-%m-%d"),
+        )
+
+    if cached_rates is not None and not cached_rates.empty:
+        treasury_rates = frame_model.merge_frames(cached_rates, treasury_rates)
+        treasury_rates = frame_model.slice_frame(
+            treasury_rates,
+            requested_start.strftime("%Y-%m-%d"),
+            requested_end.strftime("%Y-%m-%d"),
+        )
 
     return treasury_rates

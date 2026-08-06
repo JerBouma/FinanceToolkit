@@ -7,6 +7,7 @@ import os
 import pandas as pd
 
 from financetoolkit import fmp_model
+from financetoolkit.cache import cache_controller
 from financetoolkit.discovery import discovery_model
 from financetoolkit.utilities import logger_model
 from financetoolkit.utilities.error_model import handle_errors
@@ -37,12 +38,18 @@ class Discovery:
     def __init__(
         self,
         api_key: str | None = API_KEY,
+        use_cached_data: bool | str = False,
     ):
         """
         Initializes the Discovery Controller Class.
 
         Args:
             api_key (str): An API key from FinancialModelingPrep. Obtain one here: https://www.jeroenbouma.com/fmp
+            use_cached_data (bool | str): Whether to serve the discovery endpoints from the cache when
+                a stored response is still fresh. If True, uses the shared cache database in the user
+                configuration directory. If a string is provided, uses that as the path to a dedicated
+                cache folder or database file. Defaults to False. Note that a Toolkit created with
+                caching enabled in the same process already makes its cache available here.
 
         As an example:
 
@@ -80,30 +87,21 @@ class Discovery:
 
         self._api_key = api_key
 
+        cache_enabled, cache_location = cache_controller.parse_use_cached_data(
+            use_cached_data
+        )
+
+        if cache_enabled:
+            self._cache = cache_controller.get_cache(
+                location=cache_location, enabled=True
+            )
+
+            cache_controller.set_active_cache(self._cache)
+
         # This tests the API key to determine the subscription plan. This is relevant for the sleep timer
         # but also for other components of the Toolkit. This prevents wait timers from occurring while
         # it wouldn't result to any other answer than a rate limit error.
-        determine_plan = fmp_model.get_financial_data(
-            url=f"https://financialmodelingprep.com/stable/income-statement?symbol=AAPL&apikey={api_key}&limit=10",
-            sleep_timer=False,
-            user_subscription="Free",
-        )
-
-        self._fmp_plan = "Premium"
-
-        for option in [
-            "PREMIUM QUERY PARAMETER",
-            "EXCLUSIVE ENDPOINT",
-            "NO DATA",
-            "BANDWIDTH LIMIT REACH",
-            "INVALID API KEY",
-            "LIMIT REACH",
-        ]:
-            if option in determine_plan:
-                self._fmp_plan = "Free"
-                break
-        else:
-            self._fmp_plan = "Premium"
+        self._fmp_plan, _ = fmp_model.determine_subscription_plan(api_key=api_key)
 
     @handle_errors
     def search_instruments(

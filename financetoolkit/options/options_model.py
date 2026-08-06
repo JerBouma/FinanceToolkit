@@ -4,6 +4,9 @@ import numpy as np
 import pandas as pd
 import yfinance as yf
 
+from financetoolkit.cache import policy_model
+from financetoolkit.cache.cache_controller import get_active_cache
+
 # pylint: disable=too-many-arguments,too-many-locals
 
 
@@ -17,7 +20,27 @@ def get_option_expiry_dates(ticker: str) -> list[str]:
     Returns:
         list[str]: A list of option expiry dates in 'YYYY-MM-DD' format.
     """
-    return yf.Ticker(ticker).options
+    cache = get_active_cache()
+
+    if cache is not None:
+        cached_dates = cache.get(
+            source=policy_model.YAHOO_FINANCE, dataset="option_expiries", entity=ticker
+        )
+
+        if cached_dates is not None:
+            return cached_dates
+
+    expiry_dates = yf.Ticker(ticker).options
+
+    if cache is not None and expiry_dates:
+        cache.set(
+            source=policy_model.YAHOO_FINANCE,
+            dataset="option_expiries",
+            entity=ticker,
+            data=expiry_dates,
+        )
+
+    return expiry_dates
 
 
 def get_option_chains(
@@ -25,6 +48,11 @@ def get_option_chains(
 ) -> pd.DataFrame:
     """
     Retrieve option chains (calls or puts) for a list of tickers and a specific expiration date.
+
+    Option quotes move continuously while the market is open, so a cached chain is
+    only served for a few minutes (see the yfinance.option_chain policy). That is
+    long enough to stop a single analysis from requesting the same chain repeatedly
+    without ever presenting a materially outdated quote as current.
 
     Args:
         tickers (list[str]): List of ticker symbols.
@@ -34,9 +62,26 @@ def get_option_chains(
     Returns:
         pd.DataFrame: A DataFrame containing the option chains for the specified tickers and expiration date.
     """
+    cache = get_active_cache()
+    cache_parameters = {
+        "expiration_date": expiration_date,
+        "put_option": put_option,
+    }
     result_dict = {}
 
     for ticker in tickers:
+        if cache is not None:
+            cached_chain = cache.get(
+                source=policy_model.YAHOO_FINANCE,
+                dataset="option_chain",
+                entity=ticker,
+                parameters=cache_parameters,
+            )
+
+            if cached_chain is not None:
+                result_dict[ticker] = cached_chain
+                continue
+
         option_chain = yf.Ticker(ticker).option_chain(expiration_date)
         options_df = option_chain.puts if put_option else option_chain.calls
 
@@ -65,6 +110,15 @@ def get_option_chains(
 
         options_df = options_df.set_index("Strike")
         result_dict[ticker] = options_df
+
+        if cache is not None and not options_df.empty:
+            cache.set(
+                source=policy_model.YAHOO_FINANCE,
+                dataset="option_chain",
+                entity=ticker,
+                data=options_df,
+                parameters=cache_parameters,
+            )
 
     result_final = pd.concat(result_dict)
     if "Last Trade Date" in result_final.columns:

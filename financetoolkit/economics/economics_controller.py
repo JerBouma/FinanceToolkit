@@ -9,6 +9,7 @@ from datetime import datetime, timedelta
 
 import pandas as pd
 
+from financetoolkit.cache.cache_controller import Cache, set_active_cache
 from financetoolkit.economics import fred_model, gmdb_model, oecd_model, yfinance_model
 from financetoolkit.utilities.error_model import handle_errors
 from financetoolkit.utilities.logger_model import get_logger
@@ -38,6 +39,8 @@ class Economics:
         quarterly: bool | None = None,
         rounding: int | None = 4,
         fred_api_key: str = FRED_API_KEY,
+        allow_stale_oecd_cache: bool = True,
+        cache: Cache | None = None,
     ):
         """
         Initializes the Economics Controller Class.
@@ -54,6 +57,13 @@ class Economics:
                 Obtain a free key at https://fred.stlouisfed.org/docs/api/api_key.html. Can also be set
                 via the FRED_API_KEY environment variable. Defaults to the value of FRED_API_KEY if set,
                 otherwise an empty string.
+            allow_stale_oecd_cache (bool, optional): the OECD API enforces a hard rate limit (60
+                downloads/hour). When True, a 429 response falls back to the most recently cached
+                successful response for that exact query instead of returning empty data -- opt-in,
+                since the served data may not be the most up-to-date. Every successful OECD response
+                is cached regardless of this setting. Defaults to False.
+            cache (Cache | None, optional): The incremental cache used for the OECD, FRED and Global
+                Macro Database requests this module makes. Defaults to None, which disables caching.
 
         As an example:
 
@@ -108,9 +118,17 @@ class Economics:
         )
         self._end_date = end_date if end_date else datetime.now().strftime("%Y-%m-%d")
 
+        self._cache = cache
+
+        # The OECD and FRED get_* functions are free functions rather than methods
+        # on this class, so the cache is published once here for them to read back
+        # instead of being threaded through every one of them and their callers.
+        set_active_cache(cache)
+        oecd_model.configure_oecd_cache(allow_stale_oecd_cache)
+
         self._gmdb_source: bool = gmdb_source
         self._gmbd_dataset: pd.DataFrame = (
-            gmdb_model.collect_global_macro_database_dataset()
+            gmdb_model.collect_global_macro_database_dataset(cache=cache)
             if self._gmdb_source
             else pd.DataFrame()
         )

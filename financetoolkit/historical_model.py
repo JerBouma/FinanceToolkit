@@ -9,7 +9,9 @@ import time
 import numpy as np
 import pandas as pd
 
-from financetoolkit import fmp_model, yfinance_model
+from financetoolkit import fmp_model, helpers, yfinance_model
+from financetoolkit.cache import frame_model, policy_model
+from financetoolkit.cache.cache_controller import Cache
 from financetoolkit.utilities import error_model, logger_model
 from financetoolkit.utilities.statistics_model import PERIOD_TRANSLATION
 
@@ -51,6 +53,7 @@ def get_historical_data(
     show_errors: bool = False,
     log_message: str = "Obtaining historical data",
     user_subscription: str = "Free",
+    cache: Cache | None = None,
 ):
     """
     Retrieves historical stock data for the given ticker(s) from Financial Modeling Prep or/and Yahoo Finance
@@ -86,6 +89,9 @@ def get_historical_data(
         acquired data from FinancialModelingPrep and which tickers acquired data from YahooFinance.
         show_errors (bool, optional): A boolean representing whether to show errors. Defaults to True.
         log_message (str, optional): A string representing the message to show in the log output.
+        cache (Cache, optional): An incremental cache to serve already retrieved ranges from. When
+        provided, each ticker only requests the part of the period that is not cached yet, so
+        widening the date range or adding a ticker does not refetch what is already stored.
 
     Raises:
         ValueError: If the start date is after the end date.
@@ -110,21 +116,93 @@ def get_historical_data(
         ],
     )
 
+    # The cache is keyed on everything that changes the per ticker frame itself.
+    # The requested period is deliberately excluded: it is tracked as coverage so
+    # that a wider period reuses the narrower one already stored. Post-processing
+    # that happens after this function (fill_nan, rounding) is excluded too.
+    cache_parameters = {
+        "interval": interval,
+        "return_column": return_column,
+        "include_dividends": include_dividends,
+        "divide_ohlc_by": divide_ohlc_by,
+        # The dividend endpoint's limit depends on the plan, so a Free-plan frame
+        # is not interchangeable with a Premium one.
+        "user_subscription": user_subscription,
+    }
+    cache_dataset = (
+        "intraday" if interval not in ("1d", "1wk", "1mo", "1y") else "historical"
+    )
+
+    # Price data is cached under the provider that actually served it, named exactly
+    # as `enforce_source` names it. A ticker that falls back to Yahoo Finance is
+    # therefore stored as Yahoo Finance data, which is both what the user would
+    # expect to clear and what they would expect to see listed.
+    candidate_sources = (
+        # Intraday bars are only published by FinancialModelingPrep, so there is no
+        # second provider to consult for them.
+        (policy_model.FINANCIAL_MODELING_PREP,)
+        if cache_dataset == "intraday"
+        else (policy_model.FINANCIAL_MODELING_PREP, policy_model.YAHOO_FINANCE)
+    )
+    cache_sources = [
+        source
+        for source in candidate_sources
+        if enforce_source is None or enforce_source == source
+    ]
+
+    def resolve_from_cache(ticker):
+        """Find the provider holding this ticker, with whatever gap is left to fetch."""
+        for source in cache_sources:
+            plan = cache_plans.get(source)
+
+            if plan is None:
+                continue
+
+            cached_data = plan.cached.get(ticker)
+
+            if cached_data is not None and not cached_data.empty:
+                return source, cached_data, plan.get_fetch_span(ticker)
+
+        return None, None, None
+
     def worker(ticker, historical_data_dict, historical_data_error_dict):
+        cached_source, cached_data, fetch_span = (
+            resolve_from_cache(ticker) if cache_plans else (None, None, None)
+        )
+        cache_source = None
+
+        if cached_data is not None and fetch_span is None:
+            historical_data_dict[ticker] = helpers.enrich_historical_data(
+                historical_data=cached_data,
+                start=start,
+                end=end,
+                return_column=return_column,
+            )
+
+            return
+
+        fetch_start = fetch_span[0].strftime("%Y-%m-%d") if fetch_span else start
+        fetch_end = fetch_span[1].strftime("%Y-%m-%d") if fetch_span else end
+
         historical_data = pd.DataFrame()
         attempted_fmp = False
 
         if api_key and interval in ["1min", "5min", "15min", "30min", "1hour", "4hour"]:
+            # Intraday bars are only available from FinancialModelingPrep, so there
+            # is no fallback to attribute this to.
             historical_data = fmp_model.get_intraday_data(
                 ticker=ticker,
                 api_key=api_key,
-                start=start,
-                end=end,
+                start=fetch_start,
+                end=fetch_end,
                 interval=interval,
                 return_column=return_column,
                 sleep_timer=sleep_timer,
                 user_subscription=user_subscription,
             )
+
+            if not historical_data.empty:
+                cache_source = policy_model.FINANCIAL_MODELING_PREP
 
         elif not api_key and interval in [
             "1min",
@@ -147,8 +225,8 @@ def get_historical_data(
                 historical_data = fmp_model.get_historical_data(
                     ticker=ticker,
                     api_key=api_key,
-                    start=start,
-                    end=end,
+                    start=fetch_start,
+                    end=fetch_end,
                     interval=interval,
                     return_column=return_column,
                     include_dividends=include_dividends,
@@ -159,6 +237,7 @@ def get_historical_data(
 
                 if not historical_data.empty:
                     fmp_tickers.append(ticker)
+                    cache_source = policy_model.FINANCIAL_MODELING_PREP
 
                 attempted_fmp = True
 
@@ -169,8 +248,8 @@ def get_historical_data(
             ):
                 historical_data = yfinance_model.get_historical_data(
                     ticker=ticker,
-                    start=start,
-                    end=end,
+                    start=fetch_start,
+                    end=fetch_end,
                     interval=interval,
                     return_column=return_column,
                     divide_ohlc_by=divide_ohlc_by,
@@ -179,6 +258,43 @@ def get_historical_data(
 
                 if not historical_data.empty:
                     yf_tickers.append(ticker)
+                    cache_source = policy_model.YAHOO_FINANCE
+
+        if cache is not None and cache_source and not historical_data.empty:
+            # Coverage is only recorded for a non-empty response. An empty frame is
+            # indistinguishable from a rate limited or failed request here, and
+            # caching that would mean permanently remembering a transient outage as
+            # "this ticker has no data".
+            cache.store(
+                source=cache_source,
+                dataset=cache_dataset,
+                entity=ticker,
+                data=historical_data,
+                start=fetch_start,
+                end=fetch_end,
+                parameters=cache_parameters,
+            )
+
+        # Only merge with what was cached when the same provider served both halves.
+        # A ticker that fell back to the other provider mid-run carries different
+        # split and dividend adjustments, so splicing the two would be wrong.
+        if (
+            cached_data is not None
+            and not cached_data.empty
+            and cached_source == cache_source
+        ):
+            historical_data = frame_model.merge_frames(cached_data, historical_data)
+
+        if not historical_data.empty:
+            # Return and Cumulative Return depend on the window they are computed
+            # over, so they are recalculated once the cached and freshly fetched
+            # parts have been combined rather than trusted from either half.
+            historical_data = helpers.enrich_historical_data(
+                historical_data=frame_model.slice_frame(historical_data, start, end),
+                start=start,
+                end=end,
+                return_column=return_column,
+            )
 
         if historical_data.empty:
             no_data.append(ticker)
@@ -201,6 +317,30 @@ def get_historical_data(
     yf_tickers: list[str] = []
     no_data: list[str] = []
     threads = []
+
+    # One plan per provider the request is allowed to use, since a ticker may have
+    # been served by either of them on an earlier run.
+    cache_plans = (
+        {
+            source: cache.plan(
+                source=source,
+                dataset=cache_dataset,
+                entities=ticker_list,
+                start=start,
+                end=end,
+                parameters=cache_parameters,
+            )
+            for source in cache_sources
+        }
+        if cache is not None and cache.enabled
+        else {}
+    )
+
+    if cache_plans and all(
+        resolved[1] is not None and resolved[2] is None
+        for resolved in (resolve_from_cache(ticker) for ticker in ticker_list)
+    ):
+        logger.info("%s from the cache for %d ticker(s)", log_message, len(ticker_list))
 
     for ticker in ticker_list:
         # Introduce a sleep timer to prevent rate limit errors

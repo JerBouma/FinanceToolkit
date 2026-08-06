@@ -10,6 +10,7 @@ from datetime import datetime, timedelta
 import numpy as np
 import pandas as pd
 
+from financetoolkit.cache.cache_controller import Cache, set_active_cache
 from financetoolkit.economics import oecd_model
 from financetoolkit.fixedincome import (
     bond_model,
@@ -75,6 +76,7 @@ class FixedIncome:
         rounding: int | None = 4,
         fred_api_key: str = FRED_API_KEY,
         api_key: str = "",
+        cache: Cache | None = None,
     ):
         """
         Initializes the Fixed Income Controller Class.
@@ -90,6 +92,8 @@ class FixedIncome:
                 environment variable. Defaults to the value of FRED_API_KEY if set, otherwise an empty string.
             api_key (str, optional): A FinancialModelingPrep API key used to retrieve the Treasury par yield
                 curve rates. Obtain one at https://www.jeroenbouma.com/fmp. Defaults to an empty string.
+            cache (Cache | None, optional): The incremental cache used for the FRED, ECB and Federal
+                Reserve requests this module makes. Defaults to None, which disables caching.
 
         As an example:
 
@@ -144,6 +148,12 @@ class FixedIncome:
         self._rounding: int | None = rounding
         self._fred_api_key = fred_api_key
         self._api_key = api_key
+        self._cache = cache
+
+        # The FRED, ECB and Federal Reserve collectors are free functions rather than
+        # methods on this class, so the cache is published once here for them to read
+        # back instead of being threaded through every one of them.
+        set_active_cache(cache)
 
     def _require_fred_api_key(self) -> None:
         if not self._fred_api_key:

@@ -8,6 +8,8 @@ import warnings
 import numpy as np
 import pandas as pd
 
+from financetoolkit.cache import policy_model, ticker_model
+from financetoolkit.cache.cache_controller import get_active_cache
 from financetoolkit.fmp_model import get_analyst_estimates as _get_analyst_estimates
 from financetoolkit.helpers import handle_portfolio
 from financetoolkit.ratios import (
@@ -7840,14 +7842,28 @@ class Ratios:
             provided or the fetch failed (e.g. no Premium FMP subscription).
         """
         if "data" not in self._analyst_estimates_cache and self._api_key:
-            fetched_analyst_estimates, _ = _get_analyst_estimates(
+            # Routed through the persistent cache under the same source, dataset and
+            # parameters that Toolkit.get_analyst_estimates uses, so the two share
+            # entries instead of each paying for the same request.
+            fetched_analyst_estimates, _ = ticker_model.collect_per_ticker(
+                cache=get_active_cache(),
+                source=policy_model.FINANCIAL_MODELING_PREP,
+                dataset="analyst_estimates",
                 tickers=self._tickers_without_portfolio,
-                api_key=self._api_key,
-                quarter=self._quarterly,
-                start_date=self._start_date,
-                rounding=self._rounding,
-                sleep_timer=self._sleep_timer,
-                user_subscription=self._user_subscription,
+                ticker_axis=ticker_model.TICKER_ON_INDEX,
+                parameters={
+                    "quarter": self._quarterly,
+                    "start_date": self._start_date,
+                },
+                collector=lambda tickers: _get_analyst_estimates(
+                    tickers=tickers,
+                    api_key=self._api_key,
+                    quarter=self._quarterly,
+                    start_date=self._start_date,
+                    rounding=self._rounding,
+                    sleep_timer=self._sleep_timer,
+                    user_subscription=self._user_subscription,
+                ),
             )
             self._analyst_estimates_cache["data"] = fetched_analyst_estimates
 

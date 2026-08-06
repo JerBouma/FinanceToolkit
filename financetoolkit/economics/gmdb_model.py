@@ -4,6 +4,8 @@ import io
 
 import pandas as pd
 
+from financetoolkit.cache import policy_model
+from financetoolkit.cache.cache_controller import Cache
 from financetoolkit.utilities.requests_model import get_request
 
 GMD_LOCATION = "https://github.com/KMueller-Lab/Global-Macro-Database/blob/main/data/final/data_final.dta?raw=True"
@@ -11,18 +13,35 @@ GMD_LOCATION = "https://github.com/KMueller-Lab/Global-Macro-Database/blob/main/
 
 def collect_global_macro_database_dataset(
     gmd_location: str = GMD_LOCATION,
+    cache: Cache | None = None,
 ) -> pd.DataFrame:
     """
     Collect and transform the Global Macro Database dataset.
     Reads a Stata file, processes it by converting 'year' to integers, removing 'ISO3' if present,
     and setting a multi-index of 'year' and 'countryname'. The dataset is then unstacked by 'countryname'.
 
+    The Global Macro Database is published as one annual Stata file covering every
+    country at once, so there is no per-country request to make and nothing to append
+    to incrementally. It is therefore cached whole, which still removes a multi-megabyte
+    download from every run that happens within the cache's freshness window.
+
     Args:
         gmd_location (str): The file path to the Stata dataset. Defaults to GMD_LOCATION.
+        cache (Cache | None): An optional cache to serve the dataset from and store it in.
 
     Returns:
         pd.DataFrame: A transformed DataFrame indexed by 'year' with country-wise columns.
     """
+    if cache is not None and cache.enabled:
+        cached_dataset = cache.get(
+            source=policy_model.GLOBAL_MACRO_DATABASE,
+            dataset="dataset",
+            entity="global",
+        )
+
+        if cached_dataset is not None:
+            return cached_dataset
+
     response = get_request(gmd_location, timeout=30)
     response.raise_for_status()
 
@@ -33,6 +52,14 @@ def collect_global_macro_database_dataset(
     gmd_dataset = gmd_dataset.unstack(level=1)
 
     gmd_dataset = gmd_dataset.sort_index(axis=1)
+
+    if cache is not None and cache.enabled:
+        cache.set(
+            source=policy_model.GLOBAL_MACRO_DATABASE,
+            dataset="dataset",
+            entity="global",
+            data=gmd_dataset,
+        )
 
     return gmd_dataset
 

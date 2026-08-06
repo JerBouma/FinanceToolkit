@@ -2,15 +2,52 @@
 
 __docformat__ = "google"
 
+from datetime import datetime
 from io import StringIO
 
 import pandas as pd
 import requests
 
+from financetoolkit.cache import frame_model, policy_model
+from financetoolkit.cache.cache_controller import get_active_cache
 from financetoolkit.utilities.logger_model import get_logger
 from financetoolkit.utilities.requests_model import get_request
 
 logger = get_logger()
+
+# The OECD API enforces a hard limit of 60 downloads/hour (see
+# https://data-explorer.oecd.org, "API rate limiting"), well within reach of
+# a single multi-country/multi-indicator FinanceScenarios-style run. Every
+# successful OECD response is cached (see collect_oecd_data) so a later run
+# has something to fall back to -- _ALLOW_STALE_CACHE_ON_RATE_LIMIT only
+# controls whether a 429 is allowed to actually *serve* that cache past its
+# freshness window, since doing so means the caller knowingly accepts data
+# that may not be current. Module-level, not a parameter threaded through
+# every one of this module's ~20 get_* functions and their callers, since
+# it's a cross-cutting policy set once per process (configure_oecd_cache(),
+# called from EconomicsController.__init__).
+_ALLOW_STALE_CACHE_ON_RATE_LIMIT = True
+
+
+def configure_oecd_cache(allow_stale_on_rate_limit: bool = True) -> None:
+    """
+    Set whether a rate-limited OECD call may fall back on the cache past the point
+    where the cache would normally consider the stored response due for a refresh.
+
+    The cache itself is the shared one published by the controllers; only this
+    policy is specific to the OECD.
+
+    Args:
+        allow_stale_on_rate_limit (bool): serve the last successfully cached
+            response for a query when the OECD API returns 429 (Too Many
+            Requests), rather than an empty DataFrame. The served data may
+            not be the most up-to-date -- it's whatever was last
+            successfully fetched for that exact query, which could be
+            arbitrarily old the first time this is ever enabled.
+    """
+    global _ALLOW_STALE_CACHE_ON_RATE_LIMIT  # noqa: PLW0603
+    _ALLOW_STALE_CACHE_ON_RATE_LIMIT = allow_stale_on_rate_limit
+
 
 # pylint: disable=too-many-lines
 
@@ -258,9 +295,12 @@ def collect_oecd_data(
        pd.DataFrame: A DataFrame containing the data from the OECD API.
     """
     extensions = EXTENSIONS
+    buffered_start_date = start_date
 
     if start_date:
         buffer_periods = START_BUFFER_PERIODS.get(period_code, 0)
+        buffered_period = pd.Period(start_date, freq=period_code) - buffer_periods
+        buffered_start_date = buffered_period.to_timestamp().strftime("%Y-%m-%d")
         extensions += (
             f"&startPeriod="
             f"{_format_oecd_period(start_date, period_code, buffer_periods)}"
@@ -268,10 +308,50 @@ def collect_oecd_data(
     if end_date:
         extensions += f"&endPeriod={_format_oecd_period(end_date, period_code)}"
 
+    # The dataset id together with its filters is what identifies an OECD query;
+    # the requested period is tracked as coverage instead, so narrowing or widening
+    # the date range reuses what was already downloaded for the same indicator.
+    cache = get_active_cache()
+    cache_entity = oecd_data_string
+    cache_parameters = {"period_code": period_code}
+    cached_data = None
+
+    # An absent start or end date means "everything the OECD has", which has to be
+    # expressed as a concrete range on both sides. Otherwise the plan would measure
+    # against today while the stored coverage would end at the last observation,
+    # leaving a gap that can never be closed and defeating the cache entirely.
+    coverage_start = buffered_start_date or "1900-01-01"
+    coverage_end = end_date or datetime.today().strftime("%Y-%m-%d")
+
+    if cache is not None:
+        plan = cache.plan(
+            source=policy_model.OECD,
+            dataset="query",
+            entities=[cache_entity],
+            start=coverage_start,
+            end=coverage_end,
+            parameters=cache_parameters,
+        )
+        cached_data = plan.cached.get(cache_entity)
+
+        if plan.fully_cached and cached_data is not None and not cached_data.empty:
+            return cached_data
+
     try:
         response = get_request(f"{BASE_URL}{oecd_data_string}{extensions}", timeout=300)
     except requests.exceptions.HTTPError as error:
         if error.response is not None and error.response.status_code == 429:  # noqa
+            if (
+                _ALLOW_STALE_CACHE_ON_RATE_LIMIT
+                and cached_data is not None
+                and not cached_data.empty
+            ):
+                logger.warning(
+                    "OECD API rate limit reached (429 Too Many Requests) -- serving the most "
+                    "recently cached response for this query instead (opted in via "
+                    "configure_oecd_cache); this may not be the most up-to-date data."
+                )
+                return cached_data
             logger.warning(
                 "OECD API rate limit reached (429 Too Many Requests). "
                 "Please wait a moment before retrying."
@@ -299,6 +379,26 @@ def collect_oecd_data(
     # Only remove data if all of it is NaN or it is NaT
     oecd_data = oecd_data.dropna(axis=1, how="all")
     oecd_data = oecd_data[~oecd_data.index.isna()]
+
+    # Stored on every successful fetch, since this is also what a later rate-limit
+    # fallback serves back. Merging keeps whatever was downloaded for an earlier,
+    # different period rather than replacing it.
+    if cache is not None and not oecd_data.empty:
+        cache.store(
+            source=policy_model.OECD,
+            dataset="query",
+            entity=cache_entity,
+            data=oecd_data,
+            start=coverage_start,
+            end=coverage_end,
+            parameters=cache_parameters,
+        )
+
+        if cached_data is not None and not cached_data.empty:
+            oecd_data = frame_model.merge_frames(cached_data, oecd_data)
+            oecd_data = frame_model.slice_frame(
+                oecd_data, buffered_start_date, end_date
+            )
 
     return oecd_data
 

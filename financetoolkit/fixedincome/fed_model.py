@@ -6,6 +6,8 @@ import io
 
 import pandas as pd
 
+from financetoolkit.cache import policy_model
+from financetoolkit.cache.cache_controller import get_active_cache
 from financetoolkit.utilities.requests_model import get_request
 
 BASE_URL = "https://markets.newyorkfed.org/read"
@@ -36,6 +38,10 @@ def collect_fed_data(fed_code: str) -> pd.DataFrame:
     """
     Collect the data from the Federal Reserve Bank of New York.
 
+    The endpoint returns the full history of a rate in one response and takes no
+    date range, so there is nothing to request incrementally. The response is cached
+    whole instead, keyed on the rate being asked for.
+
     Args:
         fed_code (str): The code for the data to be collected.
 
@@ -43,6 +49,16 @@ def collect_fed_data(fed_code: str) -> pd.DataFrame:
        pd.DataFrame: A DataFrame containing the data from the Federal
        Reserve Bank of New York.
     """
+    cache = get_active_cache()
+
+    if cache is not None:
+        cached_data = cache.get(
+            source=policy_model.FEDERAL_RESERVE, dataset="rate", entity=fed_code
+        )
+
+        if cached_data is not None:
+            return cached_data
+
     url = f"{BASE_URL}{EXTENSIONS_1}{fed_code}{EXTENSIONS_2}"
     response = get_request(url)
     fed_data = pd.read_csv(io.StringIO(response.text))
@@ -67,6 +83,14 @@ def collect_fed_data(fed_code: str) -> pd.DataFrame:
     ]
 
     fed_data = fed_data.rename(columns=COLUMN_NAMES)
+
+    if cache is not None and not fed_data.empty:
+        cache.set(
+            source=policy_model.FEDERAL_RESERVE,
+            dataset="rate",
+            entity=fed_code,
+            data=fed_data,
+        )
 
     return fed_data
 

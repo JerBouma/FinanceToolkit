@@ -9,7 +9,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from financetoolkit.utilities import cache_model, logger_model
+from financetoolkit.utilities import logger_model
 
 logger = logger_model.get_logger()
 
@@ -22,15 +22,18 @@ def initialize_statements_and_normalization(
     cash: pd.DataFrame,
     format_location: str,
     reverse_dates: bool,
-    use_cached_data: bool | str,
-    cached_data_location: str,
     start_date: str,
     end_date: str,
     quarterly: bool,
 ):
     """
-    Initializes financial statements by applying normalization, date conversion,
-    and potentially loading from cache. Also loads normalization format files.
+    Initializes financial statements by applying normalization and date conversion.
+    Also loads normalization format files.
+
+    Statements are no longer pre-loaded from cache here. Caching happens per ticker
+    when the statements are actually requested, so that a different ticker list or
+    period reuses what overlaps rather than being handed a previously assembled
+    frame for a different set of companies.
 
     Args:
         balance (pd.DataFrame): Raw balance sheet data.
@@ -38,8 +41,6 @@ def initialize_statements_and_normalization(
         cash (pd.DataFrame): Raw cash flow statement data.
         format_location (str): Path to normalization file directory.
         reverse_dates (bool): Whether to reverse the order of dates.
-        use_cached_data (bool): Whether to load statements from cache if input is empty.
-        cached_data_location (str): Path to the cache directory.
         start_date (str): Start date for filtering.
         end_date (str): End date for filtering.
         quarterly (bool): Whether the data is quarterly.
@@ -68,13 +69,12 @@ def initialize_statements_and_normalization(
     yf_cash_flow_statement_generic = norm_formats["cash_yf"]
     fmp_statistics_statement_generic = norm_formats["statistics"]
 
-    def _process_or_load_statement(
+    def _process_statement(
         statement_df: pd.DataFrame,
         statement_format: pd.Series,
-        cache_file_name: str,
         statement_name: str,
     ) -> pd.DataFrame:
-        """Processes a statement or loads it from cache."""
+        """Normalizes a user supplied statement and relabels its dates."""
         if not statement_df.empty:
             try:
                 processed_statement = convert_financial_statements(
@@ -107,70 +107,22 @@ def initialize_statements_and_normalization(
                     e,
                 )
                 return pd.DataFrame()
-        elif use_cached_data:
-            try:
-                cached_data = cache_model.load_cached_data(
-                    cached_data_location=cached_data_location,
-                    file_name=cache_file_name,
-                )
-                if not isinstance(cached_data, pd.DataFrame):
-                    logger.warning(
-                        "Cached data %s for %s is not a DataFrame (type: %s). Returning empty.",
-                        cache_file_name,
-                        statement_name,
-                        type(cached_data),
-                    )
-                    return pd.DataFrame()
-                return cached_data
-            except FileNotFoundError:
-                logger.info(
-                    "Cache file %s not found for %s.", cache_file_name, statement_name
-                )
-                return pd.DataFrame()
-            except Exception as e:
-                logger.error(
-                    "Failed to load %s from cache for %s: %s. Returning empty DataFrame.",
-                    cache_file_name,
-                    statement_name,
-                    e,
-                )
-                return pd.DataFrame()
         else:
             return pd.DataFrame()
 
-    balance_sheet_statement = _process_or_load_statement(
+    balance_sheet_statement = _process_statement(
         balance,
         fmp_balance_sheet_statement_generic,
-        "balance_sheet_statement.pickle",
         "balance sheet",
     )
-    income_statement = _process_or_load_statement(
-        income, fmp_income_statement_generic, "income_statement.pickle", "income"
+    income_statement = _process_statement(
+        income, fmp_income_statement_generic, "income"
     )
-    cash_flow_statement = _process_or_load_statement(
-        cash, fmp_cash_flow_statement_generic, "cash_flow_statement.pickle", "cash flow"
+    cash_flow_statement = _process_statement(
+        cash, fmp_cash_flow_statement_generic, "cash flow"
     )
 
     statistics_statement = pd.DataFrame()
-    if use_cached_data:
-        cache_file_name = "statistics_statement.pickle"
-        try:
-            cached_stats = cache_model.load_cached_data(
-                cached_data_location=cached_data_location,
-                file_name=cache_file_name,
-            )
-            if isinstance(cached_stats, pd.DataFrame):
-                statistics_statement = cached_stats
-            else:
-                logger.warning(
-                    "Cached statistics data (%s) is not a DataFrame (type: %s). Returning empty.",
-                    cache_file_name,
-                    type(cached_stats),
-                )
-        except FileNotFoundError:
-            logger.info("Cache file %s not found.", cache_file_name)
-        except Exception as e:
-            logger.error("Failed to load %s from cache: %s.", cache_file_name, e)
 
     return (
         balance_sheet_statement,

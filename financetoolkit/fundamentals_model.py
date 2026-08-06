@@ -3,11 +3,14 @@
 import importlib.util
 import threading
 import time
+from datetime import datetime
 
 import numpy as np
 import pandas as pd
 
 from financetoolkit import fmp_model, normalization_model, yfinance_model
+from financetoolkit.cache import policy_model
+from financetoolkit.cache.cache_controller import Cache
 from financetoolkit.utilities import error_model, logger_model
 
 # Check if yfinance is installed
@@ -35,6 +38,7 @@ def collect_financial_statements(
     sleep_timer: bool = True,
     user_subscription: str = "Free",
     enforce_source: str | None = None,
+    cache: Cache | None = None,
 ) -> pd.DataFrame:
     """
     Retrieves financial statements (balance, income, or cash flow statements) for one or multiple companies,
@@ -65,6 +69,8 @@ def collect_financial_statements(
                               If "FinancialModelingPrep", only FMP is used. If "YahooFinance", only Yahoo Finance is used.
                               If None (or any other value), FMP is tried first, and Yahoo Finance is used as a fallback.
                               Defaults to "FinancialModelingPrep".
+        cache (Cache): An incremental cache to serve already retrieved statements from. Statements are cached
+                       per ticker and per source, so adding a ticker only requests that one ticker.
 
     Returns:
         tuple[pd.DataFrame, pd.DataFrame, list[str]]:
@@ -75,8 +81,61 @@ def collect_financial_statements(
             - no_data (list[str]): A list of tickers for which no data could be retrieved from any source.
     """
 
+    # Statements are cached per ticker and per source. The reporting periods sit on
+    # the column axis rather than the index, hence date_axis=1 throughout.
+    # The subscription plan changes how many reporting periods the endpoint
+    # returns, so it belongs in the key. Without it a shallow Free-plan response
+    # would be served to a Premium caller, which matters on a shared cache.
+    cache_parameters = {
+        "statement": statement,
+        "quarter": quarter,
+        "user_subscription": user_subscription,
+    }
+    # The cache source is the provider name as `enforce_source` spells it, which is
+    # also the key this function already groups its per-provider results under.
+    cache_sources = (
+        policy_model.FINANCIAL_MODELING_PREP,
+        policy_model.YAHOO_FINANCE,
+    )
+
+    def restore_from_cache(ticker) -> bool:
+        """Serve a ticker from the cache, reporting whether it was fully served."""
+        for source in cache_sources:
+            plan = cache_plans.get(source)
+
+            if plan is None or plan.get_fetch_span(ticker) is not None:
+                continue
+
+            cached_statement = plan.cached.get(ticker)
+
+            if cached_statement is None or cached_statement.empty:
+                continue
+
+            financial_statement_dict[source][ticker] = cached_statement
+
+            # Fiscal year relabelling is a side effect of the fetch rather than
+            # part of the frame, so it is restored alongside it. Without this a
+            # cached run would silently drop the fiscal year notes.
+            adjustments = cache.get(
+                source=source,
+                dataset="fiscal_year_adjustments",
+                entity=ticker,
+                parameters=cache_parameters,
+            )
+
+            if adjustments:
+                fiscal_year_adjustments[ticker] = adjustments
+
+            return True
+
+        return False
+
     def worker(ticker, financial_statement_dict, enforce_source):
+        if cache_plans and restore_from_cache(ticker):
+            return
+
         financial_statement_data = pd.DataFrame()
+        resolved_source = ""
         attempted_fmp = False
 
         if api_key and enforce_source in [None, "FinancialModelingPrep"]:
@@ -97,6 +156,7 @@ def collect_financial_statements(
 
             if not financial_statement_data.empty:
                 fmp_tickers.append(ticker)
+                resolved_source = policy_model.FINANCIAL_MODELING_PREP
 
             attempted_fmp = True
 
@@ -116,6 +176,28 @@ def collect_financial_statements(
 
             if not financial_statement_data.empty:
                 yf_tickers.append(ticker)
+                resolved_source = policy_model.YAHOO_FINANCE
+
+        if cache is not None and resolved_source and not financial_statement_data.empty:
+            cache.store(
+                source=resolved_source,
+                dataset="statements",
+                entity=ticker,
+                data=financial_statement_data,
+                start=coverage_start,
+                end=coverage_end,
+                parameters=cache_parameters,
+                date_axis=1,
+            )
+
+            if ticker in fiscal_year_adjustments:
+                cache.set(
+                    source=resolved_source,
+                    dataset="fiscal_year_adjustments",
+                    entity=ticker,
+                    data=fiscal_year_adjustments[ticker],
+                    parameters=cache_parameters,
+                )
 
         if financial_statement_data.empty:
             no_data.append(ticker)
@@ -153,6 +235,29 @@ def collect_financial_statements(
     # effectively atomic under the GIL, so no explicit lock is needed here).
     if fiscal_year_adjustments is None:
         fiscal_year_adjustments = {}
+
+    # Coverage needs a concrete range on both ends. Without one the plan would
+    # measure against today while the stored range would end at the last reported
+    # period, leaving a gap that could never be closed.
+    coverage_start = start_date or "1900-01-01"
+    coverage_end = end_date or datetime.today().strftime("%Y-%m-%d")
+
+    cache_plans = {}
+
+    if cache is not None and cache.enabled:
+        for source in cache_sources:
+            if enforce_source is not None and enforce_source != source:
+                continue
+
+            cache_plans[source] = cache.plan(
+                source=source,
+                dataset="statements",
+                entities=ticker_list,
+                start=coverage_start,
+                end=coverage_end,
+                parameters=cache_parameters,
+                date_axis=1,
+            )
 
     for ticker in ticker_list:
         # Introduce a sleep timer to prevent rate limit errors

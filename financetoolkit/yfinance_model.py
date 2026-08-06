@@ -12,6 +12,8 @@ import pandas as pd
 import yfinance as yf
 
 from financetoolkit import helpers
+from financetoolkit.cache import policy_model
+from financetoolkit.cache.cache_controller import get_active_cache
 from financetoolkit.utilities import logger_model
 from financetoolkit.utilities.requests_model import get_request
 
@@ -283,9 +285,27 @@ def get_historical_statistics(ticker: str) -> pd.Series:
     Args:
         ticker (str): the ticker to retrieve statistics for.
 
+    These describe the instrument itself (its currency, exchange and listing date)
+    rather than its price, so they change very rarely and are cached per ticker.
+
+    Args:
+        ticker (str): the ticker to retrieve statistics for.
+
     Returns:
         pd.Series: A Sries containing the statistics for the given ticker.
     """
+    cache = get_active_cache()
+
+    if cache is not None:
+        cached_statistics = cache.get(
+            source=policy_model.YAHOO_FINANCE,
+            dataset="historical_statistics",
+            entity=ticker,
+        )
+
+        if cached_statistics is not None:
+            return cached_statistics
+
     response = get_request(
         f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?interval=1d&range=None",
         timeout=60,
@@ -325,6 +345,14 @@ def get_historical_statistics(ticker: str) -> pd.Series:
         stats_df = stats_df.loc[
             [column for column in columns.values() if column in stats_df.index]
         ]
+
+        if cache is not None and not stats_df.empty:
+            cache.set(
+                source=policy_model.YAHOO_FINANCE,
+                dataset="historical_statistics",
+                entity=ticker,
+                data=stats_df,
+            )
 
         return stats_df
 

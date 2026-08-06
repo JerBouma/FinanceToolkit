@@ -45,8 +45,7 @@ def test_get_ols_no_constant():
 
 
 def test_get_ols_r_squared_is_nan_when_there_is_nothing_to_explain():
-    # An all-zero outcome through the origin leaves a zero total sum of squares,
-    # so R-squared is undefined rather than 0 -- and must not warn on the way.
+    # A zero total sum of squares leaves R-squared undefined, and must not warn.
     with warnings.catch_warnings():
         warnings.simplefilter("error")
         result = regression_model.get_ols(
@@ -311,8 +310,7 @@ def test_get_quantile_regression_with_bootstrap_standard_errors():
 
 
 def test_get_quantile_regression_bootstrap_rejects_unconverged_replicates(monkeypatch):
-    # A replicate that runs out of iterations stopped short of the requested
-    # quantile, so it is dropped rather than folded into the standard error.
+    # A replicate that runs out of iterations is dropped, not folded into the SE.
     rng = np.random.default_rng(8)
     n = 300
     x = pd.Series(rng.standard_normal(n), name="X")

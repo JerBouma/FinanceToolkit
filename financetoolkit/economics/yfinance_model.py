@@ -96,7 +96,7 @@ def get_commodity_forward_curve(
 
         ticker = f"{root}{_MONTH_CODES[month]}{year % 100:02d}.{exchange}"
 
-        # Each contract is cached separately, so a rebuild re-requests only what moved.
+        # Each contract is cached separately, so a rebuild refetches only stale months.
         cached_contract = None
         fetch_start, fetch_end = start_date, end_date
 

@@ -7,7 +7,7 @@ from financetoolkit.risk import var_model
 
 # pylint: disable=missing-function-docstring
 
-# A named constant so PLR2004 does not flag this as a magic value.
+# How close Cornish-Fisher VaR must sit to gaussian VaR on near-normal data.
 CLOSE_TO_GAUSSIAN_TOLERANCE = 0.001
 
 

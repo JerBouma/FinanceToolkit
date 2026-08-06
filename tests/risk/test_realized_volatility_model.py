@@ -7,7 +7,7 @@ from financetoolkit.risk import realized_volatility_model
 
 # pylint: disable=missing-function-docstring
 
-# A named constant so PLR2004 does not flag this as a magic value.
+# How far apart the four range-based estimators may sit on a calm path.
 MAGNITUDE_AGREEMENT_RATIO = 2
 
 # The HAR-RV forecast should track a HAR-structured series at least this closely.

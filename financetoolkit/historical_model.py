@@ -122,7 +122,7 @@ def get_historical_data(
         "return_column": return_column,
         "include_dividends": include_dividends,
         "divide_ohlc_by": divide_ohlc_by,
-        # The dividend endpoint's limit depends on the plan, so plans are not equal.
+        # The dividend limit depends on the plan, so a Free frame is not a Premium one.
         "user_subscription": user_subscription,
     }
     cache_dataset = (

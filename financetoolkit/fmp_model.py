@@ -405,6 +405,9 @@ def get_historical_data(
                 if not dividends_df.empty:
                     dividends_df.index = pd.to_datetime(dividends_df.index)
                     dividends_df.index = dividends_df.index.to_period(freq="D")
+                    dividends_df = dividends_df[
+                        ~dividends_df.index.duplicated(keep="first")
+                    ]
 
                     historical_data["Dividends"] = dividends_df["dividend"]
                 else:

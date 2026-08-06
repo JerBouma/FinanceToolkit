@@ -2,6 +2,8 @@
 
 __docformat__ = "google"
 
+from math import fsum
+
 import numpy as np
 import pandas as pd
 
@@ -88,8 +90,9 @@ def get_intrinsic_value(
             cash_flow_value / (1 + weighted_average_cost_of_capital) ** (index + 1)
         )
 
-    # Calculate the Enterprise Value
-    enterprise_value = sum(cash_flow_present_value)
+    # Calculate the Enterprise Value, using fsum so the total is correctly rounded
+    # rather than accumulation-order dependent (builtin sum only compensates on 3.12+)
+    enterprise_value = fsum(cash_flow_present_value)
 
     # Calculate the Equity Value
     equity_value = enterprise_value + cash_and_cash_equivalents - total_debt
@@ -373,7 +376,9 @@ def get_two_stage_dividend_discount_model(
     for _ in range(1, high_growth_periods + 1):
         dividend_projection.append(dividend_projection[-1] * (1 + high_growth_rate))
 
-    high_growth_present_value = sum(
+    # fsum rather than sum so the total is correctly rounded rather than
+    # accumulation-order dependent (builtin sum only compensates on 3.12+)
+    high_growth_present_value = fsum(
         dividend / (1 + rate_of_return) ** period
         for period, dividend in enumerate(dividend_projection[1:], start=1)
     )

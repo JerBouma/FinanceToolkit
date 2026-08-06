@@ -87,8 +87,12 @@ def test_get_fama_and_french_model_multi(recorder):
 
 
 def test_get_fama_and_french_model_single(recorder):
+    # Three non-collinear points, so the regression keeps a residual degree of
+    # freedom. A perfect two-point fit leaves the p-value and standard error
+    # undefined, and scipy reports that as 0.0 before 1.18 and NaN from 1.18 on.
     result = performance_model.get_fama_and_french_model_single(
-        excess_returns=pd.Series([0.3, 0.2]), factor=pd.Series([0.06, 0.02])
+        excess_returns=pd.Series([0.3, 0.2, 0.15]),
+        factor=pd.Series([0.06, 0.02, 0.03]),
     )
 
     recorder.capture(pd.DataFrame(result))

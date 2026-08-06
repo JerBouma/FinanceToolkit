@@ -2,9 +2,12 @@
 
 __docformat__ = "google"
 
+import warnings
+
 import numpy as np
 import pandas as pd
 import statsmodels.api as sm
+from statsmodels.tools.sm_exceptions import IterationLimitWarning
 
 # pylint: disable=too-many-instance-attributes,too-many-locals,too-many-arguments
 
@@ -13,6 +16,12 @@ COV_TYPES = ("nonrobust", "HC0", "HC1", "HC2", "HC3", "cluster", "HAC")
 
 # Cluster-robust standard errors require at least 2 distinct clusters.
 MINIMUM_CLUSTERS = 2
+
+# Duplicated rows in a resample need more iterations than statsmodels' default 1000.
+BOOTSTRAP_MAX_ITERATIONS = 10_000
+
+# A standard deviation across bootstrap replicates needs more than one of them.
+MINIMUM_CONVERGED_REPLICATES = 2
 
 
 def _to_design_matrix(
@@ -128,6 +137,45 @@ def regression_summary_table(result: dict) -> pd.DataFrame:
     )
 
 
+def _coefficient_of_determination(sm_result) -> tuple[float, float]:
+    """
+    Returns R-squared and adjusted R-squared, or NaN where they are not defined.
+
+    R-squared is the share of the total sum of squares that the model explains, so
+    it has no meaning when that total is zero -- an outcome with no variation left
+    to explain. `statsmodels` computes it as a bare division and lets NumPy produce
+    a NaN through a `0/0`, which is the right value but arrives with a runtime
+    warning attached. The case is real rather than pathological: a cross-sectional
+    Fama-MacBeth regression through the origin hits it whenever every asset in one
+    period returned exactly zero.
+
+    Which total applies depends on the model. With an intercept it is the total sum
+    of squares about the mean; a regression through the origin instead compares
+    against the uncentered total, since there is no fitted mean to deviate from.
+
+    Args:
+        sm_result: A fitted `statsmodels` OLS/WLS/GLS results object.
+
+    Returns:
+        tuple[float, float]: `(r_squared, adjusted_r_squared)`, both NaN when the
+        total sum of squares is zero or the residual degrees of freedom are
+        exhausted.
+    """
+    total_sum_of_squares = (
+        sm_result.centered_tss if sm_result.k_constant else sm_result.uncentered_tss
+    )
+
+    if not np.isfinite(total_sum_of_squares) or total_sum_of_squares == 0:
+        return float("nan"), float("nan")
+
+    r_squared = float(sm_result.rsquared)
+
+    if sm_result.df_resid <= 0:
+        return r_squared, float("nan")
+
+    return r_squared, float(sm_result.rsquared_adj)
+
+
 def _from_statsmodels_ols(
     sm_result, feature_names: list[str], design_matrix: np.ndarray, cov_type: str
 ) -> dict:
@@ -160,8 +208,11 @@ def _from_statsmodels_ols(
         fitted_values (np.ndarray): The fitted values `X @ coefficients`, shape `(n,)`.
         covariance_matrix (np.ndarray): The estimated covariance matrix of the
         coefficients, shape `(k, k)`.
-        r_squared (float): The coefficient of determination.
+        r_squared (float): The coefficient of determination. NaN when there is no
+        variation in the outcome for the model to explain, which leaves it undefined.
         adjusted_r_squared (float): R-squared adjusted for the number of regressors.
+        NaN under the same condition, and also once the residual degrees of freedom
+        are exhausted (`n == k`), which leaves the adjustment itself undefined.
         residual_variance (float): The estimated residual variance,
         `sigma^2 = SSR / (n - k)` for OLS -- for WLS/GLS this is the WEIGHTED
         residual sum of squares divided by `(n - k)` (`statsmodels`' `mse_resid`),
@@ -180,6 +231,8 @@ def _from_statsmodels_ols(
         (heteroskedasticity-robust) or "cluster" (cluster-robust). See `get_ols`'s
         `cov_type` argument.
     """
+    r_squared, adjusted_r_squared = _coefficient_of_determination(sm_result)
+
     return {
         "coefficients": np.asarray(sm_result.params),
         "standard_errors": np.asarray(sm_result.bse),
@@ -188,8 +241,8 @@ def _from_statsmodels_ols(
         "residuals": np.asarray(sm_result.resid),
         "fitted_values": np.asarray(sm_result.fittedvalues),
         "covariance_matrix": np.asarray(sm_result.cov_params()),
-        "r_squared": float(sm_result.rsquared),
-        "adjusted_r_squared": float(sm_result.rsquared_adj),
+        "r_squared": r_squared,
+        "adjusted_r_squared": adjusted_r_squared,
         "residual_variance": float(sm_result.mse_resid),
         "degrees_of_freedom": int(sm_result.df_resid),
         "n_observations": int(sm_result.nobs),
@@ -751,11 +804,43 @@ def get_quantile_regression(
         bootstrap_coefficients = np.empty((n_bootstrap, k))
         for i in range(n_bootstrap):
             sample_indices = rng.integers(0, n, size=n)
-            bootstrap_coefficients[i] = np.asarray(
-                sm.QuantReg(y_values[sample_indices], x_values[sample_indices])
-                .fit(q=tau)
-                .params
+
+            with warnings.catch_warnings(record=True) as raised:
+                warnings.simplefilter("always", IterationLimitWarning)
+                replicate = sm.QuantReg(
+                    y_values[sample_indices], x_values[sample_indices]
+                ).fit(q=tau, max_iter=BOOTSTRAP_MAX_ITERATIONS)
+
+            hit_iteration_limit = False
+
+            for entry in raised:
+                if entry.category is IterationLimitWarning:
+                    hit_iteration_limit = True
+                else:
+                    # Re-emitted: recording captures every category, not just this one.
+                    warnings.warn_explicit(
+                        entry.message,
+                        entry.category,
+                        entry.filename,
+                        entry.lineno,
+                    )
+
+            # Stopped short of the requested quantile, so it describes no quantile.
+            if hit_iteration_limit:
+                bootstrap_coefficients[i] = np.nan
+                continue
+
+            bootstrap_coefficients[i] = np.asarray(replicate.params)
+
+        n_converged = int(np.sum(np.isfinite(bootstrap_coefficients[:, 0])))
+
+        if n_converged < MINIMUM_CONVERGED_REPLICATES:
+            raise ValueError(
+                f"Only {n_converged} of {n_bootstrap} bootstrap replicates converged, "
+                "which is too few to estimate a standard error from. Raise "
+                "n_bootstrap, or drop it to fall back on the analytic standard errors."
             )
+
         standard_errors = np.nanstd(bootstrap_coefficients, axis=0, ddof=1)
 
     return {

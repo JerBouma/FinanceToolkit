@@ -732,6 +732,15 @@ def get_propensity_score_matching(
     if not np.all(np.isin(treatment_values, [0, 1])):
         raise ValueError("treatment must contain only 0/1 values.")
 
+    treated_indices = np.flatnonzero(treatment_values == 1)
+    control_indices = np.flatnonzero(treatment_values == 0)
+
+    # Checked before fitting: a constant treatment is perfectly separable.
+    if len(treated_indices) == 0 or len(control_indices) == 0:
+        raise ValueError(
+            "Need at least one treated and one control observation to match."
+        )
+
     propensity_model = get_logistic_regression(
         treatment_values, covariate_values, add_constant=add_constant
     )
@@ -741,14 +750,6 @@ def get_propensity_score_matching(
     # docstring ("Austin, 2011") for why this materially improves match quality.
     clipped_scores = np.clip(propensity_scores, 1e-6, 1 - 1e-6)
     logit_scores = np.log(clipped_scores / (1 - clipped_scores))
-
-    treated_indices = np.flatnonzero(treatment_values == 1)
-    control_indices = np.flatnonzero(treatment_values == 0)
-
-    if len(treated_indices) == 0 or len(control_indices) == 0:
-        raise ValueError(
-            "Need at least one treated and one control observation to match."
-        )
 
     if caliper is None:
         logit_std = np.std(logit_scores, ddof=1) if len(logit_scores) > 1 else 0.0

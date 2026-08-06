@@ -644,9 +644,11 @@ def test_get_mae(recorder, econometrics_module):
 
 
 def test_get_out_of_sample_validation_arima(recorder, econometrics_module):
+    # q=0: weekly price differences are near white noise, so an ARMA(1, 1) on them
+    # has near-canceling AR and MA roots and is not identified on this fixture.
     recorder.capture(
         econometrics_module.get_out_of_sample_validation(
-            period="weekly", model="arima", p=1, d=1, q=1
+            period="weekly", model="arima", p=1, d=1, q=0
         )
     )
 

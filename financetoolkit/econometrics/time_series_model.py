@@ -189,7 +189,8 @@ def get_arima_forecast(
         trend = [0] * d + [1]
 
     try:
-        sm_result = ARIMA(clean_series, order=(p, d, q), trend=trend).fit(
+        # Passed 2D: statsmodels reshapes a 1D endog in place, deprecated in NumPy 2.5.
+        sm_result = ARIMA(clean_series.to_frame(), order=(p, d, q), trend=trend).fit(
             method_kwargs={"maxiter": max_iterations}
         )
     except (ValueError, np.linalg.LinAlgError) as error:

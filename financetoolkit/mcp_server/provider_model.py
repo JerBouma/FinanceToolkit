@@ -14,11 +14,12 @@ from typing import Any
 import pandas as pd
 
 from financetoolkit import Toolkit
+from financetoolkit.cache import cache_controller, policy_model
+from financetoolkit.cache.cache_controller import Cache
 from financetoolkit.discovery.discovery_controller import Discovery
 from financetoolkit.economics.economics_controller import Economics
 from financetoolkit.fixedincome.fixedincome_controller import FixedIncome
 from financetoolkit.mcp_server.auth_model import resolve_api_key, resolve_fred_api_key
-from financetoolkit.mcp_server.cache_model import SQLiteCache
 from financetoolkit.utilities.logger_model import get_logger
 
 logger = get_logger()
@@ -29,6 +30,13 @@ API_KEY: str = os.environ.get("FINANCIAL_MODELING_PREP_API_KEY", "")
 
 # Optional — only gates the subset of Economics/FixedIncome tools backed by FRED.
 FRED_API_KEY: str = os.environ.get("FRED_API_KEY", "")
+
+# Tool responses are computed output rather than source data, so they live under
+# their own source in the shared cache. That keeps them separable: they can be
+# evicted on the server's own schedule without touching the downloaded data
+# underneath them, and a user can clear them on their own.
+MCP_CACHE_SOURCE = policy_model.MCP
+MCP_CACHE_DATASET = "tool"
 
 
 class ToolkitProvider:
@@ -64,9 +72,15 @@ class ToolkitProvider:
         self._api_key = api_key
         self._fred_api_key = fred_api_key
         self._cache_ttl: int = cache_ttl
-        self._sqlitecache: SQLiteCache = SQLiteCache(
-            database_location=database_location
-        )
+
+        # The same cache the library uses. Tool responses are stored under their
+        # own source, one layer above the per-ticker source data, so a response
+        # served from here still benefits from source data another process warmed.
+        self._cache_location = database_location
+        self._cache: Cache = cache_controller.get_cache(location=database_location)
+
+        cache_controller.set_active_cache(self._cache)
+
         self._toolkit_cache: dict[str, Any] = {}
         self._standalone_cache: dict[str, Any] = {}
         self._lock = Lock()
@@ -126,8 +140,11 @@ class ToolkitProvider:
         current_time = time.time()
 
         if self._cache_ttl and (current_time - self._last_eviction) > self._cache_ttl:
-            evicted_count = self._sqlitecache.remove_expired_entries(
-                ttl=self._cache_ttl
+            # Scoped to this server's own tool responses. The same database holds
+            # the price history and filings the library accumulated, which have
+            # their own, much longer lifetimes and must not be evicted here.
+            evicted_count = self._cache.remove_expired_entries(
+                ttl=self._cache_ttl, source=MCP_CACHE_SOURCE
             )
             self._last_eviction = current_time
             if evicted_count > 0:
@@ -157,8 +174,12 @@ class ToolkitProvider:
         if not self._cache_ttl:
             pass  # fall through directly to the live call below
         else:
-            cached = self._sqlitecache.get_dataframe(
-                module_name, cache_params, ttl=self._cache_ttl
+            cached = self._cache.get(
+                source=MCP_CACHE_SOURCE,
+                dataset=MCP_CACHE_DATASET,
+                entity=f"{module_name}.{method_name}",
+                parameters=cache_params,
+                ttl=self._cache_ttl,
             )
             if cached is not None:
                 logger.info(
@@ -228,7 +249,9 @@ class ToolkitProvider:
         elif category == "discovery":
             # Module that can also be initialized with the Toolkit class
             # but doesn't require any parameters other than the API key
-            instance = Discovery(api_key=effective_key)
+            instance = Discovery(
+                api_key=effective_key, use_cached_data=self._cache_location
+            )
             result = getattr(instance, method_name)(**method_kwargs)
         else:
             raise ValueError(
@@ -238,7 +261,13 @@ class ToolkitProvider:
         if isinstance(result, pd.Series):
             result = result.to_frame()
         if self._cache_ttl and isinstance(result, pd.DataFrame):
-            self._sqlitecache.store_dataframe(module_name, cache_params, result)
+            self._cache.set(
+                source=MCP_CACHE_SOURCE,
+                dataset=MCP_CACHE_DATASET,
+                entity=f"{module_name}.{method_name}",
+                data=result,
+                parameters=cache_params,
+            )
 
         return result
 
@@ -409,6 +438,9 @@ class ToolkitProvider:
                 end_date=end_date,
                 quarterly=quarterly,
                 benchmark_ticker=benchmark_ticker,
+                # Points at the same database the provider opened, so the source
+                # data behind a tool response is cached too, not just the response.
+                use_cached_data=self._cache_location,
             )
             self._toolkit_cache[cache_key] = toolkit_instance
 
@@ -579,6 +611,7 @@ class ToolkitProvider:
                         end_date=end_date,
                         quarterly=quarterly,
                         fred_api_key=effective_fred_key,
+                        cache=self._cache,
                     )
                 elif module_name == "fixedincome":
                     instance = FixedIncome(
@@ -586,9 +619,12 @@ class ToolkitProvider:
                         end_date=end_date,
                         quarterly=quarterly,
                         fred_api_key=effective_fred_key,
+                        cache=self._cache,
                     )
                 elif module_name == "discovery":
-                    instance = Discovery(api_key=effective_key)
+                    instance = Discovery(
+                        api_key=effective_key, use_cached_data=self._cache_location
+                    )
                 else:
                     raise ValueError(f"Unknown standalone module: {module_name}")
 

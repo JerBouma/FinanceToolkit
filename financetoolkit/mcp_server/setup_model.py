@@ -19,6 +19,8 @@ from rich.panel import Panel
 from rich.prompt import Confirm
 from rich.text import Text
 
+from financetoolkit.cache.cache_controller import get_default_cache_location
+
 console = Console(stderr=True)
 
 
@@ -235,15 +237,15 @@ def get_global_cache_db_path() -> pathlib.Path:
     """
     Return the path to the global Finance Toolkit SQLite cache database.
 
-    The cache database lives alongside the global ``.env`` file so Claude
-    Desktop and other MCP clients can write to a user-owned configuration
-    directory instead of the current working directory.
+    The location is owned by the cache package rather than by the MCP server,
+    since the library writes to the same database. It sits alongside the global
+    ``.env`` file so Claude Desktop and other MCP clients write to a user-owned
+    configuration directory instead of the current working directory.
 
     Returns:
-        pathlib.Path: Absolute path to ``financetoolkit_cache.db`` in the
-            global Finance Toolkit config directory.
+        pathlib.Path: Absolute path to the shared cache database.
     """
-    return get_global_env_path().with_name("financetoolkit_cache.db")
+    return get_default_cache_location()
 
 
 def _write_global_env_value(env_key: str, value: str, label: str) -> bool:

@@ -117,27 +117,28 @@ def get_ui(
     if method not in ("return", "level"):
         raise ValueError("method must be 'return' or 'level'.")
 
-    if isinstance(returns, pd.DataFrame):
-        if returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS:
-            periods = returns.index.get_level_values(0).unique()
-            period_data_list = []
+    if (
+        isinstance(returns, pd.DataFrame)
+        and returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS
+    ):
+        periods = returns.index.get_level_values(0).unique()
+        period_data_list = []
 
-            for sub_period in periods:
-                period_data = returns.loc[sub_period].aggregate(
-                    get_ui, rolling=rolling, method=method
-                )
-                period_data.name = sub_period
+        for sub_period in periods:
+            period_data = returns.loc[sub_period].aggregate(
+                get_ui, rolling=rolling, method=method
+            )
+            period_data.name = sub_period
 
-                if not period_data.empty:
-                    period_data_list.append(period_data)
+            if not period_data.empty:
+                period_data_list.append(period_data)
 
-            ulcer_index = pd.concat(period_data_list, axis=1)
+        ulcer_index = pd.concat(period_data_list, axis=1)
 
-            return ulcer_index.T
+        return ulcer_index.T
 
-        return returns.aggregate(get_ui, rolling=rolling, method=method)
-
-    if isinstance(returns, pd.Series):
+    if isinstance(returns, pd.DataFrame | pd.Series):
+        # expanding/rolling/cumprod/mean are column-vectorized on a DataFrame already, no per-column loop needed.
         if method == "level":
             reference_max = (
                 returns.expanding().max()
@@ -154,9 +155,7 @@ def get_ui(
             )
             drawdowns = (cumulative_returns - reference_max) / reference_max
 
-        ulcer_index_value = np.sqrt((drawdowns**2).mean())
-
-        return ulcer_index_value
+        return np.sqrt((drawdowns**2).mean())
 
     raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
 
@@ -564,6 +563,34 @@ def get_rolling_conditional_drawdown_at_risk(
     return returns.rolling(window=window_size).apply(_cdar, raw=True)
 
 
+def _drawdown_trough(
+    values: np.ndarray, method: str
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Per-column running max, the row index of each column's single worst
+    drawdown, and which columns are entirely NaN -- shared vectorized core of
+    get_max_drawdown_duration/get_max_drawdown_recovery_time's DataFrame path
+    (values shape (n_rows, n_cols)).
+    """
+    computed = (
+        values
+        if method == "level"
+        else (1 + np.nan_to_num(values, nan=0.0)).cumprod(axis=0)
+    )
+    # np.maximum.accumulate propagates NaN forever; -inf substitution matches pandas cummax()'s skip-NaN behavior.
+    running_max = np.maximum.accumulate(
+        np.where(np.isnan(computed), -np.inf, computed), axis=0
+    )
+    drawdowns = (
+        computed - running_max if method == "level" else computed / running_max - 1
+    )
+    all_nan = np.all(np.isnan(drawdowns), axis=0)
+    trough_position = np.argmin(
+        np.where(np.isnan(drawdowns), np.inf, drawdowns), axis=0
+    )
+    return computed, running_max, trough_position, all_nan
+
+
 def get_max_drawdown_duration(
     returns: pd.Series | pd.DataFrame,
     method: str = "return",
@@ -610,7 +637,22 @@ def get_max_drawdown_duration(
 
             return max_drawdown_duration.T
 
-        return returns.aggregate(get_max_drawdown_duration, method=method)
+        # Vectorized across every column at once -- was a per-column .aggregate() loop, see _drawdown_trough().
+        values = returns.to_numpy(dtype=float)
+        computed, running_max, trough_position, all_nan = _drawdown_trough(
+            values, method
+        )
+        n_rows, n_cols = computed.shape
+        row_index = np.arange(n_rows)[:, None]
+        column_index = np.arange(n_cols)
+        peak_value = running_max[trough_position, column_index]
+        is_peak = (computed == peak_value[None, :]) & (
+            row_index <= trough_position[None, :]
+        )
+        peak_position = np.where(is_peak, row_index, -1).max(axis=0)
+        duration = (trough_position - peak_position).astype(float)
+        duration[all_nan] = np.nan
+        return pd.Series(duration, index=returns.columns)
     if isinstance(returns, pd.Series):
         series = returns if method == "level" else (1 + returns.fillna(0)).cumprod()
         running_max = series.cummax()
@@ -680,7 +722,24 @@ def get_max_drawdown_recovery_time(
 
             return max_drawdown_recovery_time.T
 
-        return returns.aggregate(get_max_drawdown_recovery_time, method=method)
+        # Vectorized across every column at once -- was a per-column .aggregate() loop, see _drawdown_trough().
+        values = returns.to_numpy(dtype=float)
+        computed, running_max, trough_position, all_nan = _drawdown_trough(
+            values, method
+        )
+        n_rows, n_cols = computed.shape
+        row_index = np.arange(n_rows)[:, None]
+        column_index = np.arange(n_cols)
+        peak_value = running_max[trough_position, column_index]
+        recovered = (computed >= peak_value[None, :]) & (
+            row_index >= trough_position[None, :]
+        )
+        has_recovered = recovered.any(axis=0)
+        first_recovery_row = np.where(recovered, row_index, n_rows).min(axis=0)
+        recovery_time = (first_recovery_row - trough_position).astype(float)
+        recovery_time[~has_recovered] = np.nan
+        recovery_time[all_nan] = np.nan
+        return pd.Series(recovery_time, index=returns.columns)
     if isinstance(returns, pd.Series):
         series = returns if method == "level" else (1 + returns.fillna(0)).cumprod()
         running_max = series.cummax()

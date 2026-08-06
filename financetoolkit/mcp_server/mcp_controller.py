@@ -72,6 +72,38 @@ def _load_dotenv_configuration() -> None:
 _load_dotenv_configuration()
 
 
+def _resolve_cache_enabled(configured: object) -> bool:
+    """
+    Decide whether this server caches anything at all.
+
+    ``FINANCE_TOOLKIT_CACHE_ENABLED`` wins when set. Otherwise the config.yaml
+    value is used, where the default ``auto`` means "on locally, off when
+    hosted": a stdio server is one user on their own machine, while an HTTP
+    server multiplexes every user through one process and one database. Sharing
+    cache entries there would serve one subscriber's paid data to another, and
+    downloaded source data has no eviction policy that would keep the disk
+    bounded, so a hosted server fetches live unless told otherwise.
+
+    Args:
+        configured (object): The ``cache.enabled`` value from config.yaml, either
+            a boolean or the string ``"auto"``.
+
+    Returns:
+        bool: True when the cache should be opened and used.
+    """
+    override = os.environ.get("FINANCE_TOOLKIT_CACHE_ENABLED", "").strip().lower()
+
+    if override in ("1", "true", "yes", "on"):
+        return True
+    if override in ("0", "false", "no", "off"):
+        return False
+
+    if isinstance(configured, bool):
+        return configured
+
+    return os.environ.get("MCP_TRANSPORT", "stdio") not in ("sse", "streamable-http")
+
+
 def _build_mcp_app() -> FastMCP:
     """
     Bootstrap the MCP application and return the configured FastMCP instance.
@@ -96,6 +128,13 @@ def _build_mcp_app() -> FastMCP:
 
     _cache_db_env = os.environ.get("FINANCE_TOOLKIT_CACHE_DB", "")
     _cache_ttl_env = os.environ.get("FINANCE_TOOLKIT_CACHE_TTL", "")
+    _cache_enabled = _resolve_cache_enabled(configuration["cache"].get("enabled", True))
+
+    logger.info(
+        "Caching is %s for this server.",
+        "enabled" if _cache_enabled else "disabled, every request is fetched live",
+    )
+
     provider = ToolkitProvider(
         api_key=os.environ.get("FINANCIAL_MODELING_PREP_API_KEY", ""),
         fred_api_key=os.environ.get("FRED_API_KEY", ""),
@@ -105,6 +144,7 @@ def _build_mcp_app() -> FastMCP:
             else configuration["cache"]["ttl_seconds"]
         ),
         database_location=_cache_db_env or str(setup_model.get_global_cache_db_path()),
+        cache_enabled=_cache_enabled,
     )
 
     mcp = FastMCP(

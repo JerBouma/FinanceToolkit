@@ -51,6 +51,7 @@ class ToolkitProvider:
         database_location: str,
         api_key: str = API_KEY,
         fred_api_key: str = FRED_API_KEY,
+        cache_enabled: bool = True,
     ) -> None:
         """
         Initializes the ToolkitProvider.
@@ -68,18 +69,43 @@ class ToolkitProvider:
                 Payrolls, ICE BofA bond indices). Optional — those specific tools
                 simply error informatively when it's absent. Defaults to the
                 value of the FRED_API_KEY environment variable.
+            cache_enabled (bool, optional): Whether this server caches anything at
+                all. When False no database is opened and every layer runs
+                uncached, including the source data behind a tool response.
+                Defaults to True, which suits a local single-user server; a hosted
+                one is expected to pass False (see ``_resolve_cache_enabled`` in
+                ``mcp_controller``). Defaults to True.
         """
         self._api_key = api_key
         self._fred_api_key = fred_api_key
-        self._cache_ttl: int = cache_ttl
+        self._cache_enabled = cache_enabled
+
+        # Both cache layers hang off this: the tool-response TTL below, and the
+        # location handed to Toolkit/Discovery for the source data underneath.
+        # Zeroing the TTL and withholding the location is what turns them off.
+        self._cache_ttl: int = cache_ttl if cache_enabled else 0
+        self._cache_location = database_location
 
         # The same cache the library uses. Tool responses are stored under their
         # own source, one layer above the per-ticker source data, so a response
         # served from here still benefits from source data another process warmed.
-        self._cache_location = database_location
-        self._cache: Cache = cache_controller.get_cache(location=database_location)
+        # A disabled cache never opens the database, so nothing is written to disk.
+        self._cache: Cache = cache_controller.get_cache(
+            location=database_location, enabled=cache_enabled
+        )
 
-        cache_controller.set_active_cache(self._cache)
+        # What Toolkit and Discovery receive as ``use_cached_data``: the shared
+        # database path, or False to opt them out entirely.
+        self._use_cached_data: bool | str = (
+            database_location if cache_enabled else False
+        )
+
+        if cache_enabled:
+            cache_controller.set_active_cache(self._cache)
+        else:
+            # set_active_cache deliberately refuses to let a disabled cache
+            # replace an enabled one, so withdrawing has to be explicit.
+            cache_controller.clear_active_cache()
 
         self._toolkit_cache: dict[str, Any] = {}
         self._standalone_cache: dict[str, Any] = {}
@@ -250,7 +276,7 @@ class ToolkitProvider:
             # Module that can also be initialized with the Toolkit class
             # but doesn't require any parameters other than the API key
             instance = Discovery(
-                api_key=effective_key, use_cached_data=self._cache_location
+                api_key=effective_key, use_cached_data=self._use_cached_data
             )
             result = getattr(instance, method_name)(**method_kwargs)
         else:
@@ -440,7 +466,8 @@ class ToolkitProvider:
                 benchmark_ticker=benchmark_ticker,
                 # Points at the same database the provider opened, so the source
                 # data behind a tool response is cached too, not just the response.
-                use_cached_data=self._cache_location,
+                # False when this server runs uncached.
+                use_cached_data=self._use_cached_data,
             )
             self._toolkit_cache[cache_key] = toolkit_instance
 
@@ -623,7 +650,7 @@ class ToolkitProvider:
                     )
                 elif module_name == "discovery":
                     instance = Discovery(
-                        api_key=effective_key, use_cached_data=self._cache_location
+                        api_key=effective_key, use_cached_data=self._use_cached_data
                     )
                 else:
                     raise ValueError(f"Unknown standalone module: {module_name}")

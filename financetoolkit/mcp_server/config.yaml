@@ -31,10 +31,19 @@ categories:
 #                    (falls back to ~/.config/financetoolkit/financetoolkit_cache.db)
 #   Windows        — %APPDATA%\financetoolkit\financetoolkit_cache.db
 # The path can be overridden at runtime with:
-#   FINANCE_TOOLKIT_CACHE_DB   — absolute path to the SQLite file
-#   FINANCE_TOOLKIT_CACHE_TTL  — TTL in seconds (integer)
+#   FINANCE_TOOLKIT_CACHE_DB       — absolute path to the SQLite file
+#   FINANCE_TOOLKIT_CACHE_TTL      — TTL in seconds (integer)
+#   FINANCE_TOOLKIT_CACHE_ENABLED  — true/false, overrides the "auto" below
+#
+# "auto" means: on for a local server (stdio transport, one user, one machine),
+# off for a hosted one (MCP_TRANSPORT=sse or streamable-http). A hosted server
+# serves every user from one process against one database, so a shared entry
+# would mean one subscriber's paid data answering another user's request, and
+# nothing evicts downloaded source data off disk. Neither is worth the upside
+# there, so a hosted deployment fetches live unless it opts back in explicitly.
 # ──────────────────────────────────────────────────────────────────────────────
 cache:
+  enabled: auto
   ttl_seconds: 600
 
 # ──────────────────────────────────────────────────────────────────────────────

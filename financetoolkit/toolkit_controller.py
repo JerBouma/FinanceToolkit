@@ -7,12 +7,14 @@ import os
 import re
 import warnings
 from collections import Counter
+from collections.abc import Callable
 from datetime import datetime, timedelta
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import pandas as pd
 
 from financetoolkit import currencies_model
+from financetoolkit.cache import cache_controller, policy_model, ticker_model
 from financetoolkit.discovery.discovery_model import (
     search_press_releases as _search_press_releases,
     search_stock_news as _search_stock_news,
@@ -20,12 +22,12 @@ from financetoolkit.discovery.discovery_model import (
 from financetoolkit.economics.economics_controller import Economics
 from financetoolkit.fixedincome.fixedincome_controller import FixedIncome
 from financetoolkit.fmp_model import (
+    determine_subscription_plan as _determine_subscription_plan,
     get_analyst_estimates as _get_analyst_estimates,
     get_commitment_of_traders as _get_commitment_of_traders,
     get_dividend_calendar as _get_dividend_calendar,
     get_earnings_calendar as _get_earnings_calendar,
     get_esg_scores as _get_esg_scores,
-    get_financial_data as _get_financial_data,
     get_market_risk_premium as _get_market_risk_premium,
     get_profile as _get_profile,
     get_quote as _get_quote,
@@ -48,7 +50,7 @@ from financetoolkit.performance.performance_controller import Performance
 from financetoolkit.ratios.ratios_controller import Ratios
 from financetoolkit.risk.risk_controller import Risk
 from financetoolkit.technicals.technicals_controller import Technicals
-from financetoolkit.utilities import cache_model, logger_model
+from financetoolkit.utilities import logger_model
 from financetoolkit.utilities.dataframe_model import filter_columns
 from financetoolkit.utilities.requests_model import convert_isin_to_ticker
 from financetoolkit.utilities.statistics_model import calculate_growth
@@ -120,6 +122,7 @@ class Toolkit:
         sleep_timer: bool | None = None,
         progress_bar: bool = True,
         fred_api_key: str = FRED_API_KEY,
+        allow_stale_oecd_cache: bool = True,
     ):
         """
         Initializes a Toolkit object with a ticker or a list of tickers. The way the Toolkit is initialized
@@ -129,6 +132,10 @@ class Toolkit:
         data before and want to use this data again. This can be done by setting the use_cached_data variable
         to True. If you want to use a specific location to store the cached data, you can define this as a string,
         e.g. "datasets".
+
+        The cache keeps track of what it already holds per ticker and per date range, so changing a parameter
+        does not throw the rest away. Widening the period only retrieves the years that were missing, adding a
+        ticker only retrieves that ticker, and repeating a request retrieves nothing at all.
 
         It is good to note that the Finance Toolkit will always attempt to acquire data from Financial Modeling Prep
         if an API key is set. If this isn't the case, the data comes from Yahoo Finance. In case you have an API key
@@ -148,8 +155,10 @@ class Toolkit:
             Defaults to today.
             quarterly (bool): A boolean indicating whether to collect quarterly data. Defaults to False (yearly).
             Note that historical data can still be collected for any period and interval.
-            use_cached_data (bool | str): A boolean indicating whether to use cached data. If True, uses a 'cached' folder.
-            If a string is provided, uses that string as the path to the cache folder. Defaults to False.
+            use_cached_data (bool | str): A boolean indicating whether to use cached data. If True, uses the shared
+            cache database in the user configuration directory, which is also the one the MCP server reads and writes.
+            If a string is provided, uses that string as the path to a dedicated cache folder or database file.
+            Defaults to False.
             risk_free_rate (str): The risk-free rate identifier ('13w', '5y', '10y', '30y'). Based on US Treasury Yields.
             Used for calculations like Excess Returns. Defaults to "10y".
             benchmark_ticker (str | None): The benchmark ticker (e.g., 'SPY' for S&P 500). Used for comparative analysis
@@ -178,6 +187,11 @@ class Toolkit:
             (option-adjusted spread, effective yield, total return, yield to worst). Obtain a free key at
             https://fred.stlouisfed.org/docs/api/api_key.html. Can also be set via the FRED_API_KEY environment
             variable. Defaults to the value of FRED_API_KEY if set, otherwise an empty string.
+            allow_stale_oecd_cache (bool): the OECD API (used by the economics module) enforces a hard rate
+            limit (60 downloads/hour). When True, a rate-limited call falls back to the most recently cached
+            successful response for that query instead of empty data -- opt-in, since served data may be
+            stale. Independent of use_cached_data (which governs this Toolkit's own config/ticker cache, a
+            different mechanism). Defaults to False.
 
         As an example:
 
@@ -231,12 +245,18 @@ class Toolkit:
         self._remove_invalid_tickers = remove_invalid_tickers
         self._invalid_tickers: list = []
 
-        self._use_cached_data = (
-            use_cached_data if isinstance(use_cached_data, bool) else True
+        (
+            self._use_cached_data,
+            self._cache_location,
+        ) = cache_controller.parse_use_cached_data(use_cached_data)
+        self._cache = cache_controller.get_cache(
+            location=self._cache_location, enabled=self._use_cached_data
         )
-        self._cached_data_location = (
-            "cached" if isinstance(use_cached_data, bool) else use_cached_data
-        )
+
+        # Published so the OECD, FRED, ECB and Federal Reserve collectors, which are
+        # free functions rather than methods, pick up this Toolkit's cache as well.
+        cache_controller.set_active_cache(self._cache)
+        self._allow_stale_oecd_cache = allow_stale_oecd_cache
         self._benchmark_ticker = benchmark_ticker
 
         if start_date and re.match(r"^\d{4}-\d{2}-\d{2}$", start_date) is None:
@@ -285,76 +305,10 @@ class Toolkit:
             )
         self._lookback_start_date = _lookback_dt.strftime("%Y-%m-%d")
 
-        if use_cached_data:
-            cached_configurations = cache_model.load_cached_data(
-                cached_data_location=self._cached_data_location,
-                file_name="configurations.pickle",
-                method="pickle",
-                return_empty_type={},
-            )
-
-            if cached_configurations:  # Check if dictionary is not empty
-                cached_overwrites = []
-                # Map cache keys to tuples of (initial_value, attribute_name)
-                config_mapping = {
-                    "start_date": (self._start_date, "_start_date"),
-                    "end_date": (self._end_date, "_end_date"),
-                    "quarterly": (self._quarterly, "_quarterly"),
-                    "benchmark_ticker": (self._benchmark_ticker, "_benchmark_ticker"),
-                    "risk_free_rate": (self._risk_free_rate, "_risk_free_rate"),
-                }
-
-                # Compare initial values with cached values, update instance if different
-                for key, (initial_value, attr_name) in config_mapping.items():
-                    cached_value = cached_configurations.get(key)
-                    # Check if cached value exists and is different from the initial value
-                    if cached_value is not None and initial_value != cached_value:
-                        setattr(
-                            self, attr_name, cached_value
-                        )  # Update instance attribute
-                        cached_overwrites.append(f"{key} ({cached_value})")
-
-                # Handle tickers separately: compare input tickers with cached tickers
-                cached_tickers = cached_configurations.get("tickers")
-                # Check if cached tickers exist and are different from the input tickers
-                if cached_tickers is not None and tickers != cached_tickers and tickers:
-                    # Only log the change if the user actually provided tickers initially
-                    cached_overwrites.append("tickers")
-                    tickers = cached_tickers
-
-                if cached_overwrites:
-                    folder = (
-                        "cached"
-                        if isinstance(use_cached_data, bool)
-                        else use_cached_data
-                    )
-                    logger.info(
-                        "The following variables are overwritten by the cached "
-                        "configurations: %s\n"
-                        "If this is undesirable, please set the use_cached_data variable "
-                        "to False, delete the directory %s or select a new "
-                        "location for the cached data by changing the use_cached_data "
-                        "variable to a string.",
-                        ", ".join(cached_overwrites),
-                        folder,
-                    )
-            else:
-                # Save the current configuration if no cache exists
-                # Use the values as they are before potential overwrites from cache
-                cache_model.save_cached_data(
-                    cached_data={
-                        "tickers": tickers,  # Use the initial tickers list/str
-                        "start_date": self._start_date,
-                        "end_date": self._end_date,
-                        "quarterly": self._quarterly,
-                        "benchmark_ticker": self._benchmark_ticker,
-                        "risk_free_rate": self._risk_free_rate,  # Use the initial risk_free_rate
-                    },
-                    cached_data_location=self._cached_data_location,
-                    file_name="configurations.pickle",
-                    method="pickle",
-                    include_message=False,
-                )
+        # Earlier versions stored the tickers, dates and periodicity of the first
+        # cached run and silently applied them to every later run against the same
+        # cache directory. The cache now tracks each ticker and date range in its
+        # own right, so the arguments given here are always the ones that are used.
 
         if isinstance(tickers, str):
             tickers = [tickers.upper()]
@@ -413,32 +367,17 @@ class Toolkit:
             # This tests the API key to determine the subscription plan. This is relevant for the sleep timer
             # but also for other components of the Toolkit. This prevents wait timers from occurring while
             # it wouldn't result to any other answer than a rate limit error.
-            determine_plan = _get_financial_data(
-                url=f"https://financialmodelingprep.com/stable/income-statement?symbol=AAPL&apikey={api_key}&limit=10",
-                sleep_timer=False,
-                user_subscription="Free",
+            self._fmp_plan, invalid_api_key = _determine_subscription_plan(
+                api_key=api_key
             )
 
-            self._fmp_plan = "Premium"
-
-            for option in [
-                "PREMIUM QUERY PARAMETER",
-                "EXCLUSIVE ENDPOINT",
-                "NO DATA",
-                "BANDWIDTH LIMIT REACH",
-                "INVALID API KEY",
-                "LIMIT REACH",
-            ]:
-                if option in determine_plan:
-                    if option == "INVALID API KEY" and api_key:
-                        self._enforce_source = "YahooFinance"
-                        logger.error(
-                            "You have entered an invalid API key from Financial Modeling Prep. Obtain your API key for free "
-                            "and get 15%% off the Premium plans by using the following affiliate link.\nThis also supports "
-                            "the project: https://www.jeroenbouma.com/fmp. Using Yahoo Finance as data source instead."
-                        )
-                    self._fmp_plan = "Free"
-                    break
+            if invalid_api_key and api_key:
+                self._enforce_source = "YahooFinance"
+                logger.error(
+                    "You have entered an invalid API key from Financial Modeling Prep. Obtain your API key for free "
+                    "and get 15%% off the Premium plans by using the following affiliate link.\nThis also supports "
+                    "the project: https://www.jeroenbouma.com/fmp. Using Yahoo Finance as data source instead."
+                )
         else:
             self._fmp_plan = "Premium"
 
@@ -465,33 +404,10 @@ class Toolkit:
             self._market_risk_premium: pd.DataFrame = pd.DataFrame()
             self._commitment_of_traders: pd.DataFrame = pd.DataFrame()
 
-            # Define attributes and their corresponding cache file names
-            cached_attributes = {
-                "_profile": "profile.pickle",
-                "_quote": "quote.pickle",
-                "_rating": "rating.pickle",
-                "_analyst_estimates": "analyst_estimates.pickle",
-                "_analyst_estimates_growth": "analyst_estimates_growth.pickle",
-                "_dividend_calendar": "dividend_calendar.pickle",
-                "_earnings_calendar": "earnings_calendar.pickle",
-                "_esg_scores": "esg_scores.pickle",
-                "_revenue_geographic_segmentation": "revenue_geographic_segmentation.pickle",
-                "_revenue_product_segmentation": "revenue_product_segmentation.pickle",
-                "_market_risk_premium": "market_risk_premium.pickle",
-                "_commitment_of_traders": "commitment_of_traders.pickle",
-            }
-
-            # Initialize FinancialModelingPrep Variables
-            for attr_name, file_name in cached_attributes.items():
-                data = (
-                    cache_model.load_cached_data(
-                        cached_data_location=self._cached_data_location,
-                        file_name=file_name,
-                    )
-                    if self._use_cached_data
-                    else pd.DataFrame()
-                )
-                setattr(self, attr_name, data)
+            # These are no longer pre-loaded from cache as one pre-assembled block
+            # per dataset. Each is resolved per ticker when it is actually asked for,
+            # so a different ticker list reuses the tickers it has in common instead
+            # of being handed a frame assembled for a different set of companies.
 
         if intraday_period and intraday_period not in [
             "1min",
@@ -506,30 +422,17 @@ class Toolkit:
 
         self._intraday_period = intraday_period
 
-        # Load intraday data from cache if specified, otherwise initialize empty DataFrame
-        self._intraday_historical_data: pd.DataFrame = (
-            cache_model.load_cached_data(
-                cached_data_location=self._cached_data_location,
-                file_name="intraday_historical_data.pickle",
-            )
-            if self._use_cached_data
-            else pd.DataFrame()
-        )
+        # Price data is no longer loaded here as one pre-assembled block. It is
+        # resolved per ticker and per date range when it is actually requested, so
+        # that a different ticker list or period reuses whatever overlaps instead
+        # of discarding the cache.
+        self._intraday_historical_data: pd.DataFrame = pd.DataFrame()
 
-        # Use provided historical data if available, otherwise load daily data from cache or initialize empty DataFrame
+        # Use provided historical data if available, otherwise start empty.
         self._historical = historical
 
         self._daily_historical_data: pd.DataFrame = (
-            historical
-            if not historical.empty
-            else (
-                cache_model.load_cached_data(
-                    cached_data_location=self._cached_data_location,
-                    file_name="daily_historical_data.pickle",
-                )
-                if self._use_cached_data
-                else pd.DataFrame()
-            )
+            historical if not historical.empty else pd.DataFrame()
         )
 
         # Initialize other periods as empty DataFrames. They will be populated on demand.
@@ -560,8 +463,6 @@ class Toolkit:
             cash=cash,
             format_location=format_location,
             reverse_dates=self._reverse_dates,
-            use_cached_data=use_cached_data,
-            cached_data_location=self._cached_data_location,
             start_date=self._start_date,
             end_date=self._end_date,
             quarterly=self._quarterly,
@@ -1369,6 +1270,7 @@ class Toolkit:
             rounding=self._rounding,
             fred_api_key=self._fred_api_key,
             api_key=self._api_key,
+            cache=self._cache,
         )
 
     @property
@@ -1416,6 +1318,8 @@ class Toolkit:
             quarterly=self._quarterly,
             rounding=self._rounding,
             fred_api_key=self._fred_api_key,
+            allow_stale_oecd_cache=self._allow_stale_oecd_cache,
+            cache=self._cache,
         )
 
     def get_profile(self):
@@ -1484,18 +1388,16 @@ class Toolkit:
             return None
 
         if self._profile.empty:
-            self._profile, self._invalid_tickers = _get_profile(
+            self._profile, self._invalid_tickers = self._collect_per_ticker(
+                dataset="profile",
                 tickers=self._tickers,
-                api_key=self._api_key,
-                user_subscription=self._fmp_plan,
+                ticker_axis=ticker_model.TICKER_ON_COLUMNS,
+                collector=lambda tickers: _get_profile(
+                    tickers=tickers,
+                    api_key=self._api_key,
+                    user_subscription=self._fmp_plan,
+                ),
             )
-
-            if self._use_cached_data:
-                cache_model.save_cached_data(
-                    cached_data=self._profile,
-                    cached_data_location=self._cached_data_location,
-                    file_name="profile.pickle",
-                )
 
         if self._remove_invalid_tickers:
             self._tickers = [
@@ -1563,18 +1465,16 @@ class Toolkit:
             return None
 
         if self._quote.empty:
-            self._quote, self._invalid_tickers = _get_quote(
+            self._quote, self._invalid_tickers = self._collect_per_ticker(
+                dataset="quote",
                 tickers=self._tickers,
-                api_key=self._api_key,
-                user_subscription=self._fmp_plan,
+                ticker_axis=ticker_model.TICKER_ON_COLUMNS,
+                collector=lambda tickers: _get_quote(
+                    tickers=tickers,
+                    api_key=self._api_key,
+                    user_subscription=self._fmp_plan,
+                ),
             )
-
-            if self._use_cached_data:
-                cache_model.save_cached_data(
-                    cached_data=self._quote,
-                    cached_data_location=self._cached_data_location,
-                    file_name="quote.pickle",
-                )
 
         if self._remove_invalid_tickers:
             self._tickers = [
@@ -1642,18 +1542,17 @@ class Toolkit:
             return None
 
         if self._rating.empty:
-            self._rating, self._invalid_tickers = _get_rating(
+            self._rating, self._invalid_tickers = self._collect_per_ticker(
+                dataset="rating",
                 tickers=self._tickers,
-                api_key=self._api_key,
-                user_subscription=self._fmp_plan,
+                ticker_axis=ticker_model.TICKER_ON_INDEX,
+                parameters={"user_subscription": self._fmp_plan},
+                collector=lambda tickers: _get_rating(
+                    tickers=tickers,
+                    api_key=self._api_key,
+                    user_subscription=self._fmp_plan,
+                ),
             )
-
-            if self._use_cached_data:
-                cache_model.save_cached_data(
-                    cached_data=self._rating,
-                    cached_data_location=self._cached_data_location,
-                    file_name="rating.pickle",
-                )
 
         if self._remove_invalid_tickers:
             self._tickers = [
@@ -1740,22 +1639,24 @@ class Toolkit:
             (
                 self._analyst_estimates,
                 self._invalid_tickers,
-            ) = _get_analyst_estimates(
+            ) = self._collect_per_ticker(
+                dataset="analyst_estimates",
                 tickers=self._tickers,
-                api_key=self._api_key,
-                quarter=self._quarterly,
-                start_date=self._start_date,
-                rounding=rounding if rounding else self._rounding,
-                sleep_timer=self._sleep_timer,
-                user_subscription=self._fmp_plan,
+                ticker_axis=ticker_model.TICKER_ON_INDEX,
+                parameters={
+                    "quarter": self._quarterly,
+                    "start_date": self._start_date,
+                },
+                collector=lambda tickers: _get_analyst_estimates(
+                    tickers=tickers,
+                    api_key=self._api_key,
+                    quarter=self._quarterly,
+                    start_date=self._start_date,
+                    rounding=rounding if rounding else self._rounding,
+                    sleep_timer=self._sleep_timer,
+                    user_subscription=self._fmp_plan,
+                ),
             )
-
-            if self._use_cached_data:
-                cache_model.save_cached_data(
-                    cached_data=self._analyst_estimates,
-                    cached_data_location=self._cached_data_location,
-                    file_name="analyst_estimates.pickle",
-                )
 
         if self._remove_invalid_tickers:
             self._tickers = [
@@ -1848,22 +1749,26 @@ class Toolkit:
             (
                 self._earnings_calendar,
                 self._invalid_tickers,
-            ) = _get_earnings_calendar(
+            ) = self._collect_per_ticker(
+                dataset="earnings_calendar",
                 tickers=self._tickers,
-                api_key=self._api_key,
-                start_date=self._start_date,
-                end_date=self._end_date,
-                actual_dates=actual_dates,
-                sleep_timer=self._sleep_timer,
-                user_subscription=self._fmp_plan,
+                ticker_axis=ticker_model.TICKER_ON_INDEX,
+                parameters={
+                    "start_date": self._start_date,
+                    "end_date": self._end_date,
+                    "actual_dates": actual_dates,
+                    "user_subscription": self._fmp_plan,
+                },
+                collector=lambda tickers: _get_earnings_calendar(
+                    tickers=tickers,
+                    api_key=self._api_key,
+                    start_date=self._start_date,
+                    end_date=self._end_date,
+                    actual_dates=actual_dates,
+                    sleep_timer=self._sleep_timer,
+                    user_subscription=self._fmp_plan,
+                ),
             )
-
-            if self._use_cached_data:
-                cache_model.save_cached_data(
-                    cached_data=self._earnings_calendar,
-                    cached_data_location=self._cached_data_location,
-                    file_name="earnings_calendar.pickle",
-                )
 
         earnings_calendar = self._earnings_calendar.round(
             rounding if rounding else self._rounding
@@ -2047,23 +1952,28 @@ class Toolkit:
             (
                 self._revenue_geographic_segmentation,
                 self._invalid_tickers,
-            ) = _get_revenue_segmentation(
+            ) = self._collect_per_ticker(
+                dataset="revenue_geographic_segmentation",
                 tickers=self._tickers,
-                method="geographic",
-                api_key=self._api_key,
-                quarter=self._quarterly if self._fmp_plan == "Premium" else False,
-                start_date=self._start_date,
-                end_date=self._end_date,
-                sleep_timer=self._sleep_timer,
-                user_subscription=self._fmp_plan,
+                ticker_axis=ticker_model.TICKER_ON_INDEX,
+                parameters={
+                    "quarter": (
+                        self._quarterly if self._fmp_plan == "Premium" else False
+                    ),
+                    "start_date": self._start_date,
+                    "end_date": self._end_date,
+                },
+                collector=lambda tickers: _get_revenue_segmentation(
+                    tickers=tickers,
+                    method="geographic",
+                    api_key=self._api_key,
+                    quarter=self._quarterly if self._fmp_plan == "Premium" else False,
+                    start_date=self._start_date,
+                    end_date=self._end_date,
+                    sleep_timer=self._sleep_timer,
+                    user_subscription=self._fmp_plan,
+                ),
             )
-
-            if self._use_cached_data:
-                cache_model.save_cached_data(
-                    cached_data=self._revenue_geographic_segmentation,
-                    cached_data_location=self._cached_data_location,
-                    file_name="revenue_geographic_segmentation.pickle",
-                )
 
         if self._remove_invalid_tickers:
             self._tickers = [
@@ -2140,23 +2050,28 @@ class Toolkit:
             (
                 self._revenue_product_segmentation,
                 self._invalid_tickers,
-            ) = _get_revenue_segmentation(
+            ) = self._collect_per_ticker(
+                dataset="revenue_product_segmentation",
                 tickers=self._tickers,
-                method="product",
-                api_key=self._api_key,
-                quarter=self._quarterly if self._fmp_plan == "Premium" else False,
-                start_date=self._start_date,
-                end_date=self._end_date,
-                sleep_timer=self._sleep_timer,
-                user_subscription=self._fmp_plan,
+                ticker_axis=ticker_model.TICKER_ON_INDEX,
+                parameters={
+                    "quarter": (
+                        self._quarterly if self._fmp_plan == "Premium" else False
+                    ),
+                    "start_date": self._start_date,
+                    "end_date": self._end_date,
+                },
+                collector=lambda tickers: _get_revenue_segmentation(
+                    tickers=tickers,
+                    method="product",
+                    api_key=self._api_key,
+                    quarter=self._quarterly if self._fmp_plan == "Premium" else False,
+                    start_date=self._start_date,
+                    end_date=self._end_date,
+                    sleep_timer=self._sleep_timer,
+                    user_subscription=self._fmp_plan,
+                ),
             )
-
-            if self._use_cached_data:
-                cache_model.save_cached_data(
-                    cached_data=self._revenue_product_segmentation,
-                    cached_data_location=self._cached_data_location,
-                    file_name="revenue_product_segmentation.pickle",
-                )
 
         if self._remove_invalid_tickers:
             self._tickers = [
@@ -2305,19 +2220,13 @@ class Toolkit:
                 show_ticker_seperation=show_ticker_seperation,
                 show_errors=True,
                 user_subscription=self._fmp_plan,
+                cache=self._cache,
             )
 
             # Change the benchmark ticker name to Benchmark
             if not self._daily_historical_data.empty:
                 self._daily_historical_data = self._daily_historical_data.rename(
                     columns={self._benchmark_ticker: "Benchmark"}, level=1
-                )
-
-            if self._use_cached_data:
-                cache_model.save_cached_data(
-                    cached_data=self._daily_historical_data,
-                    cached_data_location=self._cached_data_location,
-                    file_name="daily_historical_data.pickle",
                 )
 
         if self._remove_invalid_tickers:
@@ -2555,14 +2464,8 @@ class Toolkit:
                 show_errors=True,
                 log_message="Obtaining intraday data",
                 user_subscription=self._fmp_plan,
+                cache=self._cache,
             )
-
-            if self._use_cached_data:
-                cache_model.save_cached_data(
-                    cached_data=self._intraday_historical_data,
-                    cached_data_location=self._cached_data_location,
-                    file_name="intraday_historical_data.pickle",
-                )
 
         # Save the period to prevent having to reacquire the data
         self._intraday_period = period
@@ -2668,21 +2571,24 @@ class Toolkit:
             (
                 self._dividend_calendar,
                 self._invalid_tickers,
-            ) = _get_dividend_calendar(
+            ) = self._collect_per_ticker(
+                dataset="dividend_calendar",
                 tickers=self._tickers,
-                api_key=self._api_key,
-                start_date=self._start_date,
-                end_date=self._end_date,
-                sleep_timer=self._sleep_timer,
-                user_subscription=self._fmp_plan,
+                ticker_axis=ticker_model.TICKER_ON_INDEX,
+                parameters={
+                    "start_date": self._start_date,
+                    "end_date": self._end_date,
+                    "user_subscription": self._fmp_plan,
+                },
+                collector=lambda tickers: _get_dividend_calendar(
+                    tickers=tickers,
+                    api_key=self._api_key,
+                    start_date=self._start_date,
+                    end_date=self._end_date,
+                    sleep_timer=self._sleep_timer,
+                    user_subscription=self._fmp_plan,
+                ),
             )
-
-            if self._use_cached_data:
-                cache_model.save_cached_data(
-                    cached_data=self._dividend_calendar,
-                    cached_data_location=self._cached_data_location,
-                    file_name="dividend_calendar.pickle",
-                )
 
         dividend_calendar = self._dividend_calendar.round(
             rounding if rounding else self._rounding
@@ -2789,14 +2695,24 @@ class Toolkit:
             (
                 self._esg_scores,
                 self._invalid_tickers,
-            ) = _get_esg_scores(
+            ) = self._collect_per_ticker(
+                dataset="esg_scores",
                 tickers=self._tickers,
-                api_key=self._api_key,
-                quarter=self._quarterly,
-                start_date=self._start_date,
-                end_date=self._end_date,
-                sleep_timer=self._sleep_timer,
-                user_subscription=self._fmp_plan,
+                ticker_axis=ticker_model.TICKER_ON_COLUMNS,
+                parameters={
+                    "quarter": self._quarterly,
+                    "start_date": self._start_date,
+                    "end_date": self._end_date,
+                },
+                collector=lambda tickers: _get_esg_scores(
+                    tickers=tickers,
+                    api_key=self._api_key,
+                    quarter=self._quarterly,
+                    start_date=self._start_date,
+                    end_date=self._end_date,
+                    sleep_timer=self._sleep_timer,
+                    user_subscription=self._fmp_plan,
+                ),
             )
 
         esg_scores = self._esg_scores.round(rounding if rounding else self._rounding)
@@ -2863,17 +2779,33 @@ class Toolkit:
             return None
 
         if self._market_risk_premium.empty or overwrite:
-            self._market_risk_premium = _get_market_risk_premium(
-                api_key=self._api_key,
-                user_subscription=self._fmp_plan,
+            # The market risk premium is published per country rather than per
+            # ticker, so there is nothing to split it by; it is cached as one entry.
+            cached_premium = (
+                None
+                if overwrite
+                else self._cache.get(
+                    source=policy_model.FINANCIAL_MODELING_PREP,
+                    dataset="market_risk_premium",
+                    entity="global",
+                )
             )
 
-            if self._use_cached_data:
-                cache_model.save_cached_data(
-                    cached_data=self._market_risk_premium,
-                    cached_data_location=self._cached_data_location,
-                    file_name="market_risk_premium.pickle",
+            if cached_premium is not None:
+                self._market_risk_premium = cached_premium
+            else:
+                self._market_risk_premium = _get_market_risk_premium(
+                    api_key=self._api_key,
+                    user_subscription=self._fmp_plan,
                 )
+
+                if not self._market_risk_premium.empty:
+                    self._cache.set(
+                        source=policy_model.FINANCIAL_MODELING_PREP,
+                        dataset="market_risk_premium",
+                        entity="global",
+                        data=self._market_risk_premium,
+                    )
 
         return self._market_risk_premium
 
@@ -2935,20 +2867,22 @@ class Toolkit:
             (
                 self._commitment_of_traders,
                 self._invalid_tickers,
-            ) = _get_commitment_of_traders(
+            ) = self._collect_per_ticker(
+                dataset="commitment_of_traders",
                 tickers=self._tickers,
-                api_key=self._api_key,
-                start_date=self._start_date,
-                end_date=self._end_date,
-                user_subscription=self._fmp_plan,
+                ticker_axis=ticker_model.TICKER_ON_COLUMNS,
+                parameters={
+                    "start_date": self._start_date,
+                    "end_date": self._end_date,
+                },
+                collector=lambda tickers: _get_commitment_of_traders(
+                    tickers=tickers,
+                    api_key=self._api_key,
+                    start_date=self._start_date,
+                    end_date=self._end_date,
+                    user_subscription=self._fmp_plan,
+                ),
             )
-
-            if self._use_cached_data:
-                cache_model.save_cached_data(
-                    cached_data=self._commitment_of_traders,
-                    cached_data_location=self._cached_data_location,
-                    file_name="commitment_of_traders.pickle",
-                )
 
         if self._remove_invalid_tickers:
             self._tickers = [
@@ -3146,6 +3080,7 @@ class Toolkit:
                 sleep_timer=self._sleep_timer,
                 log_message="Obtaining treasury data",
                 user_subscription=self._fmp_plan,
+                cache=self._cache,
             )
 
             if not self._daily_treasury_data.empty:
@@ -3348,6 +3283,7 @@ class Toolkit:
                     show_ticker_seperation=show_ticker_seperation,
                     log_message="Obtaining currency exchange data",
                     user_subscription=self._fmp_plan,
+                    cache=self._cache,
                 )
             else:
                 # In case there is no conversion needed, it should create a placeholder
@@ -3637,6 +3573,7 @@ class Toolkit:
                 sleep_timer=self._sleep_timer,
                 user_subscription=self._fmp_plan,
                 enforce_source=source,
+                cache=self._cache,
             )
             self._fiscal_year_adjustments.update(_fy_adj)
 
@@ -3656,13 +3593,6 @@ class Toolkit:
                         ),
                         financial_statement_name="balance sheet statement",
                     )
-
-            if self._use_cached_data:
-                cache_model.save_cached_data(
-                    cached_data=self._balance_sheet_statement,
-                    cached_data_location=self._cached_data_location,
-                    file_name="balance_sheet_statement.pickle",
-                )
 
         if self._remove_invalid_tickers:
             self._tickers = [
@@ -3839,6 +3769,7 @@ class Toolkit:
                 sleep_timer=self._sleep_timer,
                 user_subscription=self._fmp_plan,
                 enforce_source=source,
+                cache=self._cache,
             )
             self._fiscal_year_adjustments.update(_fy_adj)
 
@@ -3868,13 +3799,6 @@ class Toolkit:
                         ],
                         financial_statement_name="income statement",
                     )
-
-            if self._use_cached_data:
-                cache_model.save_cached_data(
-                    cached_data=self._income_statement,
-                    cached_data_location=self._cached_data_location,
-                    file_name="income_statement.pickle",
-                )
 
         if self._remove_invalid_tickers:
             self._tickers = [
@@ -4065,6 +3989,7 @@ class Toolkit:
                 sleep_timer=self._sleep_timer,
                 user_subscription=self._fmp_plan,
                 enforce_source=source,
+                cache=self._cache,
             )
             self._fiscal_year_adjustments.update(_fy_adj)
 
@@ -4084,13 +4009,6 @@ class Toolkit:
                         ),
                         financial_statement_name="cash flow statement",
                     )
-
-            if self._use_cached_data:
-                cache_model.save_cached_data(
-                    cached_data=self._cash_flow_statement,
-                    cached_data_location=self._cached_data_location,
-                    file_name="cash_flow_statement.pickle",
-                )
 
         if self._remove_invalid_tickers:
             self._tickers = [
@@ -4228,15 +4146,9 @@ class Toolkit:
                     if enforce_source is not None
                     else self._enforce_source
                 ),
+                cache=self._cache,
             )
             self._fiscal_year_adjustments.update(_fy_adj)
-
-            if self._use_cached_data:
-                cache_model.save_cached_data(
-                    cached_data=self._statistics_statement,
-                    cached_data_location=self._cached_data_location,
-                    file_name="statistics_statement.pickle",
-                )
 
         if self._remove_invalid_tickers:
             self._tickers = [
@@ -4271,3 +4183,181 @@ class Toolkit:
             _copy_normalization_files(path)
         else:
             _copy_normalization_files()
+
+    def _collect_per_ticker(
+        self,
+        dataset: str,
+        tickers: list[str],
+        ticker_axis: str,
+        collector: Callable[[list[str]], Any],
+        parameters: dict | None = None,
+    ) -> tuple[pd.DataFrame, list[str]]:
+        """
+        Retrieve a per-ticker dataset, requesting only the tickers not already cached.
+
+        The company endpoints return one frame covering every requested ticker, which
+        historically meant that adding a single ticker re-requested all of them. The
+        frame is therefore split per ticker on the way into the cache and reassembled
+        on the way out, so a later call only pays for what it does not already have.
+
+        Args:
+            dataset (str): The dataset name to cache under, e.g. "profile".
+            tickers (list[str]): The tickers being requested.
+            ticker_axis (str): Whether the ticker sits on the column or the index axis
+                of the returned frame, see the constants in ticker_model.
+            collector (Callable[[list[str]], Any]): Called with the tickers that are not
+                cached. May return a frame, or a (frame, invalid_tickers) tuple.
+            parameters (dict | None): Parameters that change the returned data, such as
+                the period or date range the endpoint was queried for.
+
+        Returns:
+            tuple[pd.DataFrame, list[str]]: The combined frame and the tickers the
+                source reported as invalid during this call.
+        """
+        return ticker_model.collect_per_ticker(
+            cache=self._cache,
+            source=policy_model.FINANCIAL_MODELING_PREP,
+            dataset=dataset,
+            tickers=tickers,
+            ticker_axis=ticker_axis,
+            collector=collector,
+            parameters=parameters,
+        )
+
+    def get_cache_contents(self) -> pd.DataFrame:
+        """
+        Show what the cache currently holds, grouped by source and dataset.
+
+        The cache stores data per source, per dataset and per entity (a ticker, a
+        country, a series identifier), which makes it possible to remove part of it
+        rather than all of it. This method is the counterpart to clear_cache: it
+        shows what is there so that removing something is an informed decision.
+
+        The cache is inspected regardless of whether this Toolkit was created with
+        use_cached_data enabled, so a cache filled by an earlier session can always
+        be reviewed.
+
+        Returns:
+            pd.DataFrame: One row per source and dataset combination, with the number
+                of entities, the number of stored entries and when they were written.
+                An empty DataFrame when the cache holds nothing.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "MSFT"], api_key="FINANCIAL_MODELING_PREP_KEY", use_cached_data=True)
+
+        toolkit.get_historical_data()
+
+        toolkit.get_cache_contents()
+        ```
+
+        Which returns:
+
+        | source   | dataset    |   entities |   entries | oldest_write        | newest_write        |
+        |:---------|:-----------|-----------:|----------:|:--------------------|:--------------------|
+        | market   | historical |          3 |         3 | 2026-08-06 14:02:11 | 2026-08-06 14:02:12 |
+        """
+        contents = cache_controller.get_cache(
+            location=self._cache_location, enabled=True
+        ).get_contents()
+
+        if not contents:
+            return pd.DataFrame()
+
+        return pd.DataFrame(
+            [
+                {
+                    "source": entry["source"],
+                    "dataset": entry["dataset"],
+                    "entities": len(entry["entities"]),
+                    "entries": entry["entries"],
+                    "oldest_write": cache_controller.format_timestamp(
+                        entry["oldest_write"]
+                    ),
+                    "newest_write": cache_controller.format_timestamp(
+                        entry["newest_write"]
+                    ),
+                }
+                for entry in contents
+            ]
+        )
+
+    def clear_cache(
+        self,
+        source: str | None = None,
+        dataset: str | None = None,
+        ticker: str | None = None,
+        confirm: bool = False,
+    ) -> int:
+        """
+        Remove cached data, either all of it or only the part you specify.
+
+        The Finance Toolkit never clears the cache on its own. A cache can represent
+        a large amount of downloaded data and a meaningful part of an API quota, so
+        discarding it is always an explicit action. Even a change in the cache's own
+        internal structure only produces a warning pointing at this method rather
+        than removing anything.
+
+        Because the cache is stored per source, per dataset and per entity, removal
+        can be narrowed instead of wholesale. Clearing a single stale ticker, or
+        everything retrieved from one provider, leaves the rest of the cache intact.
+
+        Args:
+            source (str | None): Only remove data from this source, for example
+                "FinancialModelingPrep", "YahooFinance", "OECD", "FRED" or
+                "GlobalMacroDatabase". These match the names used by enforce_source.
+                Defaults to None, which matches every source.
+            dataset (str | None): Only remove this dataset within the source, for
+                example "historical", "intraday" or "statements". Defaults to None,
+                which matches every dataset.
+            ticker (str | None): Only remove this entity, for example "AAPL" or a
+                country code for macroeconomic data. Defaults to None, which matches
+                every entity.
+            confirm (bool): Required to be True when no source, dataset or ticker is
+                given, since that removes the entire cache. Defaults to False.
+
+        Raises:
+            ValueError: If the whole cache would be removed without confirm being set.
+
+        Returns:
+            int: The number of stored entries that were removed.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "MSFT"], api_key="FINANCIAL_MODELING_PREP_KEY", use_cached_data=True)
+
+        # Remove only the price history of a single ticker
+        toolkit.clear_cache(source="YahooFinance", ticker="AAPL")
+
+        # Remove everything retrieved from the OECD
+        toolkit.clear_cache(source=policy_model.OECD)
+
+        # Remove the entire cache
+        toolkit.clear_cache(confirm=True)
+        ```
+        """
+        is_full_clear = source is None and dataset is None and ticker is None
+
+        if is_full_clear and not confirm:
+            raise ValueError(
+                "This would remove the entire cache. Narrow it down with the source, "
+                "dataset or ticker parameter, or pass confirm=True to remove "
+                "everything. Use get_cache_contents() to see what is currently stored."
+            )
+
+        cache = cache_controller.get_cache(location=self._cache_location, enabled=True)
+        removed = cache.remove(source=source, dataset=dataset, entity=ticker)
+
+        logger.info(
+            "Removed %d cached entries from %s.",
+            removed,
+            cache.location,
+        )
+
+        return removed

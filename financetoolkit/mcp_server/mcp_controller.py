@@ -231,18 +231,63 @@ def main() -> None:
     Start the Finance Toolkit MCP server.
 
     Bootstraps the MCP application via _build_mcp_app() and starts the server
-    using the transport defined by the MCP_TRANSPORT environment variable.
-    Defaults to stdio transport when MCP_TRANSPORT is not set, which is the
-    correct setting for use with VS Code and other MCP clients.
+    using the transport defined by `--transport`, falling back to the
+    MCP_TRANSPORT environment variable and then to stdio, which is the correct
+    setting for use with VS Code and other MCP clients.
+
+    The server contains the following optional arguments:
+
+    --transport {stdio,sse,streamable-http}
+        The transport to serve on. Defaults to MCP_TRANSPORT, then stdio.
+    --host HOST
+        The interface to bind to, for the sse and streamable-http transports
+        only. Defaults to MCP_HOST, then 0.0.0.0.
+    --port PORT
+        The port to bind to, for the sse and streamable-http transports only.
+        Defaults to MCP_PORT, then 8000.
     """
-    transport = os.environ.get("MCP_TRANSPORT", "stdio")
+    parser = argparse.ArgumentParser(
+        prog="financetoolkit-mcp",
+        description="Start the Finance Toolkit MCP server.",
+        epilog=(
+            "Every option falls back to its environment variable, so an MCP client "
+            "that can only set the environment (MCP_TRANSPORT, MCP_HOST, MCP_PORT) "
+            "keeps working unchanged. API keys are read from FINANCIAL_MODELING_PREP_API_KEY "
+            "and FRED_API_KEY, or from a .env file in the working directory. Caching is "
+            "controlled with FINANCE_TOOLKIT_CACHE_ENABLED and defaults to off when hosted."
+        ),
+    )
+    parser.add_argument(
+        "--transport",
+        choices=["stdio", "sse", "streamable-http"],
+        help="The transport to serve on. Defaults to MCP_TRANSPORT, then stdio.",
+    )
+    parser.add_argument(
+        "--host",
+        help=(
+            "The interface to bind to, for the sse and streamable-http transports "
+            "only. Defaults to MCP_HOST, then 0.0.0.0."
+        ),
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        help=(
+            "The port to bind to, for the sse and streamable-http transports only. "
+            "Defaults to MCP_PORT, then 8000."
+        ),
+    )
+
+    arguments = parser.parse_args()
+
+    transport = arguments.transport or os.environ.get("MCP_TRANSPORT", "stdio")
     get_logger().info(f"Starting MCP server on transport {transport}")
 
     if transport in ("sse", "streamable-http"):
-        # Apply environment variable overrides for host/port if specified
-        host = os.environ.get("MCP_HOST", "0.0.0.0")  # noqa: S104
+        # Apply command line, then environment variable overrides for host/port
+        host = arguments.host or os.environ.get("MCP_HOST", "0.0.0.0")  # noqa: S104
         port_env = os.environ.get("MCP_PORT", "8000")
-        port = int(port_env) if port_env.isdigit() else 8000
+        port = arguments.port or (int(port_env) if port_env.isdigit() else 8000)
 
         mcp.settings.host = host
         mcp.settings.port = port
@@ -286,7 +331,17 @@ def inspector() -> None:
     Invokes the MCP Inspector via npx, pointing it at this module so that all
     registered tools can be explored and tested interactively in a browser.
     Exits with the same return code as the Inspector process.
+
+    The Inspector takes no arguments of its own beyond --help.
     """
+    argparse.ArgumentParser(
+        prog="financetoolkit-mcp-inspector",
+        description=(
+            "Launch the MCP Inspector against the Finance Toolkit MCP server. "
+            "Requires npx, which ships with Node.js."
+        ),
+    ).parse_args()
+
     server_path = str(pathlib.Path(__file__).resolve())
     sys.exit(
         subprocess.call(  # noqa

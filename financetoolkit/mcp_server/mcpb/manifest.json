@@ -2,7 +2,7 @@
   "manifest_version": "0.4",
   "name": "finance-toolkit",
   "display_name": "Finance Toolkit",
-  "version": "2.1.5",
+  "version": "2.2.0",
   "description": "Give AI assistants access to 500+ financial methods calculated transparently from raw financial statements, not pulled from third-party endpoints.",
   "long_description": "The Finance Toolkit gives AI assistants access to 500+ financial methods calculated transparently from raw financial statements. This includes financial statements, historical prices, analyst estimates, 100+ fundamental ratios, 55+ technical indicators, 85+ risk and performance metrics, 45+ econometric tests and estimators, and 90+ macro and fixed income indicators.\n\nA Financial Modeling Prep API key is required to access 30+ years of financial data. Obtain one at [jeroenbouma.com/fmp](https://jeroenbouma.com/fmp). Authenticate once via OAuth, no key is stored on the server. Rate limit fallback to Yahoo Finance is built in, and macro databases from OECD and GMDB are accessed independently.",
   "author": {
@@ -103,11 +103,11 @@
     },
     {
       "name": "performance",
-      "description": "Pre-computed risk-adjusted performance metrics (Sharpe ratio, Sortino ratio, Alpha, Jensen's Alpha, Beta, CAPM, Treynor ratio, M2 ratio, Tracking Error, Information Ratio, Fama-French factors, period Returns, Excess Returns \u2014 Returns/Excess Returns support cumulative=true for a compounded growth index rebased to 1). Beta, CAPM, Alpha, Jensen's Alpha, Treynor, Sortino, M2, Tracking Error and Information Ratio support rolling=N for a rolling N-period value spanning the full history instead of one value per period (e.g. period='monthly', rolling=6 for a rolling 6-month figure). Requires tickers='AAPL' \u2014 use comma-separated values for multiple tickers. Does NOT support period='daily'; use weekly, monthly, quarterly, or yearly instead."
+      "description": "Pre-computed risk-adjusted performance metrics (Sharpe ratio incl. standard/adjusted/probabilistic/deflated methods, Sortino ratio, Alpha, Jensen's Alpha, Beta, CAPM, Treynor ratio, M2 ratio, Tracking Error, Information Ratio, Fama-French factors, period Returns, Excess Returns \u2014 Returns/Excess Returns support cumulative=true for a compounded growth index rebased to 1). Beta, CAPM, Alpha, Jensen's Alpha, Treynor, Sortino, M2, Tracking Error and Information Ratio support rolling=N for a rolling N-period value spanning the full history instead of one value per period (e.g. period='monthly', rolling=6 for a rolling 6-month figure). Requires tickers='AAPL' \u2014 use comma-separated values for multiple tickers. Does NOT support period='daily'; use weekly, monthly, quarterly, or yearly instead."
     },
     {
       "name": "risk",
-      "description": "Pre-computed risk metrics (VaR incl. historic/gaussian/cf/studentt/evt distributions, CVaR, EVaR, GARCH volatility, max drawdown, drawdown duration, drawdown recovery time, Conditional Drawdown at Risk (CDaR), Tail Ratio, skewness, kurtosis, downside deviation, Variance, Volatility, Excess Volatility). VaR, CVaR, skewness, kurtosis, CDaR, Tail Ratio, downside deviation, Variance, Volatility and Excess Volatility support rolling=N for a rolling N-period value spanning the full history instead of one value per period (e.g. period='monthly', rolling=6 for a rolling 6-month figure). Requires tickers='AAPL' \u2014 use comma-separated values for multiple tickers. Does NOT support period='daily'; use weekly, monthly, quarterly, or yearly instead."
+      "description": "Pre-computed risk metrics (VaR incl. historic/gaussian/cf/studentt/evt distributions, CVaR, EVaR, GARCH volatility, max drawdown, drawdown duration, drawdown recovery time, Conditional Drawdown at Risk (CDaR), Tail Ratio, skewness, kurtosis, downside deviation, Variance, Volatility incl. close_to_close/parkinson/garman_klass/rogers_satchell/yang_zhang estimators, Excess Volatility). VaR, CVaR, skewness, kurtosis, CDaR, Tail Ratio, downside deviation, Variance, Volatility and Excess Volatility support rolling=N for a rolling N-period value spanning the full history instead of one value per period (e.g. period='monthly', rolling=6 for a rolling 6-month figure). Requires tickers='AAPL' \u2014 use comma-separated values for multiple tickers. Does NOT support period='daily'; use weekly, monthly, quarterly, or yearly instead."
     },
     {
       "name": "econometrics",

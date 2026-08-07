@@ -1,5 +1,7 @@
 # ruff: noqa
 
+import csv
+import io
 import json
 import math
 import os
@@ -80,6 +82,62 @@ class Record:
             return recorded == captured
 
     @staticmethod
+    def _numbers_approx_equal(
+        recorded: str, captured: str, rel_tol: float = 1e-5
+    ) -> bool:
+        """Compare two numeric cells to within one unit of the last digit the record
+        actually stores, so a value written as 0.3754 tolerates 0.3753, while a full
+        precision value is still held to `rel_tol`. Anything that is not a number is
+        not equal unless it matched as a string already.
+
+        `rel_tol` is deliberately looser than the 1e-9 used for JSON: the values that
+        drift the most are the iterative ones (ARIMA forecasts, GARCH-family solver
+        output), where a different libm walks to a slightly different optimum and the
+        gap reaches a few parts per million. A genuine formula change moves a value by
+        far more than that."""
+        try:
+            recorded_value = float(recorded)
+            captured_value = float(captured)
+        except ValueError:
+            return False
+
+        if math.isnan(recorded_value) and math.isnan(captured_value):
+            return True
+
+        _, _, decimals = recorded.partition(".")
+
+        return math.isclose(
+            recorded_value,
+            captured_value,
+            rel_tol=rel_tol,
+            abs_tol=10 ** -len(decimals) if decimals else 0.0,
+        )
+
+    @staticmethod
+    def _csv_strings_approx_equal(recorded: str, captured: str) -> bool:
+        """Parse two CSV strings and compare them cell by cell, with float tolerance.
+        The shape, the headers and every non-numeric cell still have to match exactly;
+        only the numbers are allowed to drift, which is what differing platforms (and
+        therefore differing BLAS and libm implementations) actually produce."""
+        recorded_rows = list(csv.reader(io.StringIO(recorded)))
+        captured_rows = list(csv.reader(io.StringIO(captured)))
+
+        if len(recorded_rows) != len(captured_rows):
+            return False
+
+        for recorded_row, captured_row in zip(recorded_rows, captured_rows):
+            if len(recorded_row) != len(captured_row):
+                return False
+
+            for recorded_cell, captured_cell in zip(recorded_row, captured_row):
+                if recorded_cell == captured_cell:
+                    continue
+                if not Record._numbers_approx_equal(recorded_cell, captured_cell):
+                    return False
+
+        return True
+
+    @staticmethod
     def extract_string(data: Any, **kwargs) -> str:
         if isinstance(data, tuple(EXTENSIONS_MATCHING["txt"])):
             string_value = data
@@ -134,6 +192,12 @@ class Record:
         # JSON floats are compared approximately, so repr differences do not fail.
         if self.__record_path.endswith(".json"):
             return not self._json_strings_approx_equal(recorded, captured)
+
+        # Same for CSV, where the recorded values are the ones most exposed to the
+        # float noise that differs between the platform that recorded them and the
+        # platform running the test.
+        if self.__record_path.endswith(".csv"):
+            return not self._csv_strings_approx_equal(recorded, captured)
 
         return True
 

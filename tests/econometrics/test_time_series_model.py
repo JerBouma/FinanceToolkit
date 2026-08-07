@@ -213,8 +213,11 @@ def test_get_impulse_response_function_impact_response_matches_shock_std(recorde
     var_result = _fit_bivariate_var()
     irf = time_series_model.get_impulse_response_function(var_result, periods=5)
 
-    sigma_u = var_result["residuals"][["Y1", "Y2"]].cov().to_numpy()
-    cholesky_factor = np.linalg.cholesky(sigma_u)
+    # Sigma_u divides by T - (k * p + 1), the parameters each equation estimates, not
+    # by the T - 1 a plain sample covariance would use.
+    residuals = var_result["residuals"][["Y1", "Y2"]].dropna().to_numpy()
+    degrees_of_freedom = len(residuals) - (2 * var_result["lags"] + 1)
+    cholesky_factor = np.linalg.cholesky(residuals.T @ residuals / degrees_of_freedom)
 
     assert abs(irf["responses"]["Y1"].loc[0, "Y1"] - cholesky_factor[0, 0]) < 1e-8
     assert abs(irf["responses"]["Y2"].loc[0, "Y1"]) < 1e-8

@@ -525,6 +525,43 @@ def _require_var_result(var_result: dict) -> None:
         )
 
 
+def _residual_covariance(var_result: dict) -> np.ndarray:
+    """
+    The degrees-of-freedom adjusted residual covariance matrix `Sigma_u` of a fitted VAR.
+
+    Each equation of a VAR(p) in `k` variables estimates `k * p + 1` parameters (one
+    coefficient per variable per lag, plus the intercept), so the residual cross-product
+    has to be divided by `T - (k * p + 1)`, not by the `T - 1` a plain sample covariance
+    would use. Dividing by `T - 1` leaves `Sigma_u` too small by a factor of
+    `(T - k * p - 1) / (T - 1)`, which scales every orthogonalized impulse response by
+    the square root of that -- roughly 1% for a small bivariate system, and worse as the
+    number of lags or variables grows. This matches `sigma_u` on statsmodels'
+    `VARResults`.
+
+    Args:
+        var_result (dict): A result dict returned by `get_var_forecast`.
+
+    Returns:
+        np.ndarray: The `k` x `k` residual covariance matrix.
+
+    Raises:
+        ValueError: If the VAR leaves no degrees of freedom for the covariance estimate.
+    """
+    variable_names = var_result["variable_names"]
+    residuals = var_result["residuals"][variable_names].dropna().to_numpy()
+    n_observations, k = residuals.shape
+    degrees_of_freedom = n_observations - (k * var_result["lags"] + 1)
+
+    if degrees_of_freedom <= 0:
+        raise ValueError(
+            f"A VAR({var_result['lags']}) in {k} variables estimates "
+            f"{k * var_result['lags'] + 1} parameters per equation, which leaves no "
+            f"degrees of freedom in {n_observations} observations -- use fewer lags."
+        )
+
+    return residuals.T @ residuals / degrees_of_freedom
+
+
 def get_impulse_response_function(
     var_result: dict, periods: int = 10, orthogonalized: bool = True
 ) -> dict:
@@ -616,8 +653,7 @@ def get_impulse_response_function(
     )
 
     if orthogonalized:
-        sigma_u = var_result["residuals"][variable_names].cov().to_numpy()
-        cholesky_factor = np.linalg.cholesky(sigma_u)
+        cholesky_factor = np.linalg.cholesky(_residual_covariance(var_result))
         theta = [psi_n @ cholesky_factor for psi_n in psi]
     else:
         theta = psi
@@ -739,8 +775,7 @@ def get_variance_decomposition(var_result: dict, periods: int = 10) -> dict:
         var_result["lags"],
         periods,
     )
-    sigma_u = var_result["residuals"][variable_names].cov().to_numpy()
-    cholesky_factor = np.linalg.cholesky(sigma_u)
+    cholesky_factor = np.linalg.cholesky(_residual_covariance(var_result))
     theta = [psi_n @ cholesky_factor for psi_n in psi]
 
     squared_theta = np.stack([t**2 for t in theta])  # shape (periods + 1, k, k)

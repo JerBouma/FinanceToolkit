@@ -47,6 +47,10 @@ dependencies = [
     "requests>=2.32",
     "yfinance",
     "openpyxl>=3.1",
+    # Portfolio is exported from the package root and reads its configuration with
+    # yaml at import time, so this is needed by a plain install, not just by the
+    # MCP server.
+    "pyyaml>=6.0",
 ]
 
 [project.optional-dependencies]
@@ -62,7 +66,6 @@ mcp = [
     "mcp[cli]>=1.27.0",
     "tabulate>=0.9.0",
     "python-dotenv>=1.0",
-    "pyyaml>=6.0",
     "rich>=13.0",
 ]
 

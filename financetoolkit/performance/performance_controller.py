@@ -1677,6 +1677,10 @@ class Performance:
         self,
         period: str | None = None,
         rolling: int | None = None,
+        method: str = "standard",
+        benchmark_sharpe_ratio: float = 0.0,
+        trials_window: int | None = None,
+        n_trials: int | None = None,
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
@@ -1705,15 +1709,80 @@ class Performance:
 
         Note that this is explicitly already subtracts the Risk Free Rate.
 
+        The plain Sharpe ratio only looks at the mean and standard deviation of returns, implicitly
+        assuming Gaussian, i.i.d. returns and ignoring how much uncertainty surrounds the estimate
+        itself. The `method` parameter selects one of three corrections for that, each keeping the
+        same excess returns and therefore the same underlying Sharpe ratio as its starting point:
+
+        - `"adjusted"` — the Adjusted Sharpe Ratio (ASR, Pezier & White, 2006) penalizes (or
+        rewards) the Sharpe ratio for negative skewness and excess kurtosis using a
+        Cornish-Fisher-style expansion, so that two strategies with the same Sharpe ratio but
+        different tail shapes are no longer scored identically:
+
+            - ASR = SR * [1 + (S / 6) * SR − ((K − 3) / 24) * SR^2]
+
+        - `"probabilistic"` — the Probabilistic Sharpe Ratio (PSR) is the probability that the true
+        (population) Sharpe ratio exceeds `benchmark_sharpe_ratio`, folding the skewness and
+        (non-excess) kurtosis of the underlying returns into the standard error of the Sharpe ratio
+        so that a short, lumpy sample no longer looks more convincing than it is:
+
+            - PSR(SR*) = Φ( (SR̂ − SR*) · sqrt(n − 1) / sqrt(1 − γ₃·SR̂ + ((γ₄ − 1) / 4)·SR̂²) )
+
+        - `"deflated"` — the Deflated Sharpe Ratio (DSR) is the Probabilistic Sharpe Ratio corrected
+        for the fact that a reported Sharpe ratio is often the best of many strategy variations,
+        parameter combinations, or lookback windows tried during a backtest (multiple testing /
+        selection bias / "backtest overfitting"). It estimates the Sharpe ratio one would expect to
+        observe purely by chance as the maximum of `n_trials` independent trials under the null
+        hypothesis of no skill, and uses that expected maximum as the benchmark SR* in the
+        Probabilistic Sharpe Ratio formula instead of a naive benchmark such as 0:
+
+            - SR* = sqrt(Var[SR_trials]) · [ (1 − γ)·Φ⁻¹(1 − 1/N) + γ·Φ⁻¹(1 − 1/(N·e)) ]
+
+        Where SR̂ is the observed Sharpe ratio, S (γ₃) is the skewness and K (γ₄) the non-excess
+        (raw) kurtosis of the same returns, n is the number of return observations, N is `n_trials`,
+        Var[SR_trials] is the variance of the Sharpe ratios observed across those N trials,
+        γ ≈ 0.5772 is the Euler-Mascheroni constant and Φ is the standard normal CDF. Since
+        DSR = PSR(SR*), it is always less than or equal to the Probabilistic Sharpe Ratio computed
+        against a benchmark of 0.
+
+        This codebase does not track "N literal strategy trials" — there is no record of how many
+        parameter combinations were tried before arriving at the current Toolkit configuration. As a
+        documented approximation, `Var[SR_trials]` is estimated from the variance of an auxiliary
+        *rolling* Sharpe ratio series (see `get_rolling_sharpe_ratio`) computed over a
+        `trials_window`-sized window across the full return history, and `n_trials` defaults to the
+        number of valid (non-NaN) values in that same rolling series. This treats each rolling
+        window as if it were one "trial" — a reasonable proxy for how dispersed the Sharpe ratio
+        could plausibly have been under different choices, but not a substitute for passing the
+        actual number of variations tried (via `n_trials`) when that is known, since the quality of
+        the correction depends directly on it.
+
         See definition: https://en.wikipedia.org/wiki/Sharpe_ratio
 
-        Also known as: risk-adjusted return, reward-to-variability ratio.
+        Also known as: risk-adjusted return, reward-to-variability ratio. The variants are also
+        known as the Pezier and White Adjusted Sharpe Ratio (ASR), the Sharpe ratio significance
+        probability (PSR) and the backtest overfitting or selection-bias-adjusted Sharpe ratio (DSR).
 
         Args:
             period (str, optional): The period to use for the calculation. Defaults to "quarterly" if the Toolkit is
                 initialised with quarterly=True, otherwise "yearly".
             rolling (int, optional): The rolling period to use for the calculation. If you select
             period = 'monthly' and set rolling to 12 you obtain the rolling 12-month Sharpe Ratio.
+            method (str, optional): Which Sharpe ratio to calculate, one of "standard", "adjusted",
+            "probabilistic" or "deflated", as described above. Defaults to "standard".
+            benchmark_sharpe_ratio (float, optional): The hypothesized or benchmark Sharpe ratio
+            (SR*) to test the observed Sharpe ratio against. Only used when method="probabilistic".
+            Defaults to 0.0, i.e. testing whether the strategy has any skill at all above doing nothing.
+            trials_window (int, optional): The window size (in units of `period`) used for the
+            auxiliary rolling Sharpe ratio series that approximates `Var[SR_trials]` and the
+            default `n_trials`, see above. Only used when method="deflated". Defaults to None, which
+            uses half of the available return history so that enough overlapping windows exist
+            regardless of `period` or date range.
+            n_trials (int, optional): The number of independent (or effectively independent)
+            strategy variations, parameter combinations, or lookback windows tried before
+            arriving at the reported Sharpe ratio. Only used when method="deflated". Defaults to
+            None, which falls back to the number of valid values in the auxiliary rolling Sharpe
+            ratio series described above. Pass this explicitly whenever the actual number of trials
+            is known.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
@@ -1722,13 +1791,17 @@ class Performance:
                 values. Defaults to False.
 
         Returns:
-            pd.DataFrame: Sharpe ratio values.
+            pd.DataFrame: Sharpe ratio values. For method="probabilistic" and method="deflated"
+            these are probabilities between 0 and 1 rather than ratios.
 
         Notes:
         - Daily Sharpe Ratio is not an option as the standard deviation for 1 day is close to zero. Therefore, it does
         not give any useful insights.
         - The method retrieves historical data and calculates the Sharpe ratio for each asset in the Toolkit instance.
         - The risk-free rate is often represented by the return of a risk-free investment, such as a Treasury bond.
+        - The "adjusted", "probabilistic" and "deflated" variants use the **non-excess (raw)** kurtosis
+        convention, i.e. a Normal distribution has a kurtosis of 3, not 0. Internally this calls
+        `risk_model.get_kurtosis(..., fisher=False)`.
         - If `growth` is set to True, the method calculates the growth of the ratio values using the specified `lag`.
 
         As an example:
@@ -1751,109 +1824,11 @@ class Performance:
         | 2024   | -2.8575 | -0.9845 |
         | 2025   | -2.0637 | -1.0411 |
         | 2026   | -2.4952 | -1.6057 |
-        """
-        period = period if period else "quarterly" if self._quarterly else "yearly"
 
-        if rolling:
-            period_returns = self._historical_data[period].loc[:, "Return"][
-                self._tickers_without_portfolio
-            ]
-            excess_return = performance_model.get_excess_return(
-                period_returns, self._risk_free_rate_data[period]
-            )
-            sharpe_ratio = performance_model.get_rolling_sharpe_ratio(
-                excess_return, rolling
-            )
-        else:
-            excess_return = self._within_historical_data[period].loc[
-                :, "Excess Return"
-            ][self._tickers_without_portfolio]
-            sharpe_ratio = performance_model.get_sharpe_ratio(excess_return)
-
-        return finalize_dataset(
-            dataset=sharpe_ratio,
-            start_date=self._start_date,
-            end_date=self._end_date,
-            default_rounding=self._rounding,
-            growth=growth,
-            lag=lag,
-            rounding=rounding,
-            standardize=standardize,
-            axis="rows",
-            row_slice=True,
-            dropna=True,
-        )
-
-    @handle_portfolio
-    @handle_errors
-    def get_probabilistic_sharpe_ratio(
-        self,
-        period: str | None = None,
-        rolling: int | None = None,
-        benchmark_sharpe_ratio: float = 0.0,
-        rounding: int | None = None,
-        growth: bool = False,
-        lag: int | list[int] = 1,
-        standardize: bool = False,
-    ):
-        """
-        Calculate the Probabilistic Sharpe Ratio (PSR), the probability that the true
-        (population) Sharpe ratio exceeds a benchmark Sharpe ratio, correcting the
-        naive Sharpe ratio significance test for skewed and fat-tailed returns.
-
-        A plain Sharpe ratio significance test (e.g. treating SR̂ as approximately
-        normally distributed) implicitly assumes Gaussian, i.i.d. returns. Real asset
-        and strategy returns are typically skewed and fat-tailed, which understates the
-        true uncertainty around the Sharpe ratio estimate and makes the naive test
-        overconfident. The PSR explicitly folds the skewness and (non-excess) kurtosis
-        of the underlying returns into the standard error of the Sharpe ratio, giving a
-        more honest probability that the strategy truly beats `benchmark_sharpe_ratio`
-        rather than 0 or 0.5 simply being a coincidence of a short, lumpy sample.
-
-        The formula is as follows:
-
-            - PSR(SR*) = Φ( (SR̂ − SR*) · sqrt(n − 1) / sqrt(1 − γ₃·SR̂ + ((γ₄ − 1) / 4)·SR̂²) )
-
-        Where SR̂ is the observed Sharpe ratio, SR* is `benchmark_sharpe_ratio`, γ₃ is
-        skewness, γ₄ is the non-excess (raw) kurtosis, n is the number of return
-        observations and Φ is the standard normal CDF.
-
-        Also known as: PSR, Sharpe ratio significance probability.
-
-        Args:
-            period (str, optional): The period to use for the calculation. Defaults to "quarterly" if the Toolkit is
-                initialised with quarterly=True, otherwise "yearly".
-            rolling (int, optional): The rolling period to use for the calculation. If you select
-            period = 'monthly' and set rolling to 12 you obtain the rolling 12-month Probabilistic
-            Sharpe Ratio.
-            benchmark_sharpe_ratio (float, optional): The hypothesized or benchmark Sharpe ratio
-            (SR*) to test the observed Sharpe ratio against. Defaults to 0.0, i.e. testing whether
-            the strategy has any skill at all above doing nothing.
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
-            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
-            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
-            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
-                combined with growth=True, standardizes the growth values instead of the raw
-                values. Defaults to False.
-
-        Returns:
-            pd.DataFrame: Probabilistic Sharpe Ratio values, between 0 and 1.
-
-        Notes:
-        - This uses the **non-excess (raw)** kurtosis convention, i.e. a Normal distribution has a
-        kurtosis of 3, not 0. Internally this calls `risk_model.get_kurtosis(..., fisher=False)`.
-        - The method retrieves historical data and calculates the Probabilistic Sharpe ratio for
-        each asset in the Toolkit instance, using the same excess returns as `get_sharpe_ratio`.
-        - If `growth` is set to True, the method calculates the growth of the ratio values using the specified `lag`.
-
-        As an example:
+        And, asking for the probability that these Sharpe ratios are genuine instead:
 
         ```python
-        from financetoolkit import Toolkit
-
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
-
-        toolkit.performance.get_probabilistic_sharpe_ratio()
+        toolkit.performance.get_sharpe_ratio(method="probabilistic")
         ```
 
         Which returns:
@@ -1867,205 +1842,85 @@ class Performance:
         | 2025   | 0.0000 | 0.0000 |
         | 2026   | 0.0000 | 0.0000 |
         """
+        if method not in ("standard", "adjusted", "probabilistic", "deflated"):
+            raise ValueError(
+                "Method must be standard, adjusted, probabilistic, or deflated."
+            )
+
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
-        if rolling:
+        # The deflated variant needs the full (non within period) return history to
+        # approximate how dispersed the Sharpe ratio is across trials, regardless of
+        # whether the ratio being tested is itself a rolling one.
+        if rolling or method == "deflated":
             period_returns = self._historical_data[period].loc[:, "Return"][
                 self._tickers_without_portfolio
             ]
-            excess_return = performance_model.get_excess_return(
+            full_excess_return = performance_model.get_excess_return(
                 period_returns, self._risk_free_rate_data[period]
             )
+
+        if rolling:
+            excess_return = full_excess_return
             sharpe_ratio = performance_model.get_rolling_sharpe_ratio(
                 excess_return, rolling
             )
-            skewness = get_rolling_skewness(excess_return, rolling)
-            kurtosis = get_rolling_kurtosis(excess_return, rolling, fisher=False)
-            n_observations = rolling
         else:
             excess_return = self._within_historical_data[period].loc[
                 :, "Excess Return"
             ][self._tickers_without_portfolio]
-
             sharpe_ratio = performance_model.get_sharpe_ratio(excess_return)
-            skewness = get_skewness(excess_return)
-            kurtosis = get_kurtosis(excess_return, fisher=False)
-            n_observations = excess_return.groupby(level=0).count()
 
-        probabilistic_sharpe_ratio = performance_model.get_probabilistic_sharpe_ratio(
-            sharpe_ratio=sharpe_ratio,
-            benchmark_sharpe_ratio=benchmark_sharpe_ratio,
-            skewness=skewness,
-            kurtosis=kurtosis,
-            n_observations=n_observations,
-        )
-
-        return finalize_dataset(
-            dataset=probabilistic_sharpe_ratio,
-            start_date=self._start_date,
-            end_date=self._end_date,
-            default_rounding=self._rounding,
-            growth=growth,
-            lag=lag,
-            rounding=rounding,
-            standardize=standardize,
-            axis="rows",
-            row_slice=True,
-            dropna=True,
-        )
-
-    @handle_portfolio
-    @handle_errors
-    def get_deflated_sharpe_ratio(
-        self,
-        period: str | None = None,
-        rolling: int | None = None,
-        trials_window: int | None = None,
-        n_trials: int | None = None,
-        rounding: int | None = None,
-        growth: bool = False,
-        lag: int | list[int] = 1,
-        standardize: bool = False,
-    ):
-        """
-        Calculate the Deflated Sharpe Ratio (DSR), the Probabilistic Sharpe Ratio
-        corrected for the fact that the reported Sharpe ratio is often the best of many
-        strategy variations, parameter combinations, or lookback windows tried during a
-        backtest (multiple testing / selection bias / "backtest overfitting").
-
-        The more variations that were tried, the more likely it is that at least one of
-        them shows an impressive Sharpe ratio by pure chance, even with zero true skill.
-        The DSR accounts for this by first estimating the Sharpe ratio one would expect
-        to observe, purely by chance, as the maximum of `n_trials` independent trials
-        under the null hypothesis of no skill, and then uses that expected maximum as
-        the benchmark (SR*) in the Probabilistic Sharpe Ratio formula, instead of a
-        naive benchmark such as 0.
-
-        The formula for the expected maximum Sharpe ratio benchmark is as follows:
-
-            - SR* = sqrt(Var[SR_trials]) · [ (1 − γ)·Φ⁻¹(1 − 1/N) + γ·Φ⁻¹(1 − 1/(N·e)) ]
-
-        Where N is `n_trials`, Var[SR_trials] is the variance of the Sharpe ratios
-        observed across those N trials, and γ ≈ 0.5772 is the Euler-Mascheroni constant.
-        DSR = PSR(SR*), i.e. it is always less than or equal to the Probabilistic Sharpe
-        Ratio computed against a benchmark of 0.
-
-        This codebase does not track "N literal strategy trials" — there is no record of
-        how many parameter combinations were tried before arriving at the current
-        Toolkit configuration. As a documented approximation, `Var[SR_trials]` is
-        estimated from the variance of an auxiliary *rolling* Sharpe ratio series (see
-        `get_rolling_sharpe_ratio`) computed over a `trials_window`-sized window across
-        the full return history, and `n_trials` defaults to the number of valid
-        (non-NaN) values in that same rolling series. This treats each rolling window as
-        if it were one "trial" — a reasonable proxy for how dispersed the Sharpe ratio
-        could plausibly have been under different choices, but not a substitute for
-        passing the actual number of variations tried (via `n_trials`) when that is
-        known, since the quality of the correction depends directly on it.
-
-        Also known as: DSR, backtest overfitting correction, selection-bias-adjusted Sharpe ratio.
-
-        Args:
-            period (str, optional): The period to use for the calculation. Defaults to "quarterly" if the Toolkit is
-                initialised with quarterly=True, otherwise "yearly".
-            rolling (int, optional): The rolling period to use for the primary Sharpe ratio
-            being tested. If you select period = 'monthly' and set rolling to 12 you obtain the
-            rolling 12-month Deflated Sharpe Ratio.
-            trials_window (int, optional): The window size (in units of `period`) used for the
-            auxiliary rolling Sharpe ratio series that approximates `Var[SR_trials]` and the
-            default `n_trials`, see the Notes above. Defaults to None, which uses half of the
-            available return history so that enough overlapping windows exist regardless of
-            `period` or date range.
-            n_trials (int, optional): The number of independent (or effectively independent)
-            strategy variations, parameter combinations, or lookback windows tried before
-            arriving at the reported Sharpe ratio. Defaults to None, which falls back to the
-            number of valid values in the auxiliary rolling Sharpe ratio series described above.
-            Pass this explicitly whenever the actual number of trials is known.
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
-            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
-            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
-            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
-                combined with growth=True, standardizes the growth values instead of the raw
-                values. Defaults to False.
-
-        Returns:
-            pd.DataFrame: Deflated Sharpe Ratio values, between 0 and 1.
-
-        Notes:
-        - This uses the **non-excess (raw)** kurtosis convention, i.e. a Normal distribution has a
-        kurtosis of 3, not 0. Internally this calls `risk_model.get_kurtosis(..., fisher=False)`.
-        - The method retrieves historical data and calculates the Deflated Sharpe ratio for
-        each asset in the Toolkit instance, using the same excess returns as `get_sharpe_ratio`.
-        - If `growth` is set to True, the method calculates the growth of the ratio values using the specified `lag`.
-
-        As an example:
-
-        ```python
-        from financetoolkit import Toolkit
-
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
-
-        toolkit.performance.get_deflated_sharpe_ratio()
-        ```
-
-        Which returns:
-
-        | Date   |   AAPL |   TSLA |
-        |:-------|-------:|-------:|
-        | 2021   | 0.0000 | 0.0000 |
-        | 2022   | 0.0000 | 0.0000 |
-        | 2023   | 0.0000 | 0.0000 |
-        | 2024   | 0.0000 | 0.0000 |
-        | 2025   | 0.0000 | 0.0000 |
-        | 2026   | 0.0000 | 0.0000 |
-        """
-        period = period if period else "quarterly" if self._quarterly else "yearly"
-
-        period_returns = self._historical_data[period].loc[:, "Return"][
-            self._tickers_without_portfolio
-        ]
-        full_excess_return = performance_model.get_excess_return(
-            period_returns, self._risk_free_rate_data[period]
-        )
-
-        trials_window = (
-            trials_window
-            if trials_window is not None
-            else max(2, len(period_returns) // 2)
-        )
-        trials_sharpe_ratio = performance_model.get_rolling_sharpe_ratio(
-            full_excess_return, trials_window
-        )
-        sharpe_ratio_variance = trials_sharpe_ratio.var()
-        trials = n_trials if n_trials is not None else trials_sharpe_ratio.count()
-
-        if rolling:
-            sharpe_ratio = performance_model.get_rolling_sharpe_ratio(
-                full_excess_return, rolling
-            )
-            skewness = get_rolling_skewness(full_excess_return, rolling)
-            kurtosis = get_rolling_kurtosis(full_excess_return, rolling, fisher=False)
-            n_observations = rolling
+        if method == "standard":
+            result = sharpe_ratio
         else:
-            excess_return = self._within_historical_data[period].loc[
-                :, "Excess Return"
-            ][self._tickers_without_portfolio]
+            if rolling:
+                skewness = get_rolling_skewness(excess_return, rolling)
+                kurtosis = get_rolling_kurtosis(excess_return, rolling, fisher=False)
+                n_observations = rolling
+            else:
+                skewness = get_skewness(excess_return)
+                kurtosis = get_kurtosis(excess_return, fisher=False)
+                n_observations = excess_return.groupby(level=0).count()
 
-            sharpe_ratio = performance_model.get_sharpe_ratio(excess_return)
-            skewness = get_skewness(excess_return)
-            kurtosis = get_kurtosis(excess_return, fisher=False)
-            n_observations = excess_return.groupby(level=0).count()
+            if method == "adjusted":
+                result = performance_model.get_adjusted_sharpe_ratio(
+                    sharpe_ratio=sharpe_ratio,
+                    skewness=skewness,
+                    kurtosis=kurtosis,
+                )
+            elif method == "probabilistic":
+                result = performance_model.get_probabilistic_sharpe_ratio(
+                    sharpe_ratio=sharpe_ratio,
+                    benchmark_sharpe_ratio=benchmark_sharpe_ratio,
+                    skewness=skewness,
+                    kurtosis=kurtosis,
+                    n_observations=n_observations,
+                )
+            else:
+                trials_window = (
+                    trials_window
+                    if trials_window is not None
+                    else max(2, len(full_excess_return) // 2)
+                )
+                trials_sharpe_ratio = performance_model.get_rolling_sharpe_ratio(
+                    full_excess_return, trials_window
+                )
+                trials = (
+                    n_trials if n_trials is not None else trials_sharpe_ratio.count()
+                )
 
-        deflated_sharpe_ratio = performance_model.get_deflated_sharpe_ratio(
-            sharpe_ratio=sharpe_ratio,
-            sharpe_ratio_variance=sharpe_ratio_variance,
-            n_trials=trials,
-            n_observations=n_observations,
-            skewness=skewness,
-            kurtosis=kurtosis,
-        )
+                result = performance_model.get_deflated_sharpe_ratio(
+                    sharpe_ratio=sharpe_ratio,
+                    sharpe_ratio_variance=trials_sharpe_ratio.var(),
+                    n_trials=trials,
+                    n_observations=n_observations,
+                    skewness=skewness,
+                    kurtosis=kurtosis,
+                )
 
         return finalize_dataset(
-            dataset=deflated_sharpe_ratio,
+            dataset=result,
             start_date=self._start_date,
             end_date=self._end_date,
             default_rounding=self._rounding,
@@ -4179,124 +4034,6 @@ class Performance:
 
         return finalize_dataset(
             dataset=fama_decomposition,
-            start_date=self._start_date,
-            end_date=self._end_date,
-            default_rounding=self._rounding,
-            growth=growth,
-            lag=lag,
-            rounding=rounding,
-            standardize=standardize,
-            axis="rows",
-            row_slice=True,
-            dropna=True,
-        )
-
-    @handle_portfolio
-    @handle_errors
-    def get_adjusted_sharpe_ratio(
-        self,
-        period: str | None = None,
-        rolling: int | None = None,
-        rounding: int | None = None,
-        growth: bool = False,
-        lag: int | list[int] = 1,
-        standardize: bool = False,
-    ):
-        """
-        Calculate the Adjusted Sharpe Ratio (ASR) of an investment portfolio or asset's
-        returns.
-
-        The Sharpe ratio only looks at the mean and standard deviation of returns,
-        implicitly assuming a Normal distribution. The Adjusted Sharpe Ratio (Pezier &
-        White, 2006) penalizes (or rewards) the Sharpe ratio for negative skewness and
-        excess kurtosis using a Cornish-Fisher-style expansion, so that two strategies
-        with the same Sharpe ratio but different tail shapes are no longer scored
-        identically.
-
-        The formula is as follows:
-
-        - ASR = SR * [1 + (S / 6) * SR − ((K − 3) / 24) * SR^2]
-
-        Where SR is the (ordinary, period) Sharpe ratio, S is the skewness of the same
-        returns, and K is the non-excess (raw) kurtosis of the same returns.
-
-        Also known as: Pezier and White Adjusted Sharpe Ratio.
-
-        Args:
-            period (str, optional): The period to use for the calculation. Defaults to "quarterly" if the Toolkit is
-                initialised with quarterly=True, otherwise "yearly".
-            rolling (int, optional): The rolling period to use for the calculation. If you select
-            period = 'monthly' and set rolling to 12 you obtain the rolling 12-month Adjusted
-            Sharpe Ratio.
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
-            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
-            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
-            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
-                combined with growth=True, standardizes the growth values instead of the raw
-                values. Defaults to False.
-
-        Returns:
-            pd.DataFrame: Adjusted Sharpe Ratio values.
-
-        Notes:
-        - This uses the **non-excess (raw)** kurtosis convention, i.e. a Normal distribution has a
-        kurtosis of 3, not 0. Internally this calls `risk_model.get_kurtosis(..., fisher=False)`,
-        the same convention documented in `get_probabilistic_sharpe_ratio`.
-        - Daily Adjusted Sharpe Ratio is not an option as the standard deviation for 1 day is close
-        to zero. Therefore, it does not give any useful insights.
-        - The method retrieves historical data and calculates the Adjusted Sharpe ratio for each
-        asset in the Toolkit instance, using the same excess returns as `get_sharpe_ratio`.
-        - If `growth` is set to True, the method calculates the growth of the ratio values using the specified `lag`.
-
-        As an example:
-
-        ```python
-        from financetoolkit import Toolkit
-
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
-
-        toolkit.performance.get_adjusted_sharpe_ratio()
-        ```
-
-        Which returns:
-
-        | Date   |    AAPL |    MSFT |
-        |:-------|--------:|--------:|
-        | 2020   | -0.2021 | -0.2502 |
-        | 2021   | -0.8212 | -0.9321 |
-        | 2022   | -1.2058 | -1.2489 |
-        """
-        period = period if period else "quarterly" if self._quarterly else "yearly"
-
-        if rolling:
-            period_returns = self._historical_data[period].loc[:, "Return"][
-                self._tickers_without_portfolio
-            ]
-            excess_return = performance_model.get_excess_return(
-                period_returns, self._risk_free_rate_data[period]
-            )
-            sharpe_ratio = performance_model.get_rolling_sharpe_ratio(
-                excess_return, rolling
-            )
-            skewness = get_rolling_skewness(excess_return, rolling)
-            kurtosis = get_rolling_kurtosis(excess_return, rolling, fisher=False)
-        else:
-            excess_return = self._within_historical_data[period].loc[
-                :, "Excess Return"
-            ][self._tickers_without_portfolio]
-
-            sharpe_ratio = performance_model.get_sharpe_ratio(excess_return)
-            skewness = get_skewness(excess_return)
-            kurtosis = get_kurtosis(excess_return, fisher=False)
-
-        adjusted_sharpe_ratio = performance_model.get_adjusted_sharpe_ratio(
-            sharpe_ratio=sharpe_ratio,
-            skewness=skewness,
-            kurtosis=kurtosis,
-        )
-
-        return finalize_dataset(
-            dataset=adjusted_sharpe_ratio,
             start_date=self._start_date,
             end_date=self._end_date,
             default_rounding=self._rounding,

@@ -244,29 +244,35 @@ def test_get_volatility(recorder, risk_module):
     recorder.capture(risk_module.get_volatility(period="monthly", rolling=6))
 
 
-def test_get_parkinson_volatility(recorder, risk_module):
-    recorder.capture(risk_module.get_parkinson_volatility())
-    recorder.capture(risk_module.get_parkinson_volatility(period="monthly"))
-    recorder.capture(risk_module.get_parkinson_volatility(growth=True))
-    recorder.capture(risk_module.get_parkinson_volatility(growth=True, lag=[1, 2, 3]))
+def test_get_volatility_parkinson(recorder, risk_module):
+    recorder.capture(risk_module.get_volatility(method="parkinson"))
+    recorder.capture(risk_module.get_volatility(method="parkinson", period="monthly"))
+    recorder.capture(risk_module.get_volatility(method="parkinson", growth=True))
+    recorder.capture(
+        risk_module.get_volatility(method="parkinson", growth=True, lag=[1, 2, 3])
+    )
 
 
-def test_get_garman_klass_volatility(recorder, risk_module):
-    recorder.capture(risk_module.get_garman_klass_volatility())
-    recorder.capture(risk_module.get_garman_klass_volatility(period="monthly"))
-    recorder.capture(risk_module.get_garman_klass_volatility(growth=True))
+def test_get_volatility_garman_klass(recorder, risk_module):
+    recorder.capture(risk_module.get_volatility(method="garman_klass"))
+    recorder.capture(
+        risk_module.get_volatility(method="garman_klass", period="monthly")
+    )
+    recorder.capture(risk_module.get_volatility(method="garman_klass", growth=True))
 
 
-def test_get_rogers_satchell_volatility(recorder, risk_module):
-    recorder.capture(risk_module.get_rogers_satchell_volatility())
-    recorder.capture(risk_module.get_rogers_satchell_volatility(period="monthly"))
-    recorder.capture(risk_module.get_rogers_satchell_volatility(growth=True))
+def test_get_volatility_rogers_satchell(recorder, risk_module):
+    recorder.capture(risk_module.get_volatility(method="rogers_satchell"))
+    recorder.capture(
+        risk_module.get_volatility(method="rogers_satchell", period="monthly")
+    )
+    recorder.capture(risk_module.get_volatility(method="rogers_satchell", growth=True))
 
 
-def test_get_yang_zhang_volatility(recorder, risk_module):
-    recorder.capture(risk_module.get_yang_zhang_volatility())
-    recorder.capture(risk_module.get_yang_zhang_volatility(period="monthly"))
-    recorder.capture(risk_module.get_yang_zhang_volatility(growth=True))
+def test_get_volatility_yang_zhang(recorder, risk_module):
+    recorder.capture(risk_module.get_volatility(method="yang_zhang"))
+    recorder.capture(risk_module.get_volatility(method="yang_zhang", period="monthly"))
+    recorder.capture(risk_module.get_volatility(method="yang_zhang", growth=True))
 
 
 def test_get_excess_volatility(recorder, risk_module):

@@ -1,6 +1,8 @@
 """Performance Controller Tests""" ""
 # pylint: disable=missing-function-docstring
 
+from functools import partial
+
 import pytest
 
 
@@ -160,39 +162,31 @@ def test_get_sharpe_ratio(recorder, performance_module):
     recorder.capture(performance_module.get_sharpe_ratio(growth=True, lag=[1, 2, 3]))
 
 
-def test_get_probabilistic_sharpe_ratio(recorder, performance_module):
-    recorder.capture(round(performance_module.get_probabilistic_sharpe_ratio(), 4))
-    recorder.capture(
-        performance_module.get_probabilistic_sharpe_ratio(period="quarterly")
-    )
-    recorder.capture(
-        performance_module.get_probabilistic_sharpe_ratio(period="monthly", rolling=6)
-    )
-    recorder.capture(
-        performance_module.get_probabilistic_sharpe_ratio(benchmark_sharpe_ratio=-0.5)
-    )
-    recorder.capture(performance_module.get_probabilistic_sharpe_ratio(growth=True))
-    recorder.capture(
-        performance_module.get_probabilistic_sharpe_ratio(growth=True, lag=[1, 2, 3])
-    )
+def test_get_sharpe_ratio_probabilistic(recorder, performance_module):
+    probabilistic = partial(performance_module.get_sharpe_ratio, method="probabilistic")
+
+    recorder.capture(round(probabilistic(), 4))
+    recorder.capture(probabilistic(period="quarterly"))
+    recorder.capture(probabilistic(period="monthly", rolling=6))
+    recorder.capture(probabilistic(benchmark_sharpe_ratio=-0.5))
+    recorder.capture(probabilistic(growth=True))
+    recorder.capture(probabilistic(growth=True, lag=[1, 2, 3]))
 
 
-def test_get_deflated_sharpe_ratio(recorder, performance_module):
-    recorder.capture(round(performance_module.get_deflated_sharpe_ratio(), 4))
-    recorder.capture(performance_module.get_deflated_sharpe_ratio(period="quarterly"))
-    recorder.capture(
-        performance_module.get_deflated_sharpe_ratio(period="monthly", rolling=6)
-    )
-    recorder.capture(performance_module.get_deflated_sharpe_ratio(n_trials=1))
-    recorder.capture(performance_module.get_deflated_sharpe_ratio(n_trials=50))
-    recorder.capture(performance_module.get_deflated_sharpe_ratio(growth=True))
-    recorder.capture(
-        performance_module.get_deflated_sharpe_ratio(growth=True, lag=[1, 2, 3])
-    )
+def test_get_sharpe_ratio_deflated(recorder, performance_module):
+    deflated = partial(performance_module.get_sharpe_ratio, method="deflated")
+
+    recorder.capture(round(deflated(), 4))
+    recorder.capture(deflated(period="quarterly"))
+    recorder.capture(deflated(period="monthly", rolling=6))
+    recorder.capture(deflated(n_trials=1))
+    recorder.capture(deflated(n_trials=50))
+    recorder.capture(deflated(growth=True))
+    recorder.capture(deflated(growth=True, lag=[1, 2, 3]))
 
     # More trials should never raise the probability, all else held fixed.
-    fewer_trials = performance_module.get_deflated_sharpe_ratio(n_trials=1)
-    more_trials = performance_module.get_deflated_sharpe_ratio(n_trials=50)
+    fewer_trials = deflated(n_trials=1)
+    more_trials = deflated(n_trials=50)
     assert (more_trials.fillna(0) <= fewer_trials.fillna(0) + 1e-9).all().all()
 
 
@@ -274,16 +268,14 @@ def test_get_fama_decomposition(recorder, performance_module):
     assert (reconstructed == jensens_alpha.round(2)).all().all()
 
 
-def test_get_adjusted_sharpe_ratio(recorder, performance_module):
-    recorder.capture(performance_module.get_adjusted_sharpe_ratio())
-    recorder.capture(performance_module.get_adjusted_sharpe_ratio(period="quarterly"))
-    recorder.capture(
-        performance_module.get_adjusted_sharpe_ratio(period="monthly", rolling=6)
-    )
-    recorder.capture(performance_module.get_adjusted_sharpe_ratio(growth=True))
-    recorder.capture(
-        performance_module.get_adjusted_sharpe_ratio(growth=True, lag=[1, 2, 3])
-    )
+def test_get_sharpe_ratio_adjusted(recorder, performance_module):
+    adjusted = partial(performance_module.get_sharpe_ratio, method="adjusted")
+
+    recorder.capture(adjusted())
+    recorder.capture(adjusted(period="quarterly"))
+    recorder.capture(adjusted(period="monthly", rolling=6))
+    recorder.capture(adjusted(growth=True))
+    recorder.capture(adjusted(growth=True, lag=[1, 2, 3]))
 
 
 def test_get_starr_ratio(recorder, performance_module):

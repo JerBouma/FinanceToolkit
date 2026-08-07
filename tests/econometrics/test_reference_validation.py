@@ -13,6 +13,8 @@ touches the network.
 
 # pylint: disable=missing-function-docstring,redefined-outer-name
 
+import warnings
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -32,6 +34,7 @@ from statsmodels.stats.diagnostic import (
 )
 from statsmodels.stats.outliers_influence import variance_inflation_factor
 from statsmodels.stats.stattools import durbin_watson, jarque_bera
+from statsmodels.tools.sm_exceptions import InterpolationWarning
 from statsmodels.tsa.api import VAR
 from statsmodels.tsa.arima.model import ARIMA
 from statsmodels.tsa.stattools import (
@@ -341,11 +344,13 @@ def test_augmented_dickey_fuller_and_kpss(macro):
     np.testing.assert_allclose(adf["P-Value"], reference_adf[1], rtol=1e-9)
 
     kpss_result = unitroot_model.get_kpss_test(series)
-    np.testing.assert_allclose(
-        kpss_result["KPSS Statistic"],
-        kpss(series, regression="c", nlags="auto")[0],
-        rtol=1e-9,
-    )
+    with warnings.catch_warnings():
+        # The statistic falls outside the p-value lookup table, which statsmodels warns
+        # about. `get_kpss_test` silences it on its own side, so the reference does too.
+        warnings.simplefilter("ignore", InterpolationWarning)
+        reference_kpss = kpss(series, regression="c", nlags="auto")[0]
+
+    np.testing.assert_allclose(kpss_result["KPSS Statistic"], reference_kpss, rtol=1e-9)
 
 
 def test_zivot_andrews(macro):
@@ -391,7 +396,13 @@ def test_cointegration_tests(macro):
     johansen = cointegration_model.get_johansen_cointegration(
         frame, det_order=0, k_ar_diff=1
     )
-    reference_johansen = coint_johansen(frame, det_order=0, k_ar_diff=1)
+    with warnings.catch_warnings():
+        # statsmodels' Johansen routine discards the imaginary part of its eigenvalues,
+        # which NumPy warns about. `get_johansen_cointegration` silences it on its own
+        # side, so the reference does too.
+        warnings.simplefilter("ignore", np.exceptions.ComplexWarning)
+        reference_johansen = coint_johansen(frame, det_order=0, k_ar_diff=1)
+
     np.testing.assert_allclose(
         johansen["Trace Statistic"].to_numpy(), reference_johansen.lr1, rtol=1e-9
     )
@@ -621,7 +632,9 @@ def test_arima_forecast(macro):
     result = time_series_model.get_arima_forecast(
         macro["log_gdp"], p=1, d=1, q=1, forecast_steps=5
     )
-    reference = ARIMA(macro["log_gdp"], order=(1, 1, 1), trend="t").fit()
+    # Passed as a frame, the same way `get_arima_forecast` does: handed a 1D endog,
+    # statsmodels reshapes it in place, which NumPy 2.5 deprecates.
+    reference = ARIMA(macro["log_gdp"].to_frame(), order=(1, 1, 1), trend="t").fit()
 
     np.testing.assert_allclose(
         result["forecast"], reference.forecast(5).to_numpy(), rtol=1e-6

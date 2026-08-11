@@ -77,9 +77,7 @@ def get_d2(
     Calculate d2 in the Black-Scholes model for option pricing.
 
     Args:
-        stock_price (float or pd.Series): The current stock price.
-        strike_price (float or pd.Series): The option's strike price.
-        risk_free_rate (float or pd.Series): The risk-free interest rate.
+        d1 (float or pd.Series): The d1 value, as calculated by get_d1.
         volatility (float or pd.Series): The volatility of the stock.
         time_to_expiration (float or pd.Series): The time to expiration of the option.
 

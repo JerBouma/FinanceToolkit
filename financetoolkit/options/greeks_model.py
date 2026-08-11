@@ -23,9 +23,11 @@ def get_delta(
     Args:
         stock_price (float): Series of stock prices.
         strike_price (float): Option strike price.
-        time_to_expiry (float): Time to option expiry (in years).
+        time_to_expiration (float): Time to option expiry (in years).
         risk_free_rate (float): Risk-free interest rate (annualized).
         volatility (float): Volatility of the underlying stock.
+        dividend_yield (float): Dividend yield (annualized). Defaults to 0.
+        put_option (bool): True if it's a put option, False for a call option.
 
     Returns:
         float: Option Delta values.
@@ -63,7 +65,7 @@ def get_dual_delta(
     Args:
         stock_price (float): Current stock price.
         strike_price (float): Option strike price.
-        time_to_expiry (float): Time to option expiry (in years).
+        time_to_expiration (float): Time to option expiry (in years).
         risk_free_rate (float): Risk-free interest rate (annualized).
         volatility (float): Volatility of the underlying stock.
         dividend_yield (float): Dividend yield (annualized). Defaults to 0.
@@ -111,6 +113,7 @@ def get_vega(
         time_to_expiration (float): Time to option expiry (in years).
         risk_free_rate (float): Risk-free interest rate (annualized).
         volatility (float): Volatility of the underlying stock.
+        dividend_yield (float): Dividend yield (annualized). Defaults to 0.
 
     Returns:
         float: Option Vega value.
@@ -348,6 +351,8 @@ def get_lambda(
         time_to_expiration (float): Time to option expiry (in years).
         risk_free_rate (float): Risk-free interest rate (annualized).
         volatility (float): Volatility of the underlying stock.
+        dividend_yield (float): Dividend yield (annualized). Defaults to 0.
+        put_option (bool): True if it's a put option, False for a call option.
 
     Returns:
         float: Option Lambda value.
@@ -428,11 +433,10 @@ def get_dual_gamma(
     Args:
         stock_price (float): Current stock price.
         strike_price (float): Option strike price.
-        time_to_expiry (float): Time to option expiry (in years).
+        time_to_expiration (float): Time to option expiry (in years).
         risk_free_rate (float): Risk-free interest rate (annualized).
         volatility (float): Volatility of the underlying stock.
         dividend_yield (float): Dividend yield (annualized). Defaults to 0.
-        put_option (bool): True if it's a put option, False for a call option.
 
     Returns:
         float: Dual Gamma value.
@@ -476,7 +480,6 @@ def get_vanna(
         risk_free_rate (float): Risk-free interest rate (annualized).
         volatility (float): Volatility of the underlying stock.
         dividend_yield (float): Dividend yield (annualized). Default is 0.0.
-        put_option (bool): True if it's a put option, False for a call option.
 
     Returns:
         float: Vanna value.
@@ -823,7 +826,7 @@ def get_zomma(
     Args:
         stock_price (float): Current stock price.
         strike_price (float): Option strike price.
-        time_to_expiry (float): Time to option expiry (in years).
+        time_to_expiration (float): Time to option expiry (in years).
         risk_free_rate (float): Risk-free interest rate (annualized).
         volatility (float): Volatility of the underlying stock.
         dividend_yield (float): Dividend yield (annualized). Defaults to 0.
@@ -865,7 +868,7 @@ def get_color(
     Args:
         stock_price (float): Current stock price.
         strike_price (float): Option strike price.
-        time_to_expiry (float): Time to option expiry (in years).
+        time_to_expiration (float): Time to option expiry (in years).
         risk_free_rate (float): Risk-free interest rate (annualized).
         volatility (float): Volatility of the underlying stock.
         dividend_yield (float): Dividend yield (annualized). Defaults to 0.
@@ -937,7 +940,7 @@ def get_ultima(
     Args:
         stock_price (float): Current stock price.
         strike_price (float): Option strike price.
-        time_to_expiry (float): Time to option expiry (in years).
+        time_to_expiration (float): Time to option expiry (in years).
         risk_free_rate (float): Risk-free interest rate (annualized).
         volatility (float): Volatility of the underlying stock.
         dividend_yield (float): Dividend yield (annualized). Defaults to 0.

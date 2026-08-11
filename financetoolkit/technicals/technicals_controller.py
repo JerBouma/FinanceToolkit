@@ -5163,8 +5163,10 @@ class Technicals:
 
         The formula is a follows:
 
-        - Sub-window Length = round((Window + 1) / 2)
-        - TMA = SMA(SMA(Close, Sub-window Length), Sub-window Length)
+        - For an odd window: Sub-window Length = (Window + 1) / 2, applied for both passes.
+        - For an even window: the two passes use different sub-window lengths, Window / 2
+          and Window / 2 + 1 (matching TA-Lib's TRIMA convention).
+        - TMA = SMA(SMA(Close, Sub-window Length 1), Sub-window Length 2)
 
         Also known as: TMA, triangular MA.
 

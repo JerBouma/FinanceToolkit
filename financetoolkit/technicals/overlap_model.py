@@ -151,8 +151,10 @@ def get_triangular_moving_average(prices: pd.Series, window: int) -> pd.Series:
 
     The formula is a follows:
 
-    - Sub-window Length = round((window + 1) / 2)
-    - TRIMA = SMA(SMA(Close, Sub-window Length), Sub-window Length)
+    - For an odd window: Sub-window Length = (window + 1) / 2, applied for both passes.
+    - For an even window: the two passes use different sub-window lengths, window / 2
+      and window / 2 + 1 (matching TA-Lib's TRIMA convention).
+    - TRIMA = SMA(SMA(Close, Sub-window Length 1), Sub-window Length 2)
 
     Also known as: TRIMA.
 
@@ -166,10 +168,14 @@ def get_triangular_moving_average(prices: pd.Series, window: int) -> pd.Series:
     Returns:
         pd.Series: TRIMA values.
     """
-    sub_window = max(round((window + 1) / 2), 1)
+    if window % 2 == 1:
+        sub_window_first = sub_window_second = max((window + 1) // 2, 1)
+    else:
+        sub_window_first = max(window // 2, 1)
+        sub_window_second = sub_window_first + 1
 
-    first_pass = prices.rolling(window=sub_window, min_periods=1).mean()
-    tri_ma = first_pass.rolling(window=sub_window, min_periods=1).mean()
+    first_pass = prices.rolling(window=sub_window_first, min_periods=1).mean()
+    tri_ma = first_pass.rolling(window=sub_window_second, min_periods=1).mean()
 
     return tri_ma
 
@@ -430,7 +436,9 @@ def get_parabolic_sar(
 
             if prices_low.iloc[i] < current_sar:
                 uptrend = False
-                current_sar = extreme_point
+                current_sar = max(
+                    extreme_point, prices_high.iloc[i], prices_high.iloc[i - 1]
+                )
                 extreme_point = prices_low.iloc[i]
                 af = af_start
             elif prices_high.iloc[i] > extreme_point:
@@ -444,7 +452,9 @@ def get_parabolic_sar(
 
             if prices_high.iloc[i] > current_sar:
                 uptrend = True
-                current_sar = extreme_point
+                current_sar = min(
+                    extreme_point, prices_low.iloc[i], prices_low.iloc[i - 1]
+                )
                 extreme_point = prices_high.iloc[i]
                 af = af_start
             elif prices_low.iloc[i] < extreme_point:

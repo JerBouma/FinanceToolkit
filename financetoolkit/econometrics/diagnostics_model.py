@@ -157,16 +157,16 @@ def get_jarque_bera_test(
 
 
 def get_ljung_box_test(
-    returns: pd.Series | pd.DataFrame, lags: int = 10
+    returns: pd.Series | pd.DataFrame, lags: int = 10, model_df: int = 0
 ) -> pd.Series | pd.DataFrame:
     """
     Calculate the Ljung-Box test for autocorrelation, via
     `statsmodels.stats.diagnostic.acorr_ljungbox`.
 
     The test aggregates the squared Autocorrelation Function up to lag `h` into a
-    single statistic that is asymptotically chi-squared distributed with `h` degrees
-    of freedom under the null hypothesis that the series exhibits no autocorrelation
-    up to that lag:
+    single statistic that is asymptotically chi-squared distributed with `h - model_df`
+    degrees of freedom under the null hypothesis that the series exhibits no
+    autocorrelation up to that lag:
 
     - Q = n * (n + 2) * SUM_{k=1}^{h} (rho_k^2 / (n - k))
 
@@ -187,10 +187,31 @@ def get_ljung_box_test(
     Args:
         returns (pd.Series | pd.DataFrame): A Series or Dataframe of returns.
         lags (int): The number of lags to test for autocorrelation up to. Defaults to 10.
+        model_df (int, optional): The number of ARMA parameters estimated on the series
+        that produced `returns`, subtracted from the chi-squared degrees of freedom.
+        Defaults to 0, which is correct for an OBSERVED series (raw returns). It is NOT
+        correct for the residuals of a fitted model: fitting `p + q` ARMA parameters uses
+        up `p + q` of the autocorrelations the statistic aggregates, so leaving this at 0
+        inflates the degrees of freedom and makes the test conservative (it under-rejects,
+        reporting a larger p-value than it should). Pass `p + q` when testing ARIMA/GARCH
+        residuals -- see Box, Pierce (1970) and Ljung, Box (1978).
 
     Returns:
         pd.Series | pd.DataFrame: The Ljung-Box statistic and its p-value.
+
+    Raises:
+        TypeError: If `returns` is not a pd.DataFrame or pd.Series.
+        ValueError: If `model_df` is negative or leaves no degrees of freedom
+        (`model_df >= lags`).
     """
+    if model_df < 0:
+        raise ValueError(f"model_df must be non-negative, received {model_df}.")
+    if model_df >= lags:
+        raise ValueError(
+            f"model_df ({model_df}) must be smaller than lags ({lags}) -- the "
+            "chi-squared distribution needs at least one degree of freedom left."
+        )
+
     if isinstance(returns, pd.DataFrame):
         if returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS:
             periods = returns.index.get_level_values(0).unique()
@@ -198,7 +219,9 @@ def get_ljung_box_test(
             valid_periods = []
 
             for sub_period in periods:
-                period_data = get_ljung_box_test(returns.loc[sub_period], lags=lags)
+                period_data = get_ljung_box_test(
+                    returns.loc[sub_period], lags=lags, model_df=model_df
+                )
 
                 if not period_data.empty:
                     period_data_list.append(period_data)
@@ -208,7 +231,9 @@ def get_ljung_box_test(
 
         return pd.DataFrame(
             {
-                column: get_ljung_box_test(returns[column], lags=lags)
+                column: get_ljung_box_test(
+                    returns[column], lags=lags, model_df=model_df
+                )
                 for column in returns.columns
             }
         )
@@ -220,7 +245,7 @@ def get_ljung_box_test(
             return pd.Series({"Ljung-Box Statistic": np.nan, "P-Value": np.nan})
 
         try:
-            result = acorr_ljungbox(values.to_numpy(), lags=[lags])
+            result = acorr_ljungbox(values.to_numpy(), lags=[lags], model_df=model_df)
         except (ValueError, np.linalg.LinAlgError):
             return pd.Series({"Ljung-Box Statistic": np.nan, "P-Value": np.nan})
 

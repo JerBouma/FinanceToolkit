@@ -1,3 +1,3 @@
 ,Coefficient,Std. Error,t-Statistic,P-Value
-Intercept,0.0016,0.0025,0.6396,0.5224
-MSFT,0.8681,0.0616,14.0885,0.0
+Intercept,0.0016,0.0025,0.6395,0.5225
+MSFT,0.8681,0.0616,14.085,0.0

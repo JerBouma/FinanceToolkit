@@ -4,7 +4,6 @@ __docformat__ = "google"
 
 import numpy as np
 import pandas as pd
-import statsmodels.api as sm
 from statsmodels.stats.weightstats import ttest_ind
 
 from financetoolkit.econometrics.regression_model import (
@@ -114,17 +113,24 @@ def _validate_nested_models(result_restricted: dict, result_unrestricted: dict) 
 
 def _refit(result: dict):
     """
-    Refits `result` (a regression result dict produced by `regression_model.get_ols`/
-    `get_wls`/`get_gls`) as a `statsmodels.api.OLS` results object on the exact same
-    (post-transform) design matrix and dependent variable, so the nested-model
-    comparison and restriction-testing functions below can delegate to `statsmodels`'
-    own `compare_f_test`/`compare_lr_test`/`wald_test` machinery rather than
-    reimplementing the RSS-ratio/quadratic-form formulas by hand. `y` is not stored on
-    `result` directly, but is exactly recoverable from `result["fitted_values"] +
-    result["residuals"]`.
+    Returns the fitted `statsmodels` results object behind `result` (a regression result
+    dict produced by `regression_model.get_ols`/`get_wls`/`get_gls`), so the nested-model
+    comparison and restriction-testing functions below can delegate to `statsmodels`' own
+    `compare_f_test`/`compare_lr_test`/`wald_test` machinery rather than reimplementing
+    the RSS-ratio/quadratic-form formulas by hand.
+
+    The fitted object is reused rather than refitted. Refitting as a plain OLS on the
+    stored design matrix would discard the robust or clustered covariance type as well as
+    the WLS weights and the GLS covariance structure, so a test on a robust or weighted
+    fit would silently report the result for an unweighted, non-robust one instead.
     """
-    target = result["fitted_values"] + result["residuals"]
-    return sm.OLS(target, result["design_matrix"]).fit()
+    if result.get("statsmodels_result") is None:
+        raise ValueError(
+            "This regression result carries no fitted model, so it cannot be used in a "
+            "nested-model test. Fit it with get_ols, get_wls or get_gls first."
+        )
+
+    return result["statsmodels_result"]
 
 
 def get_f_test(result_restricted: dict, result_unrestricted: dict) -> pd.Series:

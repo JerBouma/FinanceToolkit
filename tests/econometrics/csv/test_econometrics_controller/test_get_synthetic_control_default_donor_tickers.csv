@@ -1,9 +1,9 @@
 ,0
 Average Treatment Effect,0.0012
-Pre-Treatment RMSPE,0.0286
+Pre-Treatment RMSPE,0.0288
 Post-Treatment RMSPE,0.024
-RMSPE Ratio,0.8417
+RMSPE Ratio,0.8363
 P-Value,0.3333
 N Donors,2.0
-N Pre-Periods,78.0
+N Pre-Periods,77.0
 N Post-Periods,79.0

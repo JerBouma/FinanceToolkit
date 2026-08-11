@@ -199,7 +199,11 @@ def _from_statsmodels_ols(
         coefficients (np.ndarray): The estimated coefficients, shape `(k,)`.
         standard_errors (np.ndarray): The standard errors of the coefficients, shape `(k,)`.
         t_statistics (np.ndarray): The coefficients divided by their standard errors.
-        p_values (np.ndarray): Two-sided p-values from the Student-T(n - k) distribution.
+        p_values (np.ndarray): Two-sided p-values for those ratios. `cov_type="nonrobust"`
+        reads them off the Student-T(n - k) distribution; every robust estimator
+        ("HC0".."HC3", "cluster", "HAC") is an asymptotic result, so `statsmodels`
+        switches to the standard normal for those and `t_statistics` are then Wald
+        z-statistics rather than exact finite-sample t-statistics.
         residuals (np.ndarray): The residuals `y - X @ coefficients`, in `y`'s
         original (unweighted) scale for every estimator including WLS/GLS --
         `statsmodels` reserves its (internal, whitened-scale) `wresid` attribute for
@@ -250,6 +254,10 @@ def _from_statsmodels_ols(
         "feature_names": feature_names,
         "design_matrix": design_matrix,
         "cov_type": cov_type,
+        # The fitted statsmodels object is carried along so that the nested-model tests
+        # can delegate to its own machinery without refitting. Refitting from the design
+        # matrix alone would silently drop the covariance type and the WLS/GLS weights.
+        "statsmodels_result": sm_result,
     }
 
 
@@ -352,8 +360,8 @@ def get_ols(
 
     |               |   Coefficient |   Std. Error |   t-Statistic |   P-Value |
     |:--------------|---------------:|--------------:|---------------:|-----------:|
-    | Intercept     |         0.0198 |        0.0050 |         3.9601 |     0.0001 |
-    | Market Return |         1.2060 |        0.0062 |       193.6858 |     0.0000 |
+    | Intercept     |         0.0198 |        0.0049 |         4.0254 |     0.0001 |
+    | Market Return |         1.2060 |        0.0063 |       190.1749 |     0.0000 |
     """
     y_values = _to_target_vector(y)
     x_values, feature_names = _to_design_matrix(x, add_constant)
@@ -714,9 +722,11 @@ def get_probit_regression(
 
 def quantile_regression_summary_table(result: dict) -> pd.DataFrame:
     """
-    Builds the coefficient table (Coefficient, and Std. Error if bootstrap standard
-    errors were requested) from a `get_quantile_regression` result dict, indexed by
-    `result["feature_names"]`.
+    Builds the coefficient table (Coefficient, Std. Error) from a
+    `get_quantile_regression` result dict, indexed by `result["feature_names"]`. The
+    standard errors are `statsmodels`' analytic (kernel density-based) ones unless
+    the fit requested bootstrap replicates, in which case they are the bootstrap
+    ones -- either way they are always present.
 
     Args:
         result (dict): A fitted quantile regression result dict, as returned by
@@ -773,8 +783,10 @@ def get_quantile_regression(
     Returns:
         dict: The fitted coefficients and standard errors, residuals, fitted values
         and Koenker-Machado pseudo-R-squared -- keys `coefficients`,
-        `standard_errors` (`None` unless `n_bootstrap > 0`), `residuals`,
-        `fitted_values`, `pseudo_r_squared`, `tau`, `n_observations`, `n_parameters`,
+        `standard_errors` (the bootstrap standard deviation across replicates when
+        `n_bootstrap > 0`, otherwise `statsmodels`' analytic kernel density-based
+        ones -- always populated either way), `residuals`, `fitted_values`,
+        `pseudo_r_squared`, `tau`, `n_observations`, `n_parameters`,
         `feature_names`. Call `quantile_regression_summary_table` for a coefficient
         table.
 

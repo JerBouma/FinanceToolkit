@@ -22,6 +22,11 @@ DURBIN_WATSON_UPPER_BAND = 2.5
 # The nested F-test needs at least one added power term beyond the linear fit.
 MINIMUM_RESET_POWER = 2
 
+# `linear_reset` forwards covariance arguments under a name `fit()` does not accept,
+# so the two estimators that need extra arguments cannot be honoured -- see
+# `get_ramsey_reset_test`'s Notes.
+UNSUPPORTED_RESET_COV_TYPES = ("cluster", "HAC")
+
 
 def get_breusch_pagan_test(result: dict) -> pd.Series:
     """
@@ -237,6 +242,17 @@ def get_vif(x: pd.DataFrame) -> pd.Series:
     - `VIF > 10` is the conventional rule-of-thumb threshold for concerning
     multicollinearity (`VIF > 5` is sometimes used as a stricter cutoff); `VIF < 1`
     is not possible by construction.
+    - The auxiliary constant is added with `has_constant="add"` rather than
+    `statsmodels`' `"skip"` default. `"skip"` returns `x` unchanged whenever it
+    ALREADY contains a constant column under some other name (an always-1 dummy, or
+    a column with no variation over the sample), which silently shifts every
+    regressor one position left of the index `variance_inflation_factor` is called
+    with -- mislabelling every VIF and then running off the end of the matrix on the
+    last one with an `IndexError`. Forcing the column keeps the positions aligned, so
+    the genuine regressors keep their correct VIFs. The constant column itself still
+    reports a degenerate value: a regressor with no variance has no variance to
+    inflate, so its VIF is undefined rather than merely large -- drop such a column
+    before reading the result.
 
     For more information about the method, see the following paper:
 
@@ -247,7 +263,7 @@ def get_vif(x: pd.DataFrame) -> pd.Series:
         raise TypeError(f"x must be a pd.DataFrame, received {type(x).__name__}.")
 
     regressor_names = [column for column in x.columns if column != "Intercept"]
-    design = sm.add_constant(x[regressor_names].to_numpy())
+    design = sm.add_constant(x[regressor_names].to_numpy(), has_constant="add")
 
     vif_values = {
         regressor: variance_inflation_factor(design, index + 1)
@@ -303,12 +319,41 @@ def get_ramsey_reset_test(result: dict, power: int = 3) -> pd.Series:
         specification is rejected at the 5% level.
 
     Raises:
-        ValueError: If `power` is less than 2, or the augmented design is
+        ValueError: If `power` is less than 2, `result` was fit with a "cluster" or
+        "HAC" covariance estimator (see Notes), or the augmented design is
         rank-deficient or has too few observations relative to its parameters.
+
+    Notes:
+    - The Wald test on the added power terms uses the SAME covariance estimator
+    `result` itself was fit with, so a RESET on a heteroskedasticity-robust fit is
+    itself heteroskedasticity-robust. Reporting the classical statistic for a robust
+    fit would understate it (or overstate it) by whatever the robust correction is
+    worth -- exactly the reason the fit requested a robust covariance in the first
+    place.
+    - "cluster" and "HAC" fits are rejected rather than silently downgraded to the
+    classical statistic: `statsmodels`' `linear_reset` forwards its extra covariance
+    arguments to `fit()` under the name `cov_kwargs`, which `fit()` does not accept
+    (it takes `cov_kwds`), so the `groups`/`maxlags` those two estimators require
+    never arrive and the call fails. Refit with an "HC0".."HC3" covariance to run
+    RESET on it.
+    - The augmented model is always refit by ordinary least squares, so for a
+    `get_wls`/`get_gls` fit this is the RESET test of the OLS fit of the same `y` on
+    the same `X`, not of a weighted one -- `linear_reset` rebuilds the augmented
+    model from the design matrix alone and cannot carry weights or an error
+    covariance across either.
     """
     if power < MINIMUM_RESET_POWER:
         raise ValueError(
             f"power must be at least {MINIMUM_RESET_POWER}, received {power}."
+        )
+
+    cov_type = result.get("cov_type", "nonrobust")
+    if cov_type in UNSUPPORTED_RESET_COV_TYPES:
+        raise ValueError(
+            f"get_ramsey_reset_test cannot honour a {cov_type!r} covariance "
+            "estimator -- statsmodels' linear_reset cannot forward the "
+            "groups/maxlags it needs. Refit with an 'HC0'..'HC3' covariance (or "
+            "'nonrobust') to run RESET on it."
         )
 
     # y is recoverable as fitted_values + residuals, by construction.
@@ -316,7 +361,9 @@ def get_ramsey_reset_test(result: dict, power: int = 3) -> pd.Series:
 
     try:
         sm_result = sm.OLS(target, result["design_matrix"]).fit()
-        reset_result = linear_reset(sm_result, power=power, use_f=True)
+        reset_result = linear_reset(
+            sm_result, power=power, use_f=True, cov_type=cov_type
+        )
     except (ValueError, np.linalg.LinAlgError) as error:
         raise ValueError(
             "Could not fit the RESET-augmented regression -- the augmented design "

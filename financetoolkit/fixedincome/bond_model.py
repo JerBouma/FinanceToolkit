@@ -12,7 +12,31 @@ def get_bond_price(
     frequency: int = 1,
 ):
     """
-    Calculate the price of a bond.
+    Calculate the price of a bond as the present value of its remaining cash flows.
+
+    Every cash flow is discounted at the yield to maturity, which is treated as a
+    nominal annual rate compounded `frequency` times per year — i.e. the per-period
+    discount rate is `yield_to_maturity / frequency` and the number of periods is
+    `years_to_maturity * frequency`. This is the standard bond-market convention
+    (semi-annual compounding for U.S. Treasuries and corporates, annual for most
+    European government bonds) rather than continuous compounding.
+
+    Settlement is assumed to fall exactly on a coupon date, so the price returned is
+    a clean price with zero accrued interest and there is no fractional first period.
+
+    Also known as: present value of a bond, full price on a coupon date.
+
+    The formula is as follows:
+
+        Price = SUM_(t=1)^(n) [ (Coupon Rate * Par Value / m) / (1 + y / m)^t ]
+                + Par Value / (1 + y / m)^n
+
+    where m = frequency, y = yield to maturity and n = years_to_maturity * m.
+
+    A yield of zero, a coupon rate of zero (a zero-coupon bond) and a negative yield
+    are all handled correctly; only a yield of −m * 100% or below is undefined.
+
+    For more information, see: https://en.wikipedia.org/wiki/Bond_valuation
 
     Args:
         par_value (float): The face value of the bond.
@@ -58,6 +82,30 @@ def get_current_yield(par_value: float, coupon_rate: float, bond_price: float):
 def get_effective_yield(coupon_rate: float, frequency: int) -> float:
     """
     Calculate the effective yield of a bond, taking into account reinvestment of coupon payments.
+
+    The effective yield restates a nominal (stated) annual coupon rate on a compounded
+    basis, by assuming every coupon received during the year is reinvested at the same
+    rate until year-end. Whenever coupons are paid more than once a year the effective
+    yield therefore exceeds the nominal coupon rate; when they are paid annually the two
+    are identical.
+
+    Note the convention this function deliberately follows: the input is the bond's
+    **coupon rate**, not its yield to maturity, so the result is the effective annual
+    rate earned on the coupon stream of a bond bought at par. It is not the effective
+    annual yield to maturity of a bond trading away from par — for that, pass the yield
+    to maturity in place of the coupon rate, since the algebra is the same conversion of
+    a nominal annual rate compounded `frequency` times per year into an effective annual
+    rate.
+
+    Also known as: effective annual yield, effective annual rate, annual equivalent rate.
+
+    The formula is as follows:
+
+        Effective Yield = (1 + Coupon Rate / m)^m - 1
+
+    where m = frequency.
+
+    For more information, see: https://en.wikipedia.org/wiki/Effective_interest_rate
 
     Args:
         coupon_rate (float): The annual coupon rate (in decimal).
@@ -132,6 +180,23 @@ def get_macaulays_duration(
     Macaulay's duration is a measure of the weighted average time until the bond's cash flows are received.
     It takes into account the timing and amount of each cash flow, as well as the yield to maturity.
 
+    Because each cash flow is discounted with the same per-period rate that
+    `get_bond_price` uses, the weights are the present values of the cash flows as a
+    share of the bond's price, and the time attached to each weight is expressed in
+    **years** (t / frequency), so the result is in years regardless of the coupon
+    frequency.
+
+    Also known as: Macaulay duration, weighted average time to cash flow.
+
+    The formula is as follows:
+
+        Macaulay's Duration = SUM_(t=1)^(n) [ (t / m) * PV(CF_t) ] / Price
+
+    where m = frequency, n = years_to_maturity * m and PV(CF_t) is the present value of
+    the cash flow received in period t, discounted at (1 + y / m)^t.
+
+    For more information, see: https://en.wikipedia.org/wiki/Bond_duration#Macaulay_duration
+
     Args:
         par_value (float): The face value of the bond.
         coupon_rate (float): The annual coupon rate (in decimal).
@@ -176,6 +241,24 @@ def get_modified_duration(
     The modified duration of a bond measures the sensitivity of its price to changes in yield to maturity.
     It is a useful metric for assessing the interest rate risk associated with a bond investment.
 
+    It is Macaulay's duration divided by one plus the **per-period** yield, i.e. the yield
+    to maturity divided by the coupon frequency. Dividing by (1 + y) instead of
+    (1 + y / m) is a common error that overstates the sensitivity of a semi-annual bond;
+    the per-period division is what makes modified duration equal to the analytical
+    -(dP/dy) / P of the pricing formula.
+
+    Also known as: modified duration, adjusted duration, volatility of a bond.
+
+    The formula is as follows:
+
+        Modified Duration = Macaulay's Duration / (1 + y / m)
+
+    where m = frequency and y = yield to maturity. It estimates the percentage price
+    change for a one unit (100 percentage point) change in yield, so a modified duration
+    of 4.18 implies a 4.18% price fall for a 100 basis point rise in yield.
+
+    For more information, see: https://en.wikipedia.org/wiki/Bond_duration#Modified_duration
+
     Args:
         par_value (float): The face value of the bond.
         coupon_rate (float): The annual coupon rate (in decimal).
@@ -210,12 +293,33 @@ def get_effective_duration(
     The effective duration of a bond measures the sensitivity of the bond's price to changes in the yield to maturity.
     It provides an estimate of the percentage change in the bond's price for a given change in yield.
 
+    Unlike Macaulay's and modified duration, which are analytical yield-duration statistics
+    derived from a fixed schedule of cash flows, effective duration is a curve-duration
+    statistic obtained by actually repricing the bond after shifting the benchmark yield
+    up and down by the same amount. The bond is repriced in **both** directions and the
+    two prices are differenced symmetrically around the starting price: a one-sided shift
+    would inherit the curvature (convexity) of the price-yield relationship and
+    systematically understate the true sensitivity — by roughly 3% for a 5-year bond and
+    by more than 10% for a 30-year bond at a 100 basis point shift.
+
+    Also known as: curve duration, option-adjusted duration, OAD.
+
+    The formula is as follows:
+
+        Effective Duration = (V- - V+) / (2 * V0 * Δy)
+
+    where V- is the price after the yield is lowered by Δy, V+ is the price after the
+    yield is raised by Δy, V0 is the starting price and Δy = yield_change.
+
+    For more information, see: https://en.wikipedia.org/wiki/Bond_duration#Effective_duration
+
     Args:
         par_value (float): The face value of the bond.
         coupon_rate (float): The annual coupon rate (in decimal).
         years_to_maturity (float): The number of years until the bond matures.
         yield_to_maturity (float): The initial yield to maturity of the bond (in decimal).
-        yield_change (float): The change in yield (in decimal).
+        yield_change (float): The size of the shift applied to the yield, up and down
+            (in decimal). Defaults to 0.01 (100 basis points).
         frequency (int): The number of coupon payments per year.
 
     Returns:
@@ -226,14 +330,27 @@ def get_effective_duration(
         par_value, coupon_rate, years_to_maturity, yield_to_maturity, frequency
     )
 
-    # Calculate bond price at yield change
-    new_yield = yield_to_maturity + yield_change
-    new_price = get_bond_price(
-        par_value, coupon_rate, years_to_maturity, new_yield, frequency
+    # Reprice symmetrically around the starting yield, so that the curvature of the
+    # price-yield relationship cancels out instead of biasing the estimate downwards.
+    price_increased = get_bond_price(
+        par_value,
+        coupon_rate,
+        years_to_maturity,
+        yield_to_maturity + yield_change,
+        frequency,
+    )
+    price_decreased = get_bond_price(
+        par_value,
+        coupon_rate,
+        years_to_maturity,
+        yield_to_maturity - yield_change,
+        frequency,
     )
 
     # Calculate effective duration
-    effective_duration = -((new_price - initial_price) / (initial_price * yield_change))
+    effective_duration = (price_decreased - price_increased) / (
+        2 * initial_price * yield_change
+    )
 
     return effective_duration
 
@@ -278,6 +395,26 @@ def get_dv01(par_value, coupon_rate, years_to_maturity, yield_to_maturity, frequ
     """
     Calculate DV01 (Dollar Value of 01) of a bond.
 
+    DV01 is the change in a bond's price, expressed as a currency amount per `par_value`
+    of face, caused by a one basis point (0.01%) change in its yield. Where modified
+    duration is a percentage sensitivity, DV01 is an absolute one, which is what makes it
+    the natural unit for sizing a hedge: a position is hedged when the DV01 of the hedge
+    instrument, multiplied by its notional, offsets the DV01 of the position.
+
+    It is computed by repricing the bond one basis point above and one basis point below
+    the current yield and halving the difference, so the estimate is centred on the
+    current yield rather than biased by the curvature of the price-yield relationship.
+
+    Also known as: PV01, BPV, price value of a basis point, basis point value.
+
+    The formula is as follows:
+
+        DV01 = (Price(y - 0.0001) - Price(y + 0.0001)) / 2
+
+    Numerically this equals Modified Duration * Price / 10,000.
+
+    For more information, see: https://en.wikipedia.org/wiki/Bond_duration#DV01
+
     Args:
         par_value (float): The face value of the bond.
         coupon_rate (float): The annual coupon rate (in decimal).
@@ -286,7 +423,7 @@ def get_dv01(par_value, coupon_rate, years_to_maturity, yield_to_maturity, frequ
         frequency (int): The number of coupon payments per year.
 
     Returns:
-        float: The DV01 of the bond.
+        float: The DV01 of the bond, in the same currency units as par_value.
     """
     # Average absolute price change over a symmetric 1bp shift, via get_bond_price.
     yield_decreased = yield_to_maturity - 0.0001  # 1 basis point decrease
@@ -310,6 +447,31 @@ def get_convexity(
 ):
     """
     Calculate the convexity of a bond.
+
+    Convexity measures the curvature of the price-yield relationship, i.e. the rate at
+    which a bond's duration itself changes as the yield changes. Duration alone treats
+    that relationship as a straight line, which understates the price gain from a yield
+    fall and overstates the price loss from a yield rise; convexity is the second-order
+    term that corrects for this.
+
+    It is computed here as the annualised effective convexity, obtained by repricing the
+    bond one basis point above and one basis point below the current yield rather than
+    from a closed-form cash flow sum. Being expressed per unit (not per period) of annual
+    yield, it plugs directly into the second-order price approximation without any
+    frequency rescaling, and it already carries the 1 / (1 + y / m)^2 curvature of the
+    discount function rather than requiring it to be applied separately.
+
+    Also known as: effective convexity, second-order price sensitivity.
+
+    The formula is as follows:
+
+        Convexity = (Price(y + Δy) + Price(y - Δy) - 2 * Price(y)) / (Price(y) * Δy^2)
+
+    with Δy = 0.0001. It is consumed as the second term of
+    %ΔPrice ≈ -Modified Duration * Δy + 0.5 * Convexity * Δy^2 — see
+    `get_taylor_price_change`.
+
+    For more information, see: https://en.wikipedia.org/wiki/Bond_convexity
 
     Args:
         par_value (float): The face value of the bond.
@@ -492,11 +654,28 @@ def get_bond_equivalent_yield(discount_yield: float, days_to_maturity: float) ->
     a basis that is comparable to coupon-bearing bonds, making it possible to compare a
     T-bill's return directly against notes and bonds.
 
-    Also known as: BEY, coupon-equivalent yield.
+    Also known as: BEY, coupon-equivalent yield, investment rate.
 
-    The formula is as follows:
+    Two formulas apply, because a bill maturing in more than half a year would pay a
+    coupon along the way if it were a note, so its equivalent yield has to be compounded
+    once. For a bill with half a year (365 / 2 days) or less remaining the simple
+    restatement suffices:
 
         BEY = 365 * Discount Yield / (360 - Days to Maturity * Discount Yield)
+
+    For a bill with more than 182 days remaining, the U.S. Treasury (31 CFR 356,
+    Appendix B) solves the semi-annually compounded relationship
+    1 / Price = (1 + BEY / 2) * (1 + (t - 365 / 2) * BEY / 365) for BEY, which gives:
+
+        BEY = (-2t/365 + 2 * SQRT((t/365)^2 - (2t/365 - 1) * (1 - 1/Price)))
+              / (2t/365 - 1)
+
+    where t = days_to_maturity and Price = 1 - Discount Yield * t / 360 is the purchase
+    price per unit of face value. Applying the simple formula beyond 182 days ignores
+    that intermediate compounding and understates the yield.
+
+    A 365-day year is assumed throughout; the Treasury substitutes 366 when the holding
+    period spans a 29 February, which shifts the result by well under a basis point.
 
     For more information, see: https://en.wikipedia.org/wiki/Bond_equivalent_yield
 
@@ -509,6 +688,7 @@ def get_bond_equivalent_yield(discount_yield: float, days_to_maturity: float) ->
 
     Raises:
         TypeError: If discount_yield or days_to_maturity are not a float or int.
+        ValueError: If days_to_maturity is not positive.
     """
     if not isinstance(discount_yield, int | float):
         raise TypeError(
@@ -518,9 +698,25 @@ def get_bond_equivalent_yield(discount_yield: float, days_to_maturity: float) ->
         raise TypeError(
             f"Expected days_to_maturity to be a float or int, received {type(days_to_maturity)} instead."
         )
+    if days_to_maturity <= 0:
+        raise ValueError("days_to_maturity must be greater than 0.")
 
-    bond_equivalent_yield = (365 * discount_yield) / (
-        360 - days_to_maturity * discount_yield
+    # A bill of half a year or less pays nothing before maturity, so the discount yield
+    # only has to be restated onto the purchase price and a 365-day year. At exactly
+    # 365 / 2 days the compounded formula below degenerates to this same expression
+    # while its denominator goes to zero, so that point is routed here as well.
+    if days_to_maturity <= 365 / 2:
+        return (365 * discount_yield) / (360 - days_to_maturity * discount_yield)
+
+    # Beyond that, an equivalent note would have paid a coupon at the six month point,
+    # so the Treasury's semi-annually compounded solution is used instead.
+    purchase_price = 1 - discount_yield * days_to_maturity / 360
+    year_fraction = days_to_maturity / 365
+
+    discriminant = year_fraction**2 - (2 * year_fraction - 1) * (1 - 1 / purchase_price)
+
+    bond_equivalent_yield = (-2 * year_fraction + 2 * np.sqrt(discriminant)) / (
+        2 * year_fraction - 1
     )
 
     return bond_equivalent_yield

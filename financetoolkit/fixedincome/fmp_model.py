@@ -65,6 +65,14 @@ def get_treasury_rates(
         When a cache is active only the part of the range that is not already stored is
         paginated over, which is what makes the 40-request default bearable on repeat runs.
 
+        This function deliberately passes the rates through in percentage points, exactly as
+        the endpoint serves them, so that what is written to the cache stays a faithful mirror
+        of the upstream payload. `FixedIncome.get_treasury_rates` converts them to decimals
+        before returning them to the user, matching every other rate source in this module
+        (ECB, Euribor, Federal Reserve, FRED). Any other caller of this function must divide
+        by 100 itself before using these as a yield or spot rate anywhere in `bond_model` or
+        `yieldcurve_model`.
+
     Returns:
         pd.DataFrame: the Treasury par yield curve rates, in percentage points, indexed by date
         with one column per maturity.

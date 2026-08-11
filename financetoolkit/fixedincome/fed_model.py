@@ -108,7 +108,8 @@ def get_effective_federal_funds_rate() -> pd.DataFrame:
 
     effective_federal_funds_rate = collect_fed_data(fed_code)
 
-    # Convert to percentages
+    # The New York Fed publishes every rate column in percent, so they are divided
+    # by 100 into decimals. The volume column is a dollar amount and is left alone.
     effective_federal_funds_rate.loc[
         :, effective_federal_funds_rate.columns != "Volume ($Billions)"
     ] = (
@@ -134,7 +135,8 @@ def get_overnight_banking_funding_rate() -> pd.DataFrame:
 
     overnight_banking_funding_rate = collect_fed_data(fed_code)
 
-    # Convert to percentages
+    # The New York Fed publishes every rate column in percent, so they are divided
+    # by 100 into decimals. The volume column is a dollar amount and is left alone.
     overnight_banking_funding_rate.loc[
         :, overnight_banking_funding_rate.columns != "Volume ($Billions)"
     ] = (
@@ -160,7 +162,8 @@ def get_tri_party_general_collateral_rate() -> pd.DataFrame:
 
     tri_party_general_collateral_rate = collect_fed_data(fed_code)
 
-    # Convert to percentages
+    # The New York Fed publishes every rate column in percent, so they are divided
+    # by 100 into decimals. The volume column is a dollar amount and is left alone.
     tri_party_general_collateral_rate.loc[
         :, tri_party_general_collateral_rate.columns != "Volume ($Billions)"
     ] = (
@@ -186,7 +189,8 @@ def get_broad_general_collateral_rate() -> pd.DataFrame:
 
     broad_general_collateral_rate = collect_fed_data(fed_code)
 
-    # Convert to percentages
+    # The New York Fed publishes every rate column in percent, so they are divided
+    # by 100 into decimals. The volume column is a dollar amount and is left alone.
     broad_general_collateral_rate.loc[
         :, broad_general_collateral_rate.columns != "Volume ($Billions)"
     ] = (
@@ -212,7 +216,8 @@ def get_secured_overnight_financing_rate() -> pd.DataFrame:
 
     secured_overnight_financing_rate = collect_fed_data(fed_code)
 
-    # Convert to percentages
+    # The New York Fed publishes every rate column in percent, so they are divided
+    # by 100 into decimals. The volume column is a dollar amount and is left alone.
     secured_overnight_financing_rate.loc[
         :, secured_overnight_financing_rate.columns != "Volume ($Billions)"
     ] = (

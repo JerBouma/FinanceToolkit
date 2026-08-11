@@ -30,6 +30,15 @@ def get_forward_rate(
         Forward Rate = ((1 + far_rate)^far_maturity / (1 + near_rate)^near_maturity)
         ^(1 / (far_maturity - near_maturity)) - 1
 
+    Both the spot rates supplied and the forward rate returned are treated as **effective
+    annual** rates, i.e. compounded once per year, which is why the maturities appear
+    directly as exponents. Note that this is a different convention from
+    `get_par_yield` and `bond_model._get_bond_price_from_curve`, which read the same kind
+    of spot curve as nominal annual rates compounded `frequency` times per year. The two
+    coincide at frequency=1; at any other frequency a curve should not be passed to both
+    without first restating it, since a 4% nominal semi-annual rate is a 4.04% effective
+    annual one.
+
     For more information, see: https://en.wikipedia.org/wiki/Forward_rate
 
     Args:

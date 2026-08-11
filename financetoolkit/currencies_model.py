@@ -12,18 +12,38 @@ logger = logger_model.get_logger()
 
 # pylint: disable=comparison-with-itself,too-many-locals,protected-access
 
-# A handful of exchanges quote prices in a fractional unit of their currency rather than
-# in the currency itself: the London Stock Exchange quotes in pence (GBp), Johannesburg
-# in cents (ZAc) and Tel Aviv in agorot (ILA). No foreign exchange provider publishes a
-# rate against a fractional unit, so the rate retrieved for such a pair is the rate
-# against the major unit and has to be scaled by the number of minor units it contains.
-# Without that scaling a London listed company's statements end up a factor of 100 away
-# from its own share price, and every ratio that combines the two is wrong by 100.
+# LSE (GBp), JSE (ZAc), TASE (ILA) quote in a fractional unit; most providers only publish the major-unit rate.
 MINOR_CURRENCY_UNITS: dict[str, tuple[str, int]] = {
     "GBp": ("GBP", 100),
     "ZAc": ("ZAR", 100),  # codespell:ignore zar
     "ILA": ("ILS", 100),
 }
+
+# GBp resolves via the generic "=X" construction; ZAc needs this native FMP symbol; ILA has no listing on either provider.
+NATIVE_MINOR_UNIT_TICKERS: dict[tuple[str, str], str] = {
+    ("USD", "ZAc"): "USDZAC",
+}
+
+
+def get_fx_ticker(base_currency: str, quote_currency: str) -> str:
+    """
+    Returns the ticker to request historical exchange rate data for from a data
+    provider, for a given currency pair.
+
+    This is usually the generic BASE+QUOTE+"=X" convention (e.g. "USDGBp=X"), but a
+    handful of pairs are only listed under a provider-specific symbol instead, see
+    NATIVE_MINOR_UNIT_TICKERS.
+
+    Args:
+        base_currency (str): the currency the value being converted is expressed in.
+        quote_currency (str): the currency the value is being converted to.
+
+    Returns:
+        str: the ticker symbol to request historical exchange rate data for.
+    """
+    return NATIVE_MINOR_UNIT_TICKERS.get(
+        (base_currency, quote_currency), f"{base_currency}{quote_currency}=X"
+    )
 
 
 def get_minor_unit_factor(base_currency: str, quote_currency: str) -> float:
@@ -33,7 +53,9 @@ def get_minor_unit_factor(base_currency: str, quote_currency: str) -> float:
 
     An exchange rate is only ever published between major units, so converting USD
     reported statements onto a price quoted in pence needs the USD/GBP rate multiplied
-    by the 100 pence in a pound.
+    by the 100 pence in a pound. Pairs with a native minor-unit listing (see
+    NATIVE_MINOR_UNIT_TICKERS) are the exception: the retrieved rate is already
+    expressed in the fractional unit, so no further scaling is applied.
 
     Args:
         base_currency (str): the currency the value being converted is expressed in.
@@ -41,8 +63,12 @@ def get_minor_unit_factor(base_currency: str, quote_currency: str) -> float:
 
     Returns:
         float: the factor to multiply the exchange rate by. 1.0 when neither side of
-        the pair is quoted in a fractional unit.
+        the pair is quoted in a fractional unit, or when the pair is already natively
+        quoted in it.
     """
+    if (base_currency, quote_currency) in NATIVE_MINOR_UNIT_TICKERS:
+        return 1.0
+
     base_factor = MINOR_CURRENCY_UNITS.get(base_currency, ("", 1))[1]
     quote_factor = MINOR_CURRENCY_UNITS.get(quote_currency, ("", 1))[1]
 
@@ -174,6 +200,14 @@ def convert_currencies(
                         base_currency, quote_currency
                     )
 
+                    rates = exchange_rate_data.loc[periods, currency]
+
+                    if rates.isna().all():
+                        # Column exists (placeholder from a partly-failed batch fetch) but no provider published a rate.
+                        raise ValueError(
+                            f"No exchange rate data available for {currency}"
+                        )
+
                     if items_not_to_adjust is not None:
                         items_to_adjust = [
                             item
@@ -189,8 +223,7 @@ def convert_currencies(
 
                     financial_statement_data.loc[(ticker, items_to_adjust), :] = (
                         financial_statement_data.loc[(ticker, items_to_adjust), :].mul(
-                            exchange_rate_data.loc[periods, currency]
-                            * minor_unit_factor,
+                            rates * minor_unit_factor,
                             axis=1,
                         )
                     ).to_numpy()

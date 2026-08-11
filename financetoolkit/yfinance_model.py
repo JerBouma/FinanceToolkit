@@ -120,9 +120,9 @@ def get_financial_statement(
             :, ~financial_statement.columns.duplicated()
         ]
 
-    # Check for NaN values and fill them with 0
+    # Left as NaN, not filled with 0, matching the Toolkit-wide convention for unreported line items.
     if financial_statement.isna().to_numpy().any():
-        financial_statement = financial_statement.infer_objects(copy=False).fillna(0)
+        financial_statement = financial_statement.infer_objects(copy=False)
 
     return financial_statement
 

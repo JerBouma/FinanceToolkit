@@ -1061,13 +1061,11 @@ def get_analyst_estimates(
         analyst_estimates_total = pd.concat(analyst_estimates_dict, axis=0)
 
         try:
+            # "Number of Analysts" stays float64 (not int) so an unreported count stays NaN, not 0.
             analyst_estimates_total = analyst_estimates_total.astype(np.float64)
-            analyst_estimates_total.loc[:, "Number of Analysts", :].fillna(0).astype(
-                int
-            )
         except ValueError as error:
             logger.error(
-                "Not able to convert DataFrame to float64 and int due to %s. This could result in"
+                "Not able to convert DataFrame to float64 due to %s. This could result in"
                 "issues when values are zero and is predominantly relevant for "
                 "ratio calculations.",
                 error,

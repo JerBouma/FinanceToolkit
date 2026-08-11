@@ -3320,8 +3320,16 @@ class Toolkit:
 
         if self._daily_exchange_rate_data.empty or overwrite:
             if currencies_to_collect_data_for:
+                # A handful of pairs need a different ticker than the generic BASE+QUOTE+"=X" (see currencies_model.NATIVE_MINOR_UNIT_TICKERS).
+                fx_ticker_map = {
+                    currency: currencies_model.get_fx_ticker(
+                        currency[:3], currency[3:6]
+                    )
+                    for currency in currencies_to_collect_data_for
+                }
+
                 self._daily_exchange_rate_data, _ = _get_historical_data(
-                    tickers=currencies_to_collect_data_for,
+                    tickers=list(fx_ticker_map.values()),
                     api_key=self._api_key,
                     enforce_source=self._enforce_source,
                     start=self._lookback_start_date,
@@ -3337,6 +3345,41 @@ class Toolkit:
                     user_subscription=self._fmp_plan,
                     cache=self._cache,
                 )
+
+                if self._daily_exchange_rate_data.empty:
+                    # None of the requested pairs resolved on either provider; a NaN-filled placeholder keeps a valid date index so conversion can warn per ticker instead of failing outright.
+                    self._daily_exchange_rate_data = pd.DataFrame(
+                        data=float("nan"),
+                        index=pd.PeriodIndex(
+                            pd.date_range(
+                                start=self._lookback_start_date,
+                                end=self._end_date,
+                                freq="D",
+                            )
+                        ),
+                        columns=pd.MultiIndex.from_product(
+                            [
+                                [
+                                    "Open",
+                                    "High",
+                                    "Low",
+                                    "Close",
+                                    "Adj Close",
+                                    "Volume",
+                                    "Return",
+                                    "Cumulative Return",
+                                ],
+                                currencies_to_collect_data_for,
+                            ]
+                        ),
+                    )
+                else:
+                    # Map the requested ticker symbols back onto the canonical currency identifiers used everywhere else.
+                    self._daily_exchange_rate_data = (
+                        self._daily_exchange_rate_data.rename(
+                            columns={v: k for k, v in fx_ticker_map.items()}, level=1
+                        )
+                    )
             else:
                 # A placeholder DataFrame for when no conversion is needed.
                 self._daily_exchange_rate_data = pd.DataFrame(

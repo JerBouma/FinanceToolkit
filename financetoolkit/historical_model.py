@@ -73,6 +73,10 @@ def _first_observed_date(data: pd.DataFrame) -> pd.Timestamp | None:
         data.index.to_timestamp() if hasattr(data.index, "to_timestamp") else data.index
     )
 
+    if not isinstance(index, pd.DatetimeIndex):
+        # yfinance can return a non-empty, all-NaN frame with a RangeIndex for an unresolvable ticker.
+        return None
+
     return index.min()
 
 

@@ -78,7 +78,7 @@ def test_ken_french_factor_dataset_is_cached(cache, monkeypatch):
     )
     url = "https://example.invalid/factors.zip"
 
-    cache.set(source="KenFrench", dataset="factors", entity=url, data=dataset)
+    cache.set(source="KenFrench", dataset="factors_decimal", entity=url, data=dataset)
 
     def fail_on_request(*args, **kwargs):
         raise AssertionError("The dataset should have been served from the cache.")
@@ -97,7 +97,7 @@ def test_carhart_momentum_dataset_is_cached(cache, monkeypatch):
     )
     url = "https://example.invalid/momentum.zip"
 
-    cache.set(source="KenFrench", dataset="factors", entity=url, data=dataset)
+    cache.set(source="KenFrench", dataset="factors_decimal", entity=url, data=dataset)
 
     def fail_on_request(*args, **kwargs):
         raise AssertionError("The dataset should have been served from the cache.")

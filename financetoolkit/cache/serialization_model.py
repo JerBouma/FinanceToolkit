@@ -78,6 +78,55 @@ def decode_object(payload: bytes) -> Any:
     return pickle.loads(zlib.decompress(payload))  # noqa: S301
 
 
+def canonicalize(value: Any) -> Any:
+    """
+    Rewrite a parameter value into a form that hashes to exactly one key.
+
+    A cache key is only trustworthy if it is a total function of the arguments:
+    every value has to reach it, and two values that mean different things have
+    to reach it differently. Plain JSON does neither. It cannot represent a set,
+    a tuple or a date at all, so those would have to be dropped or stringified,
+    and it renders a tuple and a list identically and a non-string dictionary key
+    as its string form, so ``{1: "a"}`` and ``{"1": "a"}`` would collide.
+
+    Containers are therefore tagged with their type, mappings are sorted by their
+    canonical key so ordering cannot change the digest, sets are sorted so their
+    iteration order cannot either, and anything else is tagged with its class name
+    beside its representation so two unrelated objects that happen to print the
+    same do not merge. Booleans are handled before integers because ``True`` and
+    ``1`` are equal in Python and must not be for a key.
+
+    Args:
+        value (Any): The value to rewrite. Any object is accepted.
+
+    Returns:
+        Any: A JSON-serializable structure that is unique to the value.
+    """
+    if value is None or isinstance(value, str):
+        return value
+    if isinstance(value, bool):
+        return ["bool", value]
+    if isinstance(value, int):
+        return ["int", value]
+    if isinstance(value, float):
+        return ["float", repr(value)]
+    if isinstance(value, dict):
+        items = sorted(
+            ([canonicalize(key), canonicalize(item)] for key, item in value.items()),
+            key=lambda pair: json.dumps(pair[0]),
+        )
+
+        return ["dict", items]
+    if isinstance(value, tuple):
+        return ["tuple", [canonicalize(item) for item in value]]
+    if isinstance(value, list):
+        return ["list", [canonicalize(item) for item in value]]
+    if isinstance(value, set | frozenset):
+        return ["set", sorted((canonicalize(item) for item in value), key=json.dumps)]
+
+    return [type(value).__name__, str(value)]
+
+
 def create_cache_key(source: str, dataset: str, parameters: dict[str, Any]) -> str:
     """
     Build the deterministic key that identifies a cached dataset.
@@ -88,6 +137,9 @@ def create_cache_key(source: str, dataset: str, parameters: dict[str, Any]) -> s
     Only parameters that genuinely change the shape or meaning of the returned
     data (interval, period, source, currency, and so on) belong here.
 
+    Every parameter passes through ``canonicalize`` first, so nested structures,
+    lists and dictionaries all reach the digest and reach it in a fixed order.
+
     Args:
         source (str): The external data source, e.g. "fmp" or "oecd".
         dataset (str): The dataset within that source, e.g. "historical".
@@ -97,9 +149,12 @@ def create_cache_key(source: str, dataset: str, parameters: dict[str, Any]) -> s
         str: A SHA256 hex digest uniquely identifying this dataset variant.
     """
     canonical = json.dumps(
-        {"source": source, "dataset": dataset, "parameters": parameters},
+        {
+            "source": source,
+            "dataset": dataset,
+            "parameters": canonicalize(parameters),
+        },
         sort_keys=True,
-        default=str,
     )
 
     return hashlib.sha256(canonical.encode()).hexdigest()

@@ -5,13 +5,20 @@ __docformat__ = "google"
 import contextlib
 import sqlite3
 import time
-from datetime import date
+from collections.abc import Callable
 from pathlib import Path
 from threading import Lock
 
-from financetoolkit.cache.coverage_model import Interval, normalize_date
+from financetoolkit.cache.coverage_model import (
+    Interval,
+    merge_intervals,
+    normalize_date,
+)
 
 SCHEMA_VERSION = 1
+
+# How long a writer waits for another process to release the write lock.
+BUSY_TIMEOUT_SECONDS = 30
 
 # Three tables; source and dataset stay plain columns so clearing can be scoped.
 SCHEMA_STATEMENTS = (
@@ -102,7 +109,7 @@ class SQLiteBackend:
         return self._database_location
 
     @contextlib.contextmanager
-    def _connect(self):
+    def _connect(self, write: bool = False):
         """
         Yield a SQLite connection with write-ahead logging enabled.
 
@@ -110,16 +117,48 @@ class SQLiteBackend:
         context manager only commits, it does not close, so the connection is
         wrapped explicitly to avoid leaking file handles in long running servers.
 
+        Writers open an explicit ``BEGIN IMMEDIATE`` transaction. The database is
+        shared between the library and a long running MCP server, so a Python
+        lock cannot serialize anything: the write lock has to be taken in SQLite
+        itself, and it has to be taken *up front*. A deferred transaction that
+        only escalates to a write lock at its first ``INSERT`` cannot be retried
+        under write-ahead logging once another process has committed in the
+        meantime, so it fails with "database is locked" rather than waiting.
+
+        Args:
+            write (bool): True to take the database write lock for the duration of
+                the block, so that every statement inside it commits or rolls back
+                as one unit. False opens a plain read connection.
+
         Yields:
             sqlite3.Connection: An open connection guarded by the instance lock.
         """
         with self._lock:
-            connection = sqlite3.connect(self._database_location, timeout=30)
+            connection = sqlite3.connect(
+                self._database_location,
+                timeout=BUSY_TIMEOUT_SECONDS,
+                isolation_level=None,
+            )
             try:
+                connection.execute(
+                    f"PRAGMA busy_timeout={int(BUSY_TIMEOUT_SECONDS * 1000)}"
+                )
                 connection.execute("PRAGMA journal_mode=WAL")
                 connection.execute("PRAGMA synchronous=NORMAL")
-                yield connection
-                connection.commit()
+
+                if not write:
+                    yield connection
+                else:
+                    connection.execute("BEGIN IMMEDIATE")
+
+                    try:
+                        yield connection
+                    except BaseException:
+                        connection.execute("ROLLBACK")
+
+                        raise
+
+                    connection.execute("COMMIT")
             finally:
                 connection.close()
 
@@ -134,7 +173,7 @@ class SQLiteBackend:
         """
         Path(self._database_location).parent.mkdir(parents=True, exist_ok=True)
 
-        with self._connect() as connection:
+        with self._connect(write=True) as connection:
             for statement in SCHEMA_STATEMENTS:
                 connection.execute(statement)
 
@@ -181,33 +220,6 @@ class SQLiteBackend:
             ).fetchone()
 
         return row[0] if row else None
-
-    def write_series(
-        self,
-        key: str,
-        entity: str,
-        payload: bytes,
-        source: str = "",
-        dataset: str = "",
-    ) -> None:
-        """
-        Insert or replace the payload for a single entity of a dataset.
-
-        Args:
-            key (str): The dataset key.
-            entity (str): The entity within the dataset.
-            payload (bytes): The serialized payload to store.
-            source (str): The external data source, stored so the entry can be
-                cleared by source later on.
-            dataset (str): The dataset within that source, stored for the same reason.
-        """
-        with self._connect() as connection:
-            connection.execute(
-                "INSERT OR REPLACE INTO series "
-                "(key, entity, source, dataset, payload, updated_at) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
-                (key, entity, source, dataset, payload, time.time()),
-            )
 
     def read_coverage(
         self, key: str, entity: str, minimum_fetched_at: float = 0.0
@@ -257,28 +269,155 @@ class SQLiteBackend:
 
         return row[0] if row and row[0] is not None else None
 
-    def write_coverage(
-        self,
-        key: str,
-        entity: str,
-        start: date,
-        end: date,
-        source: str = "",
-        dataset: str = "",
-    ) -> None:
+    def read_entity_state(
+        self, key: str, entity: str, minimum_fetched_at: float = 0.0
+    ) -> tuple[list[Interval], list[Interval], bytes | None]:
         """
-        Record that a date range has been fetched for an entity.
+        Read everything the planner needs about an entity from one snapshot.
+
+        Reading the coverage and the payload over three separate connections lets
+        a concurrent writer commit in between, so the planner could see coverage
+        that does not describe the payload it read. A single connection gives one
+        consistent view of both.
 
         Args:
             key (str): The dataset key.
             entity (str): The entity within the dataset.
-            start (date): The inclusive start of the fetched range.
-            end (date): The inclusive end of the fetched range.
+            minimum_fetched_at (float): Coverage fetched before this Unix timestamp
+                counts as stale and is excluded from the second list.
+
+        Returns:
+            tuple[list[Interval], list[Interval], bytes | None]: Every recorded
+                interval, the intervals still within their time-to-live, and the
+                stored payload (None when nothing is cached).
+        """
+        with self._connect() as connection:
+            ever_rows = connection.execute(
+                "SELECT start_date, end_date, fetched_at FROM coverage "
+                "WHERE key = ? AND entity = ?",
+                (key, entity),
+            ).fetchall()
+            payload_row = connection.execute(
+                "SELECT payload FROM series WHERE key = ? AND entity = ?",
+                (key, entity),
+            ).fetchone()
+
+        ever_covered = [
+            (normalize_date(start), normalize_date(end)) for start, end, _ in ever_rows
+        ]
+        fresh_covered = [
+            (normalize_date(start), normalize_date(end))
+            for start, end, fetched_at in ever_rows
+            if fetched_at >= minimum_fetched_at
+        ]
+
+        return ever_covered, fresh_covered, payload_row[0] if payload_row else None
+
+    def store_series_and_coverage(
+        self,
+        key: str,
+        entity: str,
+        merge_payload: Callable[[bytes | None], bytes],
+        coverage: Interval | None = None,
+        source: str = "",
+        dataset: str = "",
+        compaction_threshold: int = 0,
+    ) -> None:
+        """
+        Write a payload and the range it covers as one indivisible unit.
+
+        Reading the stored payload, merging the new rows into it and recording the
+        coverage are three steps that only mean anything together. Spread over
+        separate connections, two processes storing different ranges of the same
+        entity both read the same starting payload, and the second write silently
+        discards the first one's rows while both coverage rows survive: the cache
+        then reports a range as fully held that it never stored. Taking the write
+        lock up front and committing once makes the two writers queue instead, so
+        the second merges on top of what the first actually wrote.
+
+        Args:
+            key (str): The dataset key.
+            entity (str): The entity within the dataset.
+            merge_payload (Callable[[bytes | None], bytes]): Receives the payload
+                currently stored (None when absent) and returns the payload to
+                store. Called with the write lock held, so it must not touch the
+                database itself.
+            coverage (Interval | None): The inclusive range the payload now covers.
+                None records no coverage, which is what a dataset without a date
+                dimension needs.
             source (str): The external data source, stored so the entry can be
                 cleared by source later on.
             dataset (str): The dataset within that source, stored for the same reason.
+            compaction_threshold (int): Collapse the entity's coverage rows into
+                merged intervals once there are at least this many. Zero disables
+                compaction.
         """
-        with self._connect() as connection:
+        with self._connect(write=True) as connection:
+            existing = connection.execute(
+                "SELECT payload FROM series WHERE key = ? AND entity = ?",
+                (key, entity),
+            ).fetchone()
+
+            payload = merge_payload(existing[0] if existing else None)
+            now = time.time()
+
+            connection.execute(
+                "INSERT OR REPLACE INTO series "
+                "(key, entity, source, dataset, payload, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (key, entity, source, dataset, payload, now),
+            )
+
+            if coverage is None:
+                return
+
+            self._upsert_coverage(
+                connection, key, entity, coverage, source, dataset, now
+            )
+
+            if compaction_threshold > 0:
+                self._compact_coverage(
+                    connection, key, entity, source, dataset, compaction_threshold
+                )
+
+    @staticmethod
+    def _upsert_coverage(
+        connection: sqlite3.Connection,
+        key: str,
+        entity: str,
+        interval: Interval,
+        source: str,
+        dataset: str,
+        fetched_at: float,
+    ) -> None:
+        """
+        Record a fetched range, refreshing it rather than duplicating it.
+
+        Storing the identical range twice would say nothing the first row does not
+        already say, so a retried or repeated write updates the existing row's
+        timestamp instead of inserting beside it. Without that, every rerun inside
+        the revision window would add another row to compact away.
+
+        Args:
+            connection (sqlite3.Connection): An open connection inside a write
+                transaction.
+            key (str): The dataset key.
+            entity (str): The entity within the dataset.
+            interval (Interval): The inclusive range that was fetched.
+            source (str): The external data source, carried onto the row.
+            dataset (str): The dataset within that source, carried onto the row.
+            fetched_at (float): The Unix timestamp to record.
+        """
+        start, end = interval
+        parameters = (key, entity, start.isoformat(), end.isoformat())
+
+        updated = connection.execute(
+            "UPDATE coverage SET fetched_at = ?, source = ?, dataset = ? "
+            "WHERE key = ? AND entity = ? AND start_date = ? AND end_date = ?",
+            (fetched_at, source, dataset, *parameters),
+        ).rowcount
+
+        if updated == 0:
             connection.execute(
                 "INSERT INTO coverage "
                 "(key, entity, source, dataset, start_date, end_date, fetched_at) "
@@ -290,58 +429,70 @@ class SQLiteBackend:
                     dataset,
                     start.isoformat(),
                     end.isoformat(),
-                    time.time(),
+                    fetched_at,
                 ),
             )
 
-    def replace_coverage(
-        self,
+    @staticmethod
+    def _compact_coverage(
+        connection: sqlite3.Connection,
         key: str,
         entity: str,
-        intervals: list[Interval],
-        fetched_at: float,
-        source: str = "",
-        dataset: str = "",
+        source: str,
+        dataset: str,
+        threshold: int,
     ) -> None:
         """
-        Overwrite all coverage rows for an entity with a compacted interval list.
+        Collapse an entity's coverage rows once they have accumulated.
 
-        Coverage rows accumulate one per fetch, so an entity refreshed daily would
-        grow an unbounded number of overlapping rows. Periodically collapsing them
-        into merged intervals keeps the table small without losing information.
+        Runs inside the caller's write transaction so that the rows are never
+        momentarily absent to another process. Merged rows inherit the oldest of
+        the timestamps they replace, so compaction can never make a stale range
+        look freshly fetched.
 
         Args:
+            connection (sqlite3.Connection): An open connection inside a write
+                transaction.
             key (str): The dataset key.
             entity (str): The entity within the dataset.
-            intervals (list[Interval]): The merged intervals to store.
-            fetched_at (float): The Unix timestamp to record for every interval.
-                The oldest original timestamp is normally used so that compaction
-                never makes stale data look fresh.
-            source (str): The external data source, stored so the entry can be
-                cleared by source later on.
-            dataset (str): The dataset within that source, stored for the same reason.
+            source (str): The external data source, carried onto the rewritten rows.
+            dataset (str): The dataset within that source, carried onto the rewritten rows.
+            threshold (int): The number of rows at which compaction kicks in.
         """
-        with self._connect() as connection:
-            connection.execute(
-                "DELETE FROM coverage WHERE key = ? AND entity = ?", (key, entity)
-            )
-            connection.executemany(
-                "INSERT INTO coverage "
-                "(key, entity, source, dataset, start_date, end_date, fetched_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?)",
-                [
-                    (
-                        key,
-                        entity,
-                        source,
-                        dataset,
-                        start.isoformat(),
-                        end.isoformat(),
-                        fetched_at,
-                    )
-                    for start, end in intervals
-                ],
-            )
+        rows = connection.execute(
+            "SELECT start_date, end_date, fetched_at FROM coverage "
+            "WHERE key = ? AND entity = ?",
+            (key, entity),
+        ).fetchall()
+
+        if len(rows) < threshold:
+            return
+
+        merged = merge_intervals(
+            [(normalize_date(start), normalize_date(end)) for start, end, _ in rows]
+        )
+        oldest = min(fetched_at for _, _, fetched_at in rows)
+
+        connection.execute(
+            "DELETE FROM coverage WHERE key = ? AND entity = ?", (key, entity)
+        )
+        connection.executemany(
+            "INSERT INTO coverage "
+            "(key, entity, source, dataset, start_date, end_date, fetched_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            [
+                (
+                    key,
+                    entity,
+                    source,
+                    dataset,
+                    start.isoformat(),
+                    end.isoformat(),
+                    oldest,
+                )
+                for start, end in merged
+            ],
+        )
 
     def read_blob(self, key: str, entity: str) -> tuple[bytes, float] | None:
         """
@@ -382,7 +533,7 @@ class SQLiteBackend:
                 cleared by source later on.
             dataset (str): The dataset within that source, stored for the same reason.
         """
-        with self._connect() as connection:
+        with self._connect(write=True) as connection:
             connection.execute(
                 "INSERT OR REPLACE INTO blobs "
                 "(key, entity, source, dataset, payload, updated_at) "
@@ -464,7 +615,7 @@ class SQLiteBackend:
         clause = f" WHERE {' AND '.join(conditions)}" if conditions else ""
         deleted = 0
 
-        with self._connect() as connection:
+        with self._connect(write=True) as connection:
             for table in ALL_TABLES:
                 rowcount = connection.execute(
                     f"DELETE FROM {table}{clause}",  # noqa: S608
@@ -510,7 +661,7 @@ class SQLiteBackend:
         clause = "".join(f" AND {condition}" for condition in scope_conditions)
         deleted = 0
 
-        with self._connect() as connection:
+        with self._connect(write=True) as connection:
             for table in ALL_TABLES:
                 timestamp_column = "fetched_at" if table == "coverage" else "updated_at"
                 deleted += connection.execute(
@@ -527,7 +678,7 @@ class SQLiteBackend:
         Returns:
             int: The number of rows deleted across all tables.
         """
-        with self._connect() as connection:
+        with self._connect(write=True) as connection:
             deleted = connection.execute("DELETE FROM series").rowcount
             deleted += connection.execute("DELETE FROM blobs").rowcount
             deleted += connection.execute("DELETE FROM coverage").rowcount

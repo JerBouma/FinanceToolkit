@@ -296,6 +296,107 @@ class ControllerInspector:
                     seen[p.name] = p
         return list(seen.values())
 
+    def collect_group_parameter_defaults(
+        self,
+        cls: type | None,
+        group_methods: list[str],
+        collect_method: str | None,
+        method_to_cls: dict[str, type] | None = None,
+    ) -> dict[str, dict[str, Any]]:
+        """
+        Return, per extra parameter, the default each method in the group gives it.
+
+        One router tool fronts every indicator in its group, so a parameter name
+        shared by several of them can only carry one default in the generated
+        schema. ``collect_group_extra_params`` resolves that by first-seen wins,
+        which is fine for building the signature but hides a real disagreement:
+        ``window`` defaults to 20 on the Chaikin Money Flow and to 252 on the
+        New Highs / New Lows, and only one of those can be advertised. Recording
+        every method's own default lets the caller decide what to do about it
+        instead of silently applying whichever method happened to be inspected
+        first.
+
+        A method that requires the parameter is recorded with
+        ``inspect.Parameter.empty``, so "required here" is distinguishable from
+        "defaults to None here".
+
+        Args:
+            cls (type | None): Default class to inspect. May be None when
+                method_to_cls provides per-method class overrides (Mixed groups).
+            group_methods (list[str]): Method names that belong to the router group.
+            collect_method (str | None): Optional collect_* method name to include.
+            method_to_cls (dict[str, type] | None): Optional per-method class override.
+
+        Returns:
+            dict[str, dict[str, Any]]: Parameter name to a mapping of method name to
+                the default that method declares for it.
+        """
+        all_methods = list(group_methods)
+
+        if collect_method:
+            all_methods.append(collect_method)
+
+        defaults: dict[str, dict[str, Any]] = {}
+
+        for meth_name in all_methods:
+            target_cls = (method_to_cls or {}).get(meth_name) if method_to_cls else cls
+
+            if target_cls is None:
+                target_cls = cls
+            if target_cls is None:
+                continue
+
+            meth_func = getattr(target_cls, meth_name, None)
+
+            if meth_func is None:
+                continue
+
+            for p in self.extract_extra_params(meth_func):
+                defaults.setdefault(p.name, {})[meth_name] = p.default
+
+        return defaults
+
+    @staticmethod
+    def find_disputed_parameters(
+        parameter_defaults: dict[str, dict[str, Any]],
+    ) -> set[str]:
+        """
+        Return the parameters whose default the group cannot agree on.
+
+        A parameter is disputed when two indicators in the same group declare
+        different defaults for it, or when at least one indicator requires it and
+        so has no default to advertise at all. Those are exactly the parameters
+        where baking one value into the tool schema would answer a question the
+        caller never asked.
+
+        Args:
+            parameter_defaults (dict[str, dict[str, Any]]): Per parameter, the
+                default declared by each method, as returned by
+                ``collect_group_parameter_defaults``.
+
+        Returns:
+            set[str]: The names of the disputed parameters.
+        """
+        disputed: set[str] = set()
+
+        for name, per_method in parameter_defaults.items():
+            values = list(per_method.values())
+
+            if any(value is inspect.Parameter.empty for value in values):
+                disputed.add(name)
+
+                continue
+
+            first = values[0]
+
+            # Compared with `==` because a default may be an unhashable list.
+            if any(
+                type(value) is not type(first) or value != first for value in values[1:]
+            ):
+                disputed.add(name)
+
+        return disputed
+
     def build_common_signature_params(
         self,
         category: str,

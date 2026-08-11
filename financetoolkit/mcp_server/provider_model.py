@@ -8,6 +8,7 @@ import hashlib
 import inspect
 import os
 import time
+from importlib import metadata
 from threading import Lock
 from typing import Any
 
@@ -33,6 +34,13 @@ FRED_API_KEY: str = os.environ.get("FRED_API_KEY", "")
 # Tool responses are computed output, so they sit under their own source.
 MCP_CACHE_SOURCE = policy_model.MCP
 MCP_CACHE_DATASET = "tool"
+
+# Part of every tool response cache key, so a release that changes a formula can
+# never be answered from the previous release's cached numbers.
+try:
+    TOOLKIT_VERSION: str = metadata.version("financetoolkit")
+except metadata.PackageNotFoundError:  # pragma: no cover - running from a checkout
+    TOOLKIT_VERSION = "unknown"
 
 
 class ToolkitProvider:
@@ -165,6 +173,11 @@ class ToolkitProvider:
                 )
 
         cache_params = {
+            # Unlike every other entry in this database, an MCP tool response is
+            # computed rather than fetched, so its meaning depends on the formulas
+            # of the release that produced it. Keying by version means an upgrade
+            # can never answer from the previous release's arithmetic.
+            "financetoolkit_version": TOOLKIT_VERSION,
             "module": module_name,
             "method": method_name,
             "tickers": sorted(t.upper() for t in tickers) if tickers else [],
@@ -173,11 +186,12 @@ class ToolkitProvider:
             "end": end_date,
             "quarterly": quarterly,
             "benchmark_ticker": benchmark_ticker,
-            **{
-                k: v
-                for k, v in method_kwargs.items()
-                if isinstance(v, str | int | float | bool | type(None))
-            },
+            # Every keyword argument, whatever its type. Filtering to scalars here
+            # dropped list-valued arguments from the key entirely, so `lag=[1, 4]`
+            # and `lag=[5, 10]` hashed the same and the second call was answered
+            # with the first one's frame. The key derivation canonicalises nested
+            # structures itself, so nothing has to be excluded to keep it stable.
+            **method_kwargs,
         }
 
         # A falsy TTL disables caching, so skip both the read and the write.
@@ -311,11 +325,43 @@ class ToolkitProvider:
             return notes
 
         fy_adj: dict = getattr(toolkit, "_fiscal_year_adjustments", {})
-        fy_tickers = [
-            ticker
-            for ticker, adjustments in fy_adj.items()
-            if any(a.get("fiscal_year") != a.get("calendar_year") for a in adjustments)
-        ]
+        fy_tickers = []
+
+        for ticker, adjustments in fy_adj.items():
+            # The registry only ever records periods that were actually relabelled,
+            # so an entry present here means a shift happened. Comparing the two
+            # fields with .get() would turn an unexpected shape into "no shift at
+            # all", which is exactly the silent miss this note exists to prevent.
+            shifted = [
+                (adjustment["fiscal_year"], adjustment["calendar_year"])
+                for adjustment in adjustments
+                if isinstance(adjustment, dict)
+                and "fiscal_year" in adjustment
+                and "calendar_year" in adjustment
+                and adjustment["fiscal_year"] != adjustment["calendar_year"]
+            ]
+            malformed = len(adjustments) - len(shifted)
+
+            if malformed:
+                logger.warning(
+                    "%s of the %s fiscal period adjustments recorded for %s do not "
+                    "carry both a fiscal_year and a differing calendar_year. The "
+                    "relabelling is reported without the period detail.",
+                    malformed,
+                    len(adjustments),
+                    ticker,
+                )
+
+            if shifted:
+                # Values are bare years for annual data and period labels such as
+                # "2026Q1" for quarterly data, so an example carries both cases.
+                fiscal, calendar = shifted[0]
+                fy_tickers.append(
+                    f"{ticker} ({len(shifted)} periods, e.g. {fiscal} to {calendar})"
+                )
+            elif malformed:
+                fy_tickers.append(f"{ticker} (periods relabelled, detail unavailable)")
+
         if fy_tickers:
             notes.append(
                 f"Fiscal Year to Calendar Year mapped for: {', '.join(fy_tickers)}"

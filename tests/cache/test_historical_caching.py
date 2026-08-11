@@ -180,6 +180,81 @@ def test_a_yahoo_served_ticker_is_cached_under_yahoo_finance(cache, monkeypatch)
     assert ("FinancialModelingPrep", "historical") not in contents
 
 
+def test_a_truncated_fmp_response_falls_back_to_yahoo_finance(cache, monkeypatch):
+    """A non-empty but drastically truncated FMP response (observed with FMP's
+    lower-tier commodities data: a few weeks back instead of the requested
+    years) must still trigger the Yahoo fallback, not be silently accepted as
+    "the data" just because it isn't literally empty."""
+
+    def fake_fmp_thin_response(ticker, api_key, start, end, **kwargs):  # noqa: ARG001
+        # Only the last 30 days of a 20-year requested window.
+        index = pd.period_range(end="2020-12-31", periods=30, freq="D")
+        return pd.DataFrame(
+            {
+                "Open": 1.0,
+                "High": 1.0,
+                "Low": 1.0,
+                "Close": 1.0,
+                "Adj Close": 1.0,
+                "Volume": 100.0,
+                "Dividends": 0.0,
+            },
+            index=index,
+        )
+
+    monkeypatch.setattr(
+        historical_model.fmp_model, "get_historical_data", fake_fmp_thin_response
+    )
+
+    def fake_yfinance(ticker, start, end, **kwargs):  # noqa: ARG001
+        index = pd.period_range(start=start, end=end, freq="D")
+        return pd.DataFrame(
+            {
+                "Open": 1.0,
+                "High": 1.0,
+                "Low": 1.0,
+                "Close": 1.0,
+                "Adj Close": 1.0,
+                "Volume": 100.0,
+            },
+            index=index,
+        )
+
+    monkeypatch.setattr(
+        historical_model.yfinance_model, "get_historical_data", fake_yfinance
+    )
+
+    historical_data, _ = historical_model.get_historical_data(
+        tickers=["GC=F"],
+        api_key="test-key",
+        enforce_source=None,
+        start="2000-01-01",
+        end="2020-12-31",
+        interval="1d",
+        show_errors=False,
+        cache=cache,
+    )
+
+    assert historical_data.index.min() == pd.Period("2000-01-01", freq="D")
+
+    contents = {(entry["source"], entry["dataset"]) for entry in cache.get_contents()}
+    assert ("YahooFinance", "historical") in contents
+    assert ("FinancialModelingPrep", "historical") not in contents
+
+
+def test_a_response_covering_the_requested_span_is_not_treated_as_truncated(
+    cache, recorded_requests
+):
+    """A full response over a genuinely long requested window must not be
+    discarded -- only a response that falls short of what was asked for
+    should ever trigger the Yahoo fallback."""
+    historical_data, _ = collect(["AAPL"], "2020-01-01", "2020-12-31", cache)
+
+    assert not historical_data.empty
+    contents = {(entry["source"], entry["dataset"]) for entry in cache.get_contents()}
+    assert ("FinancialModelingPrep", "historical") in contents
+
+
 def test_intraday_data_is_cached(cache, monkeypatch):
     """Test that intraday bars are cached rather than silently refetched."""
     calls: list[str] = []

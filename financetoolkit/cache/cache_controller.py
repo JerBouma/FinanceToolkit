@@ -378,11 +378,10 @@ class Cache:
 
         for entity in entity_list:
             try:
-                ever_covered = self._backend.read_coverage(key, entity)
-                fresh_covered = self._backend.read_coverage(
+                # One snapshot, so the coverage always describes the payload beside it.
+                ever_covered, fresh_covered, payload = self._backend.read_entity_state(
                     key, entity, minimum_fetched_at
                 )
-                payload = self._backend.read_series(key, entity)
             except Exception as error:  # pylint: disable=broad-except
                 # A read that fails mid-session is a cache miss, not a failed call.
                 logger.debug(
@@ -461,32 +460,6 @@ class Cache:
             return
 
         key = self.create_key(source, dataset, parameters)
-
-        try:
-            existing_payload = self._backend.read_series(key, entity)
-            existing = (
-                serialization_model.decode_dataframe(existing_payload)
-                if existing_payload is not None
-                else None
-            )
-
-            merged = frame_model.merge_frames(existing, data, date_axis)
-
-            self._backend.write_series(
-                key,
-                entity,
-                serialization_model.encode_dataframe(merged),
-                source=source,
-                dataset=dataset,
-            )
-        except Exception as error:  # pylint: disable=broad-except
-            # A cache write must never break the call that produced the data.
-            logger.debug(
-                "Could not cache %s.%s for %s: %s", source, dataset, entity, error
-            )
-
-            return
-
         bounds = frame_model.get_date_bounds(data, date_axis)
 
         coverage_start = (
@@ -500,66 +473,54 @@ class Cache:
             else (bounds[1] if bounds else None)
         )
 
-        if coverage_start is None or coverage_end is None:
-            return
+        coverage: coverage_model.Interval | None = None
 
-        # Sources over-fetch (prices by a year either side); claim what is genuinely held.
-        if bounds is not None:
-            coverage_start = min(coverage_start, bounds[0])
-            coverage_end = max(coverage_end, bounds[1])
+        if coverage_start is not None and coverage_end is not None:
+            # Sources over-fetch (prices by a year either side); claim what is genuinely held.
+            if bounds is not None:
+                coverage_start = min(coverage_start, bounds[0])
+                coverage_end = max(coverage_end, bounds[1])
+
+            coverage = (coverage_start, coverage_end)
+
+        def merge_payload(existing_payload: bytes | None) -> bytes:
+            """
+            Merge the incoming frame into whatever the cache holds right now.
+
+            Args:
+                existing_payload (bytes | None): The payload stored under the write
+                    lock, or None when the entity has never been cached.
+
+            Returns:
+                bytes: The payload to store in its place.
+            """
+            existing = (
+                serialization_model.decode_dataframe(existing_payload)
+                if existing_payload is not None
+                else None
+            )
+
+            return serialization_model.encode_dataframe(
+                frame_model.merge_frames(existing, data, date_axis)
+            )
 
         try:
-            self._backend.write_coverage(
+            # The payload and the range it covers are only true together, so they
+            # are written in a single transaction that another writer has to wait for.
+            self._backend.store_series_and_coverage(
                 key,
                 entity,
-                coverage_start,
-                coverage_end,
+                merge_payload,
+                coverage=coverage,
                 source=source,
                 dataset=dataset,
+                compaction_threshold=COVERAGE_COMPACTION_THRESHOLD,
             )
-            self._compact_coverage(key, entity, source, dataset)
         except Exception as error:  # pylint: disable=broad-except
+            # A cache write must never break the call that produced the data.
             logger.debug(
-                "Could not record coverage for %s.%s of %s: %s",
-                source,
-                dataset,
-                entity,
-                error,
+                "Could not cache %s.%s for %s: %s", source, dataset, entity, error
             )
-
-    def _compact_coverage(
-        self, key: str, entity: str, source: str, dataset: str
-    ) -> None:
-        """
-        Collapse an entity's coverage rows once they have accumulated.
-
-        Args:
-            key (str): The dataset key.
-            entity (str): The entity within the dataset.
-            source (str): The external data source, carried onto the rewritten rows.
-            dataset (str): The dataset within that source, carried onto the rewritten rows.
-        """
-        if self._backend is None:
-            return
-
-        intervals = self._backend.read_coverage(key, entity)
-
-        if len(intervals) < COVERAGE_COMPACTION_THRESHOLD:
-            return
-
-        merged = coverage_model.merge_intervals(intervals)
-
-        # Merged rows inherit the oldest timestamp so old data never looks freshly fetched.
-        oldest = self._backend.get_oldest_coverage_timestamp(key, entity)
-
-        self._backend.replace_coverage(
-            key,
-            entity,
-            merged,
-            oldest or time.time(),
-            source=source,
-            dataset=dataset,
-        )
 
     def get(
         self,

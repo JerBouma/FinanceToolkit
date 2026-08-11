@@ -24,7 +24,10 @@ from financetoolkit.risk.risk_model import (
 )
 from financetoolkit.utilities.dataframe_model import filter_columns
 from financetoolkit.utilities.logger_model import get_logger
-from financetoolkit.utilities.statistics_model import finalize_dataset
+from financetoolkit.utilities.statistics_model import (
+    convert_annualized_rate_to_period,
+    finalize_dataset,
+)
 
 # Division by zero is normal in these calculations, not a bug.
 warnings.filterwarnings("ignore", category=RuntimeWarning)
@@ -102,7 +105,13 @@ class Performance:
 
         # Historical Data
         self._historical_data = historical_data
-        self._risk_free_rate_data = risk_free_rate_data
+        # The risk free rate is quoted as an annualized yield, so it is converted to the
+        # matching frequency. Without this, a daily return would have a full year of
+        # risk free rate subtracted from it.
+        self._risk_free_rate_data = {
+            frequency: convert_annualized_rate_to_period(rate, frequency)
+            for frequency, rate in risk_free_rate_data.items()
+        }
 
         # Fama and French
         self._fama_and_french_dataset: pd.DataFrame = pd.DataFrame()
@@ -142,12 +151,6 @@ class Performance:
             intraday_period=intraday_period,
         )
 
-        # Risk Free Rate of Intraday Historical Data is set to be equal to the last value of the daily risk free rate
-        self._intraday_risk_free_rate_data = pd.Series(
-            self._historical_data["daily"].iloc[-1],
-            index=self._historical_data["intraday"].index,
-        )
-
     @handle_errors
     def collect_all_metrics(
         self,
@@ -161,17 +164,20 @@ class Performance:
         Calculates and collects all performance metrics.
 
         Args:
+            period (str, optional): The period to use for the calculation. Defaults to "quarterly" if the
+                Toolkit is initialised with quarterly=True, otherwise "yearly".
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int): Defines whether to select a trailing period.
-            E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
         Returns:
-            pd.Series or pd.DataFrame: Performance metrics calculated based on the specified parameters.
+            pd.DataFrame: Performance metrics calculated based on the specified parameters, with a
+            Multi Index of (metric, ticker) as the columns. For a single-ticker Toolkit the ticker
+            level is dropped. `Returns` and `Excess Return` are only included when `period` is not
+            "daily".
 
         Notes:
         - The method calculates various performance metrics for each asset in the Toolkit instance.
@@ -192,12 +198,12 @@ class Performance:
 
         |      |   Win Rate |   Upside Capture Ratio |   Downside Capture Ratio |   M2 Ratio |   Tracking Error |
         |:-----|-----------:|-----------------------:|-------------------------:|-----------:|-----------------:|
-        | 2021 |     0.4921 |                 1.3754 |                   1.4016 |     1.2868 |           0.0118 |
-        | 2022 |     0.4821 |                 1.3044 |                   1.3043 |    -0.8603 |           0.0115 |
-        | 2023 |     0.576  |                 1.1783 |                   0.9486 |     2.1832 |           0.009  |
-        | 2024 |     0.504  |                 1.1158 |                   1.0337 |     1.1242 |           0.0121 |
-        | 2025 |     0.472  |                 1.0162 |                   1.0842 |     0.1354 |           0.0139 |
-        | 2026 |     0.504  |                 0.766  |                   0.5691 |     0.3377 |           0.0154 |
+        | 2021 |     0.5253 |                 1.4003 |                   1.1039 |     0.0065 |           0.0108 |
+        | 2022 |     0.4781 |                 1.3096 |                   1.3186 |    -0.1669 |           0.0115 |
+        | 2023 |     0.576  |                 1.1815 |                   0.9655 |     0.3293 |           0.009  |
+        | 2024 |     0.5    |                 1.117  |                   1.0492 |     0.1905 |           0.0121 |
+        | 2025 |     0.472  |                 1.0324 |                   1.1132 |     0.0709 |           0.0139 |
+        | 2026 |     0.5099 |                 0.678  |                   0.5418 |     0.0919 |           0.0169 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
         rounding = rounding if rounding else self._rounding
@@ -252,7 +258,7 @@ class Performance:
                 lag=lag,
                 standardize=standardize,
             ),
-            "Ulcer Index": self.get_ulcer_performance_index(
+            "Ulcer Performance Index": self.get_ulcer_performance_index(
                 period=period,
                 rounding=rounding,
                 growth=growth,
@@ -337,6 +343,27 @@ class Performance:
                 standardize=standardize,
             ),
             "Information Ratio": self.get_information_ratio(
+                period=period,
+                rounding=rounding,
+                growth=growth,
+                lag=lag,
+                standardize=standardize,
+            ),
+            "Appraisal Ratio": self.get_appraisal_ratio(
+                period=period,
+                rounding=rounding,
+                growth=growth,
+                lag=lag,
+                standardize=standardize,
+            ),
+            "STARR Ratio": self.get_starr_ratio(
+                period=period,
+                rounding=rounding,
+                growth=growth,
+                lag=lag,
+                standardize=standardize,
+            ),
+            "Rachev Ratio": self.get_rachev_ratio(
                 period=period,
                 rounding=rounding,
                 growth=growth,
@@ -635,9 +662,12 @@ class Performance:
             factors_to_calculate (list of str, optional): List of factors to calculate scores and residuals for.
                 Defaults to ["Mkt-RF", "SMB", "HML", "RMW", "CMA"].
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            show_columns (list of str, optional): Restrict the result to these top level columns.
+                Defaults to None, which returns every column.
 
         Returns:
-            pd.DataFrame: Factor Asset Correlations.
+            pd.DataFrame: Factor Asset Correlations, with a Multi Index of (ticker, factor)
+            as the columns and one row per period.
 
         As an example:
 
@@ -646,19 +676,19 @@ class Performance:
 
         toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
-        toolkit.performance.get_factor_asset_correlations()
+        toolkit.performance.get_factor_asset_correlations()["AAPL"]
         ```
 
         Which returns:
 
-        |      |   AAPL |   TSLA |
-        |:-----|-------:|-------:|
-        | 2021 | 0.6688 | 0.5063 |
-        | 2022 | 0.8365 | 0.6432 |
-        | 2023 | 0.6986 | 0.5615 |
-        | 2024 | 0.518  | 0.4874 |
-        | 2025 | 0.7403 | 0.6978 |
-        | 2026 | 0.4834 | 0.6055 |
+        |      |   Mkt-RF |     SMB |     HML |     RMW |     CMA |
+        |:-----|---------:|--------:|--------:|--------:|--------:|
+        | 2021 |   0.6626 | -0.0091 | -0.3248 | -0.0655 | -0.0029 |
+        | 2022 |   0.8796 |  0.0561 | -0.5479 | -0.2577 | -0.4763 |
+        | 2023 |   0.6988 | -0.0083 | -0.2833 | -0.1014 | -0.463  |
+        | 2024 |   0.5184 |  0.0358 | -0.3171 | -0.0563 | -0.0977 |
+        | 2025 |   0.7408 |  0.0646 | -0.2085 | -0.1108 |  0.0761 |
+        | 2026 |   0.4609 |  0.0502 | -0.1759 | -0.0847 | -0.0546 |
         """
 
         factors_to_calculate = (
@@ -695,10 +725,14 @@ class Performance:
 
         factor_correlations: dict = {}
 
+        # The first index level repeats once per row, so it has to be de-duplicated
+        # before iterating or every period is recomputed once per day it contains.
+        dataset_periods = merged_df.index.get_level_values(0).unique()
+
         logger.info("Calculating Factor Asset Correlations")
         for ticker in self._tickers_without_portfolio:
             factor_correlations[ticker] = {}
-            for dataset_period in merged_df.index.get_level_values(0):
+            for dataset_period in dataset_periods:
                 factor_data = merged_df.loc[dataset_period][factors_to_calculate]
                 excess_returns = (
                     merged_df.loc[dataset_period][ticker]
@@ -769,27 +803,29 @@ class Performance:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
 
         Returns:
-            pd.DataFrame: Factor Correlations.
+            pd.DataFrame: Factor Correlations. One correlation matrix per period, stacked
+            into a Multi Index of (period, factor) rows with the factors as the columns and
+            restricted to the Toolkit's date range.
 
         As an example:
 
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY", start_date="2023-01-01")
 
         toolkit.performance.get_factor_correlations()
         ```
 
         Which returns:
 
-        |        |   Mkt-RF |     SMB |     HML |     RMW |     CMA |
-        |:-------|---------:|--------:|--------:|--------:|--------:|
-        | Mkt-RF |   1      | -0.4121 |  0.332  |  0.014  | -0.4682 |
-        | SMB    |  -0.4121 |  1      | -0.1718 | -0.2326 |  0.1379 |
-        | HML    |   0.332  | -0.1718 |  1      | -0.4551 |  0.184  |
-        | RMW    |   0.014  | -0.2326 | -0.4551 |  1      | -0.4106 |
-        | CMA    |  -0.4682 |  0.1379 |  0.184  | -0.4106 |  1      |
+        |                 |   Mkt-RF |     SMB |     HML |     RMW |     CMA |
+        |:----------------|---------:|--------:|--------:|--------:|--------:|
+        | (2026, 'Mkt-RF')|   1      |  0.1702 | -0.4054 | -0.5902 | -0.4198 |
+        | (2026, 'SMB')   |   0.1702 |  1      |  0.2113 | -0.1127 |  0.2437 |
+        | (2026, 'HML')   |  -0.4054 |  0.2113 |  1      |  0.3432 |  0.7051 |
+        | (2026, 'RMW')   |  -0.5902 | -0.1127 |  0.3432 |  1      |  0.4182 |
+        | (2026, 'CMA')   |  -0.4198 |  0.2437 |  0.7051 |  0.4182 |  1      |
         """
         factors_to_calculate = (
             factors_to_calculate
@@ -822,9 +858,11 @@ class Performance:
             correlation=True,
         )
 
+        # The Ken French dataset starts in 1963, so without this slice the result covers
+        # six decades regardless of the date range the Toolkit was initialised with.
         self._factor_correlations = fama_and_french_period.round(
             rounding if rounding else self._rounding
-        )
+        ).loc[self._start_date : self._end_date]
 
         return self._factor_correlations
 
@@ -863,8 +901,7 @@ class Performance:
         The model performs a Linear Regression on each factor and defines the regression parameters and residuals
         for each asset over time based on its exposure to these factors.
 
-        These results can be validated by comparing them to the period returns obtained from the historical data. E.g.
-        the regression formula is as follows for the Multi Linear Regression:
+        The regression formula is as follows for the Multi Linear Regression:
 
             - Excess Return = Intercept + Beta1 * Mkt-RF + Beta2 * SMB + Beta3 * HML + Beta4 * RMW
                 + Beta5 * CMA + Residuals
@@ -877,6 +914,11 @@ class Performance:
         calculation the Excess Return refers to the Asset Return minus the Risk Free Rate as reported in the Fama and
         French dataset and will not be the same as the defined Excess Return in the historical data given that this is
         based on the Risk Free Rate defined in the initialization.
+
+        The regression is estimated on the daily observations falling inside each period, so its Intercept, Slope and
+        Residuals are all on a daily scale. The `Factor Value` and `Residuals` columns reported by the Simple Linear
+        Regression therefore describe the **last daily observation** within the period, which is the only reading for
+        which the identity above holds — they are not period-aggregated quantities.
 
         What is relevant to look at is the influence these factors have on each stock and how much each factor explains
         the stock return. E.g. you will generally see a pretty high influence (Beta or Slope) for the Market Risk Premium
@@ -891,16 +933,21 @@ class Performance:
             method (str, optional): The regression method to use for the calculation. Defaults to 'multi'.
             factors_to_calculate (list of str, optional): List of factors to calculate scores and residuals for.
                 Defaults to ["Mkt-RF", "SMB", "HML", "RMW", "CMA"].
-            include_residuals (bool, optional): Whether to include residuals in the results. Defaults to False.
+            include_daily_residuals (bool, optional): Whether to also return the pointwise (daily)
+                regression residuals as a second DataFrame. Defaults to False.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratio values. Defaults to False.
             lag (int or list of int, optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (list of str, optional): Restrict the result to these top level columns.
+                Defaults to None, which returns every column.
 
         Returns:
-            pd.DataFrame: Fama and French 5 Factor model scores for the specified assets.
+            pd.DataFrame: Fama and French 5 Factor model scores for the specified assets, with a
+            Multi Index of (ticker, parameter) as the columns and one row per period. When
+            `include_daily_residuals` is True a tuple of (scores, residuals) is returned instead.
 
         Notes:
         - The dataset from Fama and French is not always fully up to date. Therefore, some periods could be excluded.
@@ -919,19 +966,19 @@ class Performance:
         toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         # Calculate Fama and French 5 Factor model scores
-        toolkit.performance.get_fama_and_french_model()
+        toolkit.performance.get_fama_and_french_model()["AAPL"]
         ```
 
-        Which returns:
+        Which returns (the MSE column is omitted here for brevity):
 
-        |      |    AAPL |    TSLA |
-        |:-----|--------:|--------:|
-        | 2021 | -0.0051 | -0.0195 |
-        | 2022 | -0.0196 | -0.02   |
-        | 2023 | -0.013  |  0.0045 |
-        | 2024 |  0.0022 | -0.0059 |
-        | 2025 | -0.0191 | -0.0191 |
-        | 2026 | -0.0204 | -0.0153 |
+        |      |   Intercept |   Mkt-RF Slope |   SMB Slope |   HML Slope |   RMW Slope |   CMA Slope |   R Squared |
+        |:-----|------------:|---------------:|------------:|------------:|------------:|------------:|------------:|
+        | 2021 |      0.0002 |         1.1928 |     -0.174  |     -1.1611 |      0.3114 |      1.9876 |      0.7193 |
+        | 2022 |     -0.0001 |         1.2569 |     -0.2956 |     -0.6153 |      0.2337 |      0.6806 |      0.8178 |
+        | 2023 |      0.0003 |         1.1335 |     -0.0897 |     -0.4493 |      0.4512 |      0.0025 |      0.5908 |
+        | 2024 |      0.0002 |         0.8749 |      0.2648 |     -0.5816 |      0.729  |      0.0359 |      0.3496 |
+        | 2025 |     -0.0001 |         1.4494 |     -0.0714 |      0.1007 |      0.8112 |      0.0136 |      0.6031 |
+        | 2026 |      0.0004 |         1.1722 |     -0.1766 |     -0.3145 |      0.463  |      0.7267 |      0.2918 |
         """
         if method not in ["simple", "multi"]:
             raise ValueError(
@@ -959,11 +1006,6 @@ class Performance:
             self._tickers_without_portfolio
         ]
 
-        historical_data = self._historical_data[period]
-        returns_total = historical_data.loc[:, "Return"][
-            self._tickers_without_portfolio
-        ]
-
         self._fama_and_french_dataset = (
             performance_model.obtain_fama_and_french_dataset()
         )
@@ -977,6 +1019,10 @@ class Performance:
         factor_scores: dict = {}
         daily_residuals: dict = {}
 
+        # The first index level repeats once per row, so it has to be de-duplicated
+        # before iterating or every period is regressed once per day it contains.
+        dataset_periods = merged_df.index.get_level_values(0).unique()
+
         logger.info(
             "Calculating %s Factor Exposures",
             "Multi" if method == "multi" else "Individual",
@@ -986,7 +1032,7 @@ class Performance:
             daily_residuals[ticker] = {}
 
             if method == "multi":
-                for dataset_period in merged_df.index.get_level_values(0):
+                for dataset_period in dataset_periods:
                     factor_data = merged_df.loc[dataset_period][factors_to_calculate]
                     excess_returns = (
                         merged_df.loc[dataset_period][ticker]
@@ -1006,38 +1052,11 @@ class Performance:
                             "%s for %s in %s.", error_message, ticker, dataset_period
                         )
 
-                    fama_and_french_model = pd.DataFrame.from_dict(
-                        {
-                            (ticker, factor): value
-                            for ticker, factor_scores_ticker in factor_scores.items()
-                            for factor, value in factor_scores_ticker.items()
-                        },
-                        orient="index",
-                    )
-
-                fama_and_french_model = fama_and_french_model.unstack(
-                    level=0, sort=False
-                ).swaplevel(0, 1, axis=1)
-
-                # Sort the DataFrame with respect to the original column order
-                tickers_column_order = fama_and_french_model.columns.get_level_values(
-                    0
-                ).unique()
-                parameters_column_order = (
-                    fama_and_french_model.columns.get_level_values(1).unique()
-                )
-
-                fama_and_french_model = (
-                    fama_and_french_model.sort_index(axis=1)
-                    .reindex(tickers_column_order, level=0, axis=1)
-                    .reindex(parameters_column_order, level=1, axis=1)
-                )
-
             elif method == "simple":
                 for factor in factors_to_calculate:
                     factor_scores[ticker][factor] = {}
                     daily_residuals[ticker][factor] = {}
-                    for dataset_period in merged_df.index.get_level_values(0):
+                    for dataset_period in dataset_periods:
                         factor_data = merged_df.loc[dataset_period][factor]
                         excess_returns = (
                             merged_df.loc[dataset_period][ticker]
@@ -1051,47 +1070,78 @@ class Performance:
                             excess_returns=excess_returns, factor=factor_data
                         )
 
+                        # The regression is fitted on the observations within the
+                        # period, so the reported Factor Value and Residual describe
+                        # the last observation of that period, on the same scale.
                         factor_scores[ticker][factor][dataset_period][
                             "Factor Value"
                         ] = factor_data.iloc[-1]
 
                         factor_scores[ticker][factor][dataset_period][
                             "Residuals"
-                        ] = returns_total.loc[dataset_period][ticker] - (
+                        ] = excess_returns.iloc[-1] - (
                             factor_scores[ticker][factor][dataset_period]["Slope"]
                             * factor_data.iloc[-1]
                             + factor_scores[ticker][factor][dataset_period]["Intercept"]
                         )
 
-                fama_and_french_model = pd.DataFrame.from_dict(
-                    {
-                        (period, factor, ticker): value
-                        for ticker, factor_scores_ticker in factor_scores.items()
-                        for factor, factor_scores_factor in factor_scores_ticker.items()
-                        for period, value in factor_scores_factor.items()
-                    },
-                    orient="index",
-                )
+        if method == "multi":
+            fama_and_french_model = pd.DataFrame.from_dict(
+                {
+                    (ticker_name, dataset_period): value
+                    for ticker_name, factor_scores_ticker in factor_scores.items()
+                    for dataset_period, value in factor_scores_ticker.items()
+                },
+                orient="index",
+            )
 
-                # Sort the DataFrame with respect to the original column order
-                parameters_column_order = fama_and_french_model.columns.unique()
-                factor_column_order = fama_and_french_model.index.get_level_values(
-                    1
-                ).unique()
-                ticker_column_order = fama_and_french_model.index.get_level_values(
-                    2
-                ).unique()
+            fama_and_french_model = fama_and_french_model.unstack(
+                level=0, sort=False
+            ).swaplevel(0, 1, axis=1)
 
-                fama_and_french_model = fama_and_french_model.stack().unstack(
-                    level=[2, 1, 3]
-                )
+            # Sort the DataFrame with respect to the original column order
+            tickers_column_order = fama_and_french_model.columns.get_level_values(
+                0
+            ).unique()
+            parameters_column_order = fama_and_french_model.columns.get_level_values(
+                1
+            ).unique()
 
-                fama_and_french_model = (
-                    fama_and_french_model.sort_index(axis=1)
-                    .reindex(parameters_column_order, level=2, axis=1)
-                    .reindex(factor_column_order, level=1, axis=1)
-                    .reindex(ticker_column_order, level=0, axis=1)
-                )
+            fama_and_french_model = (
+                fama_and_french_model.sort_index(axis=1)
+                .reindex(tickers_column_order, level=0, axis=1)
+                .reindex(parameters_column_order, level=1, axis=1)
+            )
+        else:
+            fama_and_french_model = pd.DataFrame.from_dict(
+                {
+                    (dataset_period, factor, ticker_name): value
+                    for ticker_name, factor_scores_ticker in factor_scores.items()
+                    for factor, factor_scores_factor in factor_scores_ticker.items()
+                    for dataset_period, value in factor_scores_factor.items()
+                },
+                orient="index",
+            )
+
+            # Sort the DataFrame with respect to the original column order
+            parameters_column_order = fama_and_french_model.columns.unique()
+            factor_column_order = fama_and_french_model.index.get_level_values(
+                1
+            ).unique()
+            ticker_column_order = fama_and_french_model.index.get_level_values(
+                2
+            ).unique()
+
+            fama_and_french_model = fama_and_french_model.stack().unstack(
+                level=[2, 1, 3]
+            )
+
+            fama_and_french_model = (
+                fama_and_french_model.sort_index(axis=1)
+                .reindex(parameters_column_order, level=2, axis=1)
+                .reindex(factor_column_order, level=1, axis=1)
+                .reindex(ticker_column_order, level=0, axis=1)
+            )
 
         self._fama_and_french_model = fama_and_french_model.round(
             rounding if rounding else self._rounding
@@ -1101,9 +1151,9 @@ class Performance:
             if method == "multi":
                 daily_residuals_df = pd.DataFrame.from_dict(
                     {
-                        (ticker, factor): value
-                        for ticker, residuals_ticker in daily_residuals.items()
-                        for factor, value in residuals_ticker.items()
+                        (ticker_name, dataset_period): value
+                        for ticker_name, residuals_ticker in daily_residuals.items()
+                        for dataset_period, value in residuals_ticker.items()
                     },
                     orient="index",
                 )
@@ -1113,14 +1163,13 @@ class Performance:
                     .unstack(level=0)
                     .sort_index(axis=1, sort_remaining=False)
                 )
-                daily_residuals_df = daily_residuals_df.reset_index(level=0, drop=True)
             else:
                 daily_residuals_df = pd.DataFrame.from_dict(
                     {
-                        (period, factor, ticker): value
-                        for ticker, residuals_ticker in daily_residuals.items()
+                        (dataset_period, factor, ticker_name): value
+                        for ticker_name, residuals_ticker in daily_residuals.items()
                         for factor, residuals_factor in residuals_ticker.items()
-                        for period, value in residuals_factor.items()
+                        for dataset_period, value in residuals_factor.items()
                     },
                     orient="index",
                 )
@@ -1131,7 +1180,16 @@ class Performance:
                     .sort_index(axis=1, sort_remaining=False)
                 )
 
-                daily_residuals_df = daily_residuals_df.reset_index(level=0, drop=True)
+            # Reshaping pairs every period with every date in the whole sample, so all
+            # but the dates actually inside a period come back as fully empty rows.
+            # Dropping them (and sorting what is left) is what makes the date slice
+            # below possible at all: it otherwise raises on the non-monotonic index of
+            # repeated dates.
+            daily_residuals_df = (
+                daily_residuals_df.dropna(how="all")
+                .sort_index()
+                .reset_index(level=0, drop=True)
+            )
 
             self._fama_and_french_residuals = daily_residuals_df.round(
                 rounding if rounding else self._rounding
@@ -1202,14 +1260,21 @@ class Performance:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (list of str, optional): Restrict the result to these top level columns.
+                Defaults to None, which returns every column.
 
         Returns:
-            pd.DataFrame: Carhart Four Factor model scores for the specified assets.
+            pd.DataFrame: Carhart Four Factor model scores for the specified assets, with a Multi
+            Index of (ticker, parameter) as the columns and one row per period.
 
         Notes:
         - The dataset from Ken French is not always fully up to date. Therefore, some periods could be excluded.
         - Daily Carhart results is not an option as it would attempt to do a linear regression on a single data
         point which will not give any meaningful results.
+        - The factors come from the Fama and French **three** factor file rather than the five factor file
+        used by `get_fama_and_french_model`. The two files agree on Mkt-RF, HML and RF but not on SMB: the
+        five factor SMB averages three separate size legs, while Carhart (1997) extends the three factor
+        model and therefore requires the three factor SMB.
         - The risk-free rate is the Risk Free Rate reported in the Fama and French dataset (used here, rather
         than the Toolkit's own risk-free rate, to stay consistent with the momentum factor's construction).
         - If `growth` is set to True, the method calculates the growth of the ratio values using the specified `lag`.
@@ -1226,11 +1291,11 @@ class Performance:
 
         Which returns (columns are Intercept, Mkt-RF/SMB/HML/MOM Slope, MSE and R Squared, per ticker):
 
-        |        |   Intercept |   Mkt-RF Slope |   MOM Slope |   R Squared |
-        |:-------|-------------:|----------------:|-------------:|-------------:|
-        | 2025Q4 |      -0.0194 |          0.0191 |      -0.006 |       0.4786 |
-        | 2026Q1 |      -0.0122 |          0.0126 |     -0.0034 |       0.3878 |
-        | 2026Q2 |      -0.0119 |          0.0076 |      0.0033 |       0.2513 |
+        |        |   Intercept |   Mkt-RF Slope |   SMB Slope |   HML Slope |   MOM Slope |   R Squared |
+        |:-------|------------:|---------------:|------------:|------------:|------------:|------------:|
+        | 2025Q4 |      0.0004 |         1.0218 |     -0.2372 |      0.2779 |     -0.2565 |      0.417  |
+        | 2026Q1 |     -0.0004 |         1.1562 |     -0.6432 |      0.3531 |      0.0224 |      0.3379 |
+        | 2026Q2 |      0.0009 |         0.8212 |      0.1163 |     -0.151  |     -0.1926 |      0.1799 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
@@ -1239,14 +1304,17 @@ class Performance:
             self._tickers_without_portfolio
         ]
 
-        self._fama_and_french_dataset = (
-            performance_model.obtain_fama_and_french_dataset()
+        # Carhart (1997) extends the *three* factor model. The three and five factor
+        # files share Mkt-RF, HML and RF but their SMB series differ, so the three
+        # factor file is the correct source here.
+        three_factor_dataset = (
+            performance_model.obtain_fama_and_french_three_factor_dataset()
         )
         momentum_dataset = performance_model.obtain_carhart_momentum_dataset()
 
-        carhart_dataset = self._fama_and_french_dataset[
-            ["Mkt-RF", "SMB", "HML", "RF"]
-        ].merge(momentum_dataset, left_index=True, right_index=True)
+        carhart_dataset = three_factor_dataset[["Mkt-RF", "SMB", "HML", "RF"]].merge(
+            momentum_dataset, left_index=True, right_index=True
+        )
         carhart_dataset = carhart_dataset.rename(columns={"Mom": "MOM"})
 
         carhart_period = determine_within_dataset(
@@ -1258,11 +1326,15 @@ class Performance:
         factors_to_calculate = ["Mkt-RF", "SMB", "HML", "MOM"]
         factor_scores: dict = {}
 
+        # The first index level repeats once per row, so it has to be de-duplicated
+        # before iterating or every period is regressed once per day it contains.
+        dataset_periods = merged_df.index.get_level_values(0).unique()
+
         logger.info("Calculating Carhart Four Factor Exposures")
         for ticker in self._tickers_without_portfolio:
             factor_scores[ticker] = {}
 
-            for dataset_period in merged_df.index.get_level_values(0):
+            for dataset_period in dataset_periods:
                 factor_data = merged_df.loc[dataset_period][factors_to_calculate]
                 excess_returns = (
                     merged_df.loc[dataset_period][ticker]
@@ -1282,14 +1354,14 @@ class Performance:
                         "%s for %s in %s.", error_message, ticker, dataset_period
                     )
 
-            carhart_model = pd.DataFrame.from_dict(
-                {
-                    (ticker, factor): value
-                    for ticker, factor_scores_ticker in factor_scores.items()
-                    for factor, value in factor_scores_ticker.items()
-                },
-                orient="index",
-            )
+        carhart_model = pd.DataFrame.from_dict(
+            {
+                (ticker_name, dataset_period): value
+                for ticker_name, factor_scores_ticker in factor_scores.items()
+                for dataset_period, value in factor_scores_ticker.items()
+            },
+            orient="index",
+        )
 
         carhart_model = carhart_model.unstack(level=0, sort=False).swaplevel(
             0, 1, axis=1
@@ -1699,15 +1771,25 @@ class Performance:
 
             - Sharpe Ratio = Excess Return / Excess Standard Deviation
 
-        For a given period, for example monthly, this translates into the following:
+        By default one Sharpe ratio is reported per `period`, computed from the **daily**
+        excess returns falling inside that period. For a given period, for example monthly,
+        this translates into the following:
 
-            - Sharpe Ratio = Average Monthly Excess Return / Standard Deviation of Monthly Excess Returns
+            - Sharpe Ratio = Average Daily Excess Return within the Month
+              / Standard Deviation of the Daily Excess Returns within the Month
 
-        For a rolling period, this translates into the following:
+        For a rolling period, `period` instead sets the frequency of the returns themselves
+        and the ratio is computed over a rolling window of `rolling` such returns:
 
             - Sharpe Ratio = Average Rolling Excess Return / Standard Deviation of Rolling Excess Returns
 
         Note that this is explicitly already subtracts the Risk Free Rate.
+
+        The result is **not annualized**: it is a per-observation Sharpe ratio, so a value
+        computed from daily returns is roughly SQRT(252) smaller than the annualized figure
+        usually quoted in the literature (SQRT(52), SQRT(12) and SQRT(4) for weekly, monthly
+        and quarterly returns respectively). Multiply by that factor before comparing against
+        published annualized Sharpe ratios.
 
         The plain Sharpe ratio only looks at the mean and standard deviation of returns, implicitly
         assuming Gaussian, i.i.d. returns and ignoring how much uncertainty surrounds the estimate
@@ -1818,12 +1900,12 @@ class Performance:
 
         | Date   |    AAPL |    TSLA |
         |:-------|--------:|--------:|
-        | 2021   | -0.8286 | -0.3537 |
-        | 2022   | -1.2859 | -0.7606 |
-        | 2023   | -2.7296 | -1.0402 |
-        | 2024   | -2.8575 | -0.9845 |
-        | 2025   | -2.0637 | -1.0411 |
-        | 2026   | -2.4952 | -1.6057 |
+        | 2021   |  0.1277 |  0.1334 |
+        | 2022   | -0.0482 | -0.0812 |
+        | 2023   |  0.1189 |  0.095  |
+        | 2024   |  0.07   |  0.0637 |
+        | 2025   |  0.0188 |  0.0263 |
+        | 2026   |  0.0475 | -0.0604 |
 
         And, asking for the probability that these Sharpe ratios are genuine instead:
 
@@ -1835,12 +1917,12 @@ class Performance:
 
         | Date   |   AAPL |   TSLA |
         |:-------|-------:|-------:|
-        | 2021   | 0.0000 | 0.0008 |
-        | 2022   | 0.0000 | 0.0000 |
-        | 2023   | 0.0000 | 0.0000 |
-        | 2024   | 0.0000 | 0.0000 |
-        | 2025   | 0.0000 | 0.0000 |
-        | 2026   | 0.0000 | 0.0000 |
+        | 2021   | 0.8922 | 0.9022 |
+        | 2022   | 0.225  | 0.0998 |
+        | 2023   | 0.9684 | 0.9323 |
+        | 2024   | 0.8693 | 0.8496 |
+        | 2025   | 0.618  | 0.6618 |
+        | 2026   | 0.7167 | 0.2264 |
         """
         if method not in ("standard", "adjusted", "probabilistic", "deflated"):
             raise ValueError(
@@ -1954,17 +2036,28 @@ class Performance:
 
         The formula is as follows:
 
-            - Sortino Ratio = Excess Return / Excess Downside Risk
+            - Sortino Ratio = Excess Return / Downside Deviation
+            - Downside Deviation = SQRT( (1 / N) * SUM( MIN(Excess Return, 0)^2 ) )
 
-        For a given period, for example monthly, this translates into the following:
+        Where N is the *total* number of observations, not just the negative ones, following
+        Sortino & Price (1994). By default one Sortino ratio is reported per `period`,
+        computed from the **daily** excess returns falling inside that period. For a given
+        period, for example monthly, this translates into the following:
 
-            - Sortino Ratio = Average Monthly Excess Return / Average Monthly Excess Downside Risk
+            - Sortino Ratio = Average Daily Excess Return within the Month
+              / Downside Deviation of the Daily Excess Returns within the Month
 
-        For a rolling period, this translates into the following:
+        For a rolling period, `period` instead sets the frequency of the returns themselves
+        and the ratio is computed over a rolling window of `rolling` such returns:
 
-            - Sortino Ratio = Average Rolling Excess Return / Rolling Downside Risk
+            - Sortino Ratio = Average Rolling Excess Return / Rolling Downside Deviation
 
         Note that this is explicitly already subtracts the Risk Free Rate.
+
+        As with the Sharpe Ratio, the result is **not annualized**: it is a per-observation
+        ratio, so multiply by SQRT(252), SQRT(52), SQRT(12) or SQRT(4) for daily, weekly,
+        monthly or quarterly returns respectively before comparing against published
+        annualized figures.
 
         See definition: https://en.wikipedia.org/wiki/Sortino_ratio
 
@@ -2005,12 +2098,12 @@ class Performance:
 
         | Date   |    AAPL |    TSLA |
         |:-------|--------:|--------:|
-        | 2021   | -1.0988 | -0.5282 |
-        | 2022   | -1.5168 | -0.9959 |
-        | 2023   | -2.8934 | -1.3591 |
-        | 2024   | -3.097  | -1.3744 |
-        | 2025   | -2.4472 | -1.3183 |
-        | 2026   | -2.5624 | -1.7784 |
+        | 2021   |  0.197  |  0.2049 |
+        | 2022   | -0.0675 | -0.1069 |
+        | 2023   |  0.1839 |  0.1462 |
+        | 2024   |  0.1071 |  0.1044 |
+        | 2025   |  0.0283 |  0.0391 |
+        | 2026   |  0.0665 | -0.0789 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
@@ -2100,12 +2193,12 @@ class Performance:
 
         | Date   |    AAPL |    TSLA |
         |:-------|--------:|--------:|
-        | 2021   |  8.5991 |  5.6729 |
-        | 2022   | -4.5711 | -5.0182 |
-        | 2023   | 13.3465 | 11.6618 |
-        | 2024   |  7.4872 |  6.3795 |
-        | 2025   |  0.8946 |  0.7159 |
-        | 2026   |  2.3126 | -2.6591 |
+        | 2021   | -0.4626 | -0.2002 |
+        | 2022   | -4.5193 | -5.0182 |
+        | 2023   | 13.6486 | 11.6618 |
+        | 2024   |  7.6983 |  6.3795 |
+        | 2025   |  0.9945 |  0.7159 |
+        | 2026   |  2.2021 | -3.5198 |
         """
 
         period = period if period else "quarterly" if self._quarterly else "yearly"
@@ -2525,12 +2618,12 @@ class Performance:
 
         | Date   |    AAPL |    TSLA |
         |:-------|--------:|--------:|
-        | 2021   |  1.2868 |  0.8811 |
-        | 2022   | -0.8603 | -1.0335 |
-        | 2023   |  2.1832 |  1.8102 |
-        | 2024   |  1.1242 |  0.9127 |
-        | 2025   |  0.1354 |  0.1134 |
-        | 2026   |  0.3377 | -0.3943 |
+        | 2021   |  0.0065 |  0.0112 |
+        | 2022   | -0.1669 | -0.2118 |
+        | 2023   |  0.3293 |  0.2753 |
+        | 2024   |  0.1905 |  0.1604 |
+        | 2025   |  0.0709 |  0.0637 |
+        | 2026   |  0.0919 | -0.0461 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
@@ -3104,12 +3197,12 @@ class Performance:
 
         | Date   |    AAPL |    TSLA |
         |:-------|--------:|--------:|
-        | 2021   | -0.5191 | -0.2779 |
-        | 2022   | -0.6896 | -0.4956 |
-        | 2023   | -0.8901 | -0.6046 |
-        | 2024   | -0.9024 | -0.6129 |
-        | 2025   | -0.8423 | -0.6148 |
-        | 2026   | -0.8718 | -0.7635 |
+        | 2021   |  0.1414 |  0.1382 |
+        | 2022   | -0.052  | -0.0816 |
+        | 2023   |  0.1284 |  0.1026 |
+        | 2024   |  0.0767 |  0.0749 |
+        | 2025   |  0.0186 |  0.0275 |
+        | 2026   |  0.0441 | -0.0538 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
@@ -3376,64 +3469,37 @@ class Performance:
 
         Which returns:
 
-        |                                       |   AAPL |   TSLA |   Benchmark |
-        |:--------------------------------------|-------:|-------:|------------:|
-        | Compound Annual Growth Rate (CAGR)    | 0.0965 | 0.0186 |      0.0779 |
-        | Compound Quarterly Growth Rate (CQGR) | 0.0124 | 0.0089 |      0.0087 |
-        | Compound Monthly Growth Rate (CMGR)   | 0.0124 | 0.0089 |      0.0087 |
-        | Compound Weekly Growth Rate (CWGR)    | 0.0029 | 0.0022 |      0.0021 |
-        | Compound Daily Growth Rate (CDGR)     | 0.0006 | 0.0005 |      0.0004 |
+        |                                       |   AAPL |    TSLA |   Benchmark |
+        |:--------------------------------------|-------:|--------:|------------:|
+        | Compound Annual Growth Rate (CAGR)    | 0.1219 | -0.0124 |      0.1158 |
+        | Compound Quarterly Growth Rate (CQGR) | 0.041  |  0.0124 |      0.0332 |
+        | Compound Monthly Growth Rate (CMGR)   | 0.0123 |  0.005  |      0.0101 |
+        | Compound Weekly Growth Rate (CWGR)    | 0.0029 |  0.0012 |      0.0024 |
+        | Compound Daily Growth Rate (CDGR)     | 0.0006 |  0.0003 |      0.0005 |
         """
-        prices = (
-            self._historical_data["yearly"]
-            .loc[:, "Adj Close"]
-            .loc[self._start_date : self._end_date]
-        )
+        compound_growth_rates = {}
 
-        cagr = performance_model.get_compound_growth_rate(prices, len(prices))
+        for period, label in [
+            ("yearly", "Compound Annual Growth Rate (CAGR)"),
+            ("quarterly", "Compound Quarterly Growth Rate (CQGR)"),
+            ("monthly", "Compound Monthly Growth Rate (CMGR)"),
+            ("weekly", "Compound Weekly Growth Rate (CWGR)"),
+            ("daily", "Compound Daily Growth Rate (CDGR)"),
+        ]:
+            prices = (
+                self._historical_data[period]
+                .loc[:, "Adj Close"]
+                .loc[self._start_date : self._end_date]
+            )
 
-        prices = (
-            self._historical_data["quarterly"]
-            .loc[:, "Adj Close"]
-            .loc[self._start_date : self._end_date]
-        )
+            # N observations span N - 1 compounding intervals, not N.
+            compound_growth_rates[label] = (
+                performance_model.get_compound_growth_rate(prices, len(prices) - 1)
+                if len(prices) > 1
+                else pd.Series(float("nan"), index=prices.columns)
+            )
 
-        cqgr = performance_model.get_compound_growth_rate(prices, len(prices))
-
-        prices = (
-            self._historical_data["monthly"]
-            .loc[:, "Adj Close"]
-            .loc[self._start_date : self._end_date]
-        )
-
-        cqgr = performance_model.get_compound_growth_rate(prices, len(prices))
-
-        prices = (
-            self._historical_data["weekly"]
-            .loc[:, "Adj Close"]
-            .loc[self._start_date : self._end_date]
-        )
-
-        cwgr = performance_model.get_compound_growth_rate(prices, len(prices))
-
-        prices = (
-            self._historical_data["daily"]
-            .loc[:, "Adj Close"]
-            .loc[self._start_date : self._end_date]
-        )
-
-        cdgr = performance_model.get_compound_growth_rate(prices, len(prices))
-
-        compound_growth_rate = pd.DataFrame(
-            [cagr, cqgr, cqgr, cwgr, cdgr],
-            index=[
-                "Compound Annual Growth Rate (CAGR)",
-                "Compound Quarterly Growth Rate (CQGR)",
-                "Compound Monthly Growth Rate (CMGR)",
-                "Compound Weekly Growth Rate (CWGR)",
-                "Compound Daily Growth Rate (CDGR)",
-            ],
-        )
+        compound_growth_rate = pd.DataFrame(compound_growth_rates).T
 
         compound_growth_rate = compound_growth_rate.round(
             rounding if rounding else self._rounding
@@ -3641,7 +3707,8 @@ class Performance:
     ):
         """
         Calculate the full pairwise Correlation Matrix across all assets (and the
-        benchmark) in the Toolkit instance, based on the daily historical returns.
+        benchmark) in the Toolkit instance, based on the returns at the frequency given
+        by `period`.
 
         Unlike `get_beta`, which relates a single asset to the benchmark, this computes
         the correlation between every pair of assets at once. This is a prerequisite for
@@ -3692,7 +3759,8 @@ class Performance:
     ):
         """
         Calculate the full pairwise Covariance Matrix across all assets (and the
-        benchmark) in the Toolkit instance, based on the daily historical returns.
+        benchmark) in the Toolkit instance, based on the returns at the frequency given
+        by `period`.
 
         Unlike `get_covariance`, which relates a single asset to the benchmark, this
         computes the covariance between every pair of assets at once. This is a
@@ -3808,11 +3876,14 @@ class Performance:
 
         Which returns:
 
-        | Date   |    AAPL |    MSFT |
-        |:-------|--------:|--------:|
-        | 2020   | 37.2641 | 16.0511 |
-        | 2021   | -2.5308 | 20.9479 |
-        | 2022   | -1.4753 | -3.3995 |
+        | Date   |    AAPL |     TSLA |
+        |:-------|--------:|---------:|
+        | 2021   |  0.2731 |   0.2656 |
+        | 2022   | -1.4762 |  -9.3885 |
+        | 2023   | 22.7573 |  16.6849 |
+        | 2024   |  5.353  |   2.7161 |
+        | 2025   | -8.9932 |  -7.9343 |
+        | 2026   |  1.7362 | -22.8876 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
@@ -3969,10 +4040,13 @@ class Performance:
         Which returns:
 
         | Date   |   Selectivity |   Diversification |
-        |:-------|--------------:|-------------------:|
-        | 2020   |        0.5708 |              0.0416 |
-        | 2021   |       -0.1945 |              0.1653 |
-        | 2022   |        0.0220 |             -0.0375 |
+        |:-------|--------------:|------------------:|
+        | 2021   |        0.0113 |           -0.0084 |
+        | 2022   |        0.022  |           -0.0375 |
+        | 2023   |        0.1048 |            0.0979 |
+        | 2024   |       -0.1053 |            0.1698 |
+        | 2025   |       -0.1774 |            0.056  |
+        | 2026   |       -0.0958 |            0.1246 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
@@ -4118,11 +4192,13 @@ class Performance:
 
         Which returns:
 
-        | Date   |     AAPL |    MSFT |
-        |:-------|---------:|--------:|
-        | 2020   |  12.0414 |  6.5831 |
-        | 2021   |   9.8271 | 18.3701 |
-        | 2022   |  -6.7460 | -6.8990 |
+        | Date   |    AAPL |    TSLA |
+        |:-------|--------:|--------:|
+        | 2022   | -6.7449 | -7.54   |
+        | 2023   | 17.0093 | 13.7817 |
+        | 2024   |  8.838  |  7.4715 |
+        | 2025   |  1.0706 |  0.8767 |
+        | 2026   |  2.1448 | -4.6751 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
@@ -4224,11 +4300,13 @@ class Performance:
 
         Which returns:
 
-        | Date   |   AAPL |   MSFT |
+        | Date   |   AAPL |   TSLA |
         |:-------|-------:|-------:|
-        | 2020   | 1.0649 | 1.0946 |
-        | 2021   | 0.9964 | 1.0552 |
-        | 2022   | 1.0790 | 1.0200 |
+        | 2022   | 1.0788 | 0.9467 |
+        | 2023   | 1.0726 | 1.1169 |
+        | 2024   | 1.1443 | 1.3081 |
+        | 2025   | 1.0729 | 1.0925 |
+        | 2026   | 0.8627 | 0.8404 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
@@ -4320,9 +4398,9 @@ class Performance:
 
         | Date   |   Alpha |   Beta |   Gamma |   R Squared |
         |:-------|--------:|-------:|--------:|------------:|
-        | 2020   |  0.0030 | 1.1648 |  0.3569 |       0.6932 |
-        | 2021   |  0.0051 | 1.4745 |  5.9823 |       0.4704 |
-        | 2022   |  0.0090 | 1.3691 |  1.5507 |       0.8050 |
+        | 2024   |  0.0009 | 0.944  | -9.4286 |      0.294  |
+        | 2025   | -0.0005 | 1.2237 |  1.6352 |      0.5693 |
+        | 2026   |  0.0006 | 0.6632 | -2.6122 |      0.1087 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
@@ -4434,10 +4512,10 @@ class Performance:
         Which returns:
 
         | Date   |   Alpha |   Beta |   Up Market Beta |   R Squared |
-        |:-------|--------:|-------:|------------------:|------------:|
-        | 2020   |  0.0032 | 1.1578 |            -0.0071 |       0.6929 |
-        | 2021   |  0.0033 | 1.2403 |             1.3512 |       0.4740 |
-        | 2022   |  0.0068 | 1.2399 |             1.5621 |       0.8105 |
+        |:-------|--------:|-------:|-----------------:|------------:|
+        | 2024   |  0.0013 | 1.1387 |          -0.3553 |      0.2926 |
+        | 2025   | -0.0009 | 1.1732 |           0.152  |      0.5673 |
+        | 2026   |  0.0008 | 0.7243 |          -0.1232 |      0.1088 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 

@@ -230,7 +230,7 @@ def obtain_fama_and_french_dataset(fama_and_french_url: str | None = None):
     if cache is not None:
         cached_dataset = cache.get(
             source=policy_model.KEN_FRENCH,
-            dataset="factors",
+            dataset="factors_decimal",
             entity=fama_and_french_url,
         )
 
@@ -252,6 +252,9 @@ def obtain_fama_and_french_dataset(fama_and_french_url: str | None = None):
 
         fama_and_french_dataset = fama_and_french_dataset.dropna(axis="index")
 
+        # Ken French publishes the factors in percent while returns are decimals.
+        fama_and_french_dataset = fama_and_french_dataset / 100
+
         fama_and_french_dataset.index = pd.to_datetime(
             fama_and_french_dataset.index, format="%Y%m%d"
         ).to_period(freq="D")
@@ -260,12 +263,47 @@ def obtain_fama_and_french_dataset(fama_and_french_url: str | None = None):
     if cache is not None and not fama_and_french_dataset.empty:
         cache.set(
             source=policy_model.KEN_FRENCH,
-            dataset="factors",
+            dataset="factors_decimal",
             entity=fama_and_french_url,
             data=fama_and_french_dataset,
         )
 
     return fama_and_french_dataset
+
+
+def obtain_fama_and_french_three_factor_dataset(
+    fama_and_french_url: str | None = None,
+) -> pd.DataFrame:
+    """
+    This functionality returns the Fama and French 3 Factor Model dataset:
+
+        - Market (MKT): The excess return of the market.
+        - Size (SMB): Small companies tend to outperform large companies.
+        - Value (HML): Value stocks tend to outperform growth stocks.
+
+    Next to that, it also includes the Risk Free Rate.
+
+    This is a separate dataset from the 5 Factor Model (see
+    `obtain_fama_and_french_dataset`) and is *not* interchangeable with it: `Mkt-RF`,
+    `HML` and `RF` are identical across the two files, but `SMB` is not. In the 3 Factor
+    file SMB is built from the 2x3 size/book-to-market sort alone, whereas in the 5
+    Factor file it is the average of three separate SMB legs (size/book-to-market,
+    size/operating-profitability and size/investment). The Carhart (1997) Four Factor
+    Model extends the *three* factor model, so it must be estimated against this file.
+
+    Args:
+        fama_and_french_url (str): the URL of the ZIP file that contains the dataset. If no URL is
+        provided, the default URL (Fama and French 3 Factor) is used.
+
+    Returns:
+        pd.DataFrame: the Fama and French 3 Factor Model dataset.
+    """
+    return obtain_fama_and_french_dataset(
+        fama_and_french_url
+        if fama_and_french_url
+        else "https://mba.tuck.dartmouth.edu/pages/faculty/ken.french/ftp/"
+        "F-F_Research_Data_Factors_daily_CSV.zip"
+    )
 
 
 def obtain_carhart_momentum_dataset(momentum_url: str | None = None) -> pd.DataFrame:
@@ -296,7 +334,9 @@ def obtain_carhart_momentum_dataset(momentum_url: str | None = None) -> pd.DataF
 
     if cache is not None:
         cached_dataset = cache.get(
-            source=policy_model.KEN_FRENCH, dataset="factors", entity=momentum_url
+            source=policy_model.KEN_FRENCH,
+            dataset="factors_decimal",
+            entity=momentum_url,
         )
 
         if cached_dataset is not None:
@@ -320,6 +360,9 @@ def obtain_carhart_momentum_dataset(momentum_url: str | None = None) -> pd.DataF
         ]
         momentum_dataset = momentum_dataset.dropna(axis="index")
 
+        # Ken French publishes the factor in percent while returns are decimals.
+        momentum_dataset = momentum_dataset / 100
+
         momentum_dataset.index = pd.to_datetime(
             momentum_dataset.index, format="%Y%m%d"
         ).to_period(freq="D")
@@ -329,7 +372,7 @@ def obtain_carhart_momentum_dataset(momentum_url: str | None = None) -> pd.DataF
     if cache is not None and not momentum_dataset.empty:
         cache.set(
             source=policy_model.KEN_FRENCH,
-            dataset="factors",
+            dataset="factors_decimal",
             entity=momentum_url,
             data=momentum_dataset,
         )
@@ -396,17 +439,37 @@ def get_fama_and_french_model_multi(
     Returns:
         dict: the regression results.
         pd.Series: the residuals.
+
+    Notes:
+    - Observations for which either the excess return or any factor is NaN are dropped
+    (listwise deletion), which is the standard treatment for a missing observation in an
+    OLS regression. Every return series starts with at least one NaN (the first
+    observation has no prior close to compare against), and market holidays that differ
+    between the return and factor calendars add more. Back- or forward-filling them
+    instead would duplicate a neighbouring day's return into the regression, and for a
+    leading NaN would use a future observation to explain a past one.
     """
     error_message = None
 
-    if excess_returns.isna().any():
-        excess_returns = excess_returns.bfill(limit=None)
-        excess_returns = excess_returns.ffill(limit=None)
+    factor_dataset = factor_dataset.reindex(excess_returns.index)
+    valid = excess_returns.notna() & factor_dataset.notna().all(axis=1)
+    excess_returns = excess_returns[valid]
+    factor_dataset = factor_dataset[valid]
 
-    if factor_dataset.isna().any().any():
-        # Filled along time (axis=0), mirroring how excess_returns is filled above.
-        factor_dataset = factor_dataset.bfill(limit=None)
-        factor_dataset = factor_dataset.ffill(limit=None)
+    if factor_dataset.empty:
+        error_message = (
+            "No overlapping non-missing observations between the returns and the "
+            "factors. Setting values to NaN"
+        )
+        regression_results = {"Intercept": np.nan}
+
+        for factor in factor_dataset.columns:
+            regression_results[f"{factor} Slope"] = np.nan
+
+        regression_results["Mean Squared Error (MSE)"] = np.nan
+        regression_results["R Squared"] = np.nan
+
+        return regression_results, excess_returns * np.nan, error_message
 
     model = LinearRegression()
     model.fit(factor_dataset, excess_returns)
@@ -477,7 +540,19 @@ def get_fama_and_french_model_single(
     Returns:
         dict: the regression results.
         pd.Series: the residuals.
+
+    Notes:
+    - Observations for which either the excess return or the factor is NaN are dropped
+    (listwise deletion), mirroring `get_fama_and_french_model_multi`. `scipy.stats.linregress`
+    propagates NaN, so a single missing observation -- which the first period of any dataset
+    always has, the first return having no prior close -- would otherwise turn every
+    regression parameter and every residual for that period into NaN.
     """
+    factor = factor.reindex(excess_returns.index)
+    valid = excess_returns.notna() & factor.notna()
+    excess_returns = excess_returns[valid]
+    factor = factor[valid]
+
     if len(excess_returns) < 2:  # noqa
         # Robust handling of insufficient data points for regression method
         regression_results = {
@@ -1780,12 +1855,31 @@ def get_compound_growth_rate(
     CGR is the mean growth rate of an investment over a specified period. Typically,
     the Compound Annual Growth Rate (CAGR) is used.
 
+    The formula is as follows:
+
+        - CGR = (Final Value / Initial Value) ^ (1 / Number of Periods) - 1
+
+    Note that `periods` is the number of compounding *intervals* between the first and
+    the last observation, which for a series of N observations is N - 1, not N. Passing
+    N instead of N - 1 systematically understates the growth rate (e.g. ten year-end
+    prices span nine years of compounding, not ten).
+
     Args:
-        prices (pd.Series): Series of data points.
+        prices (pd.Series | pd.DataFrame): Series or DataFrame of data points, ordered
+        from oldest to newest.
+        periods (int): The number of compounding intervals between the first and the
+        last observation. Must be greater than zero.
 
     Returns:
-        float: CGR value.
+        float | pd.Series: CGR value, as a float if `prices` is a Series and as a
+        Series (one value per column) if `prices` is a DataFrame.
+
+    Raises:
+        ValueError: If `periods` is not greater than zero.
     """
+    if periods <= 0:
+        raise ValueError("The number of periods must be greater than zero.")
+
     return (prices.iloc[-1] / prices.iloc[0]) ** (1 / periods) - 1
 
 
@@ -2365,31 +2459,43 @@ def _get_market_timing_regression(
     Returns:
         dict: the regression results.
         pd.Series: the residuals.
+
+    Notes:
+    - Rows in which the asset's or the benchmark's excess return is NaN are dropped
+    before fitting. Every return series starts with at least one NaN (the first
+    observation has no prior close to compare against), and `LinearRegression` raises
+    on NaN inputs, so without this the regression fails for the very first period of
+    any dataset.
     """
-    if len(excess_returns) < 3:  # noqa
-        # Robust handling of insufficient data points for regression method
-        regression_results = {
-            "Alpha": np.nan,
-            "Beta": np.nan,
-            second_regressor_name: np.nan,
-            "R Squared": np.nan,
-        }
-        return regression_results, excess_returns * np.nan
+    regression_results_nan = {
+        "Alpha": np.nan,
+        "Beta": np.nan,
+        second_regressor_name: np.nan,
+        "R Squared": np.nan,
+    }
 
     factor_dataset = pd.DataFrame(
         {
             "Benchmark Excess Return": benchmark_excess_returns,
             second_regressor_name: second_regressor,
         }
-    )
+    ).reindex(excess_returns.index)
+
+    valid = excess_returns.notna() & factor_dataset.notna().all(axis=1)
+    excess_returns_valid = excess_returns[valid]
+    factor_dataset = factor_dataset[valid]
+
+    if len(excess_returns_valid) < 3:  # noqa
+        # Robust handling of insufficient data points for regression method
+        return regression_results_nan, excess_returns * np.nan
 
     model = LinearRegression()
-    model.fit(factor_dataset, excess_returns)
+    model.fit(factor_dataset, excess_returns_valid)
 
     y_pred = model.predict(factor_dataset)
-    residuals = excess_returns - y_pred
+    residuals = excess_returns_valid - y_pred
 
-    r_squared = model.score(factor_dataset, excess_returns)
+    r_squared = model.score(factor_dataset, excess_returns_valid)
 
     regression_results = {
         "Alpha": model.intercept_,

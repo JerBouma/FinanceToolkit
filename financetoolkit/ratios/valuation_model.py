@@ -479,20 +479,20 @@ def get_tangible_asset_value(
 
 def get_net_current_asset_value(
     total_current_assets: pd.Series,
-    total_current_liabilities: pd.Series,
+    total_liabilities: pd.Series,
 ) -> pd.Series:
     """
-    Calculate the net current asset value, which is the total value of a company's current assets
-    minus its current liabilities.
+    Calculate the net current asset value (Benjamin Graham's NCAV), which is the total value
+    of a company's current assets minus its total liabilities (not just its current liabilities).
 
     Args:
         total_current_assets (float or pd.Series): The current assets of the company.
-        total_current_liabilities (float or pd.Series): The current liabilities of the company.
+        total_liabilities (float or pd.Series): The total liabilities of the company.
 
     Returns:
         float | pd.Series: The net current asset value.
     """
-    return total_current_assets - total_current_liabilities
+    return total_current_assets - total_liabilities
 
 
 def get_ev_to_ebit(

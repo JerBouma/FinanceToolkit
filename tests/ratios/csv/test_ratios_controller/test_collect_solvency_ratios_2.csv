@@ -2,9 +2,9 @@
 AAPL,Debt-to-Assets Ratio,Lag 1,,0.0302,-0.0342,-0.1611
 AAPL,Debt-to-Assets Ratio,Lag 2,,,-0.005,-0.1898
 AAPL,Debt-to-Assets Ratio,Lag 3,,,,-0.1653
-AAPL,Asset Coverage Ratio,Lag 1,,-0.0755,-0.0917,0.2436
-AAPL,Asset Coverage Ratio,Lag 2,,,-0.1603,0.1295
-AAPL,Asset Coverage Ratio,Lag 3,,,,0.0442
+AAPL,Asset Coverage Ratio,Lag 1,,-0.0701,-0.0604,0.21
+AAPL,Asset Coverage Ratio,Lag 2,,,-0.1262,0.137
+AAPL,Asset Coverage Ratio,Lag 3,,,,0.0572
 AAPL,Debt-to-Equity Ratio,Lag 1,,0.1563,0.2082,-0.3163
 AAPL,Debt-to-Equity Ratio,Lag 2,,,0.3971,-0.1739
 AAPL,Debt-to-Equity Ratio,Lag 3,,,,-0.0448
@@ -44,9 +44,9 @@ AAPL,Interest Paid to Expense Ratio,Lag 3,,,,-0.0746
 MSFT,Debt-to-Assets Ratio,Lag 1,,-0.1379,-0.1733,-0.1328
 MSFT,Debt-to-Assets Ratio,Lag 2,,,-0.2874,-0.2831
 MSFT,Debt-to-Assets Ratio,Lag 3,,,,-0.382
-MSFT,Asset Coverage Ratio,Lag 1,,0.12,0.2047,0.1799
-MSFT,Asset Coverage Ratio,Lag 2,,,0.3493,0.4214
-MSFT,Asset Coverage Ratio,Lag 3,,,,0.5921
+MSFT,Asset Coverage Ratio,Lag 1,,0.1389,0.1775,0.188
+MSFT,Asset Coverage Ratio,Lag 2,,,0.341,0.3988
+MSFT,Asset Coverage Ratio,Lag 3,,,,0.5932
 MSFT,Debt-to-Equity Ratio,Lag 1,,-0.2046,-0.2292,-0.2096
 MSFT,Debt-to-Equity Ratio,Lag 2,,,-0.3869,-0.3907
 MSFT,Debt-to-Equity Ratio,Lag 3,,,,-0.5154

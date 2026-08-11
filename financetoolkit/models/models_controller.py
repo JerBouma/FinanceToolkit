@@ -1939,7 +1939,6 @@ class Models:
         ]["Dividends"]
 
         gorden_growth_model: dict[str, dict[str, float]] = {}
-        previous_period = dividends_per_share.index[0]
 
         periods = pd.period_range(
             start=dividends_per_share.index[0],
@@ -1949,22 +1948,20 @@ class Models:
 
         for ticker in self._tickers:
             gorden_growth_model[ticker] = {}
+            last_known_period = dividends_per_share.index[0]
 
             for period in periods:
-                previous_period_location = periods.get_loc(previous_period)
-                period_location = periods.get_loc(period)
-                distance = period_location - previous_period_location
-
-                if (period_location + 1) < len(dividends_per_share.index):
-                    previous_period = period
-
-                dividends_per_share_value = (
-                    dividends_per_share.loc[period, ticker]
-                    if period != dividends_per_share.index[-1]
-                    and period in dividends_per_share.index
-                    else dividends_per_share.loc[previous_period, ticker]
-                    * (1 + growth_rate) ** distance
-                )
+                if period in dividends_per_share.index:
+                    dividends_per_share_value = dividends_per_share.loc[period, ticker]
+                    last_known_period = period
+                else:
+                    distance = periods.get_loc(period) - periods.get_loc(
+                        last_known_period
+                    )
+                    dividends_per_share_value = (
+                        dividends_per_share.loc[last_known_period, ticker]
+                        * (1 + growth_rate) ** distance
+                    )
 
                 gorden_growth_model[ticker][period] = (
                     intrinsic_model.get_gorden_growth_model(
@@ -2782,21 +2779,54 @@ class Models:
         # Every criterion is a boolean comparison, so a period for which the statements have
         # not been reported yet compares NaN against a number, evaluates to False and scores
         # a perfect zero — the worst possible F-Score — rather than being reported as missing.
-        # Mask those periods out explicitly before dropping them.
+        # Mask those periods out; must cover every field feeding any of the nine criteria, not just ROA/CFO/accruals.
         reported = (
-            total_assets.notna() & net_income.notna() & operating_cashflow.notna()
-        )
-        reported = (
-            reported.reindex(
-                index=piotroski_results.index.get_level_values(0),
-                columns=piotroski_results.columns,
-            )
-            .fillna(False)
-            .astype(bool)
-            .set_axis(piotroski_results.index)
+            total_assets.notna()
+            & net_income.notna()
+            & operating_cashflow.notna()
+            & long_term_debt.notna()
+            & current_assets.notna()
+            & current_liabilities.notna()
+            & revenue.notna()
+            & cost_of_goods_sold.notna()
+            & common_stock_issued.notna()
         )
 
-        piotroski_results = piotroski_results.astype(float).where(reported)
+        # Five criteria compare against the previous period; require it reported too, or NaN > x resolves False.
+        reported_previous_period = reported.shift(1, axis=1)
+        change_based_criteria = {
+            "Change in Return on Assets Criteria",
+            "Change in Leverage Criteria",
+            "Change in Current Ratio Criteria",
+            "Gross Margin Criteria",
+            "Asset Turnover Criteria",
+            "Piotroski Score",
+        }
+
+        def _broadcast(mask: pd.DataFrame) -> pd.DataFrame:
+            return (
+                mask.reindex(
+                    index=piotroski_results.index.get_level_values(0),
+                    columns=piotroski_results.columns,
+                )
+                .fillna(False)
+                .astype(bool)
+                .set_axis(piotroski_results.index)
+            )
+
+        reported = _broadcast(reported)
+        reported_previous_period = _broadcast(reported_previous_period)
+
+        needs_previous_period = piotroski_results.index.get_level_values(1).isin(
+            change_based_criteria
+        )
+        full_mask = reported.copy()
+        full_mask.loc[needs_previous_period] = (
+            reported.loc[needs_previous_period]
+            & reported_previous_period.loc[needs_previous_period]
+        )
+
+        piotroski_results = piotroski_results.astype(float).where(full_mask)
 
         piotroski_results = piotroski_results.dropna(axis=1, how="all")
 

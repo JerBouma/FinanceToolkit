@@ -317,7 +317,11 @@ def get_return_on_tangible_assets(
     formulation in that it also nets out total liabilities, so the denominator
     reflects the tangible equity actually backing the business rather than the
     gross tangible asset base. Compare `get_tangible_asset_value` in the valuation
-    module, which computes the same net tangible asset base without averaging.
+    module, which is a related but distinct net tangible asset base: it excludes
+    Goodwill specifically, whereas this function excludes Intangible Assets, and
+    Goodwill and Intangible Assets are two separate balance-sheet line items that
+    can differ substantially (e.g. one is a subset of, or need not equal, the
+    other), so the two functions' denominators are not interchangeable.
 
     The formula is as follows:
 

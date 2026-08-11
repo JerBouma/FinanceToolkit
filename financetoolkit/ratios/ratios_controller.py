@@ -224,7 +224,7 @@ class Ratios:
         | EV-to-EBITDA              | 25.7524      | 17.0831      | 24.9432      | 29.3152      | 28.7093      |
         | EV-to-Operating-Cash-Flow | 29.7611      | 18.2565      | 28.3904      | 33.3825      | 37.2762      |
         | Tangible Asset Value      |  6.309e+10   |  5.0672e+10  |  6.2146e+10  |  5.695e+10   |  7.3733e+10  |
-        | Net Current Asset Value   |  9.355e+09   | -1.8577e+10  | -1.742e+09   | -2.3405e+10  | -1.7674e+10  |
+        | Net Current Asset Value   | -1.5308e+11  | -1.6668e+11  | -1.4687e+11  | -1.5504e+11  | -1.3755e+11  |
         """
         if not days:
             days = 365 / 4 if self._quarterly else 365
@@ -628,10 +628,10 @@ class Ratios:
             trailing=trailing
         )
         efficiency_ratios["Inventory Turnover Ratio"] = (
-            self.get_inventory_turnover_ratio()
+            self.get_inventory_turnover_ratio(trailing=trailing)
         )
         efficiency_ratios["Accounts Payable Turnover Ratio"] = (
-            self.get_accounts_payables_turnover_ratio()
+            self.get_accounts_payables_turnover_ratio(trailing=trailing)
         )
         efficiency_ratios["SGA-to-Revenue Ratio"] = self.get_sga_to_revenue_ratio(
             trailing=trailing
@@ -3543,7 +3543,7 @@ class Ratios:
             trailing=trailing
         )
         profitability_ratios["Free Cash Flow to Operating Cash Flow Ratio"] = (
-            self.get_free_cash_flow_operating_cash_flow_ratio()
+            self.get_free_cash_flow_operating_cash_flow_ratio(trailing=trailing)
         )
         profitability_ratios["EBT to EBIT Ratio"] = self.get_EBT_to_EBIT(
             trailing=trailing
@@ -4566,7 +4566,7 @@ class Ratios:
 
         |      |   2021 |   2022 |   2023 |   2024 |   2025 |
         |:-----|-------:|-------:|-------:|-------:|-------:|
-        | AAPL | 0.5637 | 0.599  | 0.6068 | 0.6019 | 0.7038 |
+        | AAPL | 0.4143 | 0.4439 | 0.444  | 0.4336 | 0.5335 |
         | TSLA | 0.1429 | 0.2733 | 0.2403 | 0.0889 | 0.0425 |
         """
         if trailing:
@@ -5906,18 +5906,21 @@ class Ratios:
     ):
         """
         Calculate the asset coverage ratio, a solvency ratio that measures how well a
-        company's tangible assets, after settling current liabilities, can cover its
-        total debt.
+        company's tangible assets, after settling non-debt current liabilities, can
+        cover its total debt.
 
         This ratio is commonly used by lenders and bondholders to assess the extent to
         which a company's hard (tangible) assets would be available to repay debt
         obligations in a liquidation scenario, since intangible assets (e.g. goodwill)
-        typically have little to no recovery value and current liabilities are assumed
-        to be settled first out of current assets.
+        typically have little to no recovery value and non-debt current liabilities are
+        assumed to be settled first out of current assets. Short-term debt is netted
+        out of current liabilities before subtracting, since it is already captured in
+        total debt and would otherwise be double-counted.
 
         The formula is as follows:
 
-        - Asset Coverage Ratio = (Total Assets - Intangible Assets - Total Current Liabilities) / Total Debt
+        - Asset Coverage Ratio = [(Total Assets - Intangible Assets) -
+          (Total Current Liabilities - Short Term Debt)] / Total Debt
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
@@ -5960,6 +5963,10 @@ class Ratios:
                 .T.rolling(trailing)
                 .mean()
                 .T,
+                self._balance_sheet_statement.loc[:, "Short Term Debt", :]
+                .T.rolling(trailing)
+                .mean()
+                .T,
                 self._balance_sheet_statement.loc[:, "Total Debt", :]
                 .T.rolling(trailing)
                 .mean()
@@ -5970,6 +5977,7 @@ class Ratios:
                 self._balance_sheet_statement.loc[:, "Total Assets", :],
                 self._balance_sheet_statement.loc[:, "Intangible Assets", :],
                 self._balance_sheet_statement.loc[:, "Total Current Liabilities", :],
+                self._balance_sheet_statement.loc[:, "Short Term Debt", :],
                 self._balance_sheet_statement.loc[:, "Total Debt", :],
             )
 
@@ -6800,10 +6808,10 @@ class Ratios:
 
         Which returns:
 
-        |      |    2021 |     2022 |     2023 |     2024 |    2025 |
-        |:-----|--------:|---------:|---------:|---------:|--------:|
-        | AAPL | -9.3855 | -11.4075 | -10.087  | -12.5176 | -8.7678 |
-        | TSLA | -1.4346 |  -2.053  |  -1.4896 |  -1.3157 | -1.7294 |
+        |      |   2021 |    2022 |   2023 |    2024 |   2025 |
+        |:-----|-------:|--------:|-------:|--------:|-------:|
+        | AAPL | 9.3855 | 11.4075 | 10.087 | 12.5176 | 8.7678 |
+        | TSLA | 1.4346 |  2.053  | 1.4896 |  1.3157 | 1.7294 |
         """
         if trailing:
             capex_coverage_ratio = solvency_model.get_capex_coverage_ratio(
@@ -6890,10 +6898,10 @@ class Ratios:
 
         Which returns:
 
-        |      |    2021 |   2022 |    2023 |    2024 |    2025 |
-        |:-----|--------:|-------:|--------:|--------:|--------:|
-        | AAPL | -4.0716 | -4.781 | -4.2543 | -4.7913 | -3.9623 |
-        | TSLA | -1.4346 | -2.053 | -1.4896 | -1.3157 | -1.7294 |
+        |      |   2021 |  2022 |   2023 |   2024 |   2025 |
+        |:-----|-------:|------:|-------:|-------:|-------:|
+        | AAPL | 4.0716 | 4.781 | 4.2543 | 4.7913 | 3.9623 |
+        | TSLA | 1.4346 | 2.053 | 1.4896 | 1.3157 | 1.7294 |
         """
         if trailing:
             dividend_capex_coverage_ratio = (
@@ -7254,7 +7262,7 @@ class Ratios:
         | EV-to-EBITDA                | 25.7524     | 17.0831      | 24.9432     | 29.3152     | 28.7093     |
         | EV-to-Operating-Cash-Flow   | 29.7611     | 18.2565      | 28.3904     | 33.3825     | 37.2762     |
         | Tangible Asset Value        |  6.309e+10  |  5.0672e+10  |  6.2146e+10 |  5.695e+10  |  7.3733e+10 |
-        | Net Current Asset Value     |  9.355e+09  | -1.8577e+10  | -1.742e+09  | -2.3405e+10 | -1.7674e+10 |
+        | Net Current Asset Value     | -1.5308e+11 | -1.6668e+11  | -1.4687e+11 | -1.5504e+11 | -1.3755e+11 |
         | EV-to-Free-Cash-Flow        | 33.3102     | 20.0107      | 31.5146     | 36.2809     | 42.075      |
         | Graham Number               | 21.7378     | 20.662       | 23.2902     | 22.4928     | 28.7292     |
         | Buyback Yield               |  0.0283     |  0.0421      |  0.0255     |  0.0246     |  0.0222     |
@@ -7270,7 +7278,7 @@ class Ratios:
             diluted=diluted, trailing=trailing
         )
         valuation_ratios["Price-to-Earnings"] = self.get_price_to_earnings_ratio(
-            include_dividends=include_dividends, diluted=diluted
+            include_dividends=include_dividends, diluted=diluted, trailing=trailing
         )
         valuation_ratios["Price-to-Earnings-Growth"] = (
             self.get_price_to_earnings_growth_ratio(
@@ -7764,8 +7772,6 @@ class Ratios:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int): Defines whether to select a trailing period.
-            E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
         Returns:
             pd.DataFrame: Price earnings to growth (PEG) ratio values.
@@ -8754,41 +8760,22 @@ class Ratios:
         | AAPL |  28.7847 | 17.3655 | 27.5403 | 32.6289 |  36.5905 |
         | TSLA | 103.745  | 29.0716 | 65.2832 | 94.6614 | 107.589  |
         """
-        average_shares = (
-            self._income_statement.loc[:, "Weighted Average Shares Diluted", :]
-            if diluted
-            else self._income_statement.loc[:, "Weighted Average Shares", :]
+        market_cap = self.get_market_cap(
+            diluted=diluted,
+            trailing=trailing if trailing else None,
+            show_daily=show_daily,
         )
 
         cash_flow_from_operations = self._cash_flow_statement.loc[
             :, "Cash Flow from Operations", :
         ]
 
-        years = self._cash_flow_statement.columns
-        begin, end = str(years[0]), str(years[-1])
-
         if show_daily:
-            share_prices = self._daily_historical_data.loc[begin:, "Adj Close"][
-                self._tickers_without_portfolio
-            ]
-
-            average_shares = map_period_data_to_daily_data(
-                period_data=average_shares,
-                daily_dates=share_prices.index,
-                quarterly=self._quarterly,
-            )
-
             cash_flow_from_operations = map_period_data_to_daily_data(
                 period_data=cash_flow_from_operations,
-                daily_dates=share_prices.index,
+                daily_dates=market_cap.index,
                 quarterly=self._quarterly,
             )
-        else:
-            share_prices = self._historical_data.loc[begin:end, "Adj Close"][
-                self._tickers_without_portfolio
-            ].T
-
-        market_cap = valuation_model.get_market_cap(share_prices, average_shares)
 
         if trailing:
             price_to_cash_flow_ratio = valuation_model.get_price_to_cash_flow_ratio(
@@ -9938,15 +9925,20 @@ class Ratios:
         trailing: int | None = None,
     ):
         """
-        Calculate the net current asset value, a financial metric that represents the total value
-        of a company's current assets minus its current liabilities. It indicates the extent to
-        which a company's short-term assets exceed its short-term liabilities.
+        Calculate the net current asset value, a conservative liquidation-value metric introduced
+        by Benjamin Graham that represents the total value of a company's current assets minus
+        *all* of its liabilities (not just its current liabilities). It approximates what would
+        be left for shareholders if the company were liquidated, paying off every liability using
+        only the current (most liquid) assets and ignoring any value from fixed/non-current assets.
 
         The formula is as follows:
 
-        - Net Current Asset Value = Total Current Assets — Total Current Liabilities
+        - Net Current Asset Value = Total Current Assets — Total Liabilities
 
-        Also known as: NCAV, net current asset value, Graham number.
+        Also known as: NCAV. Note that NCAV is related to, but distinct from, the Graham Number
+        (`sqrt(22.5 * Earnings per Share * Book Value per Share)`, see `Toolkit.models.get_graham_number`)
+        — both are Benjamin Graham value-investing metrics, but NCAV is a liquidation-value estimate
+        while the Graham Number is a fair-value price estimate based on earnings and book value.
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
@@ -9973,10 +9965,10 @@ class Ratios:
 
         Which returns:
 
-        |      |      2021 |        2022 |        2023 |        2024 |        2025 |
-        |:-----|----------:|------------:|------------:|------------:|------------:|
-        | AAPL | 9.355e+09 | -1.8577e+10 | -1.742e+09  | -2.3405e+10 | -1.7674e+10 |
-        | TSLA | 7.395e+09 |  1.4208e+10 |  2.0868e+10 |  2.9539e+10 |  3.6928e+10 |
+        |      |        2021 |        2022 |        2023 |        2024 |        2025 |
+        |:-----|------------:|------------:|------------:|------------:|------------:|
+        | AAPL | -1.5308e+11 | -1.6668e+11 | -1.4687e+11 | -1.5504e+11 | -1.3755e+11 |
+        | TSLA | -3.448e+09  |  4.477e+09  |  6.607e+09  |  9.97e+09   |  1.3701e+10 |
         """
         if trailing:
             net_current_asset_value = valuation_model.get_net_current_asset_value(
@@ -9984,7 +9976,7 @@ class Ratios:
                 .T.rolling(trailing)
                 .mean()
                 .T,
-                self._balance_sheet_statement.loc[:, "Total Current Liabilities", :]
+                self._balance_sheet_statement.loc[:, "Total Liabilities", :]
                 .T.rolling(trailing)
                 .mean()
                 .T,
@@ -9992,7 +9984,7 @@ class Ratios:
         else:
             net_current_asset_value = valuation_model.get_net_current_asset_value(
                 self._balance_sheet_statement.loc[:, "Total Current Assets", :],
-                self._balance_sheet_statement.loc[:, "Total Current Liabilities", :],
+                self._balance_sheet_statement.loc[:, "Total Liabilities", :],
             )
 
         return finalize_dataset(

@@ -1,6 +1,6 @@
 ,,2021,2022,2023
 AAPL,Debt-to-Assets Ratio,,-0.0034,-0.0965
-AAPL,Asset Coverage Ratio,,-0.0807,0.0569
+AAPL,Asset Coverage Ratio,,-0.0631,0.0612
 AAPL,Debt-to-Equity Ratio,,0.1734,-0.087
 AAPL,Debt Service Coverage Ratio,,0.0767,-0.0444
 AAPL,Equity Multiplier,,0.1772,0.0106
@@ -14,7 +14,7 @@ AAPL,Debt-to-Capital Ratio,,0.0516,-0.0276
 AAPL,Preferred Dividend Coverage Ratio,,,
 AAPL,Interest Paid to Expense Ratio,,-0.0342,-0.0244
 MSFT,Debt-to-Assets Ratio,,-0.1547,-0.1548
-MSFT,Asset Coverage Ratio,,0.1608,0.1957
+MSFT,Asset Coverage Ratio,,0.1564,0.1869
 MSFT,Debt-to-Equity Ratio,,-0.2153,-0.2226
 MSFT,Debt Service Coverage Ratio,,0.093,0.0342
 MSFT,Equity Multiplier,,-0.072,-0.0797

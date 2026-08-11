@@ -186,33 +186,41 @@ def get_asset_coverage_ratio(
     total_assets: float | pd.Series,
     intangible_assets: float | pd.Series,
     current_liabilities: float | pd.Series,
+    short_term_debt: float | pd.Series,
     total_debt: float | pd.Series,
 ) -> pd.Series:
     """
     Calculate the asset coverage ratio, a solvency ratio that measures how well a
-    company's tangible assets, after settling current liabilities, can cover its total
-    debt.
+    company's tangible assets, after settling non-debt current liabilities, can cover
+    its total debt.
 
     This ratio is commonly used by lenders and bondholders to assess the extent to
     which a company's hard (tangible) assets would be available to repay debt
     obligations in a liquidation scenario, since intangible assets (e.g. goodwill)
-    typically have little to no recovery value and current liabilities are assumed to
-    be settled first out of current assets.
+    typically have little to no recovery value and non-debt current liabilities are
+    assumed to be settled first out of current assets. Short-term debt is netted out
+    of current liabilities before subtracting, because it is already captured in
+    total debt — otherwise it would be double-counted, once as part of current
+    liabilities and again as part of total debt.
 
     The formula is as follows:
 
-        Asset Coverage Ratio = (Total Assets - Intangible Assets - Current Liabilities) / Total Debt
+        Asset Coverage Ratio = [(Total Assets - Intangible Assets)
+            - (Current Liabilities - Short-Term Debt)] / Total Debt
 
     Args:
         total_assets (float or pd.Series): Total assets of the company.
         intangible_assets (float or pd.Series): Intangible assets of the company.
         current_liabilities (float or pd.Series): Total current liabilities of the company.
+        short_term_debt (float or pd.Series): Short-term (current portion of) debt of the company.
         total_debt (float or pd.Series): Total debt of the company.
 
     Returns:
         float | pd.Series: The asset coverage ratio.
     """
-    return (total_assets - intangible_assets - current_liabilities) / total_debt
+    return (
+        (total_assets - intangible_assets) - (current_liabilities - short_term_debt)
+    ) / total_debt
 
 
 def get_cash_flow_coverage_ratio(

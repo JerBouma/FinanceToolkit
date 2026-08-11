@@ -1,7 +1,7 @@
 ,,2020,2021,2022,2023
 AAPL,Earnings per Share,,,0.321,0.0448
 AAPL,Revenue per Share,,,0.2263,0.0562
-AAPL,Price-to-Earnings,,-0.2144,-0.3241,0.0
+AAPL,Price-to-Earnings,,,-0.4429,0.0
 AAPL,Price-to-Earnings-Growth,,,4.4281,0.0
 AAPL,Book Value per Share,,,-0.0821,0.0242
 AAPL,Price-to-Book,,,-0.1982,0.0
@@ -11,7 +11,7 @@ AAPL,Earnings Yield,,,0.793,0.0
 AAPL,Dividend Payout Ratio,,,-0.1971,0.0073
 AAPL,Dividend Yield,,-0.0149,-0.3065,0.0
 AAPL,Weighted Dividend Yield,,,0.4433,0.0
-AAPL,Price-to-Cash-Flow,,,-0.4182,0.0
+AAPL,Price-to-Cash-Flow,,,-0.2125,0.0
 AAPL,Price-to-Free-Cash-Flow,,,-0.2153,0.0
 AAPL,Price-to-Sales,,,-0.1877,0.0
 AAPL,Market Cap,,,-0.0357,0.0
@@ -21,14 +21,14 @@ AAPL,EV-to-EBIT,,,-0.2458,0.0
 AAPL,EV-to-EBITDA,,,-0.2356,0.0
 AAPL,EV-to-Operating-Cash-Flow,,,-0.2077,0.0
 AAPL,Tangible Asset Value,,,-0.1142,-0.0083
-AAPL,Net Current Asset Value,,,-1.1934,1.2033
+AAPL,Net Current Asset Value,,,0.1935,-0.0194
 AAPL,EV-to-Free-Cash-Flow,,,-0.2106,0.0
 AAPL,Buyback Yield,,,0.1557,0.0
 AAPL,Shareholder Yield,,,0.042,0.0
 AAPL,SBC-Adjusted Free Cash Flow,,,0.2366,0.0198
 MSFT,Earnings per Share,,,0.2811,0.0926
 MSFT,Revenue per Share,,,0.1882,0.1298
-MSFT,Price-to-Earnings,,0.0912,-0.3991,0.0
+MSFT,Price-to-Earnings,,,-0.4381,0.0
 MSFT,Price-to-Earnings-Growth,,,0.2063,0.0
 MSFT,Book Value per Share,,,0.1965,0.2191
 MSFT,Price-to-Book,,,-0.3984,0.0
@@ -38,7 +38,7 @@ MSFT,Earnings Yield,,,0.7807,0.0
 MSFT,Dividend Payout Ratio,,,-0.1377,0.0108
 MSFT,Dividend Yield,,0.3814,0.5373,0.0
 MSFT,Weighted Dividend Yield,,,0.5354,0.0
-MSFT,Price-to-Cash-Flow,,,-0.4087,0.0
+MSFT,Price-to-Cash-Flow,,,-0.1468,0.0
 MSFT,Price-to-Free-Cash-Flow,,,-0.1397,0.0
 MSFT,Price-to-Sales,,,-0.1259,0.0
 MSFT,Market Cap,,,0.0293,0.0
@@ -48,7 +48,7 @@ MSFT,EV-to-EBIT,,,-0.1681,0.0
 MSFT,EV-to-EBITDA,,,-0.1573,0.0
 MSFT,EV-to-Operating-Cash-Flow,,,-0.1494,0.0
 MSFT,Tangible Asset Value,,,0.1439,0.2408
-MSFT,Net Current Asset Value,,,-0.1705,-0.0918
+MSFT,Net Current Asset Value,,,3.2467,0.392
 MSFT,EV-to-Free-Cash-Flow,,,-0.1423,0.0
 MSFT,Buyback Yield,,,0.1609,0.0
 MSFT,Shareholder Yield,,,0.2995,0.0

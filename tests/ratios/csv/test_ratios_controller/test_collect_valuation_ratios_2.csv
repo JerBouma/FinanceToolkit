@@ -65,9 +65,9 @@ AAPL,EV-to-Operating-Cash-Flow,Lag 3,,,,-0.3817
 AAPL,Tangible Asset Value,Lag 1,,-0.0344,-0.1968,0.2264
 AAPL,Tangible Asset Value,Lag 2,,,-0.2245,-0.015
 AAPL,Tangible Asset Value,Lag 3,,,,-0.0489
-AAPL,Net Current Asset Value,Lag 1,,-0.7559,-2.9858,-0.9062
-AAPL,Net Current Asset Value,Lag 2,,,-1.4848,-1.1862
-AAPL,Net Current Asset Value,Lag 3,,,,-1.0455
+AAPL,Net Current Asset Value,Lag 1,,0.333,0.0889,-0.1188
+AAPL,Net Current Asset Value,Lag 2,,,0.4514,-0.0405
+AAPL,Net Current Asset Value,Lag 3,,,,0.279
 AAPL,EV-to-Free-Cash-Flow,Lag 1,,0.02,-0.3958,0.0
 AAPL,EV-to-Free-Cash-Flow,Lag 2,,,-0.3837,-0.3958
 AAPL,EV-to-Free-Cash-Flow,Lag 3,,,,-0.3837
@@ -146,9 +146,9 @@ MSFT,EV-to-Operating-Cash-Flow,Lag 3,,,,-0.2718
 MSFT,Tangible Asset Value,Lag 1,,0.2311,0.0731,0.3971
 MSFT,Tangible Asset Value,Lag 2,,,0.3211,0.4991
 MSFT,Tangible Asset Value,Lag 3,,,,0.8456
-MSFT,Net Current Asset Value,Lag 1,,-0.1264,-0.2209,0.0738
-MSFT,Net Current Asset Value,Lag 2,,,-0.3194,-0.1634
-MSFT,Net Current Asset Value,Lag 3,,,,-0.2691
+MSFT,Net Current Asset Value,Lag 1,,5.7628,2.8746,-0.2488
+MSFT,Net Current Asset Value,Lag 2,,,25.2033,1.9108
+MSFT,Net Current Asset Value,Lag 3,,,,18.685
 MSFT,EV-to-Free-Cash-Flow,Lag 1,,0.2014,-0.3825,0.0
 MSFT,EV-to-Free-Cash-Flow,Lag 2,,,-0.2581,-0.3825
 MSFT,EV-to-Free-Cash-Flow,Lag 3,,,,-0.2581

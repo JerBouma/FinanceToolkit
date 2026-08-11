@@ -26,20 +26,31 @@ def get_current_ratio(
 
 def get_quick_ratio(
     cash_and_equivalents: pd.Series,
-    accounts_receivable: pd.Series,
     marketable_securities: pd.Series,
+    accounts_receivable: pd.Series,
     current_liabilities: pd.Series,
 ) -> pd.Series:
     """
     Calculate the quick ratio (also known as the acid-test ratio), a more stringent
     measure of liquidity that excludes inventory from current assets.
 
-    This ratio is also referred to as the Acid Test Ratio.
+    This uses the narrow ("quick assets") formulation, which builds the numerator up
+    from the three assets that can be converted to cash quickly, rather than the
+    broader (Current Assets - Inventory) / Current Liabilities formulation. The narrow
+    version is the stricter of the two since it also excludes prepaid expenses and
+    other current assets that cannot readily be turned into cash.
+
+    The formula is as follows:
+
+        Quick Ratio = (Cash and Cash Equivalents + Marketable Securities +
+            Accounts Receivable) / Current Liabilities
+
+    Also known as: acid-test ratio.
 
     Args:
         cash_and_equivalents (float or pd.Series): Total cash and cash equivalents of the company.
-        accounts_receivable (float or pd.Series): Total accounts receivable of the company.
         marketable_securities (float or pd.Series): Total marketable securities of the company.
+        accounts_receivable (float or pd.Series): Total accounts receivable of the company.
         current_liabilities (float or pd.Series): Total current liabilities of the company.
 
     Returns:

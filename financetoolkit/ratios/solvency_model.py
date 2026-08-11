@@ -103,10 +103,10 @@ def get_equity_multiplier(
     This is also referred to as the company financial leverage.
 
     Args:
-        total_assets_begin (float or pd.Series): Total assets at the beginning of the period.
-        total_assets_end (float or pd.Series): Total assets at the end of the period.
-        total_equity_begin (float or pd.Series): Total equity at the beginning of the period.
-        total_equity_end (float or pd.Series): Total equity at the end of the period.
+        average_total_assets (float or pd.Series): Average total assets of the company.
+            This is typically calculated as (beginning total assets + ending total assets) / 2.
+        average_total_equity (float or pd.Series): Average total equity of the company.
+            This is typically calculated as (beginning total equity + ending total equity) / 2.
 
     Returns:
         float | pd.Series: The equity multiplier.
@@ -243,12 +243,15 @@ def get_capex_coverage_ratio(
 
     Args:
         cash_flow_from_operations (float or pd.Series): Cash flow from operations of the company.
-        capital_expenditure (float or pd.Series): Capital expenditure of the company.
+        capital_expenditure (float or pd.Series): Capital expenditure of the company,
+            as reported in the Cash Flow Statement.
 
     Returns:
         float | pd.Series: The capital expenditure coverage ratio value.
     """
-    return cash_flow_from_operations / capital_expenditure
+    # Capital Expenditure is reported as a negative cash outflow, so the magnitude is
+    # used to keep the ratio positive and consistent with "higher is better".
+    return cash_flow_from_operations / abs(capital_expenditure)
 
 
 def get_dividend_capex_coverage_ratio(
@@ -263,13 +266,17 @@ def get_dividend_capex_coverage_ratio(
 
     Args:
         cash_flow_from_operations (float or pd.Series): Cash flow from operations of the company.
-        capital_expenditure (float or pd.Series): Capital expenditure of the company.
-        dividends (float or pd.Series): Dividend payments of the company.
+        capital_expenditure (float or pd.Series): Capital expenditure of the company,
+            as reported in the Cash Flow Statement.
+        dividends (float or pd.Series): Dividend payments of the company, as reported
+            in the Cash Flow Statement.
 
     Returns:
         float | pd.Series: The dividend paid and capex coverage ratio value.
     """
-    return cash_flow_from_operations / (capital_expenditure + dividends)
+    # Both are reported as negative cash outflows, so their magnitudes are used to keep
+    # the ratio positive and consistent with "higher is better".
+    return cash_flow_from_operations / (abs(capital_expenditure) + abs(dividends))
 
 
 def get_debt_to_capital_ratio(

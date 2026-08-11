@@ -64,7 +64,7 @@ AAPL,Effective Tax Rate,0.1443,0.133,0.162,0.1472
 AAPL,Return on Assets,,0.2806,0.2836,0.275
 AAPL,Cash Return on Assets,,0.3083,0.3471,0.3134
 AAPL,Return on Equity,,1.4744,1.7546,1.7195
-AAPL,Return on Invested Capital,,0.5637,0.599,0.6286
+AAPL,Return on Invested Capital,,0.4143,0.4439,0.46
 AAPL,Return on Capital Employed,0.3202,0.496,0.6139,0.5677
 AAPL,Return on Tangible Assets,,1.4744,1.7546,1.7195
 AAPL,Income Quality Ratio,1.4052,1.0988,1.2239,1.1397
@@ -85,7 +85,7 @@ MSFT,Effective Tax Rate,0.1651,0.1383,0.1311,0.1898
 MSFT,Return on Assets,,0.193,0.2082,0.1863
 MSFT,Cash Return on Assets,,0.2417,0.2549,0.2255
 MSFT,Return on Equity,,0.4708,0.4715,0.3882
-MSFT,Return on Invested Capital,,0.3899,0.4153,0.3731
+MSFT,Return on Invested Capital,,0.2243,0.2496,0.2128
 MSFT,Return on Capital Employed,0.2429,0.2996,0.318,0.2965
 MSFT,Return on Tangible Assets,,0.4992,0.5026,0.411
 MSFT,Income Quality Ratio,1.3702,1.2525,1.2241,1.2103
@@ -104,8 +104,8 @@ AAPL,Free Cash Flow Yield,0.0323,0.0316,0.0531,
 AAPL,Net-Debt to EBITDA Ratio,1.0894,0.8449,0.8337,0.6448
 AAPL,Gross Debt to EBITDA Ratio,1.581,1.1355,1.0149,0.8829
 AAPL,Cash Flow Coverage Ratio,0.6598,0.7621,0.922,0.9951
-AAPL,CAPEX Coverage Ratio,-11.0376,-9.3855,-11.4075,-10.087
-AAPL,Dividend CAPEX Coverage Ratio,-3.7716,-4.0716,-4.781,-4.2543
+AAPL,CAPEX Coverage Ratio,11.0376,9.3855,11.4075,10.087
+AAPL,Dividend CAPEX Coverage Ratio,3.7716,4.0716,4.781,4.2543
 AAPL,Debt-to-Capital Ratio,0.6517,0.6839,0.7233,0.6413
 AAPL,Preferred Dividend Coverage Ratio,inf,inf,inf,inf
 AAPL,Interest Paid to Expense Ratio,1.0449,1.0159,0.9775,0.9669
@@ -118,8 +118,8 @@ MSFT,Free Cash Flow Yield,0.0274,0.0225,0.0367,
 MSFT,Net-Debt to EBITDA Ratio,0.8733,0.6562,0.4838,0.2467
 MSFT,Gross Debt to EBITDA Ratio,1.0797,0.8306,0.6262,0.5857
 MSFT,Cash Flow Coverage Ratio,0.8546,1.1323,1.4532,1.4606
-MSFT,CAPEX Coverage Ratio,-3.9295,-3.7213,-3.7275,-3.116
-MSFT,Dividend CAPEX Coverage Ratio,-1.9843,-2.0661,-2.1188,-1.8282
+MSFT,CAPEX Coverage Ratio,3.9295,3.7213,3.7275,3.116
+MSFT,Dividend CAPEX Coverage Ratio,1.9843,2.0661,2.1188,1.8282
 MSFT,Debt-to-Capital Ratio,0.3751,0.3231,0.2689,0.2253
 MSFT,Preferred Dividend Coverage Ratio,inf,inf,inf,inf
 MSFT,Interest Paid to Expense Ratio,0.0,0.0,0.0,0.0

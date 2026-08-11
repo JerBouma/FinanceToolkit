@@ -96,7 +96,6 @@ def get_operating_cycle(
     Args:
         days_of_inventory (float or pd.Series): Days of inventory of the company.
         days_of_sales_outstanding (float or pd.Series): Days of sales outstanding of the company.
-        days_of_payables (float or pd.Series): Days of payables of the company.
 
     Returns:
         float | pd.Series: The operating cycle value.
@@ -133,8 +132,8 @@ def get_days_of_accounts_payable_outstanding(
 
     Args:
         cost_of_goods_sold (float or pd.Series): Total Costs of Goods Sold of the company.
-        accounts_payable_begin (float or pd.Series): Beginning accounts payable of the company.
-        accounts_payable_end (float or pd.Series): Ending accounts payable of the company.
+        average_accounts_payable (float or pd.Series): Average accounts payable of the company.
+        This is typically calculated as (beginning accounts payable + ending accounts payable) / 2.
         days (int, optional): Number of days in the year. Defaults to 365.
 
     Returns:

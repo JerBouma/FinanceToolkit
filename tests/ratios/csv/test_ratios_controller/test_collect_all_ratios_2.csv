@@ -194,8 +194,8 @@ AAPL,Cash Return on Assets,Lag 3,,,,
 AAPL,Return on Equity,Lag 1,,,0.19,-0.02
 AAPL,Return on Equity,Lag 2,,,,0.1662
 AAPL,Return on Equity,Lag 3,,,,
-AAPL,Return on Invested Capital,Lag 1,,,0.0626,0.0494
-AAPL,Return on Invested Capital,Lag 2,,,,0.1151
+AAPL,Return on Invested Capital,Lag 1,,,0.0714,0.0363
+AAPL,Return on Invested Capital,Lag 2,,,,0.1103
 AAPL,Return on Invested Capital,Lag 3,,,,
 AAPL,Return on Capital Employed,Lag 1,,0.549,0.2377,-0.0753
 AAPL,Return on Capital Employed,Lag 2,,,0.9172,0.1446
@@ -257,8 +257,8 @@ MSFT,Cash Return on Assets,Lag 3,,,,
 MSFT,Return on Equity,Lag 1,,,0.0015,-0.1767
 MSFT,Return on Equity,Lag 2,,,,-0.1754
 MSFT,Return on Equity,Lag 3,,,,
-MSFT,Return on Invested Capital,Lag 1,,,0.0651,-0.1016
-MSFT,Return on Invested Capital,Lag 2,,,,-0.0431
+MSFT,Return on Invested Capital,Lag 1,,,0.1128,-0.1474
+MSFT,Return on Invested Capital,Lag 2,,,,-0.0513
 MSFT,Return on Invested Capital,Lag 3,,,,
 MSFT,Return on Capital Employed,Lag 1,,0.2334,0.0614,-0.0676
 MSFT,Return on Capital Employed,Lag 2,,,0.3092,-0.0103

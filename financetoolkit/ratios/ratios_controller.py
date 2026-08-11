@@ -613,7 +613,7 @@ class Ratios:
             self.get_days_of_sales_outstanding(days=days, trailing=trailing)
         )
         efficiency_ratios["Operating Cycle"] = self.get_operating_cycle(
-            trailing=trailing
+            days=days, trailing=trailing
         )
         efficiency_ratios["Days of Accounts Payable Outstanding"] = (
             self.get_days_of_accounts_payable_outstanding(days=days, trailing=trailing)
@@ -986,6 +986,7 @@ class Ratios:
                     .T.rolling(trailing)
                     .sum()
                     .T,
+                    days,
                 )
             )
         else:
@@ -1035,7 +1036,7 @@ class Ratios:
 
         The formula is as follows:
 
-        - Days of Sales Outstanding Ratio = (Accounts Receivable / Total Credit Sales) * Days
+        - Days of Sales Outstanding Ratio = (Average Accounts Receivable / Total Credit Sales) * Days
 
         Also known as: DSO, days sales outstanding, receivable days.
 
@@ -1086,6 +1087,7 @@ class Ratios:
                 .mean()
                 .T,
                 self._income_statement.loc[:, "Revenue", :].T.rolling(trailing).sum().T,
+                days,
             )
         else:
             days_of_sales_outstanding = efficiency_model.get_days_of_sales_outstanding(
@@ -1189,7 +1191,6 @@ class Ratios:
 
             days_of_sales = efficiency_model.get_days_of_sales_outstanding(
                 self._balance_sheet_statement.loc[:, "Accounts Receivable", :]
-                .shift(axis=1)
                 .T.rolling(trailing)
                 .mean()
                 .T,
@@ -1403,6 +1404,7 @@ class Ratios:
                     .T.rolling(trailing)
                     .mean()
                     .T,
+                    days,
                 )
             )
         else:
@@ -3969,22 +3971,27 @@ class Ratios:
         trailing: int | None = None,
     ) -> pd.DataFrame:
         """
-        Compute the Interest Coverage Ratio, a metric that reveals a company's
-        ability to cover its interest expenses with its pre-tax profits.
-        This ratio measures the proportion of pre-tax profits required to
-        pay for interest payments and is crucial in determining a
-        company's financial health.
+        Compute the Interest Burden Ratio, the component of the extended (five-step)
+        DuPont decomposition that isolates the drag interest expense places on a
+        company's operating profit.
 
-        The Interest Coverage Ratio is calculated by dividing the earnings before
-        interest and taxes (EBIT) by the interest expenses. A higher ratio indicates
-        that the company has more earnings to cover its interest expenses, which is
-        generally considered favorable.
+        The Interest Burden Ratio is calculated by dividing earnings before tax (EBT)
+        by earnings before interest and taxes (EBIT, proxied here by Operating Income).
+        It expresses the share of operating profit that survives interest expense, so
+        it sits between 0 and 1 for a company with debt: a value close to 1 means
+        interest barely dents operating profit, while a low value signals a heavy
+        interest load. Values slightly above 1 occur when non-operating income (e.g.
+        interest income) exceeds interest expense.
+
+        Note that this is the reciprocal of, and should not be confused with, the
+        Interest Coverage Ratio (`get_interest_coverage_ratio`), which divides
+        operating profit by interest expense and is therefore unbounded above.
 
         The formula is as follows:
 
-        - Interest Coverage Ratio = EBIT (or Operating Income) / Interest Expenses
+        - Interest Burden Ratio = Income Before Tax / Operating Income
 
-        Also known as: interest burden, EBIT to EBT ratio.
+        Also known as: EBT to EBIT ratio, interest burden.
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
@@ -3997,10 +4004,10 @@ class Ratios:
             E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
         Returns:
-            pd.DataFrame: Interest Coverage Ratio values.
+            pd.DataFrame: Interest Burden Ratio values.
 
         Notes:
-        - The method retrieves historical data and calculates the Interest Coverage Ratio for each
+        - The method retrieves historical data and calculates the Interest Burden Ratio for each
         asset in the Toolkit instance.
         - If `growth` is set to True, the method calculates the growth of the ratio values
         using the specified `lag`.
@@ -4012,30 +4019,30 @@ class Ratios:
 
         toolkit = Toolkit(["TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
-        interest_coverage_ratios = toolkit.ratios.get_interest_burden_ratio()
+        interest_burden_ratios = toolkit.ratios.get_interest_burden_ratio()
         ```
 
         Which returns:
 
-        |      |    2021 |    2022 |    2023 |     2024 |     2025 |
-        |:-----|--------:|--------:|--------:|---------:|---------:|
-        | TSLA | 17.5822 | 71.4974 | 56.9936 |  20.2171 |  12.8846 |
+        |      |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:-----|-------:|-------:|-------:|-------:|-------:|
+        | TSLA | 0.9724 | 1.0046 | 1.1217 | 1.2705 | 1.2119 |
         """
         if trailing:
-            interest_burden_ratio = profitability_model.get_interest_coverage_ratio(
-                self._income_statement.loc[:, "Operating Income", :]
+            interest_burden_ratio = profitability_model.get_interest_burden_ratio(
+                self._income_statement.loc[:, "Income Before Tax", :]
                 .T.rolling(trailing)
                 .sum()
                 .T,
-                self._income_statement.loc[:, "Interest Expense", :]
+                self._income_statement.loc[:, "Operating Income", :]
                 .T.rolling(trailing)
                 .sum()
                 .T,
             )
         else:
             interest_burden_ratio = profitability_model.get_interest_burden_ratio(
+                self._income_statement.loc[:, "Income Before Tax", :],
                 self._income_statement.loc[:, "Operating Income", :],
-                self._income_statement.loc[:, "Interest Expense", :],
             )
 
         return finalize_dataset(
@@ -4563,48 +4570,48 @@ class Ratios:
         | TSLA | 0.1429 | 0.2733 | 0.2403 | 0.0889 | 0.0425 |
         """
         if trailing:
-            return_on_invested_capital = (
-                profitability_model.get_return_on_invested_capital(
-                    self._income_statement.loc[:, "Net Income", :]
+            return_on_invested_capital = profitability_model.get_return_on_invested_capital(
+                self._income_statement.loc[:, "Net Income", :]
+                .T.rolling(trailing)
+                .sum()
+                .T,
+                (
+                    # Dividends Paid is reported as a negative cash outflow, so the
+                    # magnitude is taken before it is subtracted from Net Income.
+                    self._cash_flow_statement.loc[:, "Dividends Paid", :]
                     .T.rolling(trailing)
                     .sum()
-                    .T,
-                    (
-                        self._cash_flow_statement.loc[:, "Dividends Paid", :]
-                        .T.rolling(trailing)
-                        .sum()
-                        .T
-                        if dividend_adjusted
-                        else 0
-                    ),
-                    self._balance_sheet_statement.loc[:, "Total Equity", :]
-                    .T.rolling(trailing)
-                    .mean()
-                    .T,
-                    self._balance_sheet_statement.loc[:, "Total Debt", :]
-                    .T.rolling(trailing)
-                    .mean()
-                    .T,
-                )
+                    .T.abs()
+                    if dividend_adjusted
+                    else 0
+                ),
+                self._balance_sheet_statement.loc[:, "Total Equity", :]
+                .T.rolling(trailing)
+                .mean()
+                .T,
+                self._balance_sheet_statement.loc[:, "Total Debt", :]
+                .T.rolling(trailing)
+                .mean()
+                .T,
             )
         else:
-            return_on_invested_capital = (
-                profitability_model.get_return_on_invested_capital(
-                    self._income_statement.loc[:, "Net Income", :],
-                    (
-                        self._cash_flow_statement.loc[:, "Dividends Paid", :]
-                        if dividend_adjusted
-                        else 0
-                    ),
-                    self._balance_sheet_statement.loc[:, "Total Equity", :]
-                    .T.rolling(2)
-                    .mean()
-                    .T,
-                    self._balance_sheet_statement.loc[:, "Total Debt", :]
-                    .T.rolling(2)
-                    .mean()
-                    .T,
-                )
+            return_on_invested_capital = profitability_model.get_return_on_invested_capital(
+                self._income_statement.loc[:, "Net Income", :],
+                (
+                    # Dividends Paid is reported as a negative cash outflow, so the
+                    # magnitude is taken before it is subtracted from Net Income.
+                    self._cash_flow_statement.loc[:, "Dividends Paid", :].abs()
+                    if dividend_adjusted
+                    else 0
+                ),
+                self._balance_sheet_statement.loc[:, "Total Equity", :]
+                .T.rolling(2)
+                .mean()
+                .T,
+                self._balance_sheet_statement.loc[:, "Total Debt", :]
+                .T.rolling(2)
+                .mean()
+                .T,
             )
 
         return finalize_dataset(
@@ -4943,7 +4950,12 @@ class Ratios:
 
         The formula is as follows:
 
-        - Net Income per EBT = Net Income / Income Before Tax
+        - Net Income per EBT = Net Income / (Net Income + Income Tax Expense)
+
+        Earnings before tax is reconstructed from the income statement as Net Income
+        plus Income Tax Expense rather than read from the reported Income Before Tax
+        line, so this can differ slightly from `get_tax_burden_ratio` when a company
+        reports minority interests or discontinued operations below the tax line.
 
         Also known as: net income to pre-tax income.
 
@@ -5453,12 +5465,13 @@ class Ratios:
                 .T,
                 self._income_statement.loc[:, "Revenue", :].T.rolling(trailing).sum().T,
             )
-        EBIT_to_revenue = profitability_model.get_EBIT_to_revenue(
-            self._income_statement.loc[:, "Net Income", :]
-            + self._income_statement.loc[:, "Income Tax Expense", :]
-            + self._income_statement.loc[:, "Interest Expense", :],
-            self._income_statement.loc[:, "Revenue", :],
-        )
+        else:
+            EBIT_to_revenue = profitability_model.get_EBIT_to_revenue(
+                self._income_statement.loc[:, "Net Income", :]
+                + self._income_statement.loc[:, "Income Tax Expense", :]
+                + self._income_statement.loc[:, "Interest Expense", :],
+                self._income_statement.loc[:, "Revenue", :],
+            )
 
         return finalize_dataset(
             dataset=EBIT_to_revenue,
@@ -6082,7 +6095,7 @@ class Ratios:
 
         The formula is as follows:
 
-        - Interest Coverage Ratio = Operating Income / (Interest Expense + Depreciation and Amortization)
+        - Interest Coverage Ratio = (Operating Income + Depreciation and Amortization) / Interest Expense
 
         Also known as: TIE, times interest earned.
 
@@ -6437,9 +6450,9 @@ class Ratios:
         if trailing:
             market_cap = valuation_model.get_market_cap(
                 (
-                    share_prices.rolling(trailing).sum()
+                    share_prices.rolling(trailing).mean()
                     if show_daily
-                    else share_prices.T.rolling(trailing).sum().T
+                    else share_prices.T.rolling(trailing).mean().T
                 ),
                 average_shares,
             )
@@ -7426,7 +7439,7 @@ class Ratios:
 
         The formula is as follows:
 
-        - Earnings per Share (EPS) = (Net Income — Preferred Dividends Paid) / Weighted Average Shares
+        - Earnings per Share (EPS) = (Net Income — |Preferred Dividends Paid|) / Weighted Average Shares
 
         Also known as: EPS, net income per share.
 
@@ -7473,11 +7486,13 @@ class Ratios:
         )
 
         if trailing:
+            # Preferred Dividends Paid is reported as a negative cash outflow, so the
+            # magnitude is taken before it is subtracted from Net Income.
             dividends = (
                 self._cash_flow_statement.loc[:, "Preferred Dividends Paid", :]
                 .T.rolling(trailing)
                 .sum()
-                .T
+                .T.abs()
                 if include_dividends
                 else 0
             )
@@ -7491,8 +7506,10 @@ class Ratios:
                 average_shares,
             )
         else:
+            # Preferred Dividends Paid is reported as a negative cash outflow, so the
+            # magnitude is taken before it is subtracted from Net Income.
             dividends = (
-                self._cash_flow_statement.loc[:, "Preferred Dividends Paid", :]
+                self._cash_flow_statement.loc[:, "Preferred Dividends Paid", :].abs()
                 if include_dividends
                 else 0
             )
@@ -8570,7 +8587,7 @@ class Ratios:
 
         The formula is as follows:
 
-        - Weighted Dividend Yield = Dividends Paid / Weighted Average (Diluted) Shares * Share Price
+        - Weighted Dividend Yield = (|Dividends Paid| / Weighted Average (Diluted) Shares) / Share Price
 
         Also known as: blended dividend yield.
 

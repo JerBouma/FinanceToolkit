@@ -88,11 +88,16 @@ def get_interest_coverage_ratio(
     operating_income: pd.Series, interest_expense: pd.Series
 ) -> pd.Series:
     """
-    Compute the Interest Coverage Ratio, a metric that reveals a company's
-    ability to cover its interest expenses with its pre-tax profits.
-    This ratio measures how many times the operating income covers the
-    interest payments of operain required and is crucial in determining a
-    company's financial health.
+    Compute the Interest Coverage Ratio, a metric that reveals a company's ability to
+    cover its interest expenses out of its operating profit. It measures how many times
+    over the operating income covers the interest payments due on outstanding debt, and
+    is a standard indicator of default risk: a higher ratio is better.
+
+    The formula is as follows:
+
+        Interest Coverage Ratio = Operating Income / Interest Expense
+
+    Also known as: times interest earned, TIE.
 
     Args:
         operating_income (float or pd.Series): Operating income of the company.
@@ -108,11 +113,24 @@ def get_interest_burden_ratio(
     income_before_tax: pd.Series, operating_income: pd.Series
 ) -> pd.Series:
     """
-    Compute the Interest Burden Ratio, a metric that reveals a company's
-    ability to cover its interest expenses with its pre-tax profits.
-    This ratio measures how many times the operating income covers the
-    interest payments of operain required and is crucial in determining a
-    company's financial health.
+    Compute the Interest Burden Ratio, the component of the extended (five-step) DuPont
+    decomposition that isolates the drag interest expense places on operating profit.
+
+    It divides earnings before tax (EBT) by earnings before interest and taxes (EBIT,
+    proxied by operating income), so it expresses the share of operating profit that
+    survives interest expense. For a company with debt it sits between 0 and 1, where a
+    value close to 1 means interest barely dents operating profit and a low value
+    signals a heavy interest load. Values slightly above 1 occur when non-operating
+    income (e.g. interest income) exceeds interest expense.
+
+    This is the reciprocal of, and should not be confused with, the interest coverage
+    ratio, which divides operating profit by interest expense and is unbounded above.
+
+    The formula is as follows:
+
+        Interest Burden Ratio = Income Before Tax / Operating Income
+
+    Also known as: EBT to EBIT ratio.
 
     Args:
         income_before_tax (float or pd.Series): Income before tax of the company.

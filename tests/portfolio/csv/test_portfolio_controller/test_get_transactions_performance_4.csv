@@ -1,4 +1,4 @@
-Date,Identifier,Volume,Price,Costs,Invested Amount,Current Value,Return,Benchmark Return,Alpha
-2000,ASML,9.0,30.8212,-3.0,280.3908,185.58,-0.3381,-0.0841,-0.2541
-2000,FIX,17.0,6.0618,-1.0,104.0506,29.07,-0.7206,-0.0765,-0.6441
-2000,SKY,7.0,14.4675,-4.0,105.2723,89.243,-0.1523,-0.1076,-0.0447
+Date,Identifier,Volume,Price,Costs,Invested Amount,Realized Proceeds,Current Value,Return,Benchmark Return,Alpha
+2000,ASML,9.0,30.8212,-3.0,280.3908,0.0,185.58,-0.3381,-0.0939,-0.2443
+2000,FIX,17.0,6.0075,-1.0,103.127,0.0,29.07,-0.7181,-0.0791,-0.639
+2000,SKY,7.0,15.2328,-4.0,186.7941,68.5105,89.243,-0.1555,-0.0694,-0.0861

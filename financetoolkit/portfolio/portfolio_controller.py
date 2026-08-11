@@ -105,7 +105,9 @@ class Portfolio:
             )
         )
 
-        if not portfolio_dataset and not example:
+        # An explicit None check is required because the truth value of a DataFrame
+        # is ambiguous, which made passing a DataFrame raise a ValueError here.
+        if portfolio_dataset is None and not example:
             example = True
             logger.info(
                 "No portfolio dataset provided thus loading the example portfolio for demonstration purposes.\n"
@@ -909,13 +911,24 @@ class Portfolio:
 
         The following columns are included:
 
-        - Volume: the volume of each asset over time.
-        - Costs: the costs of each asset over time.
-        - Invested Amount: the invested amount over time.
-        - Current Value: the current value of the asset based on the market value on that specific day over time.
-        - Cumulative Return: the cumulative return of the asset over time.
+        - Volume: the net volume of each asset over time, i.e. every buy minus every sell.
+        - Costs: the cumulative transaction costs of each asset over time.
+        - Invested Amount: the cumulative capital deployed over time, i.e. the value of every buy plus
+        the absolute transaction costs. Sale proceeds are not netted off.
+        - Realized Proceeds: the cumulative cash received from selling units of the asset over time.
+        - Current Value: the value of the position still held, marked at the dividend-adjusted closing
+        price of that day.
+        - Cumulative Return: the total return on the capital deployed, i.e.
+        (Current Value + Realized Proceeds - Invested Amount) / Invested Amount.
         - Invested Weight: the weight of the asset in the portfolio based on the invested amount over time.
         - Current Weight: the weight of the asset in the portfolio based on the current value over time.
+
+        Positions are marked at the adjusted closing price, so the cumulative return is a total return
+        that includes reinvested dividends. The historical "Current Value" is therefore a total-return
+        equivalent value rather than the price quoted on that date; the two coincide on the latest date.
+
+        A transaction booked on a day without a price, such as a weekend or an exchange holiday, is
+        carried forward to the first following day that does have one.
 
         This method computes an overview of the portfolio's positions by calculating important statistics and performance
         metrics based on the historical data and transactions. If necessary data has not been collected, it will trigger
@@ -957,18 +970,18 @@ class Portfolio:
 
         Which returns:
 
-        | Date       |   Volume |   Costs |   Invested Amount |   Current Value |   Cumulative Return |   Invested Weight |   Current Weight |
-        |:-----------|---------:|--------:|------------------:|----------------:|--------------------:|------------------:|-----------------:|
-        | 2025-02-14 |      101 |     -14 |           1747.63 |         4854.06 |              2.7775 |            0.0126 |           0.0052 |
-        | 2025-02-18 |      101 |     -14 |           1747.63 |         4932.84 |              2.8226 |            0.0126 |           0.0053 |
-        | 2025-02-19 |      101 |     -14 |           1747.63 |         5149.99 |              2.9468 |            0.0126 |           0.0056 |
-        | 2025-02-20 |      101 |     -14 |           1747.63 |         5261.09 |              3.0104 |            0.0126 |           0.0058 |
-        | 2025-02-21 |      101 |     -14 |           1747.63 |         5092.42 |              2.9139 |            0.0126 |           0.0057 |
-        | 2025-02-24 |      101 |     -14 |           1747.63 |         5035.86 |              2.8815 |            0.0126 |           0.0056 |
-        | 2025-02-25 |      101 |     -14 |           1747.63 |         4937.89 |              2.8255 |            0.0126 |           0.0054 |
-        | 2025-02-26 |      101 |     -14 |           1747.63 |         4903.55 |              2.8058 |            0.0126 |           0.0053 |
-        | 2025-02-27 |      101 |     -14 |           1747.63 |         4913.65 |              2.8116 |            0.0126 |           0.0055 |
-        | 2025-02-28 |      101 |     -14 |           1747.63 |         4932.84 |              2.8226 |            0.0126 |           0.0054 |
+        | Date       |   Volume |   Costs |   Invested Amount |   Realized Proceeds |   Current Value |   Cumulative Return |   Invested Weight |   Current Weight |
+        |:-----------|---------:|--------:|------------------:|--------------------:|----------------:|--------------------:|------------------:|-----------------:|
+        | 2026-07-28 |       92 |     -18 |           1779.63 |             118.103 |         10405.2 |              4.9132 |            0.0128 |           0.0096 |
+        | 2026-07-29 |       92 |     -18 |           1779.63 |             118.103 |         10508.2 |              4.9711 |            0.0128 |           0.0098 |
+        | 2026-07-30 |       92 |     -18 |           1779.63 |             118.103 |         10221.2 |              4.8098 |            0.0128 |           0.0093 |
+        | 2026-07-31 |       92 |     -18 |           1779.63 |             118.103 |         10230.4 |              4.815  |            0.0128 |           0.0092 |
+        | 2026-08-03 |       92 |     -18 |           1779.63 |             118.103 |         10185.3 |              4.7896 |            0.0128 |           0.0092 |
+        | 2026-08-04 |       92 |     -18 |           1779.63 |             118.103 |         10262.6 |              4.8331 |            0.0128 |           0.0091 |
+        | 2026-08-05 |       92 |     -18 |           1779.63 |             118.103 |         10335.3 |              4.8739 |            0.0128 |           0.0092 |
+        | 2026-08-06 |       92 |     -18 |           1779.63 |             118.103 |         10310.4 |              4.8599 |            0.0128 |           0.0092 |
+        | 2026-08-07 |       92 |     -18 |           1779.63 |             118.103 |         10290.2 |              4.8486 |            0.0128 |           0.0091 |
+        | 2026-08-10 |       92 |     -18 |           1779.63 |             118.103 |         10364.7 |              4.8904 |            0.0128 |           0.0092 |
         """
         if self._weekly_historical_data.empty:
             self.collect_historical_data()
@@ -997,17 +1010,19 @@ class Portfolio:
                     period_dates=self._daily_historical_data.index.get_level_values(0),
                     portfolio_dataset=self._transactions_overview,
                     historical_prices=self._daily_historical_data,
+                    volume_column=self._volume_column,
+                    price_column=self._price_column,
+                    costs_column=self._costs_column,
                 )
             except ValueError as error:
                 raise ValueError(
                     f"Failed to create positions overview due to {error}"
                 ) from error
 
-        self._positions_overview = self._positions_overview.round(
-            rounding if rounding else self._rounding
-        )
-
-        return self._positions_overview
+        # Only the returned view is rounded. Rounding the cached frame in place would make
+        # every later call, including the portfolio performance, read back the precision of
+        # whichever call happened to run first.
+        return self._positions_overview.round(rounding if rounding else self._rounding)
 
     def get_portfolio_overview(
         self,
@@ -1022,15 +1037,24 @@ class Portfolio:
         The following columns are included:
 
         - Identifier: The name of the asset, specifically the ticker (e.g. AAPL)
-        - Volume: The total volume of the asset representing all transactions.
+        - Volume: The net volume of the asset, i.e. every buy minus every sell.
         - Costs: The total costs associated with the asset transactions.
-        - Price: The mean price of the asset based on the transactions.
-        - Invested: The total amount invested in the asset, this is the Price times the Volume minus Costs.
+        - Price: The volume-weighted average price paid for the units that were bought. Sells do
+        not enter this figure, so it stays a purchase price rather than a net cash figure.
+        - Invested: The total capital deployed in the asset, i.e. the value of every buy plus the
+        absolute transaction costs. Sale proceeds are deliberately not netted off, because a
+        denominator that shrinks with every profitable sale inflates the reported return and flips
+        its sign once more cash has come out than went in.
         - Latest Price: The latest available price of the asset obtained from historical data.
-        - Latest Value: The total value of the asset based on the latest price and the total volume minus costs.
-        - Return: The return of the asset based on the latest value and invested amount.
-        - Return Value: The absolute return value of the asset based on the latest value and invested amount.
-        - Benchmark Return: The return of the asset's benchmark based on the latest value and invested amount.
+        - Latest Value: The market value of the position still held, i.e. Volume times Latest Price.
+        - Return: The total return on the capital deployed, i.e. Return Value divided by Invested.
+        This covers realized and unrealized results together and is NaN when nothing was invested.
+        - Return Value: The absolute profit or loss, i.e. Latest Value plus all sale proceeds minus
+        Invested. This equals realized PnL plus unrealized PnL minus the transaction costs, where the
+        realized PnL is the figure reported by get_transactions_overview.
+        - Benchmark Return: The return the identical cash flows would have produced in the benchmark.
+        Every transaction buys or sells benchmark units for the exact cash amount of that transaction
+        on that date, so the comparison is matched in money rather than in share count.
         - Volatility: The annualized volatility of the asset over the most recent year, calculated via the
         Risk module (risk_model.get_volatility). For the aggregated "Portfolio" row, this is derived from
         the full covariance matrix of the underlying asset returns (Var_p = w^T * Cov * w, Markowitz, 1952)
@@ -1042,7 +1066,15 @@ class Portfolio:
         - Beta: The beta is based on the asset's return and the benchmark return. It measures the asset's volatility
         compared to the benchmark. A beta >1 indicates that the asset is more volatile than the benchmark and a beta <1
         indicates that the asset is less volatile than the benchmark.
-        - Weight: The weight of the asset in the portfolio based on the latest value and the total value of the portfolio.
+        - Weight: The weight of the asset in the portfolio based on the latest market value and the total
+        market value of the portfolio.
+
+        No inventory method (FIFO, LIFO or average cost) is applied here: "Return" measures the result of
+        every unit of currency put into the position rather than the basis of the units that happen to
+        remain. The inventory methods drive the realized PnL in get_transactions_overview instead.
+
+        The "Portfolio" row sums or averages units of different assets for "Volume", "Price" and
+        "Latest Price", so those three carry no economic meaning at the portfolio level.
 
         When recalculating these numbers, it is important to note that results are calculated before the
         rounding parameter is applied which can lead to some discrepancies in the results.
@@ -1089,16 +1121,16 @@ class Portfolio:
 
         | Identifier   |   Volume |   Costs |    Price |   Invested |   Latest Price |   Latest Value |   Return |   Return Value |   Benchmark Return |   Volatility |   Benchmark Volatility |   Alpha |   Beta |   Weight |
         |:-------------|---------:|--------:|---------:|-----------:|---------------:|---------------:|---------:|---------------:|-------------------:|-------------:|-----------------------:|--------:|-------:|---------:|
-        | MPWR         |      116 |     -27 | 255.881  |   29655.2  |        170.28  |       19752.5  |  -0.3339 |     -9902.68   |             1.1199 |       0.3064 |                 0.1937 | -1.4538 | 1.1553 |   0.025  |
-        | MSFT         |      105 |     -11 |  40.6437 |    4256.59 |        102.5   |       10762.5  |   1.5284 |      6505.91   |             2.9661 |       0.5366 |                 0.1937 | -1.4377 | 1.3618 |   0.0136 |
-        | NFLX         |      114 |     -32 | 125.444  |   14268.6  |        124.92  |       14240.9  |  -0.0019 |       -27.6764 |             2.4024 |       0.5953 |                 0.1937 | -2.4044 | 1.7687 |   0.018  |
-        | NVDA         |       69 |     -27 |   2.0551 |     114.8  |         74.52  |        5141.88 |  43.7898 |      5027.08   |             2.8726 |       0.6826 |                 0.1937 | 40.9172 | 1.2835 |   0.0065 |
-        | OXY          |       27 |     -15 |  39.7355 |    1057.86 |         46.1   |        1244.7  |   0.1766 |       186.842  |             3.2188 |       0.4365 |                 0.1937 | -3.0421 | 1.2279 |   0.0016 |
-        | SKY          |      126 |     -23 |  18.0884 |    2256.14 |        709.08  |       89344.1  |  38.6004 |     87087.9    |             3.4986 |       0.4572 |                 0.1937 | 35.1018 | 1.4054 |   0.1132 |
-        | VOO          |       77 |     -12 | 238.499  |   18352.5  |         53.58  |        4125.66 |  -0.7752 |    -14226.8    |             1.1179 |       0.2683 |                 0.1937 | -1.8931 | 0.8366 |   0.0052 |
-        | VSS          |       98 |     -21 |  77.7056 |    7594.14 |        611.01  |       59879    |   6.8849 |     52284.8    |             1.3078 |       0.4667 |                 0.1937 |  5.5771 | 1.6799 |   0.0759 |
-        | WMT          |       92 |     -18 |  17.8645 |    1625.53 |         48.84  |        4493.28 |   1.7642 |      2867.75   |             2.4786 |       0.4016 |                 0.1937 | -0.7145 | 1.246  |   0.0057 |
-        | Portfolio    |     2142 |    -532 |  59.8406 |  128710    |        368.549 |      789432    |   5.1334 |    660721      |             2.0773 |       0.4187 |                 0.1937 |  3.0561 | 1.3272 |   1      |
+        | MPWR         |      116 |     -27 | 246.737  |   30128.9  |       1381.1   |     160208     |   4.3313 |      130498    |             0.7745 |       0.5948 |                 0.1389 |  3.5569 | 1.8291 |   0.143  |
+        | MSFT         |      105 |     -11 |  39.7562 |    4384.18 |        506.06  |      53136.3   |  11.1441 |       48857.7  |             3.0307 |       0.3895 |                 0.1389 |  8.1134 | 1.1724 |   0.0474 |
+        | NFLX         |      114 |     -32 | 131.32   |   16446.9  |         76.29  |       8697.06  |  -0.3426 |       -5635.5  |             1.4502 |       0.3739 |                 0.1389 | -1.7928 | 1.0751 |   0.0078 |
+        | NVDA         |       69 |     -27 |   2.1316 |     199.66 |        217.55  |      15011     |  74.3371 |       14842.1  |             1.0435 |       0.3857 |                 0.1389 | 73.2936 | 1.8266 |   0.0134 |
+        | OXY          |       27 |     -15 |  37.5907 |    1443.45 |         58.65  |       1583.55  |   0.3434 |         495.69 |             2.4847 |       0.3943 |                 0.1389 | -2.1413 | 1.155  |   0.0014 |
+        | SKY          |      126 |     -23 |  18.1967 |    2497.75 |         92.99  |      11716.7   |   3.7692 |        9414.6  |             4.4275 |       0.4715 |                 0.1389 | -0.6583 | 1.4026 |   0.0105 |
+        | VOO          |       77 |     -12 | 236.365  |   18684.8  |        710.65  |      54720.1   |   1.9451 |       36343.6  |             1.6037 |       0.1385 |                 0.1389 |  0.3414 | 0.9961 |   0.0488 |
+        | VSS          |       98 |     -21 |  77.1834 |    8433.99 |        158.38  |      15521.2   |   0.9349 |        7885.1  |             2.2186 |       0.1932 |                 0.1389 | -1.2837 | 0.79   |   0.0138 |
+        | WMT          |       92 |     -18 |  17.4419 |    1779.63 |        112.66  |      10364.7   |   4.8904 |        8703.19 |             3.3096 |       0.2607 |                 0.1389 |  1.5808 | 0.4848 |   0.0092 |
+        | Portfolio    |     2142 |    -532 |  57.823  |  139539    |        523.214 |          1.12e+06 |   7.1016 |      990950 |             1.6887 |       0.3058 |                 0.1389 |  5.413  | 1.3848 |   1      |
         """
         if self._weekly_historical_data.empty:
             self.collect_historical_data()
@@ -1141,12 +1173,23 @@ class Portfolio:
             portfolio_returns = portfolio_returns.loc[common_dates]
             benchmark_returns = benchmark_returns.loc[common_dates]
 
-            # Compute beta for each portfolio ticker against the benchmark
+            # Compute beta for each portfolio ticker against the benchmark. The covariance
+            # and the variance are taken over the same non-missing sample, since a ticker
+            # with a shorter history would otherwise be divided by a variance measured over
+            # a longer window than its own covariance.
             betas = {}
             for ticker in portfolio_returns.columns:
-                cov = portfolio_returns[ticker].cov(benchmark_returns)
-                var = benchmark_returns.var()
-                beta = cov / var if var != 0 else float("nan")
+                paired_returns = pd.concat(
+                    [portfolio_returns[ticker], benchmark_returns], axis=1
+                ).dropna()
+
+                if paired_returns.empty:
+                    betas[ticker] = float("nan")
+                    continue
+
+                cov = paired_returns.iloc[:, 0].cov(paired_returns.iloc[:, 1])
+                var = paired_returns.iloc[:, 1].var()
+                beta = cov / var if var else float("nan")
                 betas[ticker] = beta
 
             self._portfolio_beta = pd.Series(betas)
@@ -1229,18 +1272,18 @@ class Portfolio:
 
         Which returns:
 
-        | Date                  | Identifier   |   Volume |   Costs |   Invested Amount |   Current Value |   Invested Weight |   Current Weight |   Return |
-        |:----------------------|:-------------|---------:|--------:|------------------:|----------------:|------------------:|-----------------:|---------:|
-        | 2025-02-24/2025-03-02 | META         |       15 |      -1 |           4794.75 |          803.7  |            0.0346 |           0.0009 |  -0.8324 |
-        | 2025-02-24/2025-03-02 | MPWR         |      122 |     -24 |          30077.9  |        20774.2  |            0.217  |           0.0228 |  -0.3093 |
-        | 2025-02-24/2025-03-02 | MSFT         |      110 |     -11 |           4362.18 |        11275    |            0.0315 |           0.0124 |   1.5847 |
-        | 2025-02-24/2025-03-02 | NFLX         |      125 |     -27 |          16387.9  |        15615    |            0.1183 |           0.0172 |  -0.0472 |
-        | 2025-02-24/2025-03-02 | NVDA         |       81 |     -23 |            149.66 |         6036.12 |            0.0011 |           0.0066 |  39.3322 |
-        | 2025-02-24/2025-03-02 | OXY          |       38 |      -4 |           1424.45 |         1751.8  |            0.0103 |           0.0019 |   0.2298 |
-        | 2025-02-24/2025-03-02 | SKY          |      136 |     -19 |           2455.75 |        96434.9  |            0.0177 |           0.1059 |  38.269  |
-        | 2025-02-24/2025-03-02 | VOO          |       79 |     -12 |          18660.8  |         4232.82 |            0.1347 |           0.0046 |  -0.7732 |
-        | 2025-02-24/2025-03-02 | VSS          |      109 |     -19 |           8393.99 |        66600.1  |            0.0606 |           0.0732 |   6.9343 |
-        | 2025-02-24/2025-03-02 | WMT          |      101 |     -14 |           1747.63 |         4932.84 |            0.0126 |           0.0054 |   1.8226 |
+        | Date                  | Identifier   |   Volume |   Costs |   Invested Amount |   Realized Proceeds |   Current Value |   Invested Weight |   Current Weight |   Return |
+        |:----------------------|:-------------|---------:|--------:|------------------:|--------------------:|----------------:|------------------:|-----------------:|---------:|
+        | 2026-08-10/2026-08-16 | META         |       15 |      -1 |           4796.75 |              0      |         8923.8  |            0.0344 |           0.008  |   0.8604 |
+        | 2026-08-10/2026-08-16 | MPWR         |      116 |     -27 |          30128.9  |            419.755  |       160208    |            0.2159 |           0.143  |   4.3313 |
+        | 2026-08-10/2026-08-16 | MSFT         |      105 |     -11 |           4384.18 |            105.59   |        53136.3  |            0.0314 |           0.0474 |  11.1441 |
+        | 2026-08-10/2026-08-16 | NFLX         |      114 |     -32 |          16446.9  |           2114.39   |         8697.06 |            0.1179 |           0.0078 |  -0.3426 |
+        | 2026-08-10/2026-08-16 | NVDA         |       69 |     -27 |            199.66 |             30.8599 |        15011    |            0.0014 |           0.0134 |  74.3371 |
+        | 2026-08-10/2026-08-16 | OXY          |       27 |     -15 |           1443.45 |            355.587  |         1583.55 |            0.0103 |           0.0014 |   0.3434 |
+        | 2026-08-10/2026-08-16 | SKY          |      126 |     -23 |           2497.75 |            195.613  |        11716.7  |            0.0179 |           0.0105 |   3.7692 |
+        | 2026-08-10/2026-08-16 | VOO          |       77 |     -12 |          18684.8  |            308.375  |        54720.1  |            0.1339 |           0.0488 |   1.9451 |
+        | 2026-08-10/2026-08-16 | VSS          |       98 |     -21 |           8433.99 |            797.842  |        15521.2  |            0.0604 |           0.0138 |   0.9349 |
+        | 2026-08-10/2026-08-16 | WMT          |       92 |     -18 |           1779.63 |            118.103  |        10364.7  |            0.0128 |           0.0092 |   4.8904 |
         """
         if not period:
             period = "quarterly" if self._quarterly else "yearly"
@@ -1347,6 +1390,15 @@ class Portfolio:
               `overview_model.create_profit_and_loss_overview` functions to calculate the transaction ratios
               and profit & loss.
             - The transaction ratios and PnL are added to the original portfolio dataset as new columns.
+            - "PnL" is the realized result of a sell transaction under the chosen inventory method and
+              is zero on every buy. "Cumulative PnL" is the running realized total per ticker and
+              restarts at zero for the next ticker rather than carrying across the portfolio.
+            - Transaction costs are deliberately excluded from the PnL. They are carried by the
+              invested amount instead, so a cost is never counted in two places. The identity
+              Return Value = realized PnL + unrealized PnL - transaction costs therefore ties this
+              output back to get_portfolio_overview exactly.
+            - "Invested Amount" is per transaction and is negative on a sell, since it is the cash
+              movement of that one transaction rather than the capital deployed in the position.
             - If no rounding is provided, the rounding precision specified in the configuration is used.
 
         As an example:
@@ -1361,18 +1413,18 @@ class Portfolio:
 
         Which returns:
 
-        | Date       | Name   |    Price |   Volume |   Costs | Currency   |   Invested Amount |   Current Value |   % Return |     Return |   PnL |   Cumulative PnL |
-        |:-----------|:-------|---------:|---------:|--------:|:-----------|------------------:|----------------:|-----------:|-----------:|------:|-----------------:|
-        | 2024-02-01 | GOOGL  | 140.041  |       14 |       0 | USD        |          1960.57  |         2383.92 |     0.2159 |   423.351  |     0 |          4724.68 |
-        | 2024-02-12 | BAC    |  33.0126 |        5 |      -3 | USD        |           162.063 |         9431.75 |    57.198  |  9269.69   |     0 |          4724.68 |
-        | 2024-02-22 | MCHI   |  38.4963 |        7 |      -1 | USD        |           268.474 |          375.06 |     0.397  |   106.586  |     0 |          4724.68 |
-        | 2024-03-12 | MPWR   | 727.32   |       11 |       0 | USD        |          8000.52  |         1873.08 |    -0.7659 | -6127.44   |     0 |          4737.7  |
-        | 2024-05-14 | CAMT   |  94.4243 |        4 |       0 | USD        |           377.697 |          195.36 |    -0.4828 |  -182.337  |     0 |          4737.7  |
-        | 2024-06-11 | META   | 505.574  |        8 |       0 | USD        |          4044.59  |          428.64 |    -0.894  | -3615.95   |     0 |          4737.7  |
-        | 2024-06-18 | MPWR   | 847.6    |       14 |      -1 | USD        |         11865.4   |         2383.92 |    -0.7991 | -9481.48   |     0 |          4737.7  |
-        | 2024-07-30 | AMD    | 139.57   |        3 |       0 | USD        |           418.711 |         1089.99 |     1.6032 |   671.279  |     0 |          5092.28 |
-        | 2024-10-25 | MCHI   |  48.8436 |        6 |       0 | USD        |           293.062 |          321.48 |     0.097  |    28.4183 |     0 |          5703.28 |
-        | 2024-11-13 | VOO    | 552.136  |       11 |       0 | USD        |          6073.5   |          589.38 |    -0.903  | -5484.12   |     0 |          5745.3  |
+        | Date       | Name   |    Price |   Volume |   Costs | Currency   |   Invested Amount |   Current Value |   % Return |    Return |   PnL |   Cumulative PnL |
+        |:-----------|:-------|---------:|---------:|--------:|:-----------|------------------:|----------------:|-----------:|----------:|------:|-----------------:|
+        | 2024-02-01 | GOOGL  | 140.041  |       14 |       0 | USD        |          1960.57  |         5005.28 |     1.553  | 3044.71   |     0 |           0      |
+        | 2024-02-12 | BAC    |  33.0126 |        5 |      -3 | USD        |           168.063 |          319.3  |     0.8999 |  151.237  |     0 |          56.8807 |
+        | 2024-02-22 | MCHI   |  38.4963 |        7 |      -1 | USD        |           270.474 |          398.51 |     0.4734 |  128.036  |     0 |          -4.77   |
+        | 2024-03-12 | MPWR   | 727.32   |       11 |       0 | USD        |          8000.52  |        15192.1  |     0.8989 | 7191.58   |     0 |         376.706  |
+        | 2024-05-14 | CAMT   |  94.4243 |        4 |       0 | USD        |           377.697 |          632.4  |     0.6744 |  254.703  |     0 |          99.4194 |
+        | 2024-06-11 | META   | 505.574  |        8 |       0 | USD        |          4044.59  |         4759.36 |     0.1767 |  714.771  |     0 |           0      |
+        | 2024-06-18 | MPWR   | 847.6    |       14 |      -1 | USD        |         11867.4   |        19335.4  |     0.6293 | 7468      |     0 |         376.706  |
+        | 2024-07-30 | AMD    | 139.57   |        3 |       0 | USD        |           418.711 |         1408.68 |     2.3643 |  989.97   |     0 |           9.795  |
+        | 2024-10-25 | MCHI   |  48.8436 |        6 |       0 | USD        |           293.062 |          341.58 |     0.1656 |   48.5183 |     0 |          -4.77   |
+        | 2024-11-13 | VOO    | 552.136  |       11 |       0 | USD        |          6073.5   |         7817.15 |     0.2871 | 1743.65   |     0 |         131.082  |
         """
         pnl_method = pnl_method.upper()
 
@@ -1439,16 +1491,19 @@ class Portfolio:
         except (ValueError, IndexError, KeyError) as error:
             logger.error("Failed to create PnL overview: %s", error)
 
-        if exclude_sold_positions:
-            self._transactions_overview = self._transactions_overview[
-                self._transactions_overview["Volume"] > 0
-            ]
-
-        self._transactions_overview = self._transactions_overview.round(
+        # The rounding and the filter are applied to the returned view only. The stored
+        # overview feeds create_positions_overview, so rounding it in place would push the
+        # rounding of whichever call ran first into every position metric, and removing the
+        # sell transactions would leave that function cumulating buys alone, keeping sold
+        # shares in the position forever.
+        transactions_overview = self._transactions_overview.round(
             rounding if rounding else self._rounding
         )
 
-        return self._transactions_overview
+        if exclude_sold_positions:
+            return transactions_overview[transactions_overview["Volume"] > 0]
+
+        return transactions_overview
 
     def get_transactions_performance(
         self,
@@ -1503,18 +1558,18 @@ class Portfolio:
 
         Which returns:
 
-        | Date   |   Volume |    Price |   Costs |   Invested Amount |   Current Value |   Return |   Benchmark Return |   Alpha |
-        |:-------|---------:|---------:|--------:|------------------:|----------------:|---------:|-------------------:|--------:|
-        | 2023Q4 |       15 |  41.0726 |      -3 |           619.088 |         597.029 |  -0.0356 |             0.0906 | -0.1262 |
-        | 2024Q1 |        5 |  33.0126 |      -3 |           168.063 |        6248.05  |  36.1768 |             0.0463 | 36.1305 |
-        | 2024Q1 |       14 | 140.041  |       0 |          1960.57  |        2105.39  |   0.0739 |             0.071  |  0.0029 |
-        | 2024Q1 |        7 |  38.4963 |      -1 |           270.474 |         271.706 |   0.0046 |             0.0329 | -0.0283 |
-        | 2024Q1 |       11 | 727.32   |       0 |          8000.52  |        1654.23  |  -0.7932 |             0.0153 | -0.8085 |
-        | 2024Q2 |        4 |  94.4243 |       0 |           377.697 |         249.923 |  -0.3383 |             0.0407 | -0.379  |
-        | 2024Q2 |        8 | 505.574  |       0 |          4044.59  |         331.03  |  -0.9182 |             0.0158 | -0.934  |
-        | 2024Q2 |       14 | 847.6    |      -1 |         11867.4   |        2543.81  |  -0.7856 |            -0.0048 | -0.7808 |
-        | 2024Q4 |        6 |  48.8436 |       0 |           293.062 |         281.16  |  -0.0406 |             0.0127 | -0.0533 |
-        | 2024Q4 |       11 | 552.136  |       0 |          6073.5   |         515.46  |  -0.9151 |            -0.0173 | -0.8978 |
+        | Date   |   Volume |    Price |   Costs |   Invested Amount |   Realized Proceeds |   Current Value |   Return |   Benchmark Return |   Alpha |
+        |:-------|---------:|---------:|--------:|------------------:|--------------------:|----------------:|---------:|-------------------:|--------:|
+        | 2023Q4 |       15 |  41.0726 |      -3 |           619.088 |                   0 |          580.2  |  -0.0628 |             0.0853 | -0.1481 |
+        | 2024Q1 |        5 |  33.0126 |      -3 |           168.063 |                   0 |          180.05 |   0.0713 |             0.0276 |  0.0437 |
+        | 2024Q1 |       14 | 140.041  |       0 |          1960.57  |                   0 |         2094.54 |   0.0683 |             0.071  | -0.0026 |
+        | 2024Q1 |        7 |  38.4963 |      -1 |           270.474 |                   0 |          264.04 |  -0.0238 |             0.0291 | -0.0529 |
+        | 2024Q1 |       11 | 727.32   |       0 |          8000.52  |                   0 |         7327.87 |  -0.0841 |             0.0153 | -0.0994 |
+        | 2024Q2 |        4 |  94.4243 |       0 |           377.697 |                   0 |          500.96 |   0.3264 |             0.0407 |  0.2856 |
+        | 2024Q2 |        8 | 505.574  |       0 |          4044.59  |                   0 |         4006.96 |  -0.0093 |             0.0158 | -0.0252 |
+        | 2024Q2 |       14 | 847.6    |      -1 |         11867.4   |                   0 |        11330.1  |  -0.0453 |            -0.0049 | -0.0404 |
+        | 2024Q4 |        6 |  48.8436 |       0 |           293.062 |                   0 |          273.24 |  -0.0676 |             0.0127 | -0.0803 |
+        | 2024Q4 |       11 | 552.136  |       0 |          6073.5   |                   0 |         5819.66 |  -0.0418 |            -0.0173 | -0.0245 |
         """
         if not period:
             period = "quarterly" if self._quarterly else "yearly"

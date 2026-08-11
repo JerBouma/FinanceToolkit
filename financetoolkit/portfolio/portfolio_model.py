@@ -72,15 +72,19 @@ def read_portfolio_dataset(
     """
     combined_portfolio_dataset = pd.DataFrame()
     additional_files = []
+    spreadsheet_files = []
+
+    # A copy is iterated and a new list is built. Removing entries from the list being
+    # iterated skips every other directory and mutates the caller's list in place.
     for file in excel_location:
         if file.split(".")[-1] not in ["xlsx", "xls", "csv"]:
-            excel_location.remove(file)
-
             for sub_file in os.listdir(file):
                 if sub_file.endswith(("xlsx", "xls", "csv")):
                     additional_files.append(f"{file}/{sub_file}")
+        else:
+            spreadsheet_files.append(file)
 
-    excel_location = excel_location + additional_files
+    excel_location = spreadsheet_files + additional_files
 
     logger.info("Reading Portfolio Files")
     for file in excel_location:
@@ -109,31 +113,37 @@ def read_portfolio_dataset(
             costs_columns=costs_columns,
         )
 
-        if portfolio_dataset.duplicated().any() and adjust_duplicates:
+        duplicate_mask = portfolio_dataset.duplicated(keep=False)
+
+        if duplicate_mask.any() and adjust_duplicates:
             logger.info(
                 "The same transaction was bought and/or sold on the same day in %s. "
                 "These entries will be merged together.",
                 file,
             )
-            duplicates = portfolio_dataset[portfolio_dataset.duplicated()]
-            originals = portfolio_dataset[portfolio_dataset.duplicated(keep="first")]
 
-            number_columns = list(
-                duplicates.select_dtypes(np.number).columns.intersection(
-                    originals.select_dtypes(np.number).columns
-                )
-            )
+            number_columns = list(portfolio_dataset.select_dtypes(np.number).columns)
 
             # Summing prices would falsely indicate a higher investment than made.
             number_columns.remove(selected_price_column)  # type: ignore
 
-            duplicates.loc[:, number_columns] = duplicates.loc[:, number_columns].add(
-                originals[number_columns], fill_value=0
+            # Each group of identical rows collapses onto its first occurrence with the
+            # summable columns multiplied by how often the row appears. Adding the frame to
+            # itself instead only produced the right answer for a pair and silently deleted
+            # a group of three or more identical transactions altogether.
+            row_identity = portfolio_dataset.astype(str).agg("|".join, axis=1)
+            occurrences = row_identity.map(row_identity.value_counts())
+
+            merged_rows = portfolio_dataset[
+                duplicate_mask & ~portfolio_dataset.duplicated(keep="first")
+            ].copy()
+            merged_rows[number_columns] = merged_rows[number_columns].mul(
+                occurrences.loc[merged_rows.index], axis=0
             )
 
             portfolio_dataset = pd.concat(
-                [portfolio_dataset, duplicates]
-            ).drop_duplicates(keep=False)
+                [portfolio_dataset[~duplicate_mask], merged_rows]
+            )
 
         combined_portfolio_dataset = pd.concat(
             [combined_portfolio_dataset, portfolio_dataset]
@@ -220,8 +230,11 @@ def format_portfolio_dataset(
         ValueError: If the currency column contains values other than 3-letter currency codes.
         ValueError: If the provided currency code is not a 3-letter code.
     """
-    # Clean trailing spaces if applicable
-    dataset.columns = [column.strip() for column in dataset.columns]
+    # Clean trailing spaces and case if applicable. The column names are matched
+    # case-insensitively so that a DataFrame handed in directly behaves the same as a
+    # spreadsheet read from disk.
+    dataset = dataset.copy()
+    dataset.columns = [str(column).strip().lower() for column in dataset.columns]
 
     date_columns = [column.lower() for column in date_columns]
     date_column_match = [column for column in date_columns if column in dataset.columns]
@@ -312,6 +325,27 @@ def format_portfolio_dataset(
         helpers.convert_to_float
     )
 
+    # An empty price or volume cell converts to NaN without raising, which would travel all
+    # the way into the invested amount and the weights as a missing number. The transaction
+    # is reported instead of being carried along silently.
+    incomplete_rows = dataset[
+        dataset[price_column_first].isna() | dataset[volume_column_first].isna()
+    ]
+
+    if not incomplete_rows.empty:
+        reported_columns = [
+            date_column_first,
+            tickers_column_first,
+            price_column_first,
+            volume_column_first,
+        ]
+
+        raise ValueError(
+            "The portfolio dataset contains transactions without a price or a volume. "
+            "Please complete or remove the following row(s):\n"
+            f"{incomplete_rows[reported_columns].to_string()}"
+        )
+
     if costs_columns:
         costs_columns = [column.lower() for column in costs_columns]
         costs_columns_match = [
@@ -373,7 +407,11 @@ def format_portfolio_dataset(
             raise ValueError(
                 "Currency must be a 3-letter currency code (e.g. EUR, USD or JPY)."
             )
-        currency_column_first = currency_columns.upper()
+        # A single currency code applies to every transaction, so it becomes a column of
+        # its own. Using the code itself as the column name looked up a column that does
+        # not exist and made the rename below drop the currency entirely.
+        currency_column_first = "TEMP Currency"
+        dataset[currency_column_first] = currency_columns.upper()
     else:
         currency_column_first = None
 

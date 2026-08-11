@@ -161,6 +161,10 @@ def get_barrier_option(
     - down-and-in + down-and-out = vanilla option
     - up-and-in + up-and-out = vanilla option
 
+    This holds only when ``rebate`` is zero. A rebate is an extra cash payment attached
+    to whichever leg does not survive, so it is added to both legs rather than split
+    between them and the sum then exceeds the vanilla price.
+
     Args:
         stock_price (float): The current stock price.
         strike_price (float): The option's strike price.
@@ -268,9 +272,9 @@ def get_barrier_option(
         else:  # up-and-out
             value = F if in_the_money_barrier_side else (A - B + C - D + F)
     elif barrier_direction == "down" and knock_type == "in":
-        value = (B - C + D + E) if not in_the_money_barrier_side else (A + E)
+        value = (B - C + D + E) if in_the_money_barrier_side else (A + E)
     elif barrier_direction == "down" and knock_type == "out":
-        value = (A - B + C - D + F) if not in_the_money_barrier_side else F
+        value = (A - B + C - D + F) if in_the_money_barrier_side else F
     elif barrier_direction == "up" and knock_type == "in":
         value = (A - B + D + E) if in_the_money_barrier_side else (C + E)
     else:  # up-and-out

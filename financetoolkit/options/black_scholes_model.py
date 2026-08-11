@@ -4,8 +4,12 @@ __docformat__ = "google"
 
 import numpy as np
 import pandas as pd
-from scipy.optimize import minimize
+from scipy.optimize import brentq
 from scipy.stats import norm
+
+# The volatility range the implied volatility is solved within.
+MINIMUM_IMPLIED_VOLATILITY = 1e-6
+MAXIMUM_IMPLIED_VOLATILITY = 5.0
 
 # pylint: disable=too-many-arguments,too-many-locals
 
@@ -154,12 +158,41 @@ def get_implied_volatility(
         time_to_expiration (float): The time to expiration of the option, in years.
         dividend_yield (float): The dividend yield of the stock. Defaults to 0.
         put_option (bool): Whether the option is a put option or not.
-        initial_guess (float): The starting volatility guess for the numerical
-            solver. Defaults to 0.3.
+        initial_guess (float): Retained for backwards compatibility. The solver brackets
+            the root rather than starting from a guess, so this value is not used.
 
     Returns:
-        float: The implied volatility.
+        float: The implied volatility, or NaN when the observed price admits no solution.
+
+    Notes:
+        - The Black-Scholes price is strictly increasing in volatility, so the root is
+          bracketed on [1e-6, 5] rather than minimized. An unbounded minimization can
+          settle on a negative volatility, which then squares into a plausible looking
+          variance further downstream.
+        - Quotes outside the no-arbitrage bounds, stale marks and options that never
+          traded are common in a real option chain. These return NaN instead of a
+          fabricated number.
     """
+    if time_to_expiration <= 0 or market_price <= 0:
+        return np.nan
+
+    discounted_stock = stock_price * np.exp(-dividend_yield * time_to_expiration)
+    discounted_strike = strike_price * np.exp(-risk_free_rate * time_to_expiration)
+
+    # Outside these bounds no volatility can reproduce the observed price.
+    if put_option:
+        lower_bound, upper_bound = (
+            max(discounted_strike - discounted_stock, 0.0),
+            discounted_strike,
+        )
+    else:
+        lower_bound, upper_bound = (
+            max(discounted_stock - discounted_strike, 0.0),
+            discounted_stock,
+        )
+
+    if not lower_bound < market_price < upper_bound:
+        return np.nan
 
     def objective(volatility: float) -> float:
         theoretical_price = get_black_scholes(
@@ -172,9 +205,15 @@ def get_implied_volatility(
             put_option=put_option,
         )
 
-        return (theoretical_price - market_price) ** 2
+        return theoretical_price - market_price
 
-    return minimize(objective, x0=initial_guess).x[0]
+    if (
+        objective(MINIMUM_IMPLIED_VOLATILITY) > 0
+        or objective(MAXIMUM_IMPLIED_VOLATILITY) < 0
+    ):
+        return np.nan
+
+    return brentq(objective, MINIMUM_IMPLIED_VOLATILITY, MAXIMUM_IMPLIED_VOLATILITY)
 
 
 def get_put_call_parity(

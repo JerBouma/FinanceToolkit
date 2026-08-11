@@ -118,6 +118,14 @@ def get_svi_parameters(
 
     Returns:
         dict[str, float]: The calibrated {"a", "b", "rho", "m", "sigma"} parameters.
+
+    Notes:
+        The raw SVI least-squares surface is not convex and has a large flat region in
+        which b collapses to zero, which a local optimizer started from a single guess
+        will happily settle in -- returning a straight line through a pronounced smile
+        while still reporting success. The fit is therefore run from a small grid of
+        starting points spanning the plausible location (m), width (sigma) and skew
+        (rho) of the slice, and the best of those runs is kept.
     """
     log_moneyness = np.asarray(log_moneyness, dtype=float)
     total_variance = np.asarray(total_variance, dtype=float)
@@ -128,42 +136,57 @@ def get_svi_parameters(
             "to calibrate the 5 raw SVI parameters."
         )
 
-    # A flat curve at the smallest observed variance, at the money, modest wings.
-    initial_guess = [
-        total_variance.min() * 0.9,
-        0.1,
-        0.0,
-        float(
-            np.average(
-                log_moneyness, weights=total_variance - total_variance.min() + 1e-8
-            )
-        ),
-        0.1,
-    ]
-
     def objective(parameters: np.ndarray) -> float:
         a, b, rho, m, sigma = parameters
         model_variance = get_svi_total_variance(log_moneyness, a, b, rho, m, sigma)
 
         return float(np.sum((model_variance - total_variance) ** 2))
 
-    result = minimize(
-        objective,
-        x0=initial_guess,
-        method="L-BFGS-B",
-        bounds=[
-            (None, None),  # a
-            (1e-6, None),  # b >= 0
-            (-0.999, 0.999),  # rho in (-1, 1)
-            (None, None),  # m
-            (1e-6, None),  # sigma > 0
-        ],
-    )
+    # The minimum of the observed smile is the natural location for m, but a smile whose
+    # minimum sits at the edge of the quoted strikes needs the mid-point as a fallback.
+    log_moneyness_span = max(log_moneyness.max() - log_moneyness.min(), 1e-6)
+    initial_guesses = [
+        [
+            max(total_variance.min(), 1e-8),
+            0.1,
+            initial_rho,
+            initial_m,
+            initial_sigma,
+        ]
+        for initial_m in (
+            float(log_moneyness[np.argmin(total_variance)]),
+            float(np.mean(log_moneyness)),
+        )
+        for initial_sigma in (0.1 * log_moneyness_span, 0.5 * log_moneyness_span)
+        for initial_rho in (-0.7, 0.0, 0.7)
+    ]
 
-    if not result.success:
-        raise ValueError(f"SVI calibration failed to converge: {result.message}")
+    best_result = None
 
-    a, b, rho, m, sigma = result.x
+    for initial_guess in initial_guesses:
+        result = minimize(
+            objective,
+            x0=initial_guess,
+            method="L-BFGS-B",
+            bounds=[
+                (None, None),  # a
+                (1e-6, None),  # b >= 0
+                (-0.999, 0.999),  # rho in (-1, 1)
+                (None, None),  # m
+                (1e-6, None),  # sigma > 0
+            ],
+        )
+
+        if result.success and (best_result is None or result.fun < best_result.fun):
+            best_result = result
+
+    if best_result is None:
+        raise ValueError(
+            "SVI calibration failed to converge from any of the "
+            f"{len(initial_guesses)} starting points."
+        )
+
+    a, b, rho, m, sigma = best_result.x
 
     return {
         "a": float(a),

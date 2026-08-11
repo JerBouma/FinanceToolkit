@@ -114,6 +114,12 @@ def get_vega(
 
     Returns:
         float: Option Vega value.
+
+    Notes:
+        The raw derivative dV/dsigma is divided by 100, so the returned value is the
+        change in the option value per 1 percentage point change in volatility. The
+        higher order volatility Greeks (Vanna, Vomma, Zomma, Vera, Ultima) are returned
+        unscaled, per 1.00 of volatility; only Vega and Veta carry the 1/100 factor.
     """
     d1 = black_scholes_model.get_d1(
         stock_price=stock_price,
@@ -159,6 +165,12 @@ def get_theta(
 
     Returns:
         float: Option Theta value.
+
+    Notes:
+        Theta is dV/dt, the change in the option value as calendar time passes, which is
+        the negative of the derivative with respect to the time to maturity. It is
+        divided by 365, so the returned value is the change per calendar day rather than
+        per year. A long option normally has a negative Theta.
     """
     d1 = black_scholes_model.get_d1(
         stock_price=stock_price,
@@ -230,6 +242,12 @@ def get_rho(
 
     Returns:
         float: Option Rho value.
+
+    Notes:
+        Rho is returned unscaled, as the change in the option value per 1.00 (i.e. 100
+        percentage points) change in the risk-free rate. Divide by 100 for the more
+        common per-basis-point-style quote of one percentage point. Epsilon and Vera
+        follow the same unscaled convention.
     """
     d1 = black_scholes_model.get_d1(
         stock_price=stock_price,
@@ -505,6 +523,12 @@ def get_charm(
 
     Returns:
         float: Charm value.
+
+    Notes:
+        Charm is dDelta/dt, the change in Delta as calendar time passes, which is the
+        negative of the derivative with respect to the time to maturity. Unlike Theta it
+        is returned per year rather than per day; divide by 365 for delta decay per
+        calendar day. Color follows the same per-year convention.
     """
     d1 = black_scholes_model.get_d1(
         stock_price=stock_price,
@@ -657,6 +681,18 @@ def get_veta(
 
     Returns:
         float: Veta value.
+
+    Notes:
+        Veta is the rate of change of Vega as calendar time passes, dVega/dt. The
+        closed form as published (e.g. Wikipedia's Greeks table, Haug) differentiates
+        with respect to the time to maturity tau, which runs in the opposite direction,
+        so the published expression is negated here. That keeps Veta pointing the same
+        way as Theta, Charm and Color, which all measure the change per unit of time
+        elapsed rather than per unit of remaining maturity: a long option loses Vega as
+        expiry approaches, so Veta is negative for it.
+
+        The result is divided by (100 * 365), expressing it per 1 percentage point of
+        volatility per calendar day.
     """
     d1 = black_scholes_model.get_d1(
         stock_price=stock_price,
@@ -670,8 +706,10 @@ def get_veta(
         d1=d1, volatility=volatility, time_to_expiration=time_to_expiration
     )
 
+    # The published closed form is dVega/dtau. Negating it turns it into dVega/dt, so
+    # that Veta measures the change per unit of time elapsed, as Theta, Charm and Color do.
     veta = (
-        -stock_price
+        stock_price
         * np.exp(-dividend_yield * time_to_expiration)
         * norm.pdf(d1)
         * np.sqrt(time_to_expiration)
@@ -683,8 +721,8 @@ def get_veta(
         )
     )
 
-    # Divide by 100 and multiply by 365 to get the veta value
-    veta = veta / 100 * 365
+    # Expressed per 1% change in volatility per day, matching the documented convention.
+    veta = veta / (100 * 365)
 
     return veta
 
@@ -834,6 +872,13 @@ def get_color(
 
     Returns:
         float: Color value.
+
+    Notes:
+        Color is dGamma/dt, the change in Gamma as calendar time passes. The published
+        closed form (e.g. Wikipedia's Greeks table) differentiates with respect to the
+        time to maturity and therefore carries a leading minus sign; that sign is absorbed
+        here so Color points the same way as Theta, Charm and Veta. The result is per
+        year, matching Charm; divide by 365 for gamma decay per calendar day.
     """
     d1 = black_scholes_model.get_d1(
         stock_price=stock_price,

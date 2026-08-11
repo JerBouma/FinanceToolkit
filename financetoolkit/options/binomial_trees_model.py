@@ -73,6 +73,33 @@ def calculate_stock_prices(
     Returns:
         pd.DataFrame: Stock prices at each node.
     """
+    if up_movement == down_movement:
+        raise ValueError(
+            "The up and down movement are equal, which happens when the volatility or the "
+            "time to expiration is zero. The tree cannot be constructed in that case."
+        )
+
+    if show_unique_combinations:
+        # The tree recombines, so only the net number of ups matters and there are just
+        # period_length + 1 distinct nodes. Enumerating all 2^period_length paths first
+        # and deduplicating afterwards is exponential and unusable beyond ~20 steps.
+        combinations_dict = {}
+
+        for ups in range(period_length, -1, -1):
+            downs = period_length - ups
+            combination_key = "D" * downs + "U" * ups
+
+            value = stock_price
+            values = [value]
+
+            for period in range(1, period_length + 1):
+                value = value * (down_movement if period <= downs else up_movement)
+                values.append(value)
+
+            combinations_dict[combination_key] = values
+
+        return pd.DataFrame.from_dict(combinations_dict, orient="index")
+
     combinations_dict: dict = {}
     unique_combinations = set()
 

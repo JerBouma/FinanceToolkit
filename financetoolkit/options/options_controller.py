@@ -554,13 +554,11 @@ class Options:
                     time_to_expiration=days_to_expiration / 365,
                     dividend_yield=dividend_yield_value[ticker],
                     put_option=put_option,
-                    initial_guess=volatility.loc[ticker],
                 )
 
-                # A value equal to the current volatility means it could not be resolved.
-                if round(implied_volatility_value, 4) != round(
-                    volatility.loc[ticker], 4
-                ):
+                # The solver returns NaN when the observed price admits no solution, for
+                # instance when it sits outside the no-arbitrage bounds or never traded.
+                if not pd.isna(implied_volatility_value):
                     implied_volatility[ticker][strike_price] = implied_volatility_value
 
         implied_volatility_df = pd.DataFrame(implied_volatility).unstack().dropna()
@@ -2656,8 +2654,9 @@ class Options:
 
         - Delta: measures the rate of change of the theoretical option value with respect to changes in the underlying
         asset's price.
-        - Dual Delta: the actual probability of an option finishing in the money which is the first derivative
-        of option price with respect to strike.
+        - Dual Delta: the first derivative of the option price with respect to the strike price. Up to the discount
+        factor and a sign it is the risk-neutral probability of the option finishing in the money, negative for a
+        call and positive for a put.
         - Vega: measures sensitivity to volatility. Vega is the derivative of the option value with respect to the volatility
         of the underlying asset.
         - Theta: measures the sensitivity of the value of the derivative to the passage of time, the "time decay."
@@ -2672,6 +2671,8 @@ class Options:
 
         - Gamma: measures the rate of change in the delta with respect to changes in the underlying price. Gamma is
         the second derivative of the value function with respect to the underlying price.
+        - Dual Gamma: the second derivative of the option value with respect to the strike price rather than the
+        underlying price. It is the discounted risk-neutral probability density of the underlying at expiration.
         - Vanna: also referred to as DvegaDspot and DdeltaDvol, is a second—order derivative of the option value,
         once to the underlying spot price and once to volatility.
         - Charm: Charm  or delta decay measures the instantaneous rate of change of delta over the passage of time.
@@ -2814,8 +2815,9 @@ class Options:
 
         - Delta: measures the rate of change of the theoretical option value with respect to changes in the underlying
         asset's price.
-        - Dual Delta: the actual probability of an option finishing in the money which is the first derivative
-        of option price with respect to strike.
+        - Dual Delta: the first derivative of the option price with respect to the strike price. Up to the discount
+        factor and a sign it is the risk-neutral probability of the option finishing in the money, negative for a
+        call and positive for a put.
         - Vega: measures sensitivity to volatility. Vega is the derivative of the option value with respect to the volatility
         of the underlying asset.
         - Theta: measures the sensitivity of the value of the derivative to the passage of time, the "time decay."
@@ -3007,8 +3009,8 @@ class Options:
         The formula is as follows:
 
         - d1 = (ln(S / K) + (r — q + (σ^2) / 2) * t) / (σ * sqrt(t))
-        - Call Option Delta = N(d1)
-        - Put Option Delta = N(d1) — 1
+        - Call Option Delta = e^(—q * t) * N(d1)
+        - Put Option Delta = —e^(—q * t) * N(—d1)
 
         Where S is the stock price, K is the strike price, r is the risk free rate, q is the dividend yield, σ is the
         volatility, t is the time to expiration, N(d1) is the cumulative normal distribution of d1 and N(d2) is the
@@ -3021,8 +3023,9 @@ class Options:
         - For put options, Delta is negative, indicating that the option price tends to move in the opposite direction to the
         underlying asset's price.
 
-        Note that the delta of a call option is always between 0 and 1, while the delta of a put option
-        is always between —1 and 0.
+        Note that the delta of a call option is always between 0 and e^(—q * t), while the delta of a put option
+        is always between —e^(—q * t) and 0. Without a dividend yield those bounds collapse to the familiar
+        0 to 1 and —1 to 0.
 
         Also known as: option price sensitivity to underlying, hedge ratio.
 
@@ -3177,15 +3180,18 @@ class Options:
         The formula is as follows:
 
         - d1 = (ln(S / K) + (r — q + (σ^2) / 2) * t) / (σ * sqrt(t))
-        - Call Dual Delta = e^(—r * t) * N(d2)
+        - d2 = d1 — σ * sqrt(t)
+        - Call Dual Delta = —e^(—r * t) * N(d2)
         - Put Dual Delta = e^(—r * t) * N(—d2)
 
         Where S is the stock price, K is the strike price, r is the risk free rate, q is the dividend yield, σ is the
         volatility, t is the time to expiration, N(d1) is the cumulative normal distribution of d1 and N(d2) is the
         the cumulative normal distribution of d2.
 
-        The Dual Delta can be interpreted as the probability of an option finishing in the money. For example, if the
-        Dual Delta is 0.5, then the probability of the option finishing in the money is 50%.
+        The Dual Delta is the sensitivity of the option value to the strike price rather than to the underlying price.
+        Up to the discount factor and a sign it is the risk-neutral probability that the option finishes in the money:
+        a call Dual Delta of —0.5 corresponds to a roughly 50% chance of finishing in the money. It is negative for a
+        call, since raising the strike lowers the call's value, and positive for a put.
 
         Also known as: cash delta, binary option delta.
 
@@ -3340,11 +3346,15 @@ class Options:
         The formula is as follows:
 
         - d1 = (ln(S / K) + (r — q + (σ^2) / 2) * t) / (σ * sqrt(t))
-        - Vega = S * e^(—q * t) * N'(d1) * sqrt(t)
+        - Vega = S * e^(—q * t) * N'(d1) * sqrt(t) / 100
 
         Where S is the stock price, K is the strike price, r is the risk free rate, q is the dividend yield, σ is the
-        volatility, t is the time to expiration, N(d1) is the cumulative normal distribution of d1 and N(d2) is the
+        volatility, t is the time to expiration, N'(d1) is the standard normal probability density at d1 and N(d2) is
         the cumulative normal distribution of d2.
+
+        The division by 100 expresses Vega per 1 percentage point change in volatility, the usual market quote. The
+        higher order volatility Greeks (Vanna, Vomma, Zomma, Vera, Ultima) are reported unscaled, per 1.00 of
+        volatility; only Vega and Veta carry this factor.
 
         The Vega can be interpreted as follows:
 
@@ -3507,21 +3517,25 @@ class Options:
 
         - d1 = (ln(S / K) + (r — q + (σ^2) / 2) * t) / (σ * sqrt(t))
         - d2 = d1 — σ * sqrt(t)
-        - Call Theta = e^(—q * t) * (stock_price * N'(d1) * σ) / (2 * sqrt(t)) — r * K * e^(—r * t) * N(d2)
-        + q * S * e^(—q * t) * N(d1)
-        - Put Theta = e^(—q * t) * (stock_price * N'(d1) * σ) / (2 * sqrt(t)) + r * K * e^(—r * t) * N(d2)
-        — q * S * e^(—q * t) * N(d1)
+        - Call Theta = [—e^(—q * t) * (S * N'(d1) * σ) / (2 * sqrt(t)) — r * K * e^(—r * t) * N(d2)
+        + q * S * e^(—q * t) * N(d1)] / 365
+        - Put Theta = [—e^(—q * t) * (S * N'(d1) * σ) / (2 * sqrt(t)) + r * K * e^(—r * t) * N(—d2)
+        — q * S * e^(—q * t) * N(—d1)] / 365
 
         Where S is the stock price, K is the strike price, r is the risk free rate, q is the dividend yield, σ is the
-        volatility, t is the time to expiration, N(d1) is the cumulative normal distribution of d1 and N(d2) is the
+        volatility, t is the time to expiration, N'(d1) is the standard normal probability density at d1 and N(d2) is
         the cumulative normal distribution of d2.
+
+        Theta is the derivative with respect to calendar time elapsed, not with respect to the remaining time to
+        maturity, and the division by 365 expresses it per calendar day rather than per year. Charm, Veta and Color
+        measure the same passage of time in the same direction.
 
         The Theta can be interpreted as follows:
 
-        - If Theta is positive, it indicates that the option value will increase as the time to expiration increases,
-        and vice versa.
-        - If Theta is negative, it implies that the option value will decrease as the time to expiration increases,
-        and vice versa.
+        - If Theta is negative, the option loses value with each day that passes, all else equal. This is the normal
+        case for a long option, whose time value erodes towards expiration.
+        - If Theta is positive, the option gains value with each day that passes. This happens for instance on a deep
+        in-the-money European put, where the discounting of the strike dominates.
 
         Also known as: time decay, option time value erosion.
 
@@ -3692,8 +3706,10 @@ class Options:
         - If Rho is negative, it implies that the option value will decrease as the risk free rate increases,
         and vice versa.
 
-        Rho is typically expressed as the amount of money, per share of the underlying, that the value of the option
-        will gain or lose as the risk—free interest rate rises or falls by 1.0% per annum (100 basis points).
+        Rho is reported unscaled, as the amount of money per share of the underlying that the value of the option
+        gains or loses per 1.00 change in the risk—free rate. Divide by 100 for the more commonly quoted move per
+        1.0% per annum (100 basis points). Epsilon and Vera follow the same unscaled convention, while Vega and Veta
+        are already divided by 100.
 
         Also known as: option sensitivity to interest rate.
 
@@ -3849,18 +3865,20 @@ class Options:
         The formula is as follows:
 
         - d1 = (ln(S / K) + (r — q + (σ^2) / 2) * t) / (σ * sqrt(t))
-        - Call Epsilon = —S * t * e^(—q * t) * N'(d1)
-        - Put Epislon = S * t * e^(—q * t) * N'(—d1)
+        - Call Epsilon = —S * t * e^(—q * t) * N(d1)
+        - Put Epsilon = S * t * e^(—q * t) * N(—d1)
 
         Where S is the stock price, K is the strike price, r is the risk free rate, q is the dividend yield, σ is the
         volatility, t is the time to expiration, N(d1) is the cumulative normal distribution of d1 and N(d2) is the
         the cumulative normal distribution of d2.
 
+        Epsilon is reported unscaled, per 1.00 change in the dividend yield, matching Rho and Vera.
+
         The Epsilon can be interpreted as follows:
 
-        - If Epislon is positive, it indicates that the option value will increase as the dividend yield increases,
+        - If Epsilon is positive, it indicates that the option value will increase as the dividend yield increases,
         and vice versa.
-        - If Epislon is negative, it implies that the option value will decrease as the dividend yield increases,
+        - If Epsilon is negative, it implies that the option value will decrease as the dividend yield increases,
         and vice versa.
 
         Also known as: option sensitivity to dividend yield.
@@ -4017,10 +4035,11 @@ class Options:
         The formula is as follows:
 
         - d1 = (ln(S / K) + (r — q + (σ^2) / 2) * t) / (σ * sqrt(t))
-        - Delta = N(d1)
-        - Call Option = N'(d1) / (S * σ * sqrt(t))
-        - Put Option = N'(d1) / (S * σ * sqrt(t))
-        - Lambda = Delta * (Stock Price / Call Option or Put Option)
+        - d2 = d1 — σ * sqrt(t)
+        - Call Delta = e^(—q * t) * N(d1), Put Delta = —e^(—q * t) * N(—d1)
+        - Call Option Price = S * e^(—q * t) * N(d1) — K * e^(—r * t) * N(d2)
+        - Put Option Price = K * e^(—r * t) * N(—d2) — S * e^(—q * t) * N(—d1)
+        - Lambda = Delta * (Stock Price / Call Option Price or Put Option Price)
 
         Where S is the stock price, K is the strike price, r is the risk free rate, q is the dividend yield, σ is the
         volatility, t is the time to expiration, N(d1) is the cumulative normal distribution of d1 and N(d2) is the
@@ -4181,6 +4200,8 @@ class Options:
 
         - Gamma: measures the rate of change in the delta with respect to changes in the underlying price. Gamma is
         the second derivative of the value function with respect to the underlying price.
+        - Dual Gamma: the second derivative of the option value with respect to the strike price rather than the
+        underlying price. It is the discounted risk-neutral probability density of the underlying at expiration.
         - Vanna: also referred to as DvegaDspot and DdeltaDvol, is a second—order derivative of the option value,
         once to the underlying spot price and once to volatility.
         - Charm: Charm  or delta decay measures the instantaneous rate of change of delta over the passage of time.
@@ -4380,10 +4401,10 @@ class Options:
         The formula is as follows:
 
         - d1 = (ln(S / K) + (r — q + (σ^2) / 2) * t) / (σ * sqrt(t))
-        - Gamma = N'(d1) / (S * σ * sqrt(t))
+        - Gamma = e^(—q * t) * N'(d1) / (S * σ * sqrt(t))
 
         Where S is the stock price, K is the strike price, r is the risk free rate, q is the dividend yield, σ is the
-        volatility, t is the time to expiration, N(d1) is the cumulative normal distribution of d1 and N(d2) is the
+        volatility, t is the time to expiration, N'(d1) is the standard normal probability density at d1 and N(d2) is
         the cumulative normal distribution of d2.
 
         The Gamma can be interpreted as follows:
@@ -4544,11 +4565,12 @@ class Options:
 
         - d1 = (ln(S / K) + (r — q + (σ^2) / 2) * t) / (σ * sqrt(t))
         - d2 = d1 — σ * sqrt(t)
-        - Dual Gamma = e^(—r * t) * N'(d2) / (S * σ * sqrt(t))
+        - Dual Gamma = e^(—r * t) * N'(d2) / (K * σ * sqrt(t))
 
         Where S is the stock price, K is the strike price, r is the risk free rate, q is the dividend yield, σ is the
-        volatility, t is the time to expiration, N(d1) is the cumulative normal distribution of d1 and N(d2) is the
-        the cumulative normal distribution of d2.
+        volatility, t is the time to expiration, N'(d2) is the standard normal probability density at d2 and N(d1) is
+        the cumulative normal distribution of d1. Note that Dual Gamma is a second derivative with respect to the
+        strike price, so it is the strike and not the stock price that appears in the denominator.
 
         Note that the dual gamma of a call option and put option are equal to each other.
 
@@ -4870,12 +4892,16 @@ class Options:
 
         - d1 = (ln(S / K) + (r — q + (σ^2) / 2) * t) / (σ * sqrt(t))
         - d2 = d1 — σ * sqrt(t)
-        - Call Charm = q * e^(—q * t) * N'(d1) — e^(—q * t) * N(d1) * (2 * (r — q) * t — d2 * σ * sqrt(t)) / (2 * t * σ * sqrt(t))
-        - Put Charm = —q * e^(—q * t) * N'(—d1) — e^(—q * t) * N(d1) * (2 * (r — q) * t — d2 * σ * sqrt(t)) / (2 * t * σ * sqrt(t))
+        - Call Charm = q * e^(—q * t) * N(d1) — e^(—q * t) * N'(d1) * (2 * (r — q) * t — d2 * σ * sqrt(t)) / (2 * t * σ * sqrt(t))
+        - Put Charm = —q * e^(—q * t) * N(—d1) — e^(—q * t) * N'(d1) * (2 * (r — q) * t — d2 * σ * sqrt(t)) / (2 * t * σ * sqrt(t))
 
         Where S is the stock price, K is the strike price, r is the risk free rate, q is the dividend yield, σ is the
-        volatility, t is the time to expiration, N(d1) is the cumulative normal distribution of d1 and N(d2) is the
-        the cumulative normal distribution of d2.
+        volatility, t is the time to expiration, N'(d1) is the standard normal probability density at d1 and N(d1) is
+        the cumulative normal distribution of d1.
+
+        Charm is the derivative with respect to calendar time elapsed, in the same direction as Theta, but it is
+        reported per year rather than per day. Divide by 365 for delta decay per calendar day. Color follows the same
+        per-year convention.
 
         The Charm can be interpreted as follows:
 
@@ -5206,15 +5232,17 @@ class Options:
         - Vera = —K * t * e^(—r * t) * N'(d2) * (d1 / σ)
 
         Where S is the stock price, K is the strike price, r is the risk free rate, q is the dividend yield, σ is the
-        volatility, t is the time to expiration, N(d1) is the cumulative normal distribution of d1 and N(d2) is the
-        the cumulative normal distribution of d2.
+        volatility, t is the time to expiration, N'(d2) is the standard normal probability density at d2 and N(d1) is
+        the cumulative normal distribution of d1.
+
+        Vera is reported unscaled, per 1.00 of volatility and per 1.00 of the risk free rate, matching Rho.
 
         The Vera can be interpreted as follows:
 
-        - If Vera is positive, it indicates that the option's Rho is becoming more positive over time. In
-        other words, the option is gaining sensitivity to changes in the risk free rate as time passes.
-        - If Vera is negative, it suggests that the option's Rho is becoming more negative over time. The
-        option is losing sensitivity to changes in the risk free rate as time passes.
+        - If Vera is positive, it indicates that the option's Rho becomes more positive as implied volatility rises.
+        In other words, the option gains sensitivity to the risk free rate when volatility increases.
+        - If Vera is negative, it suggests that the option's Rho becomes more negative as implied volatility rises.
+        The option loses sensitivity to the risk free rate when volatility increases.
 
         Note that the vera of a call option and put option are equal to each other.
 
@@ -5369,11 +5397,16 @@ class Options:
 
         - d1 = (ln(S / K) + (r — q + (σ^2) / 2) * t) / (σ * sqrt(t))
         - d2 = d1 — σ * sqrt(t)
-        - Veta = —S * e^(—q * t) * N'(d1) * sqrt(t) * (q + ((r — q) * d1) / (σ * sqrt(t)) — (1 + d1 * d2) / (2 * t)
+        - Veta = S * e^(—q * t) * N'(d1) * sqrt(t) * (q + ((r — q) * d1) / (σ * sqrt(t)) — (1 + d1 * d2) / (2 * t)) / (100 * 365)
 
         Where S is the stock price, K is the strike price, r is the risk free rate, q is the dividend yield, σ is the
-        volatility, t is the time to expiration, N(d1) is the cumulative normal distribution of d1 and N(d2) is the
+        volatility, t is the time to expiration, N'(d1) is the standard normal probability density at d1 and N(d2) is
         the cumulative normal distribution of d2.
+
+        The formula as usually published carries a leading minus sign because it differentiates with respect to the
+        time to maturity, which runs opposite to elapsed calendar time. That sign is absorbed here so that Veta,
+        like Theta, Charm and Color, measures the change per unit of time that passes: a long option loses Vega as
+        expiry approaches, so its Veta is negative.
 
         It is common practice to divide the mathematical result of veta by 100 times the number of days per year to
         reduce the value to the percentage change in vega per one day. This is also done here.
@@ -5538,12 +5571,13 @@ class Options:
 
         The formula is as follows:
 
-        - Partial Derivative (PD) = e^(—r * t) * (1 / K) * (1 sqrt(2 * pi * volatility ** 2 * t)) *
-        e^(—(1 / (2 * volatility ** 2 * t)) * (ln(S / K) — ((r — q) — (0.5 * volatility ** 2)) * t) ** 2
+        - Partial Derivative (PD) = e^(—r * t) * (1 / K) * (1 / sqrt(2 * pi * σ ** 2 * t)) *
+        e^(—(1 / (2 * σ ** 2 * t)) * (ln(K / S) — ((r — q) — (0.5 * σ ** 2)) * t) ** 2)
 
         Where S is the stock price, K is the strike price, r is the risk free rate, q is the dividend yield, σ is the
-        volatility, t is the time to expiration, N(d1) is the cumulative normal distribution of d1 and N(d2) is the
-        the cumulative normal distribution of d2.
+        volatility and t is the time to expiration. This expression is algebraically identical to
+        e^(—r * t) * N'(d2) / (K * σ * sqrt(t)), i.e. to the Dual Gamma, since both are the second derivative of the
+        option price with respect to the strike price.
 
         Also known as: numerical derivative, option sensitivity.
 
@@ -5834,15 +5868,14 @@ class Options:
         - Speed = —e^(—q * t) * ((N'(d1) / (S ** 2 * σ * sqrt(t)))) * ((d1 / (σ * sqrt(t))) + 1)
 
         Where S is the stock price, K is the strike price, r is the risk free rate, q is the dividend yield, σ is the
-        volatility, t is the time to expiration, N(d1) is the cumulative normal distribution of d1 and N(d2) is the
-        the cumulative normal distribution of d2.
+        volatility, t is the time to expiration and N'(d1) is the standard normal probability density at d1.
 
         The Speed can be interpreted as follows:
 
-        - If Speed is positive, it indicates that the option's Gamma is becoming more positive over time. In
-        other words, the option is gaining sensitivity to changes in the underlying price as time passes.
-        - If Speed is negative, it suggests that the option's Gamma is becoming more negative over time. The
-        option is losing sensitivity to changes in the underlying price as time passes.
+        - If Speed is positive, the option's Gamma rises as the underlying price rises, so the position's convexity
+        builds up on the way up.
+        - If Speed is negative, the option's Gamma falls as the underlying price rises, which is the usual case just
+        below the strike where Gamma is already close to its peak.
 
         Note that the speed of a call option and put option are equal to each other.
 
@@ -5997,18 +6030,18 @@ class Options:
 
         - d1 = (ln(S / K) + (r — q + (σ^2) / 2) * t) / (σ * sqrt(t))
         - d2 = d1 — σ * sqrt(t)
-        - Zomma = e^(—q * t) * (N'(d1) / (d1 * d2 — 1)) / (S * σ **2 * sqrt(t))
+        - Zomma = e^(—q * t) * (N'(d1) * (d1 * d2 — 1)) / (S * σ **2 * sqrt(t))
 
         Where S is the stock price, K is the strike price, r is the risk free rate, q is the dividend yield, σ is the
-        volatility, t is the time to expiration, N(d1) is the cumulative normal distribution of d1 and N(d2) is the
-        the cumulative normal distribution of d2.
+        volatility, t is the time to expiration and N'(d1) is the standard normal probability density at d1. This is
+        equivalently Gamma * (d1 * d2 — 1) / σ, and it is reported unscaled, per 1.00 of volatility.
 
         The Zomma can be interpreted as follows:
 
-        - If Zomma is positive, it indicates that the option's Gamma is becoming more positive over time. In
-        other words, the option is gaining sensitivity to changes in volatility as time passes.
-        - If Zomma is negative, it suggests that the option's Gamma is becoming more negative over time. The
-        option is losing sensitivity to changes in volatility as time passes.
+        - If Zomma is positive, the option's Gamma rises as implied volatility rises, which is typical for strikes
+        well away from the money.
+        - If Zomma is negative, the option's Gamma falls as implied volatility rises, which is typical for strikes
+        near the money where Gamma is already at its peak.
 
         Note that the zomma of a call option and put option are equal to each other.
 
@@ -6163,18 +6196,22 @@ class Options:
 
         - d1 = (ln(S / K) + (r — q + (σ^2) / 2) * t) / (σ * sqrt(t))
         - d2 = d1 — σ * sqrt(t)
-        - Color = —e^(—q * t) * (N'(d1) / (2 * S * t * σ * sqrt(t))) * (2 * q * t + 1 + ((2 * (r — q) * t — d2 * σ * sqrt(t)) / (σ * sqrt(t))) * d1)
+        - Color = e^(—q * t) * (N'(d1) / (2 * S * t * σ * sqrt(t))) * (2 * q * t + 1 + ((2 * (r — q) * t — d2 * σ * sqrt(t)) / (σ * sqrt(t))) * d1)
 
         Where S is the stock price, K is the strike price, r is the risk free rate, q is the dividend yield, σ is the
-        volatility, t is the time to expiration, N(d1) is the cumulative normal distribution of d1 and N(d2) is the
-        the cumulative normal distribution of d2.
+        volatility, t is the time to expiration and N'(d1) is the standard normal probability density at d1.
+
+        The formula as usually published carries a leading minus sign because it differentiates with respect to the
+        time to maturity, which runs opposite to elapsed calendar time. That sign is absorbed here so that Color,
+        like Theta, Charm and Veta, measures the change per unit of time that passes. The result is per year, matching
+        Charm; divide by 365 for gamma decay per calendar day.
 
         The Color can be interpreted as follows:
 
-        - If Color is positive, it indicates that the option's Gamma is becoming more positive over time. In
-        other words, the option is gaining sensitivity to changes in time to expiration as time passes.
-        - If Color is negative, it suggests that the option's Gamma is becoming more negative over time. The
-        option is losing sensitivity to changes in time to expiration as time passes.
+        - If Color is positive, the option's Gamma builds up with each day that passes, which is what happens to a
+        near-the-money option as expiration approaches.
+        - If Color is negative, the option's Gamma bleeds away with each day that passes, which is what happens to a
+        strike far from the money that is running out of time to reach it.
 
         Note that the color of a call option and put option are equal to each other.
 
@@ -6329,18 +6366,19 @@ class Options:
 
         - d1 = (ln(S / K) + (r — q + (σ^2) / 2) * t) / (σ * sqrt(t))
         - d2 = d1 — σ * sqrt(t)
-        - Ultima = (—vega / volatility ** 2) * (d1 * d2 * (1 — d1 * d2) + d1 ** 2 + d2 ** 2)
+        - Ultima = (—vega / σ ** 2) * (d1 * d2 * (1 — d1 * d2) + d1 ** 2 + d2 ** 2)
 
         Where S is the stock price, K is the strike price, r is the risk free rate, q is the dividend yield, σ is the
-        volatility, t is the time to expiration, N(d1) is the cumulative normal distribution of d1 and N(d2) is the
-        the cumulative normal distribution of d2.
+        volatility, t is the time to expiration and vega is the unscaled S * e^(—q * t) * N'(d1) * sqrt(t), i.e. the
+        Vega before the division by 100 that `get_vega` applies. Ultima itself is likewise reported unscaled, per
+        1.00 of volatility.
 
         The Ultima can be interpreted as follows:
 
-        - If Ultima is positive, it indicates that the option's vomma is becoming more positive over time. In
-        other words, the option is gaining sensitivity to changes in volatility as time passes.
-        - If Ultima is negative, it suggests that the option's vomma is becoming more negative over time. The
-        option is losing sensitivity to changes in volatility as time passes.
+        - If Ultima is positive, the option's Vomma rises as implied volatility rises, so the volatility convexity
+        of the position builds up in a rising volatility regime.
+        - If Ultima is negative, the option's Vomma falls as implied volatility rises, which is the usual case for
+        strikes near the money.
 
         Note that the ultima of a call option and put option are equal to each other.
 

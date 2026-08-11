@@ -157,7 +157,7 @@ def read_portfolio_dataset(
         combined_portfolio_dataset = combined_portfolio_dataset.drop_duplicates()
 
     combined_portfolio_dataset = combined_portfolio_dataset.sort_values(
-        by=selected_date_column, ascending=False  # type: ignore
+        by=selected_date_column, ascending=False, kind="stable"  # type: ignore
     )
 
     return (

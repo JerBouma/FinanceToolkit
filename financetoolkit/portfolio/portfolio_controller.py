@@ -521,7 +521,7 @@ class Portfolio:
         )
 
         self._portfolio_dataset = self._portfolio_dataset.sort_values(
-            by=self._date_column, ascending=True
+            by=self._date_column, ascending=True, kind="stable"
         )
         self._tickers = list(self._portfolio_dataset[self._ticker_column].unique())
         self._start_date = (

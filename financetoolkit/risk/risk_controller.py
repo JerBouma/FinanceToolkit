@@ -23,7 +23,10 @@ from financetoolkit.risk import (
 )
 from financetoolkit.risk.helpers import determine_within_historical_data
 from financetoolkit.utilities.error_model import handle_errors
-from financetoolkit.utilities.statistics_model import finalize_dataset
+from financetoolkit.utilities.statistics_model import (
+    convert_annualized_rate_to_period,
+    finalize_dataset,
+)
 
 # Division by zero is normal in these calculations, not a bug.
 warnings.filterwarnings("ignore", category=RuntimeWarning)
@@ -32,6 +35,23 @@ MINIMUM_TICKERS_FOR_ALL_PAIRS = 2
 
 # pylint: disable=too-many-instance-attributes,too-few-public-methods,too-many-lines,too-many-locals
 # pylint: disable=too-many-boolean-expressions
+
+
+def _as_scalar(value: float | np.ndarray | pd.Series) -> float:
+    """
+    Reduces a Value at Risk or Conditional Value at Risk estimate to a single float.
+
+    A rolling apply only accepts a scalar return value, but the Student-t and Extreme
+    Value Theory variants return a length one array or Series when given a Series, which
+    would otherwise raise a TypeError before it reaches the backtest.
+
+    Args:
+        value (float | np.ndarray | pd.Series): the estimate to reduce.
+
+    Returns:
+        float: the estimate as a single float.
+    """
+    return float(np.asarray(value).reshape(-1)[0])
 
 
 class Risk:
@@ -73,30 +93,27 @@ class Risk:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(["AAPL", "MSFT"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         toolkit.risk.get_value_at_risk(period='yearly')
         ```
 
         Which returns:
 
-        | Date   |    AAPL |    TSLA |
+        | Date   |    AAPL |    MSFT |
         |:-------|--------:|--------:|
-        | 2012   |  0      |  0      |
-        | 2013   |  0.1754 |  4.96   |
-        | 2014   |  1.7515 |  0.9481 |
-        | 2015   | -0.1958 |  0.1454 |
-        | 2016   |  0.4177 | -0.3437 |
-        | 2017   |  2.6368 |  1.2225 |
-        | 2018   | -0.2786 |  0.0718 |
-        | 2019   |  3.2243 |  0.4707 |
-        | 2020   |  1.729  |  8.3319 |
-        | 2021   |  1.3179 |  0.8797 |
-        | 2022   | -0.8026 | -1.0046 |
-        | 2023   |  1.8549 |  1.8238 |
+        | 2020   | -0.0448 | -0.0417 |
+        | 2021   | -0.0256 | -0.0211 |
+        | 2022   | -0.0373 | -0.0385 |
         """
         self._historical_data = historical_data
-        self._risk_free_rate_data = risk_free_rate_data
+        # The risk free rate is quoted as an annualized yield, so it is converted to the
+        # matching frequency. Without this, a daily return would have a full year of
+        # risk free rate subtracted from it.
+        self._risk_free_rate_data = {
+            frequency: convert_annualized_rate_to_period(rate, frequency)
+            for frequency, rate in risk_free_rate_data.items()
+        }
         self._tickers = tickers
         self._quarterly = quarterly
         self._rounding: int | None = rounding
@@ -184,7 +201,7 @@ class Risk:
         if period == "daily" and self._historical_data["intraday"].empty:
             raise ValueError("Intraday data is required for daily calculations.")
 
-        rounding = rounding if rounding else self._rounding
+        rounding = rounding if rounding is not None else self._rounding
 
         risk_metrics = {
             "Value at Risk": self.get_value_at_risk(
@@ -364,7 +381,9 @@ class Risk:
             of all years. Defaults to True.
             rolling (int, optional): The rolling window size to use for the calculation. If set, VaR is
             calculated over a rolling window of this many periods across the full return history instead
-            of per `period` (e.g. a rolling 60-day VaR). Defaults to None.
+            of per `period` (e.g. a rolling 60-day VaR). Only available for
+            `distribution="historic"`; see `get_var_backtest` for a rolling, out-of-sample VaR path
+            under the parametric distributions. Defaults to None.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the VaR values over time. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
@@ -422,6 +441,13 @@ class Risk:
             )
         if period == "daily" and self._historical_data["intraday"].empty:
             raise ValueError("Intraday data is required for daily calculations.")
+
+        if rolling and distribution != "historic":
+            raise ValueError(
+                "The rolling parameter is only available for distribution='historic'. "
+                "Use get_var_backtest to obtain a rolling, out-of-sample VaR path "
+                "under one of the parametric distributions instead."
+            )
 
         if rolling:
             returns = self._historical_data[period]["Return"]
@@ -507,7 +533,9 @@ class Risk:
             of all years. Defaults to True.
             rolling (int, optional): The rolling window size to use for the calculation. If set, CVaR is
             calculated over a rolling window of this many periods across the full return history instead
-            of per `period` (e.g. a rolling 60-day CVaR). Defaults to None.
+            of per `period` (e.g. a rolling 60-day CVaR). Only available for
+            `distribution="historic"`; see `get_acerbi_szekely_test` for a rolling, out-of-sample CVaR
+            path under the parametric distributions. Defaults to None.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the CVaR values over time. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
@@ -562,6 +590,13 @@ class Risk:
             )
         if period == "daily" and self._historical_data["intraday"].empty:
             raise ValueError("Intraday data is required for daily calculations.")
+
+        if rolling and distribution != "historic":
+            raise ValueError(
+                "The rolling parameter is only available for distribution='historic'. "
+                "Use get_acerbi_szekely_test to obtain a rolling, out-of-sample CVaR "
+                "path under one of the parametric distributions instead."
+            )
 
         if rolling:
             returns = self._historical_data[period]["Return"]
@@ -624,7 +659,7 @@ class Risk:
         period: str | None = None,
         alpha: float = 0.05,
         within_period: bool = True,
-        rounding: int | None = 4,
+        rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
@@ -1257,7 +1292,7 @@ class Risk:
         self,
         period: str | None = None,
         rolling: int | None = 14,
-        rounding: int | None = 4,
+        rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
@@ -1368,7 +1403,7 @@ class Risk:
         time_steps: int | None = None,
         optimization_t: int | None = None,
         within_period: bool = False,
-        rounding: int | None = 4,
+        rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
@@ -1696,7 +1731,7 @@ class Risk:
         time_steps: int | None = None,
         optimization_t: int | None = None,
         within_period: bool = False,
-        rounding: int | None = 4,
+        rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
@@ -2021,7 +2056,7 @@ class Risk:
         time_steps: int | None = None,
         optimization_t: int | None = None,
         within_period: bool = False,
-        rounding: int | None = 4,
+        rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
@@ -2339,12 +2374,13 @@ class Risk:
         return parameters.round(rounding if rounding is not None else self._rounding)
 
     def _get_price_column(self, period: str, column: str) -> pd.DataFrame:
+        # Reads the plain period-frequency history rather than the "within period"
+        # multi-index, so period="daily" simply means daily observations here and
+        # (unlike every within-period method above) needs no intraday data.
         if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
             raise ValueError(
                 "Period must be daily, weekly, monthly, quarterly, or yearly."
             )
-        if period == "daily" and self._historical_data["intraday"].empty:
-            raise ValueError("Intraday data is required for daily calculations.")
 
         return self._historical_data[period][column].dropna()
 
@@ -2404,7 +2440,9 @@ class Risk:
             ticker_a (str): The first asset.
             ticker_b (str): The second asset.
             period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly). Defaults to
-                "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
+                "daily", since a dependence estimate needs far more observations than a
+                lower frequency provides -- at "yearly" a decade of history is only ten
+                observations.
             column (str, optional): The historical data column to use. Defaults to "Return", since
             tail dependence between return series is the standard risk management application.
             q (float, optional): The threshold quantile used for the "empirical" method, in (0.5, 1).
@@ -2443,7 +2481,7 @@ class Risk:
         | Correlation            |  0.7602 |
         | Observations           | 157      |
         """
-        period = period if period else "quarterly" if self._quarterly else "yearly"
+        period = period if period else "daily"
         returns = self._get_price_column(period, column)
 
         result = copula_model.get_tail_dependence_coefficient(
@@ -2509,7 +2547,9 @@ class Risk:
             copula (str, optional): The copula family to fit, one of "gaussian",
             "student-t", "clayton", "gumbel" or "frank". Defaults to "gaussian".
             period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly). Defaults to
-                "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
+                "daily", since a dependence estimate needs far more observations than a
+                lower frequency provides -- at "yearly" a decade of history is only ten
+                observations.
             column (str, optional): The historical data column to use. Defaults to "Return".
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to
             None.
@@ -2550,7 +2590,7 @@ class Risk:
         | AIC                   | -65.2495 |
         | Observations          | 314      |
         """
-        period = period if period else "quarterly" if self._quarterly else "yearly"
+        period = period if period else "daily"
         returns = self._get_price_column(period, column)
 
         fit_functions = {
@@ -2621,7 +2661,9 @@ class Risk:
             copula (str, optional): The copula family to fit and simulate from, one of "gaussian",
             "student-t", "clayton", "gumbel" or "frank". Defaults to "gaussian".
             period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly). Defaults to
-                "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
+                "daily", since a dependence estimate needs far more observations than a
+                lower frequency provides -- at "yearly" a decade of history is only ten
+                observations.
             column (str, optional): The historical data column to use. Defaults to "Return".
             n_simulations (int, optional): The number of joint draws to simulate. Defaults to 10,000.
             random_state (int, optional): The seed for the random number generator. Defaults to 42.
@@ -2671,7 +2713,7 @@ class Risk:
         | 75%   |    0.0261     |    0.0213    |
         | max   |    0.1315     |    0.2169    |
         """
-        period = period if period else "quarterly" if self._quarterly else "yearly"
+        period = period if period else "daily"
         returns = self._get_price_column(period, column)
 
         fit_functions = {
@@ -2788,7 +2830,9 @@ class Risk:
             tickers in the Toolkit instance is compared (requires `ticker_b` to also be None).
             ticker_b (str, optional): The second asset. Defaults to None, see `ticker_a`.
             period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly). Defaults to
-                "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
+                "daily", since a dependence estimate needs far more observations than a
+                lower frequency provides -- at "yearly" a decade of history is only ten
+                observations.
             column (str, optional): The historical data column to use. Defaults to "Return".
             show_full_results (bool, optional): Only relevant when neither ticker is given. When False
             (the default), returns a square ticker-by-ticker grid of just the winning copula family
@@ -2834,7 +2878,7 @@ class Risk:
         | Gaussian  |                  0      |                  0      |            42.908  | -83.816  |
         | Clayton   |                  0.389  |                  0      |            33.6247 | -65.2495 |
         """
-        period = period if period else "quarterly" if self._quarterly else "yearly"
+        period = period if period else "daily"
         returns = self._get_price_column(period, column)
 
         fit_functions = {
@@ -2935,7 +2979,9 @@ class Risk:
             conditioning_ticker (str): The asset (or e.g. a benchmark/index) whose distress
             `ticker` is conditioned on.
             period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly). Defaults to
-                "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
+                "daily", since a dependence estimate needs far more observations than a
+                lower frequency provides -- at "yearly" a decade of history is only ten
+                observations.
             column (str, optional): The historical data column to use. Defaults to "Return".
             alpha (float, optional): The confidence level for both the tail quantile regression and
             the VaR of `conditioning_ticker` (e.g., 0.05 for 95% confidence). Defaults to 0.05.
@@ -2970,7 +3016,7 @@ class Risk:
         | Quantile Regression Intercept   | -0.0508 |
         | Observations                    | 157     |
         """
-        period = period if period else "quarterly" if self._quarterly else "yearly"
+        period = period if period else "daily"
         returns = self._get_price_column(period, column)
 
         result = covar_model.get_covar(
@@ -3283,16 +3329,23 @@ class Risk:
             )
         elif distribution == "gaussian":
             rolling_var = returns.rolling(window=window_size).apply(
-                lambda window: var_model.get_var_gaussian(window, alpha), raw=False
+                lambda window: _as_scalar(var_model.get_var_gaussian(window, alpha)),
+                raw=False,
             )
         elif distribution == "studentt":
             rolling_var = returns.rolling(window=window_size).apply(
-                lambda window: var_model.get_var_studentt(window, alpha), raw=False
+                lambda window: _as_scalar(var_model.get_var_studentt(window, alpha)),
+                raw=False,
             )
         else:
             rolling_var = returns.rolling(window=window_size).apply(
-                lambda window: var_model.get_var_evt(window, alpha), raw=False
+                lambda window: _as_scalar(var_model.get_var_evt(window, alpha)),
+                raw=False,
             )
+
+        # A trailing rolling window includes the current observation, so without the shift
+        # each estimate would be compared against a return it was computed from.
+        rolling_var = rolling_var.shift(1)
 
         results = []
         if test in ("kupiec", "both"):
@@ -3405,25 +3458,36 @@ class Risk:
             )
         elif distribution == "gaussian":
             rolling_var = returns.rolling(window=window_size).apply(
-                lambda window: var_model.get_var_gaussian(window, alpha), raw=False
+                lambda window: _as_scalar(var_model.get_var_gaussian(window, alpha)),
+                raw=False,
             )
             rolling_cvar = returns.rolling(window=window_size).apply(
-                lambda window: cvar_model.get_cvar_gaussian(window, alpha), raw=False
+                lambda window: _as_scalar(cvar_model.get_cvar_gaussian(window, alpha)),
+                raw=False,
             )
         elif distribution == "studentt":
             rolling_var = returns.rolling(window=window_size).apply(
-                lambda window: var_model.get_var_studentt(window, alpha), raw=False
+                lambda window: _as_scalar(var_model.get_var_studentt(window, alpha)),
+                raw=False,
             )
             rolling_cvar = returns.rolling(window=window_size).apply(
-                lambda window: cvar_model.get_cvar_studentt(window, alpha), raw=False
+                lambda window: _as_scalar(cvar_model.get_cvar_studentt(window, alpha)),
+                raw=False,
             )
         else:
             rolling_var = returns.rolling(window=window_size).apply(
-                lambda window: var_model.get_var_evt(window, alpha), raw=False
+                lambda window: _as_scalar(var_model.get_var_evt(window, alpha)),
+                raw=False,
             )
             rolling_cvar = returns.rolling(window=window_size).apply(
-                lambda window: cvar_model.get_cvar_evt(window, alpha), raw=False
+                lambda window: _as_scalar(cvar_model.get_cvar_evt(window, alpha)),
+                raw=False,
             )
+
+        # A trailing rolling window includes the current observation, so without the shift
+        # each estimate would be compared against a return it was computed from.
+        rolling_var = rolling_var.shift(1)
+        rolling_cvar = rolling_cvar.shift(1)
 
         result = backtesting_model.get_acerbi_szekely_test(
             returns, rolling_var, rolling_cvar, alpha, n_bootstrap, random_state
@@ -4891,7 +4955,9 @@ class Risk:
             lambda column: risk_model.get_autocorrelation(column, lags=lags)
         )
 
-        return autocorrelation.round(rounding if rounding else self._rounding)
+        return autocorrelation.round(
+            rounding if rounding is not None else self._rounding
+        )
 
     @handle_errors
     def get_hurst_exponent(
@@ -4937,10 +5003,15 @@ class Risk:
         | TSLA      |  0.0099 |
         | Benchmark | -0.0077 |
         """
-        returns = self._historical_data["daily"]["Return"]
+        # The estimator regresses the dispersion of lagged differences on the lag, which
+        # only identifies self-affinity on a level series. Feeding it returns, which are
+        # already differenced, collapses the exponent towards zero.
+        prices = self._historical_data["daily"]["Adj Close"]
 
-        hurst_exponent = returns.apply(
+        hurst_exponent = prices.apply(
             lambda column: risk_model.get_hurst_exponent(column, max_lag=max_lag)
         )
 
-        return hurst_exponent.round(rounding if rounding else self._rounding)
+        return hurst_exponent.round(
+            rounding if rounding is not None else self._rounding
+        )

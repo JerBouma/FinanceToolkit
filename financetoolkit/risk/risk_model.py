@@ -202,7 +202,9 @@ def get_kurtosis(
         returns (pd.Series | pd.Dataframe): A single index dataframe or series
         fisher (bool, optional): Whether to return Fisher's definition of kurtosis
         (excess kurtosis, i.e. normal distribution equals 0.0) instead of Pearson's
-        definition (normal distribution equals 3.0). Defaults to True.
+        definition (normal distribution equals 3.0). The two differ by exactly 3,
+        since both are computed from the same bias-corrected (sample) estimator that
+        `get_skewness` also uses. Defaults to True.
 
     Returns:
         pd.Series | pd.Dataframe: Kurtosis of the dataset
@@ -226,9 +228,10 @@ def get_kurtosis(
             return kurtosis.T
         return returns.aggregate(get_kurtosis, fisher=fisher)
     if isinstance(returns, pd.Series):
-        if fisher:
-            return returns.kurtosis()
-        return (((returns - returns.mean()) / returns.std(ddof=0)) ** 4).mean()
+        # Pearson is Fisher shifted by 3 by definition, so both branches must come
+        # from the same estimator -- the population moment ratio used previously is
+        # a different (biased) estimator, leaving the two definitions inconsistent.
+        return returns.kurtosis() if fisher else returns.kurtosis() + 3
 
     raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
 
@@ -791,28 +794,37 @@ def get_rolling_kurtosis(
         returns (pd.Series | pd.DataFrame): A Series or Dataframe of returns.
         window_size (int): The size of the rolling window.
         fisher (bool, optional): Whether to use Fisher's definition of kurtosis (kurtosis = 0.0
-        for a normal distribution). Defaults to True.
+        for a normal distribution) instead of Pearson's (kurtosis = 3.0 for a normal
+        distribution). The two differ by exactly 3, as in `get_kurtosis`. Defaults to True.
 
     Returns:
         pd.Series | pd.DataFrame: Rolling Kurtosis values with time as index.
     """
-    if fisher:
-        return returns.rolling(window=window_size).kurt()
+    rolling_kurtosis = returns.rolling(window=window_size).kurt()
 
-    def _pearson_kurtosis(window):
-        return (((window - window.mean()) / window.std(ddof=0)) ** 4).mean()
-
-    return returns.rolling(window=window_size).apply(_pearson_kurtosis)
+    return rolling_kurtosis if fisher else rolling_kurtosis + 3
 
 
 def get_downside_deviation(
     returns: pd.Series | pd.DataFrame, minimum_acceptable_return: float = 0.0
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate the Downside Deviation of returns, i.e. the standard deviation of only the returns
-    that fall below a minimum acceptable return (MAR).
+    Calculate the Downside Deviation of returns, i.e. the square root of the average squared
+    shortfall below a minimum acceptable return (MAR). This is the second order lower partial
+    moment used as the denominator of the Sortino ratio.
 
-    Also known as: semi-deviation, downside risk.
+    Returns above the MAR contribute a shortfall of zero but still count towards the average,
+    so the measure reflects how often shortfalls occur as well as how large they are.
+
+    The formula is as follows:
+
+        Downside Deviation = sqrt((1 / N) * sum(min(Return - MAR, 0)^2))
+
+    Also known as: semi-deviation, downside risk, second order lower partial moment.
+
+    References:
+        Sortino, F. A. and Price, L. N. (1994). Performance Measurement in a Downside Risk
+        Framework. The Journal of Investing, 3(3), 59-64.
 
     Args:
         returns (pd.Series | pd.DataFrame): A Series or Dataframe of returns.
@@ -847,11 +859,13 @@ def get_downside_deviation(
             minimum_acceptable_return=minimum_acceptable_return,
         )
     if isinstance(returns, pd.Series):
-        downside_returns = (
-            returns[returns < minimum_acceptable_return] - minimum_acceptable_return
-        )
+        # The second order lower partial moment: shortfalls are squared and averaged over
+        # every observation, not only the ones below the threshold, and they are measured
+        # from the minimum acceptable return rather than from their own mean. Taking the
+        # standard deviation of the shortfalls alone understates the risk materially.
+        shortfalls = (returns - minimum_acceptable_return).clip(upper=0)
 
-        return downside_returns.std()
+        return np.sqrt((shortfalls**2).mean())
 
     raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
 
@@ -862,8 +876,12 @@ def get_rolling_downside_deviation(
     minimum_acceptable_return: float = 0.0,
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate the rolling Downside Deviation of returns, i.e. the standard deviation of only the
-    returns that fall below a minimum acceptable return (MAR), within a rolling window.
+    Calculate the rolling Downside Deviation of returns, i.e. the square root of the average
+    squared shortfall below a minimum acceptable return (MAR), within a rolling window.
+
+    The formula is as follows:
+
+        Downside Deviation = sqrt((1 / N) * sum(min(Return - MAR, 0)^2))
 
     Args:
         returns (pd.Series | pd.DataFrame): A Series or Dataframe of returns.
@@ -876,9 +894,9 @@ def get_rolling_downside_deviation(
     """
 
     def _downside_deviation(window):
-        downside_returns = window[window < minimum_acceptable_return]
+        shortfalls = np.minimum(window - minimum_acceptable_return, 0)
 
-        return downside_returns.std() if len(downside_returns) > 1 else np.nan
+        return np.sqrt(np.mean(shortfalls**2))
 
     return returns.rolling(window=window_size).apply(_downside_deviation, raw=True)
 
@@ -1179,19 +1197,22 @@ def get_hill_estimator(
         if returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS:
             periods = returns.index.get_level_values(0).unique()
             period_data_list = []
+            valid_periods = []
 
             for sub_period in periods:
                 period_data = returns.loc[sub_period].aggregate(
                     get_hill_estimator, k=k, tail=tail
                 )
-                period_data.name = sub_period
 
                 if not period_data.empty:
                     period_data_list.append(period_data)
+                    valid_periods.append(sub_period)
 
-            hill_estimator = pd.concat(period_data_list, axis=1)
-
-            return hill_estimator.T
+            # Keyed on the sub-period, since every sub-period contributes a whole
+            # frame of statistics rather than the single row the other functions
+            # in this module return -- concatenating without the keys would drop
+            # the period labels entirely.
+            return pd.concat(period_data_list, keys=valid_periods, axis=0)
 
         return pd.DataFrame(
             {

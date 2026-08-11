@@ -189,6 +189,12 @@ def get_acerbi_szekely_test(
     days are, on average, worse than the CVaR predicted -- i.e. `abs(r_t) > abs(CVaR_t)`
     on breach days), while `Z2 < 0` indicates the model is conservative.
 
+    Note that the original paper writes the statistic as `SUM[...] / (n * alpha) + 1`
+    with the Expected Shortfall quoted as a positive loss; this module keeps CVaR on
+    the same negative-return scale as every other measure here, which flips the sign
+    of the constant to `- 1` and, with it, the sign of the statistic relative to the
+    paper. The magnitude and the p-value are unaffected.
+
     The Z2 statistic has no closed-form null distribution (the indicator function
     makes it non-pivotal), so -- following the Monte Carlo approach recommended in the
     original paper -- the p-value here is obtained via a nonparametric (i.i.d.,

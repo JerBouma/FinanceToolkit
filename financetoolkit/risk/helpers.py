@@ -14,6 +14,10 @@ PERIOD_TRANSLATION: dict[str, str | dict[str, str]] = {
         "30min": "D",
         "1hour": "D",
     },
+    # The daily period nests the intraday observations of a single day, so it is only
+    # available when intraday data was fetched -- exactly the condition the Risk and
+    # Econometrics controllers already guard their period="daily" branches with.
+    "daily": "D",
     "weekly": "W",
     "monthly": "M",
     "quarterly": "Q",
@@ -36,7 +40,8 @@ def determine_within_historical_data(
         daily_historical_data (pd.DataFrame): the daily historical data used for the
         weekly, monthly, quarterly and yearly periods.
         intraday_historical_data (pd.DataFrame): the intraday historical data used for
-        the intraday period. When empty, the daily historical data is used instead.
+        the intraday and daily periods. When empty, the daily period is skipped
+        entirely, since there would be nothing to nest inside a single day.
         intraday_period (str | None): the intraday frequency (e.g. "1min", "1hour")
         used to look up the outer resampling symbol. When None, the intraday period is
         skipped entirely.
@@ -49,6 +54,10 @@ def determine_within_historical_data(
 
     for period, symbol in PERIOD_TRANSLATION.items():
         if not intraday_period and period == "intraday":
+            continue
+        # Without intraday observations there is nothing to nest inside a single day,
+        # so the daily period would collapse to one observation per group.
+        if intraday_historical_data.empty and period == "daily":
             continue
 
         period_symbol = (
@@ -63,7 +72,9 @@ def determine_within_historical_data(
         else:
             source_data = daily_historical_data
 
-        inner_freq = "D" if period != "intraday" else "min"
+        # The daily period nests intraday observations inside each day, so like the
+        # intraday period it needs a minute-level inner index rather than a daily one.
+        inner_freq = "min" if period in ("intraday", "daily") else "D"
         period_data = source_data.copy()
         period_data.index = pd.MultiIndex.from_arrays(
             [

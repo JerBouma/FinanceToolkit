@@ -31,8 +31,11 @@ def get_amihud_illiquidity(
     price a lot -- i.e. the asset is illiquid -- while a low ILLIQ value means the
     asset can absorb a large amount of trading with little price impact -- i.e. the
     asset is liquid. Since the raw ratio is extremely small for actively traded
-    assets, it is conventionally scaled up by `scale` (1,000,000 by default) purely
-    for readability.
+    assets, it is conventionally scaled up by `scale` (1,000,000 by default, as in
+    the original paper) purely for readability. Note that Amihud's sample predates
+    the modern mega-cap: for a stock turning over billions of dollars a day the
+    scaled ratio is still on the order of 1e-6 and will round away entirely at the
+    default rounding, so raise `scale` (e.g. to 1e12) when comparing such names.
 
     Unlike the bid-ask-based Roll Spread (see `get_roll_spread`), the Amihud ratio
     does not require intraday quote data and can be computed directly from daily

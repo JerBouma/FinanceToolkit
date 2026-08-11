@@ -290,11 +290,14 @@ def get_gaussian_copula_parameters(
     series_a: pd.Series, series_b: pd.Series
 ) -> dict[str, float]:
     """
-    Calibrate a bivariate gaussian copula to two series, via canonical maximum
-    likelihood: both series are transformed to pseudo-observations (see
-    `get_pseudo_observations`), then to standard normal quantiles, whose sample
-    (Pearson) correlation is the exact maximum likelihood estimate of the
-    copula's rho parameter.
+    Calibrate a bivariate gaussian copula to two series: both series are
+    transformed to pseudo-observations (see `get_pseudo_observations`), then to
+    standard normal quantiles, whose sample (Pearson) correlation is taken as the
+    copula's rho parameter. This "normal scores" plug-in estimator is the standard
+    calibration for the gaussian copula and is consistent and asymptotically
+    equivalent to the canonical maximum likelihood estimate (which has no closed
+    form, since the normal scores' variances are fixed at one rather than
+    estimated), typically agreeing with it to within a few thousandths.
 
     Also known as: gaussian copula calibration, normal copula fit.
 
@@ -419,10 +422,10 @@ def get_student_t_copula_parameters(
     Calibrate a bivariate Student-T copula to two series, via profile maximum
     likelihood (Demarta & McNeil, 2005): for each candidate degrees of freedom,
     the correlation is estimated as the sample correlation of the pseudo-
-    observations' Student-T quantiles at that degrees of freedom (the exact
-    maximum likelihood estimate conditional on degrees of freedom, exactly as in
-    `get_gaussian_copula_parameters`), and the degrees of freedom that maximizes
-    the resulting log-likelihood is found via bounded 1-D optimization.
+    observations' Student-T quantiles at that degrees of freedom (the same plug-in
+    estimator as in `get_gaussian_copula_parameters`), and the degrees of freedom
+    that maximizes the resulting log-likelihood is found via bounded 1-D
+    optimization.
 
     See: Demarta, S., & McNeil, A.J. (2005), "The T Copula and Related Copulas",
     International Statistical Review, 73(1), 111-129.

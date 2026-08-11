@@ -248,6 +248,21 @@ def get_var_studentt(returns, alpha: float) -> pd.Series | pd.DataFrame:
     """
     Calculate the Value at Risk (VaR) of returns based on the Student-T distribution.
 
+    The degrees of freedom `v` and the scale are estimated jointly by maximum
+    likelihood (`scipy.stats.t.fit`), and the VaR is the corresponding quantile:
+
+    - VaR = mean + scale * t_v^-1(alpha)
+
+    Note that the scale of a Student-T distribution is *not* its standard deviation:
+    the two are related by `std = scale * SQRT(v / (v - 2))`, and only for `v > 2`,
+    since a Student-T with two or fewer degrees of freedom has no finite Variance at
+    all. Using the fitted scale rather than rescaling the sample standard deviation
+    therefore keeps the estimate well defined for every fitted `v` (heavily fat-tailed
+    return samples routinely fit below `v = 2`), and matches the convention used by
+    `cvar_model.get_cvar_studentt`. It also avoids the classic overstatement of risk
+    that results from multiplying the sample standard deviation by the *unscaled*
+    `t_v^-1(alpha)` quantile.
+
     Args:
         returns (pd.Series | pd.DataFrame): A Series or Dataframe of returns.
         alpha (float): The confidence level (e.g., 0.05 for 95% confidence).
@@ -274,14 +289,19 @@ def get_var_studentt(returns, alpha: float) -> pd.Series | pd.DataFrame:
 
         return value_at_risk.T
 
-    # Fitting Student-T parameters to the data
+    # Fitting Student-T parameters to the data. Missing observations are dropped per
+    # column, since scipy's fit raises on any non-finite value while the mean below
+    # simply skips them.
     if isinstance(returns, pd.Series):
-        v = np.array([stats.t.fit(returns)[0]])
+        fitted = [stats.t.fit(returns.dropna())]
     else:
-        v = np.array([stats.t.fit(returns[col])[0] for col in returns.columns])
-    za = stats.t.ppf(alpha, v)
+        fitted = [stats.t.fit(returns[col].dropna()) for col in returns.columns]
 
-    return np.sqrt((v - 2) / v) * za * returns.std(ddof=0) + returns.mean()
+    degrees_of_freedom = np.array([parameters[0] for parameters in fitted])
+    scale = np.array([parameters[2] for parameters in fitted])
+    za = stats.t.ppf(alpha, degrees_of_freedom)
+
+    return scale * za + returns.mean()
 
 
 def get_var_cornish_fisher(

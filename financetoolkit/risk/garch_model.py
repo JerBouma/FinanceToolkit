@@ -54,7 +54,8 @@ def get_garch_weights(
     - alpha > 0
     - beta > 0
     - alpha + beta < 1
-    Note that there is no restriction on (1 - alpha - beta) sigma_l.
+    - 0 < (1 - alpha - beta) sigma_l <= 2 * Var(returns), which follows from the long run
+      variance sigma_l being of the same order as the sample Variance under stationarity.
 
     Args:
         returns (np.ndarray): A np.ndarray of returns.
@@ -70,8 +71,18 @@ def get_garch_weights(
     if t is None:
         t = len(returns)
 
-    bounds = [(1e-9, 1), (1e-9, 1), (1e-9, 1)]
-    initial_guess = [np.var(returns[: t - 1]), 0.1, 0.8]
+    # Omega is (1 - alpha - beta) * long run variance, not the long run variance
+    # itself, so both the bound and the starting value are anchored to the sample
+    # Variance. Searching omega over [0, 1] instead puts the optimum of a daily
+    # return series in the bottom millionth of the range, which the global search
+    # then routinely misses.
+    variance = float(np.var(returns[: t - 1]))
+    omega_upper_bound = max(2 * variance, 1e-9)
+
+    bounds = [(1e-12, omega_upper_bound), (1e-9, 1), (1e-9, 1)]
+    initial_omega = min(max(variance * 0.1, 1e-12), omega_upper_bound)
+
+    initial_guess = [initial_omega, 0.1, 0.8]
 
     # Define the wrapper function for optimization that applies the constraints
     def wrapper_func(parameters):
@@ -200,8 +211,15 @@ def get_garch_forecast(
     GARCH (Generalized autoregressive conditional heteroskedasticity) is stochastic model for time series, which is for
     instance used to model volatility clusters, stock return and inflation. It is a generalisation of the ARCH models.
 
-    The forecasting with GARCH is done with the following formula:
-    long_run_variance + (current_variance - long_run_variance) * (alpha + beta) ** (t - 1)
+    The forecasting with GARCH is done with the following formula, for a horizon of
+    h = 1, 2, ... time steps ahead of the end of the sample:
+
+    sigma_2(t + h) = long_run_variance + (sigma_2(t + 1) - long_run_variance) * (alpha + beta) ** (h - 1)
+
+    Where `sigma_2(t + 1) = omega + alpha * u_t ** 2 + beta * sigma_2(t)` is the one
+    step ahead conditional variance implied by the *last* observed return, so the
+    first returned value is a genuine forecast rather than the in-sample conditional
+    variance of the final observation.
 
     For more:
     - Finance Compact Plus Band 1, by Yvonne Seler Zimmerman and Heinz Zimmerman; ISBN: 978-3-907291-31-1
@@ -248,17 +266,22 @@ def get_garch_forecast(
         if weights is None:
             weights = get_garch_weights(returns, p=p, q=q)
 
-        garch_values = get_garch(returns, weights, time_steps, p=p, q=q)
+        # One step past the sample so the recursion consumes the final observed
+        # return, making garch_values[-1] the one step ahead conditional variance
+        # rather than the in-sample variance of the last observation.
+        garch_values = get_garch(returns, weights, len(returns) + 1, p=p, q=q)
 
-        # Already a variance, so never squared; seeded from the last fitted value.
+        # Already a variance, so never squared; seeded from the one step ahead value.
         long_run_variance = weights[0] / (1 - weights[1] - weights[2])
         current_variance = garch_values[-1]
+        persistence = weights[1] + weights[2]
+
         sigma_2 = np.zeros(time_steps)
-        sigma_2[0] = current_variance
-        for i in range(1, time_steps):
-            sigma_2[i] = long_run_variance + (current_variance - long_run_variance) * (
-                weights[1] + weights[2]
-            ) ** (i - 1)
+        for i in range(time_steps):
+            sigma_2[i] = (
+                long_run_variance
+                + (current_variance - long_run_variance) * persistence**i
+            )
 
         return sigma_2
 
@@ -300,6 +323,8 @@ def get_gjr_garch_weights(
 
     The weights are estimated by maximizing the Gaussian log-likelihood, subject to:
     - omega > 0, alpha > 0, beta > 0
+    - omega <= 2 * Var(returns), which follows from omega being
+      (1 - alpha - gamma / 2 - beta) times the long run variance
     - alpha + gamma >= 0 (so the conditional variance stays non-negative regardless of
       the sign of the shock)
     - alpha + gamma / 2 + beta < 1 (the GJR-GARCH stationarity condition, assuming a
@@ -319,8 +344,19 @@ def get_gjr_garch_weights(
     if t is None:
         t = len(returns)
 
-    bounds = [(1e-9, 1), (1e-9, 1), (-1, 1), (1e-9, 1)]
-    initial_guess = [np.var(returns[: t - 1]), 0.05, 0.1, 0.8]
+    # Anchored to the sample Variance for the same reason as in get_garch_weights:
+    # omega is (1 - alpha - gamma / 2 - beta) * long run variance, and searching it
+    # over [0, 1] leaves the optimum of a daily return series in the bottom
+    # millionth of the range, which cost this four-parameter fit far more than the
+    # three-parameter GARCH one (beta was routinely estimated near 0.2 rather than
+    # the 0.9 the likelihood actually prefers).
+    variance = float(np.var(returns[: t - 1]))
+    omega_upper_bound = max(2 * variance, 1e-9)
+
+    bounds = [(1e-12, omega_upper_bound), (1e-9, 1), (-1, 1), (1e-9, 1)]
+    initial_omega = min(max(variance * 0.1, 1e-12), omega_upper_bound)
+
+    initial_guess = [initial_omega, 0.05, 0.1, 0.8]
 
     def wrapper_func(parameters):
         alpha, gamma, beta = parameters[1], parameters[2], parameters[3]
@@ -452,9 +488,14 @@ def get_gjr_garch_forecast(
 
     The forecasting with GJR-GARCH is done with the following formula, using the
     "effective" persistence (alpha + gamma / 2 + beta), which reduces to the plain
-    GARCH forecast formula when gamma = 0:
+    GARCH forecast formula when gamma = 0, for a horizon of h = 1, 2, ... time steps
+    ahead of the end of the sample:
 
-    long_run_variance + (current_variance - long_run_variance) * (alpha + gamma / 2 + beta) ** (t - 1)
+    sigma_2(t + h) = long_run_variance + (sigma_2(t + 1) - long_run_variance) * (alpha + gamma / 2 + beta) ** (h - 1)
+
+    Where `sigma_2(t + 1)` is the one step ahead conditional variance implied by the
+    *last* observed return, so the first returned value is a genuine forecast rather
+    than the in-sample conditional variance of the final observation.
 
     For more information about the method, see the following paper:
 
@@ -508,19 +549,23 @@ def get_gjr_garch_forecast(
         if weights is None:
             weights = get_gjr_garch_weights(returns, p=p, q=q)
 
-        garch_values = get_gjr_garch(returns, weights, time_steps, p=p, q=q)
+        # One step past the sample so the recursion consumes the final observed
+        # return, making garch_values[-1] the one step ahead conditional variance
+        # rather than the in-sample variance of the last observation.
+        garch_values = get_gjr_garch(returns, weights, len(returns) + 1, p=p, q=q)
 
         omega, alpha, gamma, beta = weights
         persistence = alpha + gamma / 2 + beta
 
         long_run_variance = omega / (1 - persistence)
         current_variance = garch_values[-1]
+
         sigma_2 = np.zeros(time_steps)
-        sigma_2[0] = current_variance
-        for i in range(1, time_steps):
-            sigma_2[i] = long_run_variance + (
-                current_variance - long_run_variance
-            ) * persistence ** (i - 1)
+        for i in range(time_steps):
+            sigma_2[i] = (
+                long_run_variance
+                + (current_variance - long_run_variance) * persistence**i
+            )
 
         return sigma_2
 
@@ -722,10 +767,13 @@ def get_egarch_forecast(
     since the alpha and gamma terms have zero expectation under standard normal
     innovations) and then exponentiating:
 
-    - E[ln(sigma_(t+h)^2)] = long_run_log_variance + beta^(h - 1) * (current_log_variance - long_run_log_variance)
+    - E[ln(sigma_(t+h)^2)] = long_run_log_variance + beta^(h - 1) * (ln(sigma_(t+1)^2) - long_run_log_variance)
     - sigma_(t+h)^2 ~= exp(E[ln(sigma_(t+h)^2)])
 
-    Where `long_run_log_variance = omega / (1 - beta)`. This is the standard practical
+    Where `long_run_log_variance = omega / (1 - beta)` and `sigma_(t+1)^2` is the one
+    step ahead conditional variance implied by the *last* observed return, so the
+    first returned value is a genuine forecast rather than the in-sample conditional
+    variance of the final observation. This is the standard practical
     approximation (it understates the true forecast somewhat due to Jensen's
     inequality, since E[exp(X)] != exp(E[X])), not an exact closed form.
 
@@ -780,7 +828,10 @@ def get_egarch_forecast(
         if weights is None:
             weights = get_egarch_weights(returns, p=p, q=q)
 
-        garch_values = get_egarch(returns, weights, len(returns), p=p, q=q)
+        # One step past the sample so the recursion consumes the final observed
+        # return, making garch_values[-1] the one step ahead conditional variance
+        # rather than the in-sample variance of the last observation.
+        garch_values = get_egarch(returns, weights, len(returns) + 1, p=p, q=q)
 
         omega, _, _, beta = weights
         current_log_variance = np.log(garch_values[-1])

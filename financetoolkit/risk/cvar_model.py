@@ -5,6 +5,9 @@ import pandas as pd
 from scipy import stats
 
 from financetoolkit.risk import risk_model, var_model
+from financetoolkit.utilities.logger_model import get_logger
+
+logger = get_logger()
 
 ALPHA_CONSTRAINT = 0.5
 
@@ -144,10 +147,12 @@ def get_cvar_studentt(
 
     returns = pd.DataFrame(returns)
 
-    # Fitting student-t parameters to the data
+    # Fitting student-t parameters to the data. Missing observations are dropped per
+    # column, since scipy's fit raises on any non-finite value while the mean below
+    # simply skips them.
     v, scale = np.array([]), np.array([])
     for col in returns.columns:
-        col_v, _, col_scale = stats.t.fit(returns[col])
+        col_v, _, col_scale = stats.t.fit(returns[col].dropna())
         v = np.append(v, col_v)
         scale = np.append(scale, col_scale)
     za = stats.t.ppf(1 - alpha, v)
@@ -163,7 +168,9 @@ def get_cvar_laplace(
 
     Args:
         returns (pd.Series | pd.DataFrame): A Series or Dataframe of returns.
-        alpha (float): The confidence level (e.g., 0.05 for 95% confidence). Note that `alpha` needs to be below 0.5.
+        alpha (float): The confidence level (e.g., 0.05 for 95% confidence). Note that `alpha` needs to be
+        0.5 or below, since the closed-form Laplace Expected Shortfall below is only defined on the lower
+        half of the distribution. NaN is returned (with a warning) for any higher `alpha`.
 
     Returns:
         pd.Series | pd.DataFrame: CVaR values as float if returns is a pd.Series,
@@ -192,12 +199,17 @@ def get_cvar_laplace(
     # Laplace variance is 2*b**2, so b is fitted to the data's variance.
     b = np.sqrt(returns.std(ddof=0) ** 2 / 2)
 
-    if alpha <= ALPHA_CONSTRAINT:
-        return -b * (1 - np.log(2 * alpha)) + returns.mean()
+    if alpha > ALPHA_CONSTRAINT:
+        # NaN rather than 0, which would read as "no tail risk at all" downstream.
+        logger.warning(
+            "The Laplace Conditional Value at Risk is only defined for an alpha of "
+            "0.5 or below, %s was given. Returning NaN instead.",
+            alpha,
+        )
 
-    print("Laplace Conditional VaR is not available for a level over 50%.")
+        return returns.mean() * np.nan
 
-    return 0
+    return -b * (1 - np.log(2 * alpha)) + returns.mean()
 
 
 def get_cvar_logistic(

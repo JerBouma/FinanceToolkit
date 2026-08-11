@@ -434,6 +434,8 @@ class Toolkit:
         self._daily_historical_data: pd.DataFrame = (
             historical if not historical.empty else pd.DataFrame()
         )
+        # None means "not fetched by us yet", so pre-supplied `historical` is never auto-invalidated below.
+        self._daily_historical_data_params: tuple | None = None
 
         # Initialize other periods as empty DataFrames. They will be populated on demand.
         self._weekly_historical_data: pd.DataFrame = pd.DataFrame()
@@ -2210,7 +2212,24 @@ class Toolkit:
                 fill_nan=fill_nan,
             )
 
-        if self._daily_historical_data.empty or overwrite:
+        resolved_enforce_source = (
+            enforce_source if enforce_source is not None else self._enforce_source
+        )
+        resolved_rounding = rounding if rounding is not None else self._rounding
+        daily_historical_params = (
+            resolved_enforce_source,
+            return_column,
+            include_dividends,
+            fill_nan,
+            resolved_rounding,
+        )
+        # Auto-invalidate only data we fetched ourselves before, on a param change; never touches pre-supplied `historical`.
+        params_changed = (
+            self._daily_historical_data_params is not None
+            and self._daily_historical_data_params != daily_historical_params
+        )
+
+        if self._daily_historical_data.empty or overwrite or params_changed:
             self._daily_historical_data, self._invalid_tickers = _get_historical_data(
                 tickers=(
                     self._tickers + [self._benchmark_ticker]
@@ -2218,24 +2237,21 @@ class Toolkit:
                     else self._tickers
                 ),
                 api_key=self._api_key,
-                enforce_source=(
-                    enforce_source
-                    if enforce_source is not None
-                    else self._enforce_source
-                ),
+                enforce_source=resolved_enforce_source,
                 start=self._start_date,
                 end=self._end_date,
                 interval="1d",
                 return_column=return_column,
                 include_dividends=include_dividends,
                 fill_nan=fill_nan,
-                rounding=rounding if rounding is not None else self._rounding,
+                rounding=resolved_rounding,
                 sleep_timer=self._sleep_timer,
                 show_ticker_seperation=show_ticker_seperation,
                 show_errors=True,
                 user_subscription=self._fmp_plan,
                 cache=self._cache,
             )
+            self._daily_historical_data_params = daily_historical_params
 
             # Change the benchmark ticker name to Benchmark
             if not self._daily_historical_data.empty:

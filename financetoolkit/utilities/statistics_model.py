@@ -29,6 +29,53 @@ VOLATILITY_WINDOW_TRANSLATION = {
     "yearly": 252,
 }
 
+# The number of observations of each period within a single year.
+PERIODS_PER_YEAR = {
+    "daily": 252,
+    "weekly": 52,
+    "monthly": 12,
+    "quarterly": 4,
+    "yearly": 1,
+}
+
+
+def convert_annualized_rate_to_period(
+    annualized_rate: pd.Series | pd.DataFrame | float, period: str
+) -> pd.Series | pd.DataFrame | float:
+    """
+    Converts an annualized rate, such as a Treasury yield, into the equivalent rate for
+    a single period of the given frequency.
+
+    Rates like the risk-free rate are quoted on an annual basis. Subtracting them from a
+    daily, weekly, monthly or quarterly return without conversion mixes two different
+    time scales and makes every excess return wrong by roughly the annual rate. The
+    conversion is geometric so that compounding the result over a full year reproduces
+    the original annualized rate.
+
+    The formula is as follows:
+
+        Period Rate = (1 + Annualized Rate)^(1 / Periods per Year) - 1
+
+    Args:
+        annualized_rate (pd.Series | pd.DataFrame | float): the annualized rate to convert.
+        period (str): the period to convert the rate to. Must be one of daily, weekly,
+            monthly, quarterly or yearly.
+
+    Raises:
+        ValueError: If the period is not one of the supported frequencies.
+
+    Returns:
+        pd.Series | pd.DataFrame | float: the rate expressed per single period. A yearly
+        period returns the rate unchanged.
+    """
+    if period not in PERIODS_PER_YEAR:
+        raise ValueError(
+            f"Period {period} is not valid. It should be one of "
+            f"{', '.join(PERIODS_PER_YEAR)}."
+        )
+
+    return (1 + annualized_rate) ** (1 / PERIODS_PER_YEAR[period]) - 1
+
 
 def finalize_dataset(
     dataset: pd.Series | pd.DataFrame,
@@ -101,7 +148,9 @@ def finalize_dataset(
     Returns:
         pd.Series | pd.DataFrame: The processed metric values.
     """
-    rounding = rounding if rounding else default_rounding
+    # Explicitly compare to None so that rounding=0 is honoured rather than treated
+    # as "not supplied", and so that rounding=None disables rounding altogether.
+    rounding = rounding if rounding is not None else default_rounding
 
     if rolling:
         dataset = dataset.rolling(window=rolling).mean()
@@ -119,7 +168,7 @@ def finalize_dataset(
             dataset=dataset, rounding=rounding, axis=axis
         )
     elif not growth:
-        dataset = dataset.round(rounding)
+        dataset = apply_rounding(dataset, rounding)
 
     if dropna:
         dataset = dataset.dropna(how="all", axis=0)
@@ -142,9 +191,29 @@ def finalize_dataset(
             logger.warning(
                 f"The following countries are not available for {indicator_name}: {missing_countries}"
             )
-        dataset = dataset[list(set(countries) - set(missing_countries))]
+        dataset = dataset[
+            [country for country in countries if country not in missing_countries]
+        ]
 
     return dataset
+
+
+def apply_rounding(
+    dataset: pd.Series | pd.DataFrame, rounding: int | None
+) -> pd.Series | pd.DataFrame:
+    """
+    Rounds a dataset to the given number of decimals, leaving it untouched when no
+    rounding is requested. Calling pd.DataFrame.round(None) raises a TypeError, so
+    rounding=None (documented as "no rounding") has to be handled explicitly.
+
+    Args:
+        dataset (pd.Series | pd.DataFrame): the dataset to round.
+        rounding (int | None): the number of decimals to round to, or None to skip rounding.
+
+    Returns:
+        pd.Series | pd.DataFrame: the rounded dataset, or the dataset as-is when rounding is None.
+    """
+    return dataset if rounding is None else dataset.round(rounding)
 
 
 def calculate_growth(
@@ -158,10 +227,15 @@ def calculate_growth(
 
     Args:
         dataset (pd.Series | pd.DataFrame): the dataset to calculate the growth values for.
-        lag (int | str): the lag to use for the calculation. Defaults to 1.
+        lag (int | list[int]): the lag or lags to use for the calculation. A list returns one row or
+            column per lag. Defaults to 1.
+        rounding (int | None): the number of decimals to round the result to, or None for no rounding.
+            Defaults to 4.
+        axis (str): the axis to compute the change over. Use "columns" when each row is an entity
+            observed over time and "rows" when each column is. Defaults to "columns".
 
     Returns:
-        pd.Series | pd.DataFrame: _description_
+        pd.Series | pd.DataFrame: the period over period growth of the dataset.
     """
     # pandas 2.1 warns about pct_change fill even though the code handles it.
     warnings.simplefilter(action="ignore", category=FutureWarning)
@@ -227,9 +301,18 @@ def calculate_growth(
                     .reshape(-1)
                 )
 
-        return dataset_lag.round(rounding)
+        return apply_rounding(dataset_lag, rounding)
 
-    return dataset.ffill().pct_change(periods=lag, axis=axis).round(rounding)
+    # The forward fill has to run along the same axis as the pct_change. A statement
+    # or ratio DataFrame is indexed by ticker with the periods as columns, so filling
+    # along the default axis would carry the previous ticker's value into the gap.
+    dataset = (
+        dataset.ffill(axis=axis)
+        if isinstance(dataset, pd.DataFrame)
+        else dataset.ffill()
+    )
+
+    return apply_rounding(dataset.pct_change(periods=lag, axis=axis), rounding)
 
 
 def calculate_standardization(
@@ -258,17 +341,15 @@ def calculate_standardization(
         pd.Series | pd.DataFrame: the standardized (Z-Score) dataset.
     """
     if isinstance(dataset, pd.Series):
-        return ((dataset - dataset.mean()) / dataset.std()).round(rounding)
+        return apply_rounding((dataset - dataset.mean()) / dataset.std(), rounding)
 
     if axis == "columns":
-        return (
-            dataset.sub(dataset.mean(axis=1), axis=0)
-            .div(dataset.std(axis=1), axis=0)
-            .round(rounding)
+        return apply_rounding(
+            dataset.sub(dataset.mean(axis=1), axis=0).div(dataset.std(axis=1), axis=0),
+            rounding,
         )
 
-    return (
-        dataset.sub(dataset.mean(axis=0), axis=1)
-        .div(dataset.std(axis=0), axis=1)
-        .round(rounding)
+    return apply_rounding(
+        dataset.sub(dataset.mean(axis=0), axis=1).div(dataset.std(axis=0), axis=1),
+        rounding,
     )

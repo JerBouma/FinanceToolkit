@@ -3,7 +3,7 @@ AAPL,Cash and Cash Equivalents,,-0.0809,-0.3232,0.2672
 AAPL,Short Term Investments,,-0.4767,-0.1098,0.2811
 AAPL,Cash and Short Term Investments,,-0.3112,-0.2289,0.2743
 AAPL,Accounts Receivable,,0.6301,0.0725,0.047
-AAPL, Other Receivables,,0.183,0.2981,-0.0388
+AAPL,Other Receivables,,0.183,0.2981,-0.0388
 AAPL,Net Receivables,,0.3755,0.183,0.0009
 AAPL,Inventory,,0.6203,-0.2483,0.28
 AAPL,Prepaids,,,,
@@ -29,7 +29,7 @@ AAPL,Tax Payables,,,inf,0.346
 AAPL,Deferred Revenue,,0.1459,0.0394,0.0188
 AAPL,Other Current Liabilities,,0.115,0.145,-0.0797
 AAPL,Total Current Liabilities,,0.1906,0.2271,-0.0563
-AAPL, Capital Lease Obligations Non Current,,0.2258,0.046,0.0483
+AAPL,Capital Lease Obligations Non Current,,0.2258,0.046,0.0483
 AAPL,Long Term Debt,,0.1058,-0.093,-0.0372
 AAPL,Deferred Revenue Non Current,,,,
 AAPL,Deferred Tax Liabilities,,,,
@@ -41,7 +41,7 @@ AAPL,Total Debt,,0.1165,-0.0296,-0.1615
 AAPL,Net Debt,,0.2055,0.0714,-0.2546
 AAPL,Total Investments,,0.0115,-0.065,-0.0916
 AAPL,Total Liabilities,,0.1136,0.0492,-0.0386
-AAPL, Treasury Stock,,,,
+AAPL,Treasury Stock,,,,
 AAPL,Preferred Stock,,,,
 AAPL,Common Stock,,0.1297,0.1305,0.1382
 AAPL,Retained Earnings,,-0.6284,-1.5516,-0.9302
@@ -55,7 +55,7 @@ MSFT,Cash and Cash Equivalents,,0.0477,-0.0206,1.4911
 MSFT,Short Term Investments,,-0.0563,-0.2173,-0.1571
 MSFT,Cash and Short Term Investments,,-0.0459,-0.1958,0.0621
 MSFT,Accounts Receivable,,0.1884,0.1634,0.1
-MSFT, Other Receivables,,,,
+MSFT,Other Receivables,,,,
 MSFT,Net Receivables,,0.1884,0.1634,0.1
 MSFT,Inventory,,0.391,0.4196,-0.3319
 MSFT,Prepaids,,,,
@@ -81,7 +81,7 @@ MSFT,Tax Payables,,0.0207,0.8707,0.0209
 MSFT,Deferred Revenue,,0.1535,0.0966,0.1178
 MSFT,Other Current Liabilities,,0.2135,0.0923,0.0854
 MSFT,Total Current Liabilities,,0.2261,0.0725,0.0954
-MSFT, Capital Lease Obligations Non Current,,0.2552,0.1932,0.1078
+MSFT,Capital Lease Obligations Non Current,,0.2552,0.1932,0.1078
 MSFT,Long Term Debt,,-0.1595,-0.0608,-0.1072
 MSFT,Deferred Revenue Non Current,,-0.1774,0.0971,0.0146
 MSFT,Deferred Tax Liabilities,,-0.0294,0.1616,0.8826
@@ -93,7 +93,7 @@ MSFT,Total Debt,,-0.0454,-0.096,-0.0213
 MSFT,Net Debt,,-0.0674,-0.116,-0.4664
 MSFT,Total Investments,,-0.031,-0.1992,-0.1154
 MSFT,Total Liabilities,,0.048,0.0339,0.0376
-MSFT, Treasury Stock,,,,
+MSFT,Treasury Stock,,,,
 MSFT,Preferred Stock,,,,
 MSFT,Common Stock,,0.0318,0.0461,0.078
 MSFT,Retained Earnings,,0.6506,0.4772,0.4101

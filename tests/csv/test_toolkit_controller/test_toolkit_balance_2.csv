@@ -11,9 +11,9 @@ AAPL,Cash and Short Term Investments,Lag 3,,,,-0.3231
 AAPL,Accounts Receivable,Lag 1,,0.6301,0.0725,0.047
 AAPL,Accounts Receivable,Lag 2,,,0.7484,0.1229
 AAPL,Accounts Receivable,Lag 3,,,,0.8305
-AAPL, Other Receivables,Lag 1,,0.183,0.2981,-0.0388
-AAPL, Other Receivables,Lag 2,,,0.5357,0.2477
-AAPL, Other Receivables,Lag 3,,,,0.4761
+AAPL,Other Receivables,Lag 1,,0.183,0.2981,-0.0388
+AAPL,Other Receivables,Lag 2,,,0.5357,0.2477
+AAPL,Other Receivables,Lag 3,,,,0.4761
 AAPL,Net Receivables,Lag 1,,0.3755,0.183,0.0009
 AAPL,Net Receivables,Lag 2,,,0.6272,0.184
 AAPL,Net Receivables,Lag 3,,,,0.6287
@@ -89,9 +89,9 @@ AAPL,Other Current Liabilities,Lag 3,,,,0.1749
 AAPL,Total Current Liabilities,Lag 1,,0.1906,0.2271,-0.0563
 AAPL,Total Current Liabilities,Lag 2,,,0.461,0.158
 AAPL,Total Current Liabilities,Lag 3,,,,0.3787
-AAPL, Capital Lease Obligations Non Current,Lag 1,,0.2258,0.046,0.0483
-AAPL, Capital Lease Obligations Non Current,Lag 2,,,0.2823,0.0965
-AAPL, Capital Lease Obligations Non Current,Lag 3,,,,0.3442
+AAPL,Capital Lease Obligations Non Current,Lag 1,,0.2258,0.046,0.0483
+AAPL,Capital Lease Obligations Non Current,Lag 2,,,0.2823,0.0965
+AAPL,Capital Lease Obligations Non Current,Lag 3,,,,0.3442
 AAPL,Long Term Debt,Lag 1,,0.1058,-0.093,-0.0372
 AAPL,Long Term Debt,Lag 2,,,0.003,-0.1267
 AAPL,Long Term Debt,Lag 3,,,,-0.0343
@@ -125,9 +125,9 @@ AAPL,Total Investments,Lag 3,,,,-0.1409
 AAPL,Total Liabilities,Lag 1,,0.1136,0.0492,-0.0386
 AAPL,Total Liabilities,Lag 2,,,0.1684,0.0088
 AAPL,Total Liabilities,Lag 3,,,,0.1233
-AAPL, Treasury Stock,Lag 1,,,,
-AAPL, Treasury Stock,Lag 2,,,,
-AAPL, Treasury Stock,Lag 3,,,,
+AAPL,Treasury Stock,Lag 1,,,,
+AAPL,Treasury Stock,Lag 2,,,,
+AAPL,Treasury Stock,Lag 3,,,,
 AAPL,Preferred Stock,Lag 1,,,,
 AAPL,Preferred Stock,Lag 2,,,,
 AAPL,Preferred Stock,Lag 3,,,,
@@ -167,9 +167,9 @@ MSFT,Cash and Short Term Investments,Lag 3,,,,-0.1851
 MSFT,Accounts Receivable,Lag 1,,0.1884,0.1634,0.1
 MSFT,Accounts Receivable,Lag 2,,,0.3827,0.2798
 MSFT,Accounts Receivable,Lag 3,,,,0.521
-MSFT, Other Receivables,Lag 1,,,,
-MSFT, Other Receivables,Lag 2,,,,
-MSFT, Other Receivables,Lag 3,,,,
+MSFT,Other Receivables,Lag 1,,,,
+MSFT,Other Receivables,Lag 2,,,,
+MSFT,Other Receivables,Lag 3,,,,
 MSFT,Net Receivables,Lag 1,,0.1884,0.1634,0.1
 MSFT,Net Receivables,Lag 2,,,0.3827,0.2798
 MSFT,Net Receivables,Lag 3,,,,0.521
@@ -245,9 +245,9 @@ MSFT,Other Current Liabilities,Lag 3,,,,0.4387
 MSFT,Total Current Liabilities,Lag 1,,0.2261,0.0725,0.0954
 MSFT,Total Current Liabilities,Lag 2,,,0.3149,0.1747
 MSFT,Total Current Liabilities,Lag 3,,,,0.4403
-MSFT, Capital Lease Obligations Non Current,Lag 1,,0.2552,0.1932,0.1078
-MSFT, Capital Lease Obligations Non Current,Lag 2,,,0.4977,0.3218
-MSFT, Capital Lease Obligations Non Current,Lag 3,,,,0.6592
+MSFT,Capital Lease Obligations Non Current,Lag 1,,0.2552,0.1932,0.1078
+MSFT,Capital Lease Obligations Non Current,Lag 2,,,0.4977,0.3218
+MSFT,Capital Lease Obligations Non Current,Lag 3,,,,0.6592
 MSFT,Long Term Debt,Lag 1,,-0.1595,-0.0608,-0.1072
 MSFT,Long Term Debt,Lag 2,,,-0.2106,-0.1614
 MSFT,Long Term Debt,Lag 3,,,,-0.2952
@@ -281,9 +281,9 @@ MSFT,Total Investments,Lag 3,,,,-0.3136
 MSFT,Total Liabilities,Lag 1,,0.048,0.0339,0.0376
 MSFT,Total Liabilities,Lag 2,,,0.0836,0.0728
 MSFT,Total Liabilities,Lag 3,,,,0.1243
-MSFT, Treasury Stock,Lag 1,,,,
-MSFT, Treasury Stock,Lag 2,,,,
-MSFT, Treasury Stock,Lag 3,,,,
+MSFT,Treasury Stock,Lag 1,,,,
+MSFT,Treasury Stock,Lag 2,,,,
+MSFT,Treasury Stock,Lag 3,,,,
 MSFT,Preferred Stock,Lag 1,,,,
 MSFT,Preferred Stock,Lag 2,,,,
 MSFT,Preferred Stock,Lag 3,,,,

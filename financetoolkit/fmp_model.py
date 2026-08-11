@@ -103,13 +103,23 @@ def get_financial_data(
                 ):
                     time.sleep(5.01)
                     limit_retry_counter += 1
-                else:
-                    return pd.DataFrame(columns=["LIMIT REACH"])
+                    continue
+
+                return pd.DataFrame(columns=["LIMIT REACH"])
             if "US stocks only" in error_message:
                 return pd.DataFrame(columns=["US STOCKS ONLY"])
 
             if "Invalid API KEY." in error_message:
                 return pd.DataFrame(columns=["INVALID API KEY"])
+
+            # Anything that is not one of the messages above is not retryable. Without
+            # this the loop would fall through and hammer the endpoint indefinitely.
+            logger.error(
+                "The request to Financial Modeling Prep failed with an unrecognised error: %s",
+                error_message or e,
+            )
+
+            return pd.DataFrame(columns=["REQUEST FAILED"])
 
         except (
             MaxRetryError,
@@ -211,6 +221,8 @@ def get_financial_statement(
         api_key (str): API key for the financial data provider.
         quarter (bool): Whether to retrieve quarterly data. Defaults to False (annual data).
         start_date (str | None): The start date to filter data with. Defaults to None.
+        fiscal_year_adjustments (dict | None): A registry that collects every reporting period whose
+            calendar label differs from its fiscal label, keyed by ticker. Defaults to None.
         sleep_timer (bool): Whether to set a sleep timer when the rate limit is reached. Note that this only works
             if you have a Premium subscription (Starter or higher) from FinancialModelingPrep. Defaults to True.
         user_subscription (str): The subscription type of the user. Defaults to "Free".
@@ -281,26 +293,16 @@ def get_financial_statement(
             financial_statement["date"]
         ) - pd.offsets.Day(1)
 
-        if quarter:
-            financial_statement["date"] = financial_statement["date"].dt.to_period("Q")
-        else:
-            # A fiscal year ending in Jan-May mostly falls in the prior calendar year.
-            end_month = financial_statement["date"].dt.month
-            end_year = financial_statement["date"].dt.year
-            calendar_year = end_year - (end_month < 6).astype(int)  # noqa
-
-            shifted_mask = end_month < 6  # noqa
-            if shifted_mask.any() and fiscal_year_adjustments is not None:
-                fiscal_year_adjustments[ticker] = [
-                    {"fiscal_year": int(fy), "calendar_year": int(cy)}
-                    for fy, cy in zip(
-                        end_year[shifted_mask], calendar_year[shifted_mask]
-                    )
-                ]
-
-            financial_statement["date"] = pd.PeriodIndex(
-                calendar_year.astype(str), freq="Y"
+        # A fiscal period is labelled with the calendar period holding most of it, at
+        # both frequencies, so yearly and quarterly output stay consistent.
+        financial_statement["date"] = (
+            helpers.convert_period_end_dates_to_calendar_periods(
+                period_end_dates=financial_statement["date"],
+                quarter=quarter,
+                ticker=ticker,
+                fiscal_year_adjustments=fiscal_year_adjustments,
             )
+        )
 
         financial_statement = financial_statement.set_index("date").T
 
@@ -396,6 +398,13 @@ def get_historical_data(
         f"?symbol={ticker}&apikey={api_key}&from={start_date_string}&to={end_date_string}"
     )
 
+    # The stable EOD endpoint no longer returns an adjusted close, so the dividend
+    # adjusted variant is queried separately to obtain it.
+    adjusted_data_url = (
+        f"https://financialmodelingprep.com/stable/historical-price-eod/dividend-adjusted"
+        f"?symbol={ticker}&apikey={api_key}&from={start_date_string}&to={end_date_string}"
+    )
+
     dividend_url = (
         f"https://financialmodelingprep.com/stable/dividends"
         f"?symbol={ticker}&apikey={api_key}&limit={'99999' if user_subscription != 'Free' else '5'}"
@@ -438,7 +447,29 @@ def get_historical_data(
         }
     )
 
-    historical_data["Adj Close"] = historical_data["Close"]
+    try:
+        adjusted_data = get_financial_data(
+            url=adjusted_data_url,
+            sleep_timer=sleep_timer,
+            raw=True,
+            user_subscription=user_subscription,
+        )
+
+        adjusted_data = pd.DataFrame(adjusted_data).set_index("date")
+        adjusted_data.index = pd.to_datetime(adjusted_data.index).to_period(freq="D")
+        adjusted_data = adjusted_data[~adjusted_data.index.duplicated(keep="first")]
+
+        historical_data["Adj Close"] = adjusted_data["adjClose"]
+    except (HTTPError, KeyError, ValueError, URLError, RemoteDisconnected):
+        # Without the adjusted close, returns would be based on raw prices and would
+        # therefore exclude dividends. This is reported rather than silently accepted.
+        logger.warning(
+            "No adjusted close data found for %s, falling back to the unadjusted close. "
+            "Returns will not include dividends.",
+            ticker,
+        )
+        historical_data["Adj Close"] = historical_data["Close"]
+
     historical_data = historical_data[
         ["Open", "High", "Low", "Close", "Adj Close", "Volume"]
     ]
@@ -690,15 +721,12 @@ def get_revenue_segmentation(
     and returns a DataFrame containing the data.
 
     Args:
-        tickers (List[str]): List of company tickers.
-        statement (str): The type of financial statement to retrieve. Can be "balance", "income", or "cash-flow".
+        tickers (list[str] | str): A single ticker or a list of company tickers.
+        method (str): The segmentation to retrieve, either "geographic" or "product".
         api_key (str): API key for the financial data provider.
         quarter (bool): Whether to retrieve quarterly data. Defaults to False (annual data).
         start_date (str): The start date to filter data with.
         end_date (str): The end date to filter data with.
-        statement_format (pd.DataFrame): Optional DataFrame containing the names of the financial
-            statement line items to include in the output. Rows should contain the original name
-            of the line item, and columns should contain the desired name for that line item.
         sleep_timer (bool): Whether to set a sleep timer when the rate limit is reached. Note that this only works
         if you have a Premium subscription (Starter or higher) from FinancialModelingPrep. Defaults to False.
         user_subscription (str): The subscription type of the user. Defaults to "Free".
@@ -908,10 +936,12 @@ def get_analyst_estimates(
         - Number of Analysts
 
     Args:
-        tickers (List[str]): List of company tickers.
+        tickers (list[str] | str): A single ticker or a list of company tickers.
         api_key (str): API key for the financial data provider.
         quarter (bool): Whether to retrieve quarterly data. Defaults to False (annual data).
         start_date (str): The start date to filter data with.
+        rounding (int | None): The number of decimals to round the results to, or None for no
+            rounding. Defaults to 4.
         sleep_timer (bool): Whether to set a sleep timer when the rate limit is reached. Note that this only works
         if you have a Premium subscription (Starter or higher) from FinancialModelingPrep. Defaults to False.
         user_subscription (str): The subscription type of the user. Defaults to "Free".
@@ -1079,7 +1109,7 @@ def get_profile(
     Gives information about the profile of a company which includes i.a. beta, company description, industry and sector.
 
     Args:
-        ticker (list or string): the company ticker (for example: "AAPL")
+        tickers (list[str] | str): the company ticker or tickers (for example: "AAPL")
         api_key (string): the API Key obtained from
         https://www.jeroenbouma.com/fmp
         user_subscription (str): The subscription type of the user. Defaults to "Free".
@@ -1197,7 +1227,7 @@ def get_quote(
     price-to-earning ratio and shares outstanding.
 
     Args:
-        ticker (list or string): the company ticker (for example: "AMD")
+        tickers (list[str] | str): the company ticker or tickers (for example: "AMD")
         api_key (string): the API Key obtained from
         https://www.jeroenbouma.com/fmp
         user_subscription (str): The subscription type of the user. Defaults to "Free".
@@ -1289,7 +1319,7 @@ def get_rating(
     recommendation as well as ratings based on a variety of ratios.
 
     Args:
-        ticker (list or string): the company ticker (for example: "MSFT")
+        tickers (list[str] | str): the company ticker or tickers (for example: "MSFT")
         api_key (string): the API Key obtained from
         https://www.jeroenbouma.com/fmp
         user_subscription (str): The subscription type of the user. Defaults to "Free".
@@ -1385,7 +1415,7 @@ def get_earnings_calendar(
     Obtains Earnings Calendar which shows the expected earnings and EPS for a company.
 
     Args:
-        ticker (list or string): the company ticker (for example: "MSFT")
+        tickers (list[str] | str): the company ticker or tickers (for example: "MSFT")
         api_key (string): the API Key obtained from
         https://www.jeroenbouma.com/fmp
         start_date (str): The start date to filter data with.
@@ -1503,7 +1533,7 @@ def get_dividend_calendar(
     Obtains Dividend Calendar which shows the dividends and related dates.
 
     Args:
-        ticker (list or string): the company ticker (for example: "MSFT")
+        tickers (list[str] | str): the company ticker or tickers (for example: "MSFT")
         api_key (string): the API Key obtained from
         https://www.jeroenbouma.com/fmp
         start_date (str): The start date to filter data with.
@@ -1622,7 +1652,8 @@ def get_esg_scores(
     Obtains the ESG Scores for a selection of companies.
 
     Args:
-        ticker (list or string): the company ticker (for example: "MSFT")
+        tickers (list[str] | str): the company ticker or tickers (for example: "MSFT")
+        quarter (bool): whether to retrieve quarterly data. Defaults to False.
         api_key (string): the API Key obtained from
         https://www.jeroenbouma.com/fmp
         start_date (str): The start date to filter data with.
@@ -1799,7 +1830,7 @@ def get_commitment_of_traders(
     Also known as: COT report, CFTC positioning data, speculator/hedger positioning.
 
     Args:
-        ticker (list or string): the ticker (for example: "NG" for Natural Gas futures)
+        tickers (list[str] | str): the ticker or tickers (for example: "NG" for Natural Gas futures)
         api_key (string): the API Key obtained from
         https://www.jeroenbouma.com/fmp
         start_date (str): The start date to filter data with.

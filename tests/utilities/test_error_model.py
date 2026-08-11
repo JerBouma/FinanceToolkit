@@ -3,9 +3,11 @@
 # ruff: noqa: PLR2004
 
 import inspect
+import os
 from unittest.mock import patch
 
 import pandas as pd
+import pytest
 
 from financetoolkit.utilities import error_model
 
@@ -52,8 +54,9 @@ def test_handle_errors_decorator_key_error():
 
         mock_logger.error.assert_called_once()
         error_message = mock_logger.error.call_args[0][0]
-        assert "index name missing" in error_message
-        assert "missing_column" in str(mock_logger.error.call_args[0][1])
+        assert "is missing from" in error_message
+        assert "test_function" in str(mock_logger.error.call_args[0][1])
+        assert "missing_column" in str(mock_logger.error.call_args[0][3])
 
 
 def test_handle_errors_decorator_value_error():
@@ -72,26 +75,50 @@ def test_handle_errors_decorator_value_error():
 
         mock_logger.error.assert_called_once()
         error_message = mock_logger.error.call_args[0][0]
-        assert "error occurred while trying to run" in error_message
+        assert "could not be calculated" in error_message
+        # The traceback is attached so the failing line stays identifiable.
+        assert mock_logger.error.call_args[1]["exc_info"] is True
 
 
-def test_handle_errors_decorator_attribute_error():
-    """Test handle_errors decorator with AttributeError."""
+def test_handle_errors_decorator_attribute_error_is_raised():
+    """An AttributeError is a defect rather than missing data, so it is not swallowed."""
 
     @error_model.handle_errors
     def test_function():
         raise AttributeError("'NoneType' object has no attribute 'value'")
 
     with patch("financetoolkit.utilities.error_model.logger") as mock_logger:
-        result = test_function()
-
-        assert isinstance(result, pd.Series)
-        assert result.dtype == "object"
-        assert result.empty
+        with pytest.raises(AttributeError):
+            test_function()
 
         mock_logger.error.assert_called_once()
-        error_message = mock_logger.error.call_args[0][0]
-        assert "error occurred while trying to run" in error_message
+        assert "indicates a defect" in mock_logger.error.call_args[0][0]
+
+
+def test_handle_errors_decorator_type_error_is_raised():
+    """A TypeError is a defect rather than missing data, so it is not swallowed."""
+
+    @error_model.handle_errors
+    def test_function():
+        return 1 + "a"
+
+    with patch("financetoolkit.utilities.error_model.logger"), pytest.raises(TypeError):
+        test_function()
+
+
+def test_handle_errors_decorator_strict_mode_raises():
+    """Strict mode turns every reported failure into a raised exception."""
+
+    @error_model.handle_errors
+    def test_function():
+        raise KeyError("missing_column")
+
+    with (
+        patch.dict(os.environ, {error_model.STRICT_ERRORS_ENVIRONMENT_VARIABLE: "1"}),
+        patch("financetoolkit.utilities.error_model.logger"),
+        pytest.raises(KeyError),
+    ):
+        test_function()
 
 
 def test_handle_errors_decorator_zero_division_error():
@@ -111,6 +138,7 @@ def test_handle_errors_decorator_zero_division_error():
         mock_logger.error.assert_called_once()
         error_message = mock_logger.error.call_args[0][0]
         assert "division by zero" in error_message
+        assert "test_function" in str(mock_logger.error.call_args[0][1])
 
 
 def test_handle_errors_decorator_index_error():
@@ -324,7 +352,7 @@ def test_check_for_error_messages_us_stocks_only():
 
 
 def test_check_for_error_messages_no_errors():
-    """Test check_for_error_messages with no errors column."""
+    """Test check_for_error_messages with the NO ERRORS column."""
     dataset_dict = {
         "AAPL": pd.DataFrame({"NO ERRORS": ["success"]}),
         "MSFT": pd.DataFrame({"data": [1, 2, 3]}),
@@ -333,10 +361,10 @@ def test_check_for_error_messages_no_errors():
     with patch("financetoolkit.utilities.error_model.logger") as mock_logger:
         result = error_model.check_for_error_messages(dataset_dict, "Free")
 
-        # Should not call logger.error
-        mock_logger.error.assert_not_called()
+        # Despite its name, this column is only produced once every connection retry
+        # has been exhausted, so the ticker is dropped and that has to be reported.
+        mock_logger.error.assert_called_once()
 
-        # NO ERRORS ticker should still be removed
         assert "AAPL" not in result
         assert "MSFT" in result
 

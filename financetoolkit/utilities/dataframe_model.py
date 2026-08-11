@@ -66,10 +66,12 @@ def filter_columns(
 
     Args:
         result: The value returned by a controller ``get_*`` method.
-        show_columns: Column names to keep.  For MultiIndex DataFrames the
-            first index level is used for matching.  Invalid names are logged
-            as warnings; if none of the requested columns exist the original
-            result is returned unchanged.
+        show_columns: Column names to keep.  For MultiIndex columns every level
+            is searched, outermost first, so a name occurring on an inner level
+            (such as a factor model coefficient under a ticker) is matched too.
+            Invalid names are logged as warnings; if none of the requested
+            columns exist the original result is returned unchanged and that is
+            reported explicitly.
 
     Returns:
         The filtered result, or *result* unchanged when filtering cannot be
@@ -101,8 +103,9 @@ def _filter_dataframe_columns(
     """Internal helper: filter a single DataFrame to *show_columns*.
 
     Resolution order:
-        1. MultiIndex *columns* — filter by first column level (e.g. OHLCV type in
-        historical data where columns are ``(metric, ticker)``).
+        1. MultiIndex *columns* — filter by any column level, outermost first (e.g.
+        OHLCV type in historical data where columns are ``(metric, ticker)``, or a
+        coefficient name in a factor model where columns are ``(ticker, coefficient)``).
         2. Flat *columns* — filter columns whose string representation appears in
         *show_columns*.
         3. MultiIndex *index* (fallback) — filter by the last index level (e.g.
@@ -118,16 +121,47 @@ def _filter_dataframe_columns(
     if df.empty:
         return df
 
-    # MultiIndex columns
+    # MultiIndex columns. Every level is searched, not only the first: a factor model
+    # is indexed by (ticker, coefficient), so asking for "Intercept" matched nothing at
+    # level 0 and the unfiltered frame came back as though the filter had been applied.
     if isinstance(df.columns, pd.MultiIndex):
-        available = [str(c) for c in df.columns.get_level_values(0).unique()]
-        valid = [c for c in show_columns if c in available]
-        invalid = [c for c in show_columns if c not in available]
-        for col in invalid:
-            logger.warning("Column '%s' not found. Valid columns: %s", col, available)
-        if valid:
-            mask = df.columns.get_level_values(0).isin(valid)
-            return df.loc[:, mask]
+        mask = pd.Series(False, index=range(len(df.columns)))
+        matched: list[str] = []
+        available: list[str] = []
+
+        for level in range(df.columns.nlevels):
+            level_values = df.columns.get_level_values(level)
+            level_available = [str(value) for value in level_values.unique()]
+            available.extend(
+                value for value in level_available if value not in available
+            )
+            # Only names not already resolved at a shallower level, so that a name
+            # occurring at two levels resolves at the outermost one.
+            level_valid = [
+                column
+                for column in show_columns
+                if column in level_available and column not in matched
+            ]
+
+            if level_valid:
+                mask |= pd.Series(level_values.isin(level_valid).tolist())
+                matched.extend(level_valid)
+
+        for column in show_columns:
+            if column not in matched:
+                logger.warning(
+                    "Column '%s' not found. Valid columns: %s", column, available
+                )
+
+        if matched:
+            return df.loc[:, mask.to_numpy()]
+
+        logger.warning(
+            "None of the requested columns %s exist, so the result is returned "
+            "unfiltered. Valid columns: %s",
+            show_columns,
+            available,
+        )
         return df
 
     # Flat columns

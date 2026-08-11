@@ -3,6 +3,7 @@
 __docformat__ = "google"
 
 import inspect
+import os
 
 import pandas as pd
 
@@ -13,67 +14,151 @@ logger = logger_model.get_logger()
 
 # pylint: disable=comparison-with-itself,too-many-locals,protected-access
 
+# Set FINANCETOOLKIT_STRICT_ERRORS to 1 (or true/yes/on) to make every failure inside a
+# metric raise instead of being reported and returned as an empty Series. This is what
+# a test suite or a scheduled job should run with, since it turns a quietly missing
+# number into an immediate, traceable failure.
+STRICT_ERRORS_ENVIRONMENT_VARIABLE = "FINANCETOOLKIT_STRICT_ERRORS"
+
+# AttributeError and TypeError cannot be produced by financial data that is merely
+# incomplete; they mean the code asked an object for something it does not have. There
+# is no value that can be returned for them that is not a lie, so they always raise.
+ALWAYS_RAISED_ERRORS = (AttributeError, TypeError)
+
+
+def use_strict_errors() -> bool:
+    """
+    Reports whether strict error handling is enabled, in which case every failure inside
+    a metric is raised rather than reported and replaced by an empty Series.
+
+    Returns:
+        bool: whether strict error handling is enabled.
+    """
+    return os.environ.get(STRICT_ERRORS_ENVIRONMENT_VARIABLE, "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    )
+
+
+def get_tickers_from_arguments(args: tuple) -> str:
+    """
+    Recovers the tickers a failing metric was calculating for, so that the error message
+    names the companies involved rather than only the metric.
+
+    Args:
+        args (tuple): the positional arguments the decorated function was called with.
+            The first is the controller instance for every method this decorator is
+            applied to.
+
+    Returns:
+        str: a comma separated list of tickers, or "unknown" when they cannot be
+        recovered from the arguments.
+    """
+    tickers = getattr(args[0], "_tickers", None) if args else None
+
+    if isinstance(tickers, str):
+        return tickers
+    if isinstance(tickers, list) and tickers:
+        return ", ".join(str(ticker) for ticker in tickers)
+
+    return "unknown"
+
 
 def handle_errors(func):
     """
-    Decorator to handle specific errors that may occur in a function and provide informative messages.
+    Decorator that reports failures inside a metric calculation instead of letting them
+    propagate as a raw traceback, so that one unavailable line item does not abort an
+    entire analysis.
+
+    Silently returning an empty Series where a number was expected is the worst outcome
+    a financial library can produce, so the behaviour is deliberately split by what the
+    exception actually says about the data:
+
+        - KeyError and IndexError mean a line item the calculation needs is not in the
+          statements, which is a genuine and common gap between data providers rather
+          than a defect. These are logged as an error naming the metric, the tickers and
+          the missing item, and an empty Series is returned.
+        - ValueError and ZeroDivisionError mean the data is present but could not be
+          computed with. These are logged as an error, with the traceback attached so
+          the failing line is identifiable, and an empty Series is returned.
+        - AttributeError and TypeError cannot be caused by incomplete financial data at
+          all; they mean the code is wrong. These are always raised.
+
+    Setting the FINANCETOOLKIT_STRICT_ERRORS environment variable to 1 raises every
+    exception instead, which is the appropriate setting for a test suite or a scheduled
+    job where an empty result must not pass unnoticed.
 
     Args:
         func (function): The function to be decorated.
 
     Returns:
-        function: The decorated function.
+        function: The decorated function, which returns an empty Series of dtype object
+        in place of a result whenever a reported failure occurs.
 
     Raises:
-        KeyError: If an index name is missing in the provided financial statements.
-        ValueError: If an error occurs while running the function, typically due to incomplete financial statements.
+        AttributeError: If the calculation asks an object for an attribute it lacks.
+        TypeError: If the calculation is performed on an unsupported type.
+        Exception: Any exception at all when strict error handling is enabled.
     """
 
     def wrapper(*args, **kwargs):
         try:
             return func(*args, **kwargs)
-        except KeyError as e:
-            function_name = func.__name__
+        except ALWAYS_RAISED_ERRORS as error:
             logger.error(
-                "There is an index name missing in the provided financial statements. "
-                "This is %s. This is required for the function (%s) "
-                "to run. Please fill this column to be able to calculate the ratios.",
-                e,
-                function_name,
+                "%s failed for %s with a %s (%s), which indicates a defect rather than "
+                "missing data.",
+                func.__name__,
+                get_tickers_from_arguments(args),
+                type(error).__name__,
+                error,
+            )
+            raise
+        except KeyError as error:
+            if use_strict_errors():
+                raise
+            logger.error(
+                "%s could not be calculated for %s because the item %s is missing from "
+                "the provided financial statements. Fill this row to obtain the metric.",
+                func.__name__,
+                get_tickers_from_arguments(args),
+                error,
             )
             return pd.Series(dtype="object")
-        except ValueError as e:
-            function_name = func.__name__
+        except IndexError as error:
+            if use_strict_errors():
+                raise
             logger.error(
-                "An error occurred while trying to run the function %s. %s",
-                function_name,
-                e,
+                "%s could not be calculated for %s due to missing data. %s: %s",
+                func.__name__,
+                get_tickers_from_arguments(args),
+                type(error).__name__,
+                error,
             )
             return pd.Series(dtype="object")
-        except AttributeError as e:
-            function_name = func.__name__
+        except ZeroDivisionError as error:
+            if use_strict_errors():
+                raise
             logger.error(
-                "An error occurred while trying to run the function %s. %s",
-                function_name,
-                e,
+                "%s could not be calculated for %s due to a division by zero. %s: %s",
+                func.__name__,
+                get_tickers_from_arguments(args),
+                type(error).__name__,
+                error,
             )
             return pd.Series(dtype="object")
-        except ZeroDivisionError as e:
-            function_name = func.__name__
+        except ValueError as error:
+            if use_strict_errors():
+                raise
             logger.error(
-                "An error occurred while trying to run the function "
-                "%s. %s This is due to a division by zero.",
-                function_name,
-                e,
-            )
-            return pd.Series(dtype="object")
-        except IndexError as e:
-            function_name = func.__name__
-            logger.error(
-                "An error occurred while trying to run the function "
-                "%s. %s This is due to missing data.",
-                function_name,
-                e,
+                "%s could not be calculated for %s. %s: %s",
+                func.__name__,
+                get_tickers_from_arguments(args),
+                type(error).__name__,
+                error,
+                exc_info=True,
             )
             return pd.Series(dtype="object")
 
@@ -101,7 +186,7 @@ def check_for_error_messages(
         dataset_dictionary (dict[str, pd.DataFrame]): a dictionary with the ticker
         as key and the dataframe as value.
         user_subscription (str): the subscription type of the user.
-        subscription_type (str): the subscription type of the user. Defaults to "Premium".
+        required_subscription (str): the subscription the requested data needs. Defaults to "Premium".
         delete_tickers (bool): whether to delete the tickers that have an error from the
         dataset dictionary. Defaults to True.
     """
@@ -120,6 +205,7 @@ def check_for_error_messages(
     us_stocks_only = []
     invalid_api_key = []
     no_errors = []
+    request_failed = []
 
     for ticker, dataframe in dataset_dictionary.items():
         if "PREMIUM QUERY PARAMETER" in dataframe.columns:
@@ -148,6 +234,8 @@ def check_for_error_messages(
             us_stocks_only.append(ticker)
         elif "INVALID API KEY" in dataframe.columns:
             invalid_api_key.append(ticker)
+        elif "REQUEST FAILED" in dataframe.columns:
+            request_failed.append(ticker)
         elif "NO ERRORS" in dataframe.columns:
             no_errors.append(ticker)
 
@@ -276,6 +364,22 @@ def check_for_error_messages(
             "the project: https://www.jeroenbouma.com/fmp"
         )
 
+    if request_failed:
+        logger.error(
+            "The request to Financial Modeling Prep failed with an unrecognised error for the "
+            "following tickers: %s.\nNo data could be collected for them.",
+            ", ".join(request_failed),
+        )
+
+    if no_errors:
+        # These exhausted every connection retry, so this is a network failure rather
+        # than the absence of an error it is named after.
+        logger.error(
+            "The connection to Financial Modeling Prep could not be established for the "
+            "following tickers: %s.\nNo data could be collected for them.",
+            ", ".join(no_errors),
+        )
+
     if delete_tickers:
         # Tickers that errored are removed so the rest of the program continues.
         removed_tickers = set(
@@ -291,8 +395,8 @@ def check_for_error_messages(
             + yfinance_rate_limit_reached_fallback
             + us_stocks_only
             + no_data
-            + us_stocks_only
             + invalid_api_key
+            + request_failed
             + no_errors
         )
 

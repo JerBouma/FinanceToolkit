@@ -53,7 +53,7 @@ from financetoolkit.technicals.technicals_controller import Technicals
 from financetoolkit.utilities import logger_model
 from financetoolkit.utilities.dataframe_model import filter_columns
 from financetoolkit.utilities.requests_model import convert_isin_to_ticker
-from financetoolkit.utilities.statistics_model import calculate_growth
+from financetoolkit.utilities.statistics_model import apply_rounding, calculate_growth
 
 if TYPE_CHECKING:
     # TYPE_CHECKING only: the econometrics extra is imported lazily at runtime.
@@ -181,7 +181,29 @@ class Toolkit:
             limit (60 downloads/hour). When True, a rate-limited call falls back to the most recently cached
             successful response for that query instead of empty data -- opt-in, since served data may be
             stale. Independent of use_cached_data (which governs this Toolkit's own config/ticker cache, a
-            different mechanism). Defaults to False.
+            different mechanism). Defaults to True.
+
+        Fiscal periods and calendar periods:
+
+            Financial statements are labelled with the calendar period in which the majority of the
+            fiscal period falls, not with the company's own fiscal label and not with the calendar
+            period its final day happens to sit in. A fiscal period is a span of time and the date a
+            provider reports is only its last day, so labelling by that day alone would place NVIDIA's
+            fiscal year February 2023 to January 2024 in calendar 2024 even though eleven of its twelve
+            months are 2023.
+
+            Concretely, a fiscal year ending in January through May is labelled with the preceding
+            calendar year, and a fiscal quarter is labelled with the calendar quarter containing the
+            month before its end. Both are the same majority rule at two frequencies, so a company's
+            yearly and quarterly statements stay consistent with each other: NVIDIA's fiscal 2024 is
+            labelled 2023 and its four quarters are labelled 2023Q1 through 2023Q4. Companies reporting
+            on calendar quarter ends (March, June, September and December) are never relabelled, and
+            neither are fiscal years ending in June through December. Which tickers were relabelled is
+            reported in the log and available on the Toolkit as _fiscal_year_adjustments.
+
+            This convention is what makes financial statements line up with price history, since prices
+            are always in calendar time. It also means the labels are not the company's own fiscal year
+            numbering: what NVIDIA calls fiscal 2024 appears here as 2023.
 
         As an example:
 
@@ -312,8 +334,10 @@ class Toolkit:
             # Check whether the ticker is in ISIN format and if say so convert it to a ticker
             self._tickers.append(convert_isin_to_ticker(ticker))
 
-        # Take out duplicate tickers if applicable
-        deduplicated_tickers = list(set(self._tickers))
+        # Take out duplicate tickers if applicable. Deduplicating through a set would
+        # make the ticker order, and therefore the column order of every single output,
+        # depend on the hash seed and change between runs.
+        deduplicated_tickers = list(dict.fromkeys(self._tickers))
 
         if len(deduplicated_tickers) != len(self._tickers):
             duplicate_tickers = [
@@ -433,6 +457,7 @@ class Toolkit:
             self._fmp_cash_flow_statement_generic,
             self._yf_cash_flow_statement_generic,
             self._fmp_statistics_statement_generic,
+            self._yf_statistics_statement_generic,
         ) = _initialize_statements_and_normalization(
             balance=balance,
             income=income,
@@ -1558,6 +1583,8 @@ class Toolkit:
             rounding (int | None, optional): Defines the number of decimal places to round the data to. Defaults to None.
             growth (bool, optional): Defines whether to return the growth of the data. Defaults to False.
             lag (int | list[int], optional): Defines the number of periods to lag the growth data by. Defaults to 1.
+            show_columns (list[str] | None): A list of column names to keep in the result. Invalid
+            names are reported and ignored. Defaults to None, which keeps every column.
 
         Returns:
             pandas.DataFrame: The analyst estimates for the specified tickers.
@@ -1626,7 +1653,7 @@ class Toolkit:
                     api_key=self._api_key,
                     quarter=self._quarterly,
                     start_date=self._start_date,
-                    rounding=rounding if rounding else self._rounding,
+                    rounding=rounding if rounding is not None else self._rounding,
                     sleep_timer=self._sleep_timer,
                     user_subscription=self._fmp_plan,
                 ),
@@ -1643,7 +1670,7 @@ class Toolkit:
             self._analyst_estimates_growth = calculate_growth(
                 self._analyst_estimates,
                 lag=lag,
-                rounding=rounding if rounding else self._rounding,
+                rounding=rounding if rounding is not None else self._rounding,
             )
 
         if len(self._tickers) == 1 and not self._analyst_estimates.empty:
@@ -1675,6 +1702,10 @@ class Toolkit:
         Args:
             actual_dates (bool): Defines whether to return the actual dates or the corresponding quarters.
             overwrite (bool): Defines whether to overwrite the existing data.
+            show_columns (list[str] | None): A list of column names to keep in the result. Invalid
+            names are reported and ignored. Defaults to None, which keeps every column.
+            rounding (int | None): The number of decimals to round the results to. Defaults to None,
+            which uses the rounding set on the Toolkit.
 
         Returns:
             pd.DataFrame: The earnings calendar for the specified tickers.
@@ -1744,8 +1775,9 @@ class Toolkit:
                 ),
             )
 
-        earnings_calendar = self._earnings_calendar.round(
-            rounding if rounding else self._rounding
+        earnings_calendar = apply_rounding(
+            self._earnings_calendar,
+            rounding if rounding is not None else self._rounding,
         )
 
         if self._remove_invalid_tickers:
@@ -1777,6 +1809,8 @@ class Toolkit:
             pages (int, optional): The number of pages to collect, each page is a
                 separate API call, e.g. pages=5 makes 5 calls. Defaults to 1.
             limit (int, optional): The number of articles to return per page. Defaults to 100.
+            show_columns (list[str] | None): A list of column names to keep in the result. Invalid
+            names are reported and ignored. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The latest news articles for the specified tickers.
@@ -1832,6 +1866,8 @@ class Toolkit:
             pages (int, optional): The number of pages to collect, each page is a
                 separate API call, e.g. pages=5 makes 5 calls. Defaults to 1.
             limit (int, optional): The number of articles to return per page. Defaults to 100.
+            show_columns (list[str] | None): A list of column names to keep in the result. Invalid
+            names are reported and ignored. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The latest press releases for the specified tickers.
@@ -1884,6 +1920,8 @@ class Toolkit:
 
         Args:
             overwrite (bool): Defines whether to overwrite the existing data.
+            show_columns (list[str] | None): A list of column names to keep in the result. Invalid
+            names are reported and ignored. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The revenue by geographic segmentation for the specified tickers.
@@ -1978,6 +2016,8 @@ class Toolkit:
 
         Args:
             overwrite (bool): Defines whether to overwrite the existing data.
+            show_columns (list[str] | None): A list of column names to keep in the result. Invalid
+            names are reported and ignored. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The revenue by product segmentation for the specified tickers.
@@ -2189,7 +2229,7 @@ class Toolkit:
                 return_column=return_column,
                 include_dividends=include_dividends,
                 fill_nan=fill_nan,
-                rounding=rounding if rounding else self._rounding,
+                rounding=rounding if rounding is not None else self._rounding,
                 sleep_timer=self._sleep_timer,
                 show_ticker_seperation=show_ticker_seperation,
                 show_errors=True,
@@ -2217,7 +2257,9 @@ class Toolkit:
             historical_data = self._daily_historical_data.loc[
                 self._start_date : self._end_date, :
             ]
-            historical_data.loc[historical_data.index[0], "Return"] = 0
+            # The first row of the window has no preceding observation, so its
+            # Return stays NaN. Cumulative Return is already anchored at 1 there
+            # by its own calculation, so nothing depends on fabricating a zero.
 
         elif period == "weekly":
             if self._weekly_risk_free_rate.empty or overwrite:
@@ -2230,13 +2272,16 @@ class Toolkit:
                 daily_historical_data=self._daily_historical_data,
                 start=self._start_date,
                 end=self._end_date,
-                rounding=rounding if rounding else self._rounding,
+                rounding=rounding if rounding is not None else self._rounding,
+                return_column=return_column,
             )
 
             historical_data = self._weekly_historical_data.loc[
                 self._start_date : self._end_date, :
             ]
-            historical_data.loc[historical_data.index[0], "Return"] = 0
+            # The first row of the window has no preceding observation, so its
+            # Return stays NaN. Cumulative Return is already anchored at 1 there
+            # by its own calculation, so nothing depends on fabricating a zero.
 
         elif period == "monthly":
             if self._monthly_risk_free_rate.empty or overwrite:
@@ -2249,13 +2294,16 @@ class Toolkit:
                 daily_historical_data=self._daily_historical_data,
                 start=self._start_date,
                 end=self._end_date,
-                rounding=rounding if rounding else self._rounding,
+                rounding=rounding if rounding is not None else self._rounding,
+                return_column=return_column,
             )
 
             historical_data = self._monthly_historical_data.loc[
                 self._start_date : self._end_date, :
             ]
-            historical_data.loc[historical_data.index[0], "Return"] = 0
+            # The first row of the window has no preceding observation, so its
+            # Return stays NaN. Cumulative Return is already anchored at 1 there
+            # by its own calculation, so nothing depends on fabricating a zero.
 
         elif period == "quarterly":
             if self._quarterly_risk_free_rate.empty or overwrite:
@@ -2268,13 +2316,16 @@ class Toolkit:
                 daily_historical_data=self._daily_historical_data,
                 start=self._start_date,
                 end=self._end_date,
-                rounding=rounding if rounding else self._rounding,
+                rounding=rounding if rounding is not None else self._rounding,
+                return_column=return_column,
             )
 
             historical_data = self._quarterly_historical_data.loc[
                 self._start_date : self._end_date, :
             ]
-            historical_data.loc[historical_data.index[0], "Return"] = 0
+            # The first row of the window has no preceding observation, so its
+            # Return stays NaN. Cumulative Return is already anchored at 1 there
+            # by its own calculation, so nothing depends on fabricating a zero.
 
         elif period == "yearly":
             if self._yearly_risk_free_rate.empty or overwrite:
@@ -2287,13 +2338,16 @@ class Toolkit:
                 daily_historical_data=self._daily_historical_data,
                 start=self._start_date,
                 end=self._end_date,
-                rounding=rounding if rounding else self._rounding,
+                rounding=rounding if rounding is not None else self._rounding,
+                return_column=return_column,
             )
 
             historical_data = self._yearly_historical_data.loc[
                 self._start_date : self._end_date, :
             ]
-            historical_data.loc[historical_data.index[0], "Return"] = 0
+            # The first row of the window has no preceding observation, so its
+            # Return stays NaN. Cumulative Return is already anchored at 1 there
+            # by its own calculation, so nothing depends on fabricating a zero.
 
         else:
             raise ValueError(
@@ -2367,6 +2421,8 @@ class Toolkit:
             return_column (str, optional): The column to use for the return calculation. Defaults to "Close".
             fill_nan (bool, optional): Defines whether to forward fill NaN values. Defaults to True.
             rounding (int | None, optional): Defines the number of decimal places to round the data to. Defaults to None.
+            show_columns (list[str] | None): A list of column names to keep in the result. Invalid
+            names are reported and ignored. Defaults to None, which keeps every column.
 
         Returns:
             pandas.DataFrame: The intraday data for the specified tickers.
@@ -2433,7 +2489,7 @@ class Toolkit:
                 return_column=return_column,
                 include_dividends=False,
                 fill_nan=fill_nan,
-                rounding=rounding if rounding else self._rounding,
+                rounding=rounding if rounding is not None else self._rounding,
                 sleep_timer=self._sleep_timer,
                 show_errors=True,
                 log_message="Obtaining intraday data",
@@ -2463,7 +2519,8 @@ class Toolkit:
             self._start_date : self._end_date, :
         ]
 
-        historical_data.loc[historical_data.index[0], "Return"] = 0
+        # The first row of the window has no preceding observation, so its Return
+        # stays NaN rather than being reported as an unchanged period.
 
         if show_columns is not None:
             historical_data = filter_columns(historical_data, show_columns)
@@ -2496,6 +2553,8 @@ class Toolkit:
         Args:
             overwrite (bool): Defines whether to overwrite the existing data.
             rounding (int): Defines the number of decimal places to round the data to.
+            show_columns (list[str] | None): A list of column names to keep in the result. Invalid
+            names are reported and ignored. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The earnings calendar for the specified tickers.
@@ -2564,8 +2623,9 @@ class Toolkit:
                 ),
             )
 
-        dividend_calendar = self._dividend_calendar.round(
-            rounding if rounding else self._rounding
+        dividend_calendar = apply_rounding(
+            self._dividend_calendar,
+            rounding if rounding is not None else self._rounding,
         )
 
         if self._remove_invalid_tickers:
@@ -2629,6 +2689,8 @@ class Toolkit:
         Args:
             overwrite (bool): Defines whether to overwrite the existing data.
             rounding (int): Defines the number of decimal places to round the data to.
+            show_columns (list[str] | None): A list of column names to keep in the result. Invalid
+            names are reported and ignored. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The ESG scores for the specified tickers.
@@ -2689,7 +2751,9 @@ class Toolkit:
                 ),
             )
 
-        esg_scores = self._esg_scores.round(rounding if rounding else self._rounding)
+        esg_scores = apply_rounding(
+            self._esg_scores, rounding if rounding is not None else self._rounding
+        )
 
         if self._remove_invalid_tickers:
             self._tickers = [
@@ -2948,6 +3012,14 @@ class Toolkit:
             fill_nan (bool): Defines whether to forward fill NaN values. This defaults
             to True to prevent holes in the dataset. This is especially relevant for
             technical indicators.
+            risk_free_rate (str | None, optional): The maturity to return as the risk free rate
+                ('13w', '5y', '10y' or '30y'). Defaults to None, which uses the maturity set on
+                the Toolkit.
+            divide_ohlc_by (int | float | None, optional): A value to divide the yields by. Treasury
+                yields are published in percent, so this defaults to 100 to return decimals.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding set on the Toolkit.
+            show_errors (bool, optional): Whether to report retrieval errors. Defaults to False.
             enforce_source (str | None, optional): Forces this specific call to use a given
                 source, either "FinancialModelingPrep" or "YahooFinance". This takes precedence
                 over the source set on the Toolkit itself. Defaults to None, which falls back to
@@ -3046,7 +3118,7 @@ class Toolkit:
                 start=self._start_date,
                 end=self._end_date,
                 divide_ohlc_by=divide_ohlc_by,
-                rounding=rounding if rounding else self._rounding,
+                rounding=rounding if rounding is not None else self._rounding,
                 show_errors=show_errors,
                 fill_nan=fill_nan,
                 sleep_timer=self._sleep_timer,
@@ -3058,6 +3130,9 @@ class Toolkit:
             if not self._daily_treasury_data.empty:
                 self._daily_treasury_data = self._daily_treasury_data.rename(
                     columns=treasury_names, level=1
+                )
+                self._daily_treasury_data = self._align_treasury_data_to_trading_days(
+                    self._daily_treasury_data
                 )
                 self._daily_risk_free_rate = self._daily_treasury_data.xs(
                     risk_free_rate, level=1, axis=1
@@ -3080,7 +3155,7 @@ class Toolkit:
                 daily_historical_data=self._daily_treasury_data,
                 start=self._start_date,
                 end=self._end_date,
-                rounding=rounding if rounding else self._rounding,
+                rounding=rounding if rounding is not None else self._rounding,
             )
 
             self._weekly_risk_free_rate = self._weekly_treasury_data.xs(
@@ -3094,7 +3169,7 @@ class Toolkit:
                 daily_historical_data=self._daily_treasury_data,
                 start=self._start_date,
                 end=self._end_date,
-                rounding=rounding if rounding else self._rounding,
+                rounding=rounding if rounding is not None else self._rounding,
             )
 
             self._monthly_risk_free_rate = self._monthly_treasury_data.xs(
@@ -3108,7 +3183,7 @@ class Toolkit:
                 daily_historical_data=self._daily_treasury_data,
                 start=self._start_date,
                 end=self._end_date,
-                rounding=rounding if rounding else self._rounding,
+                rounding=rounding if rounding is not None else self._rounding,
             )
 
             self._quarterly_risk_free_rate = self._quarterly_treasury_data.xs(
@@ -3124,7 +3199,7 @@ class Toolkit:
                 daily_historical_data=self._daily_treasury_data,
                 start=self._start_date,
                 end=self._end_date,
-                rounding=rounding if rounding else self._rounding,
+                rounding=rounding if rounding is not None else self._rounding,
             )
 
             self._yearly_risk_free_rate = self._yearly_treasury_data.xs(
@@ -3167,8 +3242,6 @@ class Toolkit:
         Also known as: currency exchange, FX rates, foreign exchange rates.
 
         Args:
-            start (str): The start date for the exchange data. Defaults to None.
-            end (str): The end date for the exchange data. Defaults to None.
             period (str): The interval at which the historical data should be
             returned - daily, weekly, monthly, quarterly, or yearly.
             Defaults to "daily".
@@ -3229,12 +3302,20 @@ class Toolkit:
                     historical_currencies=self._historical_statistics.loc["Currency"],
                 )
 
-        # Separate same-currency comparisons from actual exchange rates.
+        # Separate same-currency comparisons from actual exchange rates. GBP and GBp are
+        # the same currency in different units, so there is no rate to retrieve for that
+        # pair either; the unit difference is applied as a factor during conversion.
         currencies_to_collect_data_for = [
-            currency for currency in self._currencies if currency[:3] != currency[3:6]
+            currency
+            for currency in self._currencies
+            if currencies_model.get_major_currency(currency[:3])
+            != currencies_model.get_major_currency(currency[3:6])
         ]
         currencies_to_fill_to_one = [
-            currency for currency in self._currencies if currency[:3] == currency[3:6]
+            currency
+            for currency in self._currencies
+            if currencies_model.get_major_currency(currency[:3])
+            == currencies_model.get_major_currency(currency[3:6])
         ]
 
         if self._daily_exchange_rate_data.empty or overwrite:
@@ -3249,7 +3330,7 @@ class Toolkit:
                     return_column=return_column,
                     include_dividends=False,
                     fill_nan=fill_nan,
-                    rounding=rounding if rounding else self._rounding,
+                    rounding=rounding if rounding is not None else self._rounding,
                     sleep_timer=self._sleep_timer,
                     show_ticker_seperation=show_ticker_seperation,
                     log_message="Obtaining currency exchange data",
@@ -3298,7 +3379,9 @@ class Toolkit:
             historical_data = self._daily_exchange_rate_data.loc[
                 self._start_date : self._end_date, :
             ]
-            historical_data.loc[historical_data.index[0], "Return"] = 0
+            # The first row of the window has no preceding observation, so its
+            # Return stays NaN. Cumulative Return is already anchored at 1 there
+            # by its own calculation, so nothing depends on fabricating a zero.
 
             if len(self._currencies) == 1:
                 return historical_data.xs(self._currencies[0], level=1, axis="columns")
@@ -3311,13 +3394,15 @@ class Toolkit:
                 daily_historical_data=self._daily_exchange_rate_data,
                 start=self._start_date,
                 end=self._end_date,
-                rounding=rounding if rounding else self._rounding,
+                rounding=rounding if rounding is not None else self._rounding,
             )
 
             historical_data = self._weekly_exchange_rate_data.loc[
                 self._start_date : self._end_date, :
             ]
-            historical_data.loc[historical_data.index[0], "Return"] = 0
+            # The first row of the window has no preceding observation, so its
+            # Return stays NaN. Cumulative Return is already anchored at 1 there
+            # by its own calculation, so nothing depends on fabricating a zero.
 
             if len(self._currencies) == 1:
                 return historical_data.xs(self._currencies[0], level=1, axis="columns")
@@ -3330,13 +3415,15 @@ class Toolkit:
                 daily_historical_data=self._daily_exchange_rate_data,
                 start=self._start_date,
                 end=self._end_date,
-                rounding=rounding if rounding else self._rounding,
+                rounding=rounding if rounding is not None else self._rounding,
             )
 
             historical_data = self._monthly_exchange_rate_data.loc[
                 self._start_date : self._end_date, :
             ]
-            historical_data.loc[historical_data.index[0], "Return"] = 0
+            # The first row of the window has no preceding observation, so its
+            # Return stays NaN. Cumulative Return is already anchored at 1 there
+            # by its own calculation, so nothing depends on fabricating a zero.
 
             if len(self._currencies) == 1:
                 return historical_data.xs(self._currencies[0], level=1, axis="columns")
@@ -3349,13 +3436,15 @@ class Toolkit:
                 daily_historical_data=self._daily_exchange_rate_data,
                 start=self._start_date,
                 end=self._end_date,
-                rounding=rounding if rounding else self._rounding,
+                rounding=rounding if rounding is not None else self._rounding,
             )
 
             historical_data = self._quarterly_exchange_rate_data.loc[
                 self._start_date : self._end_date, :
             ]
-            historical_data.loc[historical_data.index[0], "Return"] = 0
+            # The first row of the window has no preceding observation, so its
+            # Return stays NaN. Cumulative Return is already anchored at 1 there
+            # by its own calculation, so nothing depends on fabricating a zero.
 
             if len(self._currencies) == 1:
                 return historical_data.xs(self._currencies[0], level=1, axis="columns")
@@ -3368,13 +3457,15 @@ class Toolkit:
                 daily_historical_data=self._daily_exchange_rate_data,
                 start=self._start_date,
                 end=self._end_date,
-                rounding=rounding if rounding else self._rounding,
+                rounding=rounding if rounding is not None else self._rounding,
             )
 
             historical_data = self._yearly_exchange_rate_data.loc[
                 self._start_date : self._end_date, :
             ]
-            historical_data.loc[historical_data.index[0], "Return"] = 0
+            # The first row of the window has no preceding observation, so its
+            # Return stays NaN. Cumulative Return is already anchored at 1 there
+            # by its own calculation, so nothing depends on fabricating a zero.
 
             return historical_data
 
@@ -3422,6 +3513,8 @@ class Toolkit:
             growth (bool): Defines whether to return the growth of the data.
             lag (int | str): Defines the number of periods to lag the growth data by.
             E.g. when selecting 4 with quarterly data, the TTM is calculated.
+            show_columns (list[str] | None): A list of column names to keep in the result. Invalid
+            names are reported and ignored. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A pandas DataFrame with the retrieved balance sheet statement data.
@@ -3533,9 +3626,10 @@ class Toolkit:
                 quarter=self._quarterly,
                 start_date=self._lookback_start_date,
                 end_date=self._end_date,
-                rounding=rounding if rounding else self._rounding,
+                rounding=rounding if rounding is not None else self._rounding,
                 fmp_statement_format=self._fmp_balance_sheet_statement_generic,
                 fmp_statistics_format=self._fmp_statistics_statement_generic,
+                yf_statistics_format=self._yf_statistics_statement_generic,
                 yf_statement_format=self._yf_balance_sheet_statement_generic,
                 sleep_timer=self._sleep_timer,
                 user_subscription=self._fmp_plan,
@@ -3574,12 +3668,13 @@ class Toolkit:
             self._balance_sheet_statement_growth = calculate_growth(
                 balance_sheet_statement,
                 lag=lag,
-                rounding=rounding if rounding else self._rounding,
+                rounding=rounding if rounding is not None else self._rounding,
                 axis="columns",
             ).truncate(before=self._start_date, axis=1)
 
-        balance_sheet_statement = balance_sheet_statement.round(
-            rounding if rounding else self._rounding
+        balance_sheet_statement = apply_rounding(
+            balance_sheet_statement,
+            rounding if rounding is not None else self._rounding,
         )
 
         balance_sheet_statement = balance_sheet_statement.truncate(
@@ -3632,6 +3727,8 @@ class Toolkit:
             lag (int | str): Defines the number of periods to lag the growth data by.
             trailing (int): Defines whether to select a trailing period.
             E.g. when selecting 4 with quarterly data, the TTM is calculated.
+            show_columns (list[str] | None): A list of column names to keep in the result. Invalid
+            names are reported and ignored. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A pandas DataFrame with the retrieved income statement data.
@@ -3727,9 +3824,10 @@ class Toolkit:
                 quarter=self._quarterly,
                 start_date=self._lookback_start_date,
                 end_date=self._end_date,
-                rounding=rounding if rounding else self._rounding,
+                rounding=rounding if rounding is not None else self._rounding,
                 fmp_statement_format=self._fmp_income_statement_generic,
                 fmp_statistics_format=self._fmp_statistics_statement_generic,
+                yf_statistics_format=self._yf_statistics_statement_generic,
                 yf_statement_format=self._yf_income_statement_generic,
                 sleep_timer=self._sleep_timer,
                 user_subscription=self._fmp_plan,
@@ -3792,12 +3890,12 @@ class Toolkit:
             self._income_statement_growth = calculate_growth(
                 income_statement,
                 lag=lag,
-                rounding=rounding if rounding else self._rounding,
+                rounding=rounding if rounding is not None else self._rounding,
                 axis="columns",
             ).truncate(before=self._start_date, axis=1)
 
-        income_statement = income_statement.round(
-            rounding if rounding else self._rounding
+        income_statement = apply_rounding(
+            income_statement, rounding if rounding is not None else self._rounding
         )
 
         income_statement = income_statement.truncate(before=self._start_date, axis=1)
@@ -3846,6 +3944,8 @@ class Toolkit:
             lag (int | str): Defines the number of periods to lag the growth data by.
             trailing (int): Defines whether to select a trailing period.
             E.g. when selecting 4 with quarterly data, the TTM is calculated.
+            show_columns (list[str] | None): A list of column names to keep in the result. Invalid
+            names are reported and ignored. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A pandas DataFrame with the retrieved cash flow statement data.
@@ -3943,9 +4043,10 @@ class Toolkit:
                 quarter=self._quarterly,
                 start_date=self._lookback_start_date,
                 end_date=self._end_date,
-                rounding=rounding if rounding else self._rounding,
+                rounding=rounding if rounding is not None else self._rounding,
                 fmp_statement_format=self._fmp_cash_flow_statement_generic,
                 fmp_statistics_format=self._fmp_statistics_statement_generic,
+                yf_statistics_format=self._yf_statistics_statement_generic,
                 yf_statement_format=self._yf_cash_flow_statement_generic,
                 sleep_timer=self._sleep_timer,
                 user_subscription=self._fmp_plan,
@@ -3987,12 +4088,12 @@ class Toolkit:
             self._cash_flow_statement_growth = calculate_growth(
                 cash_flow_statement,
                 lag=lag,
-                rounding=rounding if rounding else self._rounding,
+                rounding=rounding if rounding is not None else self._rounding,
                 axis="columns",
             ).truncate(before=self._start_date, axis=1)
 
-        cash_flow_statement = cash_flow_statement.round(
-            rounding if rounding else self._rounding
+        cash_flow_statement = apply_rounding(
+            cash_flow_statement, rounding if rounding is not None else self._rounding
         )
 
         cash_flow_statement = cash_flow_statement.truncate(
@@ -4034,6 +4135,8 @@ class Toolkit:
                 which falls back to the Toolkit's own enforce_source.
             overwrite (bool): Defines whether to overwrite the existing data.
             rounding (int): Defines the number of decimal places to round the data to.
+            show_columns (list[str] | None): A list of column names to keep in the result. Invalid
+            names are reported and ignored. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A pandas DataFrame with the retrieved statistics statement data.
@@ -4096,9 +4199,10 @@ class Toolkit:
                 quarter=self._quarterly,
                 start_date=self._lookback_start_date,
                 end_date=self._end_date,
-                rounding=rounding if rounding else self._rounding,
+                rounding=rounding if rounding is not None else self._rounding,
                 fmp_statement_format=self._fmp_balance_sheet_statement_generic,
                 fmp_statistics_format=self._fmp_statistics_statement_generic,
+                yf_statistics_format=self._yf_statistics_statement_generic,
                 yf_statement_format=self._yf_balance_sheet_statement_generic,
                 sleep_timer=self._sleep_timer,
                 user_subscription=self._fmp_plan,
@@ -4144,6 +4248,52 @@ class Toolkit:
             _copy_normalization_files(path)
         else:
             _copy_normalization_files()
+
+    def _align_treasury_data_to_trading_days(
+        self, treasury_data: pd.DataFrame
+    ) -> pd.DataFrame:
+        """
+        Fills the treasury series on equity trading days the bond market was closed for.
+
+        The bond market observes holidays the equity market does not, Columbus Day and
+        Veterans Day among them, so a Treasury yield series has gaps on days that do
+        have a stock return. Every one of those gaps produces a NaN excess return that
+        is then dropped from the within-period Sharpe, Sortino, Kappa and Appraisal
+        ratios and from the market timing regressions, silently shortening the sample.
+
+        The last published yield is carried forward across such a gap, which is the
+        correct reading of an instrument that simply did not trade that day. Only the
+        yields are carried forward: the Return and Cumulative Return columns stay NaN on
+        an inserted day, since no return was actually realized on it. Gaps before the
+        first or after the last published yield are left alone.
+
+        Args:
+            treasury_data (pd.DataFrame): the daily treasury data, with the metric as
+                the first column level and the maturity as the second.
+
+        Returns:
+            pd.DataFrame: the treasury data reindexed onto the trading days of the
+            historical data and forward filled across bond market holidays.
+        """
+        if treasury_data.empty or self._daily_historical_data.empty:
+            return treasury_data
+
+        trading_days = self._daily_historical_data.index
+        trading_days = trading_days[
+            (trading_days >= treasury_data.index.min())
+            & (trading_days <= treasury_data.index.max())
+        ]
+
+        treasury_data = treasury_data.reindex(treasury_data.index.union(trading_days))
+
+        carried_forward = [
+            column
+            for column in treasury_data.columns
+            if column[0] not in ("Return", "Cumulative Return")
+        ]
+        treasury_data[carried_forward] = treasury_data[carried_forward].ffill()
+
+        return treasury_data
 
     def _collect_per_ticker(
         self,

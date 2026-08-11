@@ -391,7 +391,12 @@ def test_get_appraisal_ratio(recorder):
         jensens_alpha, capm_residuals["AAPL"]
     )
 
-    expected = jensens_alpha / capm_residuals["AAPL"].groupby(level=0).std()
+    # The residual std is pointwise (daily), so it is rescaled to the period frequency
+    # of jensens_alpha by multiplying with the square root of the number of
+    # observations in that period, matching how volatility is annualized elsewhere.
+    residual_std = capm_residuals["AAPL"].groupby(level=0).std()
+    observations_per_period = capm_residuals["AAPL"].groupby(level=0).size()
+    expected = jensens_alpha / (residual_std * np.sqrt(observations_per_period))
     pd.testing.assert_series_equal(appraisal_ratio, expected, check_names=False)
 
     recorder.capture(appraisal_ratio.round(6))

@@ -4,10 +4,72 @@ import numpy as np
 import pandas as pd
 from scipy import optimize
 
+from financetoolkit.utilities.logger_model import get_logger
+
+logger = get_logger()
+
 ALPHA_CONSTRAINT = 0.5
 
 # Two levels when a 'within period' index nests days inside a period (2020Q1).
 MULTI_PERIOD_INDEX_LEVELS = 2
+
+# Fallback seed used for a single retry when the primary fit gets stuck at x0.
+RETRY_SEED = 7
+
+
+def _fit_dual_annealing(
+    wrapper_func,
+    bounds: list[tuple[float, float]],
+    initial_guess: list[float],
+    model_name: str,
+) -> np.ndarray:
+    """
+    Runs `scipy.optimize.dual_annealing` for a GARCH-family log-likelihood and verifies
+    the fit actually moved rather than trusting the returned parameters blindly.
+
+    `result.success` alone is not a reliable guard here: `dual_annealing` reports success
+    (with message "Maximum number of iteration reached") even when the local search never
+    improves on the literal `x0` starting point, so an unchecked `result.x` can silently
+    return an unfitted guess as if it were a real estimate. This is checked for explicitly
+    by comparing `result.x` against `x0`. If the first attempt fails (either
+    `result.success` is False, or the result is still exactly `x0`), it is retried once
+    with a different seed (a stuck run is usually just an unlucky annealing schedule rather
+    than a genuinely unfittable series); if the retry also fails, a warning is logged and
+    NaN weights are returned instead of the unfitted starting point.
+
+    Args:
+        wrapper_func (Callable): The (constrained) negative log-likelihood to minimize.
+        bounds (list[tuple[float, float]]): The parameter bounds passed to `dual_annealing`.
+        initial_guess (list[float]): The starting point (`x0`) for the first attempt.
+        model_name (str): The model name to include in the warning message if both
+        attempts fail.
+
+    Returns:
+        np.ndarray: The fitted weights, or an array of NaN (same length as
+        `initial_guess`) if the optimizer did not move off `x0` on either attempt.
+    """
+    x0 = np.asarray(initial_guess, dtype=float)
+
+    def _stuck_at_start(result) -> bool:
+        return (not result.success) or np.array_equal(np.asarray(result.x), x0)
+
+    result = optimize.dual_annealing(wrapper_func, bounds, x0=initial_guess, seed=42)
+
+    if _stuck_at_start(result):
+        result = optimize.dual_annealing(
+            wrapper_func, bounds, x0=initial_guess, seed=RETRY_SEED
+        )
+
+    if _stuck_at_start(result):
+        logger.warning(
+            "The %s optimization did not converge after two attempts (%s) and "
+            "returned the unfitted starting point. Returning NaN weights instead.",
+            model_name,
+            result.message,
+        )
+        return np.full(len(initial_guess), np.nan)
+
+    return result.x
 
 
 def garch_log_maximization(
@@ -64,7 +126,9 @@ def get_garch_weights(
         q: (int): Number of sigma_t datapoints to use. Note that currently only q=1 is supported.
 
     Returns:
-        list: A list with the weights
+        list: A list with the weights [omega, alpha, beta]. If `dual_annealing` fails to
+        converge even after a retry with a different seed, this is `[nan, nan, nan]`
+        instead of the unfitted starting point (see `_fit_dual_annealing`).
     """
     if isinstance(returns, pd.DataFrame):
         returns = returns.iloc[:, 0].to_numpy()
@@ -93,9 +157,7 @@ def get_garch_weights(
         return garch_log_maximization(parameters, returns, t, p, q)
 
     # Seeded so fitted parameters are reproducible across runs.
-    result = optimize.dual_annealing(wrapper_func, bounds, x0=initial_guess, seed=42)
-
-    return result.x
+    return _fit_dual_annealing(wrapper_func, bounds, initial_guess, "GARCH")
 
 
 def get_garch(
@@ -337,7 +399,10 @@ def get_gjr_garch_weights(
         q: (int): Number of sigma_t datapoints to use. Note that currently only q=1 is supported.
 
     Returns:
-        list: A list with the weights [omega, alpha, gamma, beta].
+        list: A list with the weights [omega, alpha, gamma, beta]. If `dual_annealing`
+        fails to converge even after a retry with a different seed, this is
+        `[nan, nan, nan, nan]` instead of the unfitted starting point (see
+        `_fit_dual_annealing`).
     """
     if isinstance(returns, pd.DataFrame):
         returns = returns.iloc[:, 0].to_numpy()
@@ -366,9 +431,7 @@ def get_gjr_garch_weights(
             return np.inf
         return gjr_garch_log_maximization(parameters, returns, t, p, q)
 
-    result = optimize.dual_annealing(wrapper_func, bounds, x0=initial_guess, seed=42)
-
-    return result.x
+    return _fit_dual_annealing(wrapper_func, bounds, initial_guess, "GJR-GARCH")
 
 
 def get_gjr_garch(
@@ -616,7 +679,10 @@ def get_egarch_weights(
         q: (int): Number of sigma_t datapoints to use. Note that currently only q=1 is supported.
 
     Returns:
-        list: A list with the weights [omega, alpha, gamma, beta].
+        list: A list with the weights [omega, alpha, gamma, beta]. If `dual_annealing`
+        fails to converge even after a retry with a different seed, this is
+        `[nan, nan, nan, nan]` instead of the unfitted starting point (see
+        `_fit_dual_annealing`).
     """
     if isinstance(returns, pd.DataFrame):
         returns = returns.iloc[:, 0].to_numpy()
@@ -633,9 +699,7 @@ def get_egarch_weights(
             return np.inf
         return egarch_log_maximization(parameters, returns, t, p, q)
 
-    result = optimize.dual_annealing(wrapper_func, bounds, x0=initial_guess, seed=42)
-
-    return result.x
+    return _fit_dual_annealing(wrapper_func, bounds, initial_guess, "EGARCH")
 
 
 def get_egarch(

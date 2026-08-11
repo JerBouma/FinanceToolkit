@@ -4997,11 +4997,11 @@ class Risk:
 
         Which returns:
 
-        |           |       0 |
-        |:----------|--------:|
-        | AMZN      | -0.0082 |
-        | TSLA      |  0.0099 |
-        | Benchmark | -0.0077 |
+        |           |      0 |
+        |:----------|-------:|
+        | AMZN      | 0.4553 |
+        | TSLA      | 0.5122 |
+        | Benchmark | 0.4515 |
         """
         # The estimator regresses the dispersion of lagged differences on the lag, which
         # only identifies self-affinity on a level series. Feeding it returns, which are

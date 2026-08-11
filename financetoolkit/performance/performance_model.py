@@ -2126,7 +2126,8 @@ def get_appraisal_ratio(
         over the estimation window used for `jensens_alpha`, from which the idiosyncratic
         (residual) standard deviation is derived. When this has a "within period" Multi
         Index (period, date), the standard deviation is computed separately within each
-        period; otherwise it is computed over the entire series at once.
+        period and rescaled to the period frequency (see Notes below); otherwise it is
+        computed over the entire series at once.
 
     Returns:
         pd.Series | pd.DataFrame: Appraisal Ratio values.
@@ -2136,9 +2137,23 @@ def get_appraisal_ratio(
     `get_jensens_alpha` under the hood on already-excess returns (i.e. with
     `risk_free_rate` set to 0), so it reuses the exact same CAPM regression machinery as
     `jensens_alpha` itself rather than reimplementing it.
+    - When `capm_residuals` has a "within period" (period, date) Multi Index, the residuals
+    themselves are pointwise (e.g. daily), so their per-period standard deviation is a
+    daily-scale figure. `jensens_alpha`, however, is always period-scale (e.g. yearly).
+    Dividing a period-scale Alpha by a daily-scale standard deviation would silently
+    inflate the ratio by roughly the square root of the number of observations in the
+    period — the same timeframe-mixing mistake the Sharpe ratio guards against by
+    de-annualizing the risk-free rate first. To keep both sides on the same frequency, the
+    per-period residual standard deviation is scaled up by multiplying it with the square
+    root of the number of residual observations in that period, mirroring how
+    `financetoolkit.risk.risk_model.get_volatility` scales daily volatility to a period.
     """
     if capm_residuals.index.nlevels == MULTI_PERIOD_INDEX_LEVELS:
         residual_standard_deviation = capm_residuals.groupby(level=0).std()
+        observations_per_period = capm_residuals.groupby(level=0).size()
+        residual_standard_deviation = residual_standard_deviation.mul(
+            np.sqrt(observations_per_period), axis=0
+        )
     else:
         residual_standard_deviation = capm_residuals.std()
 
@@ -2355,6 +2370,17 @@ def get_starr_ratio(
     one value per period) rather than a raw daily series if a mean excess return per period
     is intended — this function does not average `excess_returns` itself.
 
+    When `returns` has a "within period" (period, date) Multi Index, CVaR is computed from
+    the daily observations within each period (see `get_cvar_historic`), which makes it a
+    daily-scale tail-risk measure. Dividing a period-scale `excess_returns` (e.g. a yearly
+    excess return) by that daily-scale CVaR would silently inflate the ratio by roughly the
+    square root of the number of trading days in the period — the same timeframe-mixing
+    mistake the Sharpe ratio guards against by de-annualizing the risk-free rate before
+    computing daily excess returns. To keep both sides of the ratio on the same frequency,
+    the CVaR is instead scaled up to the period frequency by multiplying it with the square
+    root of the number of return observations within that period, mirroring how
+    `financetoolkit.risk.risk_model.get_volatility` scales daily volatility to a period.
+
     Also known as: Stable Tail Adjusted Return Ratio, Conditional Sharpe Ratio.
 
     For more information about the method, see the following paper:
@@ -2364,9 +2390,12 @@ def get_starr_ratio(
 
     Args:
         excess_returns (pd.Series | pd.DataFrame): A Series or DataFrame of returns with
-        the risk-free rate subtracted.
+        the risk-free rate subtracted, already aggregated to one value per period (see
+        Notes above).
         returns (pd.Series | pd.DataFrame): The corresponding raw (non-excess) returns,
-        from which the CVaR denominator is computed.
+        from which the CVaR denominator is computed. When this has a "within period" Multi
+        Index (period, date), the resulting per-period CVaR is rescaled to the period
+        frequency (see above) so it stays comparable to `excess_returns`.
         alpha (float, optional): The confidence level used for the CVaR calculation (e.g.
         0.05 for the worst 5% of outcomes). Defaults to 0.05.
 
@@ -2374,6 +2403,14 @@ def get_starr_ratio(
         pd.Series | pd.DataFrame: STARR Ratio values.
     """
     conditional_value_at_risk = cvar_model.get_cvar_historic(returns, alpha)
+
+    if returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS and isinstance(
+        conditional_value_at_risk, pd.Series | pd.DataFrame
+    ):
+        observations_per_period = returns.groupby(level=0).size()
+        conditional_value_at_risk = conditional_value_at_risk.mul(
+            np.sqrt(observations_per_period), axis=0
+        )
 
     starr_ratio = excess_returns / abs(conditional_value_at_risk)
 

@@ -42,8 +42,8 @@ def get_nonfarm_payrolls(start_date: str, end_date: str, api_key: str) -> pd.Dat
     Requires a free FRED API key. Register at https://fred.stlouisfed.org/docs/api/api_key.html.
 
     Returns:
-        pd.DataFrame: A single-column ("United States") DataFrame of the level of
-            nonfarm payroll employment, in thousands of persons.
+        pd.DataFrame: A single-column ("United States") DataFrame of the monthly level of
+            nonfarm payroll employment, in thousands of persons, seasonally adjusted.
     """
     return _get_fred_series("PAYEMS", start_date, end_date, api_key)
 
@@ -57,21 +57,23 @@ def get_initial_jobless_claims(
     Requires a free FRED API key. Register at https://fred.stlouisfed.org/docs/api/api_key.html.
 
     Returns:
-        pd.DataFrame: A single-column ("United States") DataFrame of weekly initial
-            jobless claims, seasonally adjusted.
+        pd.DataFrame: A single-column ("United States") DataFrame of initial jobless
+            claims, as a count of claims, weekly (week ending Saturday) and seasonally
+            adjusted.
     """
     return _get_fred_series("ICSA", start_date, end_date, api_key)
 
 
 def get_retail_sales(start_date: str, end_date: str, api_key: str) -> pd.DataFrame:
     """
-    Retrieves Advance Retail Sales: Retail and Food Services from FRED (series RSAFS).
+    Retrieves Advance Retail Sales: Retail Trade and Food Services from FRED (series
+    RSAFS).
 
     Requires a free FRED API key. Register at https://fred.stlouisfed.org/docs/api/api_key.html.
 
     Returns:
-        pd.DataFrame: A single-column ("United States") DataFrame of total retail and
-            food services sales, in millions of dollars.
+        pd.DataFrame: A single-column ("United States") DataFrame of monthly total retail
+            trade and food services sales, in millions of dollars, seasonally adjusted.
     """
     return _get_fred_series("RSAFS", start_date, end_date, api_key)
 
@@ -85,8 +87,8 @@ def get_industrial_production_index(
     Requires a free FRED API key. Register at https://fred.stlouisfed.org/docs/api/api_key.html.
 
     Returns:
-        pd.DataFrame: A single-column ("United States") DataFrame of the Industrial
-            Production Index (2017 = 100).
+        pd.DataFrame: A single-column ("United States") DataFrame of the monthly
+            Industrial Production Index (2017 = 100), seasonally adjusted.
     """
     return _get_fred_series("INDPRO", start_date, end_date, api_key)
 
@@ -99,8 +101,10 @@ def get_housing_starts(start_date: str, end_date: str, api_key: str) -> pd.DataF
     Requires a free FRED API key. Register at https://fred.stlouisfed.org/docs/api/api_key.html.
 
     Returns:
-        pd.DataFrame: A single-column ("United States") DataFrame of new housing
-            starts, in thousands of units, seasonally adjusted annual rate.
+        pd.DataFrame: A single-column ("United States") DataFrame of monthly new housing
+            starts, in thousands of units, at a seasonally adjusted annual rate -- so the
+            value is the annualised pace implied by that month, not the count of units
+            started in it.
     """
     return _get_fred_series("HOUST", start_date, end_date, api_key)
 
@@ -115,9 +119,9 @@ def get_real_personal_income(
     Requires a free FRED API key. Register at https://fred.stlouisfed.org/docs/api/api_key.html.
 
     Returns:
-        pd.DataFrame: A single-column ("United States") DataFrame of real personal
+        pd.DataFrame: A single-column ("United States") DataFrame of monthly real personal
             income excluding current transfer receipts, in billions of chained 2017
-            dollars.
+            dollars, at a seasonally adjusted annual rate.
     """
     return _get_fred_series("W875RX1", start_date, end_date, api_key)
 
@@ -132,10 +136,20 @@ def get_mortgage_rate_30_year(
     Requires a free FRED API key. Register at https://fred.stlouisfed.org/docs/api/api_key.html.
 
     Returns:
-        pd.DataFrame: A single-column ("United States") DataFrame of the weekly
-            average 30-year fixed mortgage rate, in percent.
+        pd.DataFrame: A single-column ("United States") DataFrame of the 30-year fixed
+            mortgage rate as a decimal fraction per annum (0.065 for 6.5%), weekly (week
+            ending Thursday) and not seasonally adjusted.
+
+    Notes:
+        FRED publishes this series in percentage points (6.5 for 6.5%); it is divided by
+        100 here so that every rate the Finance Toolkit returns is a decimal fraction.
     """
-    return _get_fred_series("MORTGAGE30US", start_date, end_date, api_key)
+    mortgage_rate_30_year = _get_fred_series(
+        "MORTGAGE30US", start_date, end_date, api_key
+    )
+
+    # FRED quotes the rate in percentage points, so divide by 100 for the decimal.
+    return mortgage_rate_30_year / 100
 
 
 def get_recession_indicator(
@@ -147,8 +161,11 @@ def get_recession_indicator(
     Requires a free FRED API key. Register at https://fred.stlouisfed.org/docs/api/api_key.html.
 
     Returns:
-        pd.DataFrame: A single-column ("United States") DataFrame, 1 during NBER-dated
-            recession months (peak through trough) and 0 otherwise.
+        pd.DataFrame: A single-column ("United States") DataFrame, monthly and not
+            seasonally adjusted, 1 during NBER-dated recession months and 0 otherwise.
+            FRED's midpoint convention means the series switches to 1 in the month
+            *following* the business cycle peak and back to 0 in the month following
+            the trough, so the peak month itself is still marked as an expansion.
     """
     return _get_fred_series("USREC", start_date, end_date, api_key)
 
@@ -169,8 +186,10 @@ def get_commercial_real_estate_prices(
     Requires a free FRED API key. Register at https://fred.stlouisfed.org/docs/api/api_key.html.
 
     Returns:
-        pd.DataFrame: A single-column ("United States") DataFrame of the quarterly
-            Commercial Real Estate Price Index, as a year-over-year percent change.
+        pd.DataFrame: A single-column ("United States") DataFrame of quarterly commercial
+            real estate prices expressed as a year-over-year percent change (5.0 for 5%),
+            not seasonally adjusted. FRED publishes this series only as that percent
+            change, not as an index level.
     """
     return _get_fred_series("COMREPUSQ159N", start_date, end_date, api_key)
 
@@ -199,14 +218,20 @@ def get_real_yield_curve(start_date: str, end_date: str, api_key: str) -> pd.Dat
 
     Returns:
         pd.DataFrame: A DataFrame indexed by date with one column per maturity (5, 7,
-            10, 20, 30 Year), in percent.
+            10, 20, 30 Year), as a decimal fraction per annum (0.0174 for 1.74%).
+
+    Notes:
+        FRED publishes these series in percentage points (1.74 for 1.74%); they are
+        divided by 100 here so that this curve is on the same decimal scale as
+        `fixedincome.get_treasury_rates` and can be differenced against it directly.
     """
     real_yield_curve = get_fred_data(
         list(REAL_YIELD_SERIES), start_date, end_date, api_key
     )
     real_yield_curve = real_yield_curve.rename(columns=REAL_YIELD_SERIES)
 
-    return real_yield_curve
+    # FRED quotes these yields in percentage points, so divide by 100 for the decimal.
+    return real_yield_curve / 100
 
 
 def get_breakeven_inflation_expectations(
@@ -229,7 +254,14 @@ def get_breakeven_inflation_expectations(
 
     Returns:
         pd.DataFrame: A DataFrame indexed by date with one column per maturity (5, 7,
-            10, 20, 30 Year) plus the 5-Year, 5-Year Forward Rate, in percent.
+            10, 20, 30 Year) plus the 5-Year, 5-Year Forward Rate, as a decimal fraction
+            per annum (0.0221 for 2.21%).
+
+    Notes:
+        FRED publishes the underlying series in percentage points (2.21 for 2.21%); the
+        result is divided by 100 so that it is on the same decimal scale as the rest of
+        the toolkit's rate surfaces. The subtraction is done before the rescaling, which
+        is equivalent since both legs share the same scale.
     """
     series_ids = [
         "T5YIE",
@@ -252,4 +284,5 @@ def get_breakeven_inflation_expectations(
     breakeven_inflation["30 Year"] = data["DGS30"] - data["DFII30"]
     breakeven_inflation["5 Year, 5 Year Forward"] = data["T5YIFR"]
 
-    return breakeven_inflation
+    # FRED quotes these rates in percentage points, so divide by 100 for the decimal.
+    return breakeven_inflation / 100

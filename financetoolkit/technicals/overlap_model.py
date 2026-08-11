@@ -237,6 +237,13 @@ def get_kaufman_adaptive_moving_average(
 
     Reference: Kaufman, P.J. (1998). "Trading Systems and Methods." 3rd ed. Wiley.
 
+    Notes:
+        - The recursion is seeded with the closing price on the first period where the
+          Efficiency Ratio is defined, matching TA-Lib's `ta_KAMA.c` (`prevKAMA =
+          inReal[today-1]`). StockCharts instead describes seeding with a Simple Moving
+          Average; the two conventions differ only in a transient that decays geometrically
+          over the periods that follow, and neither affects the steady-state values.
+
     Args:
         prices (pd.Series): Series of prices.
         window (int): Number of periods over which the Efficiency Ratio is calculated.
@@ -457,7 +464,28 @@ def get_pivot_points(
 
     Pivot Points are calculated from the previous period's high, low and close prices
     and are used to identify potential support and resistance levels for the current
-    period.
+    period. This is the "floor trader" (classic) variant.
+
+    The formula is a follows:
+
+    - Pivot Point (P) = (Previous High + Previous Low + Previous Close) / 3
+    - Resistance 1 = (2 * P) — Previous Low
+    - Support 1 = (2 * P) — Previous High
+    - Resistance 2 = P + (Previous High — Previous Low)
+    - Support 2 = P — (Previous High — Previous Low)
+    - Resistance 3 = Previous High + 2 * (P — Previous Low)
+    - Support 3 = Previous Low — 2 * (Previous High — P)
+
+    Also known as: floor pivots, classic pivot points, standard pivot points.
+
+    Reference: The standard textbook treatment is Person, J.L. (2004). "A Complete Guide to
+    Technical Trading Tactics." Wiley; the levels originate in floor-trading practice rather
+    than a published paper.
+
+    Notes:
+        - Every level is derived exclusively from the *previous* period's high, low and
+          close, so the whole set is known at the open of the current period and carries no
+          look-ahead.
 
     Args:
         prices_high (pd.Series): Series of high prices.
@@ -505,70 +533,118 @@ def get_pivot_points(
     )
 
 
+def _get_confirmed_levels(
+    prices: pd.Series, extreme_indices: np.ndarray, window: int, sensitivity: float
+) -> pd.Series:
+    """
+    Turn a set of centred local extremes into a strictly causal series of price levels.
+
+    A local extreme found by a centred pivot window at position `i` is not knowable until
+    `window` further periods have printed and confirmed that no higher high (or lower low)
+    followed. Each extreme is therefore published at position `i + window` — the first
+    period on which an observer could actually have identified it — and extremes whose
+    confirmation period falls beyond the end of the sample are dropped entirely rather
+    than published early.
+
+    Extremes within `sensitivity` (a fractional distance) of an already-established level
+    are treated as a retest of that level and blend into it as a running average. The
+    blended value is published at the *new* extreme's confirmation date; the value
+    already published at earlier dates is never rewritten, so the series is append-only.
+
+    Args:
+        prices (pd.Series): Series of prices the extremes were detected on.
+        extreme_indices (np.ndarray): Positional indices of the centred local extremes.
+        window (int): The half-width of the centred pivot window, and therefore the
+            number of periods by which confirmation of each extreme lags its occurrence.
+        sensitivity (float): Fractional distance below which a new extreme is treated as
+            a retest of an existing level rather than a new level.
+
+    Returns:
+        pd.Series: Levels indexed by the date each level was confirmed on.
+    """
+    length = len(prices)
+    levels: list[float] = []
+    published: dict = {}
+
+    for position in extreme_indices:
+        confirmation_position = int(position) + window
+
+        # An extreme is only knowable once the centred window that identified it has
+        # fully printed; anything not yet confirmed within the sample is discarded.
+        if confirmation_position >= length:
+            break
+
+        price = float(prices.iloc[int(position)])
+        confirmation_date = prices.index[confirmation_position]
+
+        for level_position, level in enumerate(levels):
+            if level and abs(price - level) / abs(level) < sensitivity:
+                levels[level_position] = (level + price) / 2
+                published[confirmation_date] = levels[level_position]
+                break
+        else:
+            levels.append(price)
+            published[confirmation_date] = price
+
+    return pd.Series(published, dtype="float64")
+
+
 def get_support_resistance_levels(
     prices: pd.Series, window: int = 5, sensitivity: float = 0.05
-):
+) -> pd.DataFrame:
     """
     Calculate support and resistance levels from historical price data.
 
-    Parameters:
-        prices (pd.Series): A pandas Series of historical closing prices.
-        window (int): The window size to use for identifying local maxima and minima.
-        sensitivity (float): The sensitivity threshold for identifying levels.
+    Support levels are the valleys where price has repeatedly stopped falling, and
+    resistance levels are the peaks where it has repeatedly stopped rising. Both are
+    identified here as centred local extremes — a price that is higher (or lower) than
+    every price within `window` periods on either side of it — and extremes that sit
+    within `sensitivity` of one another are blended into a single level, on the reasoning
+    that price stalling repeatedly at nearly the same value describes one level rather
+    than several.
+
+    Also known as: support levels, resistance levels, swing highs and swing lows.
+
+    Reference: The standard textbook treatment is Murphy, J.J. (1999). "Technical Analysis
+    of the Financial Markets." New York Institute of Finance.
+
+    Notes:
+        - A centred pivot window cannot identify an extreme until `window` further periods
+          have printed without exceeding it. Every level is therefore published with a
+          confirmation lag of exactly `window` periods: the level formed at period `t` first
+          appears at period `t + window`, which is the first period on which an observer
+          could have known about it. Extremes that have not yet been confirmed by the end
+          of the sample are not published at all.
+        - The series is append-only. A retest that blends into an existing level publishes
+          the blended value from its own confirmation date onward and never rewrites a value
+          that was already published, so a value read at any date is exactly the value that
+          was available at that date and the result is safe to use in a backtest.
+
+    Args:
+        prices (pd.Series): Series of prices to identify levels on (typically closing prices).
+        window (int): Half-width of the centred window used to identify local maxima and
+            minima, and therefore also the confirmation lag in periods. Defaults to 5.
+        sensitivity (float): Fractional distance below which a new extreme is treated as a
+            retest of an existing level rather than a new one. A higher value blends more
+            extremes together and therefore yields fewer distinct levels. Defaults to 0.05.
 
     Returns:
-        support_resistance_levels (pd.DataFrame): A DataFrame with support and resistance levels.
-            The DataFrame has two columns: "Resistance" and "Support".
-            The index matches `prices`. A level is only identified on the handful of
-            dates where a new local maximum or minimum is detected, so the result is
-            forward-filled to the full price index — every date shows the most
-            recently established level (NaN before the first level is found), rather
-            than only the isolated dates where a new level was detected.
+        pd.DataFrame: Support and resistance levels with two columns, "Resistance" and
+            "Support", reindexed to `prices` and forward-filled, so that every date carries
+            the most recently confirmed level (NaN before the first level is confirmed).
     """
-    # Identify local maxima and minima
-    local_maxima_indices = argrelextrema(prices.values, np.greater, order=window)[0]
-    local_minima_indices = argrelextrema(prices.values, np.less, order=window)[0]
+    local_maxima_indices = argrelextrema(prices.to_numpy(), np.greater, order=window)[0]
+    local_minima_indices = argrelextrema(prices.to_numpy(), np.less, order=window)[0]
 
-    local_maxima_prices = prices.iloc[local_maxima_indices]
-    local_minima_prices = prices.iloc[local_minima_indices]
-
-    # Initialize dictionaries for support and resistance levels
-    resistance_levels: dict[pd.PeriodIndex, float] = {}
-    support_levels: dict[pd.PeriodIndex, float] = {}
-
-    # Calculate resistance levels
-    for idx, price in zip(local_maxima_indices, local_maxima_prices):
-        if not resistance_levels:
-            resistance_levels[prices.index[idx]] = price
-        else:
-            close_to_existing = False
-            for date, level in resistance_levels.items():
-                if abs(price - level) / level < sensitivity:
-                    resistance_levels[date] = (resistance_levels[date] + price) / 2
-                    close_to_existing = True
-                    break
-            if not close_to_existing:
-                resistance_levels[prices.index[idx]] = price
-
-    # Calculate support levels
-    for idx, price in zip(local_minima_indices, local_minima_prices):
-        if not support_levels:
-            support_levels[prices.index[idx]] = price
-        else:
-            close_to_existing = False
-            for date, level in support_levels.items():
-                if abs(price - level) / level < sensitivity:
-                    support_levels[date] = (support_levels[date] + price) / 2
-                    close_to_existing = True
-                    break
-            if not close_to_existing:
-                support_levels[prices.index[idx]] = price
+    resistance_levels = _get_confirmed_levels(
+        prices, local_maxima_indices, window, sensitivity
+    )
+    support_levels = _get_confirmed_levels(
+        prices, local_minima_indices, window, sensitivity
+    )
 
     support_resistance_levels = pd.DataFrame(
-        {
-            "Resistance": pd.Series(resistance_levels, dtype="float64"),
-            "Support": pd.Series(support_levels, dtype="float64"),
-        }
+        {"Resistance": resistance_levels, "Support": support_levels}
     ).sort_index()
 
     return support_resistance_levels.reindex(prices.index).ffill()

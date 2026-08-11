@@ -260,6 +260,18 @@ def get_supertrend(
             supertrend.iloc[i] = supertrend.iloc[i - 1]
             continue
 
+        # The bands are NaN until the Average True Range has a full window, so the first
+        # bar with valid bands seeds the recursion. Comparing against the NaN carried in
+        # from the previous bar would fail both branches and propagate NaN indefinitely.
+        if pd.isna(final_upper_band.iloc[i - 1]) or pd.isna(
+            final_lower_band.iloc[i - 1]
+        ):
+            final_upper_band.iloc[i] = basic_upper_band.iloc[i]
+            final_lower_band.iloc[i] = basic_lower_band.iloc[i]
+            trend_direction.iloc[i] = 1
+            supertrend.iloc[i] = final_lower_band.iloc[i]
+            continue
+
         if (
             basic_upper_band.iloc[i] < final_upper_band.iloc[i - 1]
             or prices_close.iloc[i - 1] > final_upper_band.iloc[i - 1]
@@ -356,14 +368,16 @@ def get_donchian_channels(
     """
     Calculate the Donchian Channels of a given price series.
 
-    Donchian Channels plot the highest high and lowest low over a specified window,
-    with the middle line being the average of the two. They are used to identify
-    breakouts and the overall volatility of the price range.
+    Donchian Channels plot the highest high and lowest low over the `window` periods
+    *preceding* the current one, with the middle line being the average of the two. They
+    are used to identify breakouts — Donchian's original rule buys when price exceeds the
+    highest high of the preceding N periods — and to gauge the overall volatility of the
+    price range.
 
     The formula is a follows:
 
-    - Upper Channel = Max(High, window)
-    - Lower Channel = Min(Low, window)
+    - Upper Channel = Max(High, window), ending one period before the current period
+    - Lower Channel = Min(Low, window), ending one period before the current period
     - Middle Channel = (Upper Channel + Lower Channel) / 2
 
     Also known as: Donchian Bands, price channel.
@@ -372,16 +386,27 @@ def get_donchian_channels(
     Trading Rule" commodity trading system; the channel itself is described in Kaufman, P.J.
     (2013). "Trading Systems and Methods." 5th ed. Wiley.
 
+    Notes:
+        - The current period is deliberately excluded from the lookback. StockCharts states
+          the rule directly: "The Price Channel formula doesn't include the most recent
+          period. Price Channels are based on prices prior to the current period... A
+          channel break would not be possible if the most recent period was used." Including
+          the current bar makes `High > Upper Channel` impossible by construction, which
+          silently disables the indicator's primary use as a breakout signal.
+        - Because the channel is built entirely from prior periods, it uses no information
+          from the current bar and is safe to compare the current bar's price against.
+
     Args:
         prices_high (pd.Series): Series of high prices.
         prices_low (pd.Series): Series of low prices.
-        window (int): Number of periods to consider for the Donchian Channels.
+        window (int): Number of periods, ending one period ago, to consider for the
+            Donchian Channels.
 
     Returns:
         pd.DataFrame: Donchian Channels (upper, middle, lower).
     """
-    upper_channel = prices_high.rolling(window=window).max()
-    lower_channel = prices_low.rolling(window=window).min()
+    upper_channel = prices_high.rolling(window=window).max().shift(1)
+    lower_channel = prices_low.rolling(window=window).min().shift(1)
     middle_channel = (upper_channel + lower_channel) / 2
 
     return pd.concat(
@@ -402,6 +427,15 @@ def get_volatility_cone(
     volatility for each window compares to its own historical range. It is commonly
     used to judge whether current (or implied) volatility is cheap or expensive
     relative to history.
+
+    The formula is a follows:
+
+    - Log Return(t) = ln(Close(t) / Close(t-1))
+    - Realized Volatility(window) = StdDev(Log Return, window) * sqrt(252)
+    - For each window, the cone reports the minimum, the 10th, 25th, 50th, 75th and 90th
+      percentiles, the maximum and the most recent value of that realized volatility series
+
+    Also known as: volatility cone, realized volatility cone.
 
     Reference: Burghardt, G. & Lane, M. (1990). "How to Tell if Options are Cheap." Journal
     of Portfolio Management, and the related treatment in Natenberg, S. (1994). "Option
@@ -474,12 +508,13 @@ def get_bollinger_bands(
     Reference: Bollinger, J. (2001). "Bollinger on Bollinger Bands." McGraw-Hill.
 
     Notes:
-        - The rolling standard deviation here uses pandas' default (sample standard
-          deviation, dividing by n-1), consistent with the calculation in Bollinger's own
-          reference spreadsheet. Some other implementations instead use the population
-          standard deviation (dividing by n); for the default 20-period window, the two
-          conventions differ by roughly 2.5%, which mainly matters when trying to reproduce
-          another platform's values exactly rather than for interpreting the bands.
+        - The rolling standard deviation uses the *population* convention (dividing by n,
+          i.e. `ddof=0`), not pandas' default sample convention (dividing by n-1). This is
+          what Bollinger himself specifies — "(We use the population calculation for
+          standard deviation)", bollingerbands.com — and matches both TA-Lib (`ta_VAR.c`
+          divides by the period) and StockCharts. For the default 20-period window the
+          sample convention inflates the band half-width by a factor of sqrt(20/19), about
+          2.6%.
 
     Args:
         prices (pd.Series): Series of prices.
@@ -490,7 +525,7 @@ def get_bollinger_bands(
         pd.DataFrame: Bollinger Bands (upper, middle, lower).
     """
     rolling_mean = prices.rolling(window=window).mean()
-    rolling_std = prices.rolling(window=window).std()
+    rolling_std = prices.rolling(window=window).std(ddof=0)
 
     upper_band = rolling_mean + (num_std_dev * rolling_std)
     lower_band = rolling_mean - (num_std_dev * rolling_std)

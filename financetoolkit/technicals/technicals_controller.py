@@ -2,6 +2,7 @@
 
 __docformat__ = "google"
 
+import warnings
 
 import pandas as pd
 
@@ -21,6 +22,11 @@ from financetoolkit.utilities.statistics_model import (
 
 # pylint: disable=too-many-lines,too-many-instance-attributes,too-many-public-methods,too-many-locals,eval-used
 # pylint: disable=too-many-boolean-expressions
+
+# The default number of periods the Stochastic Oscillator's %K line is smoothed over to
+# obtain the %D signal line. Named so the deprecated `smooth_widow` alias can tell an
+# explicitly passed `smooth_window` apart from the untouched default.
+DEFAULT_STOCHASTIC_SMOOTH_WINDOW = 3
 
 
 class Technicals:
@@ -1895,7 +1901,7 @@ class Technicals:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
-    ) -> tuple[pd.Series, pd.Series] | tuple[pd.DataFrame, pd.DataFrame]:
+    ) -> pd.Series | pd.DataFrame:
         """
         Calculate the Aroon Indicator for a given price series.
 
@@ -1924,7 +1930,7 @@ class Technicals:
                 Defaults to 1.
 
         Returns:
-            Tuple[pd.Series, pd.Series] or Tuple[pd.DataFrame, pd.DataFrame]:
+            pd.Series or pd.DataFrame:
             Aroon Indicator values for the upward and downward trends.
 
         Notes:
@@ -2972,7 +2978,7 @@ class Technicals:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
-    ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    ) -> pd.Series | pd.DataFrame:
         """
         Calculate the Ichimoku Cloud indicator for a given price series.
 
@@ -3013,8 +3019,7 @@ class Technicals:
                 Defaults to 1.
 
         Returns:
-            Tuple[pd.Series, pd.Series, pd.Series, pd.Series] or
-            Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+            pd.Series or pd.DataFrame:
             Conversion Line, Base Line, Lead Span A, and Lead Span B values.
 
         Notes:
@@ -3105,12 +3110,13 @@ class Technicals:
         period: str = "daily",
         close_column: str = "Adj Close",
         window: int = 14,
-        smooth_widow: int = 3,
+        smooth_window: int = DEFAULT_STOCHASTIC_SMOOTH_WINDOW,
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
-    ) -> tuple[pd.DataFrame, pd.DataFrame]:
+        smooth_widow: int | None = None,
+    ) -> pd.Series | pd.DataFrame:
         """
         Calculate the Stochastic Oscillator indicator for a given price series.
 
@@ -3121,7 +3127,7 @@ class Technicals:
         The formula is a follows:
 
         - %K = 100 * ((Close — Lowest Low) / (Highest High — Lowest Low))
-        - %D = SMA(%K)
+        - %D = SMA(%K, smooth_window)
 
         Also known as: stochastic oscillator, percent K, percent D.
 
@@ -3132,21 +3138,27 @@ class Technicals:
                 Defaults to "Adj Close".
             window (int, optional): The number of periods to consider for the %K line calculation.
                 Defaults to 14.
-            smooth_widow (int, optional): The number of periods to consider for the %D line
-                (slow stochastic) calculation. Defaults to 3.
+            smooth_window (int, optional): The number of periods used to smooth the %K line
+                into the %D signal line. Defaults to 3.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the %K and %D values.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
+                Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-                Defaults to 1.
+            smooth_widow (int | None, optional): Deprecated misspelling of `smooth_window`,
+                accepted so that existing callers keep working. Passing it emits a
+                DeprecationWarning and forwards the value to `smooth_window`. Defaults to None.
 
         Returns:
-            Tuple[pd.Series, pd.Series] or Tuple[pd.DataFrame, pd.DataFrame]:
-            %K line and %D line values.
+            pd.Series or pd.DataFrame: Stochastic Oscillator (%K and %D) values.
+
+        Raises:
+            ValueError: If the specified `period` is not one of the valid options, or if both
+                `smooth_window` and the deprecated `smooth_widow` are given conflicting values.
 
         Notes:
         - The method retrieves historical data based on the specified `period` and calculates
@@ -3179,6 +3191,20 @@ class Technicals:
         | 2026-07-01 |         51.4243 |         71.9567 |
         | 2026-07-02 |         74.7297 |         97.7853 |
         """
+        if smooth_widow is not None:
+            warnings.warn(
+                "The 'smooth_widow' parameter is a misspelling and is deprecated, use "
+                "'smooth_window' instead. It will be removed in a future version.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            if smooth_window not in (DEFAULT_STOCHASTIC_SMOOTH_WINDOW, smooth_widow):
+                raise ValueError(
+                    "Received conflicting values for 'smooth_window' and the deprecated "
+                    "'smooth_widow'. Pass only 'smooth_window'."
+                )
+            smooth_window = smooth_widow
+
         if period not in [
             "intraday",
             "daily",
@@ -3208,7 +3234,7 @@ class Technicals:
                     historical_data["Low"][ticker],
                     historical_data[close_column][ticker],
                     window,
-                    smooth_widow,
+                    smooth_window,
                 ).loc[self._start_date : self._end_date]
             )
 
@@ -3244,7 +3270,7 @@ class Technicals:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
-    ) -> tuple[pd.Series, pd.Series] | tuple[pd.DataFrame, pd.DataFrame]:
+    ) -> pd.Series | pd.DataFrame:
         """
         Calculate the Moving Average Convergence Divergence (MACD) indicator for a given price series.
 
@@ -3281,7 +3307,7 @@ class Technicals:
                 Defaults to 1.
 
         Returns:
-            Tuple[pd.DataFrame, pd.DataFrame] or Tuple[pd.Series, pd.Series]:
+            pd.Series or pd.DataFrame:
             MACD line and signal line values.
 
         Notes:
@@ -3730,7 +3756,7 @@ class Technicals:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
-    ) -> tuple[pd.Series, pd.Series] | tuple[pd.DataFrame, pd.DataFrame]:
+    ) -> pd.Series | pd.DataFrame:
         """
         Calculate the Vortex Indicator for a given price series.
 
@@ -3767,7 +3793,7 @@ class Technicals:
                 Defaults to 1.
 
         Returns:
-            Tuple[pd.Series, pd.Series] or Tuple[pd.DataFrame, pd.DataFrame]:
+            pd.Series or pd.DataFrame:
             VI+ and VI- values.
 
         Notes:
@@ -3863,7 +3889,7 @@ class Technicals:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
-    ) -> tuple[pd.Series, pd.Series] | tuple[pd.DataFrame, pd.DataFrame]:
+    ) -> pd.Series | pd.DataFrame:
         """
         Calculate the Elder Ray Index (Bull Power and Bear Power) for a given price series.
 
@@ -3897,7 +3923,7 @@ class Technicals:
                 Defaults to 1.
 
         Returns:
-            Tuple[pd.Series, pd.Series] or Tuple[pd.DataFrame, pd.DataFrame]:
+            pd.Series or pd.DataFrame:
             Bull Power and Bear Power values.
 
         Notes:
@@ -4216,7 +4242,7 @@ class Technicals:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
-    ) -> tuple[pd.Series, pd.Series] | tuple[pd.DataFrame, pd.DataFrame]:
+    ) -> pd.Series | pd.DataFrame:
         """
         Calculate the Know Sure Thing (KST) for a given price series.
 
@@ -4263,7 +4289,7 @@ class Technicals:
                 Defaults to 1.
 
         Returns:
-            Tuple[pd.Series, pd.Series] or Tuple[pd.DataFrame, pd.DataFrame]:
+            pd.Series or pd.DataFrame:
             KST and Signal Line values.
 
         Notes:
@@ -4515,7 +4541,9 @@ class Technicals:
 
         if len(self._tickers) == 1:
             return (
-                self._overlap_indicators_growth[self._tickers[0]]
+                self._overlap_indicators_growth.xs(
+                    self._tickers[0], level=1, axis="columns"
+                )
                 if growth
                 else self._overlap_indicators.xs(
                     self._tickers[0], level=1, axis="columns"
@@ -4994,7 +5022,7 @@ class Technicals:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
-    ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    ) -> pd.Series | pd.DataFrame:
         """
         Calculate the Bollinger Bands for a given price series.
 
@@ -5008,6 +5036,10 @@ class Technicals:
         - Middle Band = SMA(Close, Window)
         - Upper Band = Middle Band + (Num Std Dev * Std Dev)
         - Lower Band = Middle Band — (Num Std Dev * Std Dev)
+
+        The standard deviation is the *population* standard deviation (dividing by n), as
+        Bollinger himself specifies and as TA-Lib and StockCharts both implement, not
+        pandas' default sample standard deviation.
 
         Also known as: Bollinger Bands, BB, volatility bands, price channels.
 
@@ -5031,7 +5063,7 @@ class Technicals:
                 Defaults to 1.
 
         Returns:
-            Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame] or Tuple[pd.Series, pd.Series, pd.Series]:
+            pd.Series or pd.DataFrame:
             Bollinger Bands (upper, middle, lower).
 
         Notes:
@@ -5844,7 +5876,7 @@ class Technicals:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
-    ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    ) -> pd.Series | pd.DataFrame:
         """
         Calculate the Pivot Points for a given price series.
 
@@ -5880,7 +5912,7 @@ class Technicals:
                 Defaults to 1.
 
         Returns:
-            Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame] or Tuple[pd.Series, pd.Series, pd.Series]:
+            pd.Series or pd.DataFrame:
             Pivot Points (pivot, resistance 1-3, support 1-3).
 
         Notes:
@@ -5971,6 +6003,9 @@ class Technicals:
         close_column: str = "Adj Close",
         window: int = 14,
         rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
     ) -> pd.Series | pd.DataFrame:
         """
         Retrieves the support and resistance levels for the specified period and assets.
@@ -6006,9 +6041,16 @@ class Technicals:
             rounding (int | None, optional): The number of decimals to round the results to.
                 If None, the rounding value specified during the initialization of the Toolkit instance will be used.
                 Defaults to None.
+            growth (bool, optional): Whether to calculate the growth of the levels.
+                Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation.
+                Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
 
         Returns:
-           pd.DataFrame: The support and resistance levels for each asset.
+           pd.Series or pd.DataFrame: The support and resistance levels for each asset.
 
         Raises:
             ValueError: If the specified `period` is not one of the valid options.
@@ -6017,8 +6059,13 @@ class Technicals:
         - The method retrieves historical data based on the specified `period` and calculates the
           support and resistance levels for each asset in the Toolkit instance.
         - A level is only identified on the handful of dates where a new local maximum or minimum
-          is detected. The result is forward-filled so every date shows the most recently
-          established level (NaN before the first level is found for that asset).
+          is confirmed. The result is forward-filled so every date shows the most recently
+          confirmed level (NaN before the first level is confirmed for that asset).
+        - Levels are identified with a centred pivot window, which cannot confirm an extreme
+          until `window` further periods have printed without exceeding it. Every level is
+          therefore published with a confirmation lag of exactly `window` periods, and the
+          series is append-only: a value read at any date is exactly the value that was
+          available at that date, so the output is safe to use in a backtest.
 
         As an example:
 
@@ -6081,8 +6128,17 @@ class Technicals:
             .sort_index(axis=1)
         )
 
-        return support_resistance_levels_df.round(
-            rounding if rounding else self._rounding
+        return finalize_dataset(
+            dataset=support_resistance_levels_df,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
         )
 
     @handle_portfolio
@@ -6402,7 +6458,9 @@ class Technicals:
 
         if len(self._tickers) == 1:
             return (
-                self._volatility_indicators_growth[self._tickers[0]]
+                self._volatility_indicators_growth.xs(
+                    self._tickers[0], level=1, axis="columns"
+                )
                 if growth
                 else self._volatility_indicators.xs(
                     self._tickers[0], level=1, axis="columns"
@@ -6671,7 +6729,7 @@ class Technicals:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
-    ) -> tuple[pd.Series, pd.Series] | tuple[pd.DataFrame, pd.DataFrame]:
+    ) -> pd.Series | pd.DataFrame:
         """
         Calculate the Supertrend indicator for a given price series.
 
@@ -6718,7 +6776,7 @@ class Technicals:
                 Defaults to 1.
 
         Returns:
-            Tuple[pd.Series, pd.Series] or Tuple[pd.DataFrame, pd.DataFrame]:
+            pd.Series or pd.DataFrame:
             Supertrend (the trailing indicator line) and Trend Direction (1 for an uptrend
             and -1 for a downtrend) values.
 
@@ -6806,7 +6864,7 @@ class Technicals:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
-    ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    ) -> pd.Series | pd.DataFrame:
         """
         Calculate the Keltner Channels for a given price series.
 
@@ -6847,7 +6905,7 @@ class Technicals:
                 Defaults to 1.
 
         Returns:
-            pd.DataFrame or Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]: Keltner Channels (upper, middle, lower).
+            pd.Series or pd.DataFrame: Keltner Channels (upper, middle, lower).
 
         Notes:
         - The method retrieves historical data based on the specified `period` and calculates Keltner Channels
@@ -6941,19 +6999,23 @@ class Technicals:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
-    ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    ) -> pd.Series | pd.DataFrame:
         """
         Calculate the Donchian Channels for a given price series.
 
-        Donchian Channels plot the highest high and lowest low over a specified window,
-        with the middle line being the average of the two. They are used to identify
-        breakouts and the overall volatility of the price range.
+        Donchian Channels plot the highest high and lowest low over the `window` periods
+        *preceding* the current one, with the middle line being the average of the two. They
+        are used to identify breakouts and the overall volatility of the price range.
 
         The formula is a follows:
 
-        - Upper Channel = Highest High over Window
-        - Lower Channel = Lowest Low over Window
+        - Upper Channel = Highest High over Window, ending one period ago
+        - Lower Channel = Lowest Low over Window, ending one period ago
         - Middle Channel = (Upper Channel + Lower Channel) / 2
+
+        The current period is deliberately excluded from the lookback, per Donchian's
+        original breakout rule and StockCharts' Price Channels definition — including it
+        would make a channel break impossible by construction.
 
         Also known as: Donchian Channels, price channel breakout.
 
@@ -6975,7 +7037,7 @@ class Technicals:
                 Defaults to 1.
 
         Returns:
-            pd.DataFrame or Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]: Donchian Channels (upper, middle, lower).
+            pd.Series or pd.DataFrame: Donchian Channels (upper, middle, lower).
 
         Notes:
         - The method retrieves historical data based on the specified `period` and calculates Donchian Channels

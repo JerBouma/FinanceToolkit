@@ -125,8 +125,10 @@ def get_aroon_indicator(
 
     The formula is a follows:
 
-    - Periods Since High = (window — 1) — index of the highest high within the window
-      (0 if the current period is the highest high)
+    - Periods Since High = number of periods between the current period and the most recent
+      highest high over the current period plus the previous `window` periods (0 if the
+      current period is itself the highest high, `window` if the oldest period in the
+      lookback is)
     - Aroon Up = ((window — Periods Since High) / window) * 100
     - Aroon Down = ((window — Periods Since Low) / window) * 100, defined analogously using
       the lowest low
@@ -134,6 +136,14 @@ def get_aroon_indicator(
     Also known as: Aroon Up, Aroon Down.
 
     Reference: Chande, T.S. (1995). "The New Technical Trader." Wiley.
+
+    Notes:
+        - The lookback spans `window + 1` bars — the current period plus the previous
+          `window` — which is what TA-Lib's `ta_AROON.c` scans (`trailingIdx = startIdx -
+          optInTimePeriod`, inclusive of `today`). A plain `window`-bar rolling lookback can
+          never return 0 and mis-scales every reading.
+        - Ties are broken on the most recent occurrence of the extreme, so a repeated high
+          resets Aroon Up to 100 rather than leaving it decaying from the first occurrence.
 
     Args:
         prices_high (pd.Series): Series of high prices.
@@ -143,11 +153,14 @@ def get_aroon_indicator(
     Returns:
         pd.DataFrame: Aroon Up and Aroon Down values.
     """
-    periods_since_high = prices_high.rolling(window=window).apply(
-        lambda x: (window - 1) - x.argmax(), raw=True
+    # The lookback spans today plus the previous window bars, so the extreme can be up
+    # to window periods old and the indicator can reach zero. Reversing before taking
+    # the extreme breaks ties on the most recent occurrence, as the definition requires.
+    periods_since_high = prices_high.rolling(window=window + 1).apply(
+        lambda values: window - (len(values) - 1 - values[::-1].argmax()), raw=True
     )
-    periods_since_low = prices_low.rolling(window=window).apply(
-        lambda x: (window - 1) - x.argmin(), raw=True
+    periods_since_low = prices_low.rolling(window=window + 1).apply(
+        lambda values: window - (len(values) - 1 - values[::-1].argmin()), raw=True
     )
 
     aroon_up = ((window - periods_since_high) / window) * 100
@@ -197,8 +210,11 @@ def get_commodity_channel_index(
     typical_prices = (prices_high + prices_low + prices_close) / 3
     sma_typical_prices = typical_prices.rolling(window=window).mean()
 
-    mean_deviation = (
-        (typical_prices - sma_typical_prices).abs().rolling(window=window).mean()
+    # Every point in the window is measured against the current window's mean, rather
+    # than each point against the mean of its own trailing window.
+    mean_deviation = typical_prices.rolling(window=window).apply(
+        lambda window_values: np.abs(window_values - window_values.mean()).mean(),
+        raw=True,
     )
 
     cci_values = (typical_prices - sma_typical_prices) / (constant * mean_deviation)
@@ -350,8 +366,9 @@ def get_ultimate_oscillator(
     sum_true_range_2 = true_range.rolling(window=window_2).sum()
     sum_true_range_3 = true_range.rolling(window=window_3).sum()
 
+    # The true low is the lower of the current low and the previous close.
     buying_pressure = prices_close - pd.concat(
-        [prices_low.shift(1), prices_close.shift(1)], axis=1
+        [prices_low, prices_close.shift(1)], axis=1
     ).min(axis=1)
 
     avg_buying_pressure_1 = buying_pressure.rolling(window=window_1).sum()
@@ -487,11 +504,6 @@ def get_average_directional_index(
     - DX = 100 * |+DI — -DI| / (+DI + -DI)
     - ADX = Wilder's MA(DX, window)
 
-    Note: this implementation uses the simpler classic +DM/-DM definition (each is zero
-    unless it is positive) rather than Wilder's original "only the larger of the two moves
-    counts" refinement; for most price series the two are equivalent since High and Low
-    rarely move against each other within the same period.
-
     Also known as: ADX, Average Directional Index.
 
     Reference: Wilder, J.W. Jr. (1978). "New Concepts in Technical Trading Systems." Trend
@@ -508,8 +520,14 @@ def get_average_directional_index(
     """
     true_range = get_true_range(prices_high, prices_low, prices_close)
 
-    plus_dm = prices_high.diff().apply(lambda x: x if x > 0 else 0)
-    minus_dm = -prices_low.diff().apply(lambda x: x if x < 0 else 0)
+    # Wilder's rule: only the larger of the two moves counts and the other is set to
+    # zero. Counting both on an outside bar inflates each Directional Indicator and
+    # compresses the resulting Directional Index.
+    up_move = prices_high.diff()
+    down_move = -prices_low.diff()
+
+    plus_dm = up_move.where((up_move > down_move) & (up_move > 0), 0.0)
+    minus_dm = down_move.where((down_move > up_move) & (down_move > 0), 0.0)
 
     smoothed_true_range = get_wilder_moving_average(true_range, window)
     smoothed_plus_dm = get_wilder_moving_average(plus_dm, window)
@@ -572,16 +590,51 @@ def get_ichimoku_cloud(
     """
     Calculate the Ichimoku Cloud components for a given price series.
 
+    The Ichimoku Cloud describes trend, support and resistance in one picture by plotting
+    two fast/slow midpoint lines against a shaded band ("the cloud", or Kumo) spanned by two
+    further midpoint lines that are projected forward in time. Each line is a midpoint of a
+    lookback range — the average of the highest high and lowest low over its own window —
+    rather than an average of closing prices, so every line sits in the middle of the range
+    price actually traded over that window.
+
+    The formula is a follows:
+
+    - Conversion Line (Tenkan-sen) = (Max(High, conversion_window) + Min(Low,
+      conversion_window)) / 2
+    - Base Line (Kijun-sen) = (Max(High, base_window) + Min(Low, base_window)) / 2
+    - Leading Span A (Senkou Span A) = (Conversion Line + Base Line) / 2, plotted
+      `base_window` periods ahead
+    - Leading Span B (Senkou Span B) = (Max(High, lead_span_b_window) + Min(Low,
+      lead_span_b_window)) / 2, plotted `base_window` periods ahead
+
+    Also known as: Ichimoku Kinko Hyo, Ichimoku, Kumo cloud.
+
+    Reference: Hosoda, G. (1969). "Ichimoku Kinko Hyo." Published under the pen name Ichimoku
+    Sanjin; the standard English treatment is Elliott, N. (2007). "Ichimoku Charts."
+    Harriman House.
+
+    Notes:
+        - Both leading spans are projected forward by `base_window` (26 by default) periods,
+          not by their own lookback window. Projecting Leading Span B forward by
+          `lead_span_b_window` (52) instead is a common re-implementation error.
+        - Because a span plotted `base_window` periods into the future is, at any given
+          period, derived from data `base_window` periods in the *past*, both leading spans
+          are computable from information available at that period and carry no look-ahead.
+        - The Lagging Span (Chikou Span), the close plotted `base_window` periods into the
+          past, is deliberately not returned: at any period it reports a *future* close and
+          therefore cannot be used without look-ahead bias.
+
     Args:
         prices_high (pd.Series): Series of high prices.
         prices_low (pd.Series): Series of low prices.
-        conversion_window (int): Number of periods for the conversion line.
-        base_window (int): Number of periods for the base line.
-        lead_span_b_window (int): Number of periods for the lead span B.
-        lead_span_b_shift (int): Number of periods to shift lead span B.
+        conversion_window (int): Number of periods for the Conversion Line. Conventionally 9.
+        base_window (int): Number of periods for the Base Line, and the number of periods
+            both leading spans are projected forward by. Conventionally 26.
+        lead_span_b_window (int): Number of periods for Leading Span B. Conventionally 52.
 
     Returns:
-        pd.DataFrame: Ichimoku Cloud components (Conversion Line, Base Line, Lead Span A, Lead Span B).
+        pd.DataFrame: Ichimoku Cloud components (Conversion Line, Base Line, Leading Span A,
+            Leading Span B).
     """
     conversion_line = (
         prices_high.rolling(window=conversion_window).max()

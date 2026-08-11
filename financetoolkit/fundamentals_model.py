@@ -361,12 +361,12 @@ def collect_financial_statements(
 
     if fmp_tickers and yf_tickers:
         logger.info(
-            "The following tickers acquired %s data from FinancialModelingPrep: %s",
+            "Acquired %s data from FinancialModelingPrep for: %s",
             statement,
             ", ".join(fmp_tickers),
         )
         logger.info(
-            "The following tickers acquired %s data from YahooFinance: %s",
+            "Acquired %s data from YahooFinance for: %s",
             statement,
             ", ".join(yf_tickers),
         )

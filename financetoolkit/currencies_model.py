@@ -200,7 +200,10 @@ def convert_currencies(
                         base_currency, quote_currency
                     )
 
-                    rates = exchange_rate_data.loc[periods, currency]
+                    # reindex (not .loc) since older periods can predate the FX pair's own history, e.g. a
+                    # statement stretching back to 1999 when TWDUSD=X only starts in 2004 — those periods
+                    # get NaN rather than raising and dropping the whole ticker from conversion.
+                    rates = exchange_rate_data[currency].reindex(periods)
 
                     if rates.isna().all():
                         # Column exists (placeholder from a partly-failed batch fetch) but no provider published a rate.

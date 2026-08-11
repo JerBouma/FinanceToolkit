@@ -539,11 +539,11 @@ def get_historical_data(
 
     if fmp_tickers and yf_tickers and show_ticker_seperation:
         logger.info(
-            "The following tickers acquired historical data from FinancialModelingPrep: %s",
+            "Acquired historical data from FinancialModelingPrep for: %s",
             ", ".join(fmp_tickers),
         )
         logger.info(
-            "The following tickers acquired historical data from YahooFinance: %s",
+            "Acquired historical data from YahooFinance for: %s",
             ", ".join(yf_tickers),
         )
 

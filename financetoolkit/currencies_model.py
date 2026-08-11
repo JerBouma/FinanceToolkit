@@ -12,6 +12,73 @@ logger = logger_model.get_logger()
 
 # pylint: disable=comparison-with-itself,too-many-locals,protected-access
 
+# A handful of exchanges quote prices in a fractional unit of their currency rather than
+# in the currency itself: the London Stock Exchange quotes in pence (GBp), Johannesburg
+# in cents (ZAc) and Tel Aviv in agorot (ILA). No foreign exchange provider publishes a
+# rate against a fractional unit, so the rate retrieved for such a pair is the rate
+# against the major unit and has to be scaled by the number of minor units it contains.
+# Without that scaling a London listed company's statements end up a factor of 100 away
+# from its own share price, and every ratio that combines the two is wrong by 100.
+MINOR_CURRENCY_UNITS: dict[str, tuple[str, int]] = {
+    "GBp": ("GBP", 100),
+    "ZAc": ("ZAR", 100),  # codespell:ignore zar
+    "ILA": ("ILS", 100),
+}
+
+
+def get_minor_unit_factor(base_currency: str, quote_currency: str) -> float:
+    """
+    Returns the factor an exchange rate has to be multiplied by to express it in the
+    fractional units the quote currency is quoted in.
+
+    An exchange rate is only ever published between major units, so converting USD
+    reported statements onto a price quoted in pence needs the USD/GBP rate multiplied
+    by the 100 pence in a pound.
+
+    Args:
+        base_currency (str): the currency the value being converted is expressed in.
+        quote_currency (str): the currency the value is being converted to.
+
+    Returns:
+        float: the factor to multiply the exchange rate by. 1.0 when neither side of
+        the pair is quoted in a fractional unit.
+    """
+    base_factor = MINOR_CURRENCY_UNITS.get(base_currency, ("", 1))[1]
+    quote_factor = MINOR_CURRENCY_UNITS.get(quote_currency, ("", 1))[1]
+
+    return quote_factor / base_factor
+
+
+def get_major_currency(currency: str) -> str:
+    """
+    Maps a currency code onto the major unit it belongs to, so that GBp resolves to GBP.
+    Exchange rates only exist between major units, so this is the code an exchange rate
+    can actually be requested for.
+
+    Args:
+        currency (str): the currency code, possibly a fractional unit such as GBp.
+
+    Returns:
+        str: the major unit currency code.
+    """
+    return MINOR_CURRENCY_UNITS.get(currency, (currency, 1))[0]
+
+
+def is_same_currency(base_currency: str, quote_currency: str) -> bool:
+    """
+    Reports whether two currency codes describe the same currency in the same unit,
+    so that no conversion is needed at all. GBP and GBp are the same currency but not
+    the same unit, so they are not the same for this purpose.
+
+    Args:
+        base_currency (str): the first currency code.
+        quote_currency (str): the second currency code.
+
+    Returns:
+        bool: whether the two codes are the same currency in the same unit.
+    """
+    return base_currency == quote_currency
+
 
 def determine_currencies(
     statement_currencies: pd.DataFrame, historical_currencies: pd.DataFrame
@@ -74,6 +141,8 @@ def convert_currencies(
         financial_statement_currencies (pd.Series): A Series containing the currency symbols per ticker.
         exchange_rate_data (pd.DataFrame): A DataFrame containing the exchange rate data.
         items_not_to_adjust (list[str]): A list containing the items that should not be adjusted. Defaults to None.
+        financial_statement_name (str | None): The name of the statement being converted, used in the log
+            message that reports which tickers were converted. Defaults to None.
 
     Returns:
         pd.DataFrame: A DataFrame containing the converted financial statement data.
@@ -95,9 +164,15 @@ def convert_currencies(
             if currency == currency:  # noqa
                 base_currency, quote_currency = currency[:3], currency[3:6]
 
-                if base_currency != quote_currency:
+                if not is_same_currency(base_currency, quote_currency):
                     if currency not in currencies:
                         currencies[currency] = []
+
+                    # The retrieved rate is between major units even when the price is
+                    # quoted in a fractional one, so it is scaled onto that unit here.
+                    minor_unit_factor = get_minor_unit_factor(
+                        base_currency, quote_currency
+                    )
 
                     if items_not_to_adjust is not None:
                         items_to_adjust = [
@@ -114,7 +189,9 @@ def convert_currencies(
 
                     financial_statement_data.loc[(ticker, items_to_adjust), :] = (
                         financial_statement_data.loc[(ticker, items_to_adjust), :].mul(
-                            exchange_rate_data.loc[periods, currency], axis=1
+                            exchange_rate_data.loc[periods, currency]
+                            * minor_unit_factor,
+                            axis=1,
                         )
                     ).to_numpy()
 
@@ -137,7 +214,7 @@ def convert_currencies(
     for currency, ticker_match in currencies.items():
         base_currency, quote_currency = currency[:3], currency[3:6]
 
-        if base_currency != quote_currency:
+        if not is_same_currency(base_currency, quote_currency):
             for ticker in ticker_match:
                 currencies_text.append(
                     f"{ticker} ({base_currency} to {quote_currency})"

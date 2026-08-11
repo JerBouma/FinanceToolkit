@@ -47,7 +47,8 @@ def initialize_statements_and_normalization(
 
     Returns:
         tuple: A tuple containing the processed statements (balance, income, cash, statistics)
-               and the loaded normalization formats.
+               and the loaded normalization formats, for FinancialModelingPrep and for
+               Yahoo Finance, including the statistics format of both sources.
     """
     norm_file_names = [
         "balance",
@@ -57,6 +58,7 @@ def initialize_statements_and_normalization(
         "cash",
         "cash_yf",
         "statistics",
+        "statistics_yf",
     ]
     norm_formats = {
         name: read_normalization_file(name, format_location) for name in norm_file_names
@@ -68,6 +70,7 @@ def initialize_statements_and_normalization(
     fmp_cash_flow_statement_generic = norm_formats["cash"]
     yf_cash_flow_statement_generic = norm_formats["cash_yf"]
     fmp_statistics_statement_generic = norm_formats["statistics"]
+    yf_statistics_statement_generic = norm_formats["statistics_yf"]
 
     def _process_statement(
         statement_df: pd.DataFrame,
@@ -136,6 +139,7 @@ def initialize_statements_and_normalization(
         fmp_cash_flow_statement_generic,
         yf_cash_flow_statement_generic,
         fmp_statistics_statement_generic,
+        yf_statistics_statement_generic,
     )
 
 
@@ -173,9 +177,16 @@ def read_normalization_file(statement: str, format_location: str = ""):
         )
 
     try:
-        return pd.read_csv(file_location, index_col=[0]).iloc[:, 0]
+        normalization = pd.read_csv(file_location, index_col=[0]).iloc[:, 0]
     except FileNotFoundError:
         return pd.Series()
+
+    # Stray whitespace around a normalized name makes the same concept resolve to two
+    # different labels depending on which source served the ticker, so every lookup on
+    # that name silently misses for one of them.
+    normalization.index = normalization.index.astype(str).str.strip()
+
+    return normalization.astype(str).str.strip()
 
 
 def convert_financial_statements(
@@ -190,9 +201,15 @@ def convert_financial_statements(
 
     Args:
         financial_statements (pd.DataFrame): DataFrame containing the financial statement data.
-        format (pd.DataFrame): Optional DataFrame containing the names of the financial statement line items to include
-                            in the output. Rows should contain the original name of the line item, and columns should
-                            contain the desired name for that line item.
+        statement_format (pd.DataFrame): Optional DataFrame containing the names of the financial statement line
+                            items to include in the output. Rows should contain the original name of the line item,
+                            and columns should contain the desired name for that line item.
+        adjust_financial_statements (bool): Whether to add every line item in the format that the provider did not
+                            return, filled with NaN, so that every ticker has the same rows. Defaults to True.
+                            Changed in v2.2.0: these were previously filled with zero, which made an item the
+                            provider never reported indistinguishable from one it reported as genuinely zero.
+        reverse_dates (bool): Whether to reverse the order of the columns so the oldest period comes first.
+                            Defaults to False.
 
     Returns:
         pd.DataFrame: A DataFrame containing the financial statement data. If only one ticker is provided, the
@@ -204,21 +221,43 @@ def convert_financial_statements(
         # If not format is provided, simply use the original financial statements
         return financial_statements
 
+    # Compared without surrounding whitespace so that statements normalized by an older
+    # version, which had stray spaces in a handful of names, are still recognised as
+    # already normalized instead of being dropped.
+    normalized_names = {str(value).strip() for value in statement_format.to_numpy()}
+
+    unmapped_names = []
+
     for name in financial_statements.index.unique(level=1):
         try:
-            if name in statement_format.to_numpy():
-                naming[name] = name
+            if str(name).strip() in normalized_names:
+                naming[name] = str(name).strip()
             else:
                 naming[name] = statement_format.loc[name]
         except KeyError:
+            # A line item the provider returned that no normalization file names. It is
+            # dropped from the output, so it is reported rather than disappearing.
+            unmapped_names.append(str(name))
             continue
 
+    if unmapped_names:
+        logger.debug(
+            "The following line items were returned by the data provider but are not "
+            "present in the normalization format, so they are not included in the "
+            "output: %s",
+            ", ".join(sorted(unmapped_names)),
+        )
+
     if adjust_financial_statements:
-        # Add missing columns if applicable. Fill these with NaN.
+        # Add the line items the provider did not return, so that every ticker exposes
+        # the same rows. These are filled with NaN rather than zero: the provider not
+        # reporting an item says nothing about its value, and a fabricated zero is
+        # indistinguishable from a genuine zero while silently flowing into any ratio
+        # that uses it as a term or a denominator.
         for name in statement_format.index:
             for ticker in financial_statements.index.unique(level=0):
                 if name not in financial_statements.loc[ticker].index:
-                    financial_statements.loc[(ticker, name), :] = 0
+                    financial_statements.loc[(ticker, name), :] = np.nan
 
         # All columns are present now, so the original statement format can be reused.
         naming = statement_format
@@ -248,7 +287,7 @@ def convert_date_label(
     with a frequency of 'Q' which would convert 2022-12-31 to 2022Q4.
 
     Args:
-        financial_statements (pd.DataFrame): DataFrame containing the financial statement data.
+        financial_statement (pd.DataFrame): DataFrame containing the financial statement data.
         start_date (str): The start date of the financial statement data.
         end_date (str): The end date of the financial statement data.
         quarter (bool): Whether to convert the date labels to a PeriodIndex with a frequency of 'Q' or 'Y'.

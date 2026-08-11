@@ -3,7 +3,7 @@ cashAndCashEquivalents,Cash and Cash Equivalents
 shortTermInvestments,Short Term Investments
 cashAndShortTermInvestments,Cash and Short Term Investments
 accountsReceivables,Accounts Receivable
-otherReceivables, Other Receivables
+otherReceivables,Other Receivables
 netReceivables,Net Receivables
 inventory,Inventory
 prepaids,Prepaids
@@ -29,7 +29,7 @@ taxPayables,Tax Payables
 deferredRevenue,Deferred Revenue
 otherCurrentLiabilities,Other Current Liabilities
 totalCurrentLiabilities,Total Current Liabilities
-capitalLeaseObligationsNonCurrent, Capital Lease Obligations Non Current
+capitalLeaseObligationsNonCurrent,Capital Lease Obligations Non Current
 longTermDebt,Long Term Debt
 deferredRevenueNonCurrent,Deferred Revenue Non Current
 deferredTaxLiabilitiesNonCurrent,Deferred Tax Liabilities
@@ -41,15 +41,14 @@ totalDebt,Total Debt
 netDebt,Net Debt
 totalInvestments,Total Investments
 totalLiabilities,Total Liabilities
-treasuryStock, Treasury Stock
+treasuryStock,Treasury Stock
 preferredStock,Preferred Stock
 commonStock,Common Stock
 retainedEarnings,Retained Earnings
 additionalPaidInCapital,Additional Paid In Capital
 accumulatedOtherComprehensiveIncomeLoss,Accumulated Other Comprehensive Income
-othertotalStockholdersEquity,Other Total Shareholder Equity
+otherTotalStockholdersEquity,Other Total Shareholder Equity
 totalStockholdersEquity,Total Shareholder Equity
 totalEquity,Total Equity
 minorityInterest,Minority Interest
-totalLiabilitiesAndStockholdersEquity,Total Liabilities and Shareholder Equity
 totalLiabilitiesAndTotalEquity,Total Liabilities and Equity

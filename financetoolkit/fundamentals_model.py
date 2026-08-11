@@ -12,6 +12,7 @@ from financetoolkit import fmp_model, normalization_model, yfinance_model
 from financetoolkit.cache import policy_model
 from financetoolkit.cache.cache_controller import Cache
 from financetoolkit.utilities import error_model, logger_model
+from financetoolkit.utilities.statistics_model import apply_rounding
 
 # Check if yfinance is installed
 yf_spec = importlib.util.find_spec("yfinance")
@@ -35,6 +36,7 @@ def collect_financial_statements(
     fmp_statistics_format: pd.DataFrame = pd.DataFrame(),
     fiscal_year_adjustments: dict | None = None,
     yf_statement_format: pd.DataFrame = pd.DataFrame(),
+    yf_statistics_format: pd.DataFrame = pd.DataFrame(),
     sleep_timer: bool = True,
     user_subscription: str = "Free",
     enforce_source: str | None = None,
@@ -52,6 +54,9 @@ def collect_financial_statements(
         start_date (str | None): The start date to filter data with (YYYY-MM-DD). Defaults to None.
         end_date (str | None): The end date to filter data with (YYYY-MM-DD). Defaults to None.
         rounding (int | None): The number of decimals to round the final financial statement data to. Defaults to 4.
+        fiscal_year_adjustments (dict | None): A registry that collects every reporting period whose
+                                               calendar label differs from its fiscal label, keyed by
+                                               ticker. Defaults to None.
         fmp_statement_format (pd.DataFrame): Optional DataFrame defining the desired format for FMP statement data.
                                              Defaults to an empty DataFrame.
         fmp_statistics_format (pd.DataFrame): Optional DataFrame defining the desired format for FMP
@@ -61,8 +66,9 @@ def collect_financial_statements(
                                             Finance statement data.
                                             Defaults to an empty DataFrame.
         yf_statistics_format (pd.DataFrame): Optional DataFrame defining the desired format for Yahoo Finance
-                                            statistics data.
-                                             Defaults to an empty DataFrame.
+                                            statistics data. Yahoo Finance only supplies the reporting currency,
+                                            which is what the currency conversion needs.
+                                            Defaults to an empty DataFrame.
         sleep_timer (bool): Whether to pause execution temporarily if the FMP API rate limit is reached. Defaults to True.
         user_subscription (str): The FMP subscription plan ("Free", "Starter", etc.). Defaults to "Free".
         enforce_source (str): Specifies the data source to use ("FinancialModelingPrep" or "YahooFinance").
@@ -272,12 +278,22 @@ def collect_financial_statements(
     fmp_financial_statements_total = pd.DataFrame()
     yf_financial_statements_total = pd.DataFrame()
     fmp_financial_statement_statistics = pd.DataFrame()
+    yf_financial_statement_statistics = pd.DataFrame()
 
     for source, _ in financial_statement_dict.items():
         financial_statement_dict[source] = error_model.check_for_error_messages(
             dataset_dictionary=financial_statement_dict[source],
             user_subscription=user_subscription,
         )
+
+        # A ticker that returned nothing at all leaves an empty frame behind. Keeping it
+        # makes the concatenation produce a frame without the (ticker, item) index every
+        # step below assumes, which turned an invalid ticker into a raw KeyError.
+        financial_statement_dict[source] = {
+            ticker: statement
+            for ticker, statement in financial_statement_dict[source].items()
+            if not statement.empty
+        }
 
         if source == "FinancialModelingPrep" and financial_statement_dict[source]:
             fmp_financial_statements = pd.concat(
@@ -300,6 +316,21 @@ def collect_financial_statements(
                 )
             )
         elif source == "YahooFinance" and financial_statement_dict[source]:
+            # Built before the statements are normalized, since the statistics are keyed
+            # by the same periods the raw statement is keyed by.
+            yf_statistics_per_ticker = {
+                ticker: yfinance_model.get_statistics_statement(
+                    ticker=ticker, periods=statement.columns
+                )
+                for ticker, statement in financial_statement_dict[source].items()
+                if not statement.empty
+            }
+            yf_statistics_per_ticker = {
+                ticker: statistics
+                for ticker, statistics in yf_statistics_per_ticker.items()
+                if not statistics.empty
+            }
+
             yf_financial_statements = pd.concat(
                 financial_statement_dict[source], axis=0
             )
@@ -315,6 +346,18 @@ def collect_financial_statements(
                 if not yf_financial_statements.empty
                 else pd.DataFrame()
             )
+
+            if yf_statistics_per_ticker and not yf_statistics_format.empty:
+                yf_financial_statement_statistics = (
+                    normalization_model.convert_financial_statements(
+                        financial_statements=pd.concat(
+                            yf_statistics_per_ticker, axis=0
+                        ),
+                        statement_format=yf_statistics_format,
+                        adjust_financial_statements=False,
+                        reverse_dates=True,
+                    )
+                )
 
     if fmp_tickers and yf_tickers:
         logger.info(
@@ -354,7 +397,26 @@ def collect_financial_statements(
         [fmp_financial_statements_total, yf_financial_statements_total], axis=0
     )
 
-    financial_statement_statistics = fmp_financial_statement_statistics
+    # Both sources contribute the reporting currency, so a Toolkit that fell back to
+    # Yahoo Finance for part of its tickers still knows the currency of all of them.
+    financial_statement_statistics = (
+        pd.concat(
+            [
+                statistics
+                for statistics in (
+                    fmp_financial_statement_statistics,
+                    yf_financial_statement_statistics,
+                )
+                if not statistics.empty
+            ],
+            axis=0,
+        )
+        if not (
+            fmp_financial_statement_statistics.empty
+            and yf_financial_statement_statistics.empty
+        )
+        else pd.DataFrame()
+    )
 
     try:
         financial_statement_total = financial_statement_total.astype(np.float64)
@@ -393,8 +455,9 @@ def collect_financial_statements(
     # Columns with no data over the entire period are dropped automatically.
     financial_statement_total = financial_statement_total.dropna(axis=1, how="all")
 
-    # Round the financial statement total if rounding is specified
-    financial_statement_total = financial_statement_total.round(rounding)
+    # Round the financial statement total if rounding is specified. rounding=None is
+    # documented as no rounding at all, and DataFrame.round(None) raises a TypeError.
+    financial_statement_total = apply_rounding(financial_statement_total, rounding)
 
     return (
         financial_statement_total,

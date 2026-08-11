@@ -19,6 +19,10 @@ from financetoolkit.utilities.requests_model import get_request
 
 logger = logger_model.get_logger()
 
+# The reporting currency of a company changes almost never, so it is resolved once per
+# ticker per process rather than on every statement request.
+REPORTED_CURRENCY_CACHE: dict[str, str] = {}
+
 
 def get_financial_statement(
     ticker: str,
@@ -37,6 +41,12 @@ def get_financial_statement(
                          Must be one of 'balance', 'income', or 'cashflow'.
         quarter (bool, optional): If True, retrieves quarterly data.
                                   If False, retrieves yearly data. Defaults to False.
+        fallback (bool, optional): Whether this call follows an unsuccessful attempt at
+                                   FinancialModelingPrep, which changes the error reported.
+                                   Defaults to False.
+        fiscal_year_adjustments (dict | None, optional): A registry that collects every reporting
+                                   period whose calendar label differs from its fiscal label,
+                                   keyed by ticker. Defaults to None.
 
     Returns:
         pd.DataFrame: A pandas DataFrame containing the requested financial statement.
@@ -95,28 +105,15 @@ def get_financial_statement(
         )
         return pd.DataFrame(columns=[error_code])
 
-    # yfinance returns dates as columns and items as rows; convert to periods.
-    if quarter:
-        financial_statement.columns = pd.PeriodIndex(
-            financial_statement.columns, freq="Q"
-        )
-    else:
-        # A fiscal year ending in Jan-May mostly falls in the prior calendar year.
-        col_dates = pd.DatetimeIndex(financial_statement.columns)
-        end_month = col_dates.month
-        end_year = col_dates.year
-        calendar_year = end_year - (end_month < 6).astype(int)  # noqa
-
-        shifted_mask = end_month < 6.0  # noqa
-        if shifted_mask.any() and fiscal_year_adjustments is not None:
-            fiscal_year_adjustments[ticker] = [
-                {"fiscal_year": int(fy), "calendar_year": int(cy)}
-                for fy, cy in zip(end_year[shifted_mask], calendar_year[shifted_mask])
-            ]
-
-        financial_statement.columns = pd.PeriodIndex(
-            calendar_year.astype(str), freq="Y"
-        )
+    # yfinance returns dates as columns and items as rows; convert to periods. A fiscal
+    # period is labelled with the calendar period holding most of it, at both
+    # frequencies and identically to the FinancialModelingPrep path.
+    financial_statement.columns = helpers.convert_period_end_dates_to_calendar_periods(
+        period_end_dates=pd.DatetimeIndex(financial_statement.columns),
+        quarter=quarter,
+        ticker=ticker,
+        fiscal_year_adjustments=fiscal_year_adjustments,
+    )
 
     if financial_statement.columns.duplicated().any():
         financial_statement = financial_statement.loc[
@@ -128,6 +125,114 @@ def get_financial_statement(
         financial_statement = financial_statement.infer_objects(copy=False).fillna(0)
 
     return financial_statement
+
+
+def get_statistics_statement(
+    ticker: str,
+    periods: pd.Index,
+) -> pd.DataFrame:
+    """
+    Builds the statistics statement for a Yahoo Finance sourced ticker, mirroring the
+    statistics that FinancialModelingPrep returns alongside its financial statements.
+
+    The only statistic Yahoo Finance publishes that the Toolkit depends on is the
+    currency the financial statements are reported in, exposed as ``financialCurrency``
+    on the quote summary. Without it a Yahoo sourced ticker has no `Reported Currency`,
+    which is what the currency conversion compares against the currency the instrument
+    trades in, so those tickers were never converted at all and their statements were
+    left in a different currency from their own price history.
+
+    The reporting currency is a property of the company rather than of a period, so the
+    same value is repeated across every period, matching the shape FinancialModelingPrep
+    returns.
+
+    Args:
+        ticker (str): the ticker to retrieve the statistics for.
+        periods (pd.Index): the reporting periods to report the statistics against,
+            normally the columns of the financial statement of the same ticker.
+
+    Returns:
+        pd.DataFrame: A DataFrame with the Yahoo Finance statistics names as index and
+        the given periods as columns. Empty when Yahoo Finance does not report a
+        reporting currency for the ticker.
+    """
+    reported_currency = get_reported_currency(ticker)
+
+    if not reported_currency or len(periods) == 0:
+        return pd.DataFrame()
+
+    return pd.DataFrame(
+        [[reported_currency] * len(periods)],
+        index=["financialCurrency"],
+        columns=periods,
+    )
+
+
+def get_reported_currency(ticker: str) -> str:
+    """
+    Retrieves the currency a company reports its financial statements in from Yahoo
+    Finance. This is not necessarily the currency the instrument trades in: Shell
+    reports in USD while its London listing trades in GBp, and comparing a statement to
+    a price without accounting for that compares two different currencies.
+
+    The reporting currency only changes when a company changes its reporting currency,
+    so it is cached per ticker both in memory and in the incremental cache.
+
+    Args:
+        ticker (str): the ticker to retrieve the reporting currency for.
+
+    Returns:
+        str: The ISO currency code the statements are reported in, or an empty string
+        when Yahoo Finance does not report one.
+    """
+    if ticker in REPORTED_CURRENCY_CACHE:
+        return REPORTED_CURRENCY_CACHE[ticker]
+
+    cache = get_active_cache()
+
+    if cache is not None:
+        cached_currency = cache.get(
+            source=policy_model.YAHOO_FINANCE,
+            dataset="reported_currency",
+            entity=ticker,
+        )
+
+        if cached_currency is not None:
+            REPORTED_CURRENCY_CACHE[ticker] = cached_currency
+            return cached_currency
+
+    try:
+        information = yf.Ticker(ticker).get_info() or {}
+    except (
+        HTTPError,
+        URLError,
+        RemoteDisconnected,
+        IndexError,
+        AttributeError,
+        KeyError,
+        TypeError,
+        ValueError,
+        yf.exceptions.YFRateLimitError,
+    ):
+        return ""
+
+    # financialCurrency is the statement currency. currency is the trading currency and
+    # is only a fallback, since for most listings the two are in fact the same.
+    reported_currency = str(
+        information.get("financialCurrency") or information.get("currency") or ""
+    )
+
+    REPORTED_CURRENCY_CACHE[ticker] = reported_currency
+
+    if cache is not None and reported_currency:
+        cache.set(
+            source=policy_model.YAHOO_FINANCE,
+            dataset="reported_currency",
+            entity=ticker,
+            data=reported_currency,
+        )
+
+    return reported_currency
 
 
 def get_historical_data(
@@ -144,7 +249,7 @@ def get_historical_data(
     If start and/or end date are not provided, it defaults to 10 years from the current date.
 
     Args:
-        tickers (list of str): A list of one or more ticker symbols to retrieve data for.
+        ticker (str): The ticker symbol to retrieve data for.
         start (str, optional): A string representing the start date of the period to retrieve data for
             in 'YYYY-MM-DD' format. Defaults to None.
         end (str, optional): A string representing the end date of the period to retrieve data for
@@ -152,6 +257,8 @@ def get_historical_data(
         interval (str, optional): A string representing the interval to retrieve data for.
         return_column (str, optional): A string representing the column to use for return calculations.
         divide_ohlc_by (int or float, optional): A number to divide the OHLC data by. Defaults to None.
+        fallback (bool, optional): Whether this call follows an unsuccessful attempt at
+            FinancialModelingPrep, which changes the error reported. Defaults to False.
 
     Raises:
         ValueError: If the start date is after the end date.
@@ -186,14 +293,27 @@ def get_historical_data(
     if interval in ["yearly", "quarterly"]:
         interval = "1d"
 
+    # The widened window is what is actually requested, matching the FinancialModelingPrep
+    # path. Fetching only the requested window would leave the first return in range NaN
+    # because it has no preceding close to compare against.
+    start_date_string = start_date.strftime("%Y-%m-%d")
+    end_date_string = end_date.strftime("%Y-%m-%d")
+
     try:
 
+        # auto_adjust=False keeps Open, High, Low and Close on the unadjusted (but
+        # split adjusted) basis and returns the dividend adjusted series separately as
+        # Adj Close, which is exactly what the FinancialModelingPrep path produces.
+        # With auto_adjust=True every OHLC column comes back dividend adjusted, so the
+        # same ticker priced through Yahoo and through FinancialModelingPrep disagreed
+        # on Close by the whole dividend history (1.8% median for AAPL over 2022-2023),
+        # and every indicator reading Close silently changed meaning with the provider.
         historical_data = yf.Ticker(ticker).history(
-            start=start,
-            end=end,
+            start=start_date_string,
+            end=end_date_string,
             interval=interval,
             actions=True,
-            auto_adjust=True,
+            auto_adjust=False,
             repair=True,
         )
 
@@ -208,7 +328,7 @@ def get_historical_data(
     except (HTTPError, URLError, RemoteDisconnected, IndexError):
         return pd.DataFrame()
     except yf.exceptions.YFRateLimitError:
-        error_code = "YFINANCE RATE LIMIT REACHED" + " FALLBACK" if fallback else ""
+        error_code = "YFINANCE RATE LIMIT REACHED" + (" FALLBACK" if fallback else "")
         return pd.DataFrame(columns=[error_code])
 
     if not historical_data.empty and historical_data.loc[start:end].empty:

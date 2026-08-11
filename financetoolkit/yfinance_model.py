@@ -301,20 +301,17 @@ def get_historical_data(
 
     try:
 
-        # auto_adjust=False keeps Open, High, Low and Close on the unadjusted (but
-        # split adjusted) basis and returns the dividend adjusted series separately as
-        # Adj Close, which is exactly what the FinancialModelingPrep path produces.
-        # With auto_adjust=True every OHLC column comes back dividend adjusted, so the
-        # same ticker priced through Yahoo and through FinancialModelingPrep disagreed
-        # on Close by the whole dividend history (1.8% median for AAPL over 2022-2023),
-        # and every indicator reading Close silently changed meaning with the provider.
+        # auto_adjust=False matches FMP; True made Close disagree by the dividend history (1.8% median, AAPL 2022-2023).
+        # yfinance's split-repair misfires on synthetic instruments (^IRX 100x, CL=F 10,000x after oil went negative).
+        repair_splits = not (ticker.startswith("^") or "=" in ticker)
+
         historical_data = yf.Ticker(ticker).history(
             start=start_date_string,
             end=end_date_string,
             interval=interval,
             actions=True,
             auto_adjust=False,
-            repair=True,
+            repair=repair_splits,
         )
 
         # Columns can occasionally be duplicated, so they are checked and dropped.

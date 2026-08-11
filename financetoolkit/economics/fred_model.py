@@ -187,11 +187,20 @@ def get_commercial_real_estate_prices(
 
     Returns:
         pd.DataFrame: A single-column ("United States") DataFrame of quarterly commercial
-            real estate prices expressed as a year-over-year percent change (5.0 for 5%),
-            not seasonally adjusted. FRED publishes this series only as that percent
-            change, not as an index level.
+            real estate prices expressed as a year-over-year percent change, as a decimal
+            fraction (0.05 for 5%), not seasonally adjusted. FRED publishes this series
+            only as that percent change, not as an index level.
+
+    Notes:
+        FRED publishes this series in percentage points (5.0 for 5%); it is divided by
+        100 here so that every rate the Finance Toolkit returns is a decimal fraction.
     """
-    return _get_fred_series("COMREPUSQ159N", start_date, end_date, api_key)
+    commercial_real_estate_prices = _get_fred_series(
+        "COMREPUSQ159N", start_date, end_date, api_key
+    )
+
+    # FRED quotes this series in percentage points, so divide by 100 for the decimal.
+    return commercial_real_estate_prices / 100
 
 
 REAL_YIELD_SERIES: dict[str, str] = {

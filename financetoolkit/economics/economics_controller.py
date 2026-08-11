@@ -6570,7 +6570,7 @@ class Economics:
         Returns:
             pd.DataFrame: A single-column ("United States") DataFrame of the
             quarterly Commercial Real Estate Price Index, as a year-over-year
-            percent change.
+            percent change expressed as a decimal fraction.
 
         As an example:
 
@@ -6585,12 +6585,12 @@ class Economics:
         Which returns:
 
         | Date       |   United States |
-        |:-----------|-----------------:|
-        | 2024-04-01 |         -10.6651 |
-        | 2024-07-01 |         -10.5779 |
-        | 2024-10-01 |          -2.7294 |
-        | 2025-01-01 |          -3.0080 |
-        | 2025-04-01 |          -7.0128 |
+        |:-----------|----------------:|
+        | 2024-04-01 |         -0.1067 |
+        | 2024-07-01 |         -0.1058 |
+        | 2024-10-01 |         -0.0273 |
+        | 2025-01-01 |         -0.0301 |
+        | 2025-04-01 |         -0.0701 |
         """
         self._require_fred_api_key()
 

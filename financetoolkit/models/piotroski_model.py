@@ -124,12 +124,12 @@ def get_accruals_criteria(
     total_assets: float | pd.Series | pd.DataFrame,
 ) -> float | pd.Series | pd.DataFrame:
     """
-    Calculates the accruals criteria for a company based on its net income, total assets, and operating cashflow.
+    Calculates the accruals criteria (F_ACCRUAL) for the Piotroski F-Score model.
 
-    The accruals criteria is a financial metric used to measure a company's earnings quality. It represents the
-    difference between a company's operating cashflow and its return on assets. A positive accruals criteria indicates
-    that a company's earnings are of higher quality, while a negative accruals criteria indicates that a company's
-    earnings are of lower quality.
+    The accruals criteria is a financial metric used to measure a company's earnings quality. It compares
+    the cash a company actually generated from operations against the profit it reported, both scaled by
+    the same asset base. It scores 1 when operating cash flow exceeds the return on assets, i.e. when
+    accruals are negative and reported earnings are backed by cash, and 0 otherwise.
 
     The formula is as follows:
 
@@ -137,12 +137,22 @@ def get_accruals_criteria(
 
     Args:
         net_income (float | pd.Series | pd.DataFrame): The net income of the company.
-        average_total_assets (float | pd.Series | pd.DataFrame): The average total assets of the company.
+        average_total_assets (float | pd.Series | pd.DataFrame): The average total assets of the company,
+        used as the denominator of the Return on Assets.
         operating_cashflow (float | pd.Series | pd.DataFrame): The operating cashflow of the company.
-        total_assets (float | pd.Series | pd.DataFrame): The total assets of the company.
+        total_assets (float | pd.Series | pd.DataFrame): The total assets of the company, used as the
+        denominator of the operating cashflow. This must be the *same* asset base as
+        average_total_assets: Piotroski (2000) scales both Return on Assets and Cash Flow from Operations
+        by the same total assets figure, which is what makes the comparison reduce to the sign of
+        accruals. Passing a different asset base for each (e.g. an averaged one for the Return on Assets
+        and a point-in-time one here) biases the signal by the growth rate of the balance sheet.
 
     Returns:
         float | pd.Series | pd.DataFrame: The accruals criteria for the company.
+
+    References:
+    - Piotroski, Joseph D. "Value Investing: The Use of Historical Financial Statement Information to
+    Separate Winners from Losers." Journal of Accounting Research, Vol. 38, Supplement, 2000, pp. 1-41.
     """
 
     return_on_assets = profitability_model.get_return_on_assets(
@@ -157,36 +167,44 @@ def get_accruals_criteria(
 
 
 def get_change_in_leverage_criteria(
-    total_debt: float | pd.Series | pd.DataFrame,
-    total_assets: float | pd.Series | pd.DataFrame,
+    long_term_debt: float | pd.Series | pd.DataFrame,
+    average_total_assets: float | pd.Series | pd.DataFrame,
 ) -> float | pd.Series | pd.DataFrame:
     """
-    Calculate the criteria for evaluating changes in leverage by comparing the Debt to Assets Ratio over time.
+    Calculate the change in leverage criteria (F_dLEVER) for the Piotroski F-Score model.
 
-    The Debt to Assets Ratio is a financial metric used to assess a company's solvency and leverage. It measures the
-    proportion of a company's total assets that are financed by debt.
+    Piotroski (2000) defines dLEVER as the change in the ratio of total *long-term* debt to *average*
+    total assets, and treats an increase in long-term leverage as a negative signal: a firm raising
+    long-term debt is signalling that it cannot fund itself internally, and it tightens the constraints
+    imposed by its debt covenants. Short-term debt is deliberately excluded, since it reflects working
+    capital management rather than a change in the firm's long-term capital structure.
 
     The formula is as follows:
 
-        - Debt to Assets Ratio = Total Debt / Total Assets
+        - Leverage Ratio = Long Term Debt / Average Total Assets
+        - Change in Leverage Criteria = Leverage Ratio (t) < Leverage Ratio (t-1)
 
     Args:
-        total_debt (float | pd.Series | pd.DataFrame): The total debt of a company, which can
-        be a float or a time-series.
-        total_assets (float | pd.Series | pd.DataFrame): The total assets of a company, which can
-        be a float or a time-series.
+        long_term_debt (float | pd.Series | pd.DataFrame): The total long term debt of a company, which
+        can be a float or a time-series.
+        average_total_assets (float | pd.Series | pd.DataFrame): The average total assets of a company
+        over the beginning and the end of the period, which can be a float or a time-series.
 
     Returns:
-        float | pd.Series | pd.DataFrame: A boolean criteria indicating whether the Debt to Assets
-        Ratio decreased compared to the previous period (True for decrease, False for increase or no change).
+        float | pd.Series | pd.DataFrame: A boolean criteria indicating whether the leverage ratio
+        decreased compared to the previous period (True for decrease, False for increase or no change).
 
     Notes:
-    - A True value in the criteria indicates a decrease in leverage, while a False value suggests an
-    increase or no change.
+    - A True value in the criteria indicates a decrease in long-term leverage (the favourable signal,
+    scoring 1), while a False value suggests an increase or no change.
     - This function can be used to monitor changes in a company's leverage over time.
+
+    References:
+    - Piotroski, Joseph D. "Value Investing: The Use of Historical Financial Statement Information to
+    Separate Winners from Losers." Journal of Accounting Research, Vol. 38, Supplement, 2000, pp. 1-41.
     """
     debt_ratio = solvency_model.get_debt_to_assets_ratio(
-        total_debt=total_debt, total_assets=total_assets
+        total_debt=long_term_debt, total_assets=average_total_assets
     )
 
     debt_ratio_criteria = debt_ratio < debt_ratio.shift(1, axis=1)
@@ -237,25 +255,33 @@ def get_number_of_shares_criteria(
     common_stock_issued: pd.Series | pd.DataFrame,
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate criteria for evaluating the number of common shares issued by a company.
+    Calculate the equity issuance (EQ_OFFER) criteria for the Piotroski F-Score model.
 
-    This function assesses whether a company has issued common stock. It's a key indicator of
-    the company's ownership structure and financing activities.
+    Piotroski (2000) treats raising external equity as an unfavourable signal: a financially
+    healthy firm funds itself internally, so a firm tapping the equity market is signalling that
+    it cannot generate enough internal funds to service its future obligations. The signal is
+    therefore defined the "good news" way round — it scores 1 when the firm did *not* issue
+    common equity in the period, and 0 when it did.
+
+    The formula is as follows:
+
+        - Number of Shares Criteria = Common Stock Issued == 0
 
     Args:
-        common_stock_issued (pd.Series | pd.DataFrame): A time-series or DataFrame representing the
-        number of common shares issued by a company.
+        common_stock_issued (pd.Series | pd.DataFrame): The proceeds from common stock issued by
+        the company during the period, as a time-series.
 
     Returns:
-        pd.Series | pd.DataFrame: A boolean criteria indicating whether the company issued any
-        common shares during the specified time period (True for issued shares, False
-        for no shares issued).
+        pd.Series | pd.DataFrame: A boolean criteria that is True when the company issued no
+        common stock during the period (the favourable case, scoring 1) and False when it did
+        issue common stock (scoring 0).
 
     Notes:
-    - A True value in the criteria indicates that common shares were issued, while a False value suggests
-    no issuance of common shares.
-    - This function can be used to monitor changes in the company's ownership structure and
-    financing activities.
+    - A True value in the criteria indicates that no common shares were issued, which is the
+    favourable signal in the F-Score; a False value indicates that common shares were issued.
+    - As noted in `get_piotroski_score`, routine annual equity issuance is normal in some sectors
+    (e.g. through stock-based compensation programmes), so this signal is only meaningful when
+    comparing companies within the same sector.
     """
     number_of_shares_criteria = common_stock_issued == 0
 
@@ -357,7 +383,7 @@ def get_piotroski_score(
         - Accruals Criteria: Examines the quality of earnings.
 
     2. Leverage, Liquidity, and Operating Efficiency:
-        - Change in Leverage Criteria: Analyzes changes in the company's leverage (debt).
+        - Change in Leverage Criteria: Analyzes changes in the company's long-term leverage.
         - Change in Current Ratio Criteria: Evaluates changes in the current ratio.
         - Number of Shares Criteria: Assesses the issuance of common shares.
 

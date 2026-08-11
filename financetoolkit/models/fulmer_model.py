@@ -8,6 +8,31 @@ import pandas as pd
 # pylint: disable=too-many-arguments,too-many-positional-arguments
 
 
+def _drop_non_finite(
+    values: float | pd.Series | pd.DataFrame,
+) -> float | pd.Series | pd.DataFrame:
+    """
+    Replace positive and negative infinities with NaN.
+
+    The two logarithmic components of the Fulmer H-Score are undefined for a number of
+    perfectly ordinary inputs — a company with no Interest Expense, or one whose intangible
+    assets exceed its total assets — and NumPy signals those as an infinity rather than as a
+    missing value. An infinity would propagate straight through the weighted sum and render
+    the entire H-Score (and any growth, rounding or standardization applied to it) infinite,
+    so it is treated as missing data instead.
+
+    Args:
+        values (float | pd.Series | pd.DataFrame): The values to clean.
+
+    Returns:
+        float | pd.Series | pd.DataFrame: The values with any infinity replaced by NaN.
+    """
+    if isinstance(values, pd.Series | pd.DataFrame):
+        return values.replace([np.inf, -np.inf], np.nan)
+
+    return np.nan if not np.isfinite(values) else values
+
+
 def get_retained_earnings_to_total_assets_ratio(
     retained_earnings: float | pd.Series | pd.DataFrame,
     total_assets: float | pd.Series | pd.DataFrame,
@@ -202,17 +227,19 @@ def get_log_of_tangible_total_assets(
 
     Notes:
     - Because this term is a natural logarithm, periods where Tangible Total Assets is zero or negative
-    (e.g. a company whose Goodwill and Intangible Assets exceed its Total Assets) will produce NaN. This is
-    a structural limitation of the log-linear Fulmer specification, not a bug.
+    (e.g. a company whose Goodwill and Intangible Assets exceed its Total Assets) are undefined and are
+    returned as NaN rather than as a negative infinity. This is a structural limitation of the log-linear
+    Fulmer specification, not a bug.
     - The original Fulmer (1984) paper does not unambiguously document the log base used. This
     implementation uses the natural logarithm (base e), consistent with how the analogous SIZE term is
     handled for the Ohlson O-Score elsewhere in this module (see `get_log_of_total_assets` in the Ohlson
-    module). Because the same log base is applied to every observation, this choice does not affect the
-    *ranking* of companies relative to one another, only the absolute scale of V7 (and, through the 0.575
-    coefficient, of the H-Score itself).
+    module). Note that the log base is not a neutral choice: because V7 is summed with eight other terms
+    that are plain ratios, rescaling it by ln(10) changes its weight *relative* to those terms and can
+    therefore reorder companies, not merely shift the H-Score by a constant. Only compare H-Scores that
+    were computed with the same log base.
     """
 
-    return np.log(tangible_total_assets)
+    return _drop_non_finite(np.log(tangible_total_assets))
 
 
 def get_working_capital_to_total_liabilities_ratio(
@@ -262,13 +289,15 @@ def get_log_of_ebit_to_interest_expense_ratio(
 
     Notes:
     - Because this term is a natural logarithm, periods where EBIT and Interest Expense do not have the same
-    sign (e.g. negative EBIT, or a company with no interest expense) will produce NaN or an undefined
-    result. This is a structural limitation of the log-linear Fulmer specification, not a bug, and mirrors
-    the same limitation documented for the Graham Number elsewhere in this toolkit.
+    sign (e.g. a negative EBIT against a positive Interest Expense) are undefined and are returned as NaN.
+    A company that reports no Interest Expense at all is likewise returned as NaN rather than as a positive
+    infinity, which would otherwise propagate an infinite H-Score through the 0.894 coefficient. This is a
+    structural limitation of the log-linear Fulmer specification, not a bug, and mirrors the same limitation
+    documented for the Graham Number elsewhere in this toolkit.
     - See `get_log_of_tangible_total_assets` for the log base used (natural logarithm).
     """
 
-    return np.log(ebit / interest_expense)
+    return _drop_non_finite(np.log(ebit / interest_expense))
 
 
 def get_fulmer_h_score(

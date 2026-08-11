@@ -150,8 +150,14 @@ def get_negative_equity_indicator(
         0 otherwise.
 
     Notes:
-    - Negative book equity is a strong distress signal, hence the negative coefficient this term
-      receives in the O-Score (it lowers, i.e. makes more negative, the O-Score contribution).
+    - OENEG carries a *negative* coefficient (-1.72) in the O-Score, which reads backwards at first
+      glance: negative book equity is plainly a distress signal, yet the term lowers the score and
+      therefore the estimated probability of bankruptcy. Ohlson (1980) is explicit that this is
+      deliberate — OENEG is a discontinuity correction on the leverage term, not a distress signal in
+      its own right. A firm with negative equity necessarily has a Total Liabilities to Total Assets
+      ratio above 1, so the 6.03 * TLTA term is already extreme for exactly these firms; OENEG damps
+      that term back down rather than adding further distress on top of it. The two coefficients must
+      therefore be read together, and OENEG must never be used as a standalone indicator.
     """
     return total_liabilities > total_assets
 
@@ -338,8 +344,11 @@ def get_ohlson_o_score(
 
     Notes:
     - A higher O-Score indicates a higher likelihood of bankruptcy. Ohlson's (1980) original cutoff is
-      approximately 0.38 (in probability terms, after the logistic transform), though as with the Altman
-      Z-Score, thresholds should be interpreted with caution and alongside further fundamental analysis.
+      0.038, i.e. 3.8% (in probability terms, after the logistic transform) — the threshold that
+      minimized the sum of Type I and Type II misclassification errors on his sample, and deliberately
+      far below the naive 0.50 midpoint because bankruptcy is a rare event. In raw O-Score terms that
+      corresponds to ln(0.038 / 0.962), i.e. approximately -3.23. As with the Altman Z-Score, thresholds
+      should be interpreted with caution and alongside further fundamental analysis.
     - The GNP price-level deflator used in the original SIZE term and the Funds from Operations line item
       used in the original FUTL term are both simplified/approximated in this implementation, see
       `get_log_of_total_assets` and `get_funds_from_operations_to_total_liabilities_ratio` for details.

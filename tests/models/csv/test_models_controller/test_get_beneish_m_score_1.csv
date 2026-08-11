@@ -7,13 +7,13 @@ AAPL,Depreciation Index,,,0.0065,-0.0614
 AAPL,SGA Expenses Index,,,0.2797,-0.0352
 AAPL,Leverage Index,,,0.0114,-0.113
 AAPL,Total Accruals to Total Assets,,-0.6288,1.3762,-0.3935
-AAPL,Beneish M-Score,,30.331,0.1861,0.0042
-MSFT,Days Sales in Receivables Index,,-15.0783,-0.0245,0.0434
-MSFT,Gross Margin Index,,-14.6916,0.0247,-0.0151
-MSFT,Asset Quality Index,,-15.8516,0.1747,-0.2267
-MSFT,Sales Growth Index,,-17.3638,0.0036,-0.0939
-MSFT,Depreciation Index,,-20.1412,-0.2731,0.2674
-MSFT,SGA Expenses Index,,-13.093,0.0728,0.0985
-MSFT,Leverage Index,,-14.2207,-0.013,-0.0283
+AAPL,Beneish M-Score,,,0.1861,0.0042
+MSFT,Days Sales in Receivables Index,,,-0.0245,0.0434
+MSFT,Gross Margin Index,,,0.0247,-0.0151
+MSFT,Asset Quality Index,,,0.1747,-0.2267
+MSFT,Sales Growth Index,,,0.0036,-0.0939
+MSFT,Depreciation Index,,,-0.2731,0.2674
+MSFT,SGA Expenses Index,,,0.0728,0.0985
+MSFT,Leverage Index,,,-0.013,-0.0283
 MSFT,Total Accruals to Total Assets,,-0.1482,-0.0362,-0.1729
-MSFT,Beneish M-Score,,43.6585,-0.0111,0.0509
+MSFT,Beneish M-Score,,,-0.0111,0.0509

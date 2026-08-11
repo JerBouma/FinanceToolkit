@@ -62,16 +62,14 @@ def get_intrinsic_value(
     """
     components = {}
 
-    cash_flow_projection = [cash_flow]
+    # Project the cash flow forward. The given cash flow is the latest realized one and
+    # is therefore not itself discounted, the projection starts one period after it.
+    cash_flow_projection = []
+    projected_cash_flow = cash_flow
 
-    # Cash Flow to Use
-    for period in range(1, periods + 1):
-        if period == 1:
-            cash_flow_projection.append(cash_flow_projection[0] * (1 + growth_rate))
-        else:
-            cash_flow_projection.append(
-                cash_flow_projection[period - 1] * (1 + growth_rate)
-            )
+    for _ in range(periods):
+        projected_cash_flow = projected_cash_flow * (1 + growth_rate)
+        cash_flow_projection.append(projected_cash_flow)
 
     # Calculate the Terminal Value
     terminal_value = (
@@ -80,15 +78,17 @@ def get_intrinsic_value(
         / (weighted_average_cost_of_capital - perpetual_growth_rate)
     )
 
-    # Add Terminal Value to the end of the cash flow projection
-    cash_flow_projection[-1] = cash_flow_projection[-1] + terminal_value
-
     # Calculate the Present Value based on the Discounted Cash Flow Formula
-    cash_flow_present_value = []
-    for index, cash_flow_value in enumerate(cash_flow_projection):
-        cash_flow_present_value.append(
-            cash_flow_value / (1 + weighted_average_cost_of_capital) ** (index + 1)
-        )
+    cash_flow_present_value = [
+        cash_flow_value / (1 + weighted_average_cost_of_capital) ** (index + 1)
+        for index, cash_flow_value in enumerate(cash_flow_projection)
+    ]
+
+    # The Terminal Value sits at the end of the projection horizon and is therefore
+    # discounted over the number of periods, not one period further.
+    cash_flow_present_value.append(
+        terminal_value / (1 + weighted_average_cost_of_capital) ** periods
+    )
 
     # Calculate the Enterprise Value, using fsum so the total is correctly rounded
     # rather than accumulation-order dependent (builtin sum only compensates on 3.12+)

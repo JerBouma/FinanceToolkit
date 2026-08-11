@@ -7,6 +7,9 @@ import pandas as pd
 
 from financetoolkit.performance import performance_model
 from financetoolkit.ratios import profitability_model, valuation_model
+from financetoolkit.utilities.logger_model import get_logger
+
+logger = get_logger()
 
 # pylint: disable=too-many-locals
 
@@ -107,7 +110,9 @@ def get_weighted_average_cost_of_capital(
         income_before_tax (float or pd.Series): Income before taxes of the company.
 
     Returns:
-        pd.DataFrame: A DataFrame containing the Dupont analysis components.
+        pd.DataFrame: A DataFrame containing the Weighted Average Cost of Capital and the components
+        it is built from (Market Value Equity, Market Value Debt, Cost of Equity, Cost of Debt and
+        the Corporate Tax Rate).
 
     Notes:
     - The market value of equity is calculated as the share price multiplied by the total shares outstanding.
@@ -138,9 +143,11 @@ def get_weighted_average_cost_of_capital(
     # Calculate the Cost of Debt
     cost_of_debt = get_cost_of_debt(interest_expense, total_debt)
 
-    # If the cost of debt is Inf, change it to 0
-    if np.inf in cost_of_debt.to_numpy():
-        print(
+    # If the cost of debt is infinite, change it to 0. Note that a negative infinity is just
+    # as possible as a positive one (a net interest income against zero debt) and must be
+    # caught too, which a membership test against np.inf alone would miss
+    if np.isinf(cost_of_debt.to_numpy()).any():
+        logger.info(
             "Please note that the Cost of Debt contains Inf. This is due to Total Debt being 0, "
             "therefore Cost of Debt is adjusted to 0 for those periods."
         )

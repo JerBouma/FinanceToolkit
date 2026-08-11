@@ -16,16 +16,30 @@ def get_dupont_analysis(
     """
     Perform a Dupont analysis to breakdown the return on equity (ROE) into its components.
 
+    The formula is as follows:
+
+        - Net Profit Margin = Net Income / Total Revenue
+        - Asset Turnover = Total Revenue / Average Total Assets
+        - Equity Multiplier = Average Total Assets / Average Total Equity
+        - Return on Equity = Net Profit Margin * Asset Turnover * Equity Multiplier
+
+    Also known as: DuPont, ROE decomposition, three-factor DuPont.
+
     Args:
-        net_income (float or pd.Series): Net profit of the company.
-        total_revenue (float or pd.Series): Total revenue of the company.
-        total_assets_begin (float or pd.Series): Total assets of the company at the beginning of the period.
-        total_assets_end (float or pd.Series): Total assets of the company at the end of the period.
-        total_equity_begin (float or pd.Series): Total equity of the company at the beginning of the period.
-        total_equity_end (float or pd.Series): Total equity of the company at the end of the period.
+        net_income (pd.Series): Net profit of the company.
+        total_revenue (pd.Series): Total revenue of the company.
+        average_total_assets (pd.Series): The average of the company's total assets over the
+        beginning and the end of the period.
+        average_total_equity (pd.Series): The average of the company's total equity over the
+        beginning and the end of the period.
 
     Returns:
         pd.DataFrame: A DataFrame containing the Dupont analysis components.
+
+    Notes:
+    - The three components multiply back to the Return on Equity exactly, since Total Revenue
+    and Average Total Assets each cancel out of the product. This makes the decomposition a
+    self-checking identity rather than an approximation.
     """
     # Calculate the net profit margin
     profit_margin = profitability_model.get_net_profit_margin(net_income, total_revenue)
@@ -70,21 +84,43 @@ def get_extended_dupont_analysis(
     average_total_equity: pd.Series,
 ) -> pd.DataFrame:
     """
-    Perform am Extended Dupont analysis to breakdown the return on equity (ROE) into its components.
+    Perform an Extended Dupont analysis to breakdown the return on equity (ROE) into its components.
+
+    The extended (five-factor) decomposition splits the three-factor version's Net Profit Margin
+    into a Tax Burden, an Interest Burden and an Operating Profit Margin, isolating the effect of
+    taxation, of debt financing and of operating performance on the return on equity.
+
+    The formula is as follows:
+
+        - Interest Burden Ratio = Income Before Tax / Operating Income
+        - Tax Burden Ratio = Net Income / Income Before Tax
+        - Operating Profit Margin = Operating Income / Total Revenue
+        - Asset Turnover = Total Revenue / Average Total Assets
+        - Equity Multiplier = Average Total Assets / Average Total Equity
+        - Return on Equity = Interest Burden Ratio * Tax Burden Ratio * Operating Profit Margin *
+        Asset Turnover * Equity Multiplier
+
+    Also known as: extended DuPont, five-factor DuPont, ROE breakdown.
 
     Args:
-        operating_income (float or pd.Series): Operating income of the company.
-        interest_expense (float or pd.Series): Interest expense of the company.
-        income_before_tax (float or pd.Series): Income before taxes of the company.
-        net_income (float or pd.Series): Net profit of the company.
-        total_revenue (float or pd.Series): Total revenue of the company.
-        total_assets_begin (float or pd.Series): Total assets of the company at the beginning of the period.
-        total_assets_end (float or pd.Series): Total assets of the company at the end of the period.
-        total_equity_begin (float or pd.Series): Total equity of the company at the beginning of the period.
-        total_equity_end (float or pd.Series): Total equity of the company at the end of the period.
+        operating_income (pd.Series): Operating income (EBIT) of the company.
+        income_before_tax (pd.Series): Income before taxes (EBT) of the company.
+        net_income (pd.Series): Net profit of the company.
+        total_revenue (pd.Series): Total revenue of the company.
+        average_total_assets (pd.Series): The average of the company's total assets over the
+        beginning and the end of the period.
+        average_total_equity (pd.Series): The average of the company's total equity over the
+        beginning and the end of the period.
 
     Returns:
         pd.DataFrame: A DataFrame containing the Dupont analysis components.
+
+    Notes:
+    - The five components multiply back to the Return on Equity exactly: Operating Income,
+    Income Before Tax, Total Revenue and Average Total Assets each cancel out of the product,
+    leaving Net Income / Average Total Equity.
+    - The first three components multiply back to the Net Profit Margin reported by the
+    three-factor `get_dupont_analysis`, so both decompositions resolve to the same ROE.
     """
     # Calculate the interest burden ratio
     interest_burden_ratio = profitability_model.get_interest_burden_ratio(

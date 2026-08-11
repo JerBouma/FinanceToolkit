@@ -18,7 +18,10 @@ def get_enterprise_value_breakdown(
     """
     The Enterprise Value breakdown corresponds to the following components:
         - Share Price: given for each quarter or year.
-        - Market cap: The total value of a company's outstanding common and preferred shares
+        - Market cap: The total value of a company's outstanding *common* shares, i.e. the share
+        price multiplied by the shares outstanding. Preferred shares are deliberately excluded here
+        and enter the Enterprise Value as their own component below, so that they are counted once
+        rather than twice.
         - Debt: The sum of long-term and short-term debt
         - Preferred equity: The value of preferred shares
         - Minority interest: The equity value of a subsidiary with less than 50% ownership.

@@ -1,13 +1,13 @@
 ,,,2020,2021,2022,2023
-AAPL,Interest Burden Ratio,Lag 1,,0.0097,0.0052,0.0022
-AAPL,Interest Burden Ratio,Lag 2,,,0.015,0.0073
-AAPL,Interest Burden Ratio,Lag 3,,,,0.0171
-AAPL,Tax Burden Ratio,Lag 1,,0.0034,-0.0385,0.0155
-AAPL,Tax Burden Ratio,Lag 2,,,-0.0352,-0.0235
-AAPL,Tax Burden Ratio,Lag 3,,,,-0.0202
-AAPL,Operating Profit Margin,Lag 1,,0.2215,0.0118,-0.0175
-AAPL,Operating Profit Margin,Lag 2,,,0.2359,-0.006
-AAPL,Operating Profit Margin,Lag 3,,,,0.2142
+AAPL,Interest Burden Ratio,Lag 1,,-0.0096,-0.0052,-0.0022
+AAPL,Interest Burden Ratio,Lag 2,,,-0.0147,-0.0073
+AAPL,Interest Burden Ratio,Lag 3,,,,-0.0169
+AAPL,Tax Burden Ratio,Lag 1,,0.0132,-0.0335,0.0177
+AAPL,Tax Burden Ratio,Lag 2,,,-0.0208,-0.0163
+AAPL,Tax Burden Ratio,Lag 3,,,,-0.0034
+AAPL,Operating Profit Margin,Lag 1,,0.2334,0.017,-0.0154
+AAPL,Operating Profit Margin,Lag 2,,,0.2543,0.0013
+AAPL,Operating Profit Margin,Lag 3,,,,0.235
 AAPL,Asset Turnover,Lag 1,,,0.0337,-0.0302
 AAPL,Asset Turnover,Lag 2,,,,0.0025
 AAPL,Asset Turnover,Lag 3,,,,
@@ -17,15 +17,15 @@ AAPL,Equity Multiplier,Lag 3,,,,
 AAPL,Return on Equity,Lag 1,,,0.19,-0.02
 AAPL,Return on Equity,Lag 2,,,,0.1662
 AAPL,Return on Equity,Lag 3,,,,
-MSFT,Interest Burden Ratio,Lag 1,,-0.0153,0.0129,-0.0049
-MSFT,Interest Burden Ratio,Lag 2,,,-0.0025,0.008
-MSFT,Interest Burden Ratio,Lag 3,,,,-0.0074
-MSFT,Tax Burden Ratio,Lag 1,,0.0481,-0.0046,-0.0629
-MSFT,Tax Burden Ratio,Lag 2,,,0.0433,-0.0672
-MSFT,Tax Burden Ratio,Lag 3,,,,-0.0224
-MSFT,Operating Profit Margin,Lag 1,,0.1407,-0.0018,-0.0019
-MSFT,Operating Profit Margin,Lag 2,,,0.1386,-0.0037
-MSFT,Operating Profit Margin,Lag 3,,,,0.1365
+MSFT,Interest Burden Ratio,Lag 1,,0.0155,-0.0128,0.0049
+MSFT,Interest Burden Ratio,Lag 2,,,0.0025,-0.0079
+MSFT,Interest Burden Ratio,Lag 3,,,,0.0074
+MSFT,Tax Burden Ratio,Lag 1,,0.0321,0.0083,-0.0675
+MSFT,Tax Burden Ratio,Lag 2,,,0.0407,-0.0598
+MSFT,Tax Burden Ratio,Lag 3,,,,-0.0296
+MSFT,Operating Profit Margin,Lag 1,,0.1233,0.0111,-0.0067
+MSFT,Operating Profit Margin,Lag 2,,,0.1357,0.0043
+MSFT,Operating Profit Margin,Lag 3,,,,0.1281
 MSFT,Asset Turnover,Lag 1,,,0.0723,-0.0388
 MSFT,Asset Turnover,Lag 2,,,,0.0307
 MSFT,Asset Turnover,Lag 3,,,,

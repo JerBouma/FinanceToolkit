@@ -1,13 +1,13 @@
 ,,2020,2021,2022,2023
-AAPL,Interest Burden Ratio,0.988,0.9976,1.0028,1.005
-AAPL,Tax Burden Ratio,0.8661,0.869,0.8356,0.8486
-AAPL,Operating Profit Margin,0.2444,0.2985,0.302,0.2967
+AAPL,Interest Burden Ratio,1.0121,1.0024,0.9972,0.9951
+AAPL,Tax Burden Ratio,0.8557,0.867,0.838,0.8528
+AAPL,Operating Profit Margin,0.2415,0.2978,0.3029,0.2982
 AAPL,Asset Turnover,,1.0841,1.1206,1.0868
 AAPL,Equity Multiplier,,5.255,6.1862,6.252
 AAPL,Return on Equity,,1.4744,1.7546,1.7195
-MSFT,Interest Burden Ratio,0.9985,0.9833,0.996,0.9912
-MSFT,Tax Burden Ratio,0.8361,0.8764,0.8723,0.8174
-MSFT,Operating Profit Margin,0.3708,0.423,0.4222,0.4214
+MSFT,Interest Burden Ratio,1.0015,1.017,1.004,1.0089
+MSFT,Tax Burden Ratio,0.8349,0.8617,0.8689,0.8102
+MSFT,Operating Profit Margin,0.3703,0.4159,0.4206,0.4177
 MSFT,Asset Turnover,,0.5293,0.5676,0.5456
 MSFT,Equity Multiplier,,2.4399,2.2643,2.0839
 MSFT,Return on Equity,,0.4708,0.4715,0.3882

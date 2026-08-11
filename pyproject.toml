@@ -175,7 +175,7 @@ skip_gitignore = true
 combine_as_imports = true
 
 [tool.codespell]
-ignore-words-list = 'te,hsi,amplitud,nam,tha,plaform,ine,daa,pring,pezier,trough'
+ignore-words-list = 'te,hsi,amplitud,nam,tha,plaform,ine,daa,pring,pezier,trough,zar'
 skip = '*.json,./.git,pyproject.toml,poetry.lock,examples'
 
 [tool.pytest.ini_options]

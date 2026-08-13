@@ -96,6 +96,10 @@ dev = [
     # An independent reference for the two unit root tests that are built by hand
     # rather than delegated, see tests/econometrics/test_reference_validation.py.
     "arch>=7.0",
+    "jupyter>=1.1.1",
+    "nbconvert>=7.17.1",
+    "matplotlib>=3.11.1",
+    "seaborn>=0.13.2",
 ]
 
 [tool.uv]

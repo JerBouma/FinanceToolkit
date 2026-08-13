@@ -93,8 +93,6 @@ dev = [
     "httpx2>=0.28",
     "financetoolkit[mcp]",
     "financetoolkit[econometrics]",
-    # An independent reference for the two unit root tests that are built by hand
-    # rather than delegated, see tests/econometrics/test_reference_validation.py.
     "arch>=7.0",
     "jupyter>=1.1.1",
     "nbconvert>=7.17.1",

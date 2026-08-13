@@ -216,6 +216,24 @@ def apply_rounding(
     return dataset if rounding is None else dataset.round(rounding)
 
 
+def _bounded_ffill(
+    dataset: pd.Series | pd.DataFrame, axis: str = "columns"
+) -> pd.Series | pd.DataFrame:
+    """
+    Forward-fills only a single missing observation, and only when a later valid
+    observation exists to bound the gap — never past the last real data point, and
+    never across a longer run of missing periods. See calculate_growth for why.
+    """
+    if isinstance(dataset, pd.DataFrame):
+        filled = dataset.ffill(axis=axis, limit=1)
+        has_future_data = dataset.bfill(axis=axis).notna()
+    else:
+        filled = dataset.ffill(limit=1)
+        has_future_data = dataset.bfill().notna()
+
+    return filled.where(has_future_data, dataset)
+
+
 def calculate_growth(
     dataset: pd.Series | pd.DataFrame,
     lag: int | list[int] = 1,
@@ -266,8 +284,7 @@ def calculate_growth(
                     other_indices = other_indices[0]
 
                 dataset_lag.loc[new_index] = (
-                    dataset.loc[other_indices]
-                    .ffill()
+                    _bounded_ffill(dataset.loc[other_indices])
                     .pct_change(periods=lag_dict[lag_key])  # type: ignore
                     .to_numpy()
                     .reshape(-1)
@@ -294,8 +311,7 @@ def calculate_growth(
                     other_indices = other_indices[0]
 
                 dataset_lag.loc[:, new_index] = (
-                    dataset.loc[:, other_indices]
-                    .ffill()
+                    _bounded_ffill(dataset.loc[:, other_indices])
                     .pct_change(periods=lag_dict[lag_key])  # type: ignore
                     .to_numpy()
                     .reshape(-1)
@@ -306,11 +322,7 @@ def calculate_growth(
     # The forward fill has to run along the same axis as the pct_change. A statement
     # or ratio DataFrame is indexed by ticker with the periods as columns, so filling
     # along the default axis would carry the previous ticker's value into the gap.
-    dataset = (
-        dataset.ffill(axis=axis)
-        if isinstance(dataset, pd.DataFrame)
-        else dataset.ffill()
-    )
+    dataset = _bounded_ffill(dataset, axis=axis)
 
     return apply_rounding(dataset.pct_change(periods=lag, axis=axis), rounding)
 

@@ -14,9 +14,9 @@ AAPL,Debt Service Coverage Ratio,Lag 3,,,,0.2506
 AAPL,Equity Multiplier,Lag 1,,,0.1772,0.0106
 AAPL,Equity Multiplier,Lag 2,,,,0.1897
 AAPL,Equity Multiplier,Lag 3,,,,
-AAPL,Free Cash Flow Yield,Lag 1,,-0.0217,0.6804,0.0
-AAPL,Free Cash Flow Yield,Lag 2,,,0.644,0.6804
-AAPL,Free Cash Flow Yield,Lag 3,,,,0.644
+AAPL,Free Cash Flow Yield,Lag 1,,-0.0217,0.6804,
+AAPL,Free Cash Flow Yield,Lag 2,,,0.644,
+AAPL,Free Cash Flow Yield,Lag 3,,,,
 AAPL,Net-Debt to EBITDA Ratio,Lag 1,,-0.2244,-0.0133,-0.2266
 AAPL,Net-Debt to EBITDA Ratio,Lag 2,,,-0.2347,-0.2368
 AAPL,Net-Debt to EBITDA Ratio,Lag 3,,,,-0.4081
@@ -56,9 +56,9 @@ MSFT,Debt Service Coverage Ratio,Lag 3,,,,0.1606
 MSFT,Equity Multiplier,Lag 1,,,-0.072,-0.0797
 MSFT,Equity Multiplier,Lag 2,,,,-0.1459
 MSFT,Equity Multiplier,Lag 3,,,,
-MSFT,Free Cash Flow Yield,Lag 1,,-0.1788,0.6311,0.0
-MSFT,Free Cash Flow Yield,Lag 2,,,0.3394,0.6311
-MSFT,Free Cash Flow Yield,Lag 3,,,,0.3394
+MSFT,Free Cash Flow Yield,Lag 1,,-0.1788,0.6311,
+MSFT,Free Cash Flow Yield,Lag 2,,,0.3394,
+MSFT,Free Cash Flow Yield,Lag 3,,,,
 MSFT,Net-Debt to EBITDA Ratio,Lag 1,,-0.2486,-0.2627,-0.4901
 MSFT,Net-Debt to EBITDA Ratio,Lag 2,,,-0.446,-0.624
 MSFT,Net-Debt to EBITDA Ratio,Lag 3,,,,-0.7175

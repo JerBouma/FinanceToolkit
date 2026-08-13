@@ -8,15 +8,15 @@ AAPL,Retained Earnings to Total Assets,Lag 3,,,,-1.0131
 AAPL,EBIT to Total Assets,Lag 1,,0.4752,0.0856,-0.0353
 AAPL,EBIT to Total Assets,Lag 2,,,0.6015,0.0473
 AAPL,EBIT to Total Assets,Lag 3,,,,0.545
-AAPL,Market Value to Total Liabilities,Lag 1,,0.1634,-0.321,0.0
-AAPL,Market Value to Total Liabilities,Lag 2,,,-0.21,-0.321
-AAPL,Market Value to Total Liabilities,Lag 3,,,,-0.21
+AAPL,Market Value to Total Liabilities,Lag 1,,0.1634,-0.321,
+AAPL,Market Value to Total Liabilities,Lag 2,,,-0.21,
+AAPL,Market Value to Total Liabilities,Lag 3,,,,
 AAPL,Sales to Total Assets,Lag 1,,0.2297,0.0726,-0.0275
 AAPL,Sales to Total Assets,Lag 2,,,0.3189,0.0431
 AAPL,Sales to Total Assets,Lag 3,,,,0.2826
-AAPL,Altman Z-Score,Lag 1,,0.1765,-0.2334,0.0
-AAPL,Altman Z-Score,Lag 2,,,-0.0981,-0.2334
-AAPL,Altman Z-Score,Lag 3,,,,-0.0981
+AAPL,Altman Z-Score,Lag 1,,0.1765,-0.2334,
+AAPL,Altman Z-Score,Lag 2,,,-0.0981,
+AAPL,Altman Z-Score,Lag 3,,,,
 MSFT,Working Capital to Total Assets,Lag 1,,-0.2114,-0.2872,-0.0491
 MSFT,Working Capital to Total Assets,Lag 2,,,-0.4379,-0.3222
 MSFT,Working Capital to Total Assets,Lag 3,,,,-0.4654
@@ -26,12 +26,12 @@ MSFT,Retained Earnings to Total Assets,Lag 3,,,,1.5147
 MSFT,EBIT to Total Assets,Lag 1,,0.1919,0.0685,-0.0576
 MSFT,EBIT to Total Assets,Lag 2,,,0.2735,0.0069
 MSFT,EBIT to Total Assets,Lag 3,,,,0.2001
-MSFT,Market Value to Total Liabilities,Lag 1,,0.4408,-0.3101,0.0
-MSFT,Market Value to Total Liabilities,Lag 2,,,-0.006,-0.3101
-MSFT,Market Value to Total Liabilities,Lag 3,,,,-0.006
+MSFT,Market Value to Total Liabilities,Lag 1,,0.4408,-0.3101,
+MSFT,Market Value to Total Liabilities,Lag 2,,,-0.006,
+MSFT,Market Value to Total Liabilities,Lag 3,,,,
 MSFT,Sales to Total Assets,Lag 1,,0.061,0.0791,-0.0535
 MSFT,Sales to Total Assets,Lag 2,,,0.145,0.0214
 MSFT,Sales to Total Assets,Lag 3,,,,0.0837
-MSFT,Altman Z-Score,Lag 1,,0.3549,-0.2437,0.0
-MSFT,Altman Z-Score,Lag 2,,,0.0247,-0.2437
-MSFT,Altman Z-Score,Lag 3,,,,0.0247
+MSFT,Altman Z-Score,Lag 1,,0.3549,-0.2437,
+MSFT,Altman Z-Score,Lag 2,,,0.0247,
+MSFT,Altman Z-Score,Lag 3,,,,

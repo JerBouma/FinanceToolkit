@@ -10,6 +10,7 @@ import numpy as np
 import pandas as pd
 
 from financetoolkit.utilities import logger_model
+from financetoolkit.utilities.statistics_model import bounded_ffill
 
 logger = logger_model.get_logger()
 
@@ -137,7 +138,9 @@ def enrich_historical_data(
         pd.DataFrame: A pandas DataFrame object containing the enriched historical stock data for the given ticker(s).
     """
 
-    historical_data["Return"] = historical_data[return_column].ffill().pct_change()
+    historical_data["Return"] = bounded_ffill(
+        historical_data[return_column]
+    ).pct_change()
 
     historical_data["Cumulative Return"] = 1
 

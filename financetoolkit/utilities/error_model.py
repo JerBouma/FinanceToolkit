@@ -343,7 +343,7 @@ def check_for_error_messages(
         if user_subscription == "Free":
             logger.error(
                 "Given that you are using the Free plan, it could be due to reaching the API "
-                "limit of the day, consider upgrading your plan. You can get 15%% off by "
+                "limit of the day, consider upgrading your plan. You can get 15% off by "
                 "using the following affiliate link which also supports the project: "
                 "https://www.jeroenbouma.com/fmp"
             )
@@ -360,7 +360,7 @@ def check_for_error_messages(
     if invalid_api_key:
         logger.error(
             "You have entered an invalid API key from Financial Modeling Prep. Obtain an API key for free "
-            "or get 15%% off the Premium plans by using the following affiliate link.\nThis also supports "
+            "or get 15% off the Premium plans by using the following affiliate link.\nThis also supports "
             "the project: https://www.jeroenbouma.com/fmp"
         )
 

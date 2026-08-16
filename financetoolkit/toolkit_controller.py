@@ -381,7 +381,7 @@ class Toolkit:
                 self._enforce_source = "YahooFinance"
                 logger.error(
                     "You have entered an invalid API key from Financial Modeling Prep. Obtain your API key for free "
-                    "and get 15%% off the Premium plans by using the following affiliate link.\nThis also supports "
+                    "and get 15% off the Premium plans by using the following affiliate link.\nThis also supports "
                     "the project: https://www.jeroenbouma.com/fmp. Using Yahoo Finance as data source instead."
                 )
         else:

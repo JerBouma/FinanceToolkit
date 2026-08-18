@@ -1,5 +1,6 @@
 """EVA Model Tests""" ""
 import pandas as pd
+import pytest
 
 from financetoolkit.models import eva_model
 
@@ -32,3 +33,31 @@ def test_get_economic_value_added(recorder):
             invested_capital=pd.Series([700, 730, 760, 790, 820]),
         )
     )
+
+
+def test_get_market_value_added(recorder):
+    recorder.capture(
+        eva_model.get_market_value_added(
+            market_value_of_equity=pd.Series([5000, 5200, 4800, 5300, 5600]),
+            market_value_of_debt=pd.Series([1000, 1050, 1100, 1150, 1200]),
+            invested_capital=pd.Series([3000, 3100, 3200, 3300, 3400]),
+        )
+    )
+    # Synthetic ground-truth: MVA = (5000 + 1000) - 3000 = 3000
+    assert (
+        eva_model.get_market_value_added(
+            market_value_of_equity=5000,
+            market_value_of_debt=1000,
+            invested_capital=3000,
+        )
+        == 3000
+    )
+
+
+def test_get_market_value_added_type_error():
+    with pytest.raises(TypeError):
+        eva_model.get_market_value_added(
+            market_value_of_equity="not a number",
+            market_value_of_debt=1000,
+            invested_capital=3000,
+        )

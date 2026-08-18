@@ -1,0 +1,8 @@
+,AAPL,MSFT
+CUSUM Statistic,0.8236185159514405,1.1034659991494733
+P-Value,0.5062364200944487,0.1750297918271418
+Observations,12,12
+Critical Value 1%,1.63,1.63
+Critical Value 5%,1.36,1.36
+Critical Value 10%,1.22,1.22
+Reject Stability (5%),False,False

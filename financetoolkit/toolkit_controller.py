@@ -7,11 +7,14 @@ import os
 import re
 import warnings
 from collections import Counter
+from collections.abc import Callable
 from datetime import datetime, timedelta
+from typing import TYPE_CHECKING, Any
 
 import pandas as pd
 
 from financetoolkit import currencies_model
+from financetoolkit.cache import cache_controller, policy_model, ticker_model
 from financetoolkit.discovery.discovery_model import (
     search_press_releases as _search_press_releases,
     search_stock_news as _search_stock_news,
@@ -19,11 +22,13 @@ from financetoolkit.discovery.discovery_model import (
 from financetoolkit.economics.economics_controller import Economics
 from financetoolkit.fixedincome.fixedincome_controller import FixedIncome
 from financetoolkit.fmp_model import (
+    determine_subscription_plan as _determine_subscription_plan,
     get_analyst_estimates as _get_analyst_estimates,
+    get_commitment_of_traders as _get_commitment_of_traders,
     get_dividend_calendar as _get_dividend_calendar,
     get_earnings_calendar as _get_earnings_calendar,
     get_esg_scores as _get_esg_scores,
-    get_financial_data as _get_financial_data,
+    get_market_risk_premium as _get_market_risk_premium,
     get_profile as _get_profile,
     get_quote as _get_quote,
     get_rating as _get_rating,
@@ -45,20 +50,20 @@ from financetoolkit.performance.performance_controller import Performance
 from financetoolkit.ratios.ratios_controller import Ratios
 from financetoolkit.risk.risk_controller import Risk
 from financetoolkit.technicals.technicals_controller import Technicals
-from financetoolkit.utilities import cache_model, logger_model
+from financetoolkit.utilities import logger_model
 from financetoolkit.utilities.dataframe_model import filter_columns
 from financetoolkit.utilities.requests_model import convert_isin_to_ticker
-from financetoolkit.utilities.statistics_model import calculate_growth
+from financetoolkit.utilities.statistics_model import apply_rounding, calculate_growth
 
-# Set up logger, this is meant to display useful messages, warnings or errors when
-# the Finance Toolkit runs into issues or does something that might not be entirely
-# logical at first
+if TYPE_CHECKING:
+    # TYPE_CHECKING only: the econometrics extra is imported lazily at runtime.
+    from financetoolkit.econometrics.econometrics_controller import Econometrics
+
+# Displays messages, warnings and errors when the Finance Toolkit hits issues.
 logger_model.setup_logger()
 logger = logger_model.get_logger()
 
-# Runtime errors are ignored on purpose given the nature of the calculations
-# sometimes leading to division by zero or other mathematical errors. This is however
-# for financial analysis purposes not an issue and should not be considered as a bug.
+# Division by zero is normal in these calculations, not a bug.
 warnings.filterwarnings("ignore", category=RuntimeWarning)
 
 # pylint: disable=too-many-instance-attributes,too-many-lines,line-too-long,too-many-locals
@@ -67,8 +72,7 @@ warnings.filterwarnings("ignore", category=RuntimeWarning)
 
 TICKER_LIMIT = 20
 
-# In case the user has set an API key as an environment variable,
-# this will be used as the default API key for the Toolkit.
+# Used as the Toolkit's default API key when set as an environment variable.
 API_KEY: str = os.environ.get("FINANCIAL_MODELING_PREP_API_KEY", "")
 FRED_API_KEY: str = os.environ.get("FRED_API_KEY", "")
 
@@ -76,7 +80,7 @@ FRED_API_KEY: str = os.environ.get("FRED_API_KEY", "")
 class Toolkit:
     """
     The Finance Toolkit is an open-source toolkit in which
-    all 200+ financial ratios, indicators and performance measurements
+    all 500+ financial methods
     are written down in the most simplistic way allowing for complete transparency
     of the calculation method. This allows you to not have to rely on metrics
     from other providers and, given a financial statement, allow for efficient manual
@@ -108,6 +112,7 @@ class Toolkit:
         sleep_timer: bool | None = None,
         progress_bar: bool = True,
         fred_api_key: str = FRED_API_KEY,
+        allow_stale_oecd_cache: bool = True,
     ):
         """
         Initializes a Toolkit object with a ticker or a list of tickers. The way the Toolkit is initialized
@@ -117,6 +122,10 @@ class Toolkit:
         data before and want to use this data again. This can be done by setting the use_cached_data variable
         to True. If you want to use a specific location to store the cached data, you can define this as a string,
         e.g. "datasets".
+
+        The cache keeps track of what it already holds per ticker and per date range, so changing a parameter
+        does not throw the rest away. Widening the period only retrieves the years that were missing, adding a
+        ticker only retrieves that ticker, and repeating a request retrieves nothing at all.
 
         It is good to note that the Finance Toolkit will always attempt to acquire data from Financial Modeling Prep
         if an API key is set. If this isn't the case, the data comes from Yahoo Finance. In case you have an API key
@@ -136,8 +145,10 @@ class Toolkit:
             Defaults to today.
             quarterly (bool): A boolean indicating whether to collect quarterly data. Defaults to False (yearly).
             Note that historical data can still be collected for any period and interval.
-            use_cached_data (bool | str): A boolean indicating whether to use cached data. If True, uses a 'cached' folder.
-            If a string is provided, uses that string as the path to the cache folder. Defaults to False.
+            use_cached_data (bool | str): A boolean indicating whether to use cached data. If True, uses the shared
+            cache database in the user configuration directory, which is also the one the MCP server reads and writes.
+            If a string is provided, uses that string as the path to a dedicated cache folder or database file.
+            Defaults to False.
             risk_free_rate (str): The risk-free rate identifier ('13w', '5y', '10y', '30y'). Based on US Treasury Yields.
             Used for calculations like Excess Returns. Defaults to "10y".
             benchmark_ticker (str | None): The benchmark ticker (e.g., 'SPY' for S&P 500). Used for comparative analysis
@@ -166,6 +177,33 @@ class Toolkit:
             (option-adjusted spread, effective yield, total return, yield to worst). Obtain a free key at
             https://fred.stlouisfed.org/docs/api/api_key.html. Can also be set via the FRED_API_KEY environment
             variable. Defaults to the value of FRED_API_KEY if set, otherwise an empty string.
+            allow_stale_oecd_cache (bool): the OECD API (used by the economics module) enforces a hard rate
+            limit (60 downloads/hour). When True, a rate-limited call falls back to the most recently cached
+            successful response for that query instead of empty data -- opt-in, since served data may be
+            stale. Independent of use_cached_data (which governs this Toolkit's own config/ticker cache, a
+            different mechanism). Defaults to True.
+
+        Fiscal periods and calendar periods:
+
+            Financial statements are labelled with the calendar period in which the majority of the
+            fiscal period falls, not with the company's own fiscal label and not with the calendar
+            period its final day happens to sit in. A fiscal period is a span of time and the date a
+            provider reports is only its last day, so labelling by that day alone would place NVIDIA's
+            fiscal year February 2023 to January 2024 in calendar 2024 even though eleven of its twelve
+            months are 2023.
+
+            Concretely, a fiscal year ending in January through May is labelled with the preceding
+            calendar year, and a fiscal quarter is labelled with the calendar quarter containing the
+            month before its end. Both are the same majority rule at two frequencies, so a company's
+            yearly and quarterly statements stay consistent with each other: NVIDIA's fiscal 2024 is
+            labelled 2023 and its four quarters are labelled 2023Q1 through 2023Q4. Companies reporting
+            on calendar quarter ends (March, June, September and December) are never relabelled, and
+            neither are fiscal years ending in June through December. Which tickers were relabelled is
+            reported in the log and available on the Toolkit as _fiscal_year_adjustments.
+
+            This convention is what makes financial statements line up with price history, since prices
+            are always in calendar time. It also means the labels are not the company's own fiscal year
+            numbering: what NVIDIA calls fiscal 2024 appears here as 2023.
 
         As an example:
 
@@ -219,12 +257,17 @@ class Toolkit:
         self._remove_invalid_tickers = remove_invalid_tickers
         self._invalid_tickers: list = []
 
-        self._use_cached_data = (
-            use_cached_data if isinstance(use_cached_data, bool) else True
+        (
+            self._use_cached_data,
+            self._cache_location,
+        ) = cache_controller.parse_use_cached_data(use_cached_data)
+        self._cache = cache_controller.get_cache(
+            location=self._cache_location, enabled=self._use_cached_data
         )
-        self._cached_data_location = (
-            "cached" if isinstance(use_cached_data, bool) else use_cached_data
-        )
+
+        # Published so the OECD/FRED/ECB/Fed free functions pick up this cache too.
+        cache_controller.set_active_cache(self._cache)
+        self._allow_stale_oecd_cache = allow_stale_oecd_cache
         self._benchmark_ticker = benchmark_ticker
 
         if start_date and re.match(r"^\d{4}-\d{2}-\d{2}$", start_date) is None:
@@ -260,9 +303,7 @@ class Toolkit:
         self._end_date = end_date if end_date else datetime.now().strftime("%Y-%m-%d")
         self._quarterly = quarterly
 
-        # Fetch one extra period before the user's start date so that metrics
-        # averaging two consecutive periods (e.g. Return on Equity) always have
-        # a prior-period value and do not return NaN for the first requested year.
+        # One extra period so two-period metrics have a prior value for the first year.
         if quarterly:
             _lookback_dt = datetime.strptime(self._start_date, "%Y-%m-%d") - timedelta(
                 days=92
@@ -273,76 +314,7 @@ class Toolkit:
             )
         self._lookback_start_date = _lookback_dt.strftime("%Y-%m-%d")
 
-        if use_cached_data:
-            cached_configurations = cache_model.load_cached_data(
-                cached_data_location=self._cached_data_location,
-                file_name="configurations.pickle",
-                method="pickle",
-                return_empty_type={},
-            )
-
-            if cached_configurations:  # Check if dictionary is not empty
-                cached_overwrites = []
-                # Map cache keys to tuples of (initial_value, attribute_name)
-                config_mapping = {
-                    "start_date": (self._start_date, "_start_date"),
-                    "end_date": (self._end_date, "_end_date"),
-                    "quarterly": (self._quarterly, "_quarterly"),
-                    "benchmark_ticker": (self._benchmark_ticker, "_benchmark_ticker"),
-                    "risk_free_rate": (self._risk_free_rate, "_risk_free_rate"),
-                }
-
-                # Compare initial values with cached values, update instance if different
-                for key, (initial_value, attr_name) in config_mapping.items():
-                    cached_value = cached_configurations.get(key)
-                    # Check if cached value exists and is different from the initial value
-                    if cached_value is not None and initial_value != cached_value:
-                        setattr(
-                            self, attr_name, cached_value
-                        )  # Update instance attribute
-                        cached_overwrites.append(f"{key} ({cached_value})")
-
-                # Handle tickers separately: compare input tickers with cached tickers
-                cached_tickers = cached_configurations.get("tickers")
-                # Check if cached tickers exist and are different from the input tickers
-                if cached_tickers is not None and tickers != cached_tickers and tickers:
-                    # Only log the change if the user actually provided tickers initially
-                    cached_overwrites.append("tickers")
-                    tickers = cached_tickers
-
-                if cached_overwrites:
-                    folder = (
-                        "cached"
-                        if isinstance(use_cached_data, bool)
-                        else use_cached_data
-                    )
-                    logger.info(
-                        "The following variables are overwritten by the cached "
-                        "configurations: %s\n"
-                        "If this is undesirable, please set the use_cached_data variable "
-                        "to False, delete the directory %s or select a new "
-                        "location for the cached data by changing the use_cached_data "
-                        "variable to a string.",
-                        ", ".join(cached_overwrites),
-                        folder,
-                    )
-            else:
-                # Save the current configuration if no cache exists
-                # Use the values as they are before potential overwrites from cache
-                cache_model.save_cached_data(
-                    cached_data={
-                        "tickers": tickers,  # Use the initial tickers list/str
-                        "start_date": self._start_date,
-                        "end_date": self._end_date,
-                        "quarterly": self._quarterly,
-                        "benchmark_ticker": self._benchmark_ticker,
-                        "risk_free_rate": self._risk_free_rate,  # Use the initial risk_free_rate
-                    },
-                    cached_data_location=self._cached_data_location,
-                    file_name="configurations.pickle",
-                    method="pickle",
-                    include_message=False,
-                )
+        # The cache tracks each ticker and range, so these arguments are always used.
 
         if isinstance(tickers, str):
             tickers = [tickers.upper()]
@@ -362,8 +334,8 @@ class Toolkit:
             # Check whether the ticker is in ISIN format and if say so convert it to a ticker
             self._tickers.append(convert_isin_to_ticker(ticker))
 
-        # Take out duplicate tickers if applicable
-        deduplicated_tickers = list(set(self._tickers))
+        # Take out duplicate tickers if applicable; deduplicating through a set would make the ticker order, and therefore the column order of every single output, depend on the hash seed and change between runs.
+        deduplicated_tickers = list(dict.fromkeys(self._tickers))
 
         if len(deduplicated_tickers) != len(self._tickers):
             duplicate_tickers = [
@@ -398,35 +370,18 @@ class Toolkit:
             )
 
         if sleep_timer is None:
-            # This tests the API key to determine the subscription plan. This is relevant for the sleep timer
-            # but also for other components of the Toolkit. This prevents wait timers from occurring while
-            # it wouldn't result to any other answer than a rate limit error.
-            determine_plan = _get_financial_data(
-                url=f"https://financialmodelingprep.com/stable/income-statement?symbol=AAPL&apikey={api_key}&limit=10",
-                sleep_timer=False,
-                user_subscription="Free",
+            # Determines the plan, which drives the sleep timer and other components.
+            self._fmp_plan, invalid_api_key = _determine_subscription_plan(
+                api_key=api_key
             )
 
-            self._fmp_plan = "Premium"
-
-            for option in [
-                "PREMIUM QUERY PARAMETER",
-                "EXCLUSIVE ENDPOINT",
-                "NO DATA",
-                "BANDWIDTH LIMIT REACH",
-                "INVALID API KEY",
-                "LIMIT REACH",
-            ]:
-                if option in determine_plan:
-                    if option == "INVALID API KEY" and api_key:
-                        self._enforce_source = "YahooFinance"
-                        logger.error(
-                            "You have entered an invalid API key from Financial Modeling Prep. Obtain your API key for free "
-                            "and get 15%% off the Premium plans by using the following affiliate link.\nThis also supports "
-                            "the project: https://www.jeroenbouma.com/fmp. Using Yahoo Finance as data source instead."
-                        )
-                    self._fmp_plan = "Free"
-                    break
+            if invalid_api_key and api_key:
+                self._enforce_source = "YahooFinance"
+                logger.error(
+                    "You have entered an invalid API key from Financial Modeling Prep. Obtain your API key for free "
+                    "and get 15% off the Premium plans by using the following affiliate link.\nThis also supports "
+                    "the project: https://www.jeroenbouma.com/fmp. Using Yahoo Finance as data source instead."
+                )
         else:
             self._fmp_plan = "Premium"
 
@@ -450,32 +405,10 @@ class Toolkit:
             self._revenue_product_segmentation: pd.DataFrame = pd.DataFrame()
             self._revenue_geographic_segmentation_growth: pd.DataFrame = pd.DataFrame()
             self._revenue_product_segmentation_growth: pd.DataFrame = pd.DataFrame()
+            self._market_risk_premium: pd.DataFrame = pd.DataFrame()
+            self._commitment_of_traders: pd.DataFrame = pd.DataFrame()
 
-            # Define attributes and their corresponding cache file names
-            cached_attributes = {
-                "_profile": "profile.pickle",
-                "_quote": "quote.pickle",
-                "_rating": "rating.pickle",
-                "_analyst_estimates": "analyst_estimates.pickle",
-                "_analyst_estimates_growth": "analyst_estimates_growth.pickle",
-                "_dividend_calendar": "dividend_calendar.pickle",
-                "_earnings_calendar": "earnings_calendar.pickle",
-                "_esg_scores": "esg_scores.pickle",
-                "_revenue_geographic_segmentation": "revenue_geographic_segmentation.pickle",
-                "_revenue_product_segmentation": "revenue_product_segmentation.pickle",
-            }
-
-            # Initialize FinancialModelingPrep Variables
-            for attr_name, file_name in cached_attributes.items():
-                data = (
-                    cache_model.load_cached_data(
-                        cached_data_location=self._cached_data_location,
-                        file_name=file_name,
-                    )
-                    if self._use_cached_data
-                    else pd.DataFrame()
-                )
-                setattr(self, attr_name, data)
+            # Resolved per ticker on request, so a different list reuses what it shares.
 
         if intraday_period and intraday_period not in [
             "1min",
@@ -490,31 +423,17 @@ class Toolkit:
 
         self._intraday_period = intraday_period
 
-        # Load intraday data from cache if specified, otherwise initialize empty DataFrame
-        self._intraday_historical_data: pd.DataFrame = (
-            cache_model.load_cached_data(
-                cached_data_location=self._cached_data_location,
-                file_name="intraday_historical_data.pickle",
-            )
-            if self._use_cached_data
-            else pd.DataFrame()
-        )
+        # Resolved per ticker and range on request, so an overlap is reused.
+        self._intraday_historical_data: pd.DataFrame = pd.DataFrame()
 
-        # Use provided historical data if available, otherwise load daily data from cache or initialize empty DataFrame
+        # Use provided historical data if available, otherwise start empty.
         self._historical = historical
 
         self._daily_historical_data: pd.DataFrame = (
-            historical
-            if not historical.empty
-            else (
-                cache_model.load_cached_data(
-                    cached_data_location=self._cached_data_location,
-                    file_name="daily_historical_data.pickle",
-                )
-                if self._use_cached_data
-                else pd.DataFrame()
-            )
+            historical if not historical.empty else pd.DataFrame()
         )
+        # None means "not fetched by us yet", so pre-supplied `historical` is never auto-invalidated below.
+        self._daily_historical_data_params: tuple | None = None
 
         # Initialize other periods as empty DataFrames. They will be populated on demand.
         self._weekly_historical_data: pd.DataFrame = pd.DataFrame()
@@ -538,14 +457,13 @@ class Toolkit:
             self._fmp_cash_flow_statement_generic,
             self._yf_cash_flow_statement_generic,
             self._fmp_statistics_statement_generic,
+            self._yf_statistics_statement_generic,
         ) = _initialize_statements_and_normalization(
             balance=balance,
             income=income,
             cash=cash,
             format_location=format_location,
             reverse_dates=self._reverse_dates,
-            use_cached_data=use_cached_data,
-            cached_data_location=self._cached_data_location,
             start_date=self._start_date,
             end_date=self._end_date,
             quarterly=self._quarterly,
@@ -587,9 +505,7 @@ class Toolkit:
         # Initialization of the Portfolio Variables
         self._portfolio_weights: dict | None = None
 
-        # Shared across every `toolkit.ratios` access (each access constructs a fresh Ratios
-        # instance) so that analyst estimates used by the forward-looking ratios are only
-        # ever fetched once per Toolkit instance instead of once per method call.
+        # Shared across every `toolkit.ratios` access so estimates are fetched once.
         self._analyst_estimates_cache: dict = {}
 
         pd.set_option("display.float_format", str)
@@ -1112,7 +1028,12 @@ class Toolkit:
     def risk(self) -> Risk:
         """
         This gives access to the Risk module. The Risk Module is meant to calculate metrics related to risk such
-        as Value at Risk (VaR), Conditional Value at Risk (cVaR), EMWA/GARCH models and similar models.
+        as Value at Risk (VaR), Conditional Value at Risk (cVaR), EMWA/GARCH models and similar models. It also
+        houses cross-asset systemic risk and liquidity measures (CoVaR, Tail Dependence, Amihud Illiquidity,
+        Roll Spread).
+
+        Note that the time-series diagnostic and econometric tests (unit root tests, cointegration, Granger
+        causality, ARCH-LM, Jarque-Bera and similar tests) live in the separate Econometrics module instead.
 
         It gives insights in the risk a stock composes that is not perceived as easily by looking at the data.
         This class is closely related to the Performance class which highlights things such as Sharpe Ratio and
@@ -1205,6 +1126,97 @@ class Toolkit:
         return risk
 
     @property
+    def econometrics(self) -> "Econometrics":
+        """
+        This gives access to the Econometrics module, a thin wrapper that funnels this Toolkit's
+        price/return data through `statsmodels` and `linearmodels` -- regression (OLS/WLS/GLS/
+        Logit/Probit/Quantile), panel data (Fixed/Random Effects, Hausman), causal inference
+        (IV-2SLS, Difference-in-Differences, Regression Discontinuity, Propensity Score Matching),
+        specification/hypothesis tests (Breusch-Pagan, White, Durbin-Watson, VIF, RESET, Chow,
+        t/F/LR/Wald tests), stationarity (Augmented Dickey-Fuller, KPSS, Phillips-Perron,
+        Zivot-Andrews unit root tests), long-run equilibrium relationships (Engle-Granger and
+        Johansen cointegration), predictive lead-lag relationships (Granger causality), model/
+        residual diagnostics (ARCH-LM, Jarque-Bera, Ljung-Box, Variance Ratio, CUSUM), forecast
+        comparison (Diebold-Mariano), and time series forecasting (ARIMA, VAR, VECM).
+
+        This class is closely related to the Risk class, which houses the risk measures (VaR,
+        CVaR, GARCH) that these tests often inform the choice of.
+
+        Requires the optional `financetoolkit[econometrics]` extra (`statsmodels` and
+        `linearmodels`) -- install with `pip install financetoolkit[econometrics]`.
+
+        See the following link for more information: https://www.jeroenbouma.com/projects/financetoolkit/docs/econometrics
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.econometrics.get_augmented_dickey_fuller(period='yearly')
+        ```
+        """
+        try:
+            from financetoolkit.econometrics.econometrics_controller import (  # noqa: PLC0415
+                Econometrics,
+            )
+        except ImportError as error:
+            raise ImportError(
+                "The Econometrics module requires the optional 'econometrics' extra "
+                "(statsmodels and linearmodels). Install it with: "
+                "pip install financetoolkit[econometrics]"
+            ) from error
+
+        if not self._start_date:
+            self._start_date = (datetime.today() - timedelta(days=365 * 10)).strftime(
+                "%Y-%m-%d"
+            )
+        if not self._end_date:
+            self._end_date = datetime.today().strftime("%Y-%m-%d")
+
+        for period in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
+            self.get_historical_data(period=period)
+
+        if self._intraday_period:
+            if self._intraday_period in ["1min", "5min", "15min", "30min", "1hour"]:
+                self.get_intraday_data(period=self._intraday_period)
+            else:
+                raise ValueError(
+                    "The intraday period must be one of '1min', '5min', '15min', '30min' or '1hour'."
+                )
+
+        tickers = (
+            self._daily_historical_data.columns.get_level_values(1).unique().tolist()
+        )
+
+        historical_data = {
+            "intraday": self._intraday_historical_data,
+            "daily": self._daily_historical_data,
+            "weekly": self._weekly_historical_data,
+            "monthly": self._monthly_historical_data,
+            "quarterly": self._quarterly_historical_data,
+            "yearly": self._yearly_historical_data,
+        }
+
+        econometrics = Econometrics(
+            tickers=(
+                tickers + ["Portfolio"] if "Portfolio" in self._tickers else tickers
+            ),
+            historical_data=historical_data,
+            intraday_period=self._intraday_period,
+            quarterly=self._quarterly,
+            rounding=self._rounding,
+            start_date=self._start_date,
+            end_date=self._end_date,
+        )
+
+        if self._portfolio_weights:
+            econometrics._portfolio_weights = self._portfolio_weights
+
+        return econometrics
+
+    @property
     def fixedincome(self) -> FixedIncome:
         """
         This gives access to the Fixed Income module. This module contains a wide variety of fixed income
@@ -1256,6 +1268,8 @@ class Toolkit:
             quarterly=self._quarterly,
             rounding=self._rounding,
             fred_api_key=self._fred_api_key,
+            api_key=self._api_key,
+            cache=self._cache,
         )
 
     @property
@@ -1302,6 +1316,9 @@ class Toolkit:
             end_date=self._end_date,
             quarterly=self._quarterly,
             rounding=self._rounding,
+            fred_api_key=self._fred_api_key,
+            allow_stale_oecd_cache=self._allow_stale_oecd_cache,
+            cache=self._cache,
         )
 
     def get_profile(self):
@@ -1370,18 +1387,16 @@ class Toolkit:
             return None
 
         if self._profile.empty:
-            self._profile, self._invalid_tickers = _get_profile(
+            self._profile, self._invalid_tickers = self._collect_per_ticker(
+                dataset="profile",
                 tickers=self._tickers,
-                api_key=self._api_key,
-                user_subscription=self._fmp_plan,
+                ticker_axis=ticker_model.TICKER_ON_COLUMNS,
+                collector=lambda tickers: _get_profile(
+                    tickers=tickers,
+                    api_key=self._api_key,
+                    user_subscription=self._fmp_plan,
+                ),
             )
-
-            if self._use_cached_data:
-                cache_model.save_cached_data(
-                    cached_data=self._profile,
-                    cached_data_location=self._cached_data_location,
-                    file_name="profile.pickle",
-                )
 
         if self._remove_invalid_tickers:
             self._tickers = [
@@ -1449,18 +1464,16 @@ class Toolkit:
             return None
 
         if self._quote.empty:
-            self._quote, self._invalid_tickers = _get_quote(
+            self._quote, self._invalid_tickers = self._collect_per_ticker(
+                dataset="quote",
                 tickers=self._tickers,
-                api_key=self._api_key,
-                user_subscription=self._fmp_plan,
+                ticker_axis=ticker_model.TICKER_ON_COLUMNS,
+                collector=lambda tickers: _get_quote(
+                    tickers=tickers,
+                    api_key=self._api_key,
+                    user_subscription=self._fmp_plan,
+                ),
             )
-
-            if self._use_cached_data:
-                cache_model.save_cached_data(
-                    cached_data=self._quote,
-                    cached_data_location=self._cached_data_location,
-                    file_name="quote.pickle",
-                )
 
         if self._remove_invalid_tickers:
             self._tickers = [
@@ -1528,18 +1541,17 @@ class Toolkit:
             return None
 
         if self._rating.empty:
-            self._rating, self._invalid_tickers = _get_rating(
+            self._rating, self._invalid_tickers = self._collect_per_ticker(
+                dataset="rating",
                 tickers=self._tickers,
-                api_key=self._api_key,
-                user_subscription=self._fmp_plan,
+                ticker_axis=ticker_model.TICKER_ON_INDEX,
+                parameters={"user_subscription": self._fmp_plan},
+                collector=lambda tickers: _get_rating(
+                    tickers=tickers,
+                    api_key=self._api_key,
+                    user_subscription=self._fmp_plan,
+                ),
             )
-
-            if self._use_cached_data:
-                cache_model.save_cached_data(
-                    cached_data=self._rating,
-                    cached_data_location=self._cached_data_location,
-                    file_name="rating.pickle",
-                )
 
         if self._remove_invalid_tickers:
             self._tickers = [
@@ -1571,6 +1583,8 @@ class Toolkit:
             rounding (int | None, optional): Defines the number of decimal places to round the data to. Defaults to None.
             growth (bool, optional): Defines whether to return the growth of the data. Defaults to False.
             lag (int | list[int], optional): Defines the number of periods to lag the growth data by. Defaults to 1.
+            show_columns (list[str] | None): A list of column names to keep in the result. Invalid
+            names are reported and ignored. Defaults to None, which keeps every column.
 
         Returns:
             pandas.DataFrame: The analyst estimates for the specified tickers.
@@ -1626,22 +1640,24 @@ class Toolkit:
             (
                 self._analyst_estimates,
                 self._invalid_tickers,
-            ) = _get_analyst_estimates(
+            ) = self._collect_per_ticker(
+                dataset="analyst_estimates",
                 tickers=self._tickers,
-                api_key=self._api_key,
-                quarter=self._quarterly,
-                start_date=self._start_date,
-                rounding=rounding if rounding else self._rounding,
-                sleep_timer=self._sleep_timer,
-                user_subscription=self._fmp_plan,
+                ticker_axis=ticker_model.TICKER_ON_INDEX,
+                parameters={
+                    "quarter": self._quarterly,
+                    "start_date": self._start_date,
+                },
+                collector=lambda tickers: _get_analyst_estimates(
+                    tickers=tickers,
+                    api_key=self._api_key,
+                    quarter=self._quarterly,
+                    start_date=self._start_date,
+                    rounding=rounding if rounding is not None else self._rounding,
+                    sleep_timer=self._sleep_timer,
+                    user_subscription=self._fmp_plan,
+                ),
             )
-
-            if self._use_cached_data:
-                cache_model.save_cached_data(
-                    cached_data=self._analyst_estimates,
-                    cached_data_location=self._cached_data_location,
-                    file_name="analyst_estimates.pickle",
-                )
 
         if self._remove_invalid_tickers:
             self._tickers = [
@@ -1654,7 +1670,7 @@ class Toolkit:
             self._analyst_estimates_growth = calculate_growth(
                 self._analyst_estimates,
                 lag=lag,
-                rounding=rounding if rounding else self._rounding,
+                rounding=rounding if rounding is not None else self._rounding,
             )
 
         if len(self._tickers) == 1 and not self._analyst_estimates.empty:
@@ -1686,6 +1702,10 @@ class Toolkit:
         Args:
             actual_dates (bool): Defines whether to return the actual dates or the corresponding quarters.
             overwrite (bool): Defines whether to overwrite the existing data.
+            show_columns (list[str] | None): A list of column names to keep in the result. Invalid
+            names are reported and ignored. Defaults to None, which keeps every column.
+            rounding (int | None): The number of decimals to round the results to. Defaults to None,
+            which uses the rounding set on the Toolkit.
 
         Returns:
             pd.DataFrame: The earnings calendar for the specified tickers.
@@ -1734,25 +1754,30 @@ class Toolkit:
             (
                 self._earnings_calendar,
                 self._invalid_tickers,
-            ) = _get_earnings_calendar(
+            ) = self._collect_per_ticker(
+                dataset="earnings_calendar",
                 tickers=self._tickers,
-                api_key=self._api_key,
-                start_date=self._start_date,
-                end_date=self._end_date,
-                actual_dates=actual_dates,
-                sleep_timer=self._sleep_timer,
-                user_subscription=self._fmp_plan,
+                ticker_axis=ticker_model.TICKER_ON_INDEX,
+                parameters={
+                    "start_date": self._start_date,
+                    "end_date": self._end_date,
+                    "actual_dates": actual_dates,
+                    "user_subscription": self._fmp_plan,
+                },
+                collector=lambda tickers: _get_earnings_calendar(
+                    tickers=tickers,
+                    api_key=self._api_key,
+                    start_date=self._start_date,
+                    end_date=self._end_date,
+                    actual_dates=actual_dates,
+                    sleep_timer=self._sleep_timer,
+                    user_subscription=self._fmp_plan,
+                ),
             )
 
-            if self._use_cached_data:
-                cache_model.save_cached_data(
-                    cached_data=self._earnings_calendar,
-                    cached_data_location=self._cached_data_location,
-                    file_name="earnings_calendar.pickle",
-                )
-
-        earnings_calendar = self._earnings_calendar.round(
-            rounding if rounding else self._rounding
+        earnings_calendar = apply_rounding(
+            self._earnings_calendar,
+            rounding if rounding is not None else self._rounding,
         )
 
         if self._remove_invalid_tickers:
@@ -1784,6 +1809,8 @@ class Toolkit:
             pages (int, optional): The number of pages to collect, each page is a
                 separate API call, e.g. pages=5 makes 5 calls. Defaults to 1.
             limit (int, optional): The number of articles to return per page. Defaults to 100.
+            show_columns (list[str] | None): A list of column names to keep in the result. Invalid
+            names are reported and ignored. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The latest news articles for the specified tickers.
@@ -1839,6 +1866,8 @@ class Toolkit:
             pages (int, optional): The number of pages to collect, each page is a
                 separate API call, e.g. pages=5 makes 5 calls. Defaults to 1.
             limit (int, optional): The number of articles to return per page. Defaults to 100.
+            show_columns (list[str] | None): A list of column names to keep in the result. Invalid
+            names are reported and ignored. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The latest press releases for the specified tickers.
@@ -1891,6 +1920,8 @@ class Toolkit:
 
         Args:
             overwrite (bool): Defines whether to overwrite the existing data.
+            show_columns (list[str] | None): A list of column names to keep in the result. Invalid
+            names are reported and ignored. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The revenue by geographic segmentation for the specified tickers.
@@ -1933,23 +1964,28 @@ class Toolkit:
             (
                 self._revenue_geographic_segmentation,
                 self._invalid_tickers,
-            ) = _get_revenue_segmentation(
+            ) = self._collect_per_ticker(
+                dataset="revenue_geographic_segmentation",
                 tickers=self._tickers,
-                method="geographic",
-                api_key=self._api_key,
-                quarter=self._quarterly if self._fmp_plan == "Premium" else False,
-                start_date=self._start_date,
-                end_date=self._end_date,
-                sleep_timer=self._sleep_timer,
-                user_subscription=self._fmp_plan,
+                ticker_axis=ticker_model.TICKER_ON_INDEX,
+                parameters={
+                    "quarter": (
+                        self._quarterly if self._fmp_plan == "Premium" else False
+                    ),
+                    "start_date": self._start_date,
+                    "end_date": self._end_date,
+                },
+                collector=lambda tickers: _get_revenue_segmentation(
+                    tickers=tickers,
+                    method="geographic",
+                    api_key=self._api_key,
+                    quarter=self._quarterly if self._fmp_plan == "Premium" else False,
+                    start_date=self._start_date,
+                    end_date=self._end_date,
+                    sleep_timer=self._sleep_timer,
+                    user_subscription=self._fmp_plan,
+                ),
             )
-
-            if self._use_cached_data:
-                cache_model.save_cached_data(
-                    cached_data=self._revenue_geographic_segmentation,
-                    cached_data_location=self._cached_data_location,
-                    file_name="revenue_geographic_segmentation.pickle",
-                )
 
         if self._remove_invalid_tickers:
             self._tickers = [
@@ -1980,6 +2016,8 @@ class Toolkit:
 
         Args:
             overwrite (bool): Defines whether to overwrite the existing data.
+            show_columns (list[str] | None): A list of column names to keep in the result. Invalid
+            names are reported and ignored. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The revenue by product segmentation for the specified tickers.
@@ -2026,23 +2064,28 @@ class Toolkit:
             (
                 self._revenue_product_segmentation,
                 self._invalid_tickers,
-            ) = _get_revenue_segmentation(
+            ) = self._collect_per_ticker(
+                dataset="revenue_product_segmentation",
                 tickers=self._tickers,
-                method="product",
-                api_key=self._api_key,
-                quarter=self._quarterly if self._fmp_plan == "Premium" else False,
-                start_date=self._start_date,
-                end_date=self._end_date,
-                sleep_timer=self._sleep_timer,
-                user_subscription=self._fmp_plan,
+                ticker_axis=ticker_model.TICKER_ON_INDEX,
+                parameters={
+                    "quarter": (
+                        self._quarterly if self._fmp_plan == "Premium" else False
+                    ),
+                    "start_date": self._start_date,
+                    "end_date": self._end_date,
+                },
+                collector=lambda tickers: _get_revenue_segmentation(
+                    tickers=tickers,
+                    method="product",
+                    api_key=self._api_key,
+                    quarter=self._quarterly if self._fmp_plan == "Premium" else False,
+                    start_date=self._start_date,
+                    end_date=self._end_date,
+                    sleep_timer=self._sleep_timer,
+                    user_subscription=self._fmp_plan,
+                ),
             )
-
-            if self._use_cached_data:
-                cache_model.save_cached_data(
-                    cached_data=self._revenue_product_segmentation,
-                    cached_data_location=self._cached_data_location,
-                    file_name="revenue_product_segmentation.pickle",
-                )
 
         if self._remove_invalid_tickers:
             self._tickers = [
@@ -2167,7 +2210,24 @@ class Toolkit:
                 fill_nan=fill_nan,
             )
 
-        if self._daily_historical_data.empty or overwrite:
+        resolved_enforce_source = (
+            enforce_source if enforce_source is not None else self._enforce_source
+        )
+        resolved_rounding = rounding if rounding is not None else self._rounding
+        daily_historical_params = (
+            resolved_enforce_source,
+            return_column,
+            include_dividends,
+            fill_nan,
+            resolved_rounding,
+        )
+        # Auto-invalidate only data we fetched ourselves before, on a param change; never touches pre-supplied `historical`.
+        params_changed = (
+            self._daily_historical_data_params is not None
+            and self._daily_historical_data_params != daily_historical_params
+        )
+
+        if self._daily_historical_data.empty or overwrite or params_changed:
             self._daily_historical_data, self._invalid_tickers = _get_historical_data(
                 tickers=(
                     self._tickers + [self._benchmark_ticker]
@@ -2175,34 +2235,26 @@ class Toolkit:
                     else self._tickers
                 ),
                 api_key=self._api_key,
-                enforce_source=(
-                    enforce_source
-                    if enforce_source is not None
-                    else self._enforce_source
-                ),
+                enforce_source=resolved_enforce_source,
                 start=self._start_date,
                 end=self._end_date,
                 interval="1d",
                 return_column=return_column,
                 include_dividends=include_dividends,
                 fill_nan=fill_nan,
-                rounding=rounding if rounding else self._rounding,
+                rounding=resolved_rounding,
                 sleep_timer=self._sleep_timer,
                 show_ticker_seperation=show_ticker_seperation,
                 show_errors=True,
+                user_subscription=self._fmp_plan,
+                cache=self._cache,
             )
+            self._daily_historical_data_params = daily_historical_params
 
             # Change the benchmark ticker name to Benchmark
             if not self._daily_historical_data.empty:
                 self._daily_historical_data = self._daily_historical_data.rename(
                     columns={self._benchmark_ticker: "Benchmark"}, level=1
-                )
-
-            if self._use_cached_data:
-                cache_model.save_cached_data(
-                    cached_data=self._daily_historical_data,
-                    cached_data_location=self._cached_data_location,
-                    file_name="daily_historical_data.pickle",
                 )
 
         if self._remove_invalid_tickers:
@@ -2218,8 +2270,8 @@ class Toolkit:
         if period == "daily":
             historical_data = self._daily_historical_data.loc[
                 self._start_date : self._end_date, :
-            ].copy()
-            historical_data.loc[historical_data.index[0], "Return"] = 0
+            ]
+            # The first row of the window has no preceding observation, so its Return stays NaN; Cumulative Return is already anchored at 1 there by its own calculation, so nothing depends on fabricating a zero.
 
         elif period == "weekly":
             if self._weekly_risk_free_rate.empty or overwrite:
@@ -2232,13 +2284,14 @@ class Toolkit:
                 daily_historical_data=self._daily_historical_data,
                 start=self._start_date,
                 end=self._end_date,
-                rounding=rounding if rounding else self._rounding,
+                rounding=rounding if rounding is not None else self._rounding,
+                return_column=return_column,
             )
 
             historical_data = self._weekly_historical_data.loc[
                 self._start_date : self._end_date, :
-            ].copy()
-            historical_data.loc[historical_data.index[0], "Return"] = 0
+            ]
+            # The first row of the window has no preceding observation, so its Return stays NaN; Cumulative Return is already anchored at 1 there by its own calculation, so nothing depends on fabricating a zero.
 
         elif period == "monthly":
             if self._monthly_risk_free_rate.empty or overwrite:
@@ -2251,13 +2304,14 @@ class Toolkit:
                 daily_historical_data=self._daily_historical_data,
                 start=self._start_date,
                 end=self._end_date,
-                rounding=rounding if rounding else self._rounding,
+                rounding=rounding if rounding is not None else self._rounding,
+                return_column=return_column,
             )
 
             historical_data = self._monthly_historical_data.loc[
                 self._start_date : self._end_date, :
-            ].copy()
-            historical_data.loc[historical_data.index[0], "Return"] = 0
+            ]
+            # The first row of the window has no preceding observation, so its Return stays NaN; Cumulative Return is already anchored at 1 there by its own calculation, so nothing depends on fabricating a zero.
 
         elif period == "quarterly":
             if self._quarterly_risk_free_rate.empty or overwrite:
@@ -2270,13 +2324,14 @@ class Toolkit:
                 daily_historical_data=self._daily_historical_data,
                 start=self._start_date,
                 end=self._end_date,
-                rounding=rounding if rounding else self._rounding,
+                rounding=rounding if rounding is not None else self._rounding,
+                return_column=return_column,
             )
 
             historical_data = self._quarterly_historical_data.loc[
                 self._start_date : self._end_date, :
-            ].copy()
-            historical_data.loc[historical_data.index[0], "Return"] = 0
+            ]
+            # The first row of the window has no preceding observation, so its Return stays NaN; Cumulative Return is already anchored at 1 there by its own calculation, so nothing depends on fabricating a zero.
 
         elif period == "yearly":
             if self._yearly_risk_free_rate.empty or overwrite:
@@ -2289,13 +2344,14 @@ class Toolkit:
                 daily_historical_data=self._daily_historical_data,
                 start=self._start_date,
                 end=self._end_date,
-                rounding=rounding if rounding else self._rounding,
+                rounding=rounding if rounding is not None else self._rounding,
+                return_column=return_column,
             )
 
             historical_data = self._yearly_historical_data.loc[
                 self._start_date : self._end_date, :
-            ].copy()
-            historical_data.loc[historical_data.index[0], "Return"] = 0
+            ]
+            # The first row of the window has no preceding observation, so its Return stays NaN; Cumulative Return is already anchored at 1 there by its own calculation, so nothing depends on fabricating a zero.
 
         else:
             raise ValueError(
@@ -2369,6 +2425,8 @@ class Toolkit:
             return_column (str, optional): The column to use for the return calculation. Defaults to "Close".
             fill_nan (bool, optional): Defines whether to forward fill NaN values. Defaults to True.
             rounding (int | None, optional): Defines the number of decimal places to round the data to. Defaults to None.
+            show_columns (list[str] | None): A list of column names to keep in the result. Invalid
+            names are reported and ignored. Defaults to None, which keeps every column.
 
         Returns:
             pandas.DataFrame: The intraday data for the specified tickers.
@@ -2435,18 +2493,13 @@ class Toolkit:
                 return_column=return_column,
                 include_dividends=False,
                 fill_nan=fill_nan,
-                rounding=rounding if rounding else self._rounding,
+                rounding=rounding if rounding is not None else self._rounding,
                 sleep_timer=self._sleep_timer,
                 show_errors=True,
                 log_message="Obtaining intraday data",
+                user_subscription=self._fmp_plan,
+                cache=self._cache,
             )
-
-            if self._use_cached_data:
-                cache_model.save_cached_data(
-                    cached_data=self._intraday_historical_data,
-                    cached_data_location=self._cached_data_location,
-                    file_name="intraday_historical_data.pickle",
-                )
 
         # Save the period to prevent having to reacquire the data
         self._intraday_period = period
@@ -2468,9 +2521,9 @@ class Toolkit:
 
         historical_data = self._intraday_historical_data.loc[
             self._start_date : self._end_date, :
-        ].copy()
+        ]
 
-        historical_data.loc[historical_data.index[0], "Return"] = 0
+        # The first row of the window has no preceding observation, so its Return stays NaN rather than being reported as an unchanged period.
 
         if show_columns is not None:
             historical_data = filter_columns(historical_data, show_columns)
@@ -2503,6 +2556,8 @@ class Toolkit:
         Args:
             overwrite (bool): Defines whether to overwrite the existing data.
             rounding (int): Defines the number of decimal places to round the data to.
+            show_columns (list[str] | None): A list of column names to keep in the result. Invalid
+            names are reported and ignored. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The earnings calendar for the specified tickers.
@@ -2552,24 +2607,28 @@ class Toolkit:
             (
                 self._dividend_calendar,
                 self._invalid_tickers,
-            ) = _get_dividend_calendar(
+            ) = self._collect_per_ticker(
+                dataset="dividend_calendar",
                 tickers=self._tickers,
-                api_key=self._api_key,
-                start_date=self._start_date,
-                end_date=self._end_date,
-                sleep_timer=self._sleep_timer,
-                user_subscription=self._fmp_plan,
+                ticker_axis=ticker_model.TICKER_ON_INDEX,
+                parameters={
+                    "start_date": self._start_date,
+                    "end_date": self._end_date,
+                    "user_subscription": self._fmp_plan,
+                },
+                collector=lambda tickers: _get_dividend_calendar(
+                    tickers=tickers,
+                    api_key=self._api_key,
+                    start_date=self._start_date,
+                    end_date=self._end_date,
+                    sleep_timer=self._sleep_timer,
+                    user_subscription=self._fmp_plan,
+                ),
             )
 
-            if self._use_cached_data:
-                cache_model.save_cached_data(
-                    cached_data=self._dividend_calendar,
-                    cached_data_location=self._cached_data_location,
-                    file_name="dividend_calendar.pickle",
-                )
-
-        dividend_calendar = self._dividend_calendar.round(
-            rounding if rounding else self._rounding
+        dividend_calendar = apply_rounding(
+            self._dividend_calendar,
+            rounding if rounding is not None else self._rounding,
         )
 
         if self._remove_invalid_tickers:
@@ -2633,6 +2692,8 @@ class Toolkit:
         Args:
             overwrite (bool): Defines whether to overwrite the existing data.
             rounding (int): Defines the number of decimal places to round the data to.
+            show_columns (list[str] | None): A list of column names to keep in the result. Invalid
+            names are reported and ignored. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The ESG scores for the specified tickers.
@@ -2673,17 +2734,29 @@ class Toolkit:
             (
                 self._esg_scores,
                 self._invalid_tickers,
-            ) = _get_esg_scores(
+            ) = self._collect_per_ticker(
+                dataset="esg_scores",
                 tickers=self._tickers,
-                api_key=self._api_key,
-                quarter=self._quarterly,
-                start_date=self._start_date,
-                end_date=self._end_date,
-                sleep_timer=self._sleep_timer,
-                user_subscription=self._fmp_plan,
+                ticker_axis=ticker_model.TICKER_ON_COLUMNS,
+                parameters={
+                    "quarter": self._quarterly,
+                    "start_date": self._start_date,
+                    "end_date": self._end_date,
+                },
+                collector=lambda tickers: _get_esg_scores(
+                    tickers=tickers,
+                    api_key=self._api_key,
+                    quarter=self._quarterly,
+                    start_date=self._start_date,
+                    end_date=self._end_date,
+                    sleep_timer=self._sleep_timer,
+                    user_subscription=self._fmp_plan,
+                ),
             )
 
-        esg_scores = self._esg_scores.round(rounding if rounding else self._rounding)
+        esg_scores = apply_rounding(
+            self._esg_scores, rounding if rounding is not None else self._rounding
+        )
 
         if self._remove_invalid_tickers:
             self._tickers = [
@@ -2699,6 +2772,169 @@ class Toolkit:
             return esg_scores.xs(self._tickers[0], axis=1, level=1)
 
         return esg_scores
+
+    def get_market_risk_premium(self, overwrite: bool = False):
+        """
+        Obtains the equity market risk premium by country -- the country default spread plus the
+        equity risk premium, following the approach popularized by Aswath Damodaran -- which is
+        widely used to calibrate country-specific costs of equity and discount rates in a
+        multi-country setting.
+
+        Also known as: country risk premium, Damodaran equity risk premium.
+
+        Args:
+            overwrite (bool): Defines whether to overwrite the existing data.
+
+        Raises:
+            ValueError: If an API key is not defined for FinancialModelingPrep.
+
+        Returns:
+            pd.DataFrame: The market risk premium by country, including the continent, Country
+            Risk Premium and Total Equity Risk Premium (both in percentage points).
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AMZN", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        market_risk_premium = toolkit.get_market_risk_premium()
+
+        market_risk_premium.loc[['United States', 'Germany', 'Brazil']]
+        ```
+
+        Which returns:
+
+        | Country       | Continent     |   Country Risk Premium |   Total Equity Risk Premium |
+        |:--------------|:--------------|------------------------:|-----------------------------:|
+        | United States | North America |                    0.23 |                          4.46 |
+        | Germany       | Europe        |                    0    |                          4.23 |
+        | Brazil        | South America |                    3.24 |                          7.47 |
+        """
+        if not self._api_key:
+            logger.error(
+                "The requested data requires the api_key parameter to be set, consider obtaining a key with the "
+                "following link: https://www.jeroenbouma.com/fmp"
+            )
+            return None
+
+        if self._market_risk_premium.empty or overwrite:
+            # Published per country rather than per ticker, so it is one cache entry.
+            cached_premium = (
+                None
+                if overwrite
+                else self._cache.get(
+                    source=policy_model.FINANCIAL_MODELING_PREP,
+                    dataset="market_risk_premium",
+                    entity="global",
+                )
+            )
+
+            if cached_premium is not None:
+                self._market_risk_premium = cached_premium
+            else:
+                self._market_risk_premium = _get_market_risk_premium(
+                    api_key=self._api_key,
+                    user_subscription=self._fmp_plan,
+                )
+
+                if not self._market_risk_premium.empty:
+                    self._cache.set(
+                        source=policy_model.FINANCIAL_MODELING_PREP,
+                        dataset="market_risk_premium",
+                        entity="global",
+                        data=self._market_risk_premium,
+                    )
+
+        return self._market_risk_premium
+
+    def get_commitment_of_traders(self, overwrite: bool = False):
+        """
+        Obtains the CFTC Commitment of Traders (COT) report for the tickers the Toolkit was
+        initialized with. Published weekly by the U.S. Commodity Futures Trading Commission, it
+        breaks down open interest in futures markets by trader type -- Non-Commercial (large
+        speculators), Commercial (hedgers) and Non-Reportable (small traders) -- and is widely
+        used to gauge positioning and sentiment in commodity, currency, interest rate and stock
+        index futures markets.
+
+        Note that this data is only available for CFTC-tracked futures markets. Tickers without a
+        corresponding futures contract (e.g. most individual equities) return no data.
+
+        Also known as: COT report, CFTC positioning data, speculator/hedger positioning.
+
+        Args:
+            overwrite (bool): Defines whether to overwrite the existing data.
+
+        Raises:
+            ValueError: If an API key is not defined for FinancialModelingPrep.
+
+        Returns:
+            pd.DataFrame: The Commitment of Traders report for the specified tickers.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["NG", "GC"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        commitment_of_traders = toolkit.get_commitment_of_traders()
+
+        commitment_of_traders.xs("NG", level=1, axis=1)[
+            ["Open Interest", "Non-Commercial Long", "Non-Commercial Short", "Commercial Long", "Commercial Short"]
+        ].tail()
+        ```
+
+        Which returns:
+
+        | date                |   Open Interest |   Non-Commercial Long |   Non-Commercial Short |   Commercial Long |   Commercial Short |
+        |:--------------------|-----------------:|----------------------:|------------------------:|-------------------:|--------------------:|
+        | 2024-01-30 00:00:00 |          1471807 |                 279539 |                  382722 |              526952 |               450698 |
+        | 2024-02-06 00:00:00 |          1533041 |                 301020 |                  415251 |              539246 |               456560 |
+        | 2024-02-13 00:00:00 |          1554063 |                 334504 |                  471061 |              552780 |               453300 |
+        | 2024-02-20 00:00:00 |          1592460 |                 356334 |                  510206 |              567791 |               452247 |
+        | 2024-02-27 00:00:00 |          1500882 |                 326328 |                  467881 |              545380 |               433185 |
+        """
+        if not self._api_key:
+            logger.error(
+                "The requested data requires the api_key parameter to be set, consider obtaining a key with the "
+                "following link: https://www.jeroenbouma.com/fmp"
+            )
+            return None
+
+        if self._commitment_of_traders.empty or overwrite:
+            (
+                self._commitment_of_traders,
+                self._invalid_tickers,
+            ) = self._collect_per_ticker(
+                dataset="commitment_of_traders",
+                tickers=self._tickers,
+                ticker_axis=ticker_model.TICKER_ON_COLUMNS,
+                parameters={
+                    "start_date": self._start_date,
+                    "end_date": self._end_date,
+                },
+                collector=lambda tickers: _get_commitment_of_traders(
+                    tickers=tickers,
+                    api_key=self._api_key,
+                    start_date=self._start_date,
+                    end_date=self._end_date,
+                    user_subscription=self._fmp_plan,
+                ),
+            )
+
+        if self._remove_invalid_tickers:
+            self._tickers = [
+                ticker
+                for ticker in self._tickers
+                if ticker not in self._invalid_tickers
+            ]
+
+        if len(self._tickers) == 1 and not self._commitment_of_traders.empty:
+            return self._commitment_of_traders.xs(self._tickers[0], axis=1, level=1)
+
+        return self._commitment_of_traders
 
     def get_historical_statistics(self):
         """
@@ -2779,6 +3015,18 @@ class Toolkit:
             fill_nan (bool): Defines whether to forward fill NaN values. This defaults
             to True to prevent holes in the dataset. This is especially relevant for
             technical indicators.
+            risk_free_rate (str | None, optional): The maturity to return as the risk free rate
+                ('13w', '5y', '10y' or '30y'). Defaults to None, which uses the maturity set on
+                the Toolkit.
+            divide_ohlc_by (int | float | None, optional): A value to divide the yields by. Treasury
+                yields are published in percent, so this defaults to 100 to return decimals.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding set on the Toolkit.
+            show_errors (bool, optional): Whether to report retrieval errors. Defaults to False.
+            enforce_source (str | None, optional): Forces this specific call to use a given
+                source, either "FinancialModelingPrep" or "YahooFinance". This takes precedence
+                over the source set on the Toolkit itself. Defaults to None, which falls back to
+                the Toolkit's own enforce_source.
 
         Returns:
             pd.DataFrame: A DataFrame containing the treasury data.
@@ -2858,8 +3106,7 @@ class Toolkit:
             )
 
         if self._daily_treasury_data.empty or False in specific_rates:
-            # It collects data in the scenarios where the treasury data is empty or only contains one column which generally
-            # means the data was collected for the historical data functionality which only requires a subselection
+            # Collects when treasury data is empty or holds only the historical subselection.
             (
                 self._daily_treasury_data,
                 _,
@@ -2874,16 +3121,21 @@ class Toolkit:
                 start=self._start_date,
                 end=self._end_date,
                 divide_ohlc_by=divide_ohlc_by,
-                rounding=rounding if rounding else self._rounding,
+                rounding=rounding if rounding is not None else self._rounding,
                 show_errors=show_errors,
                 fill_nan=fill_nan,
                 sleep_timer=self._sleep_timer,
                 log_message="Obtaining treasury data",
+                user_subscription=self._fmp_plan,
+                cache=self._cache,
             )
 
             if not self._daily_treasury_data.empty:
                 self._daily_treasury_data = self._daily_treasury_data.rename(
                     columns=treasury_names, level=1
+                )
+                self._daily_treasury_data = self._align_treasury_data_to_trading_days(
+                    self._daily_treasury_data
                 )
                 self._daily_risk_free_rate = self._daily_treasury_data.xs(
                     risk_free_rate, level=1, axis=1
@@ -2906,7 +3158,7 @@ class Toolkit:
                 daily_historical_data=self._daily_treasury_data,
                 start=self._start_date,
                 end=self._end_date,
-                rounding=rounding if rounding else self._rounding,
+                rounding=rounding if rounding is not None else self._rounding,
             )
 
             self._weekly_risk_free_rate = self._weekly_treasury_data.xs(
@@ -2920,7 +3172,7 @@ class Toolkit:
                 daily_historical_data=self._daily_treasury_data,
                 start=self._start_date,
                 end=self._end_date,
-                rounding=rounding if rounding else self._rounding,
+                rounding=rounding if rounding is not None else self._rounding,
             )
 
             self._monthly_risk_free_rate = self._monthly_treasury_data.xs(
@@ -2934,7 +3186,7 @@ class Toolkit:
                 daily_historical_data=self._daily_treasury_data,
                 start=self._start_date,
                 end=self._end_date,
-                rounding=rounding if rounding else self._rounding,
+                rounding=rounding if rounding is not None else self._rounding,
             )
 
             self._quarterly_risk_free_rate = self._quarterly_treasury_data.xs(
@@ -2950,7 +3202,7 @@ class Toolkit:
                 daily_historical_data=self._daily_treasury_data,
                 start=self._start_date,
                 end=self._end_date,
-                rounding=rounding if rounding else self._rounding,
+                rounding=rounding if rounding is not None else self._rounding,
             )
 
             self._yearly_risk_free_rate = self._yearly_treasury_data.xs(
@@ -2993,8 +3245,6 @@ class Toolkit:
         Also known as: currency exchange, FX rates, foreign exchange rates.
 
         Args:
-            start (str): The start date for the exchange data. Defaults to None.
-            end (str): The end date for the exchange data. Defaults to None.
             period (str): The interval at which the historical data should be
             returned - daily, weekly, monthly, quarterly, or yearly.
             Defaults to "daily".
@@ -3055,19 +3305,32 @@ class Toolkit:
                     historical_currencies=self._historical_statistics.loc["Currency"],
                 )
 
-        # Separate currencies that are merely a comparison between the same currency
-        # and currencies that are actual exchange rates.
+        # Separate same-currency comparisons from actual exchange rates; GBP and GBp are the same currency in different units, so there is no rate to retrieve for that pair either, and the unit difference is applied as a factor during conversion.
         currencies_to_collect_data_for = [
-            currency for currency in self._currencies if currency[:3] != currency[3:6]
+            currency
+            for currency in self._currencies
+            if currencies_model.get_major_currency(currency[:3])
+            != currencies_model.get_major_currency(currency[3:6])
         ]
         currencies_to_fill_to_one = [
-            currency for currency in self._currencies if currency[:3] == currency[3:6]
+            currency
+            for currency in self._currencies
+            if currencies_model.get_major_currency(currency[:3])
+            == currencies_model.get_major_currency(currency[3:6])
         ]
 
         if self._daily_exchange_rate_data.empty or overwrite:
             if currencies_to_collect_data_for:
+                # A handful of pairs need a different ticker than the generic BASE+QUOTE+"=X" (see currencies_model.NATIVE_MINOR_UNIT_TICKERS).
+                fx_ticker_map = {
+                    currency: currencies_model.get_fx_ticker(
+                        currency[:3], currency[3:6]
+                    )
+                    for currency in currencies_to_collect_data_for
+                }
+
                 self._daily_exchange_rate_data, _ = _get_historical_data(
-                    tickers=currencies_to_collect_data_for,
+                    tickers=list(fx_ticker_map.values()),
                     api_key=self._api_key,
                     enforce_source=self._enforce_source,
                     start=self._lookback_start_date,
@@ -3076,14 +3339,50 @@ class Toolkit:
                     return_column=return_column,
                     include_dividends=False,
                     fill_nan=fill_nan,
-                    rounding=rounding if rounding else self._rounding,
+                    rounding=rounding if rounding is not None else self._rounding,
                     sleep_timer=self._sleep_timer,
                     show_ticker_seperation=show_ticker_seperation,
                     log_message="Obtaining currency exchange data",
+                    user_subscription=self._fmp_plan,
+                    cache=self._cache,
                 )
+
+                if self._daily_exchange_rate_data.empty:
+                    # None of the requested pairs resolved on either provider; a NaN-filled placeholder keeps a valid date index so conversion can warn per ticker instead of failing outright.
+                    self._daily_exchange_rate_data = pd.DataFrame(
+                        data=float("nan"),
+                        index=pd.PeriodIndex(
+                            pd.date_range(
+                                start=self._lookback_start_date,
+                                end=self._end_date,
+                                freq="D",
+                            )
+                        ),
+                        columns=pd.MultiIndex.from_product(
+                            [
+                                [
+                                    "Open",
+                                    "High",
+                                    "Low",
+                                    "Close",
+                                    "Adj Close",
+                                    "Volume",
+                                    "Return",
+                                    "Cumulative Return",
+                                ],
+                                currencies_to_collect_data_for,
+                            ]
+                        ),
+                    )
+                else:
+                    # Map the requested ticker symbols back onto the canonical currency identifiers used everywhere else.
+                    self._daily_exchange_rate_data = (
+                        self._daily_exchange_rate_data.rename(
+                            columns={v: k for k, v in fx_ticker_map.items()}, level=1
+                        )
+                    )
             else:
-                # In case there is no conversion needed, it should create a placeholder
-                # DataFrame that works with the rest of the Toolkit.
+                # A placeholder DataFrame for when no conversion is needed.
                 self._daily_exchange_rate_data = pd.DataFrame(
                     data=1,
                     index=pd.PeriodIndex(
@@ -3107,8 +3406,7 @@ class Toolkit:
                     ),
                 )
 
-            # For exchange data, it is possible that a ticker such as USDUSD=X
-            # exists which should always be 1. This data is added here.
+            # A ticker such as USDUSD=X should always be 1, added here.
             if currencies_to_fill_to_one:
                 upper_columns = self._daily_exchange_rate_data.columns.get_level_values(
                     level=0
@@ -3124,8 +3422,8 @@ class Toolkit:
         if period == "daily":
             historical_data = self._daily_exchange_rate_data.loc[
                 self._start_date : self._end_date, :
-            ].copy()
-            historical_data.loc[historical_data.index[0], "Return"] = 0
+            ]
+            # The first row of the window has no preceding observation, so its Return stays NaN; Cumulative Return is already anchored at 1 there by its own calculation, so nothing depends on fabricating a zero.
 
             if len(self._currencies) == 1:
                 return historical_data.xs(self._currencies[0], level=1, axis="columns")
@@ -3138,13 +3436,13 @@ class Toolkit:
                 daily_historical_data=self._daily_exchange_rate_data,
                 start=self._start_date,
                 end=self._end_date,
-                rounding=rounding if rounding else self._rounding,
+                rounding=rounding if rounding is not None else self._rounding,
             )
 
             historical_data = self._weekly_exchange_rate_data.loc[
                 self._start_date : self._end_date, :
-            ].copy()
-            historical_data.loc[historical_data.index[0], "Return"] = 0
+            ]
+            # The first row of the window has no preceding observation, so its Return stays NaN; Cumulative Return is already anchored at 1 there by its own calculation, so nothing depends on fabricating a zero.
 
             if len(self._currencies) == 1:
                 return historical_data.xs(self._currencies[0], level=1, axis="columns")
@@ -3157,13 +3455,13 @@ class Toolkit:
                 daily_historical_data=self._daily_exchange_rate_data,
                 start=self._start_date,
                 end=self._end_date,
-                rounding=rounding if rounding else self._rounding,
+                rounding=rounding if rounding is not None else self._rounding,
             )
 
             historical_data = self._monthly_exchange_rate_data.loc[
                 self._start_date : self._end_date, :
-            ].copy()
-            historical_data.loc[historical_data.index[0], "Return"] = 0
+            ]
+            # The first row of the window has no preceding observation, so its Return stays NaN; Cumulative Return is already anchored at 1 there by its own calculation, so nothing depends on fabricating a zero.
 
             if len(self._currencies) == 1:
                 return historical_data.xs(self._currencies[0], level=1, axis="columns")
@@ -3176,13 +3474,13 @@ class Toolkit:
                 daily_historical_data=self._daily_exchange_rate_data,
                 start=self._start_date,
                 end=self._end_date,
-                rounding=rounding if rounding else self._rounding,
+                rounding=rounding if rounding is not None else self._rounding,
             )
 
             historical_data = self._quarterly_exchange_rate_data.loc[
                 self._start_date : self._end_date, :
-            ].copy()
-            historical_data.loc[historical_data.index[0], "Return"] = 0
+            ]
+            # The first row of the window has no preceding observation, so its Return stays NaN; Cumulative Return is already anchored at 1 there by its own calculation, so nothing depends on fabricating a zero.
 
             if len(self._currencies) == 1:
                 return historical_data.xs(self._currencies[0], level=1, axis="columns")
@@ -3195,13 +3493,13 @@ class Toolkit:
                 daily_historical_data=self._daily_exchange_rate_data,
                 start=self._start_date,
                 end=self._end_date,
-                rounding=rounding if rounding else self._rounding,
+                rounding=rounding if rounding is not None else self._rounding,
             )
 
             historical_data = self._yearly_exchange_rate_data.loc[
                 self._start_date : self._end_date, :
-            ].copy()
-            historical_data.loc[historical_data.index[0], "Return"] = 0
+            ]
+            # The first row of the window has no preceding observation, so its Return stays NaN; Cumulative Return is already anchored at 1 there by its own calculation, so nothing depends on fabricating a zero.
 
             return historical_data
 
@@ -3238,13 +3536,19 @@ class Toolkit:
         Also known as: assets, liabilities, shareholders equity, financial position.
 
         Args:
-            enforce_source (bool): Defines whether to enforce the source of the data. This can be
-                either "FinancialModelingPrep" or "YahooFinance". Defaults to None.
+            enforce_source (str | None, optional): Forces this specific call to use a given
+                source, either "FinancialModelingPrep" or "YahooFinance". This takes precedence
+                over the source set on the Toolkit itself, so one instance can pull historical
+                data from the free Yahoo Finance source while still using a FinancialModelingPrep
+                key for the financial statements (or the other way around). Defaults to None,
+                which falls back to the Toolkit's own enforce_source.
             overwrite (bool): Defines whether to overwrite the existing data.
             rounding (int): Defines the number of decimal places to round the data to.
             growth (bool): Defines whether to return the growth of the data.
             lag (int | str): Defines the number of periods to lag the growth data by.
             E.g. when selecting 4 with quarterly data, the TTM is calculated.
+            show_columns (list[str] | None): A list of column names to keep in the result. Invalid
+            names are reported and ignored. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A pandas DataFrame with the retrieved balance sheet statement data.
@@ -3314,10 +3618,21 @@ class Toolkit:
             and (self._balance_sheet_statement.empty or overwrite)
         )
 
+        if enforce_source is not None and enforce_source not in [
+            "FinancialModelingPrep",
+            "YahooFinance",
+        ]:
+            raise ValueError(
+                "The enforce_source parameter must be either 'FinancialModelingPrep' or 'YahooFinance'."
+            )
+
+        # A per-call enforce_source overrides the one the Toolkit was initialised with.
+        source = enforce_source if enforce_source is not None else self._enforce_source
+
         if (
             not self._api_key
             and self._balance_sheet_statement.empty
-            and self._enforce_source == "FinancialModelingPrep"
+            and source == "FinancialModelingPrep"
         ):
             logger.error(
                 "The requested data requires the api_key parameter to be set or the enforce_source "
@@ -3328,14 +3643,6 @@ class Toolkit:
                 "above affiliate link which also supports the project."
             )
             return None
-
-        if enforce_source is not None and enforce_source not in [
-            "FinancialModelingPrep",
-            "YahooFinance",
-        ]:
-            raise ValueError(
-                "The enforce_source parameter must be either 'FinancialModelingPrep' or 'YahooFinance'."
-            )
 
         # Correct for the case where a Portfolio ticker exists
         ticker_list = [ticker for ticker in self._tickers if ticker != "Portfolio"]
@@ -3353,17 +3660,15 @@ class Toolkit:
                 quarter=self._quarterly,
                 start_date=self._lookback_start_date,
                 end_date=self._end_date,
-                rounding=rounding if rounding else self._rounding,
+                rounding=rounding if rounding is not None else self._rounding,
                 fmp_statement_format=self._fmp_balance_sheet_statement_generic,
                 fmp_statistics_format=self._fmp_statistics_statement_generic,
+                yf_statistics_format=self._yf_statistics_statement_generic,
                 yf_statement_format=self._yf_balance_sheet_statement_generic,
                 sleep_timer=self._sleep_timer,
                 user_subscription=self._fmp_plan,
-                enforce_source=(
-                    enforce_source
-                    if enforce_source is not None
-                    else self._enforce_source
-                ),
+                enforce_source=source,
+                cache=self._cache,
             )
             self._fiscal_year_adjustments.update(_fy_adj)
 
@@ -3384,13 +3689,6 @@ class Toolkit:
                         financial_statement_name="balance sheet statement",
                     )
 
-            if self._use_cached_data:
-                cache_model.save_cached_data(
-                    cached_data=self._balance_sheet_statement,
-                    cached_data_location=self._cached_data_location,
-                    file_name="balance_sheet_statement.pickle",
-                )
-
         if self._remove_invalid_tickers:
             self._tickers = [
                 ticker
@@ -3404,12 +3702,13 @@ class Toolkit:
             self._balance_sheet_statement_growth = calculate_growth(
                 balance_sheet_statement,
                 lag=lag,
-                rounding=rounding if rounding else self._rounding,
+                rounding=rounding if rounding is not None else self._rounding,
                 axis="columns",
             ).truncate(before=self._start_date, axis=1)
 
-        balance_sheet_statement = balance_sheet_statement.round(
-            rounding if rounding else self._rounding
+        balance_sheet_statement = apply_rounding(
+            balance_sheet_statement,
+            rounding if rounding is not None else self._rounding,
         )
 
         balance_sheet_statement = balance_sheet_statement.truncate(
@@ -3450,14 +3749,20 @@ class Toolkit:
         Also known as: profit and loss, revenue, net income, earnings, P&L statement.
 
         Args:
-            enforce_source (bool): Defines whether to enforce the source of the data. This can be
-                either "FinancialModelingPrep" or "YahooFinance". Defaults to None.
+            enforce_source (str | None, optional): Forces this specific call to use a given
+                source, either "FinancialModelingPrep" or "YahooFinance". This takes precedence
+                over the source set on the Toolkit itself, so one instance can pull historical
+                data from the free Yahoo Finance source while still using a FinancialModelingPrep
+                key for the financial statements (or the other way around). Defaults to None,
+                which falls back to the Toolkit's own enforce_source.
             overwrite (bool): Defines whether to overwrite the existing data.
             rounding (int): Defines the number of decimal places to round the data to.
             growth (bool): Defines whether to return the growth of the data.
             lag (int | str): Defines the number of periods to lag the growth data by.
             trailing (int): Defines whether to select a trailing period.
             E.g. when selecting 4 with quarterly data, the TTM is calculated.
+            show_columns (list[str] | None): A list of column names to keep in the result. Invalid
+            names are reported and ignored. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A pandas DataFrame with the retrieved income statement data.
@@ -3511,10 +3816,21 @@ class Toolkit:
             self._convert_currency and (self._income_statement.empty or overwrite)
         )
 
+        if enforce_source is not None and enforce_source not in [
+            "FinancialModelingPrep",
+            "YahooFinance",
+        ]:
+            raise ValueError(
+                "The enforce_source parameter must be either 'FinancialModelingPrep' or 'YahooFinance'."
+            )
+
+        # A per-call enforce_source overrides the one the Toolkit was initialised with.
+        source = enforce_source if enforce_source is not None else self._enforce_source
+
         if (
             not self._api_key
             and self._income_statement.empty
-            and self._enforce_source == "FinancialModelingPrep"
+            and source == "FinancialModelingPrep"
         ):
             logger.error(
                 "The requested data requires the api_key parameter to be set or the enforce_source "
@@ -3525,14 +3841,6 @@ class Toolkit:
                 "above affiliate link which also supports the project."
             )
             return None
-
-        if enforce_source is not None and enforce_source not in [
-            "FinancialModelingPrep",
-            "YahooFinance",
-        ]:
-            raise ValueError(
-                "The enforce_source parameter must be either 'FinancialModelingPrep' or 'YahooFinance'."
-            )
 
         # Correct for the case where a Portfolio ticker exists
         ticker_list = [ticker for ticker in self._tickers if ticker != "Portfolio"]
@@ -3550,17 +3858,15 @@ class Toolkit:
                 quarter=self._quarterly,
                 start_date=self._lookback_start_date,
                 end_date=self._end_date,
-                rounding=rounding if rounding else self._rounding,
+                rounding=rounding if rounding is not None else self._rounding,
                 fmp_statement_format=self._fmp_income_statement_generic,
                 fmp_statistics_format=self._fmp_statistics_statement_generic,
+                yf_statistics_format=self._yf_statistics_statement_generic,
                 yf_statement_format=self._yf_income_statement_generic,
                 sleep_timer=self._sleep_timer,
                 user_subscription=self._fmp_plan,
-                enforce_source=(
-                    enforce_source
-                    if enforce_source is not None
-                    else self._enforce_source
-                ),
+                enforce_source=source,
+                cache=self._cache,
             )
             self._fiscal_year_adjustments.update(_fy_adj)
 
@@ -3591,13 +3897,6 @@ class Toolkit:
                         financial_statement_name="income statement",
                     )
 
-            if self._use_cached_data:
-                cache_model.save_cached_data(
-                    cached_data=self._income_statement,
-                    cached_data_location=self._cached_data_location,
-                    file_name="income_statement.pickle",
-                )
-
         if self._remove_invalid_tickers:
             self._tickers = [
                 ticker
@@ -3608,8 +3907,7 @@ class Toolkit:
         income_statement = self._income_statement
 
         if trailing:
-            # This is a special case where the trailing period does not make sense
-            # for the Weighted Average Shares and Weighted Average Shares Diluted.
+            # The trailing period does not apply to the Weighted Average Shares rows.
             weighted_average_shares = income_statement.loc[
                 :, ["Weighted Average Shares", "Weighted Average Shares Diluted"], :
             ]
@@ -3617,8 +3915,7 @@ class Toolkit:
             # The rolling window is calculated for the rest of the income statement.
             income_statement = self._income_statement.T.rolling(trailing).sum().T
 
-            # The Weighted Average Shares and Weighted Average Shares Diluted should
-            # not be summed up but rather kept equal to the current value.
+            # Weighted Average Shares are kept at the current value rather than summed.
             income_statement.loc[weighted_average_shares.index] = (
                 weighted_average_shares
             )
@@ -3627,12 +3924,12 @@ class Toolkit:
             self._income_statement_growth = calculate_growth(
                 income_statement,
                 lag=lag,
-                rounding=rounding if rounding else self._rounding,
+                rounding=rounding if rounding is not None else self._rounding,
                 axis="columns",
             ).truncate(before=self._start_date, axis=1)
 
-        income_statement = income_statement.round(
-            rounding if rounding else self._rounding
+        income_statement = apply_rounding(
+            income_statement, rounding if rounding is not None else self._rounding
         )
 
         income_statement = income_statement.truncate(before=self._start_date, axis=1)
@@ -3669,13 +3966,20 @@ class Toolkit:
         Also known as: operating cash flow, investing activities, financing activities.
 
         Args:
-            enforce_source (bool): Defines whether to enforce the source of the data. This can be
+            enforce_source (str | None, optional): Forces this specific call to use a given
+                source, either "FinancialModelingPrep" or "YahooFinance". This takes precedence
+                over the source set on the Toolkit itself, so one instance can pull historical
+                data from the free Yahoo Finance source while still using a FinancialModelingPrep
+                key for the financial statements (or the other way around). Defaults to None,
+                which falls back to the Toolkit's own enforce_source.
             overwrite (bool): Defines whether to overwrite the existing data.
             rounding (int): Defines the number of decimal places to round the data to.
             growth (bool): Defines whether to return the growth of the data.
             lag (int | str): Defines the number of periods to lag the growth data by.
             trailing (int): Defines whether to select a trailing period.
             E.g. when selecting 4 with quarterly data, the TTM is calculated.
+            show_columns (list[str] | None): A list of column names to keep in the result. Invalid
+            names are reported and ignored. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A pandas DataFrame with the retrieved cash flow statement data.
@@ -3731,10 +4035,21 @@ class Toolkit:
             self._convert_currency and (self._cash_flow_statement.empty or overwrite)
         )
 
+        if enforce_source is not None and enforce_source not in [
+            "FinancialModelingPrep",
+            "YahooFinance",
+        ]:
+            raise ValueError(
+                "The enforce_source parameter must be either 'FinancialModelingPrep' or 'YahooFinance'."
+            )
+
+        # A per-call enforce_source overrides the one the Toolkit was initialised with.
+        source = enforce_source if enforce_source is not None else self._enforce_source
+
         if (
             not self._api_key
             and self._cash_flow_statement.empty
-            and self._enforce_source == "FinancialModelingPrep"
+            and source == "FinancialModelingPrep"
         ):
             logger.error(
                 "The requested data requires the api_key parameter to be set or the enforce_source "
@@ -3745,14 +4060,6 @@ class Toolkit:
                 "above affiliate link which also supports the project."
             )
             return None
-
-        if enforce_source is not None and enforce_source not in [
-            "FinancialModelingPrep",
-            "YahooFinance",
-        ]:
-            raise ValueError(
-                "The enforce_source parameter must be either 'FinancialModelingPrep' or 'YahooFinance'."
-            )
 
         # Correct for the case where a Portfolio ticker exists
         ticker_list = [ticker for ticker in self._tickers if ticker != "Portfolio"]
@@ -3770,17 +4077,15 @@ class Toolkit:
                 quarter=self._quarterly,
                 start_date=self._lookback_start_date,
                 end_date=self._end_date,
-                rounding=rounding if rounding else self._rounding,
+                rounding=rounding if rounding is not None else self._rounding,
                 fmp_statement_format=self._fmp_cash_flow_statement_generic,
                 fmp_statistics_format=self._fmp_statistics_statement_generic,
+                yf_statistics_format=self._yf_statistics_statement_generic,
                 yf_statement_format=self._yf_cash_flow_statement_generic,
                 sleep_timer=self._sleep_timer,
                 user_subscription=self._fmp_plan,
-                enforce_source=(
-                    enforce_source
-                    if enforce_source is not None
-                    else self._enforce_source
-                ),
+                enforce_source=source,
+                cache=self._cache,
             )
             self._fiscal_year_adjustments.update(_fy_adj)
 
@@ -3801,13 +4106,6 @@ class Toolkit:
                         financial_statement_name="cash flow statement",
                     )
 
-            if self._use_cached_data:
-                cache_model.save_cached_data(
-                    cached_data=self._cash_flow_statement,
-                    cached_data_location=self._cached_data_location,
-                    file_name="cash_flow_statement.pickle",
-                )
-
         if self._remove_invalid_tickers:
             self._tickers = [
                 ticker
@@ -3824,12 +4122,12 @@ class Toolkit:
             self._cash_flow_statement_growth = calculate_growth(
                 cash_flow_statement,
                 lag=lag,
-                rounding=rounding if rounding else self._rounding,
+                rounding=rounding if rounding is not None else self._rounding,
                 axis="columns",
             ).truncate(before=self._start_date, axis=1)
 
-        cash_flow_statement = cash_flow_statement.round(
-            rounding if rounding else self._rounding
+        cash_flow_statement = apply_rounding(
+            cash_flow_statement, rounding if rounding is not None else self._rounding
         )
 
         cash_flow_statement = cash_flow_statement.truncate(
@@ -3863,10 +4161,16 @@ class Toolkit:
         Also known as: key stats, shares outstanding, float data.
 
         Args:
-            enforce_source (bool): Defines whether to enforce the source of the data. This can be
-                either "FinancialModelingPrep" or "YahooFinance". Defaults to None.
+            enforce_source (str | None, optional): Forces this specific call to use a given
+                source, either "FinancialModelingPrep" or "YahooFinance". This takes precedence
+                over the source set on the Toolkit itself, so one instance can pull historical
+                data from the free Yahoo Finance source while still using a FinancialModelingPrep
+                key for the financial statements (or the other way around). Defaults to None,
+                which falls back to the Toolkit's own enforce_source.
             overwrite (bool): Defines whether to overwrite the existing data.
             rounding (int): Defines the number of decimal places to round the data to.
+            show_columns (list[str] | None): A list of column names to keep in the result. Invalid
+            names are reported and ignored. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A pandas DataFrame with the retrieved statistics statement data.
@@ -3929,26 +4233,21 @@ class Toolkit:
                 quarter=self._quarterly,
                 start_date=self._lookback_start_date,
                 end_date=self._end_date,
-                rounding=rounding if rounding else self._rounding,
+                rounding=rounding if rounding is not None else self._rounding,
                 fmp_statement_format=self._fmp_balance_sheet_statement_generic,
                 fmp_statistics_format=self._fmp_statistics_statement_generic,
+                yf_statistics_format=self._yf_statistics_statement_generic,
                 yf_statement_format=self._yf_balance_sheet_statement_generic,
                 sleep_timer=self._sleep_timer,
                 user_subscription=self._fmp_plan,
                 enforce_source=(
-                    self._enforce_source
+                    enforce_source
                     if enforce_source is not None
                     else self._enforce_source
                 ),
+                cache=self._cache,
             )
             self._fiscal_year_adjustments.update(_fy_adj)
-
-            if self._use_cached_data:
-                cache_model.save_cached_data(
-                    cached_data=self._statistics_statement,
-                    cached_data_location=self._cached_data_location,
-                    file_name="statistics_statement.pickle",
-                )
 
         if self._remove_invalid_tickers:
             self._tickers = [
@@ -3983,3 +4282,227 @@ class Toolkit:
             _copy_normalization_files(path)
         else:
             _copy_normalization_files()
+
+    def _align_treasury_data_to_trading_days(
+        self, treasury_data: pd.DataFrame
+    ) -> pd.DataFrame:
+        """
+        Fills the treasury series on equity trading days the bond market was closed for.
+
+        The bond market observes holidays the equity market does not, Columbus Day and
+        Veterans Day among them, so a Treasury yield series has gaps on days that do
+        have a stock return. Every one of those gaps produces a NaN excess return that
+        is then dropped from the within-period Sharpe, Sortino, Kappa and Appraisal
+        ratios and from the market timing regressions, silently shortening the sample.
+
+        The last published yield is carried forward across such a gap, which is the
+        correct reading of an instrument that simply did not trade that day. Only the
+        yields are carried forward: the Return and Cumulative Return columns stay NaN on
+        an inserted day, since no return was actually realized on it. Gaps before the
+        first or after the last published yield are left alone.
+
+        Args:
+            treasury_data (pd.DataFrame): the daily treasury data, with the metric as
+                the first column level and the maturity as the second.
+
+        Returns:
+            pd.DataFrame: the treasury data reindexed onto the trading days of the
+            historical data and forward filled across bond market holidays.
+        """
+        if treasury_data.empty or self._daily_historical_data.empty:
+            return treasury_data
+
+        trading_days = self._daily_historical_data.index
+        trading_days = trading_days[
+            (trading_days >= treasury_data.index.min())
+            & (trading_days <= treasury_data.index.max())
+        ]
+
+        treasury_data = treasury_data.reindex(treasury_data.index.union(trading_days))
+
+        carried_forward = [
+            column
+            for column in treasury_data.columns
+            if column[0] not in ("Return", "Cumulative Return")
+        ]
+        treasury_data[carried_forward] = treasury_data[carried_forward].ffill()
+
+        return treasury_data
+
+    def _collect_per_ticker(
+        self,
+        dataset: str,
+        tickers: list[str],
+        ticker_axis: str,
+        collector: Callable[[list[str]], Any],
+        parameters: dict | None = None,
+    ) -> tuple[pd.DataFrame, list[str]]:
+        """
+        Retrieve a per-ticker dataset, requesting only the tickers not already cached.
+
+        The company endpoints return one frame covering every requested ticker, which
+        historically meant that adding a single ticker re-requested all of them. The
+        frame is therefore split per ticker on the way into the cache and reassembled
+        on the way out, so a later call only pays for what it does not already have.
+
+        Args:
+            dataset (str): The dataset name to cache under, e.g. "profile".
+            tickers (list[str]): The tickers being requested.
+            ticker_axis (str): Whether the ticker sits on the column or the index axis
+                of the returned frame, see the constants in ticker_model.
+            collector (Callable[[list[str]], Any]): Called with the tickers that are not
+                cached. May return a frame, or a (frame, invalid_tickers) tuple.
+            parameters (dict | None): Parameters that change the returned data, such as
+                the period or date range the endpoint was queried for.
+
+        Returns:
+            tuple[pd.DataFrame, list[str]]: The combined frame and the tickers the
+                source reported as invalid during this call.
+        """
+        return ticker_model.collect_per_ticker(
+            cache=self._cache,
+            source=policy_model.FINANCIAL_MODELING_PREP,
+            dataset=dataset,
+            tickers=tickers,
+            ticker_axis=ticker_axis,
+            collector=collector,
+            parameters=parameters,
+        )
+
+    def get_cache_contents(self) -> pd.DataFrame:
+        """
+        Show what the cache currently holds, grouped by source and dataset.
+
+        The cache stores data per source, per dataset and per entity (a ticker, a
+        country, a series identifier), which makes it possible to remove part of it
+        rather than all of it. This method is the counterpart to clear_cache: it
+        shows what is there so that removing something is an informed decision.
+
+        The cache is inspected regardless of whether this Toolkit was created with
+        use_cached_data enabled, so a cache filled by an earlier session can always
+        be reviewed.
+
+        Returns:
+            pd.DataFrame: One row per source and dataset combination, with the number
+                of entities, the number of stored entries and when they were written.
+                An empty DataFrame when the cache holds nothing.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "MSFT"], api_key="FINANCIAL_MODELING_PREP_KEY", use_cached_data=True)
+
+        toolkit.get_historical_data()
+
+        toolkit.get_cache_contents()
+        ```
+
+        Which returns:
+
+        | source   | dataset    |   entities |   entries | oldest_write        | newest_write        |
+        |:---------|:-----------|-----------:|----------:|:--------------------|:--------------------|
+        | market   | historical |          3 |         3 | 2026-08-06 14:02:11 | 2026-08-06 14:02:12 |
+        """
+        contents = cache_controller.get_cache(
+            location=self._cache_location, enabled=True
+        ).get_contents()
+
+        if not contents:
+            return pd.DataFrame()
+
+        return pd.DataFrame(
+            [
+                {
+                    "source": entry["source"],
+                    "dataset": entry["dataset"],
+                    "entities": len(entry["entities"]),
+                    "entries": entry["entries"],
+                    "oldest_write": cache_controller.format_timestamp(
+                        entry["oldest_write"]
+                    ),
+                    "newest_write": cache_controller.format_timestamp(
+                        entry["newest_write"]
+                    ),
+                }
+                for entry in contents
+            ]
+        )
+
+    def clear_cache(
+        self,
+        source: str | None = None,
+        dataset: str | None = None,
+        ticker: str | None = None,
+        confirm: bool = False,
+    ) -> int:
+        """
+        Remove cached data, either all of it or only the part you specify.
+
+        The Finance Toolkit never clears the cache on its own. A cache can represent
+        a large amount of downloaded data and a meaningful part of an API quota, so
+        discarding it is always an explicit action. Even a change in the cache's own
+        internal structure only produces a warning pointing at this method rather
+        than removing anything.
+
+        Because the cache is stored per source, per dataset and per entity, removal
+        can be narrowed instead of wholesale. Clearing a single stale ticker, or
+        everything retrieved from one provider, leaves the rest of the cache intact.
+
+        Args:
+            source (str | None): Only remove data from this source, for example
+                "FinancialModelingPrep", "YahooFinance", "OECD", "FRED" or
+                "GlobalMacroDatabase". These match the names used by enforce_source.
+                Defaults to None, which matches every source.
+            dataset (str | None): Only remove this dataset within the source, for
+                example "historical", "intraday" or "statements". Defaults to None,
+                which matches every dataset.
+            ticker (str | None): Only remove this entity, for example "AAPL" or a
+                country code for macroeconomic data. Defaults to None, which matches
+                every entity.
+            confirm (bool): Required to be True when no source, dataset or ticker is
+                given, since that removes the entire cache. Defaults to False.
+
+        Raises:
+            ValueError: If the whole cache would be removed without confirm being set.
+
+        Returns:
+            int: The number of stored entries that were removed.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "MSFT"], api_key="FINANCIAL_MODELING_PREP_KEY", use_cached_data=True)
+
+        # Remove only the price history of a single ticker
+        toolkit.clear_cache(source="YahooFinance", ticker="AAPL")
+
+        # Remove everything retrieved from the OECD
+        toolkit.clear_cache(source=policy_model.OECD)
+
+        # Remove the entire cache
+        toolkit.clear_cache(confirm=True)
+        ```
+        """
+        is_full_clear = source is None and dataset is None and ticker is None
+
+        if is_full_clear and not confirm:
+            raise ValueError(
+                "This would remove the entire cache. Narrow it down with the source, "
+                "dataset or ticker parameter, or pass confirm=True to remove "
+                "everything. Use get_cache_contents() to see what is currently stored."
+            )
+
+        cache = cache_controller.get_cache(location=self._cache_location, enabled=True)
+        removed = cache.remove(source=source, dataset=dataset, entity=ticker)
+
+        logger.info(
+            "Removed %d cached entries from %s.",
+            removed,
+            cache.location,
+        )
+
+        return removed

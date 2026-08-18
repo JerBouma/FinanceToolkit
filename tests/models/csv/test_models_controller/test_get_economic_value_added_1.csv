@@ -1,9 +1,9 @@
 ,,2020,2021,2022,2023
 AAPL,Net Operating Profit After Taxes,,0.6197,0.0545,-0.0187
-AAPL,Invested Capital,,2.2339,-0.0115,-0.0689
-AAPL,Weighted Average Cost of Capital,,0.79,-1.6465,-766092003440.3809
-AAPL,Economic Value Added,,135873920897.8754,4.3743,0.2141
+AAPL,Invested Capital,,,-0.0115,-0.0689
+AAPL,Weighted Average Cost of Capital,,0.79,-1.6465,
+AAPL,Economic Value Added,,,4.3743,
 MSFT,Net Operating Profit After Taxes,,0.3628,0.1776,-0.0077
-MSFT,Invested Capital,,3.2962,0.0965,0.1289
-MSFT,Weighted Average Cost of Capital,,0.6016,-1.7246,-1054654141760.1802
-MSFT,Economic Value Added,,-5928029706.59,-106.135,0.9639
+MSFT,Invested Capital,,,0.0965,0.1289
+MSFT,Weighted Average Cost of Capital,,0.6016,-1.7246,
+MSFT,Economic Value Added,,,-106.135,

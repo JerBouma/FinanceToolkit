@@ -1,6 +1,15 @@
 """Risk Controller Tests""" ""
 # pylint: disable=missing-function-docstring
 
+import pytest
+
+# AAPL's EGARCH fit sits on a near-flat ridge a different libm/BLAS can tip either way; see garch_model.py.
+EGARCH_PLATFORM_DRIFT = pytest.mark.xfail(
+    reason="AAPL's EGARCH fit sits on a near-flat likelihood ridge; macOS vs Linux "
+    "picks a different near-tied optimum",
+    strict=False,
+)
+
 
 def test_collect_all_metrics(recorder, risk_module):
     recorder.capture(risk_module.collect_all_metrics())
@@ -17,6 +26,11 @@ def test_get_value_at_risk(recorder, risk_module):
     recorder.capture(
         risk_module.get_value_at_risk(
             period="monthly", within_period=False, distribution="evt"
+        )
+    )
+    recorder.capture(
+        risk_module.get_value_at_risk(
+            period="monthly", within_period=False, distribution="cornish-fisher"
         )
     )
     recorder.capture(
@@ -37,6 +51,32 @@ def test_get_conditional_value_at_risk(recorder, risk_module):
             period="monthly", within_period=False, rolling=6
         )
     )
+    recorder.capture(
+        risk_module.get_conditional_value_at_risk(
+            period="monthly", within_period=False, distribution="cornish-fisher"
+        )
+    )
+    recorder.capture(
+        risk_module.get_conditional_value_at_risk(
+            period="monthly", within_period=False, distribution="evt"
+        )
+    )
+    recorder.capture(
+        risk_module.get_conditional_value_at_risk(
+            period="monthly", within_period=False, distribution="studentt"
+        )
+    )
+
+
+def test_get_conditional_value_at_risk_studentt_differs_from_var(recorder, risk_module):
+    # Regression test: studentt used to dispatch to VaR, so CVaR must be as extreme.
+    var = risk_module.get_value_at_risk(
+        period="monthly", within_period=False, distribution="studentt"
+    )
+    cvar = risk_module.get_conditional_value_at_risk(
+        period="monthly", within_period=False, distribution="studentt"
+    )
+    assert (cvar <= var).all().all()
 
 
 def test_get_conditional_drawdown_at_risk(recorder, risk_module):
@@ -81,6 +121,57 @@ def test_get_garch_forecast(recorder, risk_module):
     recorder.capture(risk_module.get_garch_forecast(period="monthly"))
     recorder.capture(risk_module.get_garch_forecast(growth=True))
     recorder.capture(risk_module.get_garch_forecast(growth=True, lag=[1, 2, 3]))
+
+
+def test_get_garch_parameters(recorder, risk_module):
+    recorder.capture(risk_module.get_garch_parameters())
+    recorder.capture(risk_module.get_garch_parameters(period="monthly"))
+
+
+def test_get_gjr_garch(recorder, risk_module):
+    recorder.capture(risk_module.get_gjr_garch())
+    recorder.capture(risk_module.get_gjr_garch(period="monthly"))
+    recorder.capture(risk_module.get_gjr_garch(growth=True))
+
+
+def test_get_gjr_garch_forecast(recorder, risk_module):
+    recorder.capture(risk_module.get_gjr_garch_forecast())
+    recorder.capture(risk_module.get_gjr_garch_forecast(period="monthly"))
+
+
+def test_get_gjr_garch_parameters(recorder, risk_module):
+    recorder.capture(risk_module.get_gjr_garch_parameters())
+    recorder.capture(risk_module.get_gjr_garch_parameters(period="monthly"))
+
+
+@EGARCH_PLATFORM_DRIFT
+def test_get_egarch(recorder, risk_module):
+    recorder.capture(risk_module.get_egarch())
+    recorder.capture(risk_module.get_egarch(period="monthly"))
+    recorder.capture(risk_module.get_egarch(growth=True))
+
+
+@EGARCH_PLATFORM_DRIFT
+def test_get_egarch_forecast(recorder, risk_module):
+    recorder.capture(risk_module.get_egarch_forecast())
+    recorder.capture(risk_module.get_egarch_forecast(period="monthly"))
+
+
+@EGARCH_PLATFORM_DRIFT
+def test_get_egarch_parameters(recorder, risk_module):
+    recorder.capture(risk_module.get_egarch_parameters())
+    recorder.capture(risk_module.get_egarch_parameters(period="monthly"))
+
+
+def test_get_var_backtest(recorder, risk_module):
+    recorder.capture(risk_module.get_var_backtest(window_size=100))
+    recorder.capture(
+        risk_module.get_var_backtest(window_size=100, distribution="gaussian")
+    )
+    recorder.capture(risk_module.get_var_backtest(window_size=100, test="kupiec"))
+    recorder.capture(
+        risk_module.get_var_backtest(window_size=100, test="christoffersen")
+    )
 
 
 def test_get_maximum_drawdown(recorder, risk_module):
@@ -165,9 +256,123 @@ def test_get_volatility(recorder, risk_module):
     recorder.capture(risk_module.get_volatility(period="monthly", rolling=6))
 
 
+def test_get_volatility_parkinson(recorder, risk_module):
+    recorder.capture(risk_module.get_volatility(method="parkinson"))
+    recorder.capture(risk_module.get_volatility(method="parkinson", period="monthly"))
+    recorder.capture(risk_module.get_volatility(method="parkinson", growth=True))
+    recorder.capture(
+        risk_module.get_volatility(method="parkinson", growth=True, lag=[1, 2, 3])
+    )
+
+
+def test_get_volatility_garman_klass(recorder, risk_module):
+    recorder.capture(risk_module.get_volatility(method="garman_klass"))
+    recorder.capture(
+        risk_module.get_volatility(method="garman_klass", period="monthly")
+    )
+    recorder.capture(risk_module.get_volatility(method="garman_klass", growth=True))
+
+
+def test_get_volatility_rogers_satchell(recorder, risk_module):
+    recorder.capture(risk_module.get_volatility(method="rogers_satchell"))
+    recorder.capture(
+        risk_module.get_volatility(method="rogers_satchell", period="monthly")
+    )
+    recorder.capture(risk_module.get_volatility(method="rogers_satchell", growth=True))
+
+
+def test_get_volatility_yang_zhang(recorder, risk_module):
+    recorder.capture(risk_module.get_volatility(method="yang_zhang"))
+    recorder.capture(risk_module.get_volatility(method="yang_zhang", period="monthly"))
+    recorder.capture(risk_module.get_volatility(method="yang_zhang", growth=True))
+
+
 def test_get_excess_volatility(recorder, risk_module):
     recorder.capture(risk_module.get_excess_volatility())
     recorder.capture(risk_module.get_excess_volatility(period="monthly"))
     recorder.capture(risk_module.get_excess_volatility(growth=True))
     recorder.capture(risk_module.get_excess_volatility(growth=True, lag=[1, 2, 3]))
     recorder.capture(risk_module.get_excess_volatility(period="monthly", rolling=6))
+
+
+def test_get_hill_estimator(recorder, risk_module):
+    recorder.capture(risk_module.get_hill_estimator(period="yearly"))
+    recorder.capture(
+        risk_module.get_hill_estimator(period="yearly", tail="right", k=0.15)
+    )
+
+
+def test_get_amihud_illiquidity(recorder, risk_module):
+    recorder.capture(risk_module.get_amihud_illiquidity(period="quarterly", scale=1e12))
+    recorder.capture(risk_module.get_amihud_illiquidity(period="monthly", scale=1e12))
+    recorder.capture(risk_module.get_amihud_illiquidity(growth=True, scale=1e12))
+
+
+def test_get_roll_spread(recorder, risk_module):
+    recorder.capture(risk_module.get_roll_spread(period="quarterly"))
+    recorder.capture(
+        risk_module.get_roll_spread(period="quarterly", within_period=False)
+    )
+
+
+def test_get_har_rv_forecast(recorder, risk_module):
+    recorder.capture(risk_module.get_har_rv_forecast().tail())
+    recorder.capture(risk_module.get_har_rv_forecast(estimator="parkinson").tail())
+    recorder.capture(risk_module.get_har_rv_forecast(estimator="garman_klass").tail())
+    recorder.capture(
+        risk_module.get_har_rv_forecast(estimator="rogers_satchell").tail()
+    )
+
+
+def test_get_har_rv_forecast_invalid_estimator(risk_module):
+    # @handle_errors returns an empty Series rather than propagating the ValueError.
+    result = risk_module.get_har_rv_forecast(estimator="bad")
+    assert result.empty
+
+
+def test_get_tail_dependence_coefficient(recorder, risk_module):
+    recorder.capture(
+        risk_module.get_tail_dependence_coefficient("AAPL", "MSFT", period="yearly")
+    )
+    recorder.capture(
+        risk_module.get_tail_dependence_coefficient(
+            "AAPL", "MSFT", period="yearly", method="gaussian"
+        )
+    )
+
+
+def test_get_covar(recorder, risk_module):
+    recorder.capture(risk_module.get_covar("AAPL", "MSFT", period="yearly"))
+
+
+def test_get_marginal_value_at_risk(recorder, risk_module):
+    recorder.capture(risk_module.get_marginal_value_at_risk(period="yearly"))
+    recorder.capture(
+        risk_module.get_marginal_value_at_risk(
+            weights={"AAPL": 0.7, "MSFT": 0.3}, period="yearly"
+        )
+    )
+    recorder.capture(
+        risk_module.get_marginal_value_at_risk(period="yearly", distribution="gaussian")
+    )
+
+
+def test_get_component_value_at_risk(recorder, risk_module):
+    recorder.capture(risk_module.get_component_value_at_risk(period="yearly"))
+    recorder.capture(
+        risk_module.get_component_value_at_risk(
+            weights={"AAPL": 0.7, "MSFT": 0.3}, period="yearly"
+        )
+    )
+    recorder.capture(
+        risk_module.get_component_value_at_risk(
+            period="yearly", distribution="gaussian"
+        )
+    )
+
+
+def test_get_acerbi_szekely_test(recorder, risk_module):
+    recorder.capture(risk_module.get_acerbi_szekely_test(window_size=100))
+    recorder.capture(
+        risk_module.get_acerbi_szekely_test(window_size=100, distribution="gaussian")
+    )

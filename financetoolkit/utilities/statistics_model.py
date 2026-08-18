@@ -13,11 +13,7 @@ logger = logger_model.get_logger()
 
 # pylint: disable=comparison-with-itself,too-many-locals
 
-# This is used to translate a period to the corresponding Pandas frequency string
-# which is required to resample daily historical data to a lower frequency. This is
-# shared across historical_model.py, risk_model.py and performance_model.py so that
-# every period-based calculation (Return, Variance, Volatility, ...) agrees on the
-# same frequency mapping.
+# Period to pandas frequency, shared so every period calculation agrees.
 PERIOD_TRANSLATION = {
     "weekly": "W",
     "monthly": "M",
@@ -25,14 +21,60 @@ PERIOD_TRANSLATION = {
     "yearly": "Y",
 }
 
-# This is used to scale a daily Variance or Volatility to the corresponding
-# period by multiplying it with the number of trading days within that period.
+# Scales a daily Variance or Volatility by the trading days in a period.
 VOLATILITY_WINDOW_TRANSLATION = {
     "weekly": 252 / 52,
     "monthly": 252 / 12,
     "quarterly": 252 / 4,
     "yearly": 252,
 }
+
+# The number of observations of each period within a single year.
+PERIODS_PER_YEAR = {
+    "daily": 252,
+    "weekly": 52,
+    "monthly": 12,
+    "quarterly": 4,
+    "yearly": 1,
+}
+
+
+def convert_annualized_rate_to_period(
+    annualized_rate: pd.Series | pd.DataFrame | float, period: str
+) -> pd.Series | pd.DataFrame | float:
+    """
+    Converts an annualized rate, such as a Treasury yield, into the equivalent rate for
+    a single period of the given frequency.
+
+    Rates like the risk-free rate are quoted on an annual basis. Subtracting them from a
+    daily, weekly, monthly or quarterly return without conversion mixes two different
+    time scales and makes every excess return wrong by roughly the annual rate. The
+    conversion is geometric so that compounding the result over a full year reproduces
+    the original annualized rate.
+
+    The formula is as follows:
+
+        Period Rate = (1 + Annualized Rate)^(1 / Periods per Year) - 1
+
+    Args:
+        annualized_rate (pd.Series | pd.DataFrame | float): the annualized rate to convert.
+        period (str): the period to convert the rate to. Must be one of daily, weekly,
+            monthly, quarterly or yearly.
+
+    Raises:
+        ValueError: If the period is not one of the supported frequencies.
+
+    Returns:
+        pd.Series | pd.DataFrame | float: the rate expressed per single period. A yearly
+        period returns the rate unchanged.
+    """
+    if period not in PERIODS_PER_YEAR:
+        raise ValueError(
+            f"Period {period} is not valid. It should be one of "
+            f"{', '.join(PERIODS_PER_YEAR)}."
+        )
+
+    return (1 + annualized_rate) ** (1 / PERIODS_PER_YEAR[period]) - 1
 
 
 def finalize_dataset(
@@ -106,7 +148,8 @@ def finalize_dataset(
     Returns:
         pd.Series | pd.DataFrame: The processed metric values.
     """
-    rounding = rounding if rounding else default_rounding
+    # Explicitly compare to None so that rounding=0 is honoured rather than treated as "not supplied", and so that rounding=None disables rounding altogether.  # noqa: E501
+    rounding = rounding if rounding is not None else default_rounding
 
     if rolling:
         dataset = dataset.rolling(window=rolling).mean()
@@ -124,7 +167,7 @@ def finalize_dataset(
             dataset=dataset, rounding=rounding, axis=axis
         )
     elif not growth:
-        dataset = dataset.round(rounding)
+        dataset = apply_rounding(dataset, rounding)
 
     if dropna:
         dataset = dataset.dropna(how="all", axis=0)
@@ -137,9 +180,7 @@ def finalize_dataset(
         )
 
     if countries:
-        # Solely meant for economic indicators, which are indexed by date with countries as columns. If the
-        # user requests a country that is not available, this function can log a warning and return
-        # the available countries instead of raising an error.
+        # Economic indicators are indexed by date with countries as columns.
         if isinstance(countries, str):
             countries = [countries]
         missing_countries = [
@@ -149,9 +190,48 @@ def finalize_dataset(
             logger.warning(
                 f"The following countries are not available for {indicator_name}: {missing_countries}"
             )
-        dataset = dataset[list(set(countries) - set(missing_countries))]
+        dataset = dataset[
+            [country for country in countries if country not in missing_countries]
+        ]
 
     return dataset
+
+
+def apply_rounding(
+    dataset: pd.Series | pd.DataFrame, rounding: int | None
+) -> pd.Series | pd.DataFrame:
+    """
+    Rounds a dataset to the given number of decimals, leaving it untouched when no
+    rounding is requested. Calling pd.DataFrame.round(None) raises a TypeError, so
+    rounding=None (documented as "no rounding") has to be handled explicitly.
+
+    Args:
+        dataset (pd.Series | pd.DataFrame): the dataset to round.
+        rounding (int | None): the number of decimals to round to, or None to skip rounding.
+
+    Returns:
+        pd.Series | pd.DataFrame: the rounded dataset, or the dataset as-is when rounding is None.
+    """
+    return dataset if rounding is None else dataset.round(rounding)
+
+
+def bounded_ffill(
+    dataset: pd.Series | pd.DataFrame, axis: str = "columns"
+) -> pd.Series | pd.DataFrame:
+    """
+    Forward-fills only a single missing observation, and only when a later valid
+    observation exists to bound the gap — never past the last real data point, and
+    never across a longer run of missing periods. Used ahead of pct_change so a data
+    gap surfaces as a NaN growth/return rather than a fabricated flat one.
+    """
+    if isinstance(dataset, pd.DataFrame):
+        filled = dataset.ffill(axis=axis, limit=1)
+        has_future_data = dataset.bfill(axis=axis).notna()
+    else:
+        filled = dataset.ffill(limit=1)
+        has_future_data = dataset.bfill().notna()
+
+    return filled.where(has_future_data, dataset)
 
 
 def calculate_growth(
@@ -165,14 +245,17 @@ def calculate_growth(
 
     Args:
         dataset (pd.Series | pd.DataFrame): the dataset to calculate the growth values for.
-        lag (int | str): the lag to use for the calculation. Defaults to 1.
+        lag (int | list[int]): the lag or lags to use for the calculation. A list returns one row or
+            column per lag. Defaults to 1.
+        rounding (int | None): the number of decimals to round the result to, or None for no rounding.
+            Defaults to 4.
+        axis (str): the axis to compute the change over. Use "columns" when each row is an entity
+            observed over time and "rows" when each column is. Defaults to "columns".
 
     Returns:
-        pd.Series | pd.DataFrame: _description_
+        pd.Series | pd.DataFrame: the period over period growth of the dataset.
     """
-    # With Pandas 2.1, pct_change will no longer automatically forward fill
-    # given that this has been solved within the code already but the warning
-    # still appears, this is a temporary fix to ignore the warning
+    # pandas 2.1 warns about pct_change fill even though the code handles it.
     warnings.simplefilter(action="ignore", category=FutureWarning)
 
     if isinstance(lag, list):
@@ -197,12 +280,14 @@ def calculate_growth(
             for new_index in dataset_lag.index:
                 lag_key = new_index[-1]
                 other_indices = new_index[:-1]
+                if len(other_indices) == 1:
+                    other_indices = other_indices[0]
 
                 dataset_lag.loc[new_index] = (
-                    dataset.loc[other_indices]
-                    .ffill()
+                    bounded_ffill(dataset.loc[other_indices])
                     .pct_change(periods=lag_dict[lag_key])  # type: ignore
                     .to_numpy()
+                    .reshape(-1)
                 )
         else:
             for old_index in dataset.columns:
@@ -222,17 +307,22 @@ def calculate_growth(
             for new_index in dataset_lag.columns:
                 lag_key = new_index[-1]
                 other_indices = new_index[:-1]
+                if len(other_indices) == 1:
+                    other_indices = other_indices[0]
 
                 dataset_lag.loc[:, new_index] = (
-                    dataset.loc[:, other_indices]
-                    .ffill()
+                    bounded_ffill(dataset.loc[:, other_indices])
                     .pct_change(periods=lag_dict[lag_key])  # type: ignore
                     .to_numpy()
+                    .reshape(-1)
                 )
 
-        return dataset_lag.round(rounding)
+        return apply_rounding(dataset_lag, rounding)
 
-    return dataset.ffill().pct_change(periods=lag, axis=axis).round(rounding)
+    # The forward fill has to run along the same axis as the pct_change, since a statement or ratio DataFrame is indexed by ticker with the periods as columns, so filling along the default axis would carry the previous ticker's value into the gap.  # noqa: E501
+    dataset = bounded_ffill(dataset, axis=axis)
+
+    return apply_rounding(dataset.pct_change(periods=lag, axis=axis), rounding)
 
 
 def calculate_standardization(
@@ -261,17 +351,15 @@ def calculate_standardization(
         pd.Series | pd.DataFrame: the standardized (Z-Score) dataset.
     """
     if isinstance(dataset, pd.Series):
-        return ((dataset - dataset.mean()) / dataset.std()).round(rounding)
+        return apply_rounding((dataset - dataset.mean()) / dataset.std(), rounding)
 
     if axis == "columns":
-        return (
-            dataset.sub(dataset.mean(axis=1), axis=0)
-            .div(dataset.std(axis=1), axis=0)
-            .round(rounding)
+        return apply_rounding(
+            dataset.sub(dataset.mean(axis=1), axis=0).div(dataset.std(axis=1), axis=0),
+            rounding,
         )
 
-    return (
-        dataset.sub(dataset.mean(axis=0), axis=1)
-        .div(dataset.std(axis=0), axis=1)
-        .round(rounding)
+    return apply_rounding(
+        dataset.sub(dataset.mean(axis=0), axis=1).div(dataset.std(axis=0), axis=1),
+        rounding,
     )

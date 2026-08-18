@@ -22,7 +22,7 @@ def get_main_refinancing_operations() -> pd.DataFrame:
         ecb_data_string=ecb_data_string, dataset="FM", frequency="D"
     )
 
-    # Convert to percentage
+    # Divide by 100 to convert the percentage into a decimal
     main_refinancing_operations = main_refinancing_operations / 100
 
     return main_refinancing_operations
@@ -34,9 +34,6 @@ def get_marginal_lending_facility() -> pd.DataFrame:
     time. The Marginal Lending Facility is the interest rate which banks may
     use to obtain overnight liquidity with the Eurosystem.
 
-    Args:
-        per_capita (bool): Whether to return the per capita data or the total data.
-
     Returns:
        pd.DataFrame: A DataFrame containing the Marginal Lending Facility over time.
     """
@@ -46,7 +43,7 @@ def get_marginal_lending_facility() -> pd.DataFrame:
         ecb_data_string=ecb_data_string, dataset="FM", frequency="D"
     )
 
-    # Convert to percentage
+    # Divide by 100 to convert the percentage into a decimal
     marginal_lending_facility = marginal_lending_facility / 100
 
     return marginal_lending_facility
@@ -67,7 +64,7 @@ def get_deposit_facility() -> pd.DataFrame:
         ecb_data_string=ecb_data_string, dataset="FM", frequency="D"
     )
 
-    # Convert to percentage
+    # Divide by 100 to convert the percentage into a decimal
     deposit_facility = deposit_facility / 100
 
     return deposit_facility

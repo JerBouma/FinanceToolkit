@@ -54,3 +54,44 @@ def test_get_chaikin_oscillator(recorder):
             20,
         )
     )
+
+
+def test_get_chaikin_money_flow(recorder):
+    recorder.capture(
+        breadth_model.get_chaikin_money_flow(
+            pd.Series([10, 11, 12, 11, 13, 14, 13, 15]),
+            pd.Series([9, 10, 10, 9, 11, 12, 11, 13]),
+            pd.Series([9.5, 10.5, 11, 10, 12, 13, 12, 14.5]),
+            pd.Series([1000, 1200, 900, 1100, 1500, 800, 1300, 1600]),
+            4,
+        ).round(3)
+    )
+
+
+def test_get_ease_of_movement(recorder):
+    recorder.capture(
+        breadth_model.get_ease_of_movement(
+            pd.Series([10, 11, 12, 11, 13, 14, 13, 15]),
+            pd.Series([9, 10, 10, 9, 11, 12, 11, 13]),
+            pd.Series([1000, 1200, 900, 1100, 1500, 800, 1300, 1600]),
+            3,
+        ).round(3)
+    )
+
+
+def test_get_negative_volume_index(recorder):
+    recorder.capture(
+        breadth_model.get_negative_volume_index(
+            pd.Series([9.5, 10.5, 11, 10, 12, 13, 12, 14.5]),
+            pd.Series([1000, 1200, 900, 1100, 1500, 800, 1300, 1600]),
+        ).round(3)
+    )
+
+
+def test_get_positive_volume_index(recorder):
+    recorder.capture(
+        breadth_model.get_positive_volume_index(
+            pd.Series([9.5, 10.5, 11, 10, 12, 13, 12, 14.5]),
+            pd.Series([1000, 1200, 900, 1100, 1500, 800, 1300, 1600]),
+        ).round(3)
+    )

@@ -5,6 +5,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import numpy as np
 import pandas as pd
 
+from financetoolkit.cache import frame_model, policy_model
+from financetoolkit.cache.cache_controller import get_active_cache
 from financetoolkit.utilities.requests_model import get_request
 
 FRED_API_BASE_URL = "https://api.stlouisfed.org/fred/series/observations"
@@ -16,6 +18,11 @@ def fetch_single_series(
     """
     Fetches observations for a single FRED series and returns them as a DataFrame.
 
+    When a cache is active, only the part of the requested range that is not already
+    stored is requested from FRED. The API key is deliberately excluded from the cache
+    key: the observations are identical regardless of who asks for them, and a
+    credential has no place in a cache key.
+
     Args:
         series_id (str): The FRED series identifier (e.g. "DGS10" for the 10-Year Treasury yield).
         start_date (str): Start date of the observation range in YYYY-MM-DD format.
@@ -26,6 +33,65 @@ def fetch_single_series(
         pd.DataFrame: A DataFrame indexed by a daily PeriodIndex with the series ID as the column name.
             Missing values (reported as "." by FRED) are converted to NaN. Returns an empty DataFrame
             if no observations are found for the given date range.
+
+    Raises:
+        RuntimeError: If the HTTP request to the FRED API fails or returns an unexpected response.
+    """
+    cache = get_active_cache()
+    cached_data = None
+    fetch_start, fetch_end = start_date, end_date
+
+    if cache is not None:
+        plan = cache.plan(
+            source=policy_model.FRED,
+            dataset="series",
+            entities=[series_id],
+            start=start_date,
+            end=end_date,
+        )
+        cached_data = plan.cached.get(series_id)
+        fetch_span = plan.get_fetch_span(series_id)
+
+        if fetch_span is None:
+            return cached_data if cached_data is not None else pd.DataFrame()
+
+        fetch_start = fetch_span[0].strftime("%Y-%m-%d")
+        fetch_end = fetch_span[1].strftime("%Y-%m-%d")
+
+    data = _request_series(series_id, fetch_start, fetch_end, api_key)
+
+    if cache is not None and not data.empty:
+        cache.store(
+            source=policy_model.FRED,
+            dataset="series",
+            entity=series_id,
+            data=data,
+            start=fetch_start,
+            end=fetch_end,
+        )
+
+    if cached_data is not None and not cached_data.empty:
+        data = frame_model.merge_frames(cached_data, data)
+        data = frame_model.slice_frame(data, start_date, end_date)
+
+    return data
+
+
+def _request_series(
+    series_id: str, start_date: str, end_date: str, api_key: str
+) -> pd.DataFrame:
+    """
+    Perform the actual FRED observations request for a single series.
+
+    Args:
+        series_id (str): The FRED series identifier.
+        start_date (str): Start date of the observation range in YYYY-MM-DD format.
+        end_date (str): End date of the observation range in YYYY-MM-DD format.
+        api_key (str): FRED API key, sent as the `api_key` query parameter.
+
+    Returns:
+        pd.DataFrame: A DataFrame indexed by a daily PeriodIndex with the series ID as
+            the column name, or an empty DataFrame when there are no observations.
 
     Raises:
         RuntimeError: If the HTTP request to the FRED API fails or returns an unexpected response.
@@ -136,9 +202,7 @@ def get_maturity_option_adjusted_spread(
         "15+ Years",
     ]
 
-    # Convert OAS data to basis points. Given that the
-    # value is in percentages, the value is multiplied by
-    # 100 to convert to basis points.
+    # OAS is a percentage, so multiply by 100 to get basis points.
     oas_data = oas_data * 100
 
     return oas_data
@@ -179,8 +243,7 @@ def get_maturity_effective_yield(
         "15+ Years",
     ]
 
-    # Yield data is a percentage, so it is divided by 100
-    # to get the actual numeric value
+    # Yield data is a percentage, so divide by 100 for the numeric value.
     yield_data = yield_data / 100
 
     return yield_data
@@ -258,8 +321,7 @@ def get_maturity_yield_to_worst(
         "15+ Years",
     ]
 
-    # Yield data is a percentage, so it is divided by 100
-    # to get the actual numeric value
+    # Yield data is a percentage, so divide by 100 for the numeric value.
     yield_data = yield_data / 100
 
     return yield_data
@@ -294,9 +356,7 @@ def get_rating_option_adjusted_spread(
 
     oas_data.columns = ["AAA", "AA", "A", "BBB", "BB", "B", "CCC"]
 
-    # Convert OAS data to basis points. Given that the
-    # value is in percentages, the value is multiplied by
-    # 100 to convert to basis points.
+    # OAS is a percentage, so multiply by 100 to get basis points.
     oas_data = oas_data * 100
 
     return oas_data
@@ -331,8 +391,7 @@ def get_rating_effective_yield(
 
     yield_data.columns = ["AAA", "AA", "A", "BBB", "BB", "B", "CCC"]
 
-    # Yield data is a percentage, so it is divided by 100
-    # to get the actual numeric value
+    # Yield data is a percentage, so divide by 100 for the numeric value.
     yield_data = yield_data / 100
 
     return yield_data
@@ -398,8 +457,7 @@ def get_rating_yield_to_worst(
 
     yield_data.columns = ["AAA", "AA", "A", "BBB", "BB", "B", "CCC"]
 
-    # Yield data is a percentage, so it is divided by 100
-    # to get the actual numeric value
+    # Yield data is a percentage, so divide by 100 for the numeric value.
     yield_data = yield_data / 100
 
     return yield_data

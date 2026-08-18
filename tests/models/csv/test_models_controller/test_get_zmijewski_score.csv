@@ -1,0 +1,11 @@
+,,2020,2021,2022,2023
+AAPL,Net Income to Total Assets,0.1773,0.2697,0.2829,0.2751
+AAPL,Total Liabilities to Total Assets,0.7983,0.8203,0.8564,0.8237
+AAPL,Current Assets to Current Liabilities,1.3636,1.0746,0.8794,0.988
+AAPL,Zmijewski Score,-0.553,-0.8427,-0.6955,-0.8466
+AAPL,Zmijewski Bankruptcy Probability,0.2901,0.1997,0.2434,0.1986
+MSFT,Net Income to Total Assets,0.147,0.1836,0.1994,0.1756
+MSFT,Total Liabilities to Total Assets,0.6074,0.5746,0.5435,0.4994
+MSFT,Current Assets to Current Liabilities,2.5158,2.08,1.7846,1.7692
+MSFT,Zmijewski Score,-1.5094,-1.8591,-2.1062,-2.2507
+MSFT,Zmijewski Bankruptcy Probability,0.0656,0.0315,0.0176,0.0122

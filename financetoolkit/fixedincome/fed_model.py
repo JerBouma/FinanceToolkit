@@ -6,6 +6,8 @@ import io
 
 import pandas as pd
 
+from financetoolkit.cache import policy_model
+from financetoolkit.cache.cache_controller import get_active_cache
 from financetoolkit.utilities.requests_model import get_request
 
 BASE_URL = "https://markets.newyorkfed.org/read"
@@ -36,6 +38,10 @@ def collect_fed_data(fed_code: str) -> pd.DataFrame:
     """
     Collect the data from the Federal Reserve Bank of New York.
 
+    The endpoint returns the full history of a rate in one response and takes no
+    date range, so there is nothing to request incrementally. The response is cached
+    whole instead, keyed on the rate being asked for.
+
     Args:
         fed_code (str): The code for the data to be collected.
 
@@ -43,6 +49,16 @@ def collect_fed_data(fed_code: str) -> pd.DataFrame:
        pd.DataFrame: A DataFrame containing the data from the Federal
        Reserve Bank of New York.
     """
+    cache = get_active_cache()
+
+    if cache is not None:
+        cached_data = cache.get(
+            source=policy_model.FEDERAL_RESERVE, dataset="rate", entity=fed_code
+        )
+
+        if cached_data is not None:
+            return cached_data
+
     url = f"{BASE_URL}{EXTENSIONS_1}{fed_code}{EXTENSIONS_2}"
     response = get_request(url)
     fed_data = pd.read_csv(io.StringIO(response.text))
@@ -68,6 +84,14 @@ def collect_fed_data(fed_code: str) -> pd.DataFrame:
 
     fed_data = fed_data.rename(columns=COLUMN_NAMES)
 
+    if cache is not None and not fed_data.empty:
+        cache.set(
+            source=policy_model.FEDERAL_RESERVE,
+            dataset="rate",
+            entity=fed_code,
+            data=fed_data,
+        )
+
     return fed_data
 
 
@@ -84,7 +108,7 @@ def get_effective_federal_funds_rate() -> pd.DataFrame:
 
     effective_federal_funds_rate = collect_fed_data(fed_code)
 
-    # Convert to percentages
+    # The New York Fed publishes every rate column in percent, so they are divided by 100 into decimals. The volume column is a dollar amount and is left alone.  # noqa: E501
     effective_federal_funds_rate.loc[
         :, effective_federal_funds_rate.columns != "Volume ($Billions)"
     ] = (
@@ -104,13 +128,13 @@ def get_overnight_banking_funding_rate() -> pd.DataFrame:
     can borrow money that are required to meet overnight balances.
 
     Returns:
-       pd.DataFrame: A DataFrame containing the Main Refinancing Operations over time.
+       pd.DataFrame: A DataFrame containing the overnight banking funding rate over time.
     """
     fed_code = CODES["OBFR"]
 
     overnight_banking_funding_rate = collect_fed_data(fed_code)
 
-    # Convert to percentages
+    # The New York Fed publishes every rate column in percent, so they are divided by 100 into decimals. The volume column is a dollar amount and is left alone.  # noqa: E501
     overnight_banking_funding_rate.loc[
         :, overnight_banking_funding_rate.columns != "Volume ($Billions)"
     ] = (
@@ -136,7 +160,7 @@ def get_tri_party_general_collateral_rate() -> pd.DataFrame:
 
     tri_party_general_collateral_rate = collect_fed_data(fed_code)
 
-    # Convert to percentages
+    # The New York Fed publishes every rate column in percent, so they are divided by 100 into decimals. The volume column is a dollar amount and is left alone.  # noqa: E501
     tri_party_general_collateral_rate.loc[
         :, tri_party_general_collateral_rate.columns != "Volume ($Billions)"
     ] = (
@@ -162,7 +186,7 @@ def get_broad_general_collateral_rate() -> pd.DataFrame:
 
     broad_general_collateral_rate = collect_fed_data(fed_code)
 
-    # Convert to percentages
+    # The New York Fed publishes every rate column in percent, so they are divided by 100 into decimals. The volume column is a dollar amount and is left alone.  # noqa: E501
     broad_general_collateral_rate.loc[
         :, broad_general_collateral_rate.columns != "Volume ($Billions)"
     ] = (
@@ -188,7 +212,7 @@ def get_secured_overnight_financing_rate() -> pd.DataFrame:
 
     secured_overnight_financing_rate = collect_fed_data(fed_code)
 
-    # Convert to percentages
+    # The New York Fed publishes every rate column in percent, so they are divided by 100 into decimals. The volume column is a dollar amount and is left alone.  # noqa: E501
     secured_overnight_financing_rate.loc[
         :, secured_overnight_financing_rate.columns != "Volume ($Billions)"
     ] = (

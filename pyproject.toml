@@ -1,6 +1,6 @@
 [project]
 name = "financetoolkit"
-version = "2.1.4"
+version = "2.2.0"
 description = "Transparent and Efficient Financial Analysis"
 license = {text = "MIT"}
 authors = [
@@ -15,7 +15,6 @@ classifiers = [
     "Topic :: Office/Business :: Financial :: Investment",
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
@@ -41,22 +40,32 @@ keywords = [
     "Commodities",
     "Options"
 ]
-requires-python = ">=3.10, <3.16"
+requires-python = ">=3.11, <3.16"
 dependencies = [
-    "pandas>=2.2",
+    "pandas>=3.0",
     "scikit-learn>=1.6",
     "requests>=2.32",
     "yfinance",
     "openpyxl>=3.1",
+    # Portfolio is exported from the package root and reads its configuration with
+    # yaml at import time, so this is needed by a plain install, not just by the
+    # MCP server.
+    "pyyaml>=6.0",
 ]
 
 [project.optional-dependencies]
+econometrics = [
+    "statsmodels>=0.14",
+    "linearmodels>=6.0",
+]
 mcp = [
+    # The MCP server exposes every module, econometrics included, so it pulls
+    # in the optional extra rather than leaving those tools failing at runtime.
+    "financetoolkit[econometrics]",
     "fastmcp>=3.4.2",
     "mcp[cli]>=1.27.0",
     "tabulate>=0.9.0",
     "python-dotenv>=1.0",
-    "pyyaml>=6.0",
     "rich>=13.0",
 ]
 
@@ -83,6 +92,12 @@ dev = [
     "ruff>=0.13.2",
     "httpx2>=0.28",
     "financetoolkit[mcp]",
+    "financetoolkit[econometrics]",
+    "arch>=7.0",
+    "jupyter>=1.1.1",
+    "nbconvert>=7.17.1",
+    "matplotlib>=3.11.1",
+    "seaborn>=0.13.2",
 ]
 
 [tool.uv]
@@ -131,6 +146,7 @@ lint.ignore = [
     "S106",  # Bandit: insecure usage pattern (e.g., weak crypto or risky API)
     "S107",  # Bandit: use of eval/exec or other code-injection risk
     "PLR0913",  # Pylint-refactor: too many arguments in function/method
+    "PLR0917",  # Pylint-refactor: too many positional arguments in function/method
     "PLR0912",  # Pylint-refactor: too many branches in function/method
     "PLR0911",  # Pylint-refactor: too many return statements in function/method
     "PLR0915",  # Pylint-refactor: function/method too many statements (too complex)
@@ -146,6 +162,9 @@ exclude = ["conftest.py"]
 [tool.ruff.lint.per-file-ignores]
 # HTML template strings contain lines that cannot be wrapped
 "financetoolkit/mcp_server/auth_model.py" = ["E501"]
+# Test assertions commonly compare against literal thresholds/expected values, and
+# tests often import a specific function locally to keep a single test's scope clear
+"tests/**" = ["PLR2004", "PLC0415"]
 
 [tool.ruff.lint.isort]
 combine-as-imports = true
@@ -158,7 +177,7 @@ skip_gitignore = true
 combine_as_imports = true
 
 [tool.codespell]
-ignore-words-list = 'te,hsi,amplitud,nam,tha,plaform,ine,daa'
+ignore-words-list = 'te,hsi,amplitud,nam,tha,plaform,ine,daa,pring,pezier,trough,zar'
 skip = '*.json,./.git,pyproject.toml,poetry.lock,examples'
 
 [tool.pytest.ini_options]

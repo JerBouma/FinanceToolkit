@@ -3,6 +3,7 @@
 __docformat__ = "google"
 
 
+import hashlib
 import importlib.util
 import threading
 import time
@@ -17,6 +18,8 @@ import requests
 from urllib3.exceptions import MaxRetryError
 
 from financetoolkit import helpers
+from financetoolkit.cache import policy_model
+from financetoolkit.cache.cache_controller import get_active_cache
 from financetoolkit.utilities import error_model, logger_model
 from financetoolkit.utilities.requests_model import get_request
 
@@ -100,26 +103,102 @@ def get_financial_data(
                 ):
                     time.sleep(5.01)
                     limit_retry_counter += 1
-                else:
-                    return pd.DataFrame(columns=["LIMIT REACH"])
+                    continue
+
+                return pd.DataFrame(columns=["LIMIT REACH"])
             if "US stocks only" in error_message:
                 return pd.DataFrame(columns=["US STOCKS ONLY"])
 
             if "Invalid API KEY." in error_message:
                 return pd.DataFrame(columns=["INVALID API KEY"])
 
+            # Anything that is not one of the messages above is not retryable, without this the loop would fall through and hammer the endpoint indefinitely.  # noqa: E501
+            logger.error(
+                "The request to Financial Modeling Prep failed with an unrecognised error: %s",
+                error_message or e,
+            )
+
+            return pd.DataFrame(columns=["REQUEST FAILED"])
+
         except (
             MaxRetryError,
             requests.exceptions.SSLError,
             requests.exceptions.ConnectionError,
         ):
-            # When the connection is refused, retry the request 12 times
-            # and if it doesn't work, then return an empty dataframe
+            # Retry a refused connection up to RETRY_LIMIT times, then return empty.
             if error_retry_counter == RETRY_LIMIT:
                 return pd.DataFrame(columns=["NO ERRORS"])
 
             error_retry_counter += 1
             time.sleep(5)
+
+
+PLAN_RESTRICTION_MESSAGES = (
+    "PREMIUM QUERY PARAMETER",
+    "EXCLUSIVE ENDPOINT",
+    "NO DATA",
+    "BANDWIDTH LIMIT REACH",
+    "INVALID API KEY",
+    "LIMIT REACH",
+)
+
+
+def determine_subscription_plan(api_key: str) -> tuple[str, bool]:
+    """
+    Probe the API key to establish which FinancialModelingPrep plan it belongs to.
+
+    The plan governs the sleep timer and several other decisions, so it is needed
+    before any real request is made. Because the answer only changes when a
+    subscription changes, it is cached briefly rather than probed on every single
+    Toolkit or Discovery construction. The key itself is never stored: the cache
+    entry is identified by a digest of it, so two processes using the same key share
+    the answer while the key stays out of the database.
+
+    Args:
+        api_key (str): The FinancialModelingPrep API key to probe.
+
+    Returns:
+        tuple[str, bool]: The plan ("Premium" or "Free"), and whether the key was
+            rejected as invalid.
+    """
+    cache = get_active_cache()
+    entity = hashlib.sha256(api_key.encode()).hexdigest()[:16] if api_key else "no_key"
+
+    if cache is not None:
+        cached_plan = cache.get(
+            source=policy_model.FINANCIAL_MODELING_PREP,
+            dataset="subscription_plan",
+            entity=entity,
+        )
+
+        if cached_plan is not None:
+            return cached_plan["plan"], cached_plan["invalid_key"]
+
+    determine_plan = get_financial_data(
+        url=f"https://financialmodelingprep.com/stable/income-statement?symbol=AAPL&apikey={api_key}&limit=10",
+        sleep_timer=False,
+        user_subscription="Free",
+    )
+
+    plan = "Premium"
+    invalid_key = False
+
+    for option in PLAN_RESTRICTION_MESSAGES:
+        if option in determine_plan:
+            invalid_key = option == "INVALID API KEY"
+            plan = "Free"
+            break
+
+    # A rate limited probe says nothing about the plan, so that answer is not stored.
+    if cache is not None and "LIMIT REACH" not in determine_plan:
+        cache.set(
+            source=policy_model.FINANCIAL_MODELING_PREP,
+            dataset="subscription_plan",
+            entity=entity,
+            data={"plan": plan, "invalid_key": invalid_key},
+        )
+
+    return plan, invalid_key
 
 
 def get_financial_statement(
@@ -141,6 +220,8 @@ def get_financial_statement(
         api_key (str): API key for the financial data provider.
         quarter (bool): Whether to retrieve quarterly data. Defaults to False (annual data).
         start_date (str | None): The start date to filter data with. Defaults to None.
+        fiscal_year_adjustments (dict | None): A registry that collects every reporting period whose
+            calendar label differs from its fiscal label, keyed by ticker. Defaults to None.
         sleep_timer (bool): Whether to set a sleep timer when the rate limit is reached. Note that this only works
             if you have a Premium subscription (Starter or higher) from FinancialModelingPrep. Defaults to True.
         user_subscription (str): The subscription type of the user. Defaults to "Free".
@@ -206,46 +287,25 @@ def get_financial_statement(
     if not financial_statement.empty:
         financial_statement = financial_statement.drop("symbol", axis=1)
 
-        # One day is deducted from the date because it could be that
-        # the date is reported as 2023-07-01 while the data is about the
-        # second quarter of 2023. This usually happens when companies
-        # have a different financial year than the calendar year. It doesn't
-        # matter for others that are correctly reporting since 2023-06-31
-        # minus one day is still 2023Q2
+        # One day is deducted: a period reported as 2023-07-01 is really 2023Q2.
         financial_statement["date"] = pd.to_datetime(
             financial_statement["date"]
         ) - pd.offsets.Day(1)
 
-        if quarter:
-            financial_statement["date"] = financial_statement["date"].dt.to_period("Q")
-        else:
-            # Derive the calendar year the fiscal period mostly represents.
-            # If the fiscal year ends in months 1-5 (Jan-May), more than half the period
-            # falls in the prior calendar year (e.g. NVDA Jan 31 end → label as prior year).
-            # Months 6-12 (Jun-Dec) stay as-is (current year is majority or tied).
-            end_month = financial_statement["date"].dt.month
-            end_year = financial_statement["date"].dt.year
-            calendar_year = end_year - (end_month < 6).astype(int)  # noqa
-
-            shifted_mask = end_month < 6  # noqa
-            if shifted_mask.any() and fiscal_year_adjustments is not None:
-                fiscal_year_adjustments[ticker] = [
-                    {"fiscal_year": int(fy), "calendar_year": int(cy)}
-                    for fy, cy in zip(
-                        end_year[shifted_mask], calendar_year[shifted_mask]
-                    )
-                ]
-
-            financial_statement["date"] = pd.PeriodIndex(
-                calendar_year.astype(str), freq="Y"
+        # A fiscal period is labelled with the calendar period holding most of it, at both frequencies, so yearly and quarterly output stay consistent.  # noqa: E501
+        financial_statement["date"] = (
+            helpers.convert_period_end_dates_to_calendar_periods(
+                period_end_dates=financial_statement["date"],
+                quarter=quarter,
+                ticker=ticker,
+                fiscal_year_adjustments=fiscal_year_adjustments,
             )
+        )
 
         financial_statement = financial_statement.set_index("date").T
 
         if financial_statement.columns.duplicated().any():
-            # This happens in the rare case that a company has two financial statements for the same period.
-            # Browsing through the data has shown that these financial statements are equal therefore
-            # one of the columns can be dropped.
+            # Duplicate statements for one period are equal, so one copy can be dropped.
             financial_statement = financial_statement.loc[
                 :, ~financial_statement.columns.duplicated()
             ]
@@ -336,6 +396,12 @@ def get_historical_data(
         f"?symbol={ticker}&apikey={api_key}&from={start_date_string}&to={end_date_string}"
     )
 
+    # The stable EOD endpoint no longer returns an adjusted close, so the dividend adjusted variant is queried separately to obtain it.  # noqa: E501
+    adjusted_data_url = (
+        f"https://financialmodelingprep.com/stable/historical-price-eod/dividend-adjusted"
+        f"?symbol={ticker}&apikey={api_key}&from={start_date_string}&to={end_date_string}"
+    )
+
     dividend_url = (
         f"https://financialmodelingprep.com/stable/dividends"
         f"?symbol={ticker}&apikey={api_key}&limit={'99999' if user_subscription != 'Free' else '5'}"
@@ -378,14 +444,34 @@ def get_historical_data(
         }
     )
 
-    historical_data["Adj Close"] = historical_data["Close"]
+    try:
+        adjusted_data = get_financial_data(
+            url=adjusted_data_url,
+            sleep_timer=sleep_timer,
+            raw=True,
+            user_subscription=user_subscription,
+        )
+
+        adjusted_data = pd.DataFrame(adjusted_data).set_index("date")
+        adjusted_data.index = pd.to_datetime(adjusted_data.index).to_period(freq="D")
+        adjusted_data = adjusted_data[~adjusted_data.index.duplicated(keep="first")]
+
+        historical_data["Adj Close"] = adjusted_data["adjClose"]
+    except (HTTPError, KeyError, ValueError, URLError, RemoteDisconnected):
+        # Without the adjusted close, returns would be based on raw prices and would therefore exclude dividends, so this is reported rather than silently accepted.  # noqa: E501
+        logger.warning(
+            "No adjusted close data found for %s, falling back to the unadjusted close. "
+            "Returns will not include dividends.",
+            ticker,
+        )
+        historical_data["Adj Close"] = historical_data["Close"]
+
     historical_data = historical_data[
         ["Open", "High", "Low", "Close", "Adj Close", "Volume"]
     ]
 
     if divide_ohlc_by:
-        # Set divide by zero and invalid value warnings to ignore as it is fine that
-        # dividing NaN by divide_ohlc_by results in NaN
+        # NaN divided by divide_ohlc_by is fine, so those warnings are ignored.
         np.seterr(divide="ignore", invalid="ignore")
         # In case tickers are presented in percentages or similar
         historical_data = historical_data.div(divide_ohlc_by)
@@ -405,6 +491,9 @@ def get_historical_data(
                 if not dividends_df.empty:
                     dividends_df.index = pd.to_datetime(dividends_df.index)
                     dividends_df.index = dividends_df.index.to_period(freq="D")
+                    dividends_df = dividends_df[
+                        ~dividends_df.index.duplicated(keep="first")
+                    ]
 
                     historical_data["Dividends"] = dividends_df["dividend"]
                 else:
@@ -628,15 +717,12 @@ def get_revenue_segmentation(
     and returns a DataFrame containing the data.
 
     Args:
-        tickers (List[str]): List of company tickers.
-        statement (str): The type of financial statement to retrieve. Can be "balance", "income", or "cash-flow".
+        tickers (list[str] | str): A single ticker or a list of company tickers.
+        method (str): The segmentation to retrieve, either "geographic" or "product".
         api_key (str): API key for the financial data provider.
         quarter (bool): Whether to retrieve quarterly data. Defaults to False (annual data).
         start_date (str): The start date to filter data with.
         end_date (str): The end date to filter data with.
-        statement_format (pd.DataFrame): Optional DataFrame containing the names of the financial
-            statement line items to include in the output. Rows should contain the original name
-            of the line item, and columns should contain the desired name for that line item.
         sleep_timer (bool): Whether to set a sleep timer when the rate limit is reached. Note that this only works
         if you have a Premium subscription (Starter or higher) from FinancialModelingPrep. Defaults to False.
         user_subscription (str): The subscription type of the user. Defaults to "Free".
@@ -680,9 +766,7 @@ def get_revenue_segmentation(
                     )
 
                 if revenue_segmentation.columns.duplicated().any():
-                    # This happens in the rare case that a company has two financial statements for the same period.
-                    # Browsing through the data has shown that these financial statements are equal therefore
-                    # one of the columns can be dropped.
+                    # Duplicate statements for one period are equal, so one copy can be dropped.
                     revenue_segmentation = revenue_segmentation.loc[
                         :, ~revenue_segmentation.columns.duplicated()
                     ]
@@ -801,8 +885,7 @@ def get_revenue_segmentation(
                 revenue_segmentation_total.columns, freq="Y"
             )
 
-        # Check whether the rows sum to zero, if so with the current start and end date there is no data
-        # for those rows and thus they can be dropped out of the dataset to clean it up
+        # Rows summing to zero have no data in this window, so drop them.
         revenue_segmentation_total = revenue_segmentation_total[
             revenue_segmentation_total.sum(axis=1) != 0
         ]
@@ -849,10 +932,12 @@ def get_analyst_estimates(
         - Number of Analysts
 
     Args:
-        tickers (List[str]): List of company tickers.
+        tickers (list[str] | str): A single ticker or a list of company tickers.
         api_key (str): API key for the financial data provider.
         quarter (bool): Whether to retrieve quarterly data. Defaults to False (annual data).
         start_date (str): The start date to filter data with.
+        rounding (int | None): The number of decimals to round the results to, or None for no
+            rounding. Defaults to 4.
         sleep_timer (bool): Whether to set a sleep timer when the rate limit is reached. Note that this only works
         if you have a Premium subscription (Starter or higher) from FinancialModelingPrep. Defaults to False.
         user_subscription (str): The subscription type of the user. Defaults to "Free".
@@ -873,12 +958,7 @@ def get_analyst_estimates(
         try:
             analyst_estimates = analyst_estimates.drop("symbol", axis=1)
 
-            # One day is deducted from the date because it could be that
-            # the date is reported as 2023-07-01 while the data is about the
-            # second quarter of 2023. This usually happens when companies
-            # have a different financial year than the calendar year. It doesn't
-            # matter for others that are correctly reporting since 2023-06-31
-            # minus one day is still 2023
+            # One day is deducted: a period reported as 2023-07-01 is really 2023Q2.
             analyst_estimates["date"] = pd.to_datetime(
                 analyst_estimates["date"]
             ) - pd.offsets.Day(1)
@@ -895,9 +975,7 @@ def get_analyst_estimates(
             analyst_estimates = analyst_estimates.set_index("date").T
 
             if analyst_estimates.columns.duplicated().any():
-                # This happens in the rare case that a company has two financial statements for the same period.
-                # Browsing through the data has shown that these financial statements are equal therefore
-                # one of the columns can be dropped.
+                # Duplicate statements for one period are equal, so one copy can be dropped.
                 analyst_estimates = analyst_estimates.loc[
                     :, ~analyst_estimates.columns.duplicated()
                 ]
@@ -979,13 +1057,11 @@ def get_analyst_estimates(
         analyst_estimates_total = pd.concat(analyst_estimates_dict, axis=0)
 
         try:
+            # "Number of Analysts" stays float64 (not int) so an unreported count stays NaN, not 0.
             analyst_estimates_total = analyst_estimates_total.astype(np.float64)
-            analyst_estimates_total.loc[:, "Number of Analysts", :].fillna(0).astype(
-                int
-            )
         except ValueError as error:
             logger.error(
-                "Not able to convert DataFrame to float64 and int due to %s. This could result in"
+                "Not able to convert DataFrame to float64 due to %s. This could result in"
                 "issues when values are zero and is predominantly relevant for "
                 "ratio calculations.",
                 error,
@@ -1027,7 +1103,7 @@ def get_profile(
     Gives information about the profile of a company which includes i.a. beta, company description, industry and sector.
 
     Args:
-        ticker (list or string): the company ticker (for example: "AAPL")
+        tickers (list[str] | str): the company ticker or tickers (for example: "AAPL")
         api_key (string): the API Key obtained from
         https://www.jeroenbouma.com/fmp
         user_subscription (str): The subscription type of the user. Defaults to "Free".
@@ -1145,7 +1221,7 @@ def get_quote(
     price-to-earning ratio and shares outstanding.
 
     Args:
-        ticker (list or string): the company ticker (for example: "AMD")
+        tickers (list[str] | str): the company ticker or tickers (for example: "AMD")
         api_key (string): the API Key obtained from
         https://www.jeroenbouma.com/fmp
         user_subscription (str): The subscription type of the user. Defaults to "Free".
@@ -1237,7 +1313,7 @@ def get_rating(
     recommendation as well as ratings based on a variety of ratios.
 
     Args:
-        ticker (list or string): the company ticker (for example: "MSFT")
+        tickers (list[str] | str): the company ticker or tickers (for example: "MSFT")
         api_key (string): the API Key obtained from
         https://www.jeroenbouma.com/fmp
         user_subscription (str): The subscription type of the user. Defaults to "Free".
@@ -1333,7 +1409,7 @@ def get_earnings_calendar(
     Obtains Earnings Calendar which shows the expected earnings and EPS for a company.
 
     Args:
-        ticker (list or string): the company ticker (for example: "MSFT")
+        tickers (list[str] | str): the company ticker or tickers (for example: "MSFT")
         api_key (string): the API Key obtained from
         https://www.jeroenbouma.com/fmp
         start_date (str): The start date to filter data with.
@@ -1367,9 +1443,7 @@ def get_earnings_calendar(
             earnings_calendar = earnings_calendar.set_index("date").sort_index()
 
             if earnings_calendar.columns.duplicated().any():
-                # This happens in the rare case that a company has two financial statements for the same period.
-                # Browsing through the data has shown that these financial statements are equal therefore
-                # one of the columns can be dropped.
+                # Duplicate statements for one period are equal, so one copy can be dropped.
                 earnings_calendar = earnings_calendar.loc[
                     :, ~earnings_calendar.columns.duplicated()
                 ]
@@ -1453,7 +1527,7 @@ def get_dividend_calendar(
     Obtains Dividend Calendar which shows the dividends and related dates.
 
     Args:
-        ticker (list or string): the company ticker (for example: "MSFT")
+        tickers (list[str] | str): the company ticker or tickers (for example: "MSFT")
         api_key (string): the API Key obtained from
         https://www.jeroenbouma.com/fmp
         start_date (str): The start date to filter data with.
@@ -1572,7 +1646,8 @@ def get_esg_scores(
     Obtains the ESG Scores for a selection of companies.
 
     Args:
-        ticker (list or string): the company ticker (for example: "MSFT")
+        tickers (list[str] | str): the company ticker or tickers (for example: "MSFT")
+        quarter (bool): whether to retrieve quarterly data. Defaults to False.
         api_key (string): the API Key obtained from
         https://www.jeroenbouma.com/fmp
         start_date (str): The start date to filter data with.
@@ -1599,12 +1674,7 @@ def get_esg_scores(
                 no_data.append(ticker)
                 esg_scores_dict[ticker] = esg_scores
             else:
-                # One day is deducted from the date because it could be that
-                # the date is reported as 2023-07-01 while the data is about the
-                # second quarter of 2023. This usually happens when companies
-                # have a different financial year than the calendar year. It doesn't
-                # matter for others that are correctly reporting since 2023-06-31
-                # minus one day is still 2023 Q2.
+                # One day is deducted: a period reported as 2023-07-01 is really 2023Q2.
                 esg_scores["date"] = pd.to_datetime(
                     esg_scores["date"]
                 ) - pd.offsets.Day(1)
@@ -1677,6 +1747,198 @@ def get_esg_scores(
 
         return (
             esg_scores_total,
+            no_data,
+        )
+
+    return pd.DataFrame(), no_data
+
+
+def get_market_risk_premium(
+    api_key: str,
+    user_subscription: str = "Free",
+) -> pd.DataFrame:
+    """
+    Obtains the equity market risk premium by country -- the country default spread plus the
+    equity risk premium, following the approach popularized by Aswath Damodaran -- which is
+    widely used to calibrate country-specific costs of equity and discount rates in a
+    multi-country setting.
+
+    Also known as: country risk premium, Damodaran equity risk premium.
+
+    Args:
+        api_key (string): the API Key obtained from
+        https://www.jeroenbouma.com/fmp
+        user_subscription (str): The subscription type of the user. Defaults to "Free".
+
+    Returns:
+        pd.DataFrame: the market risk premium by country, indexed by country and including
+        the continent, Country Risk Premium and Total Equity Risk Premium (both in
+        percentage points).
+    """
+    if not api_key:
+        raise ValueError(
+            "Please enter an API key from FinancialModelingPrep. "
+            "For more information, look here: https://www.jeroenbouma.com/fmp"
+        )
+
+    url = (
+        f"https://financialmodelingprep.com/stable/market-risk-premium?apikey={api_key}"
+    )
+
+    market_risk_premium = get_financial_data(url=url)
+
+    if "country" not in market_risk_premium.columns:
+        return market_risk_premium
+
+    market_risk_premium = market_risk_premium.rename(
+        columns={
+            "country": "Country",
+            "continent": "Continent",
+            "countryRiskPremium": "Country Risk Premium",
+            "totalEquityRiskPremium": "Total Equity Risk Premium",
+        }
+    )
+
+    market_risk_premium = market_risk_premium.set_index("Country").sort_index()
+
+    return market_risk_premium
+
+
+def get_commitment_of_traders(
+    tickers: list[str] | str,
+    api_key: str,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    user_subscription: str = "Free",
+) -> pd.DataFrame:
+    """
+    Obtains the CFTC Commitment of Traders (COT) report for a selection of tickers. Published
+    weekly by the U.S. Commodity Futures Trading Commission, it breaks down open interest in
+    futures markets by trader type -- Non-Commercial (large speculators), Commercial (hedgers)
+    and Non-Reportable (small traders) -- and is widely used to gauge positioning and sentiment
+    in commodity, currency, interest rate and stock index futures markets.
+
+    Note that this data is only available for CFTC-tracked futures markets. Tickers without a
+    corresponding futures contract (e.g. most individual equities) return no data for that ticker.
+
+    Also known as: COT report, CFTC positioning data, speculator/hedger positioning.
+
+    Args:
+        tickers (list[str] | str): the ticker or tickers (for example: "NG" for Natural Gas futures)
+        api_key (string): the API Key obtained from
+        https://www.jeroenbouma.com/fmp
+        start_date (str): The start date to filter data with.
+        end_date (str): The end date to filter data with.
+        user_subscription (str): The subscription type of the user. Defaults to "Free".
+
+    Returns:
+        pd.DataFrame: the Commitment of Traders report data.
+    """
+
+    def worker(ticker, cot_dict):
+        url = (
+            "https://financialmodelingprep.com/stable/commitment-of-traders-report?"
+            f"symbol={ticker}&apikey={api_key}"
+        )
+        cot_report = get_financial_data(
+            url=url, sleep_timer=sleep_timer, user_subscription=user_subscription
+        )
+
+        try:
+            if "date" not in cot_report.columns:
+                no_data.append(ticker)
+                cot_dict[ticker] = cot_report
+            else:
+                cot_report["date"] = pd.to_datetime(cot_report["date"])
+                cot_report = cot_report.set_index("date").sort_index()
+
+                cot_report = cot_report.rename(columns=naming)
+
+                cot_report = cot_report.truncate(
+                    before=start_date, after=end_date, axis=0
+                )
+
+                cot_report = cot_report[~cot_report.index.duplicated()]
+
+                columns = [
+                    column for column in naming.values() if column in cot_report.columns
+                ]
+
+                cot_dict[ticker] = cot_report[columns]
+        except KeyError:
+            no_data.append(ticker)
+            cot_dict[ticker] = cot_report
+
+    naming: dict = {
+        "name": "Name",
+        "sector": "Sector",
+        "openInterestAll": "Open Interest",
+        "noncommPositionsLongAll": "Non-Commercial Long",
+        "noncommPositionsShortAll": "Non-Commercial Short",
+        "noncommPositionsSpreadAll": "Non-Commercial Spread",
+        "commPositionsLongAll": "Commercial Long",
+        "commPositionsShortAll": "Commercial Short",
+        "totReptPositionsLongAll": "Total Reportable Long",
+        "totReptPositionsShortAll": "Total Reportable Short",
+        "nonreptPositionsLongAll": "Non-Reportable Long",
+        "nonreptPositionsShortAll": "Non-Reportable Short",
+        "changeInOpenInterestAll": "Change in Open Interest",
+        "changeInNoncommLongAll": "Change in Non-Commercial Long",
+        "changeInNoncommShortAll": "Change in Non-Commercial Short",
+        "changeInCommLongAll": "Change in Commercial Long",
+        "changeInCommShortAll": "Change in Commercial Short",
+        "pctOfOiNoncommLongAll": "% OI Non-Commercial Long",
+        "pctOfOiNoncommShortAll": "% OI Non-Commercial Short",
+        "pctOfOiCommLongAll": "% OI Commercial Long",
+        "pctOfOiCommShortAll": "% OI Commercial Short",
+    }
+
+    if isinstance(tickers, str):
+        ticker_list = [tickers]
+    elif isinstance(tickers, list):
+        ticker_list = tickers
+    else:
+        raise ValueError(f"Type for the tickers ({type(tickers)}) variable is invalid.")
+
+    if not api_key:
+        raise ValueError(
+            "Please enter an API key from FinancialModelingPrep. "
+            "For more information, look here: https://www.jeroenbouma.com/fmp"
+        )
+
+    sleep_timer = user_subscription != "Free"
+
+    cot_dict: dict = {}
+    no_data: list[str] = []
+    threads = []
+
+    logger.info(
+        "Obtaining Commitment of Traders data for %d ticker(s)", len(ticker_list)
+    )
+    for ticker in ticker_list:
+        # Introduce a sleep timer to prevent rate limit errors
+        time.sleep(0.1)
+
+        thread = threading.Thread(
+            target=worker,
+            args=(ticker, cot_dict),
+        )
+        thread.start()
+        threads.append(thread)
+
+    for thread in threads:
+        thread.join()
+
+    # Checks if any errors are in the dataset and if this is the case, reports them
+    cot_dict = error_model.check_for_error_messages(
+        dataset_dictionary=cot_dict, user_subscription=user_subscription
+    )
+
+    if cot_dict:
+        cot_total = pd.concat(cot_dict, axis=0).unstack(level=0)
+
+        return (
+            cot_total,
             no_data,
         )
 

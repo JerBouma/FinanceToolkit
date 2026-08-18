@@ -61,36 +61,20 @@ def determine_within_historical_data(
             "intraday",
             "daily",
         ]:
-            within_historical_data[period] = (
-                intraday_historical_data.groupby(pd.Grouper(freq=period_symbol))
-                .apply(lambda x: x)
-                .dropna(how="all", axis=0)
-            )
+            source_data = intraday_historical_data
         else:
-            within_historical_data[period] = daily_historical_data.groupby(
-                pd.Grouper(
-                    freq=(
-                        f"{period_symbol}E"
-                        if period_symbol in ["M", "Q", "Y"]
-                        else period_symbol
-                    )
-                )
-            ).apply(lambda x: x)
+            source_data = daily_historical_data
 
-        within_historical_data[period].index = within_historical_data[
-            period
-        ].index.set_levels(
+        inner_freq = "D" if period != "intraday" else "min"
+        period_data = source_data.copy()
+        period_data.index = pd.MultiIndex.from_arrays(
             [
-                pd.PeriodIndex(
-                    within_historical_data[period].index.levels[0],
-                    freq=period_symbol,
-                ),
-                pd.PeriodIndex(
-                    within_historical_data[period].index.levels[1],
-                    freq="D" if period != "intraday" else "min",
-                ),
-            ],
+                source_data.index.to_period(period_symbol),
+                source_data.index.to_period(inner_freq),
+            ]
         )
+
+        within_historical_data[period] = period_data
 
     return within_historical_data
 
@@ -117,29 +101,34 @@ def determine_within_dataset(
     dataset_new.index = pd.DatetimeIndex(dataset_new.to_timestamp().index)
     period_symbol = PERIOD_TRANSLATION[period]
 
-    within_historical_data = dataset_new.groupby(
-        pd.Grouper(
-            freq=(
-                f"{period_symbol}E"
-                if period_symbol in ["M", "Q", "Y"]
-                else period_symbol
+    if correlation:
+        within_historical_data = dataset_new.groupby(
+            pd.Grouper(
+                freq=(
+                    f"{period_symbol}E"
+                    if period_symbol in ["M", "Q", "Y"]
+                    else period_symbol
+                )
             )
-        )
-    ).apply(lambda x: x.corr() if correlation else x)
+        ).apply(lambda x: x.corr())
 
-    within_historical_data.index = within_historical_data.index.set_levels(
-        [
-            pd.PeriodIndex(
-                within_historical_data.index.levels[0],
-                freq=period_symbol,
-            ),
-            (
-                within_historical_data.index.levels[1]
-                if correlation
-                else pd.PeriodIndex(within_historical_data.index.levels[1], freq="D")
-            ),
-        ],
-    )
+        within_historical_data.index = within_historical_data.index.set_levels(
+            [
+                pd.PeriodIndex(
+                    within_historical_data.index.levels[0],
+                    freq=period_symbol,
+                ),
+                within_historical_data.index.levels[1],
+            ],
+        )
+    else:
+        within_historical_data = dataset_new.copy()
+        within_historical_data.index = pd.MultiIndex.from_arrays(
+            [
+                dataset_new.index.to_period(period_symbol),
+                dataset_new.index.to_period("D"),
+            ]
+        )
 
     return within_historical_data
 

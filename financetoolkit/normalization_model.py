@@ -9,7 +9,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from financetoolkit.utilities import cache_model, logger_model
+from financetoolkit.utilities import logger_model
 
 logger = logger_model.get_logger()
 
@@ -22,15 +22,18 @@ def initialize_statements_and_normalization(
     cash: pd.DataFrame,
     format_location: str,
     reverse_dates: bool,
-    use_cached_data: bool | str,
-    cached_data_location: str,
     start_date: str,
     end_date: str,
     quarterly: bool,
 ):
     """
-    Initializes financial statements by applying normalization, date conversion,
-    and potentially loading from cache. Also loads normalization format files.
+    Initializes financial statements by applying normalization and date conversion.
+    Also loads normalization format files.
+
+    Statements are no longer pre-loaded from cache here. Caching happens per ticker
+    when the statements are actually requested, so that a different ticker list or
+    period reuses what overlaps rather than being handed a previously assembled
+    frame for a different set of companies.
 
     Args:
         balance (pd.DataFrame): Raw balance sheet data.
@@ -38,15 +41,14 @@ def initialize_statements_and_normalization(
         cash (pd.DataFrame): Raw cash flow statement data.
         format_location (str): Path to normalization file directory.
         reverse_dates (bool): Whether to reverse the order of dates.
-        use_cached_data (bool): Whether to load statements from cache if input is empty.
-        cached_data_location (str): Path to the cache directory.
         start_date (str): Start date for filtering.
         end_date (str): End date for filtering.
         quarterly (bool): Whether the data is quarterly.
 
     Returns:
         tuple: A tuple containing the processed statements (balance, income, cash, statistics)
-               and the loaded normalization formats.
+               and the loaded normalization formats, for FinancialModelingPrep and for
+               Yahoo Finance, including the statistics format of both sources.
     """
     norm_file_names = [
         "balance",
@@ -56,6 +58,7 @@ def initialize_statements_and_normalization(
         "cash",
         "cash_yf",
         "statistics",
+        "statistics_yf",
     ]
     norm_formats = {
         name: read_normalization_file(name, format_location) for name in norm_file_names
@@ -67,14 +70,14 @@ def initialize_statements_and_normalization(
     fmp_cash_flow_statement_generic = norm_formats["cash"]
     yf_cash_flow_statement_generic = norm_formats["cash_yf"]
     fmp_statistics_statement_generic = norm_formats["statistics"]
+    yf_statistics_statement_generic = norm_formats["statistics_yf"]
 
-    def _process_or_load_statement(
+    def _process_statement(
         statement_df: pd.DataFrame,
         statement_format: pd.Series,
-        cache_file_name: str,
         statement_name: str,
     ) -> pd.DataFrame:
-        """Processes a statement or loads it from cache."""
+        """Normalizes a user supplied statement and relabels its dates."""
         if not statement_df.empty:
             try:
                 processed_statement = convert_financial_statements(
@@ -107,70 +110,22 @@ def initialize_statements_and_normalization(
                     e,
                 )
                 return pd.DataFrame()
-        elif use_cached_data:
-            try:
-                cached_data = cache_model.load_cached_data(
-                    cached_data_location=cached_data_location,
-                    file_name=cache_file_name,
-                )
-                if not isinstance(cached_data, pd.DataFrame):
-                    logger.warning(
-                        "Cached data %s for %s is not a DataFrame (type: %s). Returning empty.",
-                        cache_file_name,
-                        statement_name,
-                        type(cached_data),
-                    )
-                    return pd.DataFrame()
-                return cached_data
-            except FileNotFoundError:
-                logger.info(
-                    "Cache file %s not found for %s.", cache_file_name, statement_name
-                )
-                return pd.DataFrame()
-            except Exception as e:
-                logger.error(
-                    "Failed to load %s from cache for %s: %s. Returning empty DataFrame.",
-                    cache_file_name,
-                    statement_name,
-                    e,
-                )
-                return pd.DataFrame()
         else:
             return pd.DataFrame()
 
-    balance_sheet_statement = _process_or_load_statement(
+    balance_sheet_statement = _process_statement(
         balance,
         fmp_balance_sheet_statement_generic,
-        "balance_sheet_statement.pickle",
         "balance sheet",
     )
-    income_statement = _process_or_load_statement(
-        income, fmp_income_statement_generic, "income_statement.pickle", "income"
+    income_statement = _process_statement(
+        income, fmp_income_statement_generic, "income"
     )
-    cash_flow_statement = _process_or_load_statement(
-        cash, fmp_cash_flow_statement_generic, "cash_flow_statement.pickle", "cash flow"
+    cash_flow_statement = _process_statement(
+        cash, fmp_cash_flow_statement_generic, "cash flow"
     )
 
     statistics_statement = pd.DataFrame()
-    if use_cached_data:
-        cache_file_name = "statistics_statement.pickle"
-        try:
-            cached_stats = cache_model.load_cached_data(
-                cached_data_location=cached_data_location,
-                file_name=cache_file_name,
-            )
-            if isinstance(cached_stats, pd.DataFrame):
-                statistics_statement = cached_stats
-            else:
-                logger.warning(
-                    "Cached statistics data (%s) is not a DataFrame (type: %s). Returning empty.",
-                    cache_file_name,
-                    type(cached_stats),
-                )
-        except FileNotFoundError:
-            logger.info("Cache file %s not found.", cache_file_name)
-        except Exception as e:
-            logger.error("Failed to load %s from cache: %s.", cache_file_name, e)
 
     return (
         balance_sheet_statement,
@@ -184,6 +139,7 @@ def initialize_statements_and_normalization(
         fmp_cash_flow_statement_generic,
         yf_cash_flow_statement_generic,
         fmp_statistics_statement_generic,
+        yf_statistics_statement_generic,
     )
 
 
@@ -221,9 +177,14 @@ def read_normalization_file(statement: str, format_location: str = ""):
         )
 
     try:
-        return pd.read_csv(file_location, index_col=[0]).iloc[:, 0]
+        normalization = pd.read_csv(file_location, index_col=[0]).iloc[:, 0]
     except FileNotFoundError:
         return pd.Series()
+
+    # Stray whitespace around a normalized name makes the same concept resolve to two different labels depending on which source served the ticker, so every lookup on that name silently misses for one of them.  # noqa: E501
+    normalization.index = normalization.index.astype(str).str.strip()
+
+    return normalization.astype(str).str.strip()
 
 
 def convert_financial_statements(
@@ -238,9 +199,15 @@ def convert_financial_statements(
 
     Args:
         financial_statements (pd.DataFrame): DataFrame containing the financial statement data.
-        format (pd.DataFrame): Optional DataFrame containing the names of the financial statement line items to include
-                            in the output. Rows should contain the original name of the line item, and columns should
-                            contain the desired name for that line item.
+        statement_format (pd.DataFrame): Optional DataFrame containing the names of the financial statement line
+                            items to include in the output. Rows should contain the original name of the line item,
+                            and columns should contain the desired name for that line item.
+        adjust_financial_statements (bool): Whether to add every line item in the format that the provider did not
+                            return, filled with NaN, so that every ticker has the same rows. Defaults to True.
+                            Changed in v2.2.0: these were previously filled with zero, which made an item the
+                            provider never reported indistinguishable from one it reported as genuinely zero.
+        reverse_dates (bool): Whether to reverse the order of the columns so the oldest period comes first.
+                            Defaults to False.
 
     Returns:
         pd.DataFrame: A DataFrame containing the financial statement data. If only one ticker is provided, the
@@ -252,24 +219,38 @@ def convert_financial_statements(
         # If not format is provided, simply use the original financial statements
         return financial_statements
 
+    # Compared without surrounding whitespace so that statements normalized by an older version, which had stray spaces in a handful of names, are still recognised as already normalized instead of being dropped.  # noqa: E501
+    normalized_names = {str(value).strip() for value in statement_format.to_numpy()}
+
+    unmapped_names = []
+
     for name in financial_statements.index.unique(level=1):
         try:
-            if name in statement_format.to_numpy():
-                naming[name] = name
+            if str(name).strip() in normalized_names:
+                naming[name] = str(name).strip()
             else:
                 naming[name] = statement_format.loc[name]
         except KeyError:
+            # A line item the provider returned that no normalization file names. It is dropped from the output, so it is reported rather than disappearing.  # noqa: E501
+            unmapped_names.append(str(name))
             continue
 
+    if unmapped_names:
+        logger.debug(
+            "The following line items were returned by the data provider but are not "
+            "present in the normalization format, so they are not included in the "
+            "output: %s",
+            ", ".join(sorted(unmapped_names)),
+        )
+
     if adjust_financial_statements:
-        # Add missing columns if applicable. Fill these with NaN.
+        # Add the line items the provider did not return, so that every ticker exposes the same rows. These are filled with NaN rather than zero: the provider not reporting an item says nothing about its value, and a fabricated zero is indistinguishable from a genuine zero while silently flowing into any ratio that uses it as a term or a denominator.  # noqa: E501
         for name in statement_format.index:
             for ticker in financial_statements.index.unique(level=0):
                 if name not in financial_statements.loc[ticker].index:
-                    financial_statements.loc[(ticker, name), :] = 0
+                    financial_statements.loc[(ticker, name), :] = np.nan
 
-        # Given that all the columns are now present, it is possible to
-        # simply overwrite the naming variable with the original statement format
+        # All columns are present now, so the original statement format can be reused.
         naming = statement_format
 
     # Select only the columns it could trace back to the format
@@ -297,7 +278,7 @@ def convert_date_label(
     with a frequency of 'Q' which would convert 2022-12-31 to 2022Q4.
 
     Args:
-        financial_statements (pd.DataFrame): DataFrame containing the financial statement data.
+        financial_statement (pd.DataFrame): DataFrame containing the financial statement data.
         start_date (str): The start date of the financial statement data.
         end_date (str): The end date of the financial statement data.
         quarter (bool): Whether to convert the date labels to a PeriodIndex with a frequency of 'Q' or 'Y'.
@@ -310,9 +291,7 @@ def convert_date_label(
     )
 
     if financial_statement.columns.duplicated().any():
-        # This happens in the rare case that a company has two financial statements for the same period.
-        # Browsing through the data has shown that these financial statements are equal therefore
-        # one of the columns can be dropped.
+        # Duplicate statements for one period are equal, so one copy can be dropped.
         financial_statement = financial_statement.loc[
             :, ~financial_statement.columns.duplicated()
         ]

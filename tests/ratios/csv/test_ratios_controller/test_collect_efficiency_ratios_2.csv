@@ -17,8 +17,8 @@ AAPL,Cash Conversion Cycle,Lag 3,,,,
 AAPL,Cash Conversion Efficiency,Lag 1,,-0.0323,0.0893,-0.0691
 AAPL,Cash Conversion Efficiency,Lag 2,,,0.0541,0.0141
 AAPL,Cash Conversion Efficiency,Lag 3,,,,-0.0187
-AAPL,Receivables Turnover,Lag 1,,,0.1934,0.0897
-AAPL,Receivables Turnover,Lag 2,,,,0.3005
+AAPL,Receivables Turnover,Lag 1,,,-0.1608,-0.0824
+AAPL,Receivables Turnover,Lag 2,,,,-0.23
 AAPL,Receivables Turnover,Lag 3,,,,
 AAPL,Inventory Turnover Ratio,Lag 1,,,-0.031,-0.0209
 AAPL,Inventory Turnover Ratio,Lag 2,,,,-0.0513
@@ -53,6 +53,9 @@ AAPL,SBC to Revenue Ratio,Lag 3,,,,0.1365
 AAPL,Deferred Revenue Ratio,Lag 1,,-0.1405,-0.0337,0.0448
 AAPL,Deferred Revenue Ratio,Lag 2,,,-0.1694,0.0096
 AAPL,Deferred Revenue Ratio,Lag 3,,,,-0.1322
+AAPL,Working Capital Turnover Ratio,Lag 1,,,-6.5727,-0.5588
+AAPL,Working Capital Turnover Ratio,Lag 2,,,,-3.4584
+AAPL,Working Capital Turnover Ratio,Lag 3,,,,
 MSFT,Days of Inventory Outstanding,Lag 1,,,0.1736,-0.0691
 MSFT,Days of Inventory Outstanding,Lag 2,,,,0.0925
 MSFT,Days of Inventory Outstanding,Lag 3,,,,
@@ -71,8 +74,8 @@ MSFT,Cash Conversion Cycle,Lag 3,,,,
 MSFT,Cash Conversion Efficiency,Lag 1,,0.0759,-0.0162,-0.0797
 MSFT,Cash Conversion Efficiency,Lag 2,,,0.0584,-0.0946
 MSFT,Cash Conversion Efficiency,Lag 3,,,,-0.0259
-MSFT,Receivables Turnover,Lag 1,,,-0.0038,0.0564
-MSFT,Receivables Turnover,Lag 2,,,,0.0523
+MSFT,Receivables Turnover,Lag 1,,,0.004,-0.0536
+MSFT,Receivables Turnover,Lag 2,,,,-0.0498
 MSFT,Receivables Turnover,Lag 3,,,,
 MSFT,Inventory Turnover Ratio,Lag 1,,,-0.1479,0.0742
 MSFT,Inventory Turnover Ratio,Lag 2,,,,-0.0847
@@ -107,3 +110,6 @@ MSFT,SBC to Revenue Ratio,Lag 3,,,,0.227
 MSFT,Deferred Revenue Ratio,Lag 1,,-0.0187,-0.07,0.0457
 MSFT,Deferred Revenue Ratio,Lag 2,,,-0.0874,-0.0275
 MSFT,Deferred Revenue Ratio,Lag 3,,,,-0.0457
+MSFT,Working Capital Turnover Ratio,Lag 1,,,0.4219,0.1769
+MSFT,Working Capital Turnover Ratio,Lag 2,,,,0.6734
+MSFT,Working Capital Turnover Ratio,Lag 3,,,,

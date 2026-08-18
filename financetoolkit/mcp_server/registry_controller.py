@@ -1,7 +1,7 @@
 """
 Dynamic tool registration for the Finance Toolkit MCP Server — Router Pattern.
 
-Consolidates 200+ individual methods into ~21 categorical master tools, each
+Consolidates 500+ individual methods into 22 categorical master tools, each
 accepting an indicator parameter (Literal enum) that routes to the
 correct underlying method.
 """
@@ -34,10 +34,18 @@ from financetoolkit.utilities.logger_model import get_logger
 logger = get_logger()
 
 # Types that are not representable in JSON Schema — dropped during normalization.
-_OPAQUE_TYPES = {"list", "dict", "set", "tuple", "range", "ndarray"}
+_OPAQUE_TYPES = {
+    "list",
+    "dict",
+    "set",
+    "tuple",
+    "range",
+    "ndarray",
+    "Series",
+    "DataFrame",
+}
 
-# Human-readable descriptions injected into each tool's Args docstring so that
-# FastMCP can surface them as parameter descriptions in Smithery and other clients.
+# Injected into each tool's Args docstring so FastMCP can surface them.
 _PARAM_DESCRIPTIONS: dict[str, str] = {
     "indicator": (
         "Name of the specific metric to calculate, e.g. 'get_asset_turnover_ratio'. "
@@ -84,7 +92,11 @@ _PARAM_DESCRIPTIONS: dict[str, str] = {
     "days": "Number of calendar days used in day-count-based calculations.",
     "period": "Observation frequency, e.g. 'monthly', 'quarterly', or 'annual'.",
     "measure": "Sub-measure selector, e.g. 'M1', 'M2', or 'M3' for money supply.",
-    "gmdb_source": "Use the OECD Global Macro Data Bank as the data source when True.",
+    "gmdb_source": (
+        "Use the Global Macro Database as the data source when True, rather than the "
+        "OECD. The two are independent providers with different country and period "
+        "coverage; both return rates and ratios as decimal fractions."
+    ),
     "inflation_adjusted": "Adjust nominal values for inflation when True.",
     "bond_price": "Clean price of the bond per 100 face value.",
     "coupon_rate": "Annual coupon rate as a decimal, e.g. 0.05 for 5 %.",
@@ -107,15 +119,82 @@ _PARAM_DESCRIPTIONS: dict[str, str] = {
 }
 
 
-def _annotate_with_description(name: str, ann: Any) -> Any:
+# Beyond this many characters the per-indicator default listing stops helping.
+_DISPUTED_DEFAULT_DETAIL_LIMIT = 320
+
+
+def _annotate_with_description(name: str, ann: Any, suffix: str = "") -> Any:
     """Wrap *ann* in ``Annotated[ann, Field(description=...)]`` for JSON schema output.
 
     Pydantic reads the ``Field(description=...)`` metadata and includes it in the
     ``properties[name].description`` field of the generated JSON schema, which is
     what Smithery (and other MCP clients) use to display parameter descriptions.
+
+    Args:
+        name (str): The parameter name, used to look up the shared description.
+        ann (Any): The annotation to wrap.
+        suffix (str): Extra text appended to the description, used to spell out
+            defaults that differ between the indicators of a router group.
+
+    Returns:
+        Any: The annotated type carrying the description metadata.
     """
     desc = _PARAM_DESCRIPTIONS.get(name, f"Value for {name}.")
+
+    if suffix:
+        desc = f"{desc} {suffix}"
+
     return Annotated[ann, PydanticField(description=desc)]  # type: ignore[valid-type]
+
+
+def _describe_disputed_default(per_method: dict[str, Any]) -> str:
+    """Describe a parameter whose default differs between indicators of a group.
+
+    The tool cannot advertise one default for all of them, so the description has
+    to carry what the schema cannot: which indicators require the parameter and
+    what each of the others falls back to when it is left unset.
+
+    Args:
+        per_method (dict[str, Any]): Per indicator, the default it declares, with
+            ``inspect.Parameter.empty`` standing for "required".
+
+    Returns:
+        str: A sentence to append to the parameter description.
+    """
+    required = sorted(
+        name
+        for name, default in per_method.items()
+        if default is inspect.Parameter.empty
+    )
+
+    grouped: list[tuple[Any, list[str]]] = []
+
+    for name, default in sorted(per_method.items()):
+        if default is inspect.Parameter.empty:
+            continue
+
+        for value, names in grouped:
+            if type(value) is type(default) and value == default:
+                names.append(name)
+                break
+        else:
+            grouped.append((default, [name]))
+
+    grouped.sort(key=lambda item: (-len(item[1]), str(item[0])))
+
+    sentences = ["Leave unset to use the default of the indicator you selected."]
+
+    if required:
+        sentences.append(f"Required by: {', '.join(required)}.")
+
+    detail = "; ".join(f"{value!r} for {', '.join(names)}" for value, names in grouped)
+
+    if detail and len(detail) <= _DISPUTED_DEFAULT_DETAIL_LIMIT:
+        sentences.append(f"Defaults are {detail}.")
+    elif detail:
+        sentences.append("Defaults differ between indicators.")
+
+    return " ".join(sentences)
 
 
 def _simplify_annotation(ann: Any) -> Any:
@@ -140,6 +219,12 @@ def _simplify_annotation(ann: Any) -> Any:
     # Bare list[T] → T
     if origin is list:
         return args[0] if args else str
+
+    # A bare opaque type outside a union falls back to str, as the union case does.
+    if origin is None:
+        name = getattr(ann, "__name__", "")
+        if name in _OPAQUE_TYPES:
+            return str
 
     # Union types (both `X | Y` and `Union[X, Y]`)
     is_union = origin is typing.Union or (
@@ -405,6 +490,12 @@ class ToolRegistry:
         param_meta = [(p.name, p.annotation, p.default) for p in extra_params]
         all_indicators = group_methods
 
+        # Parameters the indicators in this group disagree about, or that some of them require. One schema default cannot describe all of them, so they are advertised as unset and only forwarded when the caller actually supplies a value, leaving each indicator's own default to apply.  # noqa: E501
+        parameter_defaults = inspector.collect_group_parameter_defaults(
+            cls, group_methods, spec.collect_method, method_to_cls
+        )
+        disputed_params = inspector.find_disputed_parameters(parameter_defaults)
+
         def wrapper(**kwargs):
             """
             Dispatch a router group tool call to the correct Finance Toolkit method.
@@ -453,9 +544,7 @@ class ToolRegistry:
                 else None
             )
 
-            # Validate that tickers are present for ticker/toolkit-category tools
-            # (methods that require a Toolkit instance).  Return an actionable
-            # error early rather than letting a confusing AttributeError propagate.
+            # Return an actionable error rather than a confusing AttributeError later.
             effective_category = category
             if method_dispatch and method_name in method_dispatch:
                 _, effective_category = method_dispatch[method_name]
@@ -501,8 +590,12 @@ class ToolRegistry:
             for pname, pann, _ in param_meta:
                 if pname in kwargs:
                     val = kwargs.pop(pname)
-                    if pname in accepted_params:
-                        method_kwargs[pname] = coerce_value(val, pann)
+                    if pname not in accepted_params:
+                        continue
+                    # A disputed parameter is advertised as unset, so an unset value means "no preference" and must reach the indicator's own default rather than another indicator's.  # noqa: E501
+                    if pname in disputed_params and val in (None, ""):
+                        continue
+                    method_kwargs[pname] = coerce_value(val, pann)
 
             if kwargs:
                 logger.warning(
@@ -552,6 +645,7 @@ class ToolRegistry:
                         quarterly=quarterly,
                         benchmark_ticker=benchmark_ticker,
                         api_key=provider._api_key,
+                        fred_api_key=provider._fred_api_key,
                     )
                 formatted = format_result(result, notes=notes or None)
                 return formatted
@@ -611,18 +705,22 @@ class ToolRegistry:
                 if p.annotation is not P.empty
                 else str
             )
-            default = p.default if p.default is not P.empty else ""
-            sig_params.append(
-                P(
-                    p.name,
-                    POS,
-                    default=default,
-                    annotation=_annotate_with_description(p.name, ann),
-                )
-            )
 
-        # Universal show_columns parameter — appended last so it doesn't
-        # interfere with positional argument ordering of method-specific params.
+            if p.name in disputed_params:
+                # Advertised as unset with the per-indicator defaults spelled out, because no single value is correct for the whole group.  # noqa: E501
+                default = None
+                annotation = _annotate_with_description(
+                    p.name,
+                    typing.Optional[ann],  # noqa: UP045
+                    suffix=_describe_disputed_default(parameter_defaults[p.name]),
+                )
+            else:
+                default = p.default if p.default is not P.empty else ""
+                annotation = _annotate_with_description(p.name, ann)
+
+            sig_params.append(P(p.name, POS, default=default, annotation=annotation))
+
+        # Appended last so it does not disturb positional ordering of other params.
         sig_params.append(
             P(
                 "show_columns",

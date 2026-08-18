@@ -34,3 +34,9 @@ ReconciledDepreciation,Reconciled Depreciation
 NetIncomeFromContinuingOperationNetMinorityInterest,Net Income from Continuing Operation Net Minority Interest
 NormalizedEBITDA,Normalized EBITDA
 TaxRateForCalcs,Tax Rate for Calcs
+GeneralAndAdministrativeExpense,General and Administrative Expenses
+SellingAndMarketingExpense,Selling and Marketing Expenses
+DepreciationAndAmortizationInIncomeStatement,Depreciation and Amortization
+NetInterestIncome,Net Interest Income
+NetIncomeContinuousOperations,Net Income from Continuing Operations
+NetIncomeDiscontinuousOperations,Net Income from Discontinued Operations

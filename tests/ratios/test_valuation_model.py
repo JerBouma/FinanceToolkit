@@ -208,6 +208,6 @@ def test_get_net_current_asset_value(recorder):
     recorder.capture(
         valuation_model.get_net_current_asset_value(
             total_current_assets=pd.Series([100, 120, 80, 50, 30]),
-            total_current_liabilities=pd.Series([50, 30, 80, 20, 50]),
+            total_liabilities=pd.Series([50, 30, 80, 20, 50]),
         )
     )

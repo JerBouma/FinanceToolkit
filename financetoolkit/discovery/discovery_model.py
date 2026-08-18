@@ -4,8 +4,78 @@ __docformat__ = "google"
 
 import pandas as pd
 
+from financetoolkit.cache import policy_model
+from financetoolkit.cache.cache_controller import get_active_cache
+from financetoolkit.cache.request_model import redact_credentials
 from financetoolkit.fmp_model import get_financial_data
-from financetoolkit.utilities import error_model
+from financetoolkit.utilities import error_model, logger_model
+
+logger = logger_model.get_logger()
+
+# The sectors the Financial Modeling Prep sector endpoints classify companies into.
+FMP_SECTORS = [
+    "Basic Materials",
+    "Communication Services",
+    "Consumer Cyclical",
+    "Consumer Defensive",
+    "Energy",
+    "Financial Services",
+    "Healthcare",
+    "Industrials",
+    "Real Estate",
+    "Technology",
+    "Utilities",
+]
+
+
+def get_cached_financial_data(
+    url: str,
+    user_subscription: str = "Free",
+    sleep_timer: bool = True,
+) -> pd.DataFrame:
+    """
+    Retrieve a discovery endpoint, serving it from the cache when it is still fresh.
+
+    The discovery endpoints return listings, screeners, calendars and news rather
+    than data for a specific company, so there is no ticker to split them by and no
+    date range to extend: the whole response is the unit. The request URL, with its
+    credentials stripped, is what identifies it.
+
+    Args:
+        url (str): The full request URL, including the API key.
+        user_subscription (str): The subscription type of the user. Defaults to "Free".
+        sleep_timer (bool): Whether to wait and retry when the rate limit is reached.
+
+    Returns:
+        pd.DataFrame: The endpoint's response, either freshly retrieved or cached.
+    """
+    cache = get_active_cache()
+    entity = redact_credentials(url)
+
+    if cache is not None:
+        cached_response = cache.get(
+            source=policy_model.FINANCIAL_MODELING_PREP,
+            dataset="discovery",
+            entity=entity,
+        )
+
+        if cached_response is not None:
+            return cached_response
+
+    response = get_financial_data(
+        url=url, sleep_timer=sleep_timer, user_subscription=user_subscription
+    )
+
+    # An empty frame may be a rate limit or plan error, not a genuine result.
+    if cache is not None and isinstance(response, pd.DataFrame) and not response.empty:
+        cache.set(
+            source=policy_model.FINANCIAL_MODELING_PREP,
+            dataset="discovery",
+            entity=entity,
+            data=response,
+        )
+
+    return response
 
 
 def get_instruments(
@@ -27,7 +97,9 @@ def get_instruments(
     """
     url = f"https://financialmodelingprep.com/stable/search-{search_method}?query={query}&apikey={api_key}"
 
-    instruments_query = get_financial_data(url=url, user_subscription=user_subscription)
+    instruments_query = get_cached_financial_data(
+        url=url, user_subscription=user_subscription
+    )
 
     error_model.check_for_error_messages(
         {"SEARCH_INSTRUMENTS": instruments_query}, user_subscription=user_subscription
@@ -66,7 +138,12 @@ def get_stock_screener(
     volume_lower: int | None = None,
     dividend_higher: int | None = None,
     dividend_lower: int | None = None,
+    sector: str | None = None,
+    industry: str | None = None,
+    country: str | None = None,
+    exchange: str | None = None,
     is_etf: bool | None = None,
+    limit: int = 1000,
     user_subscription: str = "Free",
 ) -> pd.DataFrame:
     """
@@ -85,38 +162,55 @@ def get_stock_screener(
         volume_lower (int, optional): The volume lower than. Defaults to None.
         dividend_higher (int, optional): The dividend higher than. Defaults to None.
         dividend_lower (int, optional): The dividend lower than. Defaults to None.
+        sector (str, optional): The sector to restrict the screen to, e.g. "Energy".
+        industry (str, optional): The industry to restrict the screen to, e.g. "Biotechnology".
+        country (str, optional): The two-letter country code to restrict the screen to, e.g. "US".
+        exchange (str, optional): The exchange code to restrict the screen to, e.g. "NASDAQ".
         is_etf (bool, optional): Whether the instrument is an ETF. Defaults to None.
+        limit (int, optional): The maximum number of results the API returns. Defaults to 1000,
+            which is also the API's own default, so hitting exactly this number means the result
+            was truncated.
         user_subscription (str, optional): The user subscription level. Defaults to "Free".
 
     Returns:
-        pd.DataFrame: DataFrame of instruments matching the query.
+        pd.DataFrame: DataFrame of instruments matching the query. An empty DataFrame is returned
+            when nothing matches.
+
+    Notes:
+        - Every bound is compared against None rather than truthiness, so a bound of exactly zero
+          (a perfectly valid beta, dividend or volume floor) is sent to the API instead of dropped.
     """
     url = f"https://financialmodelingprep.com/stable/company-screener?apikey={api_key}"
 
-    if market_cap_higher:
-        url += f"&marketCapMoreThan={market_cap_higher}"
-    if market_cap_lower:
-        url += f"&marketCapLowerThan={market_cap_lower}"
-    if price_higher:
-        url += f"&priceMoreThan={price_higher}"
-    if price_lower:
-        url += f"&priceLowerThan={price_lower}"
-    if beta_higher:
-        url += f"&betaMoreThan={beta_higher}"
-    if beta_lower:
-        url += f"&betaLowerThan={beta_lower}"
-    if volume_higher:
-        url += f"&volumeMoreThan={volume_higher}"
-    if volume_lower:
-        url += f"&volumeLowerThan={volume_lower}"
-    if dividend_higher:
-        url += f"&dividendMoreThan={dividend_higher}"
-    if dividend_lower:
-        url += f"&dividendLowerThan={dividend_lower}"
-    if is_etf is not None:
-        url += f"&isEtf={str(is_etf)}"
+    query_parameters = {
+        "marketCapMoreThan": market_cap_higher,
+        "marketCapLowerThan": market_cap_lower,
+        "priceMoreThan": price_higher,
+        "priceLowerThan": price_lower,
+        "betaMoreThan": beta_higher,
+        "betaLowerThan": beta_lower,
+        "volumeMoreThan": volume_higher,
+        "volumeLowerThan": volume_lower,
+        "dividendMoreThan": dividend_higher,
+        "dividendLowerThan": dividend_lower,
+        "sector": sector,
+        "industry": industry,
+        "country": country,
+        "exchange": exchange,
+        "isEtf": is_etf,
+        "limit": limit,
+    }
 
-    stock_screener = get_financial_data(url=url, user_subscription=user_subscription)
+    for parameter, value in query_parameters.items():
+        if value is not None:
+            url += f"&{parameter}={value}"
+
+    stock_screener = get_cached_financial_data(
+        url=url, user_subscription=user_subscription
+    )
+
+    if stock_screener.empty:
+        return stock_screener
 
     stock_screener = stock_screener.rename(
         columns={
@@ -137,11 +231,18 @@ def get_stock_screener(
         }
     )
 
-    if stock_screener.empty:
-        raise ValueError("No stocks found matching the query.")
-
-    stock_screener = stock_screener.drop(columns=["isEtf", "isActivelyTrading"])
+    # These are internal flags of the endpoint rather than screening results, they are dropped defensively so that a new or removed flag does not raise.  # noqa: E501
+    stock_screener = stock_screener.drop(
+        columns=["isEtf", "isFund", "isActivelyTrading"], errors="ignore"
+    )
     stock_screener = stock_screener.set_index("Symbol")
+
+    if len(stock_screener) >= limit:
+        logger.warning(
+            "The screener returned the maximum of %s results, so the list is truncated. "
+            "Narrow the criteria or raise the limit to see the remainder.",
+            limit,
+        )
 
     return stock_screener
 
@@ -159,7 +260,10 @@ def get_stock_list(api_key: str, user_subscription: str = "Free") -> pd.DataFram
     """
     url = f"https://financialmodelingprep.com/stable/stock-list?apikey={api_key}"
 
-    stock_list = get_financial_data(url=url, user_subscription=user_subscription)
+    stock_list = get_cached_financial_data(url=url, user_subscription=user_subscription)
+
+    if stock_list.empty:
+        return stock_list
 
     stock_list = stock_list.rename(
         columns={
@@ -188,9 +292,12 @@ def get_stock_shares_float(
     """
     url = f"https://financialmodelingprep.com/api/v4/shares_float/all?apikey={api_key}"
 
-    stock_shares_float = get_financial_data(
+    stock_shares_float = get_cached_financial_data(
         url=url, user_subscription=user_subscription
     )
+
+    if stock_shares_float.empty:
+        return stock_shares_float
 
     stock_shares_float = stock_shares_float.rename(
         columns={
@@ -208,51 +315,62 @@ def get_stock_shares_float(
 
 
 def get_sectors_performance(
-    api_key: str, user_subscription: str = "Free"
+    api_key: str,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    user_subscription: str = "Free",
 ) -> pd.DataFrame:
     """
-    Get the sectors performance.
+    Get the historical performance of every sector, one column per sector.
+
+    The wide layout is assembled from the per-sector historical endpoint, which is queried once
+    for each of the sectors Financial Modeling Prep classifies companies into. The single
+    combined endpoint this function used to call was retired and returns an empty response.
 
     Args:
         api_key (str): the API key from Financial Modeling Prep.
+        start_date (str, optional): The start date to filter data with, e.g. "2024-01-01".
+        end_date (str, optional): The end date to filter data with, e.g. "2024-12-31".
         user_subscription (str, optional): The user subscription level. Defaults to "Free".
 
     Returns:
-        pd.DataFrame: DataFrame of sectors performance.
+        pd.DataFrame: DataFrame of sector performance indexed by date, with one column per sector
+            holding the average percentage change of that sector on that date. The values are
+            percentages, i.e. 1.25 means +1.25%.
     """
-    url = f"https://financialmodelingprep.com/stable/historical-sectors-performance?apikey={api_key}"
+    sector_changes = {}
 
-    sectors_performance = get_financial_data(
-        url=url, user_subscription=user_subscription
-    )
+    for sector in FMP_SECTORS:
+        url = (
+            "https://financialmodelingprep.com/stable/historical-sector-performance"
+            f"?sector={sector}&apikey={api_key}"
+        )
 
-    sectors_performance = sectors_performance.rename(
-        columns={
-            "date": "Date",
-            "utilitiesChangesPercentage": "Utilities",
-            "basicMaterialsChangesPercentage": "Basic Materials",
-            "communicationServicesChangesPercentage": "Communication Services",
-            "conglomeratesChangesPercentage": "Conglomerates",
-            "consumerCyclicalChangesPercentage": "Consumer Cyclical",
-            "consumerDefensiveChangesPercentage": "Consumer Defensive",
-            "energyChangesPercentage": "Energy",
-            "financialChangesPercentage": "Financial",
-            "financialServicesChangesPercentage": "Financial Services",
-            "healthcareChangesPercentage": "Healthcare",
-            "industrialsChangesPercentage": "Industrials",
-            "realEstateChangesPercentage": "Real Estate",
-            "servicesChangesPercentage": "Services",
-            "technologyChangesPercentage": "Technology",
-        }
-    )
+        if start_date:
+            url += f"&from={start_date}"
+        if end_date:
+            url += f"&to={end_date}"
 
-    sectors_performance = sectors_performance.set_index("Date")
+        sector_performance = get_cached_financial_data(
+            url=url, user_subscription=user_subscription
+        )
+
+        if sector_performance.empty:
+            continue
+
+        sector_performance = sector_performance.rename(
+            columns={"date": "Date", "averageChange": sector}
+        )
+        sector_changes[sector] = sector_performance.set_index("Date")[sector]
+
+    if not sector_changes:
+        return pd.DataFrame()
+
+    sectors_performance = pd.concat(sector_changes, axis=1)
 
     sectors_performance.index = pd.PeriodIndex(sectors_performance.index, freq="D")
 
     sectors_performance = sectors_performance.sort_index()
-
-    sectors_performance = sectors_performance.dropna(how="all", axis=1)
 
     return sectors_performance
 
@@ -270,7 +388,12 @@ def get_biggest_gainers(api_key: str, user_subscription: str = "Free") -> pd.Dat
     """
     url = f"https://financialmodelingprep.com/stable/biggest-gainers?apikey={api_key}"
 
-    biggest_gainers = get_financial_data(url=url, user_subscription=user_subscription)
+    biggest_gainers = get_cached_financial_data(
+        url=url, user_subscription=user_subscription
+    )
+
+    if biggest_gainers.empty:
+        return biggest_gainers
 
     biggest_gainers = biggest_gainers.rename(
         columns={
@@ -301,7 +424,12 @@ def get_biggest_losers(api_key: str, user_subscription: str = "Free") -> pd.Data
     """
     url = f"https://financialmodelingprep.com/stable/biggest-losers?apikey={api_key}"
 
-    biggest_losers = get_financial_data(url=url, user_subscription=user_subscription)
+    biggest_losers = get_cached_financial_data(
+        url=url, user_subscription=user_subscription
+    )
+
+    if biggest_losers.empty:
+        return biggest_losers
 
     biggest_losers = biggest_losers.rename(
         columns={
@@ -334,7 +462,12 @@ def get_most_active_stocks(
     """
     url = f"https://financialmodelingprep.com/stable/most-actives?apikey={api_key}"
 
-    most_active = get_financial_data(url=url, user_subscription=user_subscription)
+    most_active = get_cached_financial_data(
+        url=url, user_subscription=user_subscription
+    )
+
+    if most_active.empty:
+        return most_active
 
     most_active = most_active.rename(
         columns={
@@ -367,13 +500,19 @@ def get_crypto_list(api_key: str, user_subscription: str = "Free") -> pd.DataFra
         f"https://financialmodelingprep.com/stable/cryptocurrency-list?apikey={api_key}"
     )
 
-    crypto_list = get_financial_data(url=url, user_subscription=user_subscription)
+    crypto_list = get_cached_financial_data(
+        url=url, user_subscription=user_subscription
+    )
+
+    if crypto_list.empty:
+        return crypto_list
 
     crypto_list = crypto_list.rename(
         columns={
             "symbol": "Symbol",
             "name": "Name",
-            "exchange": "Currency",
+            # The endpoint's "exchange" field holds an exchange code such as CCC, not a currency, so labelling the column Currency mislabelled the data.  # noqa: E501
+            "exchange": "Exchange",
             "icoDate": "ICO Date",
             "circulatingSupply": "Circulating Supply",
             "totalSupply": "Total Supply",
@@ -385,24 +524,35 @@ def get_crypto_list(api_key: str, user_subscription: str = "Free") -> pd.DataFra
     return crypto_list
 
 
-def get_delisted_stocks(api_key: str, user_subscription: str = "Free") -> pd.DataFrame:
+def get_delisted_stocks(
+    api_key: str, page: int = 0, limit: int = 100, user_subscription: str = "Free"
+) -> pd.DataFrame:
     """
     Get a list of delisted companies.
 
     Args:
         api_key (str): the API key from Financial Modeling Prep.
+        page (int, optional): The page of results to retrieve, starting at 0. Defaults to 0.
+        limit (int, optional): The number of results per page, capped at 100 by the API.
+            Defaults to 100.
         user_subscription (str, optional): The user subscription level. Defaults to "Free".
 
     Returns:
-        pd.DataFrame: DataFrame of delisted companies.
+        pd.DataFrame: DataFrame of delisted companies, one page at a time. The endpoint returns
+            at most 100 rows per call, so a full list requires walking `page` upwards until an
+            empty frame comes back.
     """
     url = (
-        f"https://financialmodelingprep.com/stable/delisted-companies?apikey={api_key}"
+        "https://financialmodelingprep.com/stable/delisted-companies"
+        f"?page={page}&limit={limit}&apikey={api_key}"
     )
 
-    delisted_companies = get_financial_data(
+    delisted_companies = get_cached_financial_data(
         url=url, user_subscription=user_subscription
     )
+
+    if delisted_companies.empty:
+        return delisted_companies
 
     delisted_companies = delisted_companies.rename(
         columns={
@@ -430,21 +580,23 @@ def get_forex_list(api_key: str, user_subscription: str = "Free") -> pd.DataFram
     Returns:
         pd.DataFrame: DataFrame of forex pairs.
     """
-    url = f"https://financialmodelingprep.com/stable/symbol/available-forex-currency-pairs?apikey={api_key}"
+    # The "symbol/available-forex-currency-pairs" path was retired and answers with an empty list, which then raised a KeyError on the missing columns further down.  # noqa: E501
+    url = f"https://financialmodelingprep.com/stable/forex-list?apikey={api_key}"
 
-    forex_list = get_financial_data(url=url, user_subscription=user_subscription)
+    forex_list = get_cached_financial_data(url=url, user_subscription=user_subscription)
+
+    if forex_list.empty:
+        return forex_list
 
     forex_list = forex_list.rename(
         columns={
             "symbol": "Symbol",
-            "name": "Name",
-            "currency": "Currency",
-            "stockExchange": "Exchange",
-            "exchangeShortName": "Exchange Code",
+            "fromCurrency": "From Currency",
+            "toCurrency": "To Currency",
+            "fromName": "From Name",
+            "toName": "To Name",
         }
     )
-
-    forex_list = forex_list.drop(columns=["Exchange Code"])
 
     forex_list = forex_list.set_index("Symbol").sort_index()
 
@@ -462,21 +614,25 @@ def get_commodity_list(api_key: str, user_subscription: str = "Free") -> pd.Data
     Returns:
         pd.DataFrame: DataFrame of commodities.
     """
-    url = f"https://financialmodelingprep.com/stable/symbol/available-commodities?apikey={api_key}"
+    # The "symbol/available-commodities" path was retired and answers with an empty list, which then raised a KeyError on the missing columns further down.  # noqa: E501
+    url = f"https://financialmodelingprep.com/stable/commodities-list?apikey={api_key}"
 
-    commody_list = get_financial_data(url=url, user_subscription=user_subscription)
+    commody_list = get_cached_financial_data(
+        url=url, user_subscription=user_subscription
+    )
+
+    if commody_list.empty:
+        return commody_list
 
     commody_list = commody_list.rename(
         columns={
             "symbol": "Symbol",
             "name": "Name",
             "currency": "Currency",
-            "stockExchange": "Exchange",
-            "exchangeShortName": "Exchange Code",
+            "exchange": "Exchange",
+            "tradeMonth": "Trade Month",
         }
     )
-
-    commody_list = commody_list.drop(columns=["Exchange Code"])
 
     commody_list = commody_list.set_index("Symbol").sort_index()
 
@@ -494,22 +650,20 @@ def get_etf_list(api_key: str, user_subscription: str = "Free") -> pd.DataFrame:
     Returns:
         pd.DataFrame: DataFrame of ETFs.
     """
-    url = f"https://financialmodelingprep.com/stable/etf/list?apikey={api_key}"
+    # The "etf/list" path was retired and answers with an empty list, which then raised a KeyError on the missing columns further down.  # noqa: E501
+    url = f"https://financialmodelingprep.com/stable/etf-list?apikey={api_key}"
 
-    etf_list = get_financial_data(url=url, user_subscription=user_subscription)
+    etf_list = get_cached_financial_data(url=url, user_subscription=user_subscription)
+
+    if etf_list.empty:
+        return etf_list
 
     etf_list = etf_list.rename(
         columns={
             "symbol": "Symbol",
             "name": "Name",
-            "price": "Price",
-            "exchange": "Exchange",
-            "exchangeShortName": "Exchange Code",
-            "type": "Type",
         }
     )
-
-    etf_list = etf_list.drop(columns=["Type"])
 
     etf_list = etf_list.set_index("Symbol").sort_index()
 
@@ -527,21 +681,22 @@ def get_index_list(api_key: str, user_subscription: str = "Free") -> pd.DataFram
     Returns:
         pd.DataFrame: DataFrame of indexes.
     """
-    url = f"https://financialmodelingprep.com/stable/symbol/available-indexes?apikey={api_key}"
+    # The "symbol/available-indexes" path was retired and answers with an empty list, which then raised a KeyError on the missing columns further down.  # noqa: E501
+    url = f"https://financialmodelingprep.com/stable/index-list?apikey={api_key}"
 
-    index_list = get_financial_data(url=url, user_subscription=user_subscription)
+    index_list = get_cached_financial_data(url=url, user_subscription=user_subscription)
+
+    if index_list.empty:
+        return index_list
 
     index_list = index_list.rename(
         columns={
             "symbol": "Symbol",
             "name": "Name",
             "currency": "Currency",
-            "stockExchange": "Exchange",
-            "exchangeShortName": "Exchange Code",
+            "exchange": "Exchange",
         }
     )
-
-    index_list = index_list.drop(columns=["Exchange Code"])
 
     index_list = index_list.set_index("Symbol").sort_index()
 
@@ -616,7 +771,7 @@ def _get_news_pages(
     page_frames = []
 
     for page in range(pages):
-        page_data = get_financial_data(
+        page_data = get_cached_financial_data(
             url=f"{base_url}&page={page}", user_subscription=user_subscription
         )
         if not page_data.empty:
@@ -967,7 +1122,9 @@ def get_ipo_calendar(
     if end_date:
         url += f"&to={end_date}"
 
-    ipo_calendar = get_financial_data(url=url, user_subscription=user_subscription)
+    ipo_calendar = get_cached_financial_data(
+        url=url, user_subscription=user_subscription
+    )
 
     if ipo_calendar.empty:
         return ipo_calendar
@@ -1016,7 +1173,9 @@ def get_ipo_disclosures(
     if end_date:
         url += f"&to={end_date}"
 
-    ipo_disclosures = get_financial_data(url=url, user_subscription=user_subscription)
+    ipo_disclosures = get_cached_financial_data(
+        url=url, user_subscription=user_subscription
+    )
 
     if ipo_disclosures.empty:
         return ipo_disclosures
@@ -1063,7 +1222,9 @@ def get_ipo_prospectuses(
     if end_date:
         url += f"&to={end_date}"
 
-    ipo_prospectuses = get_financial_data(url=url, user_subscription=user_subscription)
+    ipo_prospectuses = get_cached_financial_data(
+        url=url, user_subscription=user_subscription
+    )
 
     if ipo_prospectuses.empty:
         return ipo_prospectuses
@@ -1116,7 +1277,9 @@ def get_stock_splits_calendar(
     if end_date:
         url += f"&to={end_date}"
 
-    splits_calendar = get_financial_data(url=url, user_subscription=user_subscription)
+    splits_calendar = get_cached_financial_data(
+        url=url, user_subscription=user_subscription
+    )
 
     if splits_calendar.empty:
         return splits_calendar
@@ -1170,7 +1333,7 @@ def get_sector_performance(
             f"?sector={sector}&apikey={api_key}"
         )
 
-    sector_performance = get_financial_data(
+    sector_performance = get_cached_financial_data(
         url=url, user_subscription=user_subscription
     )
 
@@ -1230,7 +1393,7 @@ def get_industry_performance(
             f"?industry={industry}&apikey={api_key}"
         )
 
-    industry_performance = get_financial_data(
+    industry_performance = get_cached_financial_data(
         url=url, user_subscription=user_subscription
     )
 
@@ -1290,7 +1453,7 @@ def get_sector_pe(
             f"?sector={sector}&apikey={api_key}"
         )
 
-    sector_pe = get_financial_data(url=url, user_subscription=user_subscription)
+    sector_pe = get_cached_financial_data(url=url, user_subscription=user_subscription)
 
     if sector_pe.empty:
         return sector_pe
@@ -1348,7 +1511,9 @@ def get_industry_pe(
             f"?industry={industry}&apikey={api_key}"
         )
 
-    industry_pe = get_financial_data(url=url, user_subscription=user_subscription)
+    industry_pe = get_cached_financial_data(
+        url=url, user_subscription=user_subscription
+    )
 
     if industry_pe.empty:
         return industry_pe
@@ -1391,7 +1556,7 @@ def get_mergers_acquisitions_latest(
         f"?page={page}&limit={limit}&apikey={api_key}"
     )
 
-    mergers_acquisitions = get_financial_data(
+    mergers_acquisitions = get_cached_financial_data(
         url=url, user_subscription=user_subscription
     )
 

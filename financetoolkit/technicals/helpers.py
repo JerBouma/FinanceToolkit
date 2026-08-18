@@ -32,8 +32,9 @@ def handle_errors(func):
         except KeyError as e:
             function_name = func.__name__
             logger.error(
-                "There is an index name missing in the provided historical dataset. "
-                "%s",
+                "There is an index name missing in the provided historical dataset "
+                "while trying to run the function %s. %s",
+                function_name,
                 e,
             )
             return pd.Series(dtype="object")

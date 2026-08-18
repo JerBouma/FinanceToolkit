@@ -1,0 +1,4 @@
+,Coefficient,Std. Error,t-Statistic,P-Value
+Benchmark,1.019,0.0461,22.0835,0.0
+Entity Effect: AAPL,0.0028,,,
+Entity Effect: MSFT,0.0016,,,

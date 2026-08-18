@@ -12,8 +12,7 @@ logger = logger_model.get_logger()
 
 # pylint: disable=too-many-locals
 
-# Matches up with currency codes EUR, USD, JPY etc. This is used for
-# Yahoo Finance's notation of currencies. E.g. EURUSD=X
+# Matches currency codes (EUR, USD) in Yahoo Finance notation, e.g. EURUSD=X.
 CURRENCY_CODE_LENGTH = 3
 
 
@@ -73,15 +72,18 @@ def read_portfolio_dataset(
     """
     combined_portfolio_dataset = pd.DataFrame()
     additional_files = []
+    spreadsheet_files = []
+
+    # A copy is iterated and a new list is built, since removing entries from the list being iterated skips every other directory and mutates the caller's list in place.  # noqa: E501
     for file in excel_location:
         if file.split(".")[-1] not in ["xlsx", "xls", "csv"]:
-            excel_location.remove(file)
-
             for sub_file in os.listdir(file):
                 if sub_file.endswith(("xlsx", "xls", "csv")):
                     additional_files.append(f"{file}/{sub_file}")
+        else:
+            spreadsheet_files.append(file)
 
-    excel_location = excel_location + additional_files
+    excel_location = spreadsheet_files + additional_files
 
     logger.info("Reading Portfolio Files")
     for file in excel_location:
@@ -110,32 +112,34 @@ def read_portfolio_dataset(
             costs_columns=costs_columns,
         )
 
-        if portfolio_dataset.duplicated().any() and adjust_duplicates:
+        duplicate_mask = portfolio_dataset.duplicated(keep=False)
+
+        if duplicate_mask.any() and adjust_duplicates:
             logger.info(
                 "The same transaction was bought and/or sold on the same day in %s. "
                 "These entries will be merged together.",
                 file,
             )
-            duplicates = portfolio_dataset[portfolio_dataset.duplicated()]
-            originals = portfolio_dataset[portfolio_dataset.duplicated(keep="first")]
 
-            number_columns = list(
-                duplicates.select_dtypes(np.number).columns.intersection(
-                    originals.select_dtypes(np.number).columns
-                )
-            )
+            number_columns = list(portfolio_dataset.select_dtypes(np.number).columns)
 
-            # It shouldn't add together the prices as this falsely indicates a higher investment
-            # than actually made and result in false return calculations.
+            # Summing prices would falsely indicate a higher investment than made.
             number_columns.remove(selected_price_column)  # type: ignore
 
-            duplicates.loc[:, number_columns] = duplicates.loc[:, number_columns].add(
-                originals[number_columns], fill_value=0
+            # Each group of identical rows collapses onto its first occurrence with the summable columns multiplied by how often the row appears; adding the frame to itself instead only produced the right answer for a pair and silently deleted a group of three or more identical transactions altogether.  # noqa: E501
+            row_identity = portfolio_dataset.astype(str).agg("|".join, axis=1)
+            occurrences = row_identity.map(row_identity.value_counts())
+
+            merged_rows = portfolio_dataset[
+                duplicate_mask & ~portfolio_dataset.duplicated(keep="first")
+            ].copy()
+            merged_rows[number_columns] = merged_rows[number_columns].mul(
+                occurrences.loc[merged_rows.index], axis=0
             )
 
             portfolio_dataset = pd.concat(
-                [portfolio_dataset, duplicates]
-            ).drop_duplicates(keep=False)
+                [portfolio_dataset[~duplicate_mask], merged_rows]
+            )
 
         combined_portfolio_dataset = pd.concat(
             [combined_portfolio_dataset, portfolio_dataset]
@@ -149,7 +153,7 @@ def read_portfolio_dataset(
         combined_portfolio_dataset = combined_portfolio_dataset.drop_duplicates()
 
     combined_portfolio_dataset = combined_portfolio_dataset.sort_values(
-        by=selected_date_column, ascending=False  # type: ignore
+        by=selected_date_column, ascending=False, kind="stable"  # type: ignore
     )
 
     return (
@@ -222,8 +226,9 @@ def format_portfolio_dataset(
         ValueError: If the currency column contains values other than 3-letter currency codes.
         ValueError: If the provided currency code is not a 3-letter code.
     """
-    # Clean trailing spaces if applicable
-    dataset.columns = [column.strip() for column in dataset.columns]
+    # Clean trailing spaces and case if applicable; the column names are matched case-insensitively so that a DataFrame handed in directly behaves the same as a spreadsheet read from disk.  # noqa: E501
+    dataset = dataset.copy()
+    dataset.columns = [str(column).strip().lower() for column in dataset.columns]
 
     date_columns = [column.lower() for column in date_columns]
     date_column_match = [column for column in date_columns if column in dataset.columns]
@@ -238,8 +243,7 @@ def format_portfolio_dataset(
     dataset = dataset.set_index(date_column_first)
 
     for date_format in date_format_options:
-        # An attempt is made to format the date column to a datetime object. If this fails, the next format is tried.
-        # This is done to ensure that the date column is correctly formatted.
+        # Each date format is tried in turn until one parses the column.
         try:
             dataset.index = pd.to_datetime(dataset.index, format=date_format).to_period(
                 freq="D"
@@ -315,6 +319,25 @@ def format_portfolio_dataset(
         helpers.convert_to_float
     )
 
+    # An empty price or volume cell converts to NaN without raising, which would travel all the way into the invested amount and the weights as a missing number, so the transaction is reported instead of being carried along silently.  # noqa: E501
+    incomplete_rows = dataset[
+        dataset[price_column_first].isna() | dataset[volume_column_first].isna()
+    ]
+
+    if not incomplete_rows.empty:
+        reported_columns = [
+            date_column_first,
+            tickers_column_first,
+            price_column_first,
+            volume_column_first,
+        ]
+
+        raise ValueError(
+            "The portfolio dataset contains transactions without a price or a volume. "
+            "Please complete or remove the following row(s):\n"
+            f"{incomplete_rows[reported_columns].to_string()}"
+        )
+
     if costs_columns:
         costs_columns = [column.lower() for column in costs_columns]
         costs_columns_match = [
@@ -367,8 +390,7 @@ def format_portfolio_dataset(
             )
             dataset[currency_column_first] = dataset[currency_column_first].str.upper()
 
-            # This is mostly done given that Unnamed columns could exist in the dataset, specifically in
-            # the DEGIRO dataset and are automatically dropped. This prevents this column from being dropped.
+            # Prevents the currency column being dropped with DEGIRO's Unnamed columns.
             dataset = dataset.rename(columns={currency_column_first: "currency"})
             currency_column_first = "currency"
 
@@ -377,12 +399,13 @@ def format_portfolio_dataset(
             raise ValueError(
                 "Currency must be a 3-letter currency code (e.g. EUR, USD or JPY)."
             )
-        currency_column_first = currency_columns.upper()
+        # A single currency code applies to every transaction, so it becomes a column of its own; using the code itself as the column name looked up a column that does not exist and made the rename below drop the currency entirely.  # noqa: E501
+        currency_column_first = "TEMP Currency"
+        dataset[currency_column_first] = currency_columns.upper()
     else:
         currency_column_first = None
 
-    # Rename all columns that are relevant and drop the others. This is done so that any type of file
-    # can be added to your portfolio and it will still work.
+    # Rename what is relevant and drop the rest, so any file type still works.
     dataset = dataset.rename(
         columns={
             date_column_first: column_mapping["date"],
@@ -395,8 +418,7 @@ def format_portfolio_dataset(
         }
     )
 
-    # Drop out any other columns, this is done so that any type of file can be added to your portfolio
-    # and it will still work.
+    # Drop the other columns, so any file type can be added and still work.
     dataset = dataset[column_mapping.values()]
 
     return (

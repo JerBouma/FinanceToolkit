@@ -1,0 +1,8 @@
+,0
+CUSUM Statistic,0.33333333333333354
+P-Value,0.9998867320298483
+Observations,3
+Critical Value 1%,1.63
+Critical Value 5%,1.36
+Critical Value 10%,1.22
+Reject Stability (5%),False

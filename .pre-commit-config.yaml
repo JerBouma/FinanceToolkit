@@ -17,6 +17,7 @@ repos:
         language: python
         types: [python]
         args: ["--config", "pyproject.toml"]
+        additional_dependencies: ["black[jupyter]>=26.3.1"]
   - repo: local
     hooks:
       - id: ruff
@@ -25,6 +26,7 @@ repos:
         language: python
         types: [python]
         args: ["--config=pyproject.toml"]
+        additional_dependencies: ["ruff>=0.13.2"]
   - repo: local
     hooks:
       - id: codespell
@@ -32,3 +34,9 @@ repos:
         entry: codespell
         language: python
         types: [text]
+        exclude: '\.ipynb$'
+        # Passed explicitly: codespell only auto-discovers pyproject.toml when it
+        # can import a TOML reader, and silently ignores the whole [tool.codespell]
+        # section when it cannot.
+        args: ["--toml", "pyproject.toml"]
+        additional_dependencies: ["codespell[toml]>=2.4"]

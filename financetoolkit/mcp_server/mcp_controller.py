@@ -24,6 +24,7 @@ from financetoolkit.mcp_server.auth_model import (
     MCPAuthMiddleware,
     register_auth_routes,
     resolve_api_key,
+    resolve_fred_api_key,
 )
 from financetoolkit.mcp_server.inspection_controller import ControllerInspector
 from financetoolkit.mcp_server.provider_model import ToolkitProvider
@@ -31,28 +32,28 @@ from financetoolkit.mcp_server.registry_controller import ToolRegistry
 from financetoolkit.mcp_server.tools_model import UtilityToolRegistry
 from financetoolkit.utilities.logger_model import get_logger, setup_logger
 
-# Attach the stderr handler immediately — before any module-level log calls
-# and before FastMCP is imported/initialised.  Mirrors the pattern used by
-# toolkit_controller.py and discovery_controller.py.
+# Attached before any module-level log call and before FastMCP is imported.
 setup_logger()
 
 
 def _load_dotenv_configuration() -> None:
-    """Load dotenv configuration only when an API key is not already present.
+    """Load dotenv configuration unless both API keys are already present.
 
-    MCP clients can inject ``FINANCIAL_MODELING_PREP_API_KEY`` directly into
-    the server process environment (the ``env`` block in their config).  When
-    that key is present the server uses it immediately without reading any file.
-    Otherwise the server falls back to ``FINANCETOOLKIT_ENV_FILE`` (a path to a
-    ``.env`` file) and then to the global Finance Toolkit ``.env`` location.
+    MCP clients can inject ``FINANCIAL_MODELING_PREP_API_KEY`` and/or the
+    optional ``FRED_API_KEY`` directly into the server process environment
+    (the ``env`` block in their config).  When a key is present the server
+    uses it immediately without reading any file. Otherwise the server falls
+    back to ``FINANCETOOLKIT_ENV_FILE`` (a path to a ``.env`` file) and then
+    to the global Finance Toolkit ``.env`` location. Both keys are checked
+    (rather than short-circuiting on FMP alone) so that a client which embeds
+    the FMP key directly but leaves FRED to the env file still picks up FRED.
     """
-    if os.environ.get("FINANCIAL_MODELING_PREP_API_KEY"):
+    if os.environ.get("FINANCIAL_MODELING_PREP_API_KEY") and os.environ.get(
+        "FRED_API_KEY"
+    ):
         return
 
-    # Resolution order:
-    #   1. Local cwd .env (highest priority — wins over everything)
-    #   2. FINANCETOOLKIT_ENV_FILE (global path written by setup wizard)
-    #   3. Global config dir fallback (~/.config/financetoolkit/.env)
+    # Order: cwd .env, then FINANCETOOLKIT_ENV_FILE, then the global config dir.
     local_env = pathlib.Path.cwd() / ".env"
     if local_env.exists():
         load_dotenv(local_env, override=True)
@@ -64,6 +65,38 @@ def _load_dotenv_configuration() -> None:
 
 
 _load_dotenv_configuration()
+
+
+def _resolve_cache_enabled(configured: object) -> bool:
+    """
+    Decide whether this server caches anything at all.
+
+    ``FINANCE_TOOLKIT_CACHE_ENABLED`` wins when set. Otherwise the config.yaml
+    value is used, where the default ``auto`` means "on locally, off when
+    hosted": a stdio server is one user on their own machine, while an HTTP
+    server multiplexes every user through one process and one database. Sharing
+    cache entries there would serve one subscriber's paid data to another, and
+    downloaded source data has no eviction policy that would keep the disk
+    bounded, so a hosted server fetches live unless told otherwise.
+
+    Args:
+        configured (object): The ``cache.enabled`` value from config.yaml, either
+            a boolean or the string ``"auto"``.
+
+    Returns:
+        bool: True when the cache should be opened and used.
+    """
+    override = os.environ.get("FINANCE_TOOLKIT_CACHE_ENABLED", "").strip().lower()
+
+    if override in ("1", "true", "yes", "on"):
+        return True
+    if override in ("0", "false", "no", "off"):
+        return False
+
+    if isinstance(configured, bool):
+        return configured
+
+    return os.environ.get("MCP_TRANSPORT", "stdio") not in ("sse", "streamable-http")
 
 
 def _build_mcp_app() -> FastMCP:
@@ -90,14 +123,23 @@ def _build_mcp_app() -> FastMCP:
 
     _cache_db_env = os.environ.get("FINANCE_TOOLKIT_CACHE_DB", "")
     _cache_ttl_env = os.environ.get("FINANCE_TOOLKIT_CACHE_TTL", "")
+    _cache_enabled = _resolve_cache_enabled(configuration["cache"].get("enabled", True))
+
+    logger.info(
+        "Caching is %s for this server.",
+        "enabled" if _cache_enabled else "disabled, every request is fetched live",
+    )
+
     provider = ToolkitProvider(
         api_key=os.environ.get("FINANCIAL_MODELING_PREP_API_KEY", ""),
+        fred_api_key=os.environ.get("FRED_API_KEY", ""),
         cache_ttl=(
             int(_cache_ttl_env)
             if _cache_ttl_env.isdigit()
             else configuration["cache"]["ttl_seconds"]
         ),
         database_location=_cache_db_env or str(setup_model.get_global_cache_db_path()),
+        cache_enabled=_cache_enabled,
     )
 
     mcp = FastMCP(
@@ -134,10 +176,7 @@ def _build_mcp_app() -> FastMCP:
     toolkit_count = toolkit_registry.register_all_tools()
     utility_count = utility_registry.register_all_tools()
 
-    # Optional diagnostic tool — only registered when FT_MCP_DIAG is set.  Used to
-    # inspect what the (possibly proxied / worker-restored) HTTP request carries
-    # at tool-call time on hosted platforms such as fastmcp.app.  Never exposes
-    # the full key.
+    # Diagnostic tool for hosted platforms; never exposes the full key.
     if os.environ.get("FT_MCP_DIAG"):
 
         def diagnostics() -> str:
@@ -163,6 +202,11 @@ def _build_mcp_app() -> FastMCP:
             report["resolved_present"] = bool(resolved)
             report["resolved_len"] = len(resolved)
             report["resolved_tail"] = resolved[-4:] if resolved else ""
+
+            resolved_fred = resolve_fred_api_key()
+            report["fred_resolved_present"] = bool(resolved_fred)
+            report["fred_resolved_len"] = len(resolved_fred)
+            report["fred_resolved_tail"] = resolved_fred[-4:] if resolved_fred else ""
             return str(report)
 
         mcp.add_tool(
@@ -187,18 +231,68 @@ def main() -> None:
     Start the Finance Toolkit MCP server.
 
     Bootstraps the MCP application via _build_mcp_app() and starts the server
-    using the transport defined by the MCP_TRANSPORT environment variable.
-    Defaults to stdio transport when MCP_TRANSPORT is not set, which is the
-    correct setting for use with VS Code and other MCP clients.
+    using the transport defined by `--transport`, falling back to the
+    MCP_TRANSPORT environment variable and then to stdio, which is the correct
+    setting for use with VS Code and other MCP clients.
+
+    The server contains the following optional arguments:
+
+    --transport {stdio,sse,streamable-http}
+        The transport to serve on. Defaults to MCP_TRANSPORT, then stdio.
+    --host HOST
+        The interface to bind to, for the sse and streamable-http transports
+        only. Defaults to MCP_HOST, then 0.0.0.0.
+    --port PORT
+        The port to bind to, for the sse and streamable-http transports only.
+        Defaults to MCP_PORT, then 8000.
     """
-    transport = os.environ.get("MCP_TRANSPORT", "stdio")
+    parser = argparse.ArgumentParser(
+        prog="financetoolkit-mcp",
+        description="Start the Finance Toolkit MCP server.",
+        epilog=(
+            "Every option falls back to its environment variable, so an MCP client "
+            "that can only set the environment (MCP_TRANSPORT, MCP_HOST, MCP_PORT) "
+            "keeps working unchanged. API keys are read from FINANCIAL_MODELING_PREP_API_KEY "
+            "and FRED_API_KEY, or from a .env file in the working directory. Caching is "
+            "controlled with FINANCE_TOOLKIT_CACHE_ENABLED and defaults to off when hosted."
+        ),
+    )
+    parser.add_argument(
+        "--transport",
+        choices=["stdio", "sse", "streamable-http"],
+        help="The transport to serve on. Defaults to MCP_TRANSPORT, then stdio.",
+    )
+    parser.add_argument(
+        "--host",
+        help=(
+            "The interface to bind to, for the sse and streamable-http transports "
+            "only. Defaults to MCP_HOST, then 0.0.0.0."
+        ),
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        help=(
+            "The port to bind to, for the sse and streamable-http transports only. "
+            "Defaults to MCP_PORT, then 8000."
+        ),
+    )
+
+    arguments = parser.parse_args()
+
+    transport = arguments.transport or os.environ.get("MCP_TRANSPORT", "stdio")
     get_logger().info(f"Starting MCP server on transport {transport}")
 
     if transport in ("sse", "streamable-http"):
-        # Apply environment variable overrides for host/port if specified
-        host = os.environ.get("MCP_HOST", "0.0.0.0")  # noqa: S104
+        # Apply command line, then environment variable overrides for host/port
+        host = arguments.host or os.environ.get("MCP_HOST", "0.0.0.0")  # noqa: S104
         port_env = os.environ.get("MCP_PORT", "8000")
-        port = int(port_env) if port_env.isdigit() else 8000
+        # Compared against None rather than truth-tested: --port 0 is a valid request for an ephemeral port and must not fall through to the default.  # noqa: E501
+        port = (
+            arguments.port
+            if arguments.port is not None
+            else (int(port_env) if port_env.isdigit() else 8000)
+        )
 
         mcp.settings.host = host
         mcp.settings.port = port
@@ -242,7 +336,17 @@ def inspector() -> None:
     Invokes the MCP Inspector via npx, pointing it at this module so that all
     registered tools can be explored and tested interactively in a browser.
     Exits with the same return code as the Inspector process.
+
+    The Inspector takes no arguments of its own beyond --help.
     """
+    argparse.ArgumentParser(
+        prog="financetoolkit-mcp-inspector",
+        description=(
+            "Launch the MCP Inspector against the Finance Toolkit MCP server. "
+            "Requires npx, which ships with Node.js."
+        ),
+    ).parse_args()
+
     server_path = str(pathlib.Path(__file__).resolve())
     sys.exit(
         subprocess.call(  # noqa
@@ -309,6 +413,7 @@ def _setup_cli(client: str, overwrite: bool) -> None:
     setup_model.print_banner()
 
     api_key, key_source = setup_model.discover_api_key()
+    fred_api_key, fred_key_source = setup_model.discover_fred_api_key()
     global_env = setup_model.get_global_env_path()
 
     if api_key:
@@ -336,9 +441,42 @@ def _setup_cli(client: str, overwrite: bool) -> None:
             "--client to use the interactive wizard."
         )
 
+    if fred_api_key:
+        masked_fred = (
+            f"{fred_api_key[:4]}...{fred_api_key[-4:]}"
+            if len(fred_api_key) > 8  # noqa
+            else "****"
+        )
+        setup_model.ok(
+            f"FRED API key found (optional)  [dim]·[/]  [dim]{fred_key_source}[/]"
+            f"  [dim]·[/]  [dim cyan]{masked_fred}[/]"
+        )
+        if client != "claude-desktop" and (
+            not global_env.exists() or fred_key_source != "global config"
+        ):
+            global_values = dotenv_values(global_env) if global_env.exists() else {}
+            if global_values.get("FRED_API_KEY") != fred_api_key:
+                setup_model.info(f"Syncing FRED key to global config ({global_env})…")
+                if not setup_model.write_global_env_fred_key(fred_api_key):
+                    setup_model.warn(
+                        "Could not write the global config file — "
+                        "the FRED API key will be embedded directly in the client config instead."
+                    )
+    else:
+        setup_model.info(
+            "No FRED API key found — optional, free, only unlocks a handful of "
+            "US-only economic indicators. Set FRED_API_KEY in your environment "
+            "to include it, or get one at "
+            "https://fred.stlouisfed.org/docs/api/api_key.html"
+        )
+
     setup_model.console.print()
     setup_model.write_client_config_uvx(
-        client, pathlib.Path.cwd(), overwrite, api_key=api_key
+        client,
+        pathlib.Path.cwd(),
+        overwrite,
+        api_key=api_key,
+        fred_api_key=fred_api_key,
     )
 
     setup_model.console.print()
@@ -350,6 +488,7 @@ def _setup_interactive() -> None:
 
     # Discover an existing key from all known sources before prompting.
     api_key, key_source = setup_model.discover_api_key()
+    fred_api_key, fred_key_source = setup_model.discover_fred_api_key()
     global_env = setup_model.get_global_env_path()
 
     if api_key:
@@ -376,6 +515,37 @@ def _setup_interactive() -> None:
             )
 
     setup_model.console.print()
+
+    if fred_api_key:
+        masked_fred_key = (
+            f"{fred_api_key[:4]}...{fred_api_key[-4:]}"
+            if len(fred_api_key) > 8  # noqa
+            else "****"
+        )
+        setup_model.ok(
+            f"FRED API key found (optional)  [dim]·[/]  [dim]{fred_key_source}[/]"
+            f"  [dim]·[/]  [dim cyan]{masked_fred_key}[/]"
+        )
+    else:
+        setup_model.info(
+            "FRED API key — [bold]optional[/], free, unlocks a handful of "
+            "US-only economic indicators (nonfarm payrolls, jobless claims, "
+            "the real TIPS yield curve, and similar). Get one at "
+            "[cyan]https://fred.stlouisfed.org/docs/api/api_key.html[/]"
+        )
+        setup_model.info("Press [bold]Enter[/] to skip — everything else still works.")
+        setup_model.console.print()
+        fred_api_key = setup_model.console.input(
+            "  [bold]FRED API Key (optional)[/]  [dim cyan]›[/] "
+        ).strip()
+
+        if fred_api_key and not setup_model.write_global_env_fred_key(fred_api_key):
+            setup_model.warn(
+                "Could not write the global config file — "
+                "the FRED API key will be embedded directly in the client config instead."
+            )
+
+    setup_model.console.print()
     setup_model.print_menu()
     setup_model.console.print()
     choice_str = setup_model.console.input("  [cyan]›[/] ").strip()
@@ -397,8 +567,14 @@ def _setup_interactive() -> None:
     valid_map = {
         "1": ("Claude Desktop", setup_model.write_claude_config),
         "2": ("Claude Code", setup_model.write_claude_code_config),
-        "3": ("VS Code", lambda k: setup_model.write_vscode_config(k, cwd)),
-        "4": ("Cursor", lambda k: setup_model.write_cursor_config(k, cwd)),
+        "3": (
+            "VS Code",
+            lambda k, fk: setup_model.write_vscode_config(k, cwd, fk),
+        ),
+        "4": (
+            "Cursor",
+            lambda k, fk: setup_model.write_cursor_config(k, cwd, fk),
+        ),
         "5": ("Gemini", setup_model.write_gemini_config),
         "6": ("Windsurf", setup_model.write_windsurf_config),
     }
@@ -426,11 +602,25 @@ def _setup_interactive() -> None:
                     "the API key will be embedded directly in the client config instead."
                 )
 
+    if (
+        fred_api_key
+        and needs_global_env
+        and (not global_env.exists() or fred_key_source != "global config")
+    ):
+        global_values = dotenv_values(global_env) if global_env.exists() else {}
+        if global_values.get("FRED_API_KEY") != fred_api_key:
+            setup_model.info(f"Syncing FRED key to global config ({global_env})…")
+            if not setup_model.write_global_env_fred_key(fred_api_key):
+                setup_model.warn(
+                    "Could not write the global config file — "
+                    "the FRED API key will be embedded directly in the client config instead."
+                )
+
     setup_model.console.print()
     for char in to_process:
         name, func = valid_map[char]
         try:
-            func(api_key)
+            func(api_key, fred_api_key)
         except Exception as e:
             setup_model.err(f"Error configuring {name}: {e}")
 

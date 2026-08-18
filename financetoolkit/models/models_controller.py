@@ -10,11 +10,16 @@ from financetoolkit.models import (
     dupont_model,
     enterprise_model,
     eva_model,
+    fulmer_model,
+    grover_model,
     growth_model,
     helpers,
     intrinsic_model,
+    ohlson_model,
     piotroski_model,
+    springate_model,
     wacc_model,
+    zmijewski_model,
 )
 from financetoolkit.performance.performance_model import get_beta
 from financetoolkit.ratios import liquidity_model, profitability_model, valuation_model
@@ -277,19 +282,20 @@ class Models:
         Perform an Extended Dupont analysis to breakdown the return on equity (ROE) into its components,
         while considering additional financial metrics.
 
-        The Extended Dupont analysis is an advanced method used to break down the return on equity (ROE)
-        into multiple components, providing a more detailed insight into the factors influencing a
-        company's profitability. It considers additional metrics such as Return on Assets (ROA),
-        Total Asset Turnover, Financial Leverage, and more.
+        The Extended Dupont analysis splits the three-factor decomposition's Net Profit Margin
+        into three separate drivers — the Tax Burden, the Interest Burden and the Operating
+        Profit Margin — so that the effect of taxation, of financing costs and of operating
+        performance on the return on equity (ROE) can be read separately.
 
         The formula is as follows:
 
-            - Profit Margin = Net Income / Revenue
+            - Interest Burden Ratio = Income Before Tax / Operating Income
+            - Tax Burden Ratio = Net Income / Income Before Tax
+            - Operating Profit Margin = Operating Income / Revenue
             - Asset Turnover = Revenue / Average Total Assets
-            - Financial Leverage = Average Total Assets / Average Total Equity
-            - ROA = Net Income / Average Total Assets
-            - Total Asset Turnover = Revenue / Average Total Assets
-            - ROE = Profit Margin * Asset Turnover * Financial Leverage * ROA * Total Asset Turnover
+            - Equity Multiplier = Average Total Assets / Average Total Equity
+            - ROE = Interest Burden Ratio * Tax Burden Ratio * Operating Profit Margin *
+            Asset Turnover * Equity Multiplier
 
         Also known as: extended DuPont, five-factor DuPont, ROE breakdown.
 
@@ -303,19 +309,24 @@ class Models:
             trailing (int | None, optional): The trailing period to use for the calculation. Defaults to None.
 
         Returns:
-            pd.DataFrame: DataFrame containing Extended Dupont analysis results, including Profit Margin, Asset Turnover,
-                        Financial Leverage, ROA, Total Asset Turnover, and the calculated ROE values.
+            pd.DataFrame: DataFrame containing Extended Dupont analysis results, including the Interest
+                        Burden Ratio, Tax Burden Ratio, Operating Profit Margin, Asset Turnover, Equity
+                        Multiplier, and the calculated ROE values.
 
         Notes:
-            - The Profit Margin is the ratio of Net Income to Total Revenue, indicating the percentage of
-            revenue that translates into profit.
+            - The Interest Burden Ratio (Income Before Tax / Operating Income) measures how much of
+            operating profit survives the cost of debt financing. It equals 1 for a company with no
+            net interest expense and falls as interest costs rise.
+            - The Tax Burden Ratio (Net Income / Income Before Tax) measures how much of pre-tax
+            profit survives taxation, i.e. it equals (1 - Effective Tax Rate).
+            - The Operating Profit Margin measures operating performance before financing and tax
+            effects.
             - Asset Turnover measures the efficiency of a company's use of its assets to generate
             sales revenue.
-            - Financial Leverage represents the use of debt to finance a company's operations, which can
-            amplify returns as well as risks.
-            - Return on Assets (ROA) measures the efficiency of a company's use of its assets to
-            generate profit.
-            - Total Asset Turnover considers all assets, including both equity and debt financing.
+            - The Equity Multiplier represents the use of debt to finance a company's operations,
+            which can amplify returns as well as risks.
+            - Multiplying the first three components back together reproduces the Net Profit Margin
+            of the three-factor `get_dupont_analysis`, so both decompositions resolve to the same ROE.
 
         As an example:
 
@@ -342,39 +353,50 @@ class Models:
         """
         if trailing:
             self._extended_dupont_analysis = dupont_model.get_extended_dupont_analysis(
-                self._income_statement.loc[:, "Income Before Tax", :]
+                operating_income=self._income_statement.loc[:, "Operating Income", :]
                 .T.rolling(trailing)
                 .sum()
                 .T,
-                self._income_statement.loc[:, "Operating Income", :]
+                income_before_tax=self._income_statement.loc[:, "Income Before Tax", :]
                 .T.rolling(trailing)
                 .sum()
                 .T,
-                self._income_statement.loc[:, "Net Income", :]
+                net_income=self._income_statement.loc[:, "Net Income", :]
                 .T.rolling(trailing)
                 .sum()
                 .T,
-                self._income_statement.loc[:, "Revenue", :].T.rolling(trailing).sum().T,
-                self._balance_sheet_statement.loc[:, "Total Assets", :]
+                total_revenue=self._income_statement.loc[:, "Revenue", :]
+                .T.rolling(trailing)
+                .sum()
+                .T,
+                average_total_assets=self._balance_sheet_statement.loc[
+                    :, "Total Assets", :
+                ]
                 .T.rolling(trailing)
                 .mean()
                 .T,
-                self._balance_sheet_statement.loc[:, "Total Equity", :]
+                average_total_equity=self._balance_sheet_statement.loc[
+                    :, "Total Equity", :
+                ]
                 .T.rolling(trailing)
                 .mean()
                 .T,
             )
         else:
             self._extended_dupont_analysis = dupont_model.get_extended_dupont_analysis(
-                self._income_statement.loc[:, "Income Before Tax", :],
-                self._income_statement.loc[:, "Operating Income", :],
-                self._income_statement.loc[:, "Net Income", :],
-                self._income_statement.loc[:, "Revenue", :],
-                self._balance_sheet_statement.loc[:, "Total Assets", :]
+                operating_income=self._income_statement.loc[:, "Operating Income", :],
+                income_before_tax=self._income_statement.loc[:, "Income Before Tax", :],
+                net_income=self._income_statement.loc[:, "Net Income", :],
+                total_revenue=self._income_statement.loc[:, "Revenue", :],
+                average_total_assets=self._balance_sheet_statement.loc[
+                    :, "Total Assets", :
+                ]
                 .T.rolling(2)
                 .mean()
                 .T,
-                self._balance_sheet_statement.loc[:, "Total Equity", :]
+                average_total_equity=self._balance_sheet_statement.loc[
+                    :, "Total Equity", :
+                ]
                 .T.rolling(2)
                 .mean()
                 .T,
@@ -442,7 +464,9 @@ class Models:
         The Enterprise Value breakdown includes the following components for each quarter or year:
 
             - Share Price: The market price per share of the company's stock.
-            - Market Capitalization (Market Cap): The total value of a company's outstanding common and preferred shares.
+            - Market Capitalization (Market Cap): The total value of a company's outstanding common shares,
+            i.e. the share price multiplied by the shares outstanding. Preferred shares are excluded here and
+            enter as their own component below, so that they are counted once rather than twice.
             - Debt: The sum of long-term and short-term debt on the company's balance sheet.
             - Preferred Equity: The value of preferred shares, if applicable.
             - Minority Interest: The equity value of a subsidiary with less than 50% ownership.
@@ -471,8 +495,14 @@ class Models:
         Notes:
         - All the inputs must be in the same currency and unit for accurate calculations.
         - The Enterprise Value is an important metric used for valuation and investment analysis.
-        - A positive Enterprise Value indicates that the company is financed primarily by equity and has excess cash.
-        - A negative Enterprise Value may indicate financial distress or unusual financial situations.
+        It represents the cost of acquiring the entire business: the equity is bought at its market
+        value, the debt (and any preferred equity and minority interest) is assumed, and the acquired
+        cash reduces the effective price, which is why cash is subtracted rather than added.
+        - Enterprise Value is positive for essentially every going concern. It only turns negative
+        when a company's cash exceeds its market capitalization plus its debt, which is a sign of a
+        cash-rich balance sheet priced below its net cash — not of financial distress. A distressed,
+        heavily indebted company shows the opposite: an Enterprise Value far above its market
+        capitalization.
         - Understanding the Enterprise Value breakdown can provide insights into the sources of a
         company's value and potential risks.
 
@@ -575,6 +605,155 @@ class Models:
         return filter_columns(
             result.loc[:, self._start_date : self._end_date], show_columns
         )
+
+    @handle_errors
+    def get_tobins_q_ratio(
+        self,
+        diluted: bool = True,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+        trailing: int | None = None,
+        show_columns: list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate Tobin's Q Ratio, a valuation metric developed by economist James Tobin that
+        compares the market value of a company to the cost of replacing its assets.
+
+        The formula is as follows:
+
+            - Market Value of Equity = Share Price * Total Shares Outstanding
+            - Tobin's Q Ratio = (Market Value of Equity + Total Liabilities) / Total Assets
+
+        Tobin's Q Ratio can be interpreted as follows:
+
+            - A Q ratio greater than 1 indicates that the market values the company above the
+            cost of replacing its assets, which can reflect growth expectations, unrecognized
+            intangible value, or overvaluation.
+            - A Q ratio less than 1 indicates that the market values the company below the
+            cost of replacing its assets, which can reflect undervaluation or declining growth
+            prospects.
+
+        Also known as: Tobin's Q, Q ratio.
+
+        Args:
+            diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
+            rounding (int, optional): The number of decimals to round the results to. Defaults to None.
+            growth (bool, optional): Whether to calculate the growth of the values. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            trailing (int | None, optional): The trailing period to use for the calculation. Defaults to None.
+            show_columns (list[str] | None, optional): List of columns to show in the results. If None, all
+                columns will be shown. Defaults to None.
+
+        Returns:
+            pd.DataFrame: DataFrame containing the Market Value of Equity, Total Liabilities,
+            Total Assets and Tobin's Q Ratio.
+
+        Notes:
+        - This implementation approximates the market value of debt with the book value of
+        Total Liabilities, and the replacement cost of assets with the book value of Total
+        Assets, consistent with the simplifications used in the Weighted Average Cost of
+        Capital calculation elsewhere in this module.
+
+        References:
+        - Tobin, James. "A General Equilibrium Approach to Monetary Theory." Journal of Money,
+        Credit and Banking, Vol. 1, No. 1, 1969, pp. 15-29.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "MSFT"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.models.get_tobins_q_ratio().loc["AAPL"]
+        ```
+
+        Which returns:
+
+        |                        |        2021 |        2022 |
+        |:-----------------------|------------:|------------:|
+        | Market Value of Equity | 2.94327e+12 | 2.09689e+12 |
+        | Total Liabilities      | 2.87912e+11 | 3.02083e+11 |
+        | Total Assets           | 3.51002e+11 | 3.52755e+11 |
+        | Tobin's Q Ratio        | 9.2056      | 6.8007      |
+        """
+        tobins_q_ratio = {}
+
+        average_shares = (
+            self._income_statement.loc[:, "Weighted Average Shares Diluted", :]
+            if diluted
+            else self._income_statement.loc[:, "Weighted Average Shares", :]
+        )
+
+        years = self._balance_sheet_statement.columns
+        begin, end = str(years[0]), str(years[-1])
+
+        share_prices = (
+            self._historical_data["quarterly" if self._quarterly else "yearly"]
+            .loc[begin:end, "Adj Close"][self._tickers]
+            .T
+        )
+
+        total_liabilities = (
+            self._balance_sheet_statement.loc[:, "Total Liabilities", :]
+            .T.rolling(trailing)
+            .mean()
+            .T
+            if trailing
+            else self._balance_sheet_statement.loc[:, "Total Liabilities", :]
+        )
+        total_assets = (
+            self._balance_sheet_statement.loc[:, "Total Assets", :]
+            .T.rolling(trailing)
+            .mean()
+            .T
+            if trailing
+            else self._balance_sheet_statement.loc[:, "Total Assets", :]
+        )
+
+        market_cap = valuation_model.get_market_cap(
+            share_price=share_prices,
+            total_shares_outstanding=(
+                average_shares.T.rolling(trailing).mean().T
+                if trailing
+                else average_shares
+            ),
+        )
+
+        tobins_q_ratio["Market Value of Equity"] = market_cap
+        tobins_q_ratio["Total Liabilities"] = total_liabilities
+        tobins_q_ratio["Total Assets"] = total_assets
+        tobins_q_ratio["Tobin's Q Ratio"] = enterprise_model.get_tobins_q_ratio(
+            market_value_of_equity=market_cap,
+            total_liabilities=total_liabilities,
+            total_assets=total_assets,
+        )
+
+        tobins_q_results = (
+            pd.concat(tobins_q_ratio)
+            .dropna(axis=1, how="all")
+            .swaplevel(0, 1)
+            .reindex(self._tickers, level=0)
+        )
+
+        tobins_q_results = finalize_dataset(
+            dataset=tobins_q_results,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="columns",
+        )
+
+        return filter_columns(tobins_q_results, show_columns)
 
     @handle_errors
     def get_weighted_average_cost_of_capital(
@@ -866,8 +1045,10 @@ class Models:
         company is destroying value.
         - EBIT is approximated as Net Income + Income Tax Expense + Interest Expense, consistent
         with the Altman Z-Score calculation elsewhere in this module.
-        - Invested Capital is approximated as the average of Total Equity and Total Debt, consistent
-        with the Return on Invested Capital calculation in the Ratios module.
+        - Invested Capital is the sum of the two-period average of Total Equity and the two-period
+        average of Total Debt, i.e. the capital employed over the course of the period rather than
+        its closing balance, consistent with the Return on Invested Capital calculation in the
+        Ratios module.
 
         As an example:
 
@@ -992,6 +1173,179 @@ class Models:
         )
 
         return filter_columns(eva_results, show_columns)
+
+    @handle_errors
+    def get_market_value_added(
+        self,
+        diluted: bool = True,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+        trailing: int | None = None,
+        show_columns: list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Market Value Added (MVA) is a measure of a company's financial performance that
+        represents the difference between the current market value of a company (both its
+        equity and its debt) and the total capital that has historically been invested in it.
+        It is the market-priced counterpart to Economic Value Added (EVA): where EVA measures
+        a single period's excess return over the cost of capital, MVA reflects the market's
+        cumulative, forward-looking verdict on all of a company's expected future EVA.
+
+        The formula is as follows:
+
+            - Market Value of Equity = Share Price * Total Shares Outstanding
+            - Invested Capital = Total Equity + Total Debt
+            - MVA = (Market Value of Equity + Market Value of Debt) - Invested Capital
+
+        Also known as: MVA, market value added.
+
+        Args:
+            diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
+            rounding (int, optional): The number of decimals to round the results to. Defaults to None.
+            growth (bool, optional): Whether to calculate the growth of the values. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            trailing (int | None, optional): The trailing period to use for the calculation. Defaults to None.
+            show_columns (list[str] | None, optional): List of columns to show in the results. If None, all
+                columns will be shown. Defaults to None.
+
+        Returns:
+            pd.DataFrame: DataFrame containing the MVA and its components.
+
+        Notes:
+        - A positive MVA indicates that the market believes management has created value in
+        excess of the capital invested in the company. A negative MVA indicates the market
+        values the company below the capital that has historically been invested in it.
+        - The Market Value of Debt is approximated as the closing book value of Total Debt,
+        the same simplification used in the Weighted Average Cost of Capital calculation
+        elsewhere in this module.
+        - Invested Capital is the sum of the two-period average of Total Equity and the
+        two-period average of Total Debt, i.e. the capital that was employed *during* the
+        period, matching the Economic Value Added calculation elsewhere in this module. Note
+        that this leaves the two sides of the MVA measured on slightly different bases: the
+        market value is a closing (point-in-time) figure while the invested capital is an
+        average over the period.
+
+        References:
+        - Stern, Joel M., G. Bennett Stewart, and Donald H. Chew. "The EVA Financial
+        Management System." Journal of Applied Corporate Finance, Vol. 8, No. 2, 1995, pp. 32-46.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "MSFT"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.models.get_market_value_added().loc["AAPL"]
+        ```
+
+        Which returns:
+
+        |                        |        2021 |        2022 |        2023 |        2024 |        2025 |
+        |:-----------------------|------------:|------------:|------------:|------------:|------------:|
+        | Market Value of Equity | 2.92522e+12 | 2.08399e+12 | 3.00786e+12 | 3.83091e+12 | 4.06822e+12 |
+        | Market Value of Debt   | 1.36522e+11 | 1.3248e+11  | 1.2393e+11  | 1.19059e+11 | 1.12377e+11 |
+        | Invested Capital       | 1.93614e+11 | 1.91382e+11 | 1.84614e+11 | 1.81042e+11 | 1.8106e+11  |
+        | Market Value Added     | 2.86813e+12 | 2.02509e+12 | 2.94718e+12 | 3.76893e+12 | 3.99954e+12 |
+        """
+        mva = {}
+
+        years = self._cash_flow_statement.columns
+        begin, end = str(years[0]), str(years[-1])
+
+        share_prices = (
+            self._historical_data["quarterly" if self._quarterly else "yearly"]
+            .loc[begin:end, "Adj Close"][self._tickers]
+            .T
+        )
+
+        average_shares = (
+            self._income_statement.loc[:, "Weighted Average Shares Diluted", :]
+            if diluted
+            else self._income_statement.loc[:, "Weighted Average Shares", :]
+        )
+
+        total_equity = (
+            self._balance_sheet_statement.loc[:, "Total Equity", :]
+            .T.rolling(trailing)
+            .mean()
+            .T
+            if trailing
+            else self._balance_sheet_statement.loc[:, "Total Equity", :]
+            .T.rolling(2)
+            .mean()
+            .T
+        )
+        total_debt = (
+            self._balance_sheet_statement.loc[:, "Total Debt", :]
+            .T.rolling(trailing)
+            .mean()
+            .T
+            if trailing
+            else self._balance_sheet_statement.loc[:, "Total Debt", :]
+            .T.rolling(2)
+            .mean()
+            .T
+        )
+
+        market_cap = valuation_model.get_market_cap(
+            share_price=share_prices,
+            total_shares_outstanding=(
+                average_shares.T.rolling(trailing).mean().T
+                if trailing
+                else average_shares
+            ),
+        )
+
+        # A market value is a point-in-time quantity, so the closing balance of Total Debt is used as its proxy — not the averaged balance that Invested Capital is built from, which would otherwise cancel the debt out of the Market Value Added entirely  # noqa: E501
+        market_value_of_debt = (
+            self._balance_sheet_statement.loc[:, "Total Debt", :]
+            .T.rolling(trailing)
+            .mean()
+            .T
+            if trailing
+            else self._balance_sheet_statement.loc[:, "Total Debt", :]
+        )
+
+        mva["Market Value of Equity"] = market_cap
+        mva["Market Value of Debt"] = market_value_of_debt
+
+        mva["Invested Capital"] = eva_model.get_invested_capital(
+            total_equity=total_equity,
+            total_debt=total_debt,
+        )
+
+        mva["Market Value Added"] = eva_model.get_market_value_added(
+            market_value_of_equity=mva["Market Value of Equity"],
+            market_value_of_debt=mva["Market Value of Debt"],
+            invested_capital=mva["Invested Capital"],
+        )
+
+        mva_results = (
+            pd.concat(mva)
+            .dropna(axis=1, how="all")
+            .swaplevel(0, 1)
+            .reindex(self._tickers, level=0)
+        )
+
+        mva_results = finalize_dataset(
+            dataset=mva_results,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="columns",
+        )
+
+        return filter_columns(mva_results, show_columns)
 
     def get_intrinsic_valuation(
         self,
@@ -1181,6 +1535,324 @@ class Models:
 
         return self._intrinsic_values.loc[:, self._start_date :]
 
+    @handle_errors
+    def get_free_cash_flow_to_firm(
+        self,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+        trailing: int | None = None,
+        show_columns: list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Free Cash Flow to the Firm (FCFF) is the cash flow available to all providers of
+        capital, both debt and equity holders, after the company has paid all of its
+        operating expenses and invested in the assets needed to sustain its operations.
+        Because it is measured before any financing cash flows, FCFF is capital-structure
+        neutral, making it the cash flow base typically discounted at the Weighted Average
+        Cost of Capital (WACC) when valuing the Enterprise Value of a company directly.
+
+        The formula is as follows:
+
+            - NOPAT = EBIT * (1 - Effective Tax Rate)
+            - FCFF = NOPAT + Depreciation and Amortization - Capital Expenditure -
+            Change in Net Working Capital
+
+        Also known as: FCFF, unlevered free cash flow.
+
+        Args:
+            rounding (int, optional): The number of decimals to round the results to. Defaults to None.
+            growth (bool, optional): Whether to calculate the growth of the values. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            trailing (int | None, optional): The trailing period to use for the calculation. Defaults to None.
+            show_columns (list[str] | None, optional): List of columns to show in the results. If None, all
+                columns will be shown. Defaults to None.
+
+        Returns:
+            pd.DataFrame: DataFrame containing the FCFF and its components.
+
+        Notes:
+        - EBIT is approximated as Net Income + Income Tax Expense + Interest Expense,
+        consistent with the Altman Z-Score and Economic Value Added calculations elsewhere
+        in this module.
+        - The Capital Expenditure and Change in Working Capital line items from the cash flow
+        statement are stored using a cash-flow-impact sign convention (a use of cash is
+        negative). This method negates them internally so that they represent positive
+        magnitudes (amount spent / amount of the increase), matching the standard academic
+        FCFF formula. See `get_free_cash_flow_to_firm` in the Intrinsic module for details.
+        - FCFF can be used together with the Weighted Average Cost of Capital in
+        `get_intrinsic_valuation` (set `cash_flow_type` appropriately, or supply this
+        result as a custom base cash flow) as an alternative to the reported Free Cash Flow.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "MSFT"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.models.get_free_cash_flow_to_firm().loc["AAPL"]
+        ```
+
+        Which returns:
+
+        |                                   |        2021 |          2022 |
+        |:----------------------------------|-------------:|-------------:|
+        | Net Operating Profit After Taxes  |  9.69732e+10 |  1.02259e+11 |
+        | Depreciation and Amortization     |  1.1284e+10  |  1.1104e+10  |
+        | Capital Expenditure               |  1.1085e+10  |  1.0708e+10  |
+        | Change in Net Working Capital     |  4.911e+09   | -1.2e+09     |
+        | Free Cash Flow to Firm            |  9.22612e+10 |  1.03855e+11 |
+        """
+        fcff = {}
+
+        net_income = (
+            self._income_statement.loc[:, "Net Income", :].T.rolling(trailing).sum().T
+            if trailing
+            else self._income_statement.loc[:, "Net Income", :]
+        )
+        income_tax_expense = (
+            self._income_statement.loc[:, "Income Tax Expense", :]
+            .T.rolling(trailing)
+            .sum()
+            .T
+            if trailing
+            else self._income_statement.loc[:, "Income Tax Expense", :]
+        )
+        interest_expense = (
+            self._income_statement.loc[:, "Interest Expense", :]
+            .T.rolling(trailing)
+            .sum()
+            .T
+            if trailing
+            else self._income_statement.loc[:, "Interest Expense", :]
+        )
+        income_before_tax = (
+            self._income_statement.loc[:, "Income Before Tax", :]
+            .T.rolling(trailing)
+            .sum()
+            .T
+            if trailing
+            else self._income_statement.loc[:, "Income Before Tax", :]
+        )
+        depreciation_and_amortization = (
+            self._income_statement.loc[:, "Depreciation and Amortization", :]
+            .T.rolling(trailing)
+            .sum()
+            .T
+            if trailing
+            else self._income_statement.loc[:, "Depreciation and Amortization", :]
+        )
+        capital_expenditure = -1 * (
+            self._cash_flow_statement.loc[:, "Capital Expenditure", :]
+            .T.rolling(trailing)
+            .sum()
+            .T
+            if trailing
+            else self._cash_flow_statement.loc[:, "Capital Expenditure", :]
+        )
+        change_in_net_working_capital = -1 * (
+            self._cash_flow_statement.loc[:, "Change in Working Capital", :]
+            .T.rolling(trailing)
+            .sum()
+            .T
+            if trailing
+            else self._cash_flow_statement.loc[:, "Change in Working Capital", :]
+        )
+
+        ebit = net_income + income_tax_expense + interest_expense
+        effective_tax_rate = profitability_model.get_effective_tax_rate(
+            income_tax_expense=income_tax_expense,
+            income_before_tax=income_before_tax,
+        )
+
+        fcff["Net Operating Profit After Taxes"] = (
+            eva_model.get_net_operating_profit_after_taxes(
+                ebit=ebit,
+                effective_tax_rate=effective_tax_rate,
+            )
+        )
+        fcff["Depreciation and Amortization"] = depreciation_and_amortization
+        fcff["Capital Expenditure"] = capital_expenditure
+        fcff["Change in Net Working Capital"] = change_in_net_working_capital
+
+        fcff["Free Cash Flow to Firm"] = intrinsic_model.get_free_cash_flow_to_firm(
+            net_operating_profit_after_taxes=fcff["Net Operating Profit After Taxes"],
+            depreciation_and_amortization=fcff["Depreciation and Amortization"],
+            capital_expenditure=fcff["Capital Expenditure"],
+            change_in_net_working_capital=fcff["Change in Net Working Capital"],
+        )
+
+        fcff_results = (
+            pd.concat(fcff)
+            .dropna(axis=1, how="all")
+            .swaplevel(0, 1)
+            .reindex(self._tickers, level=0)
+        )
+
+        fcff_results = finalize_dataset(
+            dataset=fcff_results,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="columns",
+        )
+
+        return filter_columns(fcff_results, show_columns)
+
+    @handle_errors
+    def get_free_cash_flow_to_equity(
+        self,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+        trailing: int | None = None,
+        show_columns: list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Free Cash Flow to Equity (FCFE) is the cash flow available to a company's common
+        equity holders after all operating expenses, reinvestment needs, and net payments to
+        (or from) debt holders have been accounted for. Unlike FCFF, FCFE is a levered cash
+        flow measure and should be discounted at the Cost of Equity, not the Weighted Average
+        Cost of Capital, when used to value equity directly.
+
+        The formula is as follows:
+
+            - FCFE = Net Income + Depreciation and Amortization - Capital Expenditure -
+            Change in Net Working Capital + Net Borrowing
+
+        Also known as: FCFE, levered free cash flow.
+
+        Args:
+            rounding (int, optional): The number of decimals to round the results to. Defaults to None.
+            growth (bool, optional): Whether to calculate the growth of the values. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            trailing (int | None, optional): The trailing period to use for the calculation. Defaults to None.
+            show_columns (list[str] | None, optional): List of columns to show in the results. If None, all
+                columns will be shown. Defaults to None.
+
+        Returns:
+            pd.DataFrame: DataFrame containing the FCFE and its components.
+
+        Notes:
+        - The Capital Expenditure and Change in Working Capital line items from the cash flow
+        statement are stored using a cash-flow-impact sign convention (a use of cash is
+        negative). This method negates them internally so that they represent positive
+        magnitudes, matching the standard academic FCFE formula. Net Debt Issued (used as
+        Net Borrowing) is already reported using the cash-flow-impact convention (a positive
+        value means the company was a net borrower) and is therefore used as-is.
+        - FCFE is the natural cash-flow-based counterpart to Residual Income
+        (`get_residual_income`) for equity-only valuation, in the same way FCFF is the
+        counterpart to Economic Value Added for firm-level valuation.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "MSFT"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.models.get_free_cash_flow_to_equity().loc["AAPL"]
+        ```
+
+        Which returns:
+
+        |                                   |        2021 |          2022 |
+        |:----------------------------------|-------------:|-------------:|
+        | Net Income                        |  9.4680e+10  |  9.9803e+10  |
+        | Depreciation and Amortization     |  1.1284e+10  |  1.1104e+10  |
+        | Capital Expenditure               |  1.1085e+10  |  1.0708e+10  |
+        | Change in Net Working Capital     |  4.911e+09   | -1.2e+09     |
+        | Net Borrowing                     |  1.1643e+10  | -4.078e+09   |
+        | Free Cash Flow to Equity          |  1.01611e+11 |  9.7321e+10  |
+        """
+        fcfe = {}
+
+        net_income = (
+            self._income_statement.loc[:, "Net Income", :].T.rolling(trailing).sum().T
+            if trailing
+            else self._income_statement.loc[:, "Net Income", :]
+        )
+        depreciation_and_amortization = (
+            self._income_statement.loc[:, "Depreciation and Amortization", :]
+            .T.rolling(trailing)
+            .sum()
+            .T
+            if trailing
+            else self._income_statement.loc[:, "Depreciation and Amortization", :]
+        )
+        capital_expenditure = -1 * (
+            self._cash_flow_statement.loc[:, "Capital Expenditure", :]
+            .T.rolling(trailing)
+            .sum()
+            .T
+            if trailing
+            else self._cash_flow_statement.loc[:, "Capital Expenditure", :]
+        )
+        change_in_net_working_capital = -1 * (
+            self._cash_flow_statement.loc[:, "Change in Working Capital", :]
+            .T.rolling(trailing)
+            .sum()
+            .T
+            if trailing
+            else self._cash_flow_statement.loc[:, "Change in Working Capital", :]
+        )
+        net_borrowing = (
+            self._cash_flow_statement.loc[:, "Net Debt Issued", :]
+            .T.rolling(trailing)
+            .sum()
+            .T
+            if trailing
+            else self._cash_flow_statement.loc[:, "Net Debt Issued", :]
+        )
+
+        fcfe["Net Income"] = net_income
+        fcfe["Depreciation and Amortization"] = depreciation_and_amortization
+        fcfe["Capital Expenditure"] = capital_expenditure
+        fcfe["Change in Net Working Capital"] = change_in_net_working_capital
+        fcfe["Net Borrowing"] = net_borrowing
+
+        fcfe["Free Cash Flow to Equity"] = intrinsic_model.get_free_cash_flow_to_equity(
+            net_income=fcfe["Net Income"],
+            depreciation_and_amortization=fcfe["Depreciation and Amortization"],
+            capital_expenditure=fcfe["Capital Expenditure"],
+            change_in_net_working_capital=fcfe["Change in Net Working Capital"],
+            net_borrowing=fcfe["Net Borrowing"],
+        )
+
+        fcfe_results = (
+            pd.concat(fcfe)
+            .dropna(axis=1, how="all")
+            .swaplevel(0, 1)
+            .reindex(self._tickers, level=0)
+        )
+
+        fcfe_results = finalize_dataset(
+            dataset=fcfe_results,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="columns",
+        )
+
+        return filter_columns(fcfe_results, show_columns)
+
     def get_gorden_growth_model(
         self,
         rate_of_return: float,
@@ -1228,6 +1900,11 @@ class Models:
         Notes:
         - The results are highly dependent on the input. Therefore, think carefully about each input parameter to
         ensure the results are accurate (given your beliefs)
+        - Each historical period is valued off that period's *actual* Dividends per Share, and only the
+        periods beyond the last one available are projected forward at the given growth rate. The first
+        period of the historical window will therefore often be understated, since it only covers the part
+        of the year that falls inside the requested date range and so captures only part of the year's
+        dividends. Use a start_date at least one full period before the first period you intend to read.
 
         As an example:
 
@@ -1243,23 +1920,23 @@ class Models:
 
         |      |   AAPL |    MSFT |
         |:-----|-------:|--------:|
-        | 2022 | 0      |  0      |
-        | 2023 | 0      |  0      |
-        | 2024 | 0      |  0      |
-        | 2025 | 5.46   | 12.18   |
-        | 2026 | 5.733  | 12.789  |
-        | 2027 | 6.0196 | 13.4284 |
-        | 2028 | 6.3206 | 14.0999 |
-        | 2029 | 6.6367 | 14.8049 |
-        | 2030 | 6.9685 | 15.5451 |
-        | 2031 | 7.3169 | 16.3224 |
+        | 2021 | 1.54   |  8.26   |
+        | 2022 | 6.37   | 17.78   |
+        | 2023 | 6.65   | 19.53   |
+        | 2024 | 6.93   | 21.56   |
+        | 2025 | 7.21   | 23.8    |
+        | 2026 | 7.5705 | 24.99   |
+        | 2027 | 7.949  | 26.2395 |
+        | 2028 | 8.3465 | 27.5515 |
+        | 2029 | 8.7638 | 28.929  |
+        | 2030 | 9.202  | 30.3755 |
+        | 2031 | 9.6621 | 31.8943 |
         """
         dividends_per_share = self._historical_data[
             "quarterly" if self._quarterly else "yearly"
         ]["Dividends"]
 
         gorden_growth_model: dict[str, dict[str, float]] = {}
-        previous_period = dividends_per_share.index[0]
 
         periods = pd.period_range(
             start=dividends_per_share.index[0],
@@ -1269,22 +1946,20 @@ class Models:
 
         for ticker in self._tickers:
             gorden_growth_model[ticker] = {}
+            last_known_period = dividends_per_share.index[0]
 
             for period in periods:
-                previous_period_location = periods.get_loc(previous_period)
-                period_location = periods.get_loc(period)
-                distance = period_location - previous_period_location
-
-                if (period_location + 1) < len(dividends_per_share.index):
-                    previous_period = period
-
-                dividends_per_share_value = (
-                    dividends_per_share.loc[period, ticker]
-                    if period != dividends_per_share.index[-1]
-                    and period in dividends_per_share.index
-                    else dividends_per_share.loc[previous_period, ticker]
-                    * (1 + growth_rate) ** distance
-                )
+                if period in dividends_per_share.index:
+                    dividends_per_share_value = dividends_per_share.loc[period, ticker]
+                    last_known_period = period
+                else:
+                    distance = periods.get_loc(period) - periods.get_loc(
+                        last_known_period
+                    )
+                    dividends_per_share_value = (
+                        dividends_per_share.loc[last_known_period, ticker]
+                        * (1 + growth_rate) ** distance
+                    )
 
                 gorden_growth_model[ticker][period] = (
                     intrinsic_model.get_gorden_growth_model(
@@ -1301,6 +1976,329 @@ class Models:
         )
 
         return gorden_growth_model_df.loc[self._start_date :]
+
+    def get_two_stage_dividend_discount_model(
+        self,
+        rate_of_return: float | list | dict[str, float],
+        high_growth_rate: float | list | dict[str, float],
+        stable_growth_rate: float | list | dict[str, float],
+        high_growth_periods: int = 5,
+        rounding: int | None = None,
+    ) -> pd.DataFrame:
+        """
+        The Two-Stage Dividend Discount Model extends the (single-stage) Gordon Growth Model
+        to companies that are not expected to grow at a constant rate forever. It explicitly
+        projects and discounts dividends over an initial high-growth phase, and then values
+        everything from the end of that phase onward as a perpetuity growing at a lower,
+        more sustainable stable rate (a Gordon Growth terminal value).
+
+        The formula is as follows:
+
+            - Dividend Projection_t = Dividends Per Share * (1 + High Growth Rate)^t
+            - High-Growth Phase Present Value = Sum of Dividend Projection_t / (1 + Rate of
+            Return)^t, for t = 1, ..., High Growth Periods
+            - Terminal Value = Last Dividend Projection * (1 + Stable Growth Rate) /
+            (Rate of Return - Stable Growth Rate)
+            - Intrinsic Value = High-Growth Phase Present Value +
+            (Terminal Value / (1 + Rate of Return)^High Growth Periods)
+
+        Also known as: two-stage DDM, two-stage dividend discount model.
+
+        Args:
+            rate_of_return (float, list or dict): The required rate of return (discount rate)
+            used to discount both phases. Can be one number to use for all tickers, or a list
+            or dict that contains a rate of return for each ticker.
+            high_growth_rate (float, list or dict): The constant growth rate applied to
+            dividends during the explicit high-growth phase. Can be one number to use for all
+            tickers, or a list or dict that contains a high growth rate for each ticker.
+            stable_growth_rate (float, list or dict): The perpetual (terminal) growth rate
+            applied to dividends from the end of the high-growth phase onward. Can be one
+            number to use for all tickers, or a list or dict that contains a stable growth
+            rate for each ticker.
+            high_growth_periods (int, optional): The number of periods in the explicit
+            high-growth phase. Defaults to 5.
+            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+
+        Returns:
+            pd.DataFrame: DataFrame containing the intrinsic value and its components for
+            each ticker.
+
+        Notes:
+        - The results are highly dependent on the input. Therefore, think carefully about
+        each input parameter to ensure the results are accurate (given your beliefs).
+        - The Rate of Return must be greater than the Stable Growth Rate, otherwise the
+        Terminal Value formula divides by a non-positive number.
+        - The base dividend used for the projection is the most recent available Dividends
+        Per Share for each ticker. For companies that do not pay a dividend, this model is
+        not meaningful (the projections and resulting intrinsic value will be zero).
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "MSFT"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.models.get_two_stage_dividend_discount_model(0.10, 0.12, 0.03).loc["AAPL"]
+        ```
+
+        Which returns:
+
+        |                                   |   High-Growth Periods = 5 |
+        |:----------------------------------|---------------------------:|
+        | Final High-Growth Dividend        |                     1.6037 |
+        | High-Growth Phase Present Value   |                     4.8043 |
+        | Terminal Value                    |                    23.5978 |
+        | Terminal Value Present Value      |                    14.6523 |
+        | Intrinsic Value                   |                    19.4566 |
+        """
+        dividends_per_share = self._historical_data[
+            "quarterly" if self._quarterly else "yearly"
+        ]["Dividends"]
+
+        if isinstance(rate_of_return, list):
+            if len(rate_of_return) != len(self._tickers):
+                raise ValueError(
+                    "The length of the rate of return list must match the number of tickers."
+                )
+            rate_of_return_dict = {
+                ticker: rate_of_return[i] for i, ticker in enumerate(self._tickers)
+            }
+        elif isinstance(rate_of_return, dict):
+            if len(rate_of_return) != len(self._tickers):
+                raise ValueError(
+                    "The length of the rate of return dict must match the number of tickers."
+                )
+            rate_of_return_dict = rate_of_return
+        else:
+            rate_of_return_dict = {}
+
+        if isinstance(high_growth_rate, list):
+            if len(high_growth_rate) != len(self._tickers):
+                raise ValueError(
+                    "The length of the high growth rate list must match the number of tickers."
+                )
+            high_growth_rate_dict = {
+                ticker: high_growth_rate[i] for i, ticker in enumerate(self._tickers)
+            }
+        elif isinstance(high_growth_rate, dict):
+            if len(high_growth_rate) != len(self._tickers):
+                raise ValueError(
+                    "The length of the high growth rate dict must match the number of tickers."
+                )
+            high_growth_rate_dict = high_growth_rate
+        else:
+            high_growth_rate_dict = {}
+
+        if isinstance(stable_growth_rate, list):
+            if len(stable_growth_rate) != len(self._tickers):
+                raise ValueError(
+                    "The length of the stable growth rate list must match the number of tickers."
+                )
+            stable_growth_rate_dict = {
+                ticker: stable_growth_rate[i] for i, ticker in enumerate(self._tickers)
+            }
+        elif isinstance(stable_growth_rate, dict):
+            if len(stable_growth_rate) != len(self._tickers):
+                raise ValueError(
+                    "The length of the stable growth rate dict must match the number of tickers."
+                )
+            stable_growth_rate_dict = stable_growth_rate
+        else:
+            stable_growth_rate_dict = {}
+
+        two_stage_ddm_dict = {}
+        for ticker in self._tickers:
+            rate_of_return_float = rate_of_return_dict.get(ticker, rate_of_return)
+            high_growth_rate_float = high_growth_rate_dict.get(ticker, high_growth_rate)
+            stable_growth_rate_float = stable_growth_rate_dict.get(
+                ticker, stable_growth_rate
+            )
+            dividends_per_share_series = dividends_per_share[ticker].dropna()
+            base_dividend = (
+                dividends_per_share_series.iloc[-1]
+                if not dividends_per_share_series.empty
+                else 0.0
+            )
+
+            two_stage_ddm_dict[ticker] = (
+                intrinsic_model.get_two_stage_dividend_discount_model(
+                    dividends_per_share=base_dividend,
+                    rate_of_return=rate_of_return_float,
+                    high_growth_rate=high_growth_rate_float,
+                    stable_growth_rate=stable_growth_rate_float,
+                    high_growth_periods=high_growth_periods,
+                )
+            )
+            two_stage_ddm_dict[ticker] = two_stage_ddm_dict[ticker].round(
+                rounding if rounding else self._rounding
+            )
+
+        two_stage_ddm_results = pd.concat(two_stage_ddm_dict)
+
+        return two_stage_ddm_results.loc[:, self._start_date :]
+
+    @handle_errors
+    def get_residual_income(
+        self,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+        trailing: int | None = None,
+        show_columns: list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Residual Income is a measure of the profit a company generates in excess of the
+        return required by its equity holders. It is the equity-side counterpart to Economic
+        Value Added (EVA), and underpins the Residual Income Model, an alternative equity
+        valuation lens to a traditional Discounted Cash Flow (DCF) that is particularly
+        useful when a company's free cash flows are negative or unpredictable but its
+        accounting earnings are more stable.
+
+        The formula is as follows:
+
+            - Residual Income = Net Income - (Cost of Equity * Book Value of Equity)
+
+        Also known as: RI, economic profit (equity variant), abnormal earnings.
+
+        Args:
+            rounding (int, optional): The number of decimals to round the results to. Defaults to None.
+            growth (bool, optional): Whether to calculate the growth of the values. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            trailing (int | None, optional): The trailing period to use for the calculation. Defaults to None.
+            show_columns (list[str] | None, optional): List of columns to show in the results. If None, all
+                columns will be shown. Defaults to None.
+
+        Returns:
+            pd.DataFrame: DataFrame containing the Residual Income and its components.
+
+        Notes:
+        - A positive Residual Income indicates that the company generated more profit than
+        equity holders required given the capital they have invested. A negative Residual
+        Income indicates the company failed to earn its equity holders' required return, even
+        if it still reported a positive Net Income.
+        - The Cost of Equity is approximated with the Capital Asset Pricing Model (CAPM),
+        consistent with the Weighted Average Cost of Capital calculation elsewhere in this
+        module.
+        - The Book Value of Equity is approximated as the average of Total Shareholder Equity
+        minus Preferred Stock over the current and prior period, excluding preferred equity
+        since Residual Income (like Net Income) belongs to common equity holders only.
+
+        References:
+        - Ohlson, James A. "Earnings, Book Values, and Dividends in Equity Valuation."
+        Contemporary Accounting Research, Vol. 11, No. 2, 1995, pp. 661-687.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "MSFT"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.models.get_residual_income().loc["AAPL"]
+        ```
+
+        Which returns:
+
+        |                          |        2021 |          2022 |
+        |:-------------------------|-------------:|-------------:|
+        | Net Income               |  9.4680e+10  |  9.9803e+10  |
+        | Cost of Equity           |       0.3757 |      -0.2485 |
+        | Book Value of Equity     |  6.4215e+10  |  5.6881e+10  |
+        | Residual Income          |  7.0554e+10  |  1.1394e+11  |
+        """
+        residual_income = {}
+
+        net_income = (
+            self._income_statement.loc[:, "Net Income", :].T.rolling(trailing).sum().T
+            if trailing
+            else self._income_statement.loc[:, "Net Income", :]
+        )
+        total_shareholder_equity = (
+            self._balance_sheet_statement.loc[:, "Total Shareholder Equity", :]
+            .T.rolling(trailing)
+            .mean()
+            .T
+            if trailing
+            else self._balance_sheet_statement.loc[:, "Total Shareholder Equity", :]
+            .T.rolling(2)
+            .mean()
+            .T
+        )
+        preferred_stock = (
+            self._balance_sheet_statement.loc[:, "Preferred Stock", :]
+            .T.rolling(trailing)
+            .mean()
+            .T
+            if trailing
+            else self._balance_sheet_statement.loc[:, "Preferred Stock", :]
+            .T.rolling(2)
+            .mean()
+            .T
+        )
+
+        years = self._balance_sheet_statement.columns
+        begin, end = str(years[0]), str(years[-1])
+
+        risk_free_rate = self._risk_free_rate_data[
+            "quarterly" if self._quarterly else "yearly"
+        ].loc[begin:end, "Adj Close"]
+
+        returns_within = self._within_historical_data[
+            "quarterly" if self._quarterly else "yearly"
+        ].loc[begin:end, "Return"][self._tickers]
+        benchmark_returns_within = self._within_historical_data[
+            "quarterly" if self._quarterly else "yearly"
+        ].loc[begin:end, "Return"][self._benchmark_name]
+
+        beta = get_beta(returns_within, benchmark_returns_within)
+
+        benchmark_returns = self._historical_data[
+            "quarterly" if self._quarterly else "yearly"
+        ].loc[begin:end, "Return"][self._benchmark_name]
+
+        cost_of_equity = wacc_model.get_cost_of_equity(
+            risk_free_rate=risk_free_rate,
+            beta=beta,
+            benchmark_returns=benchmark_returns,
+        ).T
+
+        residual_income["Net Income"] = net_income
+        residual_income["Cost of Equity"] = cost_of_equity
+        residual_income["Book Value of Equity"] = (
+            total_shareholder_equity - preferred_stock
+        )
+
+        residual_income["Residual Income"] = intrinsic_model.get_residual_income(
+            net_income=residual_income["Net Income"],
+            cost_of_equity=residual_income["Cost of Equity"],
+            book_value_of_equity=residual_income["Book Value of Equity"],
+        )
+
+        residual_income_results = (
+            pd.concat(residual_income)
+            .dropna(axis=1, how="all")
+            .swaplevel(0, 1)
+            .reindex(self._tickers, level=0)
+        )
+
+        residual_income_results = finalize_dataset(
+            dataset=residual_income_results,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="columns",
+        )
+
+        return filter_columns(residual_income_results, show_columns)
 
     @handle_errors
     def get_altman_z_score(
@@ -1585,8 +2583,8 @@ class Models:
         each year which nets a lower score even though it is a normal practice in that sector.
 
         Please see Piotroski, Joseph D. "Value Investing: The Use of Historical Financial Statement
-        Information to Separate Winners from Losers." Journal of Accounting Research, Vol. 38, No.
-        3, 1999, pp. 1-41.
+        Information to Separate Winners from Losers." Journal of Accounting Research, Vol. 38,
+        Supplement, 2000, pp. 1-41.
 
         Also known as: Piotroski F-score, financial strength, quality score.
 
@@ -1610,18 +2608,21 @@ class Models:
 
         Which returns:
 
-        |                                     |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |                                     |   2022 |   2023 |   2024 |   2025 |   2026 |
         |:------------------------------------|-------:|-------:|-------:|-------:|-------:|
-        | Return on Assets Criteria           |      1 |      1 |      1 |      1 |      1 |
-        | Operating Cashflow Criteria         |      1 |      1 |      1 |      1 |      1 |
-        | Change in Return on Assets Criteria |      0 |      0 |      0 |      0 |      1 |
-        | Accruals Criteria                   |      1 |      1 |      1 |      1 |      1 |
-        | Change in Leverage Criteria         |      0 |      1 |      1 |      1 |      1 |
-        | Change in Current Ratio Criteria    |      0 |      0 |      1 |      0 |      1 |
-        | Number of Shares Criteria           |      0 |      1 |      1 |      1 |      1 |
-        | Gross Margin Criteria               |      1 |      1 |      1 |      1 |      1 |
-        | Asset Turnover Criteria             |      0 |      1 |      0 |      1 |      1 |
-        | Piotroski Score                     |      4 |      7 |      7 |      7 |      9 |
+        | Return on Assets Criteria           |      1 |      1 |      1 |      1 |    nan |
+        | Operating Cashflow Criteria         |      1 |      1 |      1 |      1 |    nan |
+        | Change in Return on Assets Criteria |      1 |      0 |      0 |      1 |    nan |
+        | Accruals Criteria                   |      1 |      1 |      1 |      0 |    nan |
+        | Change in Leverage Criteria         |      1 |      1 |      1 |      1 |    nan |
+        | Change in Current Ratio Criteria    |      0 |      1 |      0 |      1 |    nan |
+        | Number of Shares Criteria           |      1 |      1 |      1 |      1 |    nan |
+        | Gross Margin Criteria               |      1 |      1 |      1 |      1 |    nan |
+        | Asset Turnover Criteria             |      1 |      0 |      1 |      1 |    nan |
+        | Piotroski Score                     |      8 |      7 |      7 |      8 |    nan |
+
+        Periods for which the financial statements have not been reported yet are returned as NaN
+        rather than being scored zero across the board.
         """
         piotroski_score = {}
 
@@ -1667,13 +2668,13 @@ class Models:
             if trailing
             else self._cash_flow_statement.loc[:, "Common Stock Issued", :]
         )
-        total_debt = (
-            self._balance_sheet_statement.loc[:, "Total Debt", :]
+        long_term_debt = (
+            self._balance_sheet_statement.loc[:, "Long Term Debt", :]
             .T.rolling(trailing)
             .mean()
             .T
             if trailing
-            else self._balance_sheet_statement.loc[:, "Total Debt", :]
+            else self._balance_sheet_statement.loc[:, "Long Term Debt", :]
         )
         current_assets = (
             self._balance_sheet_statement.loc[:, "Total Current Assets", :]
@@ -1714,17 +2715,18 @@ class Models:
             )
         )
 
+        # Piotroski scales both the Return on Assets and the Cash Flow from Operations by the same asset base, which is what makes this signal reduce to the sign of accruals  # noqa: E501
         piotroski_score["Accruals Criteria"] = piotroski_model.get_accruals_criteria(
             net_income=net_income,
             average_total_assets=average_total_assets,
             operating_cashflow=operating_cashflow,
-            total_assets=total_assets,
+            total_assets=average_total_assets,
         )
 
         piotroski_score["Change in Leverage Criteria"] = (
             piotroski_model.get_change_in_leverage_criteria(
-                total_debt=total_debt,
-                total_assets=total_assets,
+                long_term_debt=long_term_debt,
+                average_total_assets=average_total_assets,
             )
         )
 
@@ -1768,17 +2770,66 @@ class Models:
         )
 
         piotroski_results = (
-            pd.concat(piotroski_score)
-            .dropna(axis=1, how="all")
-            .swaplevel(0, 1)
-            .reindex(self._tickers, level=0)
+            pd.concat(piotroski_score).swaplevel(0, 1).reindex(self._tickers, level=0)
         )
 
-        # The first column is taken out because calculating the change of the
-        # first date will always result in NaN which means that any criteria
-        # looking at the change over time will return a 0. This is a meaningless
-        # result for the analysis
-        piotroski_results = piotroski_results[piotroski_results.columns[1:]]
+        # Every criterion is a boolean comparison, so a period for which the statements have not been reported yet compares NaN against a number, evaluates to False and scores a perfect zero — the worst possible F-Score — rather than being reported as missing. Mask those periods out; must cover every field feeding any of the nine criteria, not just ROA/CFO/accruals.  # noqa: E501
+        reported = (
+            total_assets.notna()
+            & net_income.notna()
+            & operating_cashflow.notna()
+            & long_term_debt.notna()
+            & current_assets.notna()
+            & current_liabilities.notna()
+            & revenue.notna()
+            & cost_of_goods_sold.notna()
+            & common_stock_issued.notna()
+        )
+
+        # Five criteria compare against the previous period; require it reported too, or NaN > x resolves False.
+        reported_previous_period = reported.shift(1, axis=1)
+        change_based_criteria = {
+            "Change in Return on Assets Criteria",
+            "Change in Leverage Criteria",
+            "Change in Current Ratio Criteria",
+            "Gross Margin Criteria",
+            "Asset Turnover Criteria",
+            "Piotroski Score",
+        }
+
+        def _broadcast(mask: pd.DataFrame) -> pd.DataFrame:
+            return (
+                mask.reindex(
+                    index=piotroski_results.index.get_level_values(0),
+                    columns=piotroski_results.columns,
+                )
+                .fillna(False)
+                .astype(bool)
+                .set_axis(piotroski_results.index)
+            )
+
+        reported = _broadcast(reported)
+        reported_previous_period = _broadcast(reported_previous_period)
+
+        needs_previous_period = piotroski_results.index.get_level_values(1).isin(
+            change_based_criteria
+        )
+        full_mask = reported.copy()
+        full_mask.loc[needs_previous_period] = (
+            reported.loc[needs_previous_period]
+            & reported_previous_period.loc[needs_previous_period]
+        )
+
+        piotroski_results = piotroski_results.astype(float).where(full_mask)
+
+        piotroski_results = piotroski_results.dropna(axis=1, how="all")
+
+        # Two columns are lost rather than one. The averaged total assets already make the first period NaN, so the criteria that compare against the previous period only become meaningful from the third period onwards. Keeping the second column would silently score those criteria 0 even when they improved.  # noqa: E501
+        piotroski_results = piotroski_results[piotroski_results.columns[2:]]
+
+        # The F-Score is a count of satisfied criteria, so report it as such whenever every remaining period is fully reported and the float cast above is no longer needed  # noqa: E501
+        if not piotroski_results.isna().to_numpy().any():
+            piotroski_results = piotroski_results.astype(int)
 
         return filter_columns(
             piotroski_results.loc[:, self._start_date : self._end_date], show_columns
@@ -2056,6 +3107,1169 @@ class Models:
         return filter_columns(beneish_results, show_columns)
 
     @handle_errors
+    def get_ohlson_o_score(
+        self,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+        trailing: int | None = None,
+        show_columns: list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculates the Ohlson O-Score, a financial metric used to predict the likelihood of a company
+        going bankrupt. Unlike the Altman Z-Score, which is built with multiple discriminant analysis,
+        the O-Score's coefficients come from a fitted logistic regression (logit) model. This is why
+        the two models are usually reported side by side rather than one being treated as a replacement
+        for the other: the Z-Score is only meaningful compared against Altman's empirically derived
+        threshold bands, while the O-Score is directly interpretable as a probability of bankruptcy
+        once passed through the logistic transform.
+
+        The formula is as follows:
+
+            - SIZE = ln(Total Assets)
+            - TLTA = Total Liabilities / Total Assets
+            - WCTA = Working Capital / Total Assets
+            - CLCA = Current Liabilities / Current Assets
+            - OENEG = 1 if Total Liabilities > Total Assets else 0
+            - NITA = Net Income / Total Assets
+            - FUTL = Operating Cash Flow / Total Liabilities
+            - INTWO = 1 if Net Income was negative for the last two years else 0
+            - CHIN = (Net Income (t) - Net Income (t-1)) / (|Net Income (t)| + |Net Income (t-1)|)
+            - O-Score = -1.32 - 0.407 * SIZE + 6.03 * TLTA - 1.43 * WCTA + 0.0757 * CLCA
+            - 1.72 * OENEG - 2.37 * NITA - 1.83 * FUTL + 0.285 * INTWO - 0.521 * CHIN
+            - Bankruptcy Probability = 1 / (1 + e^(-O-Score))
+
+        The Ohlson O-Score can be interpreted as follows:
+
+            - Ohlson's (1980) original cutoff is a bankruptcy probability of 0.038 (3.8%), the
+            threshold that minimized the sum of Type I and Type II misclassification errors on his
+            sample. It is deliberately far below the naive 0.50 midpoint because bankruptcy is a
+            rare event. Equivalently, in raw O-Score terms the cutoff sits at ln(0.038 / 0.962),
+            i.e. approximately -3.23.
+            - A higher probability indicates a higher likelihood of bankruptcy.
+
+        Also known as: Ohlson O-Score, bankruptcy prediction, financial distress score.
+
+        Args:
+            rounding (int, optional): The number of decimals to round the results to. Defaults to None.
+            growth (bool, optional): Whether to calculate the growth of the values. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            trailing (int | None, optional): The trailing period to use for the calculation. Defaults to None.
+            show_columns (list[str] | None, optional): List of columns to show in the results. If None, all
+                columns will be shown. Defaults to None.
+
+        Returns:
+            pd.DataFrame: DataFrame containing the Ohlson O-Score, its bankruptcy probability, and its
+            components.
+
+        Notes:
+            - Ohlson's (1980) original SIZE term deflates Total Assets by the US GNP price-level index
+            (rebased to 1968), a US-specific 1970s macro series that isn't available in this toolkit and
+            isn't meaningful outside the original US sample. This implementation simplifies/omits that
+            deflator and uses ln(Total Assets) in nominal terms instead. This shifts the O-Score (and
+            resulting probability) by roughly a constant amount across all observations in a given
+            currency/period — it does not change the *ranking* of companies relative to one another, but
+            the absolute probability estimate should not be compared directly to studies that apply the
+            deflator.
+            - Ohlson's original FUTL term uses "Funds from Operations", an accounting-flow concept that
+            predates standardized cash flow statements. This implementation approximates Funds from
+            Operations with Operating Cash Flow, the standard simplification used in modern
+            reproductions of the O-Score.
+            - The Beneish M-Score, Altman Z-Score, Piotroski F-Score and Ohlson O-Score are natural
+            companions, using the same normalized financial statements as their input.
+            - As with the other bankruptcy and distress models, this is a probabilistic, not a
+            definitive, indicator and should be combined with further fundamental analysis.
+
+        References:
+        - Ohlson, James A. "Financial Ratios and the Probabilistic Prediction of Bankruptcy." Journal of
+        Accounting Research, Vol. 18, No. 1, 1980, pp. 109-131.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "MSFT"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        ohlson_o_score = toolkit.models.get_ohlson_o_score()
+
+        ohlson_o_score.loc["AAPL"]
+        ```
+
+        Which returns:
+
+        |                                             |     2020 |     2021 |     2022 |     2023 |
+        |:--------------------------------------------|---------:|---------:|---------:|---------:|
+        | Log of Total Assets                         |  26.5037 |  26.5841 |  26.589  |  26.5886 |
+        | Total Liabilities to Total Assets            |   0.7983 |   0.8203 |   0.8564 |   0.8237 |
+        | Working Capital to Total Assets              |   0.1183 |   0.0267 |  -0.0527 |  -0.0049 |
+        | Current Liabilities to Current Assets        |   0.7334 |   0.9306 |   1.1372 |   1.0121 |
+        | Negative Equity Indicator                    |   0      |   0      |   0      |   0      |
+        | Net Income to Total Assets                   |   0.1773 |   0.2697 |   0.2829 |   0.2751 |
+        | Funds from Operations to Total Liabilities   |   0.312  |   0.3614 |   0.4044 |   0.3806 |
+        | Negative Income Indicator                    |   0      |   0      |   0      |   0      |
+        | Change in Net Income                         | nan      |   0.245  |   0.0263 |  -0.0143 |
+        | Ohlson O-Score                               | nan      |  -8.5895 |  -8.2408 |  -8.4318 |
+        | Ohlson Bankruptcy Probability                | nan      |   0.0002 |   0.0003 |   0.0002 |
+
+        Note that the first period is NaN because the Change in Net Income and Negative Income
+        Indicator components require a prior period to compare against.
+        """
+        ohlson_o_score = {}
+
+        current_assets = (
+            self._balance_sheet_statement.loc[:, "Total Current Assets", :]
+            .T.rolling(trailing)
+            .mean()
+            .T
+            if trailing
+            else self._balance_sheet_statement.loc[:, "Total Current Assets", :]
+        )
+        current_liabilities = (
+            self._balance_sheet_statement.loc[:, "Total Current Liabilities", :]
+            .T.rolling(trailing)
+            .mean()
+            .T
+            if trailing
+            else self._balance_sheet_statement.loc[:, "Total Current Liabilities", :]
+        )
+        total_assets = (
+            self._balance_sheet_statement.loc[:, "Total Assets", :]
+            .T.rolling(trailing)
+            .mean()
+            .T
+            if trailing
+            else self._balance_sheet_statement.loc[:, "Total Assets", :]
+        )
+        total_liabilities = (
+            self._balance_sheet_statement.loc[:, "Total Liabilities", :]
+            .T.rolling(trailing)
+            .mean()
+            .T
+            if trailing
+            else self._balance_sheet_statement.loc[:, "Total Liabilities", :]
+        )
+        net_income = (
+            self._income_statement.loc[:, "Net Income", :].T.rolling(trailing).sum().T
+            if trailing
+            else self._income_statement.loc[:, "Net Income", :]
+        )
+        operating_cash_flow = (
+            self._cash_flow_statement.loc[:, "Operating Cash Flow", :]
+            .T.rolling(trailing)
+            .sum()
+            .T
+            if trailing
+            else self._cash_flow_statement.loc[:, "Operating Cash Flow", :]
+        )
+
+        working_capital = liquidity_model.get_working_capital(
+            current_assets,
+            current_liabilities,
+        )
+
+        ohlson_o_score["Log of Total Assets"] = ohlson_model.get_log_of_total_assets(
+            total_assets=total_assets,
+        )
+
+        ohlson_o_score["Total Liabilities to Total Assets"] = (
+            ohlson_model.get_total_liabilities_to_total_assets_ratio(
+                total_liabilities=total_liabilities,
+                total_assets=total_assets,
+            )
+        )
+
+        ohlson_o_score["Working Capital to Total Assets"] = (
+            ohlson_model.get_working_capital_to_total_assets_ratio(
+                working_capital=working_capital,
+                total_assets=total_assets,
+            )
+        )
+
+        ohlson_o_score["Current Liabilities to Current Assets"] = (
+            ohlson_model.get_current_liabilities_to_current_assets_ratio(
+                current_liabilities=current_liabilities,
+                current_assets=current_assets,
+            )
+        )
+
+        ohlson_o_score["Negative Equity Indicator"] = (
+            ohlson_model.get_negative_equity_indicator(
+                total_liabilities=total_liabilities,
+                total_assets=total_assets,
+            )
+        )
+
+        ohlson_o_score["Net Income to Total Assets"] = (
+            ohlson_model.get_net_income_to_total_assets_ratio(
+                net_income=net_income,
+                total_assets=total_assets,
+            )
+        )
+
+        ohlson_o_score["Funds from Operations to Total Liabilities"] = (
+            ohlson_model.get_funds_from_operations_to_total_liabilities_ratio(
+                funds_from_operations=operating_cash_flow,
+                total_liabilities=total_liabilities,
+            )
+        )
+
+        ohlson_o_score["Negative Income Indicator"] = (
+            ohlson_model.get_negative_income_indicator(
+                net_income=net_income,
+            )
+        )
+
+        ohlson_o_score["Change in Net Income"] = (
+            ohlson_model.get_change_in_net_income_ratio(
+                net_income=net_income,
+            )
+        )
+
+        ohlson_o_score["Ohlson O-Score"] = ohlson_model.get_ohlson_o_score(
+            log_of_total_assets=ohlson_o_score["Log of Total Assets"],
+            total_liabilities_to_total_assets_ratio=ohlson_o_score[
+                "Total Liabilities to Total Assets"
+            ],
+            working_capital_to_total_assets_ratio=ohlson_o_score[
+                "Working Capital to Total Assets"
+            ],
+            current_liabilities_to_current_assets_ratio=ohlson_o_score[
+                "Current Liabilities to Current Assets"
+            ],
+            negative_equity_indicator=ohlson_o_score["Negative Equity Indicator"],
+            net_income_to_total_assets_ratio=ohlson_o_score[
+                "Net Income to Total Assets"
+            ],
+            funds_from_operations_to_total_liabilities_ratio=ohlson_o_score[
+                "Funds from Operations to Total Liabilities"
+            ],
+            negative_income_indicator=ohlson_o_score["Negative Income Indicator"],
+            change_in_net_income_ratio=ohlson_o_score["Change in Net Income"],
+        )
+
+        ohlson_o_score["Ohlson Bankruptcy Probability"] = (
+            ohlson_model.get_ohlson_bankruptcy_probability(
+                ohlson_o_score=ohlson_o_score["Ohlson O-Score"],
+            )
+        )
+
+        ohlson_results = (
+            pd.concat(ohlson_o_score)
+            .dropna(axis=1, how="all")
+            .swaplevel(0, 1)
+            .reindex(self._tickers, level=0)
+        )
+
+        ohlson_results = finalize_dataset(
+            dataset=ohlson_results,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="columns",
+        )
+
+        return filter_columns(ohlson_results, show_columns)
+
+    @handle_errors
+    def get_zmijewski_score(
+        self,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+        trailing: int | None = None,
+        show_columns: list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculates the Zmijewski Score, a financial metric used to predict the likelihood of a company
+        going bankrupt. It is a simpler, three-variable model compared to both the Altman Z-Score and
+        the Ohlson O-Score, and is commonly used as a robustness check when those two models disagree,
+        since it is estimated on a different sample and with a different statistical technique (a
+        probit model rather than discriminant analysis or logistic regression).
+
+        The formula is as follows:
+
+            - Net Income to Total Assets = Net Income / Total Assets
+            - Total Liabilities to Total Assets = Total Liabilities / Total Assets
+            - Current Assets to Current Liabilities = Current Assets / Current Liabilities
+            - X = -4.3 - 4.5 * Net Income to Total Assets + 5.7 * Total Liabilities to Total Assets
+            - 0.004 * Current Assets to Current Liabilities
+            - Bankruptcy Probability = Phi(X), the standard normal cumulative distribution function
+
+        The Zmijewski Score can be interpreted as follows:
+
+            - A higher X (and therefore a higher bankruptcy probability) indicates a higher likelihood
+            of financial distress.
+
+        Also known as: Zmijewski Score, ZFC score, bankruptcy prediction, financial distress score.
+
+        Args:
+            rounding (int, optional): The number of decimals to round the results to. Defaults to None.
+            growth (bool, optional): Whether to calculate the growth of the values. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            trailing (int | None, optional): The trailing period to use for the calculation. Defaults to None.
+            show_columns (list[str] | None, optional): List of columns to show in the results. If None, all
+                columns will be shown. Defaults to None.
+
+        Returns:
+            pd.DataFrame: DataFrame containing the Zmijewski Score, its bankruptcy probability, and its
+            components.
+
+        Notes:
+            - Unlike the Ohlson O-Score, which uses a logistic (sigmoid) link to convert its score into
+            a probability, the Zmijewski Score uses a probit link (the standard normal CDF). Applying a
+            logistic transform to the Zmijewski Score instead would produce an incorrect probability.
+            - As with the Altman Z-Score, Piotroski F-Score, Beneish M-Score and Ohlson O-Score, this is
+            a probabilistic, not a definitive, indicator and should be combined with further fundamental
+            analysis.
+
+        References:
+        - Zmijewski, Mark E. "Methodological Issues Related to the Estimation of Financial Distress
+        Prediction Models." Journal of Accounting Research, Vol. 22, 1984, pp. 59-82.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "MSFT"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        zmijewski_score = toolkit.models.get_zmijewski_score()
+
+        zmijewski_score.loc["AAPL"]
+        ```
+
+        Which returns:
+
+        |                                          |    2020 |    2021 |    2022 |    2023 |
+        |:-----------------------------------------|--------:|--------:|--------:|--------:|
+        | Net Income to Total Assets               |  0.1773 |  0.2697 |  0.2829 |  0.2751 |
+        | Total Liabilities to Total Assets         |  0.7983 |  0.8203 |  0.8564 |  0.8237 |
+        | Current Assets to Current Liabilities     |  1.3636 |  1.0746 |  0.8794 |  0.988  |
+        | Zmijewski Score                           | -0.553  | -0.8427 | -0.6955 | -0.8466 |
+        | Zmijewski Bankruptcy Probability          |  0.2901 |  0.1997 |  0.2434 |  0.1986 |
+        """
+        zmijewski_score = {}
+
+        current_assets = (
+            self._balance_sheet_statement.loc[:, "Total Current Assets", :]
+            .T.rolling(trailing)
+            .mean()
+            .T
+            if trailing
+            else self._balance_sheet_statement.loc[:, "Total Current Assets", :]
+        )
+        current_liabilities = (
+            self._balance_sheet_statement.loc[:, "Total Current Liabilities", :]
+            .T.rolling(trailing)
+            .mean()
+            .T
+            if trailing
+            else self._balance_sheet_statement.loc[:, "Total Current Liabilities", :]
+        )
+        total_assets = (
+            self._balance_sheet_statement.loc[:, "Total Assets", :]
+            .T.rolling(trailing)
+            .mean()
+            .T
+            if trailing
+            else self._balance_sheet_statement.loc[:, "Total Assets", :]
+        )
+        total_liabilities = (
+            self._balance_sheet_statement.loc[:, "Total Liabilities", :]
+            .T.rolling(trailing)
+            .mean()
+            .T
+            if trailing
+            else self._balance_sheet_statement.loc[:, "Total Liabilities", :]
+        )
+        net_income = (
+            self._income_statement.loc[:, "Net Income", :].T.rolling(trailing).sum().T
+            if trailing
+            else self._income_statement.loc[:, "Net Income", :]
+        )
+
+        zmijewski_score["Net Income to Total Assets"] = (
+            zmijewski_model.get_net_income_to_total_assets_ratio(
+                net_income=net_income,
+                total_assets=total_assets,
+            )
+        )
+
+        zmijewski_score["Total Liabilities to Total Assets"] = (
+            zmijewski_model.get_total_liabilities_to_total_assets_ratio(
+                total_liabilities=total_liabilities,
+                total_assets=total_assets,
+            )
+        )
+
+        zmijewski_score["Current Assets to Current Liabilities"] = (
+            zmijewski_model.get_current_assets_to_current_liabilities_ratio(
+                current_assets=current_assets,
+                current_liabilities=current_liabilities,
+            )
+        )
+
+        zmijewski_score["Zmijewski Score"] = zmijewski_model.get_zmijewski_score(
+            net_income_to_total_assets_ratio=zmijewski_score[
+                "Net Income to Total Assets"
+            ],
+            total_liabilities_to_total_assets_ratio=zmijewski_score[
+                "Total Liabilities to Total Assets"
+            ],
+            current_assets_to_current_liabilities_ratio=zmijewski_score[
+                "Current Assets to Current Liabilities"
+            ],
+        )
+
+        zmijewski_score["Zmijewski Bankruptcy Probability"] = (
+            zmijewski_model.get_zmijewski_bankruptcy_probability(
+                zmijewski_score=zmijewski_score["Zmijewski Score"],
+            )
+        )
+
+        zmijewski_results = (
+            pd.concat(zmijewski_score)
+            .dropna(axis=1, how="all")
+            .swaplevel(0, 1)
+            .reindex(self._tickers, level=0)
+        )
+
+        zmijewski_results = finalize_dataset(
+            dataset=zmijewski_results,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="columns",
+        )
+
+        return filter_columns(zmijewski_results, show_columns)
+
+    @handle_errors
+    def get_springate_score(
+        self,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+        trailing: int | None = None,
+        show_columns: list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculates the Springate Score, a financial metric used to predict the likelihood of
+        a company going bankrupt. It follows the same multiple discriminant analysis
+        methodology as the Altman Z-Score, but was calibrated on a smaller, Canadian-firm
+        sample using four financial ratios instead of five.
+
+        The formula is as follows:
+
+            - Working Capital to Total Assets = Working Capital / Total Assets
+            - EBIT to Total Assets = EBIT / Total Assets
+            - EBT to Current Liabilities = Earnings Before Taxes / Total Current Liabilities
+            - Sales to Total Assets = Sales / Total Assets
+            - Springate Score = 1.03 * Working Capital to Total Assets +
+            3.07 * EBIT to Total Assets + 0.66 * EBT to Current Liabilities +
+            0.4 * Sales to Total Assets
+
+        The Springate Score can be interpreted as follows:
+
+            - A Springate Score of less than 0.862 indicates a high likelihood of bankruptcy.
+            - A Springate Score of greater than 0.862 indicates a low likelihood of bankruptcy.
+
+        Also known as: Springate Score, S-Score, bankruptcy prediction, financial distress score.
+
+        Args:
+            rounding (int, optional): The number of decimals to round the results to. Defaults to None.
+            growth (bool, optional): Whether to calculate the growth of the values. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            trailing (int | None, optional): The trailing period to use for the calculation. Defaults to None.
+            show_columns (list[str] | None, optional): List of columns to show in the results. If None, all
+                columns will be shown. Defaults to None.
+
+        Returns:
+            pd.DataFrame: DataFrame containing the Springate Score and its components.
+
+        Notes:
+        - As with the Altman Z-Score, Piotroski F-Score, Beneish M-Score, Ohlson O-Score and
+        Zmijewski Score, this is a probabilistic, not a definitive, indicator and should be
+        combined with further fundamental analysis.
+        - EBIT is approximated as Net Income + Income Tax Expense + Interest Expense,
+        consistent with the Altman Z-Score calculation elsewhere in this module.
+
+        References:
+        - Springate, Gordon L.V. "Predicting the Possibility of Failure in a Canadian Firm."
+        Unpublished M.B.A. Research Project, Simon Fraser University, 1978.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "MSFT"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.models.get_springate_score().loc["AAPL"]
+        ```
+
+        Which returns:
+
+        |                                   |    2021 |    2022 |
+        |:----------------------------------|--------:|--------:|
+        | Working Capital to Total Assets   |  0.0267 | -0.0527 |
+        | EBIT to Total Assets              |  0.3187 |  0.3459 |
+        | EBT to Current Liabilities        |  0.8703 |  0.7735 |
+        | Sales to Total Assets             |  1.0422 |  1.1179 |
+        | Springate Score                   |  1.997  |  1.9655 |
+        """
+        springate_score = {}
+
+        current_assets = (
+            self._balance_sheet_statement.loc[:, "Total Current Assets", :]
+            .T.rolling(trailing)
+            .mean()
+            .T
+            if trailing
+            else self._balance_sheet_statement.loc[:, "Total Current Assets", :]
+        )
+        current_liabilities = (
+            self._balance_sheet_statement.loc[:, "Total Current Liabilities", :]
+            .T.rolling(trailing)
+            .mean()
+            .T
+            if trailing
+            else self._balance_sheet_statement.loc[:, "Total Current Liabilities", :]
+        )
+        total_assets = (
+            self._balance_sheet_statement.loc[:, "Total Assets", :]
+            .T.rolling(trailing)
+            .mean()
+            .T
+            if trailing
+            else self._balance_sheet_statement.loc[:, "Total Assets", :]
+        )
+        net_income = (
+            self._income_statement.loc[:, "Net Income", :].T.rolling(trailing).sum().T
+            if trailing
+            else self._income_statement.loc[:, "Net Income", :]
+        )
+        income_tax_expense = (
+            self._income_statement.loc[:, "Income Tax Expense", :]
+            .T.rolling(trailing)
+            .sum()
+            .T
+            if trailing
+            else self._income_statement.loc[:, "Income Tax Expense", :]
+        )
+        interest_expense = (
+            self._income_statement.loc[:, "Interest Expense", :]
+            .T.rolling(trailing)
+            .sum()
+            .T
+            if trailing
+            else self._income_statement.loc[:, "Interest Expense", :]
+        )
+        income_before_tax = (
+            self._income_statement.loc[:, "Income Before Tax", :]
+            .T.rolling(trailing)
+            .sum()
+            .T
+            if trailing
+            else self._income_statement.loc[:, "Income Before Tax", :]
+        )
+        revenue = (
+            self._income_statement.loc[:, "Revenue", :].T.rolling(trailing).sum().T
+            if trailing
+            else self._income_statement.loc[:, "Revenue", :]
+        )
+
+        working_capital = liquidity_model.get_working_capital(
+            current_assets,
+            current_liabilities,
+        )
+
+        springate_score["Working Capital to Total Assets"] = (
+            springate_model.get_working_capital_to_total_assets_ratio(
+                working_capital=working_capital,
+                total_assets=total_assets,
+            )
+        )
+
+        springate_score["EBIT to Total Assets"] = (
+            springate_model.get_ebit_to_total_assets_ratio(
+                ebit=(net_income + income_tax_expense + interest_expense),
+                total_assets=total_assets,
+            )
+        )
+
+        springate_score["EBT to Current Liabilities"] = (
+            springate_model.get_ebt_to_current_liabilities_ratio(
+                ebt=income_before_tax,
+                current_liabilities=current_liabilities,
+            )
+        )
+
+        springate_score["Sales to Total Assets"] = (
+            springate_model.get_sales_to_total_assets_ratio(
+                sales=revenue,
+                total_assets=total_assets,
+            )
+        )
+
+        springate_score["Springate Score"] = springate_model.get_springate_score(
+            working_capital_to_total_assets_ratio=springate_score[
+                "Working Capital to Total Assets"
+            ],
+            ebit_to_total_assets_ratio=springate_score["EBIT to Total Assets"],
+            ebt_to_current_liabilities_ratio=springate_score[
+                "EBT to Current Liabilities"
+            ],
+            sales_to_total_assets_ratio=springate_score["Sales to Total Assets"],
+        )
+
+        springate_results = (
+            pd.concat(springate_score)
+            .dropna(axis=1, how="all")
+            .swaplevel(0, 1)
+            .reindex(self._tickers, level=0)
+        )
+
+        springate_results = finalize_dataset(
+            dataset=springate_results,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="columns",
+        )
+
+        return filter_columns(springate_results, show_columns)
+
+    @handle_errors
+    def get_grover_score(
+        self,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+        trailing: int | None = None,
+        show_columns: list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculates the Grover Score, a financial metric used to predict the likelihood of a
+        company going bankrupt. It was developed by re-estimating the coefficients of a
+        reduced-form Altman Z-Score and adding a Return on Assets term, using a sample that
+        paired each of Altman's original bankrupt firms with a matched non-bankrupt firm from
+        the same industry and year.
+
+        The formula is as follows:
+
+            - Working Capital to Total Assets = Working Capital / Total Assets
+            - EBIT to Total Assets = EBIT / Total Assets
+            - Return on Assets = Net Income / Total Assets
+            - Grover Score = 1.65 * Working Capital to Total Assets +
+            3.404 * EBIT to Total Assets - 0.016 * Return on Assets + 0.057
+
+        The Grover Score can be interpreted as follows:
+
+            - A Grover Score of -0.02 or lower indicates a high likelihood of bankruptcy.
+            - A Grover Score of 0.01 or higher indicates a low likelihood of bankruptcy
+            (per some secondary sources), leaving a gray area in between the two thresholds.
+
+        Also known as: Grover Score, G-Score, bankruptcy prediction, financial distress score.
+
+        Args:
+            rounding (int, optional): The number of decimals to round the results to. Defaults to None.
+            growth (bool, optional): Whether to calculate the growth of the values. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            trailing (int | None, optional): The trailing period to use for the calculation. Defaults to None.
+            show_columns (list[str] | None, optional): List of columns to show in the results. If None, all
+                columns will be shown. Defaults to None.
+
+        Returns:
+            pd.DataFrame: DataFrame containing the Grover Score and its components.
+
+        Notes:
+        - As with the Altman Z-Score, Springate Score, Ohlson O-Score and Zmijewski Score,
+        this is a probabilistic, not a definitive, indicator and should be combined with
+        further fundamental analysis.
+        - EBIT is approximated as Net Income + Income Tax Expense + Interest Expense,
+        consistent with the Altman Z-Score calculation elsewhere in this module. Return on
+        Assets uses the point-in-time Total Assets balance (not averaged), matching the
+        original Grover (2001) specification.
+
+        References:
+        - Grover, Jeffrey S. "Validating the Grover Bankruptcy Model." Doctoral dissertation,
+        University of North Texas, 2003.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "MSFT"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.models.get_grover_score().loc["AAPL"]
+        ```
+
+        Which returns:
+
+        |                                   |    2021 |    2022 |
+        |:----------------------------------|--------:|--------:|
+        | Working Capital to Total Assets   |  0.0267 | -0.0527 |
+        | EBIT to Total Assets              |  0.3187 |  0.3459 |
+        | Return on Assets                  |  0.2697 |  0.2829 |
+        | Grover Score                      |  1.1814 |  1.1432 |
+        """
+        grover_score = {}
+
+        current_assets = (
+            self._balance_sheet_statement.loc[:, "Total Current Assets", :]
+            .T.rolling(trailing)
+            .mean()
+            .T
+            if trailing
+            else self._balance_sheet_statement.loc[:, "Total Current Assets", :]
+        )
+        current_liabilities = (
+            self._balance_sheet_statement.loc[:, "Total Current Liabilities", :]
+            .T.rolling(trailing)
+            .mean()
+            .T
+            if trailing
+            else self._balance_sheet_statement.loc[:, "Total Current Liabilities", :]
+        )
+        total_assets = (
+            self._balance_sheet_statement.loc[:, "Total Assets", :]
+            .T.rolling(trailing)
+            .mean()
+            .T
+            if trailing
+            else self._balance_sheet_statement.loc[:, "Total Assets", :]
+        )
+        net_income = (
+            self._income_statement.loc[:, "Net Income", :].T.rolling(trailing).sum().T
+            if trailing
+            else self._income_statement.loc[:, "Net Income", :]
+        )
+        income_tax_expense = (
+            self._income_statement.loc[:, "Income Tax Expense", :]
+            .T.rolling(trailing)
+            .sum()
+            .T
+            if trailing
+            else self._income_statement.loc[:, "Income Tax Expense", :]
+        )
+        interest_expense = (
+            self._income_statement.loc[:, "Interest Expense", :]
+            .T.rolling(trailing)
+            .sum()
+            .T
+            if trailing
+            else self._income_statement.loc[:, "Interest Expense", :]
+        )
+
+        working_capital = liquidity_model.get_working_capital(
+            current_assets,
+            current_liabilities,
+        )
+
+        grover_score["Working Capital to Total Assets"] = (
+            grover_model.get_working_capital_to_total_assets_ratio(
+                working_capital=working_capital,
+                total_assets=total_assets,
+            )
+        )
+
+        grover_score["EBIT to Total Assets"] = (
+            grover_model.get_ebit_to_total_assets_ratio(
+                ebit=(net_income + income_tax_expense + interest_expense),
+                total_assets=total_assets,
+            )
+        )
+
+        grover_score["Return on Assets"] = grover_model.get_return_on_assets_ratio(
+            net_income=net_income,
+            total_assets=total_assets,
+        )
+
+        grover_score["Grover Score"] = grover_model.get_grover_score(
+            working_capital_to_total_assets_ratio=grover_score[
+                "Working Capital to Total Assets"
+            ],
+            ebit_to_total_assets_ratio=grover_score["EBIT to Total Assets"],
+            return_on_assets_ratio=grover_score["Return on Assets"],
+        )
+
+        grover_results = (
+            pd.concat(grover_score)
+            .dropna(axis=1, how="all")
+            .swaplevel(0, 1)
+            .reindex(self._tickers, level=0)
+        )
+
+        grover_results = finalize_dataset(
+            dataset=grover_results,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="columns",
+        )
+
+        return filter_columns(grover_results, show_columns)
+
+    @handle_errors
+    def get_fulmer_h_score(
+        self,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+        trailing: int | None = None,
+        show_columns: list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculates the Fulmer H-Score, a financial metric used to predict the likelihood of a
+        company going bankrupt. Unlike the Altman Z-Score, which was built on relatively
+        large, listed manufacturing companies, the Fulmer H-Score was calibrated on a
+        matched-pair sample of small, failed and non-failed U.S. companies, using nine
+        financial ratios selected via step-wise multiple discriminant analysis.
+
+        The formula is as follows:
+
+            H-Score = 5.528 * V1 + 0.212 * V2 + 0.073 * V3 + 1.270 * V4 - 0.120 * V5
+            + 2.335 * V6 + 0.575 * V7 + 1.083 * V8 + 0.894 * V9 - 6.075
+
+        The nine variables are:
+
+            - V1: Retained Earnings to Total Assets
+            - V2: Sales to Total Assets
+            - V3: EBT to Total Equity
+            - V4: Cash Flow (Operating Cash Flow) to Total Liabilities
+            - V5: Total Debt to Total Assets
+            - V6: Current Liabilities to Total Assets
+            - V7: Log of Tangible Total Assets (Total Assets less Goodwill and Intangible Assets)
+            - V8: Working Capital to Total Liabilities
+            - V9: Log of EBIT to Interest Expense
+
+        The Fulmer H-Score can be interpreted as follows:
+
+            - An H-Score of less than 0 predicts failure.
+            - An H-Score of greater than 0 predicts non-failure.
+
+        Also known as: Fulmer H-Score, H factor, bankruptcy prediction, financial distress score.
+
+        Args:
+            rounding (int, optional): The number of decimals to round the results to. Defaults to None.
+            growth (bool, optional): Whether to calculate the growth of the values. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            trailing (int | None, optional): The trailing period to use for the calculation. Defaults to None.
+            show_columns (list[str] | None, optional): List of columns to show in the results. If None, all
+                columns will be shown. Defaults to None.
+
+        Returns:
+            pd.DataFrame: DataFrame containing the Fulmer H-Score and its components.
+
+        Notes:
+        - Because V7 and V9 involve a natural logarithm, periods where Tangible Total Assets
+        is zero or negative, where EBIT and Interest Expense do not share the same sign, or
+        where the company reports no Interest Expense at all, will produce NaN and therefore
+        no H-Score for that period. This is a structural limitation of the log-linear Fulmer
+        specification, not a bug — the same kind of limitation documented for the Graham
+        Number elsewhere in this toolkit.
+        - Because V7 uses an un-normalized dollar figure, the H-Score is sensitive to the
+        absolute scale of a company's total assets; treat results for very large companies
+        (far outside the small-firm sample the model was calibrated on) with additional
+        caution.
+        - As with the Altman Z-Score, Springate Score and Grover Score, this is a
+        probabilistic, not a definitive, indicator and should be combined with further
+        fundamental analysis.
+
+        References:
+        - Fulmer, John G., James E. Moon, Thomas A. Gavin, and Michael J. Erwin. "A
+        Bankruptcy Classification Model for Small Firms." Journal of Commercial Bank
+        Lending, Vol. 66, No. 11, 1984, pp. 25-37.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "MSFT"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.models.get_fulmer_h_score().loc["AAPL"]
+        ```
+
+        Which returns:
+
+        |                                       |    2021 |    2022 |
+        |:--------------------------------------|--------:|--------:|
+        | Retained Earnings to Total Assets     |  0.0158 | -0.0087 |
+        | Sales to Total Assets                 |  1.0422 |  1.1179 |
+        | EBT to Total Equity                   |  1.731  |  2.3505 |
+        | Cash Flow to Total Liabilities        |  0.3614 |  0.4044 |
+        | Debt to Total Assets                  |  0.3889 |  0.3756 |
+        | Current Liabilities to Total Assets   |  0.3575 |  0.4365 |
+        | Log of Tangible Total Assets          | 26.5841 | 26.589  |
+        | Working Capital to Total Liabilities  |  0.0325 | -0.0615 |
+        | Log of EBIT to Interest Expense       |  3.7445 |  3.729  |
+        | Fulmer H-Score                        | 14.2755 | 14.329  |
+        """
+        fulmer_h_score = {}
+
+        current_assets = (
+            self._balance_sheet_statement.loc[:, "Total Current Assets", :]
+            .T.rolling(trailing)
+            .mean()
+            .T
+            if trailing
+            else self._balance_sheet_statement.loc[:, "Total Current Assets", :]
+        )
+        current_liabilities = (
+            self._balance_sheet_statement.loc[:, "Total Current Liabilities", :]
+            .T.rolling(trailing)
+            .mean()
+            .T
+            if trailing
+            else self._balance_sheet_statement.loc[:, "Total Current Liabilities", :]
+        )
+        total_assets = (
+            self._balance_sheet_statement.loc[:, "Total Assets", :]
+            .T.rolling(trailing)
+            .mean()
+            .T
+            if trailing
+            else self._balance_sheet_statement.loc[:, "Total Assets", :]
+        )
+        total_liabilities = (
+            self._balance_sheet_statement.loc[:, "Total Liabilities", :]
+            .T.rolling(trailing)
+            .mean()
+            .T
+            if trailing
+            else self._balance_sheet_statement.loc[:, "Total Liabilities", :]
+        )
+        total_debt = (
+            self._balance_sheet_statement.loc[:, "Total Debt", :]
+            .T.rolling(trailing)
+            .mean()
+            .T
+            if trailing
+            else self._balance_sheet_statement.loc[:, "Total Debt", :]
+        )
+        total_equity = (
+            self._balance_sheet_statement.loc[:, "Total Equity", :]
+            .T.rolling(trailing)
+            .mean()
+            .T
+            if trailing
+            else self._balance_sheet_statement.loc[:, "Total Equity", :]
+        )
+        retained_earnings = (
+            self._balance_sheet_statement.loc[:, "Retained Earnings", :]
+            .T.rolling(trailing)
+            .mean()
+            .T
+            if trailing
+            else self._balance_sheet_statement.loc[:, "Retained Earnings", :]
+        )
+        goodwill_and_intangible_assets = (
+            self._balance_sheet_statement.loc[:, "Goodwill and Intangible Assets", :]
+            .T.rolling(trailing)
+            .mean()
+            .T
+            if trailing
+            else self._balance_sheet_statement.loc[
+                :, "Goodwill and Intangible Assets", :
+            ]
+        )
+        revenue = (
+            self._income_statement.loc[:, "Revenue", :].T.rolling(trailing).sum().T
+            if trailing
+            else self._income_statement.loc[:, "Revenue", :]
+        )
+        income_before_tax = (
+            self._income_statement.loc[:, "Income Before Tax", :]
+            .T.rolling(trailing)
+            .sum()
+            .T
+            if trailing
+            else self._income_statement.loc[:, "Income Before Tax", :]
+        )
+        interest_expense = (
+            self._income_statement.loc[:, "Interest Expense", :]
+            .T.rolling(trailing)
+            .sum()
+            .T
+            if trailing
+            else self._income_statement.loc[:, "Interest Expense", :]
+        )
+        net_income = (
+            self._income_statement.loc[:, "Net Income", :].T.rolling(trailing).sum().T
+            if trailing
+            else self._income_statement.loc[:, "Net Income", :]
+        )
+        income_tax_expense = (
+            self._income_statement.loc[:, "Income Tax Expense", :]
+            .T.rolling(trailing)
+            .sum()
+            .T
+            if trailing
+            else self._income_statement.loc[:, "Income Tax Expense", :]
+        )
+        operating_cash_flow = (
+            self._cash_flow_statement.loc[:, "Operating Cash Flow", :]
+            .T.rolling(trailing)
+            .sum()
+            .T
+            if trailing
+            else self._cash_flow_statement.loc[:, "Operating Cash Flow", :]
+        )
+
+        working_capital = liquidity_model.get_working_capital(
+            current_assets,
+            current_liabilities,
+        )
+        ebit = net_income + income_tax_expense + interest_expense
+        tangible_total_assets = fulmer_model.get_tangible_total_assets(
+            total_assets=total_assets,
+            goodwill_and_intangible_assets=goodwill_and_intangible_assets,
+        )
+
+        fulmer_h_score["Retained Earnings to Total Assets"] = (
+            fulmer_model.get_retained_earnings_to_total_assets_ratio(
+                retained_earnings=retained_earnings,
+                total_assets=total_assets,
+            )
+        )
+
+        fulmer_h_score["Sales to Total Assets"] = (
+            fulmer_model.get_sales_to_total_assets_ratio(
+                sales=revenue,
+                total_assets=total_assets,
+            )
+        )
+
+        fulmer_h_score["EBT to Total Equity"] = fulmer_model.get_ebt_to_equity_ratio(
+            ebt=income_before_tax,
+            total_equity=total_equity,
+        )
+
+        fulmer_h_score["Cash Flow to Total Liabilities"] = (
+            fulmer_model.get_cash_flow_to_total_liabilities_ratio(
+                cash_flow=operating_cash_flow,
+                total_liabilities=total_liabilities,
+            )
+        )
+
+        fulmer_h_score["Debt to Total Assets"] = (
+            fulmer_model.get_debt_to_total_assets_ratio(
+                total_debt=total_debt,
+                total_assets=total_assets,
+            )
+        )
+
+        fulmer_h_score["Current Liabilities to Total Assets"] = (
+            fulmer_model.get_current_liabilities_to_total_assets_ratio(
+                current_liabilities=current_liabilities,
+                total_assets=total_assets,
+            )
+        )
+
+        fulmer_h_score["Log of Tangible Total Assets"] = (
+            fulmer_model.get_log_of_tangible_total_assets(
+                tangible_total_assets=tangible_total_assets,
+            )
+        )
+
+        fulmer_h_score["Working Capital to Total Liabilities"] = (
+            fulmer_model.get_working_capital_to_total_liabilities_ratio(
+                working_capital=working_capital,
+                total_liabilities=total_liabilities,
+            )
+        )
+
+        fulmer_h_score["Log of EBIT to Interest Expense"] = (
+            fulmer_model.get_log_of_ebit_to_interest_expense_ratio(
+                ebit=ebit,
+                interest_expense=interest_expense,
+            )
+        )
+
+        fulmer_h_score["Fulmer H-Score"] = fulmer_model.get_fulmer_h_score(
+            retained_earnings_to_total_assets_ratio=fulmer_h_score[
+                "Retained Earnings to Total Assets"
+            ],
+            sales_to_total_assets_ratio=fulmer_h_score["Sales to Total Assets"],
+            ebt_to_equity_ratio=fulmer_h_score["EBT to Total Equity"],
+            cash_flow_to_total_liabilities_ratio=fulmer_h_score[
+                "Cash Flow to Total Liabilities"
+            ],
+            debt_to_total_assets_ratio=fulmer_h_score["Debt to Total Assets"],
+            current_liabilities_to_total_assets_ratio=fulmer_h_score[
+                "Current Liabilities to Total Assets"
+            ],
+            log_of_tangible_total_assets=fulmer_h_score["Log of Tangible Total Assets"],
+            working_capital_to_total_liabilities_ratio=fulmer_h_score[
+                "Working Capital to Total Liabilities"
+            ],
+            log_of_ebit_to_interest_expense_ratio=fulmer_h_score[
+                "Log of EBIT to Interest Expense"
+            ],
+        )
+
+        fulmer_results = (
+            pd.concat(fulmer_h_score)
+            .dropna(axis=1, how="all")
+            .swaplevel(0, 1)
+            .reindex(self._tickers, level=0)
+        )
+
+        fulmer_results = finalize_dataset(
+            dataset=fulmer_results,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="columns",
+        )
+
+        return filter_columns(fulmer_results, show_columns)
+
+    @handle_errors
     def get_present_value_of_growth_opportunities(
         self,
         calculate_daily: bool = False,
@@ -2082,8 +4296,9 @@ class Models:
             calculate_daily (bool, optional): Whether to calculate the PVGO using daily historical data.
             Defaults to False.
             diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
-            include_dividends (bool, optional): Whether to include dividends in the calculation.
-            Defaults to False.
+            include_dividends (bool, optional): Whether to deduct Preferred Dividends Paid from Net
+            Income when calculating the Earnings per Share, so that the earnings figure reflects what is
+            attributable to common shareholders only. Defaults to False.
             trailing (int | None, optional): The trailing period to use for the calculation. Defaults to None.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the values. Defaults to False.
@@ -2094,6 +4309,14 @@ class Models:
 
         Returns:
             pd.DataFrame: DataFrame containing the PVGO values.
+
+        Notes:
+        - The textbook PVGO discounts the no-growth value of the company (Earnings per Share / r) at
+        the cost of equity, since both the share price and the Earnings per Share are equity-only,
+        per-share quantities. This implementation discounts at the Weighted Average Cost of Capital
+        instead, which blends in the (typically lower, tax-shielded) cost of debt and therefore
+        generally understates PVGO. Prefer comparing PVGO across companies, or over time for the same
+        company, over reading absolute levels literally.
 
         As an example:
 
@@ -2125,8 +4348,9 @@ class Models:
             else self._income_statement.loc[:, "Weighted Average Shares", :]
         )
 
+        # Preferred Dividends Paid is reported on the cash flow statement using the cash-flow-impact convention (an outflow is negative), while the Earnings per Share formula subtracts a positive-magnitude figure — without the absolute value the preferred dividends would be added back to Net Income instead of deducted from it  # noqa: E501
         dividends = (
-            self._cash_flow_statement.loc[:, "Preferred Dividends Paid", :]
+            self._cash_flow_statement.loc[:, "Preferred Dividends Paid", :].abs()
             if include_dividends
             else 0
         )

@@ -68,9 +68,23 @@ def get_debt_service_coverage_ratio(
     Calculate the debt service coverage ratio, a solvency ratio that measures a company's
     ability to service its debt with its net operating income.
 
+    The textbook formula divides operating income by "total debt service" (the sum of
+    the current portion of long-term debt due plus interest expense for the period).
+    Since that figure is not separately reported on the financial statements, this
+    implementation uses total current liabilities as a readily available proxy for
+    near-term debt obligations, which is a common simplification when the precise debt
+    service schedule is unavailable but tends to understate the ratio somewhat, since
+    current liabilities also include non-debt items (e.g. accounts payable, accrued
+    expenses).
+
+    The formula is as follows:
+
+        Debt Service Coverage Ratio = Operating Income / Total Current Liabilities
+
     Args:
-        net_operating_income (float or pd.Series): Net operating income of the company.
-        current_liabilities (float or pd.Series): Total debt service of the company.
+        operating_income (float or pd.Series): Operating income of the company.
+        current_liabilities (float or pd.Series): Total current liabilities of the company,
+            used here as a proxy for total debt service.
 
     Returns:
         float | pd.Series: The debt service coverage ratio value.
@@ -89,10 +103,10 @@ def get_equity_multiplier(
     This is also referred to as the company financial leverage.
 
     Args:
-        total_assets_begin (float or pd.Series): Total assets at the beginning of the period.
-        total_assets_end (float or pd.Series): Total assets at the end of the period.
-        total_equity_begin (float or pd.Series): Total equity at the beginning of the period.
-        total_equity_end (float or pd.Series): Total equity at the end of the period.
+        average_total_assets (float or pd.Series): Average total assets of the company.
+            This is typically calculated as (beginning total assets + ending total assets) / 2.
+        average_total_equity (float or pd.Series): Average total equity of the company.
+            This is typically calculated as (beginning total equity + ending total equity) / 2.
 
     Returns:
         float | pd.Series: The equity multiplier.
@@ -137,6 +151,78 @@ def get_net_debt_to_ebitda_ratio(
     return net_debt / (operating_income + depreciation_and_amortization)
 
 
+def get_gross_debt_to_ebitda_ratio(
+    total_debt: float | pd.Series,
+    operating_income: float | pd.Series,
+    depreciation_and_amortization: float | pd.Series,
+) -> pd.Series:
+    """
+    Calculates the gross debt to EBITDA ratio, which measures the total (gross) debt of
+    the company relative to its EBITDA.
+
+    This differs from `get_net_debt_to_ebitda_ratio` in that it uses total (gross) debt
+    rather than net debt (total debt minus cash and cash equivalents). Gross debt to
+    EBITDA is a more conservative leverage measure since it does not assume that a
+    company's cash balance would actually be used to pay down debt, which matters when
+    comparing companies with restricted cash, cash earmarked for other purposes, or when
+    assessing gross refinancing risk rather than net economic leverage.
+
+    The formula is as follows:
+
+        Gross Debt to EBITDA Ratio = Total Debt / (Operating Income + Depreciation and Amortization)
+
+    Args:
+        total_debt (float or pd.Series): Total debt of the company.
+        operating_income (float or pd.Series): Operating income of the company.
+        depreciation_and_amortization (float or pd.Series): Depreciation and amortization of the company.
+
+    Returns:
+        float | pd.Series: The gross debt to EBITDA ratio.
+    """
+    return total_debt / (operating_income + depreciation_and_amortization)
+
+
+def get_asset_coverage_ratio(
+    total_assets: float | pd.Series,
+    intangible_assets: float | pd.Series,
+    current_liabilities: float | pd.Series,
+    short_term_debt: float | pd.Series,
+    total_debt: float | pd.Series,
+) -> pd.Series:
+    """
+    Calculate the asset coverage ratio, a solvency ratio that measures how well a
+    company's tangible assets, after settling non-debt current liabilities, can cover
+    its total debt.
+
+    This ratio is commonly used by lenders and bondholders to assess the extent to
+    which a company's hard (tangible) assets would be available to repay debt
+    obligations in a liquidation scenario, since intangible assets (e.g. goodwill)
+    typically have little to no recovery value and non-debt current liabilities are
+    assumed to be settled first out of current assets. Short-term debt is netted out
+    of current liabilities before subtracting, because it is already captured in
+    total debt — otherwise it would be double-counted, once as part of current
+    liabilities and again as part of total debt.
+
+    The formula is as follows:
+
+        Asset Coverage Ratio = [(Total Assets - Intangible Assets)
+            - (Current Liabilities - Short-Term Debt)] / Total Debt
+
+    Args:
+        total_assets (float or pd.Series): Total assets of the company.
+        intangible_assets (float or pd.Series): Intangible assets of the company.
+        current_liabilities (float or pd.Series): Total current liabilities of the company.
+        short_term_debt (float or pd.Series): Short-term (current portion of) debt of the company.
+        total_debt (float or pd.Series): Total debt of the company.
+
+    Returns:
+        float | pd.Series: The asset coverage ratio.
+    """
+    return (
+        (total_assets - intangible_assets) - (current_liabilities - short_term_debt)
+    ) / total_debt
+
+
 def get_cash_flow_coverage_ratio(
     operating_cash_flow: float | pd.Series,
     total_debt: float | pd.Series,
@@ -165,12 +251,14 @@ def get_capex_coverage_ratio(
 
     Args:
         cash_flow_from_operations (float or pd.Series): Cash flow from operations of the company.
-        capital_expenditure (float or pd.Series): Capital expenditure of the company.
+        capital_expenditure (float or pd.Series): Capital expenditure of the company,
+            as reported in the Cash Flow Statement.
 
     Returns:
         float | pd.Series: The capital expenditure coverage ratio value.
     """
-    return cash_flow_from_operations / capital_expenditure
+    # Capital Expenditure is reported as a negative cash outflow, so the magnitude is used to keep the ratio positive and consistent with "higher is better".  # noqa: E501
+    return cash_flow_from_operations / abs(capital_expenditure)
 
 
 def get_dividend_capex_coverage_ratio(
@@ -185,13 +273,16 @@ def get_dividend_capex_coverage_ratio(
 
     Args:
         cash_flow_from_operations (float or pd.Series): Cash flow from operations of the company.
-        capital_expenditure (float or pd.Series): Capital expenditure of the company.
-        dividends (float or pd.Series): Dividend payments of the company.
+        capital_expenditure (float or pd.Series): Capital expenditure of the company,
+            as reported in the Cash Flow Statement.
+        dividends (float or pd.Series): Dividend payments of the company, as reported
+            in the Cash Flow Statement.
 
     Returns:
         float | pd.Series: The dividend paid and capex coverage ratio value.
     """
-    return cash_flow_from_operations / (capital_expenditure + dividends)
+    # Both are reported as negative cash outflows, so their magnitudes are used to keep the ratio positive and consistent with "higher is better".  # noqa: E501
+    return cash_flow_from_operations / (abs(capital_expenditure) + abs(dividends))
 
 
 def get_debt_to_capital_ratio(

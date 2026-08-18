@@ -2,12 +2,12 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.JerBouma/financetoolkit",
   "title": "Finance Toolkit",
-  "description": "200+ transparent financial metrics calculated from raw statements, not third-party endpoints.",
+  "description": "500+ transparent financial methods calculated from raw statements, not third-party endpoints.",
   "repository": {
     "url": "https://github.com/JerBouma/FinanceToolkit",
     "source": "github"
   },
-  "version": "2.1.4",
+  "version": "2.1.5",
   "remotes": [
     {
       "type": "streamable-http",
@@ -18,7 +18,7 @@
     {
       "registryType": "pypi",
       "identifier": "financetoolkit",
-      "version": "2.1.2",
+      "version": "2.1.5",
       "transport": {
         "type": "stdio",
         "command": "financetoolkit-mcp"
@@ -28,6 +28,13 @@
           "name": "FINANCIAL_MODELING_PREP_API_KEY",
           "description": "Financial Modeling Prep API key, get a key over at https://www.jeroenbouma.com/fmp",
           "isRequired": true,
+          "format": "string",
+          "isSecret": true
+        },
+        {
+          "name": "FRED_API_KEY",
+          "description": "Optional FRED API key unlocking a handful of US-only economic indicators, get a free key over at https://fred.stlouisfed.org/docs/api/api_key.html",
+          "isRequired": false,
           "format": "string",
           "isSecret": true
         }

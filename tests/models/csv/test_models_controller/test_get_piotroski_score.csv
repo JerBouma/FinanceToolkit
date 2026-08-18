@@ -1,21 +1,21 @@
-,,2021,2022,2023
-AAPL,Return on Assets Criteria,1,1,1
-AAPL,Operating Cashflow Criteria,1,1,1
-AAPL,Change in Return on Assets Criteria,0,0,0
-AAPL,Accruals Criteria,1,1,1
-AAPL,Change in Leverage Criteria,0,1,1
-AAPL,Change in Current Ratio Criteria,0,0,1
-AAPL,Number of Shares Criteria,0,1,1
-AAPL,Gross Margin Criteria,1,1,1
-AAPL,Asset Turnover Criteria,0,1,0
-AAPL,Piotroski Score,4,7,7
-MSFT,Return on Assets Criteria,1,1,1
-MSFT,Operating Cashflow Criteria,1,1,1
-MSFT,Change in Return on Assets Criteria,0,0,0
-MSFT,Accruals Criteria,1,1,1
-MSFT,Change in Leverage Criteria,1,1,1
-MSFT,Change in Current Ratio Criteria,0,0,0
-MSFT,Number of Shares Criteria,0,0,0
-MSFT,Gross Margin Criteria,1,0,1
-MSFT,Asset Turnover Criteria,0,1,0
-MSFT,Piotroski Score,5,5,5
+,,2022,2023
+AAPL,Return on Assets Criteria,1,1
+AAPL,Operating Cashflow Criteria,1,1
+AAPL,Change in Return on Assets Criteria,1,0
+AAPL,Accruals Criteria,1,1
+AAPL,Change in Leverage Criteria,1,1
+AAPL,Change in Current Ratio Criteria,0,1
+AAPL,Number of Shares Criteria,1,1
+AAPL,Gross Margin Criteria,1,1
+AAPL,Asset Turnover Criteria,1,0
+AAPL,Piotroski Score,8,7
+MSFT,Return on Assets Criteria,1,1
+MSFT,Operating Cashflow Criteria,1,1
+MSFT,Change in Return on Assets Criteria,1,0
+MSFT,Accruals Criteria,1,1
+MSFT,Change in Leverage Criteria,1,1
+MSFT,Change in Current Ratio Criteria,0,0
+MSFT,Number of Shares Criteria,0,0
+MSFT,Gross Margin Criteria,0,1
+MSFT,Asset Turnover Criteria,1,0
+MSFT,Piotroski Score,6,5

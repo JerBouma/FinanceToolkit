@@ -23,9 +23,11 @@ def get_delta(
     Args:
         stock_price (float): Series of stock prices.
         strike_price (float): Option strike price.
-        time_to_expiry (float): Time to option expiry (in years).
+        time_to_expiration (float): Time to option expiry (in years).
         risk_free_rate (float): Risk-free interest rate (annualized).
         volatility (float): Volatility of the underlying stock.
+        dividend_yield (float): Dividend yield (annualized). Defaults to 0.
+        put_option (bool): True if it's a put option, False for a call option.
 
     Returns:
         float: Option Delta values.
@@ -63,7 +65,7 @@ def get_dual_delta(
     Args:
         stock_price (float): Current stock price.
         strike_price (float): Option strike price.
-        time_to_expiry (float): Time to option expiry (in years).
+        time_to_expiration (float): Time to option expiry (in years).
         risk_free_rate (float): Risk-free interest rate (annualized).
         volatility (float): Volatility of the underlying stock.
         dividend_yield (float): Dividend yield (annualized). Defaults to 0.
@@ -111,9 +113,16 @@ def get_vega(
         time_to_expiration (float): Time to option expiry (in years).
         risk_free_rate (float): Risk-free interest rate (annualized).
         volatility (float): Volatility of the underlying stock.
+        dividend_yield (float): Dividend yield (annualized). Defaults to 0.
 
     Returns:
         float: Option Vega value.
+
+    Notes:
+        The raw derivative dV/dsigma is divided by 100, so the returned value is the
+        change in the option value per 1 percentage point change in volatility. The
+        higher order volatility Greeks (Vanna, Vomma, Zomma, Vera, Ultima) are returned
+        unscaled, per 1.00 of volatility; only Vega and Veta carry the 1/100 factor.
     """
     d1 = black_scholes_model.get_d1(
         stock_price=stock_price,
@@ -159,6 +168,12 @@ def get_theta(
 
     Returns:
         float: Option Theta value.
+
+    Notes:
+        Theta is dV/dt, the change in the option value as calendar time passes, which is
+        the negative of the derivative with respect to the time to maturity. It is
+        divided by 365, so the returned value is the change per calendar day rather than
+        per year. A long option normally has a negative Theta.
     """
     d1 = black_scholes_model.get_d1(
         stock_price=stock_price,
@@ -173,8 +188,9 @@ def get_theta(
     )
 
     if put_option:
-        theta = -np.exp(-dividend_yield * time_to_expiration) * (
-            (stock_price * norm.pdf(d1) * volatility)
+        theta = (
+            -np.exp(-dividend_yield * time_to_expiration)
+            * (stock_price * norm.pdf(d1) * volatility)
             / (2 * np.sqrt(time_to_expiration))
             + risk_free_rate
             * strike_price
@@ -229,6 +245,12 @@ def get_rho(
 
     Returns:
         float: Option Rho value.
+
+    Notes:
+        Rho is returned unscaled, as the change in the option value per 1.00 (i.e. 100
+        percentage points) change in the risk-free rate. Divide by 100 for the more
+        common per-basis-point-style quote of one percentage point. Epsilon and Vera
+        follow the same unscaled convention.
     """
     d1 = black_scholes_model.get_d1(
         stock_price=stock_price,
@@ -329,6 +351,8 @@ def get_lambda(
         time_to_expiration (float): Time to option expiry (in years).
         risk_free_rate (float): Risk-free interest rate (annualized).
         volatility (float): Volatility of the underlying stock.
+        dividend_yield (float): Dividend yield (annualized). Defaults to 0.
+        put_option (bool): True if it's a put option, False for a call option.
 
     Returns:
         float: Option Lambda value.
@@ -386,6 +410,7 @@ def get_gamma(
         risk_free_rate=risk_free_rate,
         volatility=volatility,
         time_to_expiration=time_to_expiration,
+        dividend_yield=dividend_yield,
     )
     gamma = np.exp(-dividend_yield * time_to_expiration) * (
         norm.pdf(d1) / (stock_price * volatility * np.sqrt(time_to_expiration))
@@ -408,11 +433,10 @@ def get_dual_gamma(
     Args:
         stock_price (float): Current stock price.
         strike_price (float): Option strike price.
-        time_to_expiry (float): Time to option expiry (in years).
+        time_to_expiration (float): Time to option expiry (in years).
         risk_free_rate (float): Risk-free interest rate (annualized).
         volatility (float): Volatility of the underlying stock.
         dividend_yield (float): Dividend yield (annualized). Defaults to 0.
-        put_option (bool): True if it's a put option, False for a call option.
 
     Returns:
         float: Dual Gamma value.
@@ -456,7 +480,6 @@ def get_vanna(
         risk_free_rate (float): Risk-free interest rate (annualized).
         volatility (float): Volatility of the underlying stock.
         dividend_yield (float): Dividend yield (annualized). Default is 0.0.
-        put_option (bool): True if it's a put option, False for a call option.
 
     Returns:
         float: Vanna value.
@@ -503,6 +526,12 @@ def get_charm(
 
     Returns:
         float: Charm value.
+
+    Notes:
+        Charm is dDelta/dt, the change in Delta as calendar time passes, which is the
+        negative of the derivative with respect to the time to maturity. Unlike Theta it
+        is returned per year rather than per day; divide by 365 for delta decay per
+        calendar day. Color follows the same per-year convention.
     """
     d1 = black_scholes_model.get_d1(
         stock_price=stock_price,
@@ -519,7 +548,7 @@ def get_charm(
     if put_option:
         charm = -dividend_yield * np.exp(
             -dividend_yield * time_to_expiration
-        ) * norm.cdf(-d1) + np.exp(-dividend_yield * time_to_expiration) * norm.pdf(
+        ) * norm.cdf(-d1) - np.exp(-dividend_yield * time_to_expiration) * norm.pdf(
             -d1
         ) * (
             2 * (risk_free_rate - dividend_yield) * time_to_expiration
@@ -655,6 +684,18 @@ def get_veta(
 
     Returns:
         float: Veta value.
+
+    Notes:
+        Veta is the rate of change of Vega as calendar time passes, dVega/dt. The
+        closed form as published (e.g. Wikipedia's Greeks table, Haug) differentiates
+        with respect to the time to maturity tau, which runs in the opposite direction,
+        so the published expression is negated here. That keeps Veta pointing the same
+        way as Theta, Charm and Color, which all measure the change per unit of time
+        elapsed rather than per unit of remaining maturity: a long option loses Vega as
+        expiry approaches, so Veta is negative for it.
+
+        The result is divided by (100 * 365), expressing it per 1 percentage point of
+        volatility per calendar day.
     """
     d1 = black_scholes_model.get_d1(
         stock_price=stock_price,
@@ -668,8 +709,9 @@ def get_veta(
         d1=d1, volatility=volatility, time_to_expiration=time_to_expiration
     )
 
+    # The published closed form is dVega/dtau; negating it turns it into dVega/dt, so that Veta measures the change per unit of time elapsed, as Theta, Charm and Color do.  # noqa: E501
     veta = (
-        -stock_price
+        stock_price
         * np.exp(-dividend_yield * time_to_expiration)
         * norm.pdf(d1)
         * np.sqrt(time_to_expiration)
@@ -681,8 +723,8 @@ def get_veta(
         )
     )
 
-    # Divide by 100 and multiply by 365 to get the veta value
-    veta = veta / 100 * 365
+    # Expressed per 1% change in volatility per day, matching the documented convention.
+    veta = veta / (100 * 365)
 
     return veta
 
@@ -783,7 +825,7 @@ def get_zomma(
     Args:
         stock_price (float): Current stock price.
         strike_price (float): Option strike price.
-        time_to_expiry (float): Time to option expiry (in years).
+        time_to_expiration (float): Time to option expiry (in years).
         risk_free_rate (float): Risk-free interest rate (annualized).
         volatility (float): Volatility of the underlying stock.
         dividend_yield (float): Dividend yield (annualized). Defaults to 0.
@@ -797,6 +839,7 @@ def get_zomma(
         risk_free_rate=risk_free_rate,
         volatility=volatility,
         time_to_expiration=time_to_expiration,
+        dividend_yield=dividend_yield,
     )
     d2 = black_scholes_model.get_d2(
         d1=d1, volatility=volatility, time_to_expiration=time_to_expiration
@@ -824,13 +867,20 @@ def get_color(
     Args:
         stock_price (float): Current stock price.
         strike_price (float): Option strike price.
-        time_to_expiry (float): Time to option expiry (in years).
+        time_to_expiration (float): Time to option expiry (in years).
         risk_free_rate (float): Risk-free interest rate (annualized).
         volatility (float): Volatility of the underlying stock.
         dividend_yield (float): Dividend yield (annualized). Defaults to 0.
 
     Returns:
         float: Color value.
+
+    Notes:
+        Color is dGamma/dt, the change in Gamma as calendar time passes. The published
+        closed form (e.g. Wikipedia's Greeks table) differentiates with respect to the
+        time to maturity and therefore carries a leading minus sign; that sign is absorbed
+        here so Color points the same way as Theta, Charm and Veta. The result is per
+        year, matching Charm; divide by 365 for gamma decay per calendar day.
     """
     d1 = black_scholes_model.get_d1(
         stock_price=stock_price,
@@ -847,7 +897,7 @@ def get_color(
     )
 
     color = (
-        -np.exp(-dividend_yield * time_to_expiration)
+        np.exp(-dividend_yield * time_to_expiration)
         * (
             norm.pdf(d1)
             / (
@@ -889,7 +939,7 @@ def get_ultima(
     Args:
         stock_price (float): Current stock price.
         strike_price (float): Option strike price.
-        time_to_expiry (float): Time to option expiry (in years).
+        time_to_expiration (float): Time to option expiry (in years).
         risk_free_rate (float): Risk-free interest rate (annualized).
         volatility (float): Volatility of the underlying stock.
         dividend_yield (float): Dividend yield (annualized). Defaults to 0.
@@ -911,13 +961,17 @@ def get_ultima(
         time_to_expiration=time_to_expiration,
     )
 
-    vega = get_vega(
-        stock_price=stock_price,
-        strike_price=strike_price,
-        time_to_expiration=time_to_expiration,
-        risk_free_rate=risk_free_rate,
-        volatility=volatility,
-        dividend_yield=dividend_yield,
+    # get_vega is scaled by 1/100, and Ultima's formula needs the raw vega.
+    vega = (
+        get_vega(
+            stock_price=stock_price,
+            strike_price=strike_price,
+            time_to_expiration=time_to_expiration,
+            risk_free_rate=risk_free_rate,
+            volatility=volatility,
+            dividend_yield=dividend_yield,
+        )
+        * 100
     )
 
     ultima = (-vega / volatility**2) * (d1 * d2 * (1 - d1 * d2) + d1**2 + d2**2)

@@ -1,0 +1,4 @@
+,Eigenvalue,Trace Statistic,Trace Critical Value 90%,Trace Critical Value 95%,Trace Critical Value 99%,"Reject (Trace, 5%)",Max-Eigenvalue Statistic,Max-Eig Critical Value 90%,Max-Eig Critical Value 95%,Max-Eig Critical Value 99%,"Reject (Max-Eig, 5%)"
+r <= 0,0.3076,191.9658,27.0669,29.7961,35.4628,True,183.0587,18.8928,21.1314,25.865,True
+r <= 1,0.0148,8.9071,13.4294,15.4943,19.9349,False,7.4273,12.2971,14.2639,18.52,False
+r <= 2,0.003,1.4797,2.7055,3.8415,6.6349,False,1.4797,2.7055,3.8415,6.6349,False

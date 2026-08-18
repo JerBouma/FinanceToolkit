@@ -134,8 +134,7 @@ def test_setup_logger_stream_handler_uses_stderr():
 
             result = logger_model.setup_logger()
 
-            # Check StreamHandler was called with sys.stderr (not stdout) so
-            # that log output never corrupts the stdio JSON-RPC pipe.
+            # stderr, not stdout, so log output never corrupts the stdio JSON-RPC pipe.
             mock_stream_handler.assert_called_once_with(sys.stderr)
 
             assert result == mock_logger
@@ -155,8 +154,7 @@ def test_get_logger():
 
 def test_get_logger_returns_existing_logger():
     """Test get_logger returns existing logger instance."""
-    # This test verifies that get_logger always returns the same logger instance
-    # when called multiple times
+    # get_logger should return the same instance on every call.
     with patch("logging.getLogger") as mock_get_logger:
         mock_logger = MagicMock()
         mock_get_logger.return_value = mock_logger

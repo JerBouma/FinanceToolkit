@@ -160,6 +160,11 @@ def test_get_trust_in_government(recorder, economics_module):
 def test_get_consumer_price_index(recorder, economics_module):
     recorder.capture(economics_module.get_consumer_price_index())
     recorder.capture(economics_module.get_consumer_price_index(growth=True))
+    recorder.capture(
+        economics_module.get_consumer_price_index(
+            countries=["United States"], oecd_source=True, period="monthly"
+        )
+    )
 
 
 def test_get_inflation_rate(recorder, economics_module):
@@ -195,6 +200,16 @@ def test_get_house_prices(recorder, economics_module):
 def test_get_rent_prices(recorder, economics_module):
     recorder.capture(economics_module.get_rent_prices())
     recorder.capture(economics_module.get_rent_prices(growth=True))
+
+
+def test_get_household_savings_rate(recorder, economics_module):
+    recorder.capture(economics_module.get_household_savings_rate())
+    recorder.capture(economics_module.get_household_savings_rate(growth=True))
+
+
+def test_get_household_debt_to_income_ratio(recorder, economics_module):
+    recorder.capture(economics_module.get_household_debt_to_income_ratio())
+    recorder.capture(economics_module.get_household_debt_to_income_ratio(growth=True))
 
 
 def test_get_share_prices(recorder, economics_module):
@@ -273,3 +288,151 @@ def test_get_population_statistics(recorder, economics_module):
 def test_get_poverty_rate(recorder, economics_module):
     recorder.capture(economics_module.get_poverty_rate())
     recorder.capture(economics_module.get_poverty_rate(growth=True))
+
+
+def test_get_real_gross_domestic_product_usd(recorder, economics_module):
+    recorder.capture(economics_module.get_real_gross_domestic_product_usd())
+    recorder.capture(economics_module.get_real_gross_domestic_product_usd(growth=True))
+
+
+def test_get_real_gross_domestic_product_per_capita(recorder, economics_module):
+    recorder.capture(economics_module.get_real_gross_domestic_product_per_capita())
+    recorder.capture(
+        economics_module.get_real_gross_domestic_product_per_capita(growth=True)
+    )
+
+
+def test_get_output_gap(recorder, economics_module):
+    recorder.capture(economics_module.get_output_gap())
+    recorder.capture(economics_module.get_output_gap(growth=True))
+    recorder.capture(
+        economics_module.get_output_gap(countries=["United States", "Germany", "Japan"])
+    )
+
+
+def test_get_trade_balance(recorder, economics_module):
+    recorder.capture(economics_module.get_trade_balance())
+    recorder.capture(economics_module.get_trade_balance(growth=True))
+    recorder.capture(
+        economics_module.get_trade_balance(countries=["United States", "China"])
+    )
+
+
+def test_get_real_effective_exchange_rate(recorder, economics_module):
+    recorder.capture(economics_module.get_real_effective_exchange_rate())
+    recorder.capture(economics_module.get_real_effective_exchange_rate(growth=True))
+
+
+def test_get_producer_price_index(recorder, economics_module):
+    recorder.capture(economics_module.get_producer_price_index())
+    recorder.capture(economics_module.get_producer_price_index(growth=True))
+    recorder.capture(
+        economics_module.get_producer_price_index(
+            countries=["United States", "Germany"], period="yearly"
+        )
+    )
+
+
+def test_get_real_interest_rate(recorder, economics_module):
+    recorder.capture(economics_module.get_real_interest_rate())
+    recorder.capture(economics_module.get_real_interest_rate(growth=True))
+    recorder.capture(
+        economics_module.get_real_interest_rate(
+            countries=["United States", "Germany", "Japan"], rate_type="short_term"
+        )
+    )
+    recorder.capture(
+        economics_module.get_real_interest_rate(
+            countries=["United States", "Germany"], gmdb_source=False
+        )
+    )
+
+
+def test_get_misery_index(recorder, economics_module):
+    recorder.capture(economics_module.get_misery_index())
+    recorder.capture(economics_module.get_misery_index(growth=True))
+    recorder.capture(
+        economics_module.get_misery_index(
+            countries=["United States", "Germany"], gmdb_source=False
+        )
+    )
+
+
+def test_get_yield_curve_slope(recorder, economics_module):
+    recorder.capture(economics_module.get_yield_curve_slope())
+    recorder.capture(economics_module.get_yield_curve_slope(growth=True))
+    recorder.capture(
+        economics_module.get_yield_curve_slope(
+            countries=["United States", "Germany"], gmdb_source=False
+        )
+    )
+
+
+def test_get_sovereign_debt_crisis(recorder, economics_module):
+    recorder.capture(economics_module.get_sovereign_debt_crisis())
+    recorder.capture(economics_module.get_sovereign_debt_crisis(countries="Argentina"))
+
+
+def test_get_currency_crisis(recorder, economics_module):
+    recorder.capture(economics_module.get_currency_crisis())
+    recorder.capture(economics_module.get_currency_crisis(countries="Turkey"))
+
+
+def test_get_banking_crisis(recorder, economics_module):
+    recorder.capture(economics_module.get_banking_crisis())
+    recorder.capture(
+        economics_module.get_banking_crisis(
+            countries=["United States", "United Kingdom"]
+        )
+    )
+
+
+def test_get_nonfarm_payrolls(recorder, economics_module):
+    recorder.capture(economics_module.get_nonfarm_payrolls())
+    recorder.capture(economics_module.get_nonfarm_payrolls(growth=True))
+
+
+def test_get_initial_jobless_claims(recorder, economics_module):
+    recorder.capture(economics_module.get_initial_jobless_claims())
+    recorder.capture(economics_module.get_initial_jobless_claims(growth=True))
+
+
+def test_get_retail_sales(recorder, economics_module):
+    recorder.capture(economics_module.get_retail_sales())
+    recorder.capture(economics_module.get_retail_sales(growth=True))
+
+
+def test_get_industrial_production_index(recorder, economics_module):
+    recorder.capture(economics_module.get_industrial_production_index())
+    recorder.capture(economics_module.get_industrial_production_index(growth=True))
+
+
+def test_get_housing_starts(recorder, economics_module):
+    recorder.capture(economics_module.get_housing_starts())
+    recorder.capture(economics_module.get_housing_starts(growth=True))
+
+
+def test_get_real_personal_income(recorder, economics_module):
+    recorder.capture(economics_module.get_real_personal_income())
+    recorder.capture(economics_module.get_real_personal_income(growth=True))
+
+
+def test_get_mortgage_rate_30_year(recorder, economics_module):
+    recorder.capture(economics_module.get_mortgage_rate_30_year())
+    recorder.capture(economics_module.get_mortgage_rate_30_year(growth=True))
+
+
+def test_get_recession_indicator(recorder, economics_module):
+    recorder.capture(economics_module.get_recession_indicator())
+    recorder.capture(economics_module.get_recession_indicator(growth=True))
+
+
+def test_get_nonfarm_payrolls_requires_fred_api_key():
+    from financetoolkit.economics.economics_controller import Economics
+
+    economics = Economics(start_date="2020-01-01", fred_api_key="")
+
+    # @handle_errors swallows the ValueError and returns an empty Series.
+    result = economics.get_nonfarm_payrolls()
+
+    assert result.empty

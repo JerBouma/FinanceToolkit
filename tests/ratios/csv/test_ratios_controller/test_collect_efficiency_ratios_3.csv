@@ -1,13 +1,13 @@
 ,,2021,2022,2023
 AAPL,Days of Inventory Outstanding,5.0765,4.8187,4.7022
 AAPL,Days of Sales Outstanding,12.0838,13.0756,13.5399
-AAPL,Operating Cycle,,14.9979,17.484
+AAPL,Operating Cycle,17.1603,17.8943,18.242
 AAPL,Days of Accounts Payable Outstanding,46.3044,49.6996,52.8407
 AAPL,Cash Conversion Cycle,-29.144,-31.8054,-34.5987
 AAPL,Cash Conversion Efficiency,0.2885,0.2976,0.2992
-AAPL,Receivables Turnover,0.0331,0.0358,0.0371
-AAPL,Inventory Turnover Ratio,40.0303,38.7899,37.9777
-AAPL,Accounts Payable Turnover Ratio,4.3887,3.7609,3.3795
+AAPL,Receivables Turnover,30.2058,27.9147,26.9574
+AAPL,Inventory Turnover Ratio,71.8993,75.7465,77.624
+AAPL,Accounts Payable Turnover Ratio,7.8826,7.3441,6.9075
 AAPL,SGA-to-Revenue Ratio,0.0654,0.0619,0.0643
 AAPL,Fixed Asset Turnover,3.2312,3.5069,3.6476
 AAPL,Asset Turnover Ratio,1.8976,2.1602,2.2049
@@ -17,15 +17,16 @@ AAPL,S&M to Revenue Ratio,0.0,0.0,0.0
 AAPL,G&A to Revenue Ratio,0.0,0.0,0.0
 AAPL,SBC to Revenue Ratio,0.023,0.0223,0.0256
 AAPL,Deferred Revenue Ratio,0.0111,0.0102,0.0103
+AAPL,Working Capital Turnover Ratio,26.8618,-164.8547,-76.5405
 MSFT,Days of Inventory Outstanding,8.4112,10.132,8.8642
 MSFT,Days of Sales Outstanding,41.0952,40.9995,41.355
-MSFT,Operating Cycle,,45.0292,45.483
+MSFT,Operating Cycle,49.5065,51.1315,50.2192
 MSFT,Days of Accounts Payable Outstanding,51.4085,54.2709,52.6782
 MSFT,Cash Conversion Cycle,-1.9021,-3.1394,-2.4591
 MSFT,Cash Conversion Efficiency,0.4417,0.4525,0.4306
-MSFT,Receivables Turnover,0.1126,0.1123,0.1133
-MSFT,Inventory Turnover Ratio,23.0554,19.6457,21.1032
-MSFT,Accounts Payable Turnover Ratio,3.7722,3.6677,3.551
+MSFT,Receivables Turnover,8.8818,8.9026,8.826
+MSFT,Inventory Turnover Ratio,43.3944,36.0245,41.1769
+MSFT,Accounts Payable Turnover Ratio,7.1,6.7255,6.9289
 MSFT,SGA-to-Revenue Ratio,0.1605,0.1445,0.1415
 MSFT,Fixed Asset Turnover,2.315,2.1267,1.94
 MSFT,Asset Turnover Ratio,0.9797,1.0488,1.0561
@@ -35,3 +36,4 @@ MSFT,S&M to Revenue Ratio,0.1277,0.1145,0.1087
 MSFT,G&A to Revenue Ratio,0.0328,0.03,0.0329
 MSFT,SBC to Revenue Ratio,0.0367,0.0372,0.0417
 MSFT,Deferred Revenue Ratio,0.1246,0.1188,0.1176
+MSFT,Working Capital Turnover Ratio,3.0299,4.3012,5.3026

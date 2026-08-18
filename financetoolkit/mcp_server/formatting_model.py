@@ -92,8 +92,8 @@ def _df_to_records(dataframe: pd.DataFrame) -> list[dict]:
 
         flat = stacked.reset_index()
         return [
-            {_clean_key(k): _clean(v) for k, v in row.items()}
-            for _, row in flat.iterrows()
+            {_clean_key(k): _clean(v) for k, v in rec.items()}
+            for rec in flat.to_dict(orient="records")
         ]
 
     # ── Case 2: MultiIndex index (ticker, metric) — multi-ticker financials ───
@@ -117,15 +117,14 @@ def _df_to_records(dataframe: pd.DataFrame) -> list[dict]:
         dataframe.index.names = level_names
         flat = dataframe.reset_index()
 
-        # When show_columns narrows to one metric the last-level column repeats
-        # the same value in every row — drop it so records stay concise.
+        # One metric means the last column level repeats, so drop it to stay concise.
         last_level = level_names[-1] if level_names else None
         if last_level and len(flat[last_level].unique()) == 1:
             flat = flat.drop(columns=[last_level])
 
         return [
-            {_clean_key(k): _clean(v) for k, v in row.items()}
-            for _, row in flat.iterrows()
+            {_clean_key(k): _clean(v) for k, v in rec.items()}
+            for rec in flat.to_dict(orient="records")
         ]
 
     # ── Case 3: Flat index, flat columns ──────────────────────────────────────
@@ -148,7 +147,8 @@ def _df_to_records(dataframe: pd.DataFrame) -> list[dict]:
     dataframe.index.name = idx_name
     flat = dataframe.reset_index()
     return [
-        {_clean_key(k): _clean(v) for k, v in row.items()} for _, row in flat.iterrows()
+        {_clean_key(k): _clean(v) for k, v in rec.items()}
+        for rec in flat.to_dict(orient="records")
     ]
 
 

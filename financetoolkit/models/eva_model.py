@@ -99,3 +99,60 @@ def get_economic_value_added(
     return net_operating_profit_after_taxes - (
         weighted_average_cost_of_capital * invested_capital
     )
+
+
+def get_market_value_added(
+    market_value_of_equity: float | pd.Series | pd.DataFrame,
+    market_value_of_debt: float | pd.Series | pd.DataFrame,
+    invested_capital: float | pd.Series | pd.DataFrame,
+) -> float | pd.Series | pd.DataFrame:
+    """
+    Market Value Added (MVA) is a financial metric that measures the difference between the
+    current market value of a company (both its equity and its debt) and the total capital
+    that has historically been invested in it. It is the market-priced counterpart to
+    Economic Value Added (EVA): where EVA measures a single period's excess return over the
+    cost of capital, MVA reflects the market's cumulative, forward-looking verdict on all of
+    a company's expected future EVA, discounted back to the present.
+
+    The formula is as follows:
+
+        - MVA = (Market Value of Equity + Market Value of Debt) - Invested Capital
+
+    Also known as: MVA, market value added.
+
+    Args:
+        market_value_of_equity (float | pd.Series | pd.DataFrame): The market value of a
+        company's equity, i.e. the share price multiplied by the total shares outstanding.
+        market_value_of_debt (float | pd.Series | pd.DataFrame): The market value of a
+        company's debt. This is commonly approximated with the book value of Total Debt,
+        consistent with the same simplification used in the Weighted Average Cost of Capital
+        calculation elsewhere in this module.
+        invested_capital (float | pd.Series | pd.DataFrame): The invested capital of the
+        company, i.e. the sum of total equity and total debt. See `get_invested_capital`.
+
+    Returns:
+        float | pd.Series | pd.DataFrame: The Market Value Added (MVA).
+
+    Notes:
+    - A positive MVA indicates that the market believes management has created value in
+    excess of the capital invested in the company, i.e. the market is pricing in future
+    Economic Value Added above the cost of capital.
+    - A negative MVA indicates that the market values the company below the capital that has
+    historically been invested in it, i.e. that management has, on net, destroyed
+    shareholder value.
+    - MVA and EVA are related but not identical: in theory, MVA equals the present value of
+    all expected future EVA, discounted at the Weighted Average Cost of Capital. A company
+    can therefore report a negative EVA in a given period while still showing a positive MVA
+    if the market expects performance to improve going forward, and vice versa.
+
+    References:
+    - Stern, Joel M., G. Bennett Stewart, and Donald H. Chew. "The EVA Financial Management
+    System." Journal of Applied Corporate Finance, Vol. 8, No. 2, 1995, pp. 32-46.
+    """
+    if not isinstance(market_value_of_equity, int | float | pd.Series | pd.DataFrame):
+        raise TypeError(
+            "market_value_of_equity must be a float, pd.Series or pd.DataFrame, "
+            f"not {type(market_value_of_equity)}."
+        )
+
+    return (market_value_of_equity + market_value_of_debt) - invested_capital

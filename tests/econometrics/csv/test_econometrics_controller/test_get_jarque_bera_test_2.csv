@@ -1,0 +1,75 @@
+,,AAPL,MSFT
+2019-12,Jarque-Bera Statistic,,
+2019-12,P-Value,,
+2020-01,Jarque-Bera Statistic,3.0214,1.2404
+2020-01,P-Value,0.2208,0.5378
+2020-02,Jarque-Bera Statistic,1.9602,3.1042
+2020-02,P-Value,0.3753,0.2118
+2020-03,Jarque-Bera Statistic,0.3667,0.1778
+2020-03,P-Value,0.8325,0.915
+2020-04,Jarque-Bera Statistic,1.46,0.8897
+2020-04,P-Value,0.4819,0.6409
+2020-05,Jarque-Bera Statistic,1.1343,1.1239
+2020-05,P-Value,0.5671,0.5701
+2020-06,Jarque-Bera Statistic,5.0892,7.7522
+2020-06,P-Value,0.0785,0.0207
+2020-07,Jarque-Bera Statistic,44.0053,0.6476
+2020-07,P-Value,0.0,0.7234
+2020-08,Jarque-Bera Statistic,0.0885,1.9416
+2020-08,P-Value,0.9567,0.3788
+2020-09,Jarque-Bera Statistic,1.1984,1.4399
+2020-09,P-Value,0.5493,0.4868
+2020-10,Jarque-Bera Statistic,0.1985,1.8112
+2020-10,P-Value,0.9055,0.4043
+2020-11,Jarque-Bera Statistic,0.3475,0.6925
+2020-11,P-Value,0.8405,0.7073
+2020-12,Jarque-Bera Statistic,3.1004,0.0414
+2020-12,P-Value,0.2122,0.9795
+2021-01,Jarque-Bera Statistic,1.1134,0.3906
+2021-01,P-Value,0.5731,0.8226
+2021-02,Jarque-Bera Statistic,0.4245,0.9987
+2021-02,P-Value,0.8088,0.6069
+2021-03,Jarque-Bera Statistic,0.6013,1.1973
+2021-03,P-Value,0.7403,0.5496
+2021-04,Jarque-Bera Statistic,1.3427,0.1002
+2021-04,P-Value,0.511,0.9511
+2021-05,Jarque-Bera Statistic,0.6177,0.3056
+2021-05,P-Value,0.7343,0.8583
+2021-06,Jarque-Bera Statistic,0.5182,1.578
+2021-06,P-Value,0.7717,0.4543
+2021-07,Jarque-Bera Statistic,0.5522,0.6465
+2021-07,P-Value,0.7587,0.7238
+2021-08,Jarque-Bera Statistic,1.2684,2.7712
+2021-08,P-Value,0.5304,0.2502
+2021-09,Jarque-Bera Statistic,1.2986,4.3634
+2021-09,P-Value,0.5224,0.1128
+2021-10,Jarque-Bera Statistic,0.4977,0.9943
+2021-10,P-Value,0.7797,0.6083
+2021-11,Jarque-Bera Statistic,0.9141,0.6011
+2021-11,P-Value,0.6332,0.7404
+2021-12,Jarque-Bera Statistic,0.1687,0.3886
+2021-12,P-Value,0.9191,0.8234
+2022-01,Jarque-Bera Statistic,18.5767,0.4982
+2022-01,P-Value,0.0001,0.7795
+2022-02,Jarque-Bera Statistic,0.996,0.3461
+2022-02,P-Value,0.6077,0.8411
+2022-03,Jarque-Bera Statistic,1.6364,0.8297
+2022-03,P-Value,0.4412,0.6604
+2022-04,Jarque-Bera Statistic,0.4556,0.7484
+2022-04,P-Value,0.7963,0.6878
+2022-05,Jarque-Bera Statistic,1.0524,1.4277
+2022-05,P-Value,0.5908,0.4897
+2022-06,Jarque-Bera Statistic,1.87,0.823
+2022-06,P-Value,0.3926,0.6627
+2022-07,Jarque-Bera Statistic,0.7027,3.8158
+2022-07,P-Value,0.7037,0.1484
+2022-08,Jarque-Bera Statistic,0.9693,0.4642
+2022-08,P-Value,0.6159,0.7929
+2022-09,Jarque-Bera Statistic,0.5949,4.0143
+2022-09,P-Value,0.7427,0.1344
+2022-10,Jarque-Bera Statistic,1.4148,1.5116
+2022-10,P-Value,0.4929,0.4696
+2022-11,Jarque-Bera Statistic,9.8598,5.6566
+2022-11,P-Value,0.0072,0.0591
+2022-12,Jarque-Bera Statistic,0.0444,0.4952
+2022-12,P-Value,0.978,0.7807

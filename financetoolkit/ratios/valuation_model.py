@@ -154,7 +154,15 @@ def get_interest_debt_per_share(
 ) -> pd.Series:
     """
     Calculate the interest debt per share, a valuation ratio that measures the
-    amount of interest expense incurred per outstanding share of a company's stock.
+    combined interest expense and debt burden of a company per outstanding share
+    of its stock.
+
+    The formula is as follows:
+
+        Interest Debt per Share = (Interest Expense + Total Debt) / Shares Outstanding
+
+    For more information about the method, see the following source:
+    https://site.financialmodelingprep.com/developer/docs/formula
 
     Args:
         interest_expense (float or pd.Series): Interest expense of the company.
@@ -164,7 +172,7 @@ def get_interest_debt_per_share(
     Returns:
         float | pd.Series: The interest debt per share value.
     """
-    return (interest_expense / total_debt) * shares_outstanding
+    return (interest_expense + total_debt) / shares_outstanding
 
 
 def get_capex_per_share(
@@ -257,6 +265,38 @@ def get_price_to_free_cash_flow_ratio(
         float | pd.Series: The price to free cash flow ratio value.
     """
     return market_cap / free_cash_flow
+
+
+def get_price_to_sales_ratio(
+    market_cap: pd.Series, total_revenue: pd.Series
+) -> pd.Series:
+    """
+    Calculate the price to sales ratio (P/S), a valuation ratio that compares a
+    company's market capitalization to its total revenue.
+
+    The price to sales ratio is particularly useful for valuing companies that are not
+    yet profitable (and therefore have no meaningful P/E ratio), since revenue is
+    typically positive even when earnings are not, and is less susceptible to
+    accounting distortions than earnings-based multiples. It is, however, less
+    informative than earnings- or cash-flow-based multiples for mature, profitable
+    companies since it ignores profitability and cost structure entirely.
+
+    The formula is as follows:
+
+        Price to Sales Ratio = Market Capitalization / Total Revenue
+
+    This is equivalent to Stock Price / Revenue per Share.
+
+    Also known as: P/S ratio, sales multiple.
+
+    Args:
+        market_cap (float or pd.Series): Market capitalization of the company.
+        total_revenue (float or pd.Series): Total revenue of the company.
+
+    Returns:
+        float | pd.Series: The price to sales ratio value.
+    """
+    return market_cap / total_revenue
 
 
 def get_market_cap(
@@ -439,20 +479,20 @@ def get_tangible_asset_value(
 
 def get_net_current_asset_value(
     total_current_assets: pd.Series,
-    total_current_liabilities: pd.Series,
+    total_liabilities: pd.Series,
 ) -> pd.Series:
     """
-    Calculate the net current asset value, which is the total value of a company's current assets
-    minus its current liabilities.
+    Calculate the net current asset value (Benjamin Graham's NCAV), which is the total value
+    of a company's current assets minus its total liabilities (not just its current liabilities).
 
     Args:
         total_current_assets (float or pd.Series): The current assets of the company.
-        total_current_liabilities (float or pd.Series): The current liabilities of the company.
+        total_liabilities (float or pd.Series): The total liabilities of the company.
 
     Returns:
         float | pd.Series: The net current asset value.
     """
-    return total_current_assets - total_current_liabilities
+    return total_current_assets - total_liabilities
 
 
 def get_ev_to_ebit(

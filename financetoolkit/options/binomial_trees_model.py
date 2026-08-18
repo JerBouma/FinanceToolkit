@@ -73,6 +73,31 @@ def calculate_stock_prices(
     Returns:
         pd.DataFrame: Stock prices at each node.
     """
+    if up_movement == down_movement:
+        raise ValueError(
+            "The up and down movement are equal, which happens when the volatility or the "
+            "time to expiration is zero. The tree cannot be constructed in that case."
+        )
+
+    if show_unique_combinations:
+        # The tree recombines, so only the net number of ups matters and there are just period_length + 1 distinct nodes; enumerating all 2^period_length paths first and deduplicating afterwards is exponential and unusable beyond ~20 steps.  # noqa: E501
+        combinations_dict = {}
+
+        for ups in range(period_length, -1, -1):
+            downs = period_length - ups
+            combination_key = "D" * downs + "U" * ups
+
+            value = stock_price
+            values = [value]
+
+            for period in range(1, period_length + 1):
+                value = value * (down_movement if period <= downs else up_movement)
+                values.append(value)
+
+            combinations_dict[combination_key] = values
+
+        return pd.DataFrame.from_dict(combinations_dict, orient="index")
+
     combinations_dict: dict = {}
     unique_combinations = set()
 
@@ -130,7 +155,8 @@ def calculate_stock_prices(
             }
         )
 
-        unique_movements = scoring.drop_duplicates(keep="first")
+        # keep='last' picks the downs-first path, so row k is a real node at every t >= k.
+        unique_movements = scoring.drop_duplicates(keep="last")
 
         combinations_df = combinations_df.loc[unique_movements.index]
 
@@ -191,7 +217,7 @@ def calculate_option_value(
     Returns:
     float: Option value
     """
-    option_value = np.exp(-risk_free_rate * time_to_expiration / (timestep - 1)) * (
+    option_value = np.exp(-risk_free_rate * time_to_expiration / timestep) * (
         risk_neutral_probability * up_option_payoff
         + (1 - risk_neutral_probability) * down_option_payoff
     )
@@ -265,11 +291,11 @@ def get_option_payoffs(
 
     periods = len(option_payoffs.columns)
 
-    # Calculate put option prices for earlier periods
+    # Row k at column i has (i - k) ups and k downs; shift(-1) gives the down-child.
     for i in range(periods - 2, -1, -1):
         option_value = calculate_option_value(
-            up_option_payoff=option_payoffs.iloc[:, i + 1].shift(-1),
-            down_option_payoff=option_payoffs.iloc[:, i + 1],
+            up_option_payoff=option_payoffs.iloc[:, i + 1],
+            down_option_payoff=option_payoffs.iloc[:, i + 1].shift(-1),
             risk_free_rate=risk_free_rate,
             time_to_expiration=years,
             timestep=timesteps,
@@ -277,18 +303,15 @@ def get_option_payoffs(
         )
 
         if american_option:
+            # Compare early exercise against this node's price, not the price at t=0.
             if put_option:
-                exercise_value = [
-                    get_put_option_payoffs(
-                        stock_price=stock_price, strike_price=strike_price
-                    )
-                ]
+                exercise_value = get_put_option_payoffs(
+                    stock_price=stock_prices.iloc[:, i], strike_price=strike_price
+                )
             else:
-                exercise_value = [
-                    get_call_option_payoffs(
-                        stock_price=stock_price, strike_price=strike_price
-                    )
-                ]
+                exercise_value = get_call_option_payoffs(
+                    stock_price=stock_prices.iloc[:, i], strike_price=strike_price
+                )
 
             option_payoffs.iloc[:, i] = np.maximum(option_value, exercise_value)
         else:
@@ -298,3 +321,136 @@ def get_option_payoffs(
         return option_payoffs, up_movement, down_movement, risk_neutral_probability
 
     return option_payoffs
+
+
+def get_strategy_payoff(
+    stock_price: float | pd.Series | np.ndarray,
+    legs: list[dict[str, float | bool | str]],
+) -> float | pd.Series:
+    """
+    Calculate the net expiration profit and loss (P&L) of a multi-leg option (and,
+    optionally, stock) strategy.
+
+    Also known as: option strategy payoff diagram, P&L profile.
+
+    A strategy is expressed as a list of "legs". Each leg is a dictionary describing
+    either an option position or a stock position:
+
+    - For an option leg:
+        - "instrument" (str): "option" (this is the default if omitted).
+        - "strike_price" (float): the option's strike price.
+        - "put_option" (bool): whether the leg is a put option. Defaults to False (call).
+        - "position" (str): "long" or "short". Defaults to "long".
+        - "premium" (float): the premium paid (long) or received (short) per option.
+          Defaults to 0.
+    - For a stock leg:
+        - "instrument" (str): "stock".
+        - "position" (str): "long" or "short". Defaults to "long".
+        - "premium" (float): the entry price paid (long) or received (short) per share.
+          Defaults to 0.
+
+    The net P&L at expiration is the sum, across all legs, of:
+
+    - Long option: max(payoff, 0) — premium
+    - Short option: premium — max(payoff, 0)
+    - Long stock: stock_price — entry_price
+    - Short stock: entry_price — stock_price
+
+    Where payoff is max(S — K, 0) for a call and max(K — S, 0) for a put (see
+    `get_call_option_payoffs` and `get_put_option_payoffs`).
+
+    This single, generic building block can express many common strategies by
+    combining option (and stock) legs, for example:
+
+    - Straddle: long call + long put, same strike.
+    - Strangle: long call + long put, different (OTM) strikes.
+    - Bull call spread: long call (lower strike) + short call (higher strike).
+    - Bear put spread: long put (higher strike) + short put (lower strike).
+    - Covered call: long stock + short call.
+    - Protective put: long stock + long put.
+    - Iron condor: short put + long put (lower strikes) + short call + long call
+      (higher strikes).
+
+    Args:
+        stock_price (float | pd.Series | np.ndarray): The stock price(s) at expiration
+            for which to evaluate the strategy, e.g. a range of prices to build a
+            payoff diagram.
+        legs (list[dict]): A list of leg dictionaries as described above. Must contain
+            at least one leg.
+
+    Returns:
+        float | pd.Series: The net strategy P&L for the given stock price(s).
+
+    Raises:
+        TypeError: if legs is not a list of dictionaries or if a leg's numeric fields
+        are not numeric.
+        ValueError: if legs is empty, or a leg's "position" or "instrument" is invalid,
+        or an option leg is missing "strike_price".
+    """
+    if not isinstance(legs, list):
+        raise TypeError(
+            f"legs must be a list of dictionaries, received {type(legs).__name__}."
+        )
+
+    if not legs:
+        raise ValueError("legs must contain at least one leg.")
+
+    total_payoff: float | pd.Series | np.ndarray = 0.0
+
+    for index, leg in enumerate(legs):
+        if not isinstance(leg, dict):
+            raise TypeError(
+                f"Leg {index} must be a dictionary, received {type(leg).__name__}."
+            )
+
+        instrument = leg.get("instrument", "option")
+        if instrument not in ("option", "stock"):
+            raise ValueError(
+                f"Leg {index} 'instrument' must be 'option' or 'stock', received {instrument!r}."
+            )
+
+        position = leg.get("position", "long")
+        if position not in ("long", "short"):
+            raise ValueError(
+                f"Leg {index} 'position' must be 'long' or 'short', received {position!r}."
+            )
+
+        premium = leg.get("premium", 0.0)
+        if not isinstance(premium, (int, float)) or isinstance(premium, bool):
+            raise TypeError(
+                f"Leg {index} 'premium' must be a float or int, received {type(premium).__name__}."
+            )
+
+        if instrument == "stock":
+            leg_value = stock_price
+        else:
+            strike_price = leg.get("strike_price")
+            if (
+                strike_price is None
+                or not isinstance(strike_price, (int, float))
+                or isinstance(strike_price, bool)
+            ):
+                raise TypeError(
+                    f"Leg {index} must define a numeric 'strike_price' for an option instrument."
+                )
+
+            put_option = leg.get("put_option", False)
+            if not isinstance(put_option, bool):
+                raise TypeError(
+                    f"Leg {index} 'put_option' must be a bool, received {type(put_option).__name__}."
+                )
+
+            if put_option:
+                leg_value = get_put_option_payoffs(
+                    stock_price=stock_price, strike_price=strike_price
+                )
+            else:
+                leg_value = get_call_option_payoffs(
+                    stock_price=stock_price, strike_price=strike_price
+                )
+
+        leg_pnl = leg_value - premium if position == "long" else premium - leg_value
+
+        total_payoff = total_payoff + leg_pnl
+
+    return total_payoff

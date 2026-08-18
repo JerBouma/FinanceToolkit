@@ -7,6 +7,7 @@ import os
 import pandas as pd
 
 from financetoolkit import fmp_model
+from financetoolkit.cache import cache_controller
 from financetoolkit.discovery import discovery_model
 from financetoolkit.utilities import logger_model
 from financetoolkit.utilities.error_model import handle_errors
@@ -15,14 +16,11 @@ from financetoolkit.utilities.error_model import handle_errors
 # pylint: disable=too-many-locals,line-too-long,too-many-public-methods
 # ruff: noqa: E501
 
-# Set up logger, this is meant to display useful messages, warnings or errors when
-# the Finance Toolkit runs into issues or does something that might not be entirely
-# logical at first
+# Displays messages, warnings and errors when the Finance Toolkit hits issues.
 logger_model.setup_logger()
 logger = logger_model.get_logger()
 
-# In case the user has set an API key as an environment variable,
-# this will be used as the default API key for the Toolkit.
+# Used as the Toolkit's default API key when set as an environment variable.
 API_KEY: str = os.environ.get("FINANCIAL_MODELING_PREP_API_KEY", None)
 
 
@@ -37,12 +35,18 @@ class Discovery:
     def __init__(
         self,
         api_key: str | None = API_KEY,
+        use_cached_data: bool | str = False,
     ):
         """
         Initializes the Discovery Controller Class.
 
         Args:
             api_key (str): An API key from FinancialModelingPrep. Obtain one here: https://www.jeroenbouma.com/fmp
+            use_cached_data (bool | str): Whether to serve the discovery endpoints from the cache when
+                a stored response is still fresh. If True, uses the shared cache database in the user
+                configuration directory. If a string is provided, uses that as the path to a dedicated
+                cache folder or database file. Defaults to False. Note that a Toolkit created with
+                caching enabled in the same process already makes its cache available here.
 
         As an example:
 
@@ -80,30 +84,19 @@ class Discovery:
 
         self._api_key = api_key
 
-        # This tests the API key to determine the subscription plan. This is relevant for the sleep timer
-        # but also for other components of the Toolkit. This prevents wait timers from occurring while
-        # it wouldn't result to any other answer than a rate limit error.
-        determine_plan = fmp_model.get_financial_data(
-            url=f"https://financialmodelingprep.com/stable/income-statement?symbol=AAPL&apikey={api_key}&limit=10",
-            sleep_timer=False,
-            user_subscription="Free",
+        cache_enabled, cache_location = cache_controller.parse_use_cached_data(
+            use_cached_data
         )
 
-        self._fmp_plan = "Premium"
+        if cache_enabled:
+            self._cache = cache_controller.get_cache(
+                location=cache_location, enabled=True
+            )
 
-        for option in [
-            "PREMIUM QUERY PARAMETER",
-            "EXCLUSIVE ENDPOINT",
-            "NO DATA",
-            "BANDWIDTH LIMIT REACH",
-            "INVALID API KEY",
-            "LIMIT REACH",
-        ]:
-            if option in determine_plan:
-                self._fmp_plan = "Free"
-                break
-        else:
-            self._fmp_plan = "Premium"
+            cache_controller.set_active_cache(self._cache)
+
+        # Determines the plan, which drives the sleep timer and other components.
+        self._fmp_plan, _ = fmp_model.determine_subscription_plan(api_key=api_key)
 
     @handle_errors
     def search_instruments(
@@ -179,7 +172,12 @@ class Discovery:
         volume_lower: int | None = None,
         dividend_higher: int | None = None,
         dividend_lower: int | None = None,
+        sector: str | None = None,
+        industry: str | None = None,
+        country: str | None = None,
+        exchange: str | None = None,
         is_etf: bool | None = None,
+        limit: int = 1000,
     ):
         """
         Screen stocks based on a set of criteria. This can be useful to find companies that match
@@ -191,27 +189,37 @@ class Discovery:
         - Beta (beta_higher, beta_lower)
         - Volume (volume_higher, volume_lower)
         - Dividend (dividend_higher, dividend_lower)
+        - Classification (sector, industry, country, exchange, is_etf)
 
-        Note that the limit is 1000 companies. Thus if you hit the 1000, it is recommended
-        to narrow down your search to prevent companies from being excluded simply because
-        of this limit.
+        The result is capped at `limit` companies, 1000 by default. Getting back exactly that
+        many means the list was truncated, which is warned about in the log; narrow the criteria
+        or raise the limit to see the remainder.
 
         Also known as: filter stocks, financial criteria screener.
 
         Args:
-            market_cap_higher (int): The minimum market capitalization of the stock.
+            market_cap_higher (int): The minimum market capitalization of the stock, in the
+                currency of the listing rather than in millions.
             market_cap_lower (int): The maximum market capitalization of the stock.
             price_higher (int): The minimum price of the stock.
             price_lower (int): The maximum price of the stock.
             beta_higher (int): The minimum beta of the stock.
             beta_lower (int): The maximum beta of the stock.
-            volume_higher (int): The minimum volume of the stock.
+            volume_higher (int): The minimum volume of the stock, in shares traded.
             volume_lower (int): The maximum volume of the stock.
-            dividend_higher (int): The minimum dividend of the stock.
+            dividend_higher (int): The minimum dividend of the stock, as an amount per share
+                over the last annual period rather than as a yield.
             dividend_lower (int): The maximum dividend of the stock.
+            sector (str | None): The sector to restrict the screen to, e.g. "Energy".
+            industry (str | None): The industry to restrict the screen to, e.g. "Biotechnology".
+            country (str | None): The two-letter country code to restrict the screen to, e.g. "US".
+            exchange (str | None): The exchange code to restrict the screen to, e.g. "NASDAQ".
+            is_etf (bool | None): Whether to restrict the screen to ETFs or to exclude them.
+            limit (int): The maximum number of companies to return. Defaults to 1000.
 
         Returns:
-            pd.DataFrame: A dataframe with all the symbols that match the query.
+            pd.DataFrame: A dataframe with all the symbols that match the query. An empty
+                dataframe is returned when nothing matches.
 
         As an example:
 
@@ -257,7 +265,12 @@ class Discovery:
             volume_lower=volume_lower,
             dividend_higher=dividend_higher,
             dividend_lower=dividend_lower,
+            sector=sector,
+            industry=industry,
+            country=country,
+            exchange=exchange,
             is_etf=is_etf,
+            limit=limit,
             user_subscription=self._fmp_plan,
         )
 
@@ -350,10 +363,22 @@ class Discovery:
 
         return stock_shares_float
 
-    def get_sectors_performance(self) -> pd.DataFrame:
+    def get_sectors_performance(
+        self, start_date: str | None = None, end_date: str | None = None
+    ) -> pd.DataFrame:
         """
-        Returns the sectors performance for each sector. This features the sector
-        performance over the last months.
+        Returns the historical performance of every sector, one column per sector.
+
+        The values are the average percentage change of the companies in that sector on that
+        date, so 1.25 means +1.25% and not +125%. One API call is made per sector because the
+        combined endpoint this used to read was retired and now answers with an empty response.
+
+        Without a date range the API hands back only the earliest days it holds, so pass
+        `start_date` and `end_date` to look at a recent window.
+
+        Args:
+            start_date (str | None): The start date to filter data with, e.g. "2024-01-01".
+            end_date (str | None): The end date to filter data with, e.g. "2024-12-31".
 
         Returns:
             pd.DataFrame: A dataframe with the sectors performance for each sector.
@@ -372,16 +397,19 @@ class Discovery:
 
         Which returns:
 
-        | Date       |   Utilities |   Basic Materials |   Communication Services |   Consumer Cyclical |   Consumer Defensive |   Energy |   Financial Services |   Healthcare |   Industrials |   Real Estate |   Technology |
-        |:-----------|------------:|------------------:|-------------------------:|--------------------:|---------------------:|---------:|---------------------:|-------------:|--------------:|--------------:|-------------:|
-        | 2023-12-27 |     0.13511 |           0.40986 |                 -0.23963 |             0.10358 |              0.48048 | -0.27499 |              0.30153 |      0.75715 |       0.30234 |       0.35946 |      0.02372 |
-        | 2023-12-28 |     0.80513 |          -0.45131 |                 -0.15858 |            -0.45874 |              0.03828 | -0.81641 |              0.02954 |     -0.01345 |       0.22808 |       0.59612 |     -0.15283 |
-        | 2023-12-29 |    -0.01347 |          -0.14525 |                 -0.15072 |            -0.58879 |              0.18141 | -0.42463 |             -0.34718 |     -0.082   |      -0.2181  |      -0.52222 |     -0.57062 |
-        | 2024-01-01 |    -0.01347 |          -0.14536 |                 -0.15074 |            -0.58877 |              0.18141 | -0.41917 |             -0.34753 |     -0.08193 |      -0.21821 |      -0.52216 |     -0.5708  |
-        | 2024-01-02 |    -0.01347 |          -0.14536 |                 -0.15074 |            -0.58877 |              0.18141 | -0.41917 |             -0.34779 |     -0.08193 |      -0.21823 |      -0.52281 |     -0.57073 |
+        | Date       |   Basic Materials |   Communication Services |   Consumer Cyclical |   Consumer Defensive |   Energy |   Financial Services |   Healthcare |   Industrials |   Real Estate |   Technology |   Utilities |
+        |:-----------|------------------:|-------------------------:|--------------------:|---------------------:|---------:|---------------------:|-------------:|--------------:|--------------:|-------------:|------------:|
+        | 2024-02-26 |           -2.0728 |                  -1.454  |              0.7303 |               0.324  |  -0.1413 |              -0.0491 |       2.7031 |       -1.2333 |        0.4945 |       0.2893 |     -1.5214 |
+        | 2024-02-27 |            2.8956 |                   1.0041 |             -0.7125 |               0.1136 |   2.5373 |               3.0268 |       9.1978 |       -0.5179 |        0.7542 |       0.0419 |      4.6884 |
+        | 2024-02-28 |            4.343  |                  -0.8573 |             -0.9692 |              -0.0826 |  -3.6163 |               1.8261 |      -0.9719 |        1.0113 |       -0.2592 |      -0.6251 |      1.6461 |
+        | 2024-02-29 |           -1.3336 |                   0.7907 |              1.2483 |               3.4536 |   0.6259 |              -0.5633 |      -1.4379 |       -4.1022 |        1.7541 |       1.2096 |      9.9286 |
+        | 2024-03-01 |            0.8526 |                   0.0092 |              1.5435 |              -3.7427 |   1.399  |              -0.8531 |       2.544  |        0.1322 |        0.1964 |       1.6327 |     -2.0912 |
         """
         sectors_performance = discovery_model.get_sectors_performance(
-            api_key=self._api_key, user_subscription=self._fmp_plan
+            api_key=self._api_key,
+            start_date=start_date,
+            end_date=end_date,
+            user_subscription=self._fmp_plan,
         )
 
         return sectors_performance
@@ -511,13 +539,21 @@ class Discovery:
 
         return most_active_stocks
 
-    def get_delisted_stocks(self) -> pd.DataFrame:
+    def get_delisted_stocks(self, page: int = 0, limit: int = 100) -> pd.DataFrame:
         """
-        The delisted stocks function returns a complete list of all delisted stocks including
+        The delisted stocks function returns a page of delisted stocks including
         the IPO and delisted date.
 
+        The endpoint hands out at most 100 rows per call, so this is one page of the list
+        rather than the whole of it. Walk `page` upwards until an empty frame comes back to
+        collect everything.
+
+        Args:
+            page (int): The page of results to retrieve, starting at 0. Defaults to 0.
+            limit (int): The number of results per page, capped at 100 by the API. Defaults to 100.
+
         Returns:
-            pd.DataFrame: A dataframe with all the delisted stocks.
+            pd.DataFrame: A dataframe with one page of delisted stocks.
 
         As an example:
 
@@ -547,7 +583,10 @@ class Discovery:
         | AVID     | Avid Technology, Inc.                        | NASDAQ     | 1993-03-12 | 2023-11-07      |
         """
         delisted_stocks = discovery_model.get_delisted_stocks(
-            api_key=self._api_key, user_subscription=self._fmp_plan
+            api_key=self._api_key,
+            page=page,
+            limit=limit,
+            user_subscription=self._fmp_plan,
         )
 
         return delisted_stocks
@@ -574,18 +613,18 @@ class Discovery:
 
         Which returns:
 
-        | Symbol       | Name                                 | Currency   | Exchange   |
-        |:-------------|:-------------------------------------|:-----------|:-----------|
-        | .ALPHAUSD    | .Alpha USD                           | USD        | CCC        |
-        | 00USD        | 00 Token USD                         | USD        | CCC        |
-        | 0NEUSD       | Stone USD                            | USD        | CCC        |
-        | 0X0USD       | 0x0.ai USD                           | USD        | CCC        |
-        | 0X1USD       | 0x1.tools: AI Multi-tool Plaform USD | USD        | CCC        |
-        | 0XAUSD       | 0xApe USD                            | USD        | CCC        |
-        | 0XBTCUSD     | 0xBitcoin USD                        | USD        | CCC        |
-        | 0XENCRYPTUSD | Encryption AI USD                    | USD        | CCC        |
-        | 0XGASUSD     | 0xGasless USD                        | USD        | CCC        |
-        | 0XMRUSD      | 0xMonero USD                         | USD        | CCC        |
+        | Symbol       | Name                                 | Exchange   | ICO Date   |   Circulating Supply |   Total Supply |
+        |:-------------|:-------------------------------------|:-----------|:-----------|---------------------:|---------------:|
+        | .ALPHAUSD    | .Alpha USD                           | CCC        | 2022-03-16 |          0           |  nan           |
+        | 00USD        | 00 Token USD                         | CCC        | 2022-10-11 |          2.32688e+08 |    1e+09       |
+        | 0NEUSD       | Stone USD                            | CCC        | 2022-04-26 |          9.77209e+14 |    9.77213e+14 |
+        | 0X0USD       | 0x0.ai USD                           | CCC        | 2023-01-31 |          8.68563e+08 |    8.9125e+08  |
+        | 0X1USD       | 0x1.tools: AI Multi-tool Plaform USD | CCC        | 2023-01-04 |          0           |  nan           |
+        | 0XAUSD       | 0xApe USD                            | CCC        | 2022-11-26 |          0           |  nan           |
+        | 0XBTCUSD     | 0xBitcoin USD                        | CCC        | 2018-06-04 |          9.70675e+06 |    2.09989e+07 |
+        | 0XENCRYPTUSD | Encryption AI USD                    | CCC        | 2023-04-27 |          8.68563e+08 |  nan           |
+        | 0XGASUSD     | 0xGasless USD                        | CCC        | 2023-06-07 |          9.52864e+06 |  nan           |
+        | 0XMRUSD      | 0xMonero USD                         | CCC        | 2022-09-01 |          1.86525e+06 |    1.86525e+06 |
         """
         crypto_list = discovery_model.get_crypto_list(
             api_key=self._api_key, user_subscription=self._fmp_plan
@@ -615,18 +654,18 @@ class Discovery:
 
         Which returns:
 
-        | Symbol   | Name    | Currency   | Exchange   |
-        |:---------|:--------|:-----------|:-----------|
-        | AEDAUD   | AED/AUD | AUD        | CCY        |
-        | AEDBHD   | AED/BHD | BHD        | CCY        |
-        | AEDCAD   | AED/CAD | CAD        | CCY        |
-        | AEDCHF   | AED/CHF | CHF        | CCY        |
-        | AEDDKK   | AED/DKK | DKK        | CCY        |
-        | AEDEUR   | AED/EUR | EUR        | CCY        |
-        | AEDGBP   | AED/GBP | GBP        | CCY        |
-        | AEDILS   | AED/ILS | ILS        | CCY        |
-        | AEDINR   | AED/INR | INR        | CCY        |
-        | AEDJOD   | AED/JOD | JOD        | CCY        |
+        | Symbol   | From Currency   | To Currency   | From Name                   | To Name                |
+        |:---------|:----------------|:--------------|:----------------------------|:-----------------------|
+        | AEDAUD   | AED             | AUD           | United Arab Emirates Dirham | Australian Dollar      |
+        | AEDBHD   | AED             | BHD           | United Arab Emirates Dirham | Bahraini Dinar         |
+        | AEDCAD   | AED             | CAD           | United Arab Emirates Dirham | Canadian Dollar        |
+        | AEDCHF   | AED             | CHF           | United Arab Emirates Dirham | Swiss Franc            |
+        | AEDDKK   | AED             | DKK           | United Arab Emirates Dirham | Danish Krone           |
+        | AEDEUR   | AED             | EUR           | United Arab Emirates Dirham | Euro                   |
+        | AEDGBP   | AED             | GBP           | United Arab Emirates Dirham | British Pound Sterling |
+        | AEDILS   | AED             | ILS           | United Arab Emirates Dirham | Israeli New Shekel     |
+        | AEDINR   | AED             | INR           | United Arab Emirates Dirham | Indian Rupee           |
+        | AEDJOD   | AED             | JOD           | United Arab Emirates Dirham | Jordanian Dinar        |
         """
         forex_list = discovery_model.get_forex_list(
             api_key=self._api_key, user_subscription=self._fmp_plan
@@ -656,18 +695,18 @@ class Discovery:
 
         Which returns:
 
-        | Symbol   | Name                   | Currency   | Exchange   |
-        |:---------|:-----------------------|:-----------|:-----------|
-        | ALIUSD   | Aluminum Futures       | USD        | COMEX      |
-        | BZUSD    | Brent Crude Oil        | USD        | ICE        |
-        | CCUSD    | Cocoa                  | USD        | ICE        |
-        | CLUSD    | Crude Oil              | USD        | CME        |
-        | CTUSX    | Cotton                 | USX        | ICE        |
-        | DCUSD    | Class III Milk Futures | USD        | CME        |
-        | DXUSD    | US Dollar              | USD        | ICE        |
-        | ESUSD    | E-Mini S&P 500         | USD        | CME        |
-        | GCUSD    | Gold Futures           | USD        | CME        |
-        | GFUSX    | Feeder Cattle Futures  | USX        | CME        |
+        | Symbol   | Name                   |   Exchange | Trade Month   | Currency   |
+        |:---------|:-----------------------|-----------:|:--------------|:-----------|
+        | ALIUSD   | Aluminum Futures       |        nan | Nov           | USD        |
+        | BZUSD    | Brent Crude Oil        |        nan | Sep           | USD        |
+        | CCUSD    | Cocoa                  |        nan | Dec           | USD        |
+        | CLUSD    | Crude Oil              |        nan | Oct           | USD        |
+        | CTUSX    | Cotton                 |        nan | Dec           | USX        |
+        | DCUSD    | Class III Milk Futures |        nan | Jan           | USD        |
+        | DXUSD    | US Dollar              |        nan | Sep           | USD        |
+        | ESUSD    | E-Mini S&P 500         |        nan | Jun           | USD        |
+        | GCUSD    | Gold Futures           |        nan | Dec           | USD        |
+        | GFUSX    | Feeder Cattle Futures  |        nan | Oct           | USX        |
         """
         commodity_list = discovery_model.get_commodity_list(
             api_key=self._api_key, user_subscription=self._fmp_plan
@@ -697,18 +736,18 @@ class Discovery:
 
         Which returns:
 
-        | Symbol    | Name                                                                                            |      Price | Exchange              | Exchange Code   |
-        |:----------|:------------------------------------------------------------------------------------------------|-----------:|:----------------------|:----------------|
-        | 01002T.TW | Cathay No.1 REIT                                                                                |    17.29   | Taiwan                | TAI             |
-        | 020Y.L    | iShares IV Public Limited Company - iShares Euro Government Bond 20yr Target Duration UCITS ETF |     3.9522 | London Stock Exchange | LSE             |
-        | 069500.KS | KODEX 200                                                                                       | 36390      | KSE                   | KSC             |
-        | 069660.KS | KOSEF 200                                                                                       | 36370      | KSE                   | KSC             |
-        | 091160.KS | Kodex Semicon                                                                                   | 36840      | KSE                   | KSC             |
-        | 091170.KS | Kodex Banks                                                                                     |  6695      | KSE                   | KSC             |
-        | 091180.KS | Kodex Autos                                                                                     | 19450      | KSE                   | KSC             |
-        | 091220.KS | Mirae Asset TIGER Banks ETF                                                                     |  6845      | KSE                   | KSC             |
-        | 091230.KS | Mirae Asset TIGER Semicon ETF                                                                   | 38400      | KSE                   | KSC             |
-        | 098560.KS | Mirae Asset TIGER Media & Telecom ETF                                                           |  7335      | KSE                   | KSC             |
+        | Symbol    | Name                                               |
+        |:----------|:---------------------------------------------------|
+        | 00XL.DE   | WisdomTree Copper - EUR Daily Hedged               |
+        | 00XP.DE   | WisdomTree Natural Gas - EUR Daily Hedged          |
+        | 00XR.DE   | WisdomTree Silver - EUR Daily Hedged               |
+        | 00XS.DE   | WisdomTree Wheat - EUR Daily Hedged                |
+        | 00XT.DE   | WisdomTree Brent Crude Oil - EUR Daily Hedged      |
+        | 020Y.L    | iShares € Govt Bond 20yr Target Duration UCITS ETF |
+        | 069500.KS | Samsung KODEX 200 ETF                              |
+        | 069660.KS | Kiwoom KIWOOM 200 ETF                              |
+        | 091160.KS | Samsung KODEX Semicon ETF                          |
+        | 091170.KS | Kodex Banks                                        |
         """
 
         etf_list = discovery_model.get_etf_list(
@@ -739,18 +778,18 @@ class Discovery:
 
         Which returns:
 
-        | Symbol      | Name                          | Currency   | Exchange               |
-        |:------------|:------------------------------|:-----------|:-----------------------|
-        | 000001.SS   | SSE Composite Index           | CNY        | Shanghai               |
-        | 399967.SZ   | CSI NATIONAL DEFENSE          | CNY        | Shenzhen               |
-        | 512.HK      | CES CHINA HK MAINLAND INDEX   | HKD        | HKSE                   |
-        | DX-Y.NYB    | US Dollar/USDX - Index - Cash | USD        | ICE Futures            |
-        | FTSEMIB.MI  | FTSE MIB Index                | EUR        | Milan                  |
-        | IAR.BA      | MERVAL ARGENTINA              | USD        | Buenos Aires           |
-        | IDX30.JK    | IDX30                         | IDR        | Jakarta Stock Exchange |
-        | IMOEX.ME    | MOEX Russia Index             | RUB        | MCX                    |
-        | ITLMS.MI    | FTSE Italia All-Share Index   | EUR        | Milan                  |
-        | KOSPI200.KS | KOSPI 200 Index               | KRW        | KSE                    |
+        | Symbol          | Name                                          | Exchange   | Currency   |
+        |:----------------|:----------------------------------------------|:-----------|:-----------|
+        | 000001.SS       | SSE Composite Index                           | SHH        | CNY        |
+        | 399967.SZ       | CSI National Defense                          | SHZ        | CNY        |
+        | 512.HK          | CES China HK Mainland Index                   | HKSE       | HKD        |
+        | DE000SLA30S3.SG | Solactive Equal Weight Canada Oil & Gas Index | STU        | EUR        |
+        | DX-Y.NYB        | US Dollar Index                               | ICEF       | USD        |
+        | FTSEMIB.MI      | FTSE MIB Index                                | MIL        | EUR        |
+        | IDX30.JK        | IDX30                                         | JKT        | IDR        |
+        | IMOEX.ME        | MOEX Russia Index                             | MCX        | RUB        |
+        | ITLMS.MI        | FTSE Italia All-Share Index                   | MIL        | EUR        |
+        | KOSPI200.KS     | KOSPI 200 Index                               | KSC        | KRW        |
         """
         index_list = discovery_model.get_index_list(
             api_key=self._api_key, user_subscription=self._fmp_plan

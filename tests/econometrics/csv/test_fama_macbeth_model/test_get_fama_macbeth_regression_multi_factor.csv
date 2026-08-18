@@ -1,0 +1,4 @@
+,Risk Premium,Std. Error,t-Statistic,P-Value
+Intercept,0.0013,0.0005,2.349,0.0196
+Market,0.0056,0.0013,4.4159,0.0
+Size,0.0016,0.0013,1.2166,0.2249

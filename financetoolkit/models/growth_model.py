@@ -35,6 +35,19 @@ def get_present_value_of_growth_opportunities(
 
     Returns:
         pd.DataFrame: The PVGO.
+
+    Notes:
+    - In the textbook derivation of PVGO (e.g. Bodie, Kane & Marcus, "Investments"), the no-growth
+    value EPS / r is discounted at r = the cost of equity (the "market capitalization rate" for the
+    stock), since both the share Price and EPS are equity-only, per-share quantities. This
+    implementation instead discounts at the Weighted Average Cost of Capital (WACC), which blends in
+    the (typically lower, tax-shielded) cost of debt. Because WACC is generally below the cost of
+    equity, EPS / WACC will generally overstate the no-growth value and therefore understate PVGO
+    relative to the textbook formula. This is a practical simplification (WACC is already computed
+    elsewhere in this toolkit for every company, whereas a standalone cost of equity series requires
+    re-deriving the CAPM inputs); treat the resulting PVGO as an approximation, and prefer comparing
+    PVGO *across* companies or over time for the same company rather than reading absolute levels
+    literally.
     """
     earnings_wacc_ratio = (earnings_per_share / weighted_average_cost_of_capital).T
 

@@ -312,8 +312,7 @@ def test_finalize_dataset_apply_slice_false():
 
 def test_finalize_dataset_rolling():
     """Test finalize_dataset applies rolling-window smoothing before growth."""
-    # rolling/trailing operate down the rows (axis=0), matching the date-indexed
-    # rows / ticker-columns shape used by the Economics and Fixed Income modules.
+    # rolling/trailing operate down the rows, matching the date-indexed shape.
     data = pd.DataFrame(
         {"AAPL": [1.0, 3.0, 5.0]},
         index=["2020", "2021", "2022"],

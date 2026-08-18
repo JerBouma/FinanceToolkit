@@ -14,6 +14,8 @@ PERIOD_TRANSLATION: dict[str, str | dict[str, str]] = {
         "30min": "D",
         "1hour": "D",
     },
+    # The daily period nests the intraday observations of a single day, so it is only available when intraday data was fetched -- exactly the condition the Risk and Econometrics controllers already guard their period="daily" branches with.  # noqa: E501
+    "daily": "D",
     "weekly": "W",
     "monthly": "M",
     "quarterly": "Q",
@@ -27,24 +29,32 @@ def determine_within_historical_data(
     intraday_period: str | None,
 ):
     """
-    This function is a specific function solely related to the Ratios controller. It
-    therefore also requires a self instance to exists with specific parameters.
+    This function is a specific function solely related to the Risk controller. It
+    reshapes the historical data into a multi-index (period, observation) format for
+    each period defined in PERIOD_TRANSLATION, which is what the "within period"
+    calculations in the Risk controller operate on.
 
     Args:
-        period (str): the period to return the data for.
-        within_period (bool): whether to return the data within the period or the
-        entire period.
-
-    Raises:
-        ValueError: if the period is not daily, monthly, weekly, quarterly, or yearly.
+        daily_historical_data (pd.DataFrame): the daily historical data used for the
+        weekly, monthly, quarterly and yearly periods.
+        intraday_historical_data (pd.DataFrame): the intraday historical data used for
+        the intraday and daily periods. When empty, the daily period is skipped
+        entirely, since there would be nothing to nest inside a single day.
+        intraday_period (str | None): the intraday frequency (e.g. "1min", "1hour")
+        used to look up the outer resampling symbol. When None, the intraday period is
+        skipped entirely.
 
     Returns:
-        pd.Series: the returns for the period.
+        dict[str, pd.DataFrame]: a dictionary with the period name as key and the
+        historical data with a (period, observation) multi-index as value.
     """
     within_historical_data = {}
 
     for period, symbol in PERIOD_TRANSLATION.items():
         if not intraday_period and period == "intraday":
+            continue
+        # Without intraday observations there is nothing to nest inside a single day, so the daily period would collapse to one observation per group.  # noqa: E501
+        if intraday_historical_data.empty and period == "daily":
             continue
 
         period_symbol = (
@@ -55,35 +65,20 @@ def determine_within_historical_data(
             "intraday",
             "daily",
         ]:
-            within_historical_data[period] = (
-                intraday_historical_data.groupby(pd.Grouper(freq=period_symbol))
-                .apply(lambda x: x)
-                .dropna(how="all", axis=0)
-            )
+            source_data = intraday_historical_data
         else:
-            within_historical_data[period] = daily_historical_data.groupby(
-                pd.Grouper(
-                    freq=(
-                        f"{period_symbol}E"
-                        if period_symbol in ["M", "Q", "Y"]
-                        else period_symbol
-                    )
-                )
-            ).apply(lambda x: x)
+            source_data = daily_historical_data
 
-        within_historical_data[period].index = within_historical_data[
-            period
-        ].index.set_levels(
+        # The daily period nests intraday observations inside each day, so like the intraday period it needs a minute-level inner index rather than a daily one.  # noqa: E501
+        inner_freq = "min" if period in ("intraday", "daily") else "D"
+        period_data = source_data.copy()
+        period_data.index = pd.MultiIndex.from_arrays(
             [
-                pd.PeriodIndex(
-                    within_historical_data[period].index.levels[0],
-                    freq=period_symbol,
-                ),
-                pd.PeriodIndex(
-                    within_historical_data[period].index.levels[1],
-                    freq="D" if period != "intraday" else "min",
-                ),
-            ],
+                source_data.index.to_period(period_symbol),
+                source_data.index.to_period(inner_freq),
+            ]
         )
+
+        within_historical_data[period] = period_data
 
     return within_historical_data

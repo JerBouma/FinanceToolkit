@@ -1,0 +1,17 @@
+,,AAPL,MSFT,Benchmark
+2019,Hill Tail Index,,,
+2019,Hill Shape (xi),,,
+2019,Standard Error,,,
+2019,Observations Used (k),1.0,1.0,1.0
+2020,Hill Tail Index,2.1618,1.6866,1.4802
+2020,Hill Shape (xi),0.4626,0.5929,0.6756
+2020,Standard Error,0.4834,0.368,0.323
+2020,Observations Used (k),20.0,21.0,21.0
+2021,Hill Tail Index,4.2351,4.5737,3.9018
+2021,Hill Shape (xi),0.2361,0.2186,0.2563
+2021,Standard Error,0.947,1.0493,0.8514
+2021,Observations Used (k),20.0,19.0,21.0
+2022,Hill Tail Index,2.8402,2.8258,5.9783
+2022,Hill Shape (xi),0.3521,0.3539,0.1673
+2022,Standard Error,0.6888,0.6854,1.4946
+2022,Observations Used (k),17.0,17.0,16.0

@@ -226,6 +226,105 @@ def test_oauth_routes_and_flow() -> None:
     assert payload_s256["fmp_api_key"] == "my_s256_fmp_api_key"
 
 
+def test_oauth_flow_with_fred_key() -> None:
+    """FRED API key, when submitted on the authorize form, round-trips through the
+    auth code and into the final access token alongside the FMP key."""
+    mcp = FastMCP("TestOAuthFredServer")
+    register_auth_routes(mcp)
+    app = mcp.sse_app()
+    app.add_middleware(MCPAuthMiddleware)
+    client = TestClient(app, base_url="http://127.0.0.1:8000")
+
+    auth_get_resp = client.get(
+        "/oauth/authorize?client_id=client_fred&redirect_uri=http://localhost/callback"
+        "&code_challenge=challenge123&code_challenge_method=plain&state=xyz"
+    )
+    assert auth_get_resp.status_code == 200  # noqa
+    assert "fred_api_key" in auth_get_resp.text
+    assert "FRED API Key" in auth_get_resp.text
+
+    auth_post_resp = client.post(
+        "/oauth/authorize",
+        data={
+            "fmp_api_key": "my_fmp_api_key",
+            "fred_api_key": "my_fred_api_key",
+            "client_id": "client_fred",
+            "redirect_uri": "http://localhost/callback",
+            "code_challenge": "challenge123",
+            "code_challenge_method": "plain",
+            "state": "xyz",
+        },
+        follow_redirects=False,
+    )
+    assert auth_post_resp.status_code == 303  # noqa
+    loc = auth_post_resp.headers["location"]
+    auth_code = next(
+        p.split("=")[1] for p in loc.split("?")[1].split("&") if p.startswith("code=")
+    )
+
+    token_resp = client.post(
+        "/oauth/token",
+        data={
+            "grant_type": "authorization_code",
+            "code": auth_code,
+            "client_id": "client_fred",
+            "redirect_uri": "http://localhost/callback",
+            "code_verifier": "challenge123",
+        },
+    )
+    assert token_resp.status_code == 200  # noqa
+    access_token = token_resp.json()["access_token"]
+
+    payload = verify_jwt(access_token)
+    assert payload is not None
+    assert payload["fmp_api_key"] == "my_fmp_api_key"
+    assert payload["fred_api_key"] == "my_fred_api_key"
+
+
+def test_oauth_flow_without_fred_key_defaults_empty() -> None:
+    """FRED API key is optional — omitting it from the authorize form must not
+    block authorization, and it should resolve to an empty string in the token."""
+    mcp = FastMCP("TestOAuthNoFredServer")
+    register_auth_routes(mcp)
+    app = mcp.sse_app()
+    app.add_middleware(MCPAuthMiddleware)
+    client = TestClient(app, base_url="http://127.0.0.1:8000")
+
+    auth_post_resp = client.post(
+        "/oauth/authorize",
+        data={
+            "fmp_api_key": "my_fmp_api_key",
+            "client_id": "client_no_fred",
+            "redirect_uri": "http://localhost/callback",
+            "code_challenge": "challenge123",
+            "code_challenge_method": "plain",
+            "state": "xyz",
+        },
+        follow_redirects=False,
+    )
+    assert auth_post_resp.status_code == 303  # noqa
+    loc = auth_post_resp.headers["location"]
+    auth_code = next(
+        p.split("=")[1] for p in loc.split("?")[1].split("&") if p.startswith("code=")
+    )
+
+    token_resp = client.post(
+        "/oauth/token",
+        data={
+            "grant_type": "authorization_code",
+            "code": auth_code,
+            "client_id": "client_no_fred",
+            "redirect_uri": "http://localhost/callback",
+            "code_verifier": "challenge123",
+        },
+    )
+    assert token_resp.status_code == 200  # noqa
+    payload = verify_jwt(token_resp.json()["access_token"])
+    assert payload is not None
+    assert payload["fmp_api_key"] == "my_fmp_api_key"
+    assert payload["fred_api_key"] == ""
+
+
 def test_auth_middleware_protection() -> None:
     """Test that the MCPAuthMiddleware properly intercepts and restricts access."""
     mcp = FastMCP("TestMiddlewareServer")
@@ -248,12 +347,10 @@ def test_auth_middleware_protection() -> None:
     assert "WWW-Authenticate" in sse_resp.headers
     assert "resource_metadata=" in sse_resp.headers["WWW-Authenticate"]
 
-    # SSE/Messages endpoints should allow access when valid headers or token are present.
-    # We test with POST /messages/ instead of GET /sse to prevent the test client from hanging on a streaming connection.
+    # POST /messages/ rather than GET /sse, which would hang on the stream.
     jwt_token = sign_jwt({"fmp_api_key": "my-fmp-key"})
 
-    # We test with X-FMP-API-KEY header (should bypass middleware and proceed to FastMCP,
-    # ielding 404 or 450 instead of 401)
+    # The X-FMP-API-KEY header should bypass the middleware and reach FastMCP.
     resp = client.post("/messages/", headers={"X-FMP-API-KEY": "my-key"})
     assert resp.status_code != 401  # noqa
 

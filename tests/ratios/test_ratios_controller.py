@@ -130,6 +130,10 @@ def test_get_fixed_asset_turnover(recorder, ratios_module):
     recorder.capture(ratios_module.get_fixed_asset_turnover())
 
 
+def test_get_working_capital_turnover_ratio(recorder, ratios_module):
+    recorder.capture(ratios_module.get_working_capital_turnover_ratio())
+
+
 def test_get_current_ratio(recorder, ratios_module):
     recorder.capture(ratios_module.get_current_ratio())
 
@@ -158,6 +162,10 @@ def test_get_short_term_coverage_ratio(recorder, ratios_module):
     recorder.capture(ratios_module.get_short_term_coverage_ratio())
 
 
+def test_get_defensive_interval_ratio(recorder, ratios_module):
+    recorder.capture(ratios_module.get_defensive_interval_ratio())
+
+
 def test_get_gross_margin(recorder, ratios_module):
     recorder.capture(ratios_module.get_gross_margin())
 
@@ -170,6 +178,14 @@ def test_get_net_profit_margin(recorder, ratios_module):
     recorder.capture(ratios_module.get_net_profit_margin())
 
 
+def test_get_ebitda_margin(recorder, ratios_module):
+    recorder.capture(ratios_module.get_ebitda_margin())
+
+
+def test_get_free_cash_flow_margin(recorder, ratios_module):
+    recorder.capture(ratios_module.get_free_cash_flow_margin())
+
+
 def test_get_income_before_tax_profit_margin(recorder, ratios_module):
     recorder.capture(ratios_module.get_income_before_tax_profit_margin())
 
@@ -180,6 +196,10 @@ def test_get_effective_tax_rate(recorder, ratios_module):
 
 def test_get_return_on_assets(recorder, ratios_module):
     recorder.capture(ratios_module.get_return_on_assets())
+
+
+def test_get_cash_return_on_assets(recorder, ratios_module):
+    recorder.capture(ratios_module.get_cash_return_on_assets())
 
 
 def test_get_return_on_equity(recorder, ratios_module):
@@ -230,6 +250,10 @@ def test_get_debt_to_assets_ratio(recorder, ratios_module):
     recorder.capture(ratios_module.get_debt_to_assets_ratio())
 
 
+def test_get_asset_coverage_ratio(recorder, ratios_module):
+    recorder.capture(ratios_module.get_asset_coverage_ratio())
+
+
 def test_get_debt_to_equity_ratio(recorder, ratios_module):
     recorder.capture(ratios_module.get_debt_to_equity_ratio())
 
@@ -252,6 +276,10 @@ def test_get_free_cash_flow_yield(recorder, ratios_module):
 
 def test_get_net_debt_to_ebitda_ratio(recorder, ratios_module):
     recorder.capture(ratios_module.get_net_debt_to_ebitda_ratio())
+
+
+def test_get_gross_debt_to_ebitda_ratio(recorder, ratios_module):
+    recorder.capture(ratios_module.get_gross_debt_to_ebitda_ratio())
 
 
 def test_get_cash_flow_coverage_ratio(recorder, ratios_module):
@@ -321,6 +349,11 @@ def test_get_price_to_cash_flow_ratio(recorder, ratios_module):
 def test_get_price_to_free_cash_flow_ratio(recorder, ratios_module):
     recorder.capture(ratios_module.get_price_to_free_cash_flow_ratio())
     recorder.capture(ratios_module.get_price_to_free_cash_flow_ratio(show_daily=True))
+
+
+def test_get_price_to_sales_ratio(recorder, ratios_module):
+    recorder.capture(ratios_module.get_price_to_sales_ratio())
+    recorder.capture(ratios_module.get_price_to_sales_ratio(show_daily=True))
 
 
 def test_get_market_cap(recorder, ratios_module):

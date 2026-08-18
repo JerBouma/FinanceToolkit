@@ -1,0 +1,10 @@
+,AAPL,MSFT
+KPSS Statistic,0.20352007912969491,0.17796667796444335
+P-Value,0.014679970326364407,0.024262495763333742
+Lags Used,3,4
+Observations,37,37
+Critical Value 1%,0.216,0.216
+Critical Value 2.5%,0.176,0.176
+Critical Value 5%,0.146,0.146
+Critical Value 10%,0.119,0.119
+Reject Stationarity (5%),True,True

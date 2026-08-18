@@ -2,6 +2,7 @@
 
 __docformat__ = "google"
 
+import warnings
 
 import pandas as pd
 
@@ -22,10 +23,13 @@ from financetoolkit.utilities.statistics_model import (
 # pylint: disable=too-many-lines,too-many-instance-attributes,too-many-public-methods,too-many-locals,eval-used
 # pylint: disable=too-many-boolean-expressions
 
+# The default number of periods the Stochastic Oscillator's %K line is smoothed over to obtain the %D signal line, named so the deprecated `smooth_widow` alias can tell an explicitly passed `smooth_window` apart from the untouched default.  # noqa: E501
+DEFAULT_STOCHASTIC_SMOOTH_WINDOW = 3
+
 
 class Technicals:
     """
-    The Technicals Module contains 40+ Technical Indicators that can
+    The Technicals Module contains 50+ Technical Indicators that can
     be used to analyse companies. These ratios are divided into 4
     categories which are breadth, momentum, overlap and volatility.
     Each indicator is calculated using the data from the Toolkit module.
@@ -312,6 +316,22 @@ class Technicals:
         )
 
         breadth_indicators["New Highs - New Lows"] = self.get_new_highs_new_lows(
+            period=period, close_column=close_column
+        )
+
+        breadth_indicators["Chaikin Money Flow"] = self.get_chaikin_money_flow(
+            period=period, close_column=close_column
+        )
+
+        breadth_indicators["Ease of Movement"] = self.get_ease_of_movement(
+            period=period, close_column=close_column
+        )
+
+        breadth_indicators["Negative Volume Index"] = self.get_negative_volume_index(
+            period=period, close_column=close_column
+        )
+
+        breadth_indicators["Positive Volume Index"] = self.get_positive_volume_index(
             period=period, close_column=close_column
         )
 
@@ -937,6 +957,461 @@ class Technicals:
             apply_slice=False,
         )
 
+    @handle_portfolio
+    @handle_errors
+    def get_chaikin_money_flow(
+        self,
+        period: str = "daily",
+        close_column: str = "Adj Close",
+        window: int = 20,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+    ) -> pd.Series | pd.DataFrame:
+        """
+        Calculate the Chaikin Money Flow (CMF) for a given price series.
+
+        The Chaikin Money Flow sums the same Money Flow Volume used by the Accumulation/
+        Distribution Line over a rolling window and normalizes it by the window's total
+        volume, turning the running (unbounded) Accumulation/Distribution Line into a
+        bounded oscillator. Sustained readings above zero indicate buying pressure
+        (accumulation) is dominating over the window, while sustained readings below zero
+        indicate selling pressure (distribution).
+
+        The formula is a follows:
+
+        - Money Flow Multiplier = ((Close — Low) — (High — Close)) / (High — Low)
+        - Money Flow Volume = Money Flow Multiplier * Volume
+        - CMF = Sum(Money Flow Volume, window) / Sum(Volume, window)
+
+        Also known as: CMF, Chaikin Money Flow.
+
+        Args:
+            period (str, optional): The time period to consider for historical data.
+                Can be "daily", "weekly", "quarterly", or "yearly". Defaults to "daily".
+            close_column (str, optional): The column name for closing prices in the historical data.
+                Defaults to "Adj Close".
+            window (int, optional): Number of periods to sum the Money Flow Volume and
+                volume over. Defaults to 20.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the Chaikin Money Flow.
+                Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+                Defaults to 1.
+
+        Returns:
+            pd.Series or pd.DataFrame: Chaikin Money Flow values, bounded between -1 and 1.
+
+        Notes:
+        - The method retrieves historical data based on the specified `period` and calculates
+          the Chaikin Money Flow for each asset in the Toolkit instance.
+        - There is no formal journal citation for the Chaikin Money Flow; the standard
+          textbook treatment is Murphy, J.J. (1999). "Technical Analysis of the Financial
+          Markets." New York Institute of Finance.
+        - If `growth` is set to True, the method calculates the growth of the Chaikin Money
+          Flow using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(tickers=["AAPL", "MSFT"])
+
+        toolkit.technicals.get_chaikin_money_flow()
+        ```
+        """
+        if period not in [
+            "intraday",
+            "daily",
+            "weekly",
+            "monthly",
+            "quarterly",
+            "yearly",
+        ]:
+            raise ValueError(
+                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
+            )
+        if period == "intraday":
+            if self._historical_data[period].empty:
+                raise ValueError(
+                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
+                )
+            close_column = "Close"
+
+        historical_data = self._historical_data[period]
+
+        chaikin_money_flow = pd.DataFrame(
+            index=historical_data.loc[self._start_date : self._end_date].index
+        )
+        for ticker in historical_data[close_column].columns:
+            chaikin_money_flow[ticker] = breadth_model.get_chaikin_money_flow(
+                historical_data["High"][ticker],
+                historical_data["Low"][ticker],
+                historical_data[close_column][ticker],
+                historical_data["Volume"][ticker],
+                window,
+            ).loc[self._start_date : self._end_date]
+
+        return finalize_dataset(
+            dataset=chaikin_money_flow,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            apply_slice=False,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_ease_of_movement(
+        self,
+        period: str = "daily",
+        close_column: str = "Adj Close",
+        window: int = 14,
+        volume_divisor: float = 100_000_000,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+    ) -> pd.Series | pd.DataFrame:
+        """
+        Calculate the Ease of Movement (EMV) for a given price series.
+
+        The Ease of Movement indicator relates how far price moved (the change in the
+        midpoint of the high-low range from one period to the next) to the volume required
+        to move it (via the "Box Ratio", volume scaled down and divided by the period's
+        high-low range). High positive readings mean price is moving up easily on relatively
+        little volume; high negative readings mean price is moving down easily on relatively
+        little volume. The raw daily reading is smoothed with a Simple Moving Average to
+        reduce noise.
+
+        The formula is a follows:
+
+        - Distance Moved = (High(t) + Low(t)) / 2 — (High(t-1) + Low(t-1)) / 2
+        - Box Ratio = (Volume / volume_divisor) / (High — Low)
+        - Raw EMV = Distance Moved / Box Ratio
+        - EMV = SMA(Raw EMV, window)
+
+        Also known as: EMV, Ease of Movement.
+
+        Args:
+            period (str, optional): The time period to consider for historical data.
+                Can be "daily", "weekly", "quarterly", or "yearly". Defaults to "daily".
+            close_column (str, optional): The column name for closing prices in the historical data.
+                Defaults to "Adj Close".
+            window (int, optional): Number of periods used to smooth the raw Ease of
+                Movement values with a Simple Moving Average. Defaults to 14.
+            volume_divisor (float, optional): Scaling constant applied to volume so that the
+                Box Ratio (and therefore EMV) stays in a readable range regardless of an
+                asset's typical share volume. Defaults to 100,000,000.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the Ease of Movement.
+                Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+                Defaults to 1.
+
+        Returns:
+            pd.Series or pd.DataFrame: Ease of Movement values.
+
+        Notes:
+        - The method retrieves historical data based on the specified `period` and calculates
+          the Ease of Movement for each asset in the Toolkit instance.
+        - Reference: Arms, R.W. (1989). "The Arms Index (TRIN): An Introduction to the
+          Volume Analysis of Stock and Bond Markets." Business One Irwin.
+        - If `growth` is set to True, the method calculates the growth of the Ease of
+          Movement using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(tickers=["AAPL", "MSFT"])
+
+        toolkit.technicals.get_ease_of_movement()
+        ```
+        """
+        if period not in [
+            "intraday",
+            "daily",
+            "weekly",
+            "monthly",
+            "quarterly",
+            "yearly",
+        ]:
+            raise ValueError(
+                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
+            )
+        if period == "intraday":
+            if self._historical_data[period].empty:
+                raise ValueError(
+                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
+                )
+            close_column = "Close"
+
+        historical_data = self._historical_data[period]
+
+        ease_of_movement = pd.DataFrame(
+            index=historical_data.loc[self._start_date : self._end_date].index
+        )
+        for ticker in historical_data[close_column].columns:
+            ease_of_movement[ticker] = breadth_model.get_ease_of_movement(
+                historical_data["High"][ticker],
+                historical_data["Low"][ticker],
+                historical_data["Volume"][ticker],
+                window,
+                volume_divisor,
+            ).loc[self._start_date : self._end_date]
+
+        return finalize_dataset(
+            dataset=ease_of_movement,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            apply_slice=False,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_negative_volume_index(
+        self,
+        period: str = "daily",
+        close_column: str = "Adj Close",
+        start_value: float = 1000.0,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+    ) -> pd.Series | pd.DataFrame:
+        """
+        Calculate the Negative Volume Index (NVI) for a given price series.
+
+        The Negative Volume Index is a cumulative index that only updates on days where
+        volume decreases from the prior period, compounding that day's percentage price
+        change onto the running index; on days where volume increases (or stays flat), the
+        index is carried forward unchanged. The premise, per Fosback, is that "smart money"
+        tends to be active on low-volume (quiet) days, so tracking price behaviour
+        specifically on those days isolates informed trading from the noise of high-volume,
+        crowd-driven days.
+
+        The formula is a follows:
+
+        - Index(t) = Index(t-1) * (1 + (Close(t) / Close(t-1) — 1)) if Volume(t) < Volume(t-1)
+        - Index(t) = Index(t-1) otherwise
+
+        Also known as: NVI, Negative Volume Index.
+
+        Args:
+            period (str, optional): The time period to consider for historical data.
+                Can be "daily", "weekly", "quarterly", or "yearly". Defaults to "daily".
+            close_column (str, optional): The column name for closing prices in the historical data.
+                Defaults to "Adj Close".
+            start_value (float, optional): The index value to start the series at.
+                Defaults to 1000.0.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the Negative Volume Index.
+                Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+                Defaults to 1.
+
+        Returns:
+            pd.Series or pd.DataFrame: Negative Volume Index values.
+
+        Notes:
+        - The method retrieves historical data based on the specified `period` and calculates
+          the Negative Volume Index for each asset in the Toolkit instance.
+        - Reference: Fosback, N.G. (1976). "Stock Market Logic: A Sophisticated Approach to
+          Profits on Wall Street." The Institute for Econometric Research.
+        - If `growth` is set to True, the method calculates the growth of the Negative Volume
+          Index using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(tickers=["AAPL", "MSFT"])
+
+        toolkit.technicals.get_negative_volume_index()
+        ```
+        """
+        if period not in [
+            "intraday",
+            "daily",
+            "weekly",
+            "monthly",
+            "quarterly",
+            "yearly",
+        ]:
+            raise ValueError(
+                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
+            )
+        if period == "intraday":
+            if self._historical_data[period].empty:
+                raise ValueError(
+                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
+                )
+            close_column = "Close"
+
+        historical_data = self._historical_data[period]
+
+        negative_volume_index = pd.DataFrame(
+            index=historical_data.loc[self._start_date : self._end_date].index
+        )
+        for ticker in historical_data[close_column].columns:
+            negative_volume_index[ticker] = breadth_model.get_negative_volume_index(
+                historical_data[close_column][ticker],
+                historical_data["Volume"][ticker],
+                start_value,
+            ).loc[self._start_date : self._end_date]
+
+        return finalize_dataset(
+            dataset=negative_volume_index,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            apply_slice=False,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_positive_volume_index(
+        self,
+        period: str = "daily",
+        close_column: str = "Adj Close",
+        start_value: float = 1000.0,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+    ) -> pd.Series | pd.DataFrame:
+        """
+        Calculate the Positive Volume Index (PVI) for a given price series.
+
+        The Positive Volume Index mirrors the Negative Volume Index: it is a cumulative
+        index that only updates on days where volume increases from the prior period,
+        compounding that day's percentage price change onto the running index; on days where
+        volume decreases (or stays flat), the index is carried forward unchanged. Per
+        Fosback, the Positive Volume Index isolates price behaviour on high-volume
+        (crowd-driven) days, which is traditionally read as tracking less-informed,
+        sentiment-driven trading.
+
+        The formula is a follows:
+
+        - Index(t) = Index(t-1) * (1 + (Close(t) / Close(t-1) — 1)) if Volume(t) > Volume(t-1)
+        - Index(t) = Index(t-1) otherwise
+
+        Also known as: PVI, Positive Volume Index.
+
+        Args:
+            period (str, optional): The time period to consider for historical data.
+                Can be "daily", "weekly", "quarterly", or "yearly". Defaults to "daily".
+            close_column (str, optional): The column name for closing prices in the historical data.
+                Defaults to "Adj Close".
+            start_value (float, optional): The index value to start the series at.
+                Defaults to 1000.0.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the Positive Volume Index.
+                Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+                Defaults to 1.
+
+        Returns:
+            pd.Series or pd.DataFrame: Positive Volume Index values.
+
+        Notes:
+        - The method retrieves historical data based on the specified `period` and calculates
+          the Positive Volume Index for each asset in the Toolkit instance.
+        - Reference: Fosback, N.G. (1976). "Stock Market Logic: A Sophisticated Approach to
+          Profits on Wall Street." The Institute for Econometric Research.
+        - If `growth` is set to True, the method calculates the growth of the Positive Volume
+          Index using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(tickers=["AAPL", "MSFT"])
+
+        toolkit.technicals.get_positive_volume_index()
+        ```
+        """
+        if period not in [
+            "intraday",
+            "daily",
+            "weekly",
+            "monthly",
+            "quarterly",
+            "yearly",
+        ]:
+            raise ValueError(
+                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
+            )
+        if period == "intraday":
+            if self._historical_data[period].empty:
+                raise ValueError(
+                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
+                )
+            close_column = "Close"
+
+        historical_data = self._historical_data[period]
+
+        positive_volume_index = pd.DataFrame(
+            index=historical_data.loc[self._start_date : self._end_date].index
+        )
+        for ticker in historical_data[close_column].columns:
+            positive_volume_index[ticker] = breadth_model.get_positive_volume_index(
+                historical_data[close_column][ticker],
+                historical_data["Volume"][ticker],
+                start_value,
+            ).loc[self._start_date : self._end_date]
+
+        return finalize_dataset(
+            dataset=positive_volume_index,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            apply_slice=False,
+        )
+
     def collect_momentum_indicators(
         self,
         period: str = "daily",
@@ -1103,6 +1578,41 @@ class Technicals:
         momentum_indicators["Balance of Power"] = self.get_balance_of_power(
             period=period, close_column=close_column
         )
+
+        momentum_indicators["Awesome Oscillator"] = self.get_awesome_oscillator(
+            period=period, close_column=close_column
+        )
+
+        vortex_indicator = self.get_vortex_indicator(
+            period=period, close_column=close_column, window=window
+        )
+
+        momentum_indicators["Vortex Indicator VI+"] = vortex_indicator["VI+"]
+        momentum_indicators["Vortex Indicator VI-"] = vortex_indicator["VI-"]
+
+        elder_ray_index = self.get_elder_ray_index(
+            period=period, close_column=close_column
+        )
+
+        momentum_indicators["Elder Ray Bull Power"] = elder_ray_index["Bull Power"]
+        momentum_indicators["Elder Ray Bear Power"] = elder_ray_index["Bear Power"]
+
+        momentum_indicators["Rate of Change"] = self.get_rate_of_change(
+            period=period, close_column=close_column, window=window
+        )
+
+        momentum_indicators["Choppiness Index"] = self.get_choppiness_index(
+            period=period, close_column=close_column, window=window
+        )
+
+        know_sure_thing = self.get_know_sure_thing(
+            period=period, close_column=close_column
+        )
+
+        momentum_indicators["Know Sure Thing"] = know_sure_thing["KST"]
+        momentum_indicators["Know Sure Thing Signal Line"] = know_sure_thing[
+            "Signal Line"
+        ]
 
         self._momentum_indicators = pd.concat(momentum_indicators, axis=1)
 
@@ -1389,7 +1899,7 @@ class Technicals:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
-    ) -> tuple[pd.Series, pd.Series] | tuple[pd.DataFrame, pd.DataFrame]:
+    ) -> pd.Series | pd.DataFrame:
         """
         Calculate the Aroon Indicator for a given price series.
 
@@ -1418,7 +1928,7 @@ class Technicals:
                 Defaults to 1.
 
         Returns:
-            Tuple[pd.Series, pd.Series] or Tuple[pd.DataFrame, pd.DataFrame]:
+            pd.Series or pd.DataFrame:
             Aroon Indicator values for the upward and downward trends.
 
         Notes:
@@ -1644,9 +2154,13 @@ class Technicals:
 
         The formula is a follows:
 
-        - RVI = SMA(Upward Change) / (SMA(Upward Change) + SMA(Downward Change))
+        - RVI = Sum(Upward Close-Open Movement, window) / (Sum(Upward Close-Open Movement, window)
+          + Sum(Downward Close-Open Movement, window))
 
-        Also known as: RVI, vigor index.
+        Also known as: vigor index. Note this is a bounded [0, 1] measure of the proportion
+        of upward close-open movement, related in spirit to (but not numerically the same
+        as) John Ehlers' published Relative Vigor Index. See `momentum_model.get_relative_vigor_index`
+        for the full formula and caveats.
 
         Args:
             period (str, optional): The time period to consider for historical data.
@@ -1722,7 +2236,6 @@ class Technicals:
         relative_vigor_index = momentum_model.get_relative_vigor_index(
             historical_data["Open"],
             historical_data[close_column],
-            historical_data["Volume"],
             window,
         ).loc[self._start_date : self._end_date]
 
@@ -1758,9 +2271,10 @@ class Technicals:
 
         The formula is a follows:
 
-        - Force Index = SMA(Periods) * (Close — Close(1))
+        - Raw Force Index = (Close — Close(1)) * Volume
+        - Force Index = EMA(Raw Force Index, window)
 
-        Also known as: price volume trend indicator.
+        Also known as: FI, Elder's Force Index.
 
         Args:
             period (str, optional): The time period to consider for historical data.
@@ -1874,9 +2388,12 @@ class Technicals:
 
         The formula is a follows:
 
-        - Ultimate Oscillator = 100 * ((4 * SMA(Periods)) / (SMA(Periods) + SMA(Periods) + SMA(Periods)))
+        - Average(i) = Sum(Buying Pressure, window_i) / Sum(True Range, window_i)
+        - Ultimate Oscillator = 100 * [(4 * Average_1) + (2 * Average_2) + Average_3] / 7
 
-        Also known as: UO, ultimate momentum oscillator.
+        Also known as: UO, ultimate momentum oscillator. See
+        `momentum_model.get_ultimate_oscillator` for the Buying Pressure and True Range
+        definitions.
 
         Args:
             period (str, optional): The time period to consider for historical data.
@@ -2116,9 +2633,12 @@ class Technicals:
 
         The formula is a follows:
 
-        - DPO = Close — SMA(Close, (Number of Periods / 2) + 1)
+        - Displacement = floor(Number of Periods / 2) + 1
+        - DPO = Close(t — Displacement) — SMA(Close, Number of Periods)(t)
 
-        Also known as: DPO, detrended price oscillator.
+        Also known as: DPO, detrended price oscillator. Note the moving average itself is not
+        shifted — only the close price used for the comparison is looked up further back in
+        time; see `momentum_model.get_detrended_price_oscillator` for the full explanation.
 
         Args:
             period (str, optional): The time period to consider for historical data.
@@ -2228,9 +2748,10 @@ class Technicals:
 
         The formula is a follows:
 
-        - ADX = SMA(DMI) / (SMA(DMI) + SMA(DMI))
+        - ADX = Wilder's Smoothed Moving Average of DX, where DX = 100 * |+DI — -DI| / (+DI + -DI)
 
-        Also known as: ADX, trend strength indicator.
+        Also known as: ADX, trend strength indicator. See `momentum_model.get_average_directional_index`
+        for the full formula, which uses Wilder's smoothing (not a plain SMA) throughout.
 
         Args:
             period (str, optional): The time period to consider for historical data.
@@ -2449,13 +2970,13 @@ class Technicals:
         period: str = "daily",
         close_column: str = "Adj Close",
         conversion_window: int = 9,
-        base_window: int = 20,
-        lead_span_b_window: int = 40,
+        base_window: int = 26,
+        lead_span_b_window: int = 52,
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
-    ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    ) -> pd.Series | pd.DataFrame:
         """
         Calculate the Ichimoku Cloud indicator for a given price series.
 
@@ -2465,9 +2986,15 @@ class Technicals:
 
         The formula is a follows:
 
-        - Conversion Line = (Highest High + Lowest Low) / 2
+        - Conversion Line = (Highest High + Lowest Low) / 2, over conversion_window periods
+        - Base Line = (Highest High + Lowest Low) / 2, over base_window periods
+        - Leading Span A = ((Conversion Line + Base Line) / 2), shifted forward base_window periods
+        - Leading Span B = (Highest High + Lowest Low) / 2 over lead_span_b_window periods,
+          shifted forward base_window periods
 
-        Also known as: Ichimoku Kinko Hyo, cloud indicator.
+        Also known as: Ichimoku Kinko Hyo, cloud indicator. The default windows (9, 26, 52)
+        are Goichi Hosoda's original values, both leading spans are conventionally displaced
+        forward by the base (Kijun-sen) period.
 
         Args:
             period (str, optional): The time period to consider for historical data.
@@ -2475,9 +3002,10 @@ class Technicals:
             conversion_window (int, optional): The number of periods to consider for the
                 Conversion Line (Tenkan-sen) calculation. Defaults to 9.
             base_window (int, optional): The number of periods to consider for the Base Line
-                (Kijun-sen) calculation. Defaults to 20.
-            lead_span_b_window (int, optional): The number of periods to shift forward for the
-                Lead Span B calculation. Defaults to 40.
+                (Kijun-sen) calculation, also used as the forward displacement for both
+                Leading Spans. Defaults to 26.
+            lead_span_b_window (int, optional): The number of periods to consider for the
+                Lead Span B (Senkou Span B) calculation. Defaults to 52.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the indicator values.
@@ -2489,8 +3017,7 @@ class Technicals:
                 Defaults to 1.
 
         Returns:
-            Tuple[pd.Series, pd.Series, pd.Series, pd.Series] or
-            Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+            pd.Series or pd.DataFrame:
             Conversion Line, Base Line, Lead Span A, and Lead Span B values.
 
         Notes:
@@ -2581,12 +3108,13 @@ class Technicals:
         period: str = "daily",
         close_column: str = "Adj Close",
         window: int = 14,
-        smooth_widow: int = 3,
+        smooth_window: int = DEFAULT_STOCHASTIC_SMOOTH_WINDOW,
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
-    ) -> tuple[pd.DataFrame, pd.DataFrame]:
+        smooth_widow: int | None = None,
+    ) -> pd.Series | pd.DataFrame:
         """
         Calculate the Stochastic Oscillator indicator for a given price series.
 
@@ -2597,7 +3125,7 @@ class Technicals:
         The formula is a follows:
 
         - %K = 100 * ((Close — Lowest Low) / (Highest High — Lowest Low))
-        - %D = SMA(%K)
+        - %D = SMA(%K, smooth_window)
 
         Also known as: stochastic oscillator, percent K, percent D.
 
@@ -2608,21 +3136,27 @@ class Technicals:
                 Defaults to "Adj Close".
             window (int, optional): The number of periods to consider for the %K line calculation.
                 Defaults to 14.
-            smooth_widow (int, optional): The number of periods to consider for the %D line
-                (slow stochastic) calculation. Defaults to 3.
+            smooth_window (int, optional): The number of periods used to smooth the %K line
+                into the %D signal line. Defaults to 3.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the %K and %D values.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
+                Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-                Defaults to 1.
+            smooth_widow (int | None, optional): Deprecated misspelling of `smooth_window`,
+                accepted so that existing callers keep working. Passing it emits a
+                DeprecationWarning and forwards the value to `smooth_window`. Defaults to None.
 
         Returns:
-            Tuple[pd.Series, pd.Series] or Tuple[pd.DataFrame, pd.DataFrame]:
-            %K line and %D line values.
+            pd.Series or pd.DataFrame: Stochastic Oscillator (%K and %D) values.
+
+        Raises:
+            ValueError: If the specified `period` is not one of the valid options, or if both
+                `smooth_window` and the deprecated `smooth_widow` are given conflicting values.
 
         Notes:
         - The method retrieves historical data based on the specified `period` and calculates
@@ -2655,6 +3189,20 @@ class Technicals:
         | 2026-07-01 |         51.4243 |         71.9567 |
         | 2026-07-02 |         74.7297 |         97.7853 |
         """
+        if smooth_widow is not None:
+            warnings.warn(
+                "The 'smooth_widow' parameter is a misspelling and is deprecated, use "
+                "'smooth_window' instead. It will be removed in a future version.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            if smooth_window not in (DEFAULT_STOCHASTIC_SMOOTH_WINDOW, smooth_widow):
+                raise ValueError(
+                    "Received conflicting values for 'smooth_window' and the deprecated "
+                    "'smooth_widow'. Pass only 'smooth_window'."
+                )
+            smooth_window = smooth_widow
+
         if period not in [
             "intraday",
             "daily",
@@ -2684,7 +3232,7 @@ class Technicals:
                     historical_data["Low"][ticker],
                     historical_data[close_column][ticker],
                     window,
-                    smooth_widow,
+                    smooth_window,
                 ).loc[self._start_date : self._end_date]
             )
 
@@ -2720,7 +3268,7 @@ class Technicals:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
-    ) -> tuple[pd.Series, pd.Series] | tuple[pd.DataFrame, pd.DataFrame]:
+    ) -> pd.Series | pd.DataFrame:
         """
         Calculate the Moving Average Convergence Divergence (MACD) indicator for a given price series.
 
@@ -2757,7 +3305,7 @@ class Technicals:
                 Defaults to 1.
 
         Returns:
-            Tuple[pd.DataFrame, pd.DataFrame] or Tuple[pd.Series, pd.Series]:
+            pd.Series or pd.DataFrame:
             MACD line and signal line values.
 
         Notes:
@@ -3064,6 +3612,752 @@ class Technicals:
             apply_slice=False,
         )
 
+    @handle_portfolio
+    @handle_errors
+    def get_awesome_oscillator(
+        self,
+        period: str = "daily",
+        close_column: str = "Adj Close",
+        short_window: int = 5,
+        long_window: int = 34,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+    ) -> pd.Series | pd.DataFrame:
+        """
+        Calculate the Awesome Oscillator (AO) for a given price series.
+
+        The Awesome Oscillator measures market momentum by comparing a short-term and a
+        long-term Simple Moving Average of the median price (the midpoint of each period's high
+        and low, rather than the closing price). It was developed by Bill Williams as part of
+        his broader "Trading Chaos" collection of momentum indicators.
+
+        The formula is a follows:
+
+        - Median Price = (High + Low) / 2
+        - AO = SMA(Median Price, short_window) — SMA(Median Price, long_window)
+
+        Also known as: AO, Bill Williams Awesome Oscillator.
+
+        Args:
+            period (str, optional): The time period to consider for historical data.
+                Can be "daily", "weekly", "quarterly", or "yearly". Defaults to "daily".
+            close_column (str, optional): The column name for closing prices in the historical data.
+                Defaults to "Adj Close".
+            short_window (int, optional): The number of periods for the short-term SMA of the
+                median price. Defaults to 5.
+            long_window (int, optional): The number of periods for the long-term SMA of the
+                median price. Defaults to 34.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the AO.
+                Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+                Defaults to 1.
+
+        Returns:
+            pd.Series or pd.DataFrame: Awesome Oscillator (AO) values.
+
+        Notes:
+        - The method retrieves historical data based on the specified `period` and calculates
+          the AO for each asset in the Toolkit instance.
+        - There is no academic journal citation for the Awesome Oscillator. Like most of Bill
+          Williams' indicators, it is a practitioner-developed tool rather than one derived from
+          a published financial paper. The standard textbook source is Williams, B. (1995).
+          "Trading Chaos: Applying Expert Techniques to Maximize Your Profit." Wiley.
+        - A cross of the AO above zero occurs exactly when the short-window SMA of the median
+          price crosses above the long-window SMA, and vice versa for a cross below zero.
+        - If `growth` is set to True, the method calculates the growth of the AO
+          using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(tickers=["AAPL", "MSFT"])
+
+        toolkit.technicals.get_awesome_oscillator()
+        ```
+
+        Which returns:
+
+        | Date       |     AAPL |    MSFT |   Benchmark |
+        |:-----------|---------:|--------:|------------:|
+        | 2022-12-16 |  -3.5418 | 11.2131 |      2.3418 |
+        | 2022-12-19 |  -4.8628 |  9.3716 |     -0.5142 |
+        | 2022-12-20 |  -7.3604 |  5.5371 |     -5.2622 |
+        | 2022-12-21 |  -8.7804 |  1.9144 |     -8.5319 |
+        | 2022-12-22 |  -9.8319 | -1.2635 |    -11.0124 |
+        | 2022-12-23 | -10.5435 | -3.8732 |    -11.8451 |
+        | 2022-12-27 | -10.9665 | -5.1579 |    -11.8737 |
+        | 2022-12-28 | -11.2666 | -6.1431 |    -11.8561 |
+        | 2022-12-29 | -12.1821 | -7.321  |    -12.6508 |
+        | 2022-12-30 | -12.5038 | -7.2199 |    -12.3585 |
+        """
+        if period not in [
+            "intraday",
+            "daily",
+            "weekly",
+            "monthly",
+            "quarterly",
+            "yearly",
+        ]:
+            raise ValueError(
+                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
+            )
+        if period == "intraday":
+            if self._historical_data[period].empty:
+                raise ValueError(
+                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
+                )
+            close_column = "Close"
+
+        historical_data = self._historical_data[period]
+
+        awesome_oscillator = pd.DataFrame(
+            index=historical_data.loc[self._start_date : self._end_date].index
+        )
+        for ticker in historical_data[close_column].columns:
+            awesome_oscillator[ticker] = momentum_model.get_awesome_oscillator(
+                historical_data["High"][ticker],
+                historical_data["Low"][ticker],
+                short_window,
+                long_window,
+            ).loc[self._start_date : self._end_date]
+
+        return finalize_dataset(
+            dataset=awesome_oscillator,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            apply_slice=False,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_vortex_indicator(
+        self,
+        period: str = "daily",
+        close_column: str = "Adj Close",
+        window: int = 14,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+    ) -> pd.Series | pd.DataFrame:
+        """
+        Calculate the Vortex Indicator for a given price series.
+
+        The Vortex Indicator quantifies the presence and strength of a directional trend by
+        comparing each period's price movement away from the prior period's range to the
+        period's overall volatility (True Range). It consists of two lines, VI+ and VI-, whose
+        crossovers signal potential trend changes: VI+ above VI- suggests an uptrend is in
+        control, VI- above VI+ suggests a downtrend is in control.
+
+        The formula is a follows:
+
+        - VM+ = |High(t) — Low(t-1)|
+        - VM- = |Low(t) — High(t-1)|
+        - VI+ = Sum(VM+, window) / Sum(True Range, window)
+        - VI- = Sum(VM-, window) / Sum(True Range, window)
+
+        Also known as: VI, Vortex Indicator +/-, trend direction indicator.
+
+        Args:
+            period (str, optional): The time period to consider for historical data.
+                Can be "daily", "weekly", "quarterly", or "yearly". Defaults to "daily".
+            close_column (str, optional): The column name for closing prices in the historical data.
+                Defaults to "Adj Close".
+            window (int, optional): The number of periods to sum the directional movement and
+                true range over. Defaults to 14.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the VI+ and VI- values.
+                Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+                Defaults to 1.
+
+        Returns:
+            pd.Series or pd.DataFrame:
+            VI+ and VI- values.
+
+        Notes:
+        - The method retrieves historical data based on the specified `period` and calculates
+          the Vortex Indicator values for each asset in the Toolkit instance.
+        - Reference: Botes, E., & Siepman, D. (2010). "The Vortex Indicator." Technical Analysis
+          of Stocks & Commodities, 28(1), 20-25.
+        - If `growth` is set to True, the method calculates the growth of the VI+ and VI-
+          using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(tickers=["AAPL", "MSFT"])
+
+        toolkit.technicals.get_vortex_indicator().xs("AAPL", level=1, axis="columns")
+        ```
+
+        Which returns:
+
+        | Date       |    VI+ |    VI- |
+        |:-----------|-------:|-------:|
+        | 2022-12-16 | 0.7841 | 1.0588 |
+        | 2022-12-19 | 0.7914 | 1.0685 |
+        | 2022-12-20 | 0.7615 | 1.1866 |
+        | 2022-12-21 | 0.6978 | 1.1025 |
+        | 2022-12-22 | 0.6841 | 1.1164 |
+        | 2022-12-23 | 0.6603 | 1.1994 |
+        | 2022-12-27 | 0.693  | 1.1657 |
+        | 2022-12-28 | 0.687  | 1.105  |
+        | 2022-12-29 | 0.6859 | 1.0921 |
+        | 2022-12-30 | 0.6736 | 1.1363 |
+        """
+        if period not in [
+            "intraday",
+            "daily",
+            "weekly",
+            "monthly",
+            "quarterly",
+            "yearly",
+        ]:
+            raise ValueError(
+                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
+            )
+        if period == "intraday":
+            if self._historical_data[period].empty:
+                raise ValueError(
+                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
+                )
+            close_column = "Close"
+
+        historical_data = self._historical_data[period]
+
+        vortex_indicator_dict = {}
+
+        for ticker in historical_data[close_column].columns:
+            vortex_indicator_dict[ticker] = momentum_model.get_vortex_indicator(
+                historical_data["High"][ticker],
+                historical_data["Low"][ticker],
+                historical_data[close_column][ticker],
+                window,
+            ).loc[self._start_date : self._end_date]
+
+        vortex_indicator = (
+            pd.concat(vortex_indicator_dict, axis=1)
+            .swaplevel(1, 0, axis=1)
+            .sort_index(axis=1)
+        )
+
+        return finalize_dataset(
+            dataset=vortex_indicator,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            apply_slice=False,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_elder_ray_index(
+        self,
+        period: str = "daily",
+        close_column: str = "Adj Close",
+        window: int = 13,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+    ) -> pd.Series | pd.DataFrame:
+        """
+        Calculate the Elder Ray Index (Bull Power and Bear Power) for a given price series.
+
+        The Elder Ray Index measures buying and selling pressure in the market relative to a
+        trend baseline (an Exponential Moving Average of the closing price). Bull Power captures
+        how far the high extends above the EMA (buying pressure), while Bear Power captures how
+        far the low extends below the EMA (selling pressure).
+
+        The formula is a follows:
+
+        - Bull Power = High — EMA(Close, window)
+        - Bear Power = Low — EMA(Close, window)
+
+        Also known as: Elder Ray, Bull Power, Bear Power.
+
+        Args:
+            period (str, optional): The time period to consider for historical data.
+                Can be "daily", "weekly", "quarterly", or "yearly". Defaults to "daily".
+            close_column (str, optional): The column name for closing prices in the historical data.
+                Defaults to "Adj Close".
+            window (int, optional): The number of periods for the EMA used as the trend baseline.
+                Defaults to 13, as originally proposed by Elder.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the Bull and Bear Power.
+                Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+                Defaults to 1.
+
+        Returns:
+            pd.Series or pd.DataFrame:
+            Bull Power and Bear Power values.
+
+        Notes:
+        - The method retrieves historical data based on the specified `period` and calculates
+          the Elder Ray Index values for each asset in the Toolkit instance.
+        - When the close is above the EMA (uptrend), Bull Power tends to stay positive and Bear
+          Power moves toward zero from below; when the close is below the EMA (downtrend), both
+          tend to be negative.
+        - Reference: Elder, A. (1993). "Trading for a Living." Wiley.
+        - If `growth` is set to True, the method calculates the growth of the Bull and Bear Power
+          using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(tickers=["AAPL", "MSFT"])
+
+        toolkit.technicals.get_elder_ray_index().xs("AAPL", level=1, axis="columns")
+        ```
+
+        Which returns:
+
+        | Date       |   Bear Power |   Bull Power |
+        |:-----------|-------------:|-------------:|
+        | 2022-12-16 |      -6.837  |      -2.917  |
+        | 2022-12-19 |      -7.8589 |      -3.9789 |
+        | 2022-12-20 |      -8.089  |      -4.729  |
+        | 2022-12-21 |      -4.6449 |      -0.5849 |
+        | 2022-12-22 |      -6.1399 |      -1.8799 |
+        | 2022-12-23 |      -5.9285 |      -3.1485 |
+        | 2022-12-27 |      -5.8444 |      -3.1544 |
+        | 2022-12-28 |      -7.2695 |      -2.1095 |
+        | 2022-12-29 |      -4.6924 |      -1.9424 |
+        | 2022-12-30 |      -4.4235 |      -1.9035 |
+        """
+        if period not in [
+            "intraday",
+            "daily",
+            "weekly",
+            "monthly",
+            "quarterly",
+            "yearly",
+        ]:
+            raise ValueError(
+                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
+            )
+        if period == "intraday":
+            if self._historical_data[period].empty:
+                raise ValueError(
+                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
+                )
+            close_column = "Close"
+
+        historical_data = self._historical_data[period]
+
+        elder_ray_index_dict = {}
+
+        for ticker in historical_data[close_column].columns:
+            elder_ray_index_dict[ticker] = momentum_model.get_elder_ray_index(
+                historical_data["High"][ticker],
+                historical_data["Low"][ticker],
+                historical_data[close_column][ticker],
+                window,
+            ).loc[self._start_date : self._end_date]
+
+        elder_ray_index = (
+            pd.concat(elder_ray_index_dict, axis=1)
+            .swaplevel(1, 0, axis=1)
+            .sort_index(axis=1)
+        )
+
+        return finalize_dataset(
+            dataset=elder_ray_index,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            apply_slice=False,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_rate_of_change(
+        self,
+        period: str = "daily",
+        close_column: str = "Adj Close",
+        window: int = 12,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+    ) -> pd.Series | pd.DataFrame:
+        """
+        Calculate the Rate of Change (ROC) for a given price series.
+
+        The Rate of Change is a pure momentum oscillator that measures the percentage
+        change in price between the current period and the price a fixed number of periods
+        ago. It oscillates around zero: positive values indicate price is higher than
+        `window` periods ago (upward momentum), while negative values indicate price is
+        lower (downward momentum).
+
+        The formula is a follows:
+
+        - ROC = (Close(t) / Close(t - window) — 1) * 100
+
+        Also known as: ROC, Price Rate of Change, momentum.
+
+        Args:
+            period (str, optional): The time period to consider for historical data.
+                Can be "daily", "weekly", "quarterly", or "yearly". Defaults to "daily".
+            close_column (str, optional): The column name for closing prices in the historical data.
+                Defaults to "Adj Close".
+            window (int, optional): Number of periods to look back for the rate of change
+                calculation. Defaults to 12.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the Rate of Change.
+                Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+                Defaults to 1.
+
+        Returns:
+            pd.Series or pd.DataFrame: Rate of Change values, expressed as a percentage.
+
+        Notes:
+        - The method retrieves historical data based on the specified `period` and calculates
+          the Rate of Change for each asset in the Toolkit instance.
+        - Reference: Murphy, J.J. (1999). "Technical Analysis of the Financial Markets." New
+          York Institute of Finance.
+        - If `growth` is set to True, the method calculates the growth of the Rate of Change
+          using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(tickers=["AAPL", "MSFT"])
+
+        toolkit.technicals.get_rate_of_change()
+        ```
+        """
+        if period not in [
+            "intraday",
+            "daily",
+            "weekly",
+            "monthly",
+            "quarterly",
+            "yearly",
+        ]:
+            raise ValueError(
+                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
+            )
+        if period == "intraday":
+            if self._historical_data[period].empty:
+                raise ValueError(
+                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
+                )
+            close_column = "Close"
+
+        historical_data = self._historical_data[period]
+
+        rate_of_change = momentum_model.get_rate_of_change(
+            historical_data[close_column],
+            window,
+        ).loc[self._start_date : self._end_date]
+
+        return finalize_dataset(
+            dataset=rate_of_change,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            apply_slice=False,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_choppiness_index(
+        self,
+        period: str = "daily",
+        close_column: str = "Adj Close",
+        window: int = 14,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+    ) -> pd.Series | pd.DataFrame:
+        """
+        Calculate the Choppiness Index (CHOP) for a given price series.
+
+        The Choppiness Index quantifies whether the market is trending or moving sideways
+        ("choppy") by comparing the sum of True Range over the window (a measure of the
+        total price path travelled) to the net range the price actually covered over that
+        same window (the distance between the highest high and the lowest low). When price
+        travels a long, winding path but ends up covering little net ground, the index is
+        high (near 100), signalling a choppy, range-bound market. When price travels
+        efficiently in one direction, the index is low (near 0), signalling a trending
+        market.
+
+        The formula is a follows:
+
+        - CHOP = 100 * log10( Sum(True Range, window) / (Max(High, window) — Min(Low, window)) ) / log10(window)
+
+        Also known as: CHOP, Choppiness Index.
+
+        Args:
+            period (str, optional): The time period to consider for historical data.
+                Can be "daily", "weekly", "quarterly", or "yearly". Defaults to "daily".
+            close_column (str, optional): The column name for closing prices in the historical data.
+                Defaults to "Adj Close".
+            window (int, optional): Number of periods to consider for the Choppiness Index
+                calculation. Defaults to 14.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the Choppiness Index.
+                Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+                Defaults to 1.
+
+        Returns:
+            pd.Series or pd.DataFrame: Choppiness Index values, bounded between 0 and 100.
+            Values above 61.8 are commonly read as signalling a choppy (range-bound) market,
+            while values below 38.2 are commonly read as signalling a trending market.
+
+        Notes:
+        - The method retrieves historical data based on the specified `period` and calculates
+          the Choppiness Index for each asset in the Toolkit instance.
+        - Developed by Australian commodities trader Bill Dreiss; there is no formal journal
+          citation. The standard textbook treatment is Kaufman, P.J. (2013). "Trading Systems
+          and Methods." 5th ed. Wiley.
+        - If `growth` is set to True, the method calculates the growth of the Choppiness
+          Index using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(tickers=["AAPL", "MSFT"])
+
+        toolkit.technicals.get_choppiness_index()
+        ```
+        """
+        if period not in [
+            "intraday",
+            "daily",
+            "weekly",
+            "monthly",
+            "quarterly",
+            "yearly",
+        ]:
+            raise ValueError(
+                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
+            )
+        if period == "intraday":
+            if self._historical_data[period].empty:
+                raise ValueError(
+                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
+                )
+            close_column = "Close"
+
+        historical_data = self._historical_data[period]
+
+        choppiness_index = pd.DataFrame(
+            index=historical_data.loc[self._start_date : self._end_date].index
+        )
+        for ticker in historical_data[close_column].columns:
+            choppiness_index[ticker] = momentum_model.get_choppiness_index(
+                historical_data["High"][ticker],
+                historical_data["Low"][ticker],
+                historical_data[close_column][ticker],
+                window,
+            ).loc[self._start_date : self._end_date]
+
+        return finalize_dataset(
+            dataset=choppiness_index,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            apply_slice=False,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_know_sure_thing(
+        self,
+        period: str = "daily",
+        close_column: str = "Adj Close",
+        roc_windows: list[int] | None = None,
+        sma_windows: list[int] | None = None,
+        weights: list[int] | None = None,
+        signal_window: int = 9,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+    ) -> pd.Series | pd.DataFrame:
+        """
+        Calculate the Know Sure Thing (KST) for a given price series.
+
+        The Know Sure Thing is a momentum oscillator developed by Martin Pring that combines
+        four smoothed Rate of Change series, each calculated over a progressively longer
+        lookback period, into a single weighted sum. Smoothing each Rate of Change with a
+        Simple Moving Average before combining them reduces noise, while the increasing
+        weights on the longer lookback periods give more influence to the more significant,
+        longer-term price cycles. A signal line (a Simple Moving Average of the KST itself)
+        is used to spot crossovers, in the same way the MACD line is compared to its signal
+        line.
+
+        The formula is a follows:
+
+        - RCMA(i) = SMA(ROC(Close, roc_windows[i]), sma_windows[i])
+        - KST = Sum(RCMA(i) * weights[i]) for i = 1..4
+        - Signal Line = SMA(KST, signal_window)
+
+        Also known as: KST, Pring's Know Sure Thing, Summed Rate of Change.
+
+        Args:
+            period (str, optional): The time period to consider for historical data.
+                Can be "daily", "weekly", "quarterly", or "yearly". Defaults to "daily".
+            close_column (str, optional): The column name for closing prices in the historical data.
+                Defaults to "Adj Close".
+            roc_windows (list[int] | None, optional): The four lookback periods used for the
+                underlying Rate of Change calculations. Defaults to the standard
+                [10, 15, 20, 30].
+            sma_windows (list[int] | None, optional): The four Simple Moving Average
+                smoothing periods applied to each Rate of Change series. Defaults to the
+                standard [10, 10, 10, 15].
+            weights (list[int] | None, optional): The four weights applied to each smoothed
+                Rate of Change series before summing. Defaults to the standard [1, 2, 3, 4].
+            signal_window (int, optional): Number of periods for the Simple Moving Average of
+                the KST used as the signal line. Defaults to 9.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the KST and Signal Line.
+                Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+                Defaults to 1.
+
+        Returns:
+            pd.Series or pd.DataFrame:
+            KST and Signal Line values.
+
+        Notes:
+        - The method retrieves historical data based on the specified `period` and calculates
+          the Know Sure Thing values for each asset in the Toolkit instance.
+        - Reference: Pring, M.J. (1992). "The Know Sure Thing (KST)." Technical Analysis of
+          Stocks & Commodities, 10(6).
+        - If `growth` is set to True, the method calculates the growth of the KST and Signal
+          Line using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(tickers=["AAPL", "MSFT"])
+
+        toolkit.technicals.get_know_sure_thing().xs("AAPL", level=1, axis="columns")
+        ```
+        """
+        if period not in [
+            "intraday",
+            "daily",
+            "weekly",
+            "monthly",
+            "quarterly",
+            "yearly",
+        ]:
+            raise ValueError(
+                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
+            )
+        if period == "intraday":
+            if self._historical_data[period].empty:
+                raise ValueError(
+                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
+                )
+            close_column = "Close"
+
+        historical_data = self._historical_data[period]
+
+        know_sure_thing_dict = {}
+
+        for ticker in historical_data[close_column].columns:
+            know_sure_thing_dict[ticker] = momentum_model.get_know_sure_thing(
+                historical_data[close_column][ticker],
+                roc_windows,
+                sma_windows,
+                weights,
+                signal_window,
+            ).loc[self._start_date : self._end_date]
+
+        know_sure_thing = (
+            pd.concat(know_sure_thing_dict, axis=1)
+            .swaplevel(1, 0, axis=1)
+            .sort_index(axis=1)
+        )
+
+        return finalize_dataset(
+            dataset=know_sure_thing,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            apply_slice=False,
+        )
+
     def collect_overlap_indicators(
         self,
         period: str = "daily",
@@ -3181,6 +4475,12 @@ class Technicals:
             period=period, close_column=close_column, window=window
         )
 
+        overlap_indicators["Kaufman Adaptive Moving Average (KAMA)"] = (
+            self.get_kaufman_adaptive_moving_average(
+                period=period, close_column=close_column, window=window
+            )
+        )
+
         overlap_indicators["Volume Weighted Average Price (VWAP)"] = (
             self.get_volume_weighted_average_price(
                 period=period, close_column=close_column, window=window
@@ -3196,6 +4496,17 @@ class Technicals:
         overlap_indicators["Pivot Point"] = pivot_points["Pivot Point"]
         overlap_indicators["Pivot Point Resistance 1"] = pivot_points["Resistance 1"]
         overlap_indicators["Pivot Point Support 1"] = pivot_points["Support 1"]
+
+        fibonacci_retracement_levels = self.get_fibonacci_retracement_levels(
+            period=period, close_column=close_column, window=window
+        )
+
+        overlap_indicators["Fibonacci Retracement 50.0%"] = (
+            fibonacci_retracement_levels["50.0%"]
+        )
+        overlap_indicators["Fibonacci Retracement 61.8%"] = (
+            fibonacci_retracement_levels["61.8%"]
+        )
 
         self._overlap_indicators = pd.concat(overlap_indicators, axis=1)
 
@@ -3228,7 +4539,9 @@ class Technicals:
 
         if len(self._tickers) == 1:
             return (
-                self._overlap_indicators_growth[self._tickers[0]]
+                self._overlap_indicators_growth.xs(
+                    self._tickers[0], level=1, axis="columns"
+                )
                 if growth
                 else self._overlap_indicators.xs(
                     self._tickers[0], level=1, axis="columns"
@@ -3707,7 +5020,7 @@ class Technicals:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
-    ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    ) -> pd.Series | pd.DataFrame:
         """
         Calculate the Bollinger Bands for a given price series.
 
@@ -3721,6 +5034,10 @@ class Technicals:
         - Middle Band = SMA(Close, Window)
         - Upper Band = Middle Band + (Num Std Dev * Std Dev)
         - Lower Band = Middle Band — (Num Std Dev * Std Dev)
+
+        The standard deviation is the *population* standard deviation (dividing by n), as
+        Bollinger himself specifies and as TA-Lib and StockCharts both implement, not
+        pandas' default sample standard deviation.
 
         Also known as: Bollinger Bands, BB, volatility bands, price channels.
 
@@ -3744,7 +5061,7 @@ class Technicals:
                 Defaults to 1.
 
         Returns:
-            Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame] or Tuple[pd.Series, pd.Series, pd.Series]:
+            pd.Series or pd.DataFrame:
             Bollinger Bands (upper, middle, lower).
 
         Notes:
@@ -3844,7 +5161,10 @@ class Technicals:
 
         The formula is a follows:
 
-        - TMA = SMA(SMA(Close, Window), Window)
+        - For an odd window: Sub-window Length = (Window + 1) / 2, applied for both passes.
+        - For an even window: the two passes use different sub-window lengths, Window / 2
+          and Window / 2 + 1 (matching TA-Lib's TRIMA convention).
+        - TMA = SMA(SMA(Close, Sub-window Length 1), Sub-window Length 2)
 
         Also known as: TMA, triangular MA.
 
@@ -4168,6 +5488,132 @@ class Technicals:
 
     @handle_portfolio
     @handle_errors
+    def get_kaufman_adaptive_moving_average(
+        self,
+        period: str = "daily",
+        close_column: str = "Adj Close",
+        window: int = 10,
+        fast_window: int = 2,
+        slow_window: int = 30,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+    ) -> pd.Series | pd.DataFrame:
+        """
+        Calculate the Kaufman Adaptive Moving Average (KAMA) for a given price series.
+
+        The Kaufman Adaptive Moving Average adjusts its own responsiveness to price changes
+        based on how "efficiently" price is moving. It compares the net directional move
+        over the window to the total (sum of absolute) movement over that same window — the
+        Efficiency Ratio. When price trends strongly in one direction (an efficient move),
+        the Efficiency Ratio is close to 1 and KAMA tracks price closely, behaving like a
+        fast EMA. When price whipsaws sideways (an inefficient move), the Efficiency Ratio is
+        close to 0 and KAMA flattens out, behaving like a slow EMA — reducing whipsaw signals
+        in choppy markets while still reacting quickly during strong trends.
+
+        The formula is a follows:
+
+        - Change = |Close(t) — Close(t - window)|
+        - Volatility = Sum(|Close(i) — Close(i - 1)|, window)
+        - Efficiency Ratio (ER) = Change / Volatility
+        - Fastest SC = 2 / (fast_window + 1), Slowest SC = 2 / (slow_window + 1)
+        - Smoothing Constant (SC) = [ER * (Fastest SC — Slowest SC) + Slowest SC]^2
+        - KAMA(t) = KAMA(t-1) + SC * (Close(t) — KAMA(t-1))
+
+        Also known as: KAMA, Kaufman's Adaptive Moving Average.
+
+        Args:
+            period (str, optional): The time period to consider for historical data.
+                Can be "daily", "weekly", "quarterly", or "yearly". Defaults to "daily".
+            close_column (str, optional): The column name for closing prices in the historical data.
+                Defaults to "Adj Close".
+            window (int, optional): Number of periods over which the Efficiency Ratio is
+                calculated. Defaults to 10.
+            fast_window (int, optional): The number of periods that corresponds to the
+                fastest EMA constant used when the Efficiency Ratio is at its maximum (1.0).
+                Defaults to 2.
+            slow_window (int, optional): The number of periods that corresponds to the
+                slowest EMA constant used when the Efficiency Ratio is at its minimum (0.0).
+                Defaults to 30.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the KAMA.
+                Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+                Defaults to 1.
+
+        Returns:
+            pd.Series or pd.DataFrame: KAMA values.
+
+        Notes:
+        - The method retrieves historical data based on the specified `period` and calculates
+          the KAMA for each asset in the Toolkit instance.
+        - Reference: Kaufman, P.J. (1998). "Trading Systems and Methods." 3rd ed. Wiley.
+        - If `growth` is set to True, the method calculates the growth of the KAMA using the
+          specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(tickers=["AAPL", "MSFT"])
+
+        toolkit.technicals.get_kaufman_adaptive_moving_average()
+        ```
+        """
+        if period not in [
+            "intraday",
+            "daily",
+            "weekly",
+            "monthly",
+            "quarterly",
+            "yearly",
+        ]:
+            raise ValueError(
+                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
+            )
+        if period == "intraday":
+            if self._historical_data[period].empty:
+                raise ValueError(
+                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
+                )
+            close_column = "Close"
+
+        historical_data = self._historical_data[period]
+
+        kaufman_adaptive_moving_average = pd.DataFrame(
+            index=historical_data.loc[self._start_date : self._end_date].index
+        )
+        for ticker in historical_data[close_column].columns:
+            kaufman_adaptive_moving_average[ticker] = (
+                overlap_model.get_kaufman_adaptive_moving_average(
+                    historical_data[close_column][ticker],
+                    window,
+                    fast_window,
+                    slow_window,
+                ).loc[self._start_date : self._end_date]
+            )
+
+        return finalize_dataset(
+            dataset=kaufman_adaptive_moving_average,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            apply_slice=False,
+        )
+
+    @handle_portfolio
+    @handle_errors
     def get_volume_weighted_average_price(
         self,
         period: str = "daily",
@@ -4430,7 +5876,7 @@ class Technicals:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
-    ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    ) -> pd.Series | pd.DataFrame:
         """
         Calculate the Pivot Points for a given price series.
 
@@ -4466,7 +5912,7 @@ class Technicals:
                 Defaults to 1.
 
         Returns:
-            Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame] or Tuple[pd.Series, pd.Series, pd.Series]:
+            pd.Series or pd.DataFrame:
             Pivot Points (pivot, resistance 1-3, support 1-3).
 
         Notes:
@@ -4557,6 +6003,9 @@ class Technicals:
         close_column: str = "Adj Close",
         window: int = 14,
         rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
     ) -> pd.Series | pd.DataFrame:
         """
         Retrieves the support and resistance levels for the specified period and assets.
@@ -4592,9 +6041,16 @@ class Technicals:
             rounding (int | None, optional): The number of decimals to round the results to.
                 If None, the rounding value specified during the initialization of the Toolkit instance will be used.
                 Defaults to None.
+            growth (bool, optional): Whether to calculate the growth of the levels.
+                Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation.
+                Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
 
         Returns:
-           pd.DataFrame: The support and resistance levels for each asset.
+           pd.Series or pd.DataFrame: The support and resistance levels for each asset.
 
         Raises:
             ValueError: If the specified `period` is not one of the valid options.
@@ -4603,8 +6059,13 @@ class Technicals:
         - The method retrieves historical data based on the specified `period` and calculates the
           support and resistance levels for each asset in the Toolkit instance.
         - A level is only identified on the handful of dates where a new local maximum or minimum
-          is detected. The result is forward-filled so every date shows the most recently
-          established level (NaN before the first level is found for that asset).
+          is confirmed. The result is forward-filled so every date shows the most recently
+          confirmed level (NaN before the first level is confirmed for that asset).
+        - Levels are identified with a centred pivot window, which cannot confirm an extreme
+          until `window` further periods have printed without exceeding it. Every level is
+          therefore published with a confirmation lag of exactly `window` periods, and the
+          series is append-only: a value read at any date is exactly the value that was
+          available at that date, so the output is safe to use in a backtest.
 
         As an example:
 
@@ -4667,8 +6128,175 @@ class Technicals:
             .sort_index(axis=1)
         )
 
-        return support_resistance_levels_df.round(
-            rounding if rounding else self._rounding
+        return finalize_dataset(
+            dataset=support_resistance_levels_df,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_fibonacci_retracement_levels(
+        self,
+        period: str = "daily",
+        close_column: str = "Adj Close",
+        window: int = 14,
+        levels: list[float] | None = None,
+        trend: str = "uptrend",
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+    ) -> pd.Series | pd.DataFrame:
+        """
+        Calculate the Fibonacci Retracement Levels for a given price series.
+
+        Fibonacci Retracement Levels are horizontal price levels, derived from ratios found in
+        the Fibonacci sequence, that traders watch as potential support (during a pullback
+        within an uptrend) or resistance (during a bounce within a downtrend) zones. For every
+        date, the swing high and swing low are taken as the rolling maximum high and rolling
+        minimum low over the specified `window`, and the retracement levels are derived from
+        that high/low pair.
+
+        The formula is a follows:
+
+        - Uptrend (retracing down from the high): Level = High — Ratio * (High — Low)
+        - Downtrend (retracing up from the low): Level = Low + Ratio * (High — Low)
+
+        Also known as: Fibonacci retracement, Fib levels, retracement levels.
+
+        Args:
+            period (str, optional): The time period to consider for historical data.
+                Can be "daily", "weekly", "quarterly", or "yearly". Defaults to "daily".
+            close_column (str, optional): The column name for closing prices in the historical data.
+                Defaults to "Adj Close".
+            window (int, optional): The number of periods over which the rolling swing high
+                (maximum) and swing low (minimum) are determined. Defaults to 14.
+            levels (list[float] | None, optional): The Fibonacci ratios to calculate levels for.
+                Defaults to the standard [0.0, 0.236, 0.382, 0.5, 0.618, 0.786, 1.0].
+            trend (str, optional): Whether to compute retracement levels for an "uptrend"
+                (levels measured down from the high — the conventional direction, used when a
+                prior move was up and price is now pulling back) or a "downtrend" (levels
+                measured up from the low, used when a prior move was down and price is now
+                bouncing). Defaults to "uptrend".
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the retracement levels.
+                Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+                Defaults to 1.
+
+        Returns:
+            pd.Series or pd.DataFrame: Fibonacci Retracement Levels, one column per ratio in
+            `levels`, labelled by the ratio expressed as a percentage (e.g. "23.6%").
+
+        Raises:
+            ValueError: If the specified `period` is not one of the valid options, or if `trend`
+                is not "uptrend" or "downtrend".
+
+        Notes:
+        - The method retrieves historical data based on the specified `period` and calculates
+          the Fibonacci Retracement Levels for each asset in the Toolkit instance.
+        - The 50% level is not actually a Fibonacci ratio. It is included purely by long-standing
+          market convention, based on the Dow Theory observation that markets often retrace
+          about half of a prior move.
+        - The 78.6% level is the square root of 0.618, not a ratio drawn directly from the
+          Fibonacci sequence itself (unlike 23.6%, 38.2% and 61.8%, which are).
+        - There is no single canonical academic paper behind Fibonacci Retracement Levels — the
+          indicator is a practitioner tool derived from the Fibonacci sequence's ratios rather
+          than a published financial model. The standard textbook treatment is Murphy, J.J.
+          (1999). "Technical Analysis of the Financial Markets." New York Institute of Finance.
+        - If `growth` is set to True, the method calculates the growth of the retracement levels
+          using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(tickers=["AAPL", "MSFT"])
+
+        toolkit.technicals.get_fibonacci_retracement_levels().xs("AAPL", level=1, axis="columns")
+        ```
+
+        Which returns:
+
+        Note that the columns sort lexicographically by their label (so "100.0%" sorts right
+        after "0.0%", ahead of "23.6%"), matching the sorting convention used by every other
+        multi-column indicator in this module (e.g. Pivot Points' Resistance/Support levels).
+
+        | Date       |   0.0% |   100.0% |   23.6% |   38.2% |   50.0% |   61.8% |   78.6% |
+        |:-----------|-------:|---------:|--------:|--------:|--------:|--------:|--------:|
+        | 2022-12-16 | 150.92 |   133.73 | 146.863 | 144.353 | 142.325 | 140.297 | 137.409 |
+        | 2022-12-19 | 150.92 |   131.32 | 146.294 | 143.433 | 141.12  | 138.807 | 135.514 |
+        | 2022-12-20 | 150.92 |   129.89 | 145.957 | 142.887 | 140.405 | 137.923 | 134.39  |
+        | 2022-12-21 | 150.92 |   129.89 | 145.957 | 142.887 | 140.405 | 137.923 | 134.39  |
+        | 2022-12-22 | 150.92 |   129.89 | 145.957 | 142.887 | 140.405 | 137.923 | 134.39  |
+        | 2022-12-23 | 149.97 |   129.64 | 145.172 | 142.204 | 139.805 | 137.406 | 133.991 |
+        | 2022-12-27 | 149.97 |   128.72 | 144.955 | 141.852 | 139.345 | 136.838 | 133.268 |
+        | 2022-12-28 | 149.97 |   125.87 | 144.282 | 140.764 | 137.92  | 135.076 | 131.027 |
+        | 2022-12-29 | 149.97 |   125.87 | 144.282 | 140.764 | 137.92  | 135.076 | 131.027 |
+        | 2022-12-30 | 149.97 |   125.87 | 144.282 | 140.764 | 137.92  | 135.076 | 131.027 |
+        """
+        if period not in [
+            "intraday",
+            "daily",
+            "weekly",
+            "monthly",
+            "quarterly",
+            "yearly",
+        ]:
+            raise ValueError(
+                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
+            )
+        if period == "intraday":
+            if self._historical_data[period].empty:
+                raise ValueError(
+                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
+                )
+            close_column = "Close"
+
+        historical_data = self._historical_data[period]
+
+        fibonacci_retracement_levels_dict = {}
+
+        for ticker in historical_data[close_column].columns:
+            rolling_high = historical_data["High"][ticker].rolling(window=window).max()
+            rolling_low = historical_data["Low"][ticker].rolling(window=window).min()
+
+            fibonacci_retracement_levels_dict[ticker] = (
+                overlap_model.get_fibonacci_retracement_levels(
+                    rolling_high, rolling_low, levels=levels, trend=trend
+                ).loc[self._start_date : self._end_date]
+            )
+
+        fibonacci_retracement_levels = (
+            pd.concat(fibonacci_retracement_levels_dict, axis=1)
+            .swaplevel(1, 0, axis=1)
+            .sort_index(axis=1)
+        )
+
+        return finalize_dataset(
+            dataset=fibonacci_retracement_levels,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            apply_slice=False,
         )
 
     def collect_volatility_indicators(
@@ -4768,6 +6396,13 @@ class Technicals:
             period=period, close_column=close_column, window=window
         )
 
+        supertrend = self.get_supertrend(period=period, close_column=close_column)
+
+        volatility_indicators["Supertrend"] = supertrend["Supertrend"]
+        volatility_indicators["Supertrend Trend Direction"] = supertrend[
+            "Trend Direction"
+        ]
+
         keltner_channels = self.get_keltner_channels(
             period=period, close_column=close_column, window=window
         )
@@ -4823,7 +6458,9 @@ class Technicals:
 
         if len(self._tickers) == 1:
             return (
-                self._volatility_indicators_growth[self._tickers[0]]
+                self._volatility_indicators_growth.xs(
+                    self._tickers[0], level=1, axis="columns"
+                )
                 if growth
                 else self._volatility_indicators.xs(
                     self._tickers[0], level=1, axis="columns"
@@ -4975,9 +6612,11 @@ class Technicals:
         The formula is a follows:
 
         - TR = max(high — low, abs(high — previous_close), abs(low — previous_close))
-        - ATR = EMA(TR, Window)
+        - ATR = Wilder's Smoothed Moving Average of TR over `window` periods
 
-        Also known as: ATR, volatility indicator.
+        Also known as: ATR, volatility indicator. See `volatility_model.get_average_true_range`
+        for the full formula; Wilder's smoothing constant (1/window) is slower than a
+        standard EMA's (2/(window+1)) of the same window.
 
         Args:
             period (str): Period for which to calculate the ATR.
@@ -5080,6 +6719,140 @@ class Technicals:
 
     @handle_portfolio
     @handle_errors
+    def get_supertrend(
+        self,
+        period: str = "daily",
+        close_column: str = "Adj Close",
+        window: int = 10,
+        multiplier: float = 3.0,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+    ) -> pd.Series | pd.DataFrame:
+        """
+        Calculate the Supertrend indicator for a given price series.
+
+        The Supertrend indicator plots a single trailing line that flips between sitting
+        below price (in an uptrend) and above price (in a downtrend). The line is built from
+        two bands offset from the median price ((High + Low) / 2) by a multiple of the
+        Average True Range, which are then "ratcheted" period over period — each band can
+        only move in the direction that tightens around price — so that the active band only
+        flips to the other side once the closing price actually crosses it. This makes
+        Supertrend both a trend filter (the flip direction signals a trend change) and a
+        trailing stop-loss level.
+
+        The formula is a follows:
+
+        - Basic Upper Band = (High + Low) / 2 + multiplier * ATR(window)
+        - Basic Lower Band = (High + Low) / 2 — multiplier * ATR(window)
+        - Final Upper Band(t) = Basic Upper Band(t) if Basic Upper Band(t) < Final Upper
+          Band(t-1) or Close(t-1) > Final Upper Band(t-1), else Final Upper Band(t-1)
+        - Final Lower Band(t) = Basic Lower Band(t) if Basic Lower Band(t) > Final Lower
+          Band(t-1) or Close(t-1) < Final Lower Band(t-1), else Final Lower Band(t-1)
+        - While in an uptrend, Supertrend = Final Lower Band, until Close crosses below it,
+          at which point the trend flips to a downtrend and Supertrend = Final Upper Band
+          (and vice versa)
+
+        Also known as: Supertrend, SuperTrend.
+
+        Args:
+            period (str, optional): The time period to consider for historical data.
+                Can be "daily", "weekly", "quarterly", or "yearly". Defaults to "daily".
+            close_column (str, optional): The column name for closing prices in the historical data.
+                Defaults to "Adj Close".
+            window (int, optional): Number of periods for the underlying Average True Range
+                calculation. Defaults to 10.
+            multiplier (float, optional): Multiplier applied to the Average True Range to
+                determine how far the bands sit from the median price. Defaults to 3.0.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to 4.
+            growth (bool, optional): Whether to calculate the growth of the Supertrend and
+                Trend Direction values. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+                Defaults to 1.
+
+        Returns:
+            pd.Series or pd.DataFrame:
+            Supertrend (the trailing indicator line) and Trend Direction (1 for an uptrend
+            and -1 for a downtrend) values.
+
+        Notes:
+        - The method retrieves historical data based on the specified `period` and calculates
+          the Supertrend for each asset in the Toolkit instance.
+        - There is no academic journal citation for Supertrend. Like the Parabolic SAR, it is
+          a practitioner-developed trailing-stop/trend indicator rather than one derived from
+          a published financial paper.
+        - The trend is initialized as an uptrend on the first available period, since there
+          is no prior period to determine the starting direction from.
+        - If `growth` is set to True, the method calculates the growth of the Supertrend and
+          Trend Direction values using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(tickers=["AAPL", "MSFT"])
+
+        toolkit.technicals.get_supertrend().xs("AAPL", level=1, axis="columns")
+        ```
+        """
+        if period not in [
+            "intraday",
+            "daily",
+            "weekly",
+            "monthly",
+            "quarterly",
+            "yearly",
+        ]:
+            raise ValueError(
+                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
+            )
+        if period == "intraday":
+            if self._historical_data[period].empty:
+                raise ValueError(
+                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
+                )
+            close_column = "Close"
+
+        historical_data = self._historical_data[period]
+
+        supertrend_dict = {}
+
+        for ticker in historical_data[close_column].columns:
+            supertrend_dict[ticker] = volatility_model.get_supertrend(
+                historical_data["High"][ticker],
+                historical_data["Low"][ticker],
+                historical_data[close_column][ticker],
+                window,
+                multiplier,
+            ).loc[self._start_date : self._end_date]
+
+        supertrend = (
+            pd.concat(supertrend_dict, axis=1)
+            .swaplevel(1, 0, axis=1)
+            .sort_index(axis=1)
+        )
+
+        return finalize_dataset(
+            dataset=supertrend,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            apply_slice=False,
+        )
+
+    @handle_portfolio
+    @handle_errors
     def get_keltner_channels(
         self,
         period: str = "daily",
@@ -5091,7 +6864,7 @@ class Technicals:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
-    ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    ) -> pd.Series | pd.DataFrame:
         """
         Calculate the Keltner Channels for a given price series.
 
@@ -5132,7 +6905,7 @@ class Technicals:
                 Defaults to 1.
 
         Returns:
-            pd.DataFrame or Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]: Keltner Channels (upper, middle, lower).
+            pd.Series or pd.DataFrame: Keltner Channels (upper, middle, lower).
 
         Notes:
         - The method retrieves historical data based on the specified `period` and calculates Keltner Channels
@@ -5226,19 +6999,23 @@ class Technicals:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
-    ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    ) -> pd.Series | pd.DataFrame:
         """
         Calculate the Donchian Channels for a given price series.
 
-        Donchian Channels plot the highest high and lowest low over a specified window,
-        with the middle line being the average of the two. They are used to identify
-        breakouts and the overall volatility of the price range.
+        Donchian Channels plot the highest high and lowest low over the `window` periods
+        *preceding* the current one, with the middle line being the average of the two. They
+        are used to identify breakouts and the overall volatility of the price range.
 
         The formula is a follows:
 
-        - Upper Channel = Highest High over Window
-        - Lower Channel = Lowest Low over Window
+        - Upper Channel = Highest High over Window, ending one period ago
+        - Lower Channel = Lowest Low over Window, ending one period ago
         - Middle Channel = (Upper Channel + Lower Channel) / 2
+
+        The current period is deliberately excluded from the lookback, per Donchian's
+        original breakout rule and StockCharts' Price Channels definition — including it
+        would make a channel break impossible by construction.
 
         Also known as: Donchian Channels, price channel breakout.
 
@@ -5260,7 +7037,7 @@ class Technicals:
                 Defaults to 1.
 
         Returns:
-            pd.DataFrame or Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]: Donchian Channels (upper, middle, lower).
+            pd.Series or pd.DataFrame: Donchian Channels (upper, middle, lower).
 
         Notes:
         - The method retrieves historical data based on the specified `period` and calculates Donchian Channels

@@ -96,7 +96,6 @@ def get_operating_cycle(
     Args:
         days_of_inventory (float or pd.Series): Days of inventory of the company.
         days_of_sales_outstanding (float or pd.Series): Days of sales outstanding of the company.
-        days_of_payables (float or pd.Series): Days of payables of the company.
 
     Returns:
         float | pd.Series: The operating cycle value.
@@ -133,8 +132,8 @@ def get_days_of_accounts_payable_outstanding(
 
     Args:
         cost_of_goods_sold (float or pd.Series): Total Costs of Goods Sold of the company.
-        accounts_payable_begin (float or pd.Series): Beginning accounts payable of the company.
-        accounts_payable_end (float or pd.Series): Ending accounts payable of the company.
+        average_accounts_payable (float or pd.Series): Average accounts payable of the company.
+        This is typically calculated as (beginning accounts payable + ending accounts payable) / 2.
         days (int, optional): Number of days in the year. Defaults to 365.
 
     Returns:
@@ -169,19 +168,27 @@ def get_receivables_turnover(
     net_credit_sales: pd.Series,
 ) -> pd.Series:
     """
-    Calculate the receivables turnover, a ratio that measures how efficiently a
-    company uses its assets by comparing the amount of credit extended to customers to
-    the amount of sales generated.
+    Calculate the receivables turnover, an efficiency ratio that measures how many
+    times per period a company collects its average accounts receivable, i.e. how
+    efficiently it extends credit to and collects cash from its customers.
+
+    Note that this is the reciprocal (times per period, rather than days) of the
+    days of sales outstanding: Receivables Turnover = Days in Period /
+    Days of Sales Outstanding.
+
+    The formula is as follows:
+
+        Receivables Turnover = Net Credit Sales / Average Accounts Receivable
 
     Args:
         average_accounts_receivable (float or pd.Series): Average accounts receivable of the company.
         This is typically calculated as (beginning accounts receivable + ending accounts receivable) / 2.
-        revenue (float or pd.Series): The total annual sales generated during the period.
+        net_credit_sales (float or pd.Series): The total net credit sales generated during the period.
 
     Returns:
         float | pd.Series: The receivables turnover value.
     """
-    return average_accounts_receivable / net_credit_sales
+    return net_credit_sales / average_accounts_receivable
 
 
 def get_sga_to_revenue_ratio(sga_expenses: pd.Series, revenue: pd.Series) -> pd.Series:
@@ -368,6 +375,37 @@ def get_stock_based_compensation_ratio(
         float | pd.Series: The SBC to revenue ratio value.
     """
     return stock_based_compensation / revenue
+
+
+def get_working_capital_turnover_ratio(
+    revenue: pd.Series,
+    average_working_capital: pd.Series,
+) -> pd.Series:
+    """
+    Calculate the working capital turnover ratio, an efficiency ratio that measures how
+    effectively a company uses its working capital to generate revenue.
+
+    A high working capital turnover ratio indicates that a company is generating a
+    large amount of revenue relative to the working capital it employs, which can
+    signal an efficient (or, if extreme, undercapitalized) operation. A low ratio can
+    indicate excess inventory, slow receivables collection, or otherwise underutilized
+    working capital.
+
+    The formula is as follows:
+
+        Working Capital Turnover Ratio = Revenue / Average Working Capital
+
+    Args:
+        revenue (float or pd.Series): Total revenue of the company.
+        average_working_capital (float or pd.Series): Average working capital of the company.
+            This is typically calculated as (beginning working capital + ending working
+            capital) / 2, where working capital equals current assets minus current
+            liabilities.
+
+    Returns:
+        float | pd.Series: The working capital turnover ratio value.
+    """
+    return revenue / average_working_capital
 
 
 def get_deferred_revenue_ratio(

@@ -31,10 +31,19 @@ categories:
 #                    (falls back to ~/.config/financetoolkit/financetoolkit_cache.db)
 #   Windows        — %APPDATA%\financetoolkit\financetoolkit_cache.db
 # The path can be overridden at runtime with:
-#   FINANCE_TOOLKIT_CACHE_DB   — absolute path to the SQLite file
-#   FINANCE_TOOLKIT_CACHE_TTL  — TTL in seconds (integer)
+#   FINANCE_TOOLKIT_CACHE_DB       — absolute path to the SQLite file
+#   FINANCE_TOOLKIT_CACHE_TTL      — TTL in seconds (integer)
+#   FINANCE_TOOLKIT_CACHE_ENABLED  — true/false, overrides the "auto" below
+#
+# "auto" means: on for a local server (stdio transport, one user, one machine),
+# off for a hosted one (MCP_TRANSPORT=sse or streamable-http). A hosted server
+# serves every user from one process against one database, so a shared entry
+# would mean one subscriber's paid data answering another user's request, and
+# nothing evicts downloaded source data off disk. Neither is worth the upside
+# there, so a hosted deployment fetches live unless it opts back in explicitly.
 # ──────────────────────────────────────────────────────────────────────────────
 cache:
+  enabled: auto
   ttl_seconds: 600
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -48,6 +57,7 @@ module_class_map:
   models:       "financetoolkit.models.models_controller.Models"
   performance:  "financetoolkit.performance.performance_controller.Performance"
   risk:         "financetoolkit.risk.risk_controller.Risk"
+  econometrics: "financetoolkit.econometrics.econometrics_controller.Econometrics"
   options:      "financetoolkit.options.options_controller.Options"
   economics:    "financetoolkit.economics.economics_controller.Economics"
   fixedincome:  "financetoolkit.fixedincome.fixedincome_controller.FixedIncome"
@@ -61,9 +71,15 @@ module_class_map:
 # redundant options it has to filter before being able to answer the question
 # Also excluded get_normalization_files given that it it is purely meant for your own
 # data sources and not relevant for users of the MCP tools.
+#
+# Discovery's search_* methods are not reachable either, since method discovery
+# only picks up get_* names. That is deliberate: search_instruments is already
+# registered as a utility tool, and the search_*_news methods duplicate the
+# get_*_news ones with a ticker filter the LLM can apply itself.
 # ──────────────────────────────────────────────────────────────────────────────
 skip_methods:
   - "get_normalization_files"
+  - "collect_bond_statistics"
   - "collect_all_ratios"
   - "collect_custom_ratios"
   - "collect_efficiency_ratios"
@@ -91,6 +107,10 @@ skip_params:
   - "progress_bar"
   - "overwrite"
   - "rounding"
+  # Deprecated misspelling of smooth_window kept for backwards compatibility on
+  # get_stochastic_oscillator. Exposing it would teach the model the typo, and
+  # passing both raises, so only the correct spelling reaches the tool schema.
+  - "smooth_widow"
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Parameters handled at wrapper level (not forwarded to sub-methods)
@@ -134,6 +154,8 @@ direct_methods:
   - "get_revenue_product_segmentation"
   - "get_statistics_statement"
   - "get_treasury_data"
+  - "get_market_risk_premium"
+  - "get_commitment_of_traders"
   # - "get_exchange_rates"
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -197,17 +219,18 @@ category_descriptions:
   ratios:                  "Pre-computed financial ratios (PE, EPS, ROE, margins, liquidity, valuation). Use INSTEAD of raw financial statements."
   performance:             "Risk-adjusted returns (Sharpe, Sortino, alpha, beta, CAPM, Treynor, M2, tracking error, information ratio, Fama-French, period/cumulative Returns and Excess Returns). Most metrics support rolling= for a rolling-window value instead of one per period. No need to fetch price data first."
   risk:                    "Risk metrics (VaR incl. EVT/GPD tail fitting, CVaR, EVaR, GARCH, max drawdown, drawdown duration/recovery time, CDaR, tail ratio, skewness, kurtosis, downside deviation, Variance, Volatility, Excess Volatility). Most metrics support rolling= for a rolling-window value instead of one per period. No need to fetch price data first."
+  econometrics:            "Statistical/econometric tests on price or return series (unit root: ADF/KPSS/Phillips-Perron/Zivot-Andrews, cointegration: Engle-Granger/Johansen, Granger causality, ARCH-LM, Jarque-Bera, Ljung-Box, Variance Ratio, CUSUM, Diebold-Mariano forecast comparison). Use for pairs-trading/spread-modeling foundations or diagnosing return-series properties. No need to fetch price data first."
   models:                  "Financial models (DCF/intrinsic value, WACC, DuPont, Altman Z, Piotroski). Pre-computed."
   technicals:              "Technical indicators (RSI, MACD, Bollinger Bands, moving averages). Applied to price data automatically."
   options:                 "Option pricing and Greeks (Black-Scholes, binomial, delta, gamma, theta, vega, implied vol)."
   government_economy:      "Government fiscal metrics by country (debt, deficit, expenditure, revenue, tax). Use countries= param. Supports rolling= (moving-average) and trailing= (trailing-period sum)."
-  general_economy:         "Macroeconomic indicators by country (GDP, CPI, inflation, trade, investment, consumption, confidence, money supply). Use countries= param. Supports rolling= (moving-average) and trailing= (trailing-period sum)."
+  general_economy:         "Macroeconomic indicators by country (GDP, real GDP, CPI, PPI, inflation, trade, investment, consumption, confidence, money supply, output gap, real interest rate, crisis indicators, commodity forward curves). Use countries= param (commodity forward curve uses commodity= instead). Supports rolling= (moving-average) and trailing= (trailing-period sum)."
   environment:             "Environmental and ESG data. Carbon footprint and renewable energy use countries= (supports rolling=/trailing=); ESG scores use tickers=."
   jobs_and_society:        "Labour and social metrics by country (unemployment, population, poverty, income inequality). Use countries= param. Supports rolling= (moving-average) and trailing= (trailing-period sum)."
-  interest_rates:          "Interest rate data — central bank rates, government/corporate bond yields, EURIBOR, short/long-term rates. Use countries= param. Economics-sourced rates support rolling=/trailing=."
-  fixed_income_valuations: "Bond and derivative valuation calculations (duration, present value, yield-to-maturity, derivative pricing)."
+  interest_rates:          "Interest rate data — central bank rates, government/corporate bond yields, EURIBOR, short/long-term rates, U.S. Treasury par yield curve, real (TIPS) yield curve, breakeven inflation. Use countries= param. Economics-sourced rates support rolling=/trailing=."
+  fixed_income_valuations: "Bond and derivative valuation calculations (duration, present value, yield-to-maturity, derivative pricing, par yield, forward rate, key rate duration, yield curve spread, Z-spread, bond-equivalent yield)."
   discovery:               "Market discovery (stock/ETF/crypto lists, screener, gainers/losers, sector performance). No tickers needed."
-  toolkit:                 "Raw data (historical prices, financial statements, company profile, quotes). Use ratios/performance/risk tools for computed metrics."
+  toolkit:                 "Raw data (historical prices, financial statements, company profile, quotes, market risk premium, Commitment of Traders). Use ratios/performance/risk tools for computed metrics."
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Router group specifications
@@ -234,7 +257,34 @@ tool_groups:
     description:    "Pre-computed profitability ratios (gross margin, operating margin, net margin, ROE, ROA, ROIC, ROCE). Requires tickers='AAPL' — use comma-separated values for multiple tickers. Use instead of raw financial statements. Supports quarterly=true and start_date/end_date."
     module_name:    "ratios"
     category:       "ticker"
-    collect_method: "collect_profitability_ratios"
+    # Interest/Tax Burden are DuPont components that collect_profitability_ratios does not call,
+    # but each is a standalone metric, so the full list is given explicitly here.
+    # method_override replaces the discovered list wholesale, so anything added to
+    # that collect_* method in future must be added here too.
+    method_override:
+      - "get_gross_margin"
+      - "get_operating_margin"
+      - "get_net_profit_margin"
+      - "get_ebitda_margin"
+      - "get_free_cash_flow_margin"
+      - "get_interest_coverage_ratio"
+      - "get_income_before_tax_profit_margin"
+      - "get_effective_tax_rate"
+      - "get_return_on_assets"
+      - "get_cash_return_on_assets"
+      - "get_return_on_equity"
+      - "get_return_on_invested_capital"
+      - "get_return_on_capital_employed"
+      - "get_return_on_tangible_assets"
+      - "get_income_quality_ratio"
+      - "get_net_income_per_ebt"
+      - "get_free_cash_flow_operating_cash_flow_ratio"
+      - "get_EBT_to_EBIT"
+      - "get_EBIT_to_revenue"
+      - "get_cash_tax_rate"
+      - "get_tax_rate_divergence"
+      - "get_interest_burden_ratio"
+      - "get_tax_burden_ratio"
 
   - tool_name:      "solvency"
     display_name:   "Solvency Ratios"
@@ -284,6 +334,8 @@ tool_groups:
       - "get_buyback_yield"
       - "get_shareholder_yield"
       - "get_sbc_adjusted_free_cash_flow"
+      - "get_price_to_sales_ratio"
+      - "get_reinvestment_rate"
 
   # ── Technicals (4 sub-groups) ────────────────────────────────────────────
   - tool_name:      "breadth"
@@ -305,14 +357,42 @@ tool_groups:
     description:    "Overlap technical indicators (SMA, EMA, Bollinger Bands, Keltner Channels). Applied to price data automatically — no need to fetch prices first. Requires tickers='AAPL' — use comma-separated values for multiple tickers."
     module_name:    "technicals"
     category:       "ticker"
-    collect_method: "collect_overlap_indicators"
+    # Support/Resistance returns one row per level so collect_overlap_indicators cannot include it,
+    # but each is a standalone metric, so the full list is given explicitly here.
+    # method_override replaces the discovered list wholesale, so anything added to
+    # that collect_* method in future must be added here too.
+    method_override:
+      - "get_moving_average"
+      - "get_exponential_moving_average"
+      - "get_double_exponential_moving_average"
+      - "get_trix"
+      - "get_triangular_moving_average"
+      - "get_weighted_moving_average"
+      - "get_hull_moving_average"
+      - "get_kaufman_adaptive_moving_average"
+      - "get_volume_weighted_average_price"
+      - "get_parabolic_sar"
+      - "get_pivot_points"
+      - "get_fibonacci_retracement_levels"
+      - "get_support_resistance_levels"
 
   - tool_name:      "volatility"
     display_name:   "Volatility Indicators"
     description:    "Volatility technical indicators (ATR, True Range). Applied to price data automatically — no need to fetch prices first. Requires tickers='AAPL' — use comma-separated values for multiple tickers."
     module_name:    "technicals"
     category:       "ticker"
-    collect_method: "collect_volatility_indicators"
+    # The Volatility Cone is indexed by rolling window so collect_volatility_indicators cannot include it,
+    # but each is a standalone metric, so the full list is given explicitly here.
+    # method_override replaces the discovered list wholesale, so anything added to
+    # that collect_* method in future must be added here too.
+    method_override:
+      - "get_bollinger_bands"
+      - "get_true_range"
+      - "get_average_true_range"
+      - "get_supertrend"
+      - "get_keltner_channels"
+      - "get_donchian_channels"
+      - "get_volatility_cone"
 
   # ── Single-module ticker tools ───────────────────────────────────────────
   - tool_name:    "models"
@@ -323,14 +403,20 @@ tool_groups:
 
   - tool_name:    "performance"
     display_name: "Performance Metrics"
-    description:  "Pre-computed risk-adjusted performance metrics (Sharpe ratio, Sortino ratio, Alpha, Jensen's Alpha, Beta, CAPM, Treynor ratio, M2 ratio, Tracking Error, Information Ratio, Fama-French factors, period Returns, Excess Returns — Returns/Excess Returns support cumulative=true for a compounded growth index rebased to 1). Beta, CAPM, Alpha, Jensen's Alpha, Treynor, Sortino, M2, Tracking Error and Information Ratio support rolling=N for a rolling N-period value spanning the full history instead of one value per period (e.g. period='monthly', rolling=6 for a rolling 6-month figure). Requires tickers='AAPL' — use comma-separated values for multiple tickers. Does NOT support period='daily'; use weekly, monthly, quarterly, or yearly instead."
+    description:  "Pre-computed risk-adjusted performance metrics (Sharpe ratio incl. standard/adjusted/probabilistic/deflated methods, Sortino ratio, Alpha, Jensen's Alpha, Beta, CAPM, Treynor ratio, M2 ratio, Tracking Error, Information Ratio, Fama-French factors, period Returns, Excess Returns — Returns/Excess Returns support cumulative=true for a compounded growth index rebased to 1). Beta, CAPM, Alpha, Jensen's Alpha, Treynor, Sortino, M2, Tracking Error and Information Ratio support rolling=N for a rolling N-period value spanning the full history instead of one value per period (e.g. period='monthly', rolling=6 for a rolling 6-month figure). Requires tickers='AAPL' — use comma-separated values for multiple tickers. Does NOT support period='daily'; use weekly, monthly, quarterly, or yearly instead."
     module_name:  "performance"
     category:     "ticker"
 
   - tool_name:    "risk"
     display_name: "Risk Metrics"
-    description:  "Pre-computed risk metrics (VaR incl. historic/gaussian/cf/studentt/evt distributions, CVaR, EVaR, GARCH volatility, max drawdown, drawdown duration, drawdown recovery time, Conditional Drawdown at Risk (CDaR), Tail Ratio, skewness, kurtosis, downside deviation, Variance, Volatility, Excess Volatility). VaR, CVaR, skewness, kurtosis, CDaR, Tail Ratio, downside deviation, Variance, Volatility and Excess Volatility support rolling=N for a rolling N-period value spanning the full history instead of one value per period (e.g. period='monthly', rolling=6 for a rolling 6-month figure). Requires tickers='AAPL' — use comma-separated values for multiple tickers. Does NOT support period='daily'; use weekly, monthly, quarterly, or yearly instead."
+    description:  "Pre-computed risk metrics (VaR incl. historic/gaussian/cf/studentt/evt distributions, CVaR, EVaR, GARCH volatility, max drawdown, drawdown duration, drawdown recovery time, Conditional Drawdown at Risk (CDaR), Tail Ratio, skewness, kurtosis, downside deviation, Variance, Volatility incl. close_to_close/parkinson/garman_klass/rogers_satchell/yang_zhang estimators, Excess Volatility). VaR, CVaR, skewness, kurtosis, CDaR, Tail Ratio, downside deviation, Variance, Volatility and Excess Volatility support rolling=N for a rolling N-period value spanning the full history instead of one value per period (e.g. period='monthly', rolling=6 for a rolling 6-month figure). Requires tickers='AAPL' — use comma-separated values for multiple tickers. Does NOT support period='daily'; use weekly, monthly, quarterly, or yearly instead."
     module_name:  "risk"
+    category:     "ticker"
+
+  - tool_name:    "econometrics"
+    display_name: "Econometrics Tests"
+    description:  "Statistical/econometric tests on price or return series (unit root: ADF/KPSS/Phillips-Perron/Zivot-Andrews, cointegration: Engle-Granger/Johansen, Granger causality, ARCH-LM, Jarque-Bera, Ljung-Box, Variance Ratio, CUSUM, Diebold-Mariano forecast comparison). Use for pairs-trading/spread-modeling foundations or diagnosing return-series properties. Requires tickers='AAPL' — use comma-separated values for multiple tickers."
+    module_name:  "econometrics"
     category:     "ticker"
 
   - tool_name:    "options"
@@ -365,7 +451,7 @@ tool_groups:
   # confidence indices, house/rent prices, exchange rates, share prices.
   - tool_name:       "macroeconomics"
     display_name:    "General Economy"
-    description:     "Macroeconomic indicators by country (GDP, CPI, inflation rate, trade balance, imports, exports, investment, consumption, business/consumer confidence, house prices, rent prices, exchange rates, money supply). Requires countries='United States' — use comma-separated values for multiple countries. Do NOT use tickers= for this tool. Supports start_date/end_date and quarterly=true. Supports rolling=N (moving-average smoothing) and trailing=N (trailing N-period sum, e.g. a trailing-4-quarter sum) on the raw series."
+    description:     "Macroeconomic indicators by country (GDP, real GDP, CPI, PPI, inflation rate, trade balance, imports, exports, investment, consumption, business/consumer confidence, house prices, rent prices, exchange rates, real effective exchange rate, money supply, household savings rate, household debt-to-income ratio, output gap, real interest rate, misery index, banking/currency/sovereign debt crisis indicators, commercial real estate prices, commodity forward curves). Requires countries='United States' — use comma-separated values for multiple countries. Do NOT use tickers= for this tool. Supports start_date/end_date and quarterly=true. Supports rolling=N (moving-average smoothing) and trailing=N (trailing N-period sum, e.g. a trailing-4-quarter sum) on the raw series. get_consumer_price_index accepts oecd_source=true for monthly/quarterly OECD data instead of the default annual GMDB source. get_commodity_forward_curve requires a commodity= argument instead of countries= (e.g. 'Crude Oil', 'Gold') and returns dated futures contracts, not a country series. Also includes six US-only, FRED-backed indicators (get_retail_sales, get_industrial_production_index, get_housing_starts, get_real_personal_income, get_recession_indicator, get_commercial_real_estate_prices) — these require a free FRED API key (optional; get one at https://fred.stlouisfed.org/docs/api/api_key.html) and only return a 'United States' column regardless of the countries= argument. Every rate and ratio this tool returns is a decimal fraction, not a percentage: an inflation rate of 4.1% comes back as 0.0412 and a debt-to-GDP ratio of 131.7% as 1.3173. Multiply by 100 before presenting them as percentages."
     module_name:     "economics"
     category:        "standalone"
     index_category:  "general_economy"
@@ -390,10 +476,30 @@ tool_groups:
       - "get_investment"
       - "get_investment_to_gdp_ratio"
       - "get_money_supply"
+      - "get_producer_price_index"
       - "get_rent_prices"
       - "get_share_prices"
       - "get_total_consumption"
       - "get_total_consumption_to_gdp_ratio"
+      - "get_household_savings_rate"
+      - "get_household_debt_to_income_ratio"
+      - "get_retail_sales"
+      - "get_industrial_production_index"
+      - "get_housing_starts"
+      - "get_real_personal_income"
+      - "get_recession_indicator"
+      - "get_commercial_real_estate_prices"
+      - "get_commodity_forward_curve"
+      - "get_output_gap"
+      - "get_real_interest_rate"
+      - "get_real_effective_exchange_rate"
+      - "get_misery_index"
+      - "get_banking_crisis"
+      - "get_currency_crisis"
+      - "get_sovereign_debt_crisis"
+      - "get_real_gross_domestic_product_usd"
+      - "get_real_gross_domestic_product_per_capita"
+      - "get_trade_balance"
 
   # ── Environment & ESG (mixed: economics + toolkit) ───────────────────────
   # Carbon footprint and renewable energy come from Economics (use countries=).
@@ -424,7 +530,7 @@ tool_groups:
   # Unemployment, labour productivity, population, poverty, income inequality.
   - tool_name:       "jobs"
     display_name:    "Jobs & Society"
-    description:     "Labour and social metrics by country (unemployment rate, labour productivity, population statistics, poverty rate, income inequality). Requires countries='United States' — use comma-separated values for multiple countries. Do NOT use tickers= for this tool. Supports start_date/end_date and quarterly=true. Supports rolling=N (moving-average smoothing) and trailing=N (trailing N-period sum) on the raw series."
+    description:     "Labour and social metrics by country (unemployment rate, labour productivity, population statistics, poverty rate, income inequality). Requires countries='United States' — use comma-separated values for multiple countries. Do NOT use tickers= for this tool. Supports start_date/end_date and quarterly=true. Supports rolling=N (moving-average smoothing) and trailing=N (trailing N-period sum) on the raw series. Also includes two US-only, FRED-backed labor indicators (get_nonfarm_payrolls, get_initial_jobless_claims) — these require a FRED API key and only return a 'United States' column regardless of the countries= argument."
     module_name:     "economics"
     category:        "standalone"
     index_category:  "jobs_and_society"
@@ -434,6 +540,8 @@ tool_groups:
       - "get_population_statistics"
       - "get_poverty_rate"
       - "get_unemployment_rate"
+      - "get_nonfarm_payrolls"
+      - "get_initial_jobless_claims"
 
   # ── Interest Rates (mixed: economics + fixedincome) ──────────────────────
   # Short/long-term interest rates and central bank policy from Economics.
@@ -442,7 +550,7 @@ tool_groups:
   # All indicators use countries= (both modules are CATEGORY_STANDALONE).
   - tool_name:       "rates"
     display_name:    "Interest Rates"
-    description:     "Interest rate data (central bank policy rates, short/long-term rates, government bond yields, ICE BofA corporate bond series, EURIBOR, ECB rates, Federal Reserve rates). Requires countries='United States' — use comma-separated values for multiple countries. Do NOT use tickers= for this tool. Supports start_date/end_date and quarterly=true. The central bank policy rate and short/long-term rate indicators additionally support rolling=N (moving-average smoothing) and trailing=N (trailing N-period sum)."
+    description:     "Interest rate data (central bank policy rates, short/long-term rates, government bond yields, ICE BofA corporate bond series, EURIBOR, ECB rates, Federal Reserve rates, official U.S. Treasury par yield curve, yield curve slope). Requires countries='United States' — use comma-separated values for multiple countries. Do NOT use tickers= for this tool. Supports start_date/end_date and quarterly=true. The central bank policy rate, short/long-term rate, and yield curve slope indicators additionally support rolling=N (moving-average smoothing) and trailing=N (trailing N-period sum). Also includes get_mortgage_rate_30_year, get_real_yield_curve (FRED TIPS real yields) and get_breakeven_inflation_expectations — three US-only FRED-backed indicators. A FRED API key is optional and free (get one at https://fred.stlouisfed.org/docs/api/api_key.html); without it these three return no data, while get_treasury_rates and every other indicator in this tool work without one. FRED-backed indicators only return a 'United States' column regardless of the countries= argument."
     module_name:     "mixed"
     category:        "mixed"
     index_category:  "interest_rates"
@@ -458,6 +566,11 @@ tool_groups:
       - "get_ice_bofa_option_adjusted_spread"
       - "get_ice_bofa_total_return"
       - "get_ice_bofa_yield_to_worst"
+      - "get_mortgage_rate_30_year"
+      - "get_real_yield_curve"
+      - "get_breakeven_inflation_expectations"
+      - "get_treasury_rates"
+      - "get_yield_curve_slope"
     method_to_module:
       get_central_bank_policy_rate:
         module:   "economics"
@@ -492,13 +605,28 @@ tool_groups:
       get_ice_bofa_yield_to_worst:
         module:   "fixedincome"
         category: "standalone"
+      get_mortgage_rate_30_year:
+        module:   "economics"
+        category: "standalone"
+      get_real_yield_curve:
+        module:   "economics"
+        category: "standalone"
+      get_breakeven_inflation_expectations:
+        module:   "economics"
+        category: "standalone"
+      get_treasury_rates:
+        module:   "fixedincome"
+        category: "standalone"
+      get_yield_curve_slope:
+        module:   "economics"
+        category: "standalone"
 
   # ── Fixed Income: Bond & Derivative Valuations ───────────────────────────
   # Computational valuation tools: bond duration, present value,
   # yield-to-maturity, and derivative pricing models.
   - tool_name:       "fixed_income"
     display_name:    "Bond & Derivative Valuations"
-    description:     "Bond and derivative valuation calculations (bond duration, present value, yield-to-maturity, derivative pricing). No tickers or countries needed — provide bond/derivative parameters (e.g. face_value, coupon_rate, maturity) directly as arguments."
+    description:     "Bond and derivative valuation calculations (bond duration, present value, yield-to-maturity, derivative pricing, par yield, forward rate, breakeven inflation rate, key rate duration, yield curve spread, Z-spread, bond-equivalent yield, Taylor-series price change estimate). No tickers or countries needed — provide bond/derivative parameters (e.g. face_value, coupon_rate, maturity, spot_rates) directly as arguments."
     module_name:     "fixedincome"
     category:        "standalone"
     index_category:  "fixed_income_valuations"
@@ -507,6 +635,14 @@ tool_groups:
       - "get_duration"
       - "get_present_value"
       - "get_yield_to_maturity"
+      - "get_par_yield"
+      - "get_forward_rate"
+      - "get_breakeven_inflation_rate"
+      - "get_key_rate_duration"
+      - "get_yield_curve_spread"
+      - "get_z_spread"
+      - "get_bond_equivalent_yield"
+      - "get_taylor_price_change"
 
   # ── Discovery ────────────────────────────────────────────────────────────
   - tool_name:    "discovery"
@@ -519,7 +655,7 @@ tool_groups:
   # Method list is populated at startup from toolkit_direct_methods above.
   - tool_name:                    "market_data"
     display_name:                 "Raw Financial Data"
-    description:                  "Raw financial data (historical prices, income statement, balance sheet, cash flow statement, company profile, quotes, analyst estimates, dividend/earnings calendars, statistics). Use this ONLY for raw data needs — for pre-computed ratios, performance, risk, or model metrics use the dedicated tools instead. Requires tickers='AAPL' — use comma-separated values for multiple tickers."
+    description:                  "Raw financial data (historical prices, income statement, balance sheet, cash flow statement, company profile, quotes, analyst estimates, dividend/earnings calendars, statistics, market risk premium by country, CFTC Commitment of Traders report). Use this ONLY for raw data needs — for pre-computed ratios, performance, risk, or model metrics use the dedicated tools instead. Requires tickers='AAPL' — use comma-separated values for multiple tickers. get_market_risk_premium and get_commitment_of_traders are ticker/country-agnostic snapshots and ignore most other parameters."
     module_name:                  "toolkit"
     category:                     "toolkit"
     use_direct_methods:   true
@@ -543,7 +679,7 @@ utility_tools:
     description: "List all metrics within a specific category by name."
 
   - tool_name: "search_metrics"
-    description: "Fuzzy keyword search across all 200+ available metrics."
+    description: "Fuzzy keyword search across all 500+ available methods."
 
   - tool_name: "search_instruments"
     description: "Look up ticker symbols by company name, ISIN, CIK, CUSIP, or keyword."

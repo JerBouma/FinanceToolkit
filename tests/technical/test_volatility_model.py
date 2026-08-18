@@ -47,3 +47,15 @@ def test_get_bollinger_bands(recorder):
             pd.Series([0.01, -0.03, 0.05, 0.01, -0.02]), 10, 2
         ).round(3)
     )
+
+
+def test_get_supertrend(recorder):
+    recorder.capture(
+        volatility_model.get_supertrend(
+            pd.Series([100, 110, 120, 130, 80, 90, 100, 110, 105, 95]),
+            pd.Series([90, 95, 100, 110, 60, 80, 90, 95, 90, 80]),
+            pd.Series([95, 105, 110, 120, 70, 85, 95, 105, 95, 85]),
+            5,
+            3.0,
+        ).round(3)
+    )

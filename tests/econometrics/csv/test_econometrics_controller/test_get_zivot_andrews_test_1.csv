@@ -1,0 +1,10 @@
+,AAPL,MSFT
+Zivot-Andrews Statistic,-3.8258317477274875,-5.248011333491553
+P-Value,0.6192355771475924,0.030478797884459077
+Break Index,97.0,92.0
+Observations,157,157
+Lags Used,0,0
+Critical Value 1%,-5.57556,-5.57556
+Critical Value 5%,-5.07332,-5.07332
+Critical Value 10%,-4.82668,-4.82668
+Reject Unit Root (5%),False,True

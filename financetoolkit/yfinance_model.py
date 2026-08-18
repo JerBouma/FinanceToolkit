@@ -12,10 +12,15 @@ import pandas as pd
 import yfinance as yf
 
 from financetoolkit import helpers
+from financetoolkit.cache import policy_model
+from financetoolkit.cache.cache_controller import get_active_cache
 from financetoolkit.utilities import logger_model
 from financetoolkit.utilities.requests_model import get_request
 
 logger = logger_model.get_logger()
+
+# The reporting currency of a company changes almost never, so it is resolved once per ticker per process rather than on every statement request.  # noqa: E501
+REPORTED_CURRENCY_CACHE: dict[str, str] = {}
 
 
 def get_financial_statement(
@@ -35,6 +40,12 @@ def get_financial_statement(
                          Must be one of 'balance', 'income', or 'cashflow'.
         quarter (bool, optional): If True, retrieves quarterly data.
                                   If False, retrieves yearly data. Defaults to False.
+        fallback (bool, optional): Whether this call follows an unsuccessful attempt at
+                                   FinancialModelingPrep, which changes the error reported.
+                                   Defaults to False.
+        fiscal_year_adjustments (dict | None, optional): A registry that collects every reporting
+                                   period whose calendar label differs from its fiscal label,
+                                   keyed by ticker. Defaults to None.
 
     Returns:
         pd.DataFrame: A pandas DataFrame containing the requested financial statement.
@@ -93,43 +104,131 @@ def get_financial_statement(
         )
         return pd.DataFrame(columns=[error_code])
 
-    # yfinance returns the statements with dates as columns and items as rows
-    # Convert dates to period format
-    if quarter:
-        financial_statement.columns = pd.PeriodIndex(
-            financial_statement.columns, freq="Q"
-        )
-    else:
-        # Derive the calendar year the fiscal period mostly represents.
-        # If the fiscal year ends in months 1-5 (Jan-May), more than half the period
-        # falls in the prior calendar year (e.g. NVDA Jan 31 end → label as prior year).
-        # Months 6-12 (Jun-Dec) stay as-is (current year is majority or tied).
-        col_dates = pd.DatetimeIndex(financial_statement.columns)
-        end_month = col_dates.month
-        end_year = col_dates.year
-        calendar_year = end_year - (end_month < 6).astype(int)  # noqa
-
-        shifted_mask = end_month < 6.0  # noqa
-        if shifted_mask.any() and fiscal_year_adjustments is not None:
-            fiscal_year_adjustments[ticker] = [
-                {"fiscal_year": int(fy), "calendar_year": int(cy)}
-                for fy, cy in zip(end_year[shifted_mask], calendar_year[shifted_mask])
-            ]
-
-        financial_statement.columns = pd.PeriodIndex(
-            calendar_year.astype(str), freq="Y"
-        )
+    # yfinance returns dates as columns and items as rows; convert to periods. A fiscal period is labelled with the calendar period holding most of it, at both frequencies and identically to the FinancialModelingPrep path.  # noqa: E501
+    financial_statement.columns = helpers.convert_period_end_dates_to_calendar_periods(
+        period_end_dates=pd.DatetimeIndex(financial_statement.columns),
+        quarter=quarter,
+        ticker=ticker,
+        fiscal_year_adjustments=fiscal_year_adjustments,
+    )
 
     if financial_statement.columns.duplicated().any():
         financial_statement = financial_statement.loc[
             :, ~financial_statement.columns.duplicated()
         ]
 
-    # Check for NaN values and fill them with 0
+    # Left as NaN, not filled with 0, matching the Toolkit-wide convention for unreported line items.
     if financial_statement.isna().to_numpy().any():
-        financial_statement = financial_statement.infer_objects(copy=False).fillna(0)
+        financial_statement = financial_statement.infer_objects(copy=False)
 
     return financial_statement
+
+
+def get_statistics_statement(
+    ticker: str,
+    periods: pd.Index,
+) -> pd.DataFrame:
+    """
+    Builds the statistics statement for a Yahoo Finance sourced ticker, mirroring the
+    statistics that FinancialModelingPrep returns alongside its financial statements.
+
+    The only statistic Yahoo Finance publishes that the Toolkit depends on is the
+    currency the financial statements are reported in, exposed as ``financialCurrency``
+    on the quote summary. Without it a Yahoo sourced ticker has no `Reported Currency`,
+    which is what the currency conversion compares against the currency the instrument
+    trades in, so those tickers were never converted at all and their statements were
+    left in a different currency from their own price history.
+
+    The reporting currency is a property of the company rather than of a period, so the
+    same value is repeated across every period, matching the shape FinancialModelingPrep
+    returns.
+
+    Args:
+        ticker (str): the ticker to retrieve the statistics for.
+        periods (pd.Index): the reporting periods to report the statistics against,
+            normally the columns of the financial statement of the same ticker.
+
+    Returns:
+        pd.DataFrame: A DataFrame with the Yahoo Finance statistics names as index and
+        the given periods as columns. Empty when Yahoo Finance does not report a
+        reporting currency for the ticker.
+    """
+    reported_currency = get_reported_currency(ticker)
+
+    if not reported_currency or len(periods) == 0:
+        return pd.DataFrame()
+
+    return pd.DataFrame(
+        [[reported_currency] * len(periods)],
+        index=["financialCurrency"],
+        columns=periods,
+    )
+
+
+def get_reported_currency(ticker: str) -> str:
+    """
+    Retrieves the currency a company reports its financial statements in from Yahoo
+    Finance. This is not necessarily the currency the instrument trades in: Shell
+    reports in USD while its London listing trades in GBp, and comparing a statement to
+    a price without accounting for that compares two different currencies.
+
+    The reporting currency only changes when a company changes its reporting currency,
+    so it is cached per ticker both in memory and in the incremental cache.
+
+    Args:
+        ticker (str): the ticker to retrieve the reporting currency for.
+
+    Returns:
+        str: The ISO currency code the statements are reported in, or an empty string
+        when Yahoo Finance does not report one.
+    """
+    if ticker in REPORTED_CURRENCY_CACHE:
+        return REPORTED_CURRENCY_CACHE[ticker]
+
+    cache = get_active_cache()
+
+    if cache is not None:
+        cached_currency = cache.get(
+            source=policy_model.YAHOO_FINANCE,
+            dataset="reported_currency",
+            entity=ticker,
+        )
+
+        if cached_currency is not None:
+            REPORTED_CURRENCY_CACHE[ticker] = cached_currency
+            return cached_currency
+
+    try:
+        information = yf.Ticker(ticker).get_info() or {}
+    except (
+        HTTPError,
+        URLError,
+        RemoteDisconnected,
+        IndexError,
+        AttributeError,
+        KeyError,
+        TypeError,
+        ValueError,
+        yf.exceptions.YFRateLimitError,
+    ):
+        return ""
+
+    # financialCurrency is the statement currency. currency is the trading currency and is only a fallback, since for most listings the two are in fact the same.  # noqa: E501
+    reported_currency = str(
+        information.get("financialCurrency") or information.get("currency") or ""
+    )
+
+    REPORTED_CURRENCY_CACHE[ticker] = reported_currency
+
+    if cache is not None and reported_currency:
+        cache.set(
+            source=policy_model.YAHOO_FINANCE,
+            dataset="reported_currency",
+            entity=ticker,
+            data=reported_currency,
+        )
+
+    return reported_currency
 
 
 def get_historical_data(
@@ -146,7 +245,7 @@ def get_historical_data(
     If start and/or end date are not provided, it defaults to 10 years from the current date.
 
     Args:
-        tickers (list of str): A list of one or more ticker symbols to retrieve data for.
+        ticker (str): The ticker symbol to retrieve data for.
         start (str, optional): A string representing the start date of the period to retrieve data for
             in 'YYYY-MM-DD' format. Defaults to None.
         end (str, optional): A string representing the end date of the period to retrieve data for
@@ -154,6 +253,8 @@ def get_historical_data(
         interval (str, optional): A string representing the interval to retrieve data for.
         return_column (str, optional): A string representing the column to use for return calculations.
         divide_ohlc_by (int or float, optional): A number to divide the OHLC data by. Defaults to None.
+        fallback (bool, optional): Whether this call follows an unsuccessful attempt at
+            FinancialModelingPrep, which changes the error reported. Defaults to False.
 
     Raises:
         ValueError: If the start date is after the end date.
@@ -188,19 +289,25 @@ def get_historical_data(
     if interval in ["yearly", "quarterly"]:
         interval = "1d"
 
+    # The widened window is what is actually requested, matching the FinancialModelingPrep path. Fetching only the requested window would leave the first return in range NaN because it has no preceding close to compare against.  # noqa: E501
+    start_date_string = start_date.strftime("%Y-%m-%d")
+    end_date_string = end_date.strftime("%Y-%m-%d")
+
     try:
 
+        # auto_adjust=False matches FMP (True made Close disagree by the dividend history, 1.8% median, AAPL 2022-2023); repair is disabled for synthetic instruments since yfinance's split-repair misfires on them (^IRX 100x, CL=F 10,000x after oil went negative).  # noqa: E501
+        repair_splits = not (ticker.startswith("^") or "=" in ticker)
+
         historical_data = yf.Ticker(ticker).history(
-            start=start,
-            end=end,
+            start=start_date_string,
+            end=end_date_string,
             interval=interval,
             actions=True,
-            auto_adjust=True,
-            repair=True,
+            auto_adjust=False,
+            repair=repair_splits,
         )
 
-        # Due to an odd error, it can sometimes occur that the columns are duplicated
-        # which is why a check is performed here to ensure these don't stay in the DataFrame
+        # Columns can occasionally be duplicated, so they are checked and dropped.
         historical_data = historical_data.loc[:, ~historical_data.columns.duplicated()]
 
         if "Adj Close" not in historical_data and historical_data.columns.nlevels == 1:
@@ -211,7 +318,7 @@ def get_historical_data(
     except (HTTPError, URLError, RemoteDisconnected, IndexError):
         return pd.DataFrame()
     except yf.exceptions.YFRateLimitError:
-        error_code = "YFINANCE RATE LIMIT REACHED" + " FALLBACK" if fallback else ""
+        error_code = "YFINANCE RATE LIMIT REACHED" + (" FALLBACK" if fallback else "")
         return pd.DataFrame(columns=[error_code])
 
     if not historical_data.empty and historical_data.loc[start:end].empty:
@@ -227,8 +334,7 @@ def get_historical_data(
         historical_data.index = historical_data.index.to_period(freq="D")
 
     if divide_ohlc_by:
-        # Set divide by zero and invalid value warnings to ignore as it is fine that
-        # dividing NaN by divide_ohlc_by results in NaN
+        # NaN divided by divide_ohlc_by is fine, so those warnings are ignored.
         np.seterr(divide="ignore", invalid="ignore")
         # In case tickers are presented in percentages or similar
         historical_data = historical_data.div(divide_ohlc_by)
@@ -283,9 +389,27 @@ def get_historical_statistics(ticker: str) -> pd.Series:
     Args:
         ticker (str): the ticker to retrieve statistics for.
 
+    These describe the instrument itself (its currency, exchange and listing date)
+    rather than its price, so they change very rarely and are cached per ticker.
+
+    Args:
+        ticker (str): the ticker to retrieve statistics for.
+
     Returns:
         pd.Series: A Sries containing the statistics for the given ticker.
     """
+    cache = get_active_cache()
+
+    if cache is not None:
+        cached_statistics = cache.get(
+            source=policy_model.YAHOO_FINANCE,
+            dataset="historical_statistics",
+            entity=ticker,
+        )
+
+        if cached_statistics is not None:
+            return cached_statistics
+
     response = get_request(
         f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?interval=1d&range=None",
         timeout=60,
@@ -325,6 +449,14 @@ def get_historical_statistics(ticker: str) -> pd.Series:
         stats_df = stats_df.loc[
             [column for column in columns.values() if column in stats_df.index]
         ]
+
+        if cache is not None and not stats_df.empty:
+            cache.set(
+                source=policy_model.YAHOO_FINANCE,
+                dataset="historical_statistics",
+                entity=ticker,
+                data=stats_df,
+            )
 
         return stats_df
 

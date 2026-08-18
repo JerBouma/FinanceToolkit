@@ -50,15 +50,54 @@ def get_net_profit_margin(net_income: pd.Series, revenue: pd.Series) -> pd.Serie
     return net_income / revenue
 
 
+def get_ebitda_margin(
+    operating_income: pd.Series,
+    depreciation_and_amortization: pd.Series,
+    revenue: pd.Series,
+) -> pd.Series:
+    """
+    Calculate the EBITDA margin, a profitability ratio that measures the percentage of
+    revenue that remains as earnings before interest, taxes, depreciation and
+    amortization (EBITDA).
+
+    EBITDA margin approximates a company's core operating profitability before the
+    effects of financing decisions (interest), tax jurisdictions, and non-cash
+    accounting choices around fixed and intangible assets (depreciation and
+    amortization). This makes it a commonly used metric to compare operating
+    performance across companies with different capital structures, tax regimes, and
+    depreciation policies.
+
+    The formula is as follows:
+
+        EBITDA Margin = (Operating Income + Depreciation and Amortization) / Revenue
+
+    Also known as: EBITDA-to-revenue ratio.
+
+    Args:
+        operating_income (float or pd.Series): Operating income of the company.
+        depreciation_and_amortization (float or pd.Series): Depreciation and amortization of the company.
+        revenue (float or pd.Series): Total revenue of the company.
+
+    Returns:
+        float | pd.Series: The EBITDA margin percentage value.
+    """
+    return (operating_income + depreciation_and_amortization) / revenue
+
+
 def get_interest_coverage_ratio(
     operating_income: pd.Series, interest_expense: pd.Series
 ) -> pd.Series:
     """
-    Compute the Interest Coverage Ratio, a metric that reveals a company's
-    ability to cover its interest expenses with its pre-tax profits.
-    This ratio measures how many times the operating income covers the
-    interest payments of operain required and is crucial in determining a
-    company's financial health.
+    Compute the Interest Coverage Ratio, a metric that reveals a company's ability to
+    cover its interest expenses out of its operating profit. It measures how many times
+    over the operating income covers the interest payments due on outstanding debt, and
+    is a standard indicator of default risk: a higher ratio is better.
+
+    The formula is as follows:
+
+        Interest Coverage Ratio = Operating Income / Interest Expense
+
+    Also known as: times interest earned, TIE.
 
     Args:
         operating_income (float or pd.Series): Operating income of the company.
@@ -74,11 +113,24 @@ def get_interest_burden_ratio(
     income_before_tax: pd.Series, operating_income: pd.Series
 ) -> pd.Series:
     """
-    Compute the Interest Burden Ratio, a metric that reveals a company's
-    ability to cover its interest expenses with its pre-tax profits.
-    This ratio measures how many times the operating income covers the
-    interest payments of operain required and is crucial in determining a
-    company's financial health.
+    Compute the Interest Burden Ratio, the component of the extended (five-step) DuPont
+    decomposition that isolates the drag interest expense places on operating profit.
+
+    It divides earnings before tax (EBT) by earnings before interest and taxes (EBIT,
+    proxied by operating income), so it expresses the share of operating profit that
+    survives interest expense. For a company with debt it sits between 0 and 1, where a
+    value close to 1 means interest barely dents operating profit and a low value
+    signals a heavy interest load. Values slightly above 1 occur when non-operating
+    income (e.g. interest income) exceeds interest expense.
+
+    This is the reciprocal of, and should not be confused with, the interest coverage
+    ratio, which divides operating profit by interest expense and is unbounded above.
+
+    The formula is as follows:
+
+        Interest Burden Ratio = Income Before Tax / Operating Income
+
+    Also known as: EBT to EBIT ratio.
 
     Args:
         income_before_tax (float or pd.Series): Income before tax of the company.
@@ -133,13 +185,44 @@ def get_return_on_assets(
 
     Args:
         net_income (float or pd.Series): Net income of the company.
-        total_assets_begin (float or pd.Series): Total equity at the beginning of the period.
-        total_assets_end (float or pd.Series): Total equity at the end of the period.
+        average_total_assets (float or pd.Series): Average total assets of the company.
+            This is typically calculated as (beginning total assets + ending total assets) / 2.
 
     Returns:
         float | pd.Series: The ROA percentage value.
     """
     return net_income / average_total_assets
+
+
+def get_cash_return_on_assets(
+    operating_cash_flow: pd.Series, average_total_assets: pd.Series
+) -> pd.Series:
+    """
+    Calculate the cash return on assets (Cash ROA), a profitability ratio that measures
+    how efficiently a company uses its assets to generate operating cash flow.
+
+    Unlike the return on assets, which uses accrual-based net income, the cash return
+    on assets uses operating cash flow, making it less sensitive to non-cash accounting
+    choices (e.g. depreciation method, revenue recognition timing, working capital
+    accruals). Comparing cash ROA to ROA is a useful earnings-quality cross-check: a
+    cash ROA that persistently trails ROA can indicate that reported profits are not
+    being converted into cash.
+
+    The formula is as follows:
+
+        Cash Return on Assets = Operating Cash Flow / Average Total Assets
+
+    Also known as: cash ROA.
+
+    Args:
+        operating_cash_flow (float or pd.Series): Operating cash flow of the company.
+        average_total_assets (float or pd.Series): Average total assets of the company.
+            This is typically calculated as (beginning total assets + ending total assets) / 2.
+
+    Returns:
+        float | pd.Series: The cash return on assets percentage value.
+    """
+    return operating_cash_flow / average_total_assets
 
 
 def get_return_on_equity(
@@ -152,8 +235,8 @@ def get_return_on_equity(
 
     Args:
         net_income (float or pd.Series): Net income of the company.
-        total_equity_begin (float or pd.Series): Total equity at the beginning of the period.
-        total_equity_end (float or pd.Series): Total equity at the end of the period.
+        average_total_equity (float or pd.Series): Average total equity of the company.
+            This is typically calculated as (beginning total equity + ending total equity) / 2.
 
     Returns:
         float | pd.Series: The ROE percentage value.
@@ -171,14 +254,27 @@ def get_return_on_invested_capital(
     Calculate the return on invested capital, a financial ratio that measures the company's return on
     the capital invested in it, including both equity and debt.
 
+    This uses the simplified, net-income-based formulation of ROIC (Net Income minus
+    Dividends, divided by Debt plus Equity) rather than the NOPAT / Invested Capital
+    formulation (EBIT × (1 - tax rate) / Invested Capital). The net-income-based
+    version is a commonly cited alternative that avoids needing a separate tax-rate
+    input, at the cost of not stripping out the effect of financing (interest) from
+    the numerator.
+
+    The formula is as follows:
+
+        Return on Invested Capital = (Net Income - Dividends) / (Average Total Equity
+            + Average Total Debt)
+
+    Also known as: ROIC (net-income-basis).
+
     Args:
         net_income (float or pd.Series): The company's net income.
         dividends (float or pd.Series): The dividends paid by the company.
-        effective_tax_rate (float or pd.Series): The effective tax rate of the company.
-        total_equity_begin (float or pd.Series): The total equity at the beginning of the period.
-        totaL_equity_end (float or pd.Series): The total equity at the end of the period.
-        total_debt_begin (float or pd.Series): The total debt at the beginning of the period.
-        total_debt_end (float or pd.Series): The total debt at the end of the period.
+        average_total_equity (float or pd.Series): Average total equity of the company.
+            This is typically calculated as (beginning total equity + ending total equity) / 2.
+        average_total_debt (float or pd.Series): Average total debt of the company.
+            This is typically calculated as (beginning total debt + ending total debt) / 2.
 
     Returns:
         float | pd.Series: The return on invested capital value.
@@ -213,19 +309,37 @@ def get_return_on_tangible_assets(
 ) -> pd.Series:
     """
     Calculate the return on tangible assets, which measures the amount of profit
-    generated by a company's tangible assets.
+    generated relative to a company's net tangible assets (i.e. its tangible book
+    value: total assets net of both liabilities and intangible assets such as
+    goodwill).
+
+    This differs from the simpler "net income / (total assets - intangible assets)"
+    formulation in that it also nets out total liabilities, so the denominator
+    reflects the tangible equity actually backing the business rather than the
+    gross tangible asset base. Compare `get_tangible_asset_value` in the valuation
+    module, which is a related but distinct net tangible asset base: it excludes
+    Goodwill specifically, whereas this function excludes Intangible Assets, and
+    Goodwill and Intangible Assets are two separate balance-sheet line items that
+    can differ substantially (e.g. one is a subset of, or need not equal, the
+    other), so the two functions' denominators are not interchangeable.
+
+    The formula is as follows:
+
+        Return on Tangible Assets = Net Income / (Average Total Assets -
+            Average Intangible Assets - Average Total Liabilities)
 
     Args:
         net_income (float or pd.Series): The net income of the company.
-        interest_expense (float or pd.Series): The interest expense of the company.
-        total_assets (float or pd.Series): The total assets of the company.
-        total_liabilities (float or pd.Series): The total liabilities of the company.
+        average_total_assets (float or pd.Series): Average total assets of the company.
+            This is typically calculated as (beginning total assets + ending total assets) / 2.
+        average_intangible_assets (float or pd.Series): Average intangible assets of the company.
+        average_total_liabilities (float or pd.Series): Average total liabilities of the company.
 
     Returns:
         float | pd.Series: The return on tangible assets value.
     """
     average_tangible_assets = (
-        average_total_assets + average_intangible_assets + average_total_liabilities
+        average_total_assets - average_intangible_assets - average_total_liabilities
     )
 
     return net_income / average_tangible_assets
@@ -290,6 +404,34 @@ def get_free_cash_flow_operating_cash_flow_ratio(
         float | pd.Series: The free cash flow to operating cash flow ratio value.
     """
     return free_cash_flow / operating_cash_flow
+
+
+def get_free_cash_flow_margin(
+    free_cash_flow: pd.Series, revenue: pd.Series
+) -> pd.Series:
+    """
+    Calculate the free cash flow margin, a profitability ratio that measures the
+    percentage of revenue that is converted into free cash flow.
+
+    Unlike the net profit margin, which can be distorted by non-cash accounting items
+    (e.g. depreciation, stock-based compensation, deferred taxes) and by working
+    capital timing, the free cash flow margin reflects the cash a company actually
+    generates, after capital expenditures, for every dollar of revenue. A persistently
+    low or declining free cash flow margin relative to the net profit margin can be a
+    quality-of-earnings warning sign.
+
+    The formula is as follows:
+
+        Free Cash Flow Margin = Free Cash Flow / Revenue
+
+    Args:
+        free_cash_flow (float or pd.Series): Free cash flow of the company.
+        revenue (float or pd.Series): Total revenue of the company.
+
+    Returns:
+        float | pd.Series: The free cash flow margin percentage value.
+    """
+    return free_cash_flow / revenue
 
 
 def get_tax_burden_ratio(

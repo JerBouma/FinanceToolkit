@@ -5,7 +5,7 @@ AAPL,Operating Cycle,,30.2698,34.6154,37.0808
 AAPL,Days of Accounts Payable Outstanding,,83.1683,97.0504,108.0033
 AAPL,Cash Conversion Cycle,,-52.8985,-62.435,-70.9225
 AAPL,Cash Conversion Efficiency,0.2939,0.2844,0.3098,0.2884
-AAPL,Receivables Turnover,,0.0579,0.0691,0.0753
+AAPL,Receivables Turnover,,17.2563,14.4808,13.2873
 AAPL,Inventory Turnover Ratio,,40.0303,38.7899,37.9777
 AAPL,Accounts Payable Turnover Ratio,,4.3887,3.7609,3.3795
 AAPL,SGA-to-Revenue Ratio,0.0725,0.0601,0.0636,0.065
@@ -17,13 +17,14 @@ AAPL,S&M to Revenue Ratio,0.0,0.0,0.0,0.0
 AAPL,G&A to Revenue Ratio,0.0,0.0,0.0,0.0
 AAPL,SBC to Revenue Ratio,0.0249,0.0216,0.0229,0.0283
 AAPL,Deferred Revenue Ratio,0.0242,0.0208,0.0201,0.021
+AAPL,Working Capital Turnover Ratio,,15.346,-85.519,-37.7268
 MSFT,Days of Inventory Outstanding,,15.8314,18.5792,17.296
 MSFT,Days of Sales Outstanding,,76.0605,75.7577,80.0472
 MSFT,Operating Cycle,,91.8919,94.3369,97.3431
 MSFT,Days of Accounts Payable Outstanding,,96.7601,99.5171,102.7867
 MSFT,Cash Conversion Cycle,,-4.8682,-5.1802,-5.4435
 MSFT,Cash Conversion Efficiency,0.4243,0.4565,0.4491,0.4133
-MSFT,Receivables Turnover,,0.2084,0.2076,0.2193
+MSFT,Receivables Turnover,,4.7988,4.818,4.5598
 MSFT,Inventory Turnover Ratio,,23.0554,19.6457,21.1032
 MSFT,Accounts Payable Turnover Ratio,,3.7722,3.6677,3.551
 MSFT,SGA-to-Revenue Ratio,0.1728,0.1501,0.1398,0.1431
@@ -35,3 +36,4 @@ MSFT,S&M to Revenue Ratio,0.137,0.1197,0.1101,0.1074
 MSFT,G&A to Revenue Ratio,0.0357,0.0304,0.0298,0.0357
 MSFT,SBC to Revenue Ratio,0.037,0.0364,0.0378,0.0454
 MSFT,Deferred Revenue Ratio,0.2517,0.247,0.2297,0.2402
+MSFT,Working Capital Turnover Ratio,,1.6371,2.3278,2.7395

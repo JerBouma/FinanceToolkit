@@ -142,8 +142,7 @@ def get_svi_parameters(
 
         return float(np.sum((model_variance - total_variance) ** 2))
 
-    # The minimum of the observed smile is the natural location for m, but a smile whose
-    # minimum sits at the edge of the quoted strikes needs the mid-point as a fallback.
+    # The minimum of the observed smile is the natural location for m, but a smile whose minimum sits at the edge of the quoted strikes needs the mid-point as a fallback.  # noqa: E501
     log_moneyness_span = max(log_moneyness.max() - log_moneyness.min(), 1e-6)
     initial_guesses = [
         [

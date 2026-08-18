@@ -490,10 +490,7 @@ class ToolRegistry:
         param_meta = [(p.name, p.annotation, p.default) for p in extra_params]
         all_indicators = group_methods
 
-        # Parameters the indicators in this group disagree about, or that some of
-        # them require. One schema default cannot describe all of them, so they are
-        # advertised as unset and only forwarded when the caller actually supplies
-        # a value, leaving each indicator's own default to apply.
+        # Parameters the indicators in this group disagree about, or that some of them require. One schema default cannot describe all of them, so they are advertised as unset and only forwarded when the caller actually supplies a value, leaving each indicator's own default to apply.  # noqa: E501
         parameter_defaults = inspector.collect_group_parameter_defaults(
             cls, group_methods, spec.collect_method, method_to_cls
         )
@@ -595,9 +592,7 @@ class ToolRegistry:
                     val = kwargs.pop(pname)
                     if pname not in accepted_params:
                         continue
-                    # A disputed parameter is advertised as unset, so an unset value
-                    # means "no preference" and must reach the indicator's own
-                    # default rather than another indicator's.
+                    # A disputed parameter is advertised as unset, so an unset value means "no preference" and must reach the indicator's own default rather than another indicator's.  # noqa: E501
                     if pname in disputed_params and val in (None, ""):
                         continue
                     method_kwargs[pname] = coerce_value(val, pann)
@@ -712,8 +707,7 @@ class ToolRegistry:
             )
 
             if p.name in disputed_params:
-                # Advertised as unset with the per-indicator defaults spelled out,
-                # because no single value is correct for the whole group.
+                # Advertised as unset with the per-indicator defaults spelled out, because no single value is correct for the whole group.  # noqa: E501
                 default = None
                 annotation = _annotate_with_description(
                     p.name,

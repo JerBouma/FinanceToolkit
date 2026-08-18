@@ -260,9 +260,7 @@ def get_supertrend(
             supertrend.iloc[i] = supertrend.iloc[i - 1]
             continue
 
-        # The bands are NaN until the Average True Range has a full window, so the first
-        # bar with valid bands seeds the recursion. Comparing against the NaN carried in
-        # from the previous bar would fail both branches and propagate NaN indefinitely.
+        # The bands are NaN until the Average True Range has a full window, so the first bar with valid bands seeds the recursion. Comparing against the NaN carried in from the previous bar would fail both branches and propagate NaN indefinitely.  # noqa: E501
         if pd.isna(final_upper_band.iloc[i - 1]) or pd.isna(
             final_lower_band.iloc[i - 1]
         ):

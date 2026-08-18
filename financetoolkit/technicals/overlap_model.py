@@ -579,8 +579,7 @@ def _get_confirmed_levels(
     for position in extreme_indices:
         confirmation_position = int(position) + window
 
-        # An extreme is only knowable once the centred window that identified it has
-        # fully printed; anything not yet confirmed within the sample is discarded.
+        # An extreme is only knowable once the centred window that identified it has fully printed; anything not yet confirmed within the sample is discarded.  # noqa: E501
         if confirmation_position >= length:
             break
 

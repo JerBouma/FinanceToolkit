@@ -1302,9 +1302,7 @@ class Models:
             ),
         )
 
-        # A market value is a point-in-time quantity, so the closing balance of Total Debt is
-        # used as its proxy — not the averaged balance that Invested Capital is built from,
-        # which would otherwise cancel the debt out of the Market Value Added entirely
+        # A market value is a point-in-time quantity, so the closing balance of Total Debt is used as its proxy — not the averaged balance that Invested Capital is built from, which would otherwise cancel the debt out of the Market Value Added entirely  # noqa: E501
         market_value_of_debt = (
             self._balance_sheet_statement.loc[:, "Total Debt", :]
             .T.rolling(trailing)
@@ -2717,8 +2715,7 @@ class Models:
             )
         )
 
-        # Piotroski scales both the Return on Assets and the Cash Flow from Operations by the
-        # same asset base, which is what makes this signal reduce to the sign of accruals
+        # Piotroski scales both the Return on Assets and the Cash Flow from Operations by the same asset base, which is what makes this signal reduce to the sign of accruals  # noqa: E501
         piotroski_score["Accruals Criteria"] = piotroski_model.get_accruals_criteria(
             net_income=net_income,
             average_total_assets=average_total_assets,
@@ -2776,10 +2773,7 @@ class Models:
             pd.concat(piotroski_score).swaplevel(0, 1).reindex(self._tickers, level=0)
         )
 
-        # Every criterion is a boolean comparison, so a period for which the statements have
-        # not been reported yet compares NaN against a number, evaluates to False and scores
-        # a perfect zero — the worst possible F-Score — rather than being reported as missing.
-        # Mask those periods out; must cover every field feeding any of the nine criteria, not just ROA/CFO/accruals.
+        # Every criterion is a boolean comparison, so a period for which the statements have not been reported yet compares NaN against a number, evaluates to False and scores a perfect zero — the worst possible F-Score — rather than being reported as missing. Mask those periods out; must cover every field feeding any of the nine criteria, not just ROA/CFO/accruals.  # noqa: E501
         reported = (
             total_assets.notna()
             & net_income.notna()
@@ -2830,14 +2824,10 @@ class Models:
 
         piotroski_results = piotroski_results.dropna(axis=1, how="all")
 
-        # Two columns are lost rather than one. The averaged total assets already make
-        # the first period NaN, so the criteria that compare against the previous period
-        # only become meaningful from the third period onwards. Keeping the second
-        # column would silently score those criteria 0 even when they improved.
+        # Two columns are lost rather than one. The averaged total assets already make the first period NaN, so the criteria that compare against the previous period only become meaningful from the third period onwards. Keeping the second column would silently score those criteria 0 even when they improved.  # noqa: E501
         piotroski_results = piotroski_results[piotroski_results.columns[2:]]
 
-        # The F-Score is a count of satisfied criteria, so report it as such whenever every
-        # remaining period is fully reported and the float cast above is no longer needed
+        # The F-Score is a count of satisfied criteria, so report it as such whenever every remaining period is fully reported and the float cast above is no longer needed  # noqa: E501
         if not piotroski_results.isna().to_numpy().any():
             piotroski_results = piotroski_results.astype(int)
 
@@ -4358,10 +4348,7 @@ class Models:
             else self._income_statement.loc[:, "Weighted Average Shares", :]
         )
 
-        # Preferred Dividends Paid is reported on the cash flow statement using the
-        # cash-flow-impact convention (an outflow is negative), while the Earnings per Share
-        # formula subtracts a positive-magnitude figure — without the absolute value the
-        # preferred dividends would be added back to Net Income instead of deducted from it
+        # Preferred Dividends Paid is reported on the cash flow statement using the cash-flow-impact convention (an outflow is negative), while the Earnings per Share formula subtracts a positive-magnitude figure — without the absolute value the preferred dividends would be added back to Net Income instead of deducted from it  # noqa: E501
         dividends = (
             self._cash_flow_statement.loc[:, "Preferred Dividends Paid", :].abs()
             if include_dividends

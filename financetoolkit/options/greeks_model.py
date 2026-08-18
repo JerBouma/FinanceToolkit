@@ -709,8 +709,7 @@ def get_veta(
         d1=d1, volatility=volatility, time_to_expiration=time_to_expiration
     )
 
-    # The published closed form is dVega/dtau. Negating it turns it into dVega/dt, so
-    # that Veta measures the change per unit of time elapsed, as Theta, Charm and Color do.
+    # The published closed form is dVega/dtau; negating it turns it into dVega/dt, so that Veta measures the change per unit of time elapsed, as Theta, Charm and Color do.  # noqa: E501
     veta = (
         stock_price
         * np.exp(-dividend_yield * time_to_expiration)

@@ -223,9 +223,7 @@ CODE_TO_COUNTRY = {
 # Extra history before start_date so rolling and growth rows compute correctly.
 START_BUFFER_PERIODS = {"Y": 10, "Q": 16, "M": 24}
 
-# Columns the OECD's labelled CSV writer emits that are not part of the series key.
-# Everything else is a dimension, and every dimension must resolve to a single code
-# for a query to identify exactly one series per country.
+# Columns the OECD's labelled CSV writer emits that are not part of the series key. Everything else is a dimension, and every dimension must resolve to a single code for a query to identify exactly one series per country.  # noqa: E501
 NON_DIMENSION_COLUMNS = {
     "STRUCTURE",
     "STRUCTURE_ID",
@@ -462,8 +460,7 @@ def collect_oecd_data(
         status_code = error.response.status_code if error.response is not None else None
 
         if status_code == 404:  # noqa: PLR2004
-            # The OECD answers a key that matches nothing with 404 NoRecordsFound,
-            # which is an empty result rather than a failure of the request itself.
+            # The OECD answers a key that matches nothing with 404 NoRecordsFound, which is an empty result rather than a failure of the request itself.  # noqa: E501
             logger.warning(
                 "The OECD API returned no records for the query '%s' over the requested "
                 "period. The series may not cover these dates, or may have been "
@@ -491,8 +488,7 @@ def collect_oecd_data(
             return pd.DataFrame()
         raise
     except requests.exceptions.RequestException as error:
-        # A connection failure, timeout or DNS error. The cache fallback applies for the
-        # same reason it does on a rate limit: the query is fine, the network is not.
+        # A connection failure, timeout or DNS error. The cache fallback applies for the same reason it does on a rate limit: the query is fine, the network is not.  # noqa: E501
         if cached_data is not None and not cached_data.empty:
             logger.warning(
                 "Could not reach the OECD API (%s) -- serving the most recently cached "
@@ -539,11 +535,7 @@ def collect_oecd_data(
     original_areas = oecd_data["REF_AREA"]
     oecd_data["REF_AREA"] = original_areas.replace(CODE_TO_COUNTRY)
 
-    # CODE_TO_COUNTRY has to stay injective over the codes present in a single response.
-    # Two distinct REF_AREA codes that map to the same country name would survive the
-    # check above (they are different series to the API) but collide here, and the
-    # drop_duplicates below would then silently discard one of them -- reintroducing
-    # exactly the "whichever row came first wins" failure that check exists to prevent.
+    # CODE_TO_COUNTRY has to stay injective over the codes present in a single response. Two distinct REF_AREA codes that map to the same country name would survive the check above (they are different series to the API) but collide here, and the drop_duplicates below would then silently discard one of them -- reintroducing exactly the "whichever row came first wins" failure that check exists to prevent.  # noqa: E501
     _validate_no_country_name_collision(oecd_data, original_areas, oecd_data_string)
 
     oecd_data = oecd_data[["TIME_PERIOD", "REF_AREA", "OBS_VALUE"]]
@@ -1242,8 +1234,7 @@ def get_output_gap(start_date: str | None = None, end_date: str | None = None):
 
     output_gap = collect_oecd_data(oecd_data_string, "Y", start_date, end_date)
 
-    # Published as a percentage of potential GDP; every other rate and ratio in this
-    # package is a decimal fraction, so convert rather than leave the odd one out.
+    # Published as a percentage of potential GDP; every other rate and ratio in this package is a decimal fraction, so convert rather than leave the odd one out.  # noqa: E501
     return output_gap / 100
 
 
@@ -1274,8 +1265,7 @@ def get_population(
         raise ValueError("Please choose either 'men' or 'women'.")
     gender_parameter = "M" if gender == "men" else "F" if gender == "women" else "_T"
 
-    # AGE must be pinned to _T: this dataflow publishes 24 age brackets per country,
-    # and leaving the slot open returned whichever bracket the OECD wrote out first.
+    # AGE must be pinned to _T: this dataflow publishes 24 age brackets per country, and leaving the slot open returned whichever bracket the OECD wrote out first.  # noqa: E501
     oecd_data_string = (
         f"OECD.ELS.SAE,DSD_POPULATION@DF_POP_HIST,/.POP.PS.{gender_parameter}._T.H"
     )

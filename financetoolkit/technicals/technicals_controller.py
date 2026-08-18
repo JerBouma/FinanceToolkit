@@ -23,9 +23,7 @@ from financetoolkit.utilities.statistics_model import (
 # pylint: disable=too-many-lines,too-many-instance-attributes,too-many-public-methods,too-many-locals,eval-used
 # pylint: disable=too-many-boolean-expressions
 
-# The default number of periods the Stochastic Oscillator's %K line is smoothed over to
-# obtain the %D signal line. Named so the deprecated `smooth_widow` alias can tell an
-# explicitly passed `smooth_window` apart from the untouched default.
+# The default number of periods the Stochastic Oscillator's %K line is smoothed over to obtain the %D signal line, named so the deprecated `smooth_widow` alias can tell an explicitly passed `smooth_window` apart from the untouched default.  # noqa: E501
 DEFAULT_STOCHASTIC_SMOOTH_WINDOW = 3
 
 

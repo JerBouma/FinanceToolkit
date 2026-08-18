@@ -62,8 +62,7 @@ def get_intrinsic_value(
     """
     components = {}
 
-    # Project the cash flow forward. The given cash flow is the latest realized one and
-    # is therefore not itself discounted, the projection starts one period after it.
+    # Project the cash flow forward. The given cash flow is the latest realized one and is therefore not itself discounted, the projection starts one period after it.  # noqa: E501
     cash_flow_projection = []
     projected_cash_flow = cash_flow
 
@@ -84,14 +83,12 @@ def get_intrinsic_value(
         for index, cash_flow_value in enumerate(cash_flow_projection)
     ]
 
-    # The Terminal Value sits at the end of the projection horizon and is therefore
-    # discounted over the number of periods, not one period further.
+    # The Terminal Value sits at the end of the projection horizon and is therefore discounted over the number of periods, not one period further.  # noqa: E501
     cash_flow_present_value.append(
         terminal_value / (1 + weighted_average_cost_of_capital) ** periods
     )
 
-    # Calculate the Enterprise Value, using fsum so the total is correctly rounded
-    # rather than accumulation-order dependent (builtin sum only compensates on 3.12+)
+    # Calculate the Enterprise Value, using fsum so the total is correctly rounded rather than accumulation-order dependent (builtin sum only compensates on 3.12+)  # noqa: E501
     enterprise_value = fsum(cash_flow_present_value)
 
     # Calculate the Equity Value
@@ -376,8 +373,7 @@ def get_two_stage_dividend_discount_model(
     for _ in range(1, high_growth_periods + 1):
         dividend_projection.append(dividend_projection[-1] * (1 + high_growth_rate))
 
-    # fsum rather than sum so the total is correctly rounded rather than
-    # accumulation-order dependent (builtin sum only compensates on 3.12+)
+    # fsum rather than sum so the total is correctly rounded rather than accumulation-order dependent (builtin sum only compensates on 3.12+)  # noqa: E501
     high_growth_present_value = fsum(
         dividend / (1 + rate_of_return) ** period
         for period, dividend in enumerate(dividend_projection[1:], start=1)

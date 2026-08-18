@@ -1507,9 +1507,7 @@ class Econometrics:
             include_benchmark=include_benchmark,
         )
 
-        # Positionally aligned by statsmodels, so it has to be reindexed onto the
-        # regression's own index first -- `returns` has already dropped any period
-        # with missing data, which a caller-supplied cluster label will not have.
+        # Positionally aligned by statsmodels, so it has to be reindexed onto the regression's own index first -- `returns` has already dropped any period with missing data, which a caller-supplied cluster label will not have.  # noqa: E501
         aligned_clusters = (
             clusters.reindex(returns.index) if clusters is not None else None
         )

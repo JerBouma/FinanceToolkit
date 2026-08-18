@@ -112,8 +112,7 @@ def get_iv_2sls(
     confounder = rng.standard_normal(n)
     instrument = pd.Series(rng.standard_normal(n), name="Instrument")
 
-    # x is driven by both the instrument and the confounder -- the confounder also
-    # drives y directly, so x is endogenous (correlated with y's error term).
+    # x is driven by the instrument and the confounder; the confounder also drives y, so x is endogenous.
     x = pd.Series(0.8 * instrument + 0.6 * confounder + rng.standard_normal(n) * 0.3, name="X")
     y = 1.0 + 2.0 * x + 0.9 * confounder + rng.standard_normal(n) * 0.3
 
@@ -694,8 +693,7 @@ def get_propensity_score_matching(
     propensity = 1 / (1 + np.exp(-1.5 * covariate))
     treatment = pd.Series((rng.uniform(size=n) < propensity).astype(float))
 
-    # ...and the covariate ALSO drives the outcome directly, so a naive mean difference
-    # is confounded -- the true, constant treatment effect is 2.0.
+    # ...and the covariate also drives the outcome, confounding a naive mean difference; the true effect is 2.0.
     true_effect = 2.0
     outcome = pd.Series(
         1.0 + 3.0 * covariate + true_effect * treatment + rng.standard_normal(n) * 0.5

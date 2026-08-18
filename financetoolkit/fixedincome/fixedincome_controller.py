@@ -234,8 +234,7 @@ class FixedIncome:
 
         fixedincome = FixedIncome()
 
-        # This is one example and below a collection of different bonds
-        # is shown with different characteristics
+        # This is one example and below a collection of different bonds is shown with different characteristics
         fixedincome.collect_bond_statistics(
             par_value=100,
             coupon_rate=0.05,
@@ -424,9 +423,7 @@ class FixedIncome:
             else coupon_rate
         )
 
-        # A list of maturities has to be flattened into the column labels themselves;
-        # wrapping it in another list makes pandas read it as a one-level MultiIndex and
-        # label every column with a one-element tuple.
+        # A list of maturities has to be flattened into the column labels themselves; wrapping it in another list makes pandas read it as a one-level MultiIndex and label every column with a one-element tuple.
         years_to_maturity_dates = (
             [
                 pd.to_datetime(self._end_date) + pd.Timedelta(days=365 * interval)
@@ -552,9 +549,7 @@ class FixedIncome:
             else coupon_rate
         )
 
-        # A list of maturities has to be flattened into the column labels themselves;
-        # wrapping it in another list makes pandas read it as a one-level MultiIndex and
-        # label every column with a one-element tuple.
+        # A list of maturities has to be flattened into the column labels themselves; wrapping it in another list makes pandas read it as a one-level MultiIndex and label every column with a one-element tuple.
         years_to_maturity_dates = (
             [
                 pd.to_datetime(self._end_date) + pd.Timedelta(days=365 * interval)
@@ -720,9 +715,7 @@ class FixedIncome:
                 if int(par_value - i * step_size) > 0
             )
 
-        # A list of maturities has to be flattened into the column labels themselves;
-        # wrapping it in another list makes pandas read it as a one-level MultiIndex and
-        # label every column with a one-element tuple.
+        # A list of maturities has to be flattened into the column labels themselves; wrapping it in another list makes pandas read it as a one-level MultiIndex and label every column with a one-element tuple.
         years_to_maturity_dates = (
             [
                 pd.to_datetime(self._end_date) + pd.Timedelta(days=365 * interval)
@@ -2121,10 +2114,7 @@ class FixedIncome:
             end_date=self._end_date,
         )
 
-        # The Treasury publishes these in percentage points while every other rate
-        # method in this module returns decimals, so convert here rather than in the
-        # model -- that keeps the cached payload a faithful mirror of the endpoint.
-        # The error path returns a frame with no numeric columns, hence the guard.
+        # The Treasury publishes these in percentage points while every other rate method in this module returns decimals, so convert here rather than in the model -- that keeps the cached payload a faithful mirror of the endpoint. The error path returns a frame with no numeric columns, hence the guard.
         numeric_columns = treasury_rates.select_dtypes(include="number").columns
 
         if not numeric_columns.empty:
@@ -2577,8 +2567,7 @@ class FixedIncome:
                 )
                 continue
 
-            # Only the 3-Month Euribor is published as a real rate. The others are left
-            # out rather than silently answered with their nominal rate.
+            # Only the 3-Month Euribor is published as a real rate; the others are left out rather than silently answered with their nominal rate.
             if not nominal and maturity != "3M":
                 unavailable_real_maturities.append(maturity)
                 continue
@@ -2594,8 +2583,7 @@ class FixedIncome:
                 ", ".join(unavailable_real_maturities),
             )
 
-        # Concatenated in one go so that a maturity with a longer history is not truncated
-        # to the index of whichever maturity happened to be assigned first.
+        # Concatenated in one go so that a maturity with a longer history is not truncated to the index of whichever maturity happened to be assigned first.
         euribor_rates = (
             pd.concat(collected_rates, axis=1) if collected_rates else pd.DataFrame()
         )
@@ -2697,8 +2685,7 @@ class FixedIncome:
         if not rate or rate == "deposit":
             collected_rates["Deposit"] = ecb_model.get_deposit_facility()
 
-        # Concatenated in one go so that a rate with a longer history is not truncated to
-        # the index of whichever rate happened to be assigned to the frame first.
+        # Concatenated in one go so that a rate with a longer history is not truncated to the index of whichever rate happened to be assigned to the frame first.
         ecb_rates = (
             pd.concat(collected_rates, axis=1) if collected_rates else pd.DataFrame()
         )

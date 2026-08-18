@@ -374,8 +374,7 @@ def get_random_effects(
     rng = np.random.default_rng(42)
     entities = [f"E{i}" for i in range(6)]
     times = range(40)
-    # Entity effects here are independent of X -- the assumption Random Effects
-    # needs to be a good (efficient, not just consistent) fit -- see get_hausman_test.
+    # Entity effects are independent of X here -- what Random Effects needs to be efficient -- see get_hausman_test.
     alpha = {entity: rng.uniform(-5, 5) for entity in entities}
     index = pd.MultiIndex.from_product([entities, times], names=["entity", "time"])
 
@@ -493,9 +492,7 @@ def get_hausman_test(
     index = pd.MultiIndex.from_product([entities, times], names=["entity", "time"])
     x = pd.Series(rng.standard_normal(len(index)), index=index, name="X")
 
-    # Entity effects are a (noisy) function of X's own entity-mean -- this
-    # violates Random Effects' exogeneity assumption, so the Hausman test below
-    # should reject.
+    # Entity effects are a noisy function of X's mean, violating RE exogeneity, so the Hausman test below should reject.
     entity_mean_x = x.groupby(level="entity").mean()
     eta = pd.Series(rng.normal(0, 0.3, len(entities)), index=entities)
     alpha = 0.5 * entity_mean_x + eta

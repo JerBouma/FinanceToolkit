@@ -112,8 +112,7 @@ def get_financial_data(
             if "Invalid API KEY." in error_message:
                 return pd.DataFrame(columns=["INVALID API KEY"])
 
-            # Anything that is not one of the messages above is not retryable. Without
-            # this the loop would fall through and hammer the endpoint indefinitely.
+            # Anything that is not one of the messages above is not retryable, without this the loop would fall through and hammer the endpoint indefinitely.  # noqa: E501
             logger.error(
                 "The request to Financial Modeling Prep failed with an unrecognised error: %s",
                 error_message or e,
@@ -293,8 +292,7 @@ def get_financial_statement(
             financial_statement["date"]
         ) - pd.offsets.Day(1)
 
-        # A fiscal period is labelled with the calendar period holding most of it, at
-        # both frequencies, so yearly and quarterly output stay consistent.
+        # A fiscal period is labelled with the calendar period holding most of it, at both frequencies, so yearly and quarterly output stay consistent.  # noqa: E501
         financial_statement["date"] = (
             helpers.convert_period_end_dates_to_calendar_periods(
                 period_end_dates=financial_statement["date"],
@@ -398,8 +396,7 @@ def get_historical_data(
         f"?symbol={ticker}&apikey={api_key}&from={start_date_string}&to={end_date_string}"
     )
 
-    # The stable EOD endpoint no longer returns an adjusted close, so the dividend
-    # adjusted variant is queried separately to obtain it.
+    # The stable EOD endpoint no longer returns an adjusted close, so the dividend adjusted variant is queried separately to obtain it.  # noqa: E501
     adjusted_data_url = (
         f"https://financialmodelingprep.com/stable/historical-price-eod/dividend-adjusted"
         f"?symbol={ticker}&apikey={api_key}&from={start_date_string}&to={end_date_string}"
@@ -461,8 +458,7 @@ def get_historical_data(
 
         historical_data["Adj Close"] = adjusted_data["adjClose"]
     except (HTTPError, KeyError, ValueError, URLError, RemoteDisconnected):
-        # Without the adjusted close, returns would be based on raw prices and would
-        # therefore exclude dividends. This is reported rather than silently accepted.
+        # Without the adjusted close, returns would be based on raw prices and would therefore exclude dividends, so this is reported rather than silently accepted.  # noqa: E501
         logger.warning(
             "No adjusted close data found for %s, falling back to the unadjusted close. "
             "Returns will not include dividends.",

@@ -231,8 +231,7 @@ def get_stock_screener(
         }
     )
 
-    # These are internal flags of the endpoint rather than screening results. They are
-    # dropped defensively so that a new or removed flag does not raise.
+    # These are internal flags of the endpoint rather than screening results, they are dropped defensively so that a new or removed flag does not raise.  # noqa: E501
     stock_screener = stock_screener.drop(
         columns=["isEtf", "isFund", "isActivelyTrading"], errors="ignore"
     )
@@ -512,8 +511,7 @@ def get_crypto_list(api_key: str, user_subscription: str = "Free") -> pd.DataFra
         columns={
             "symbol": "Symbol",
             "name": "Name",
-            # The endpoint's "exchange" field holds an exchange code such as CCC, not a
-            # currency, so labelling the column Currency mislabelled the data.
+            # The endpoint's "exchange" field holds an exchange code such as CCC, not a currency, so labelling the column Currency mislabelled the data.  # noqa: E501
             "exchange": "Exchange",
             "icoDate": "ICO Date",
             "circulatingSupply": "Circulating Supply",
@@ -582,8 +580,7 @@ def get_forex_list(api_key: str, user_subscription: str = "Free") -> pd.DataFram
     Returns:
         pd.DataFrame: DataFrame of forex pairs.
     """
-    # The "symbol/available-forex-currency-pairs" path was retired and answers with an
-    # empty list, which then raised a KeyError on the missing columns further down.
+    # The "symbol/available-forex-currency-pairs" path was retired and answers with an empty list, which then raised a KeyError on the missing columns further down.  # noqa: E501
     url = f"https://financialmodelingprep.com/stable/forex-list?apikey={api_key}"
 
     forex_list = get_cached_financial_data(url=url, user_subscription=user_subscription)
@@ -617,8 +614,7 @@ def get_commodity_list(api_key: str, user_subscription: str = "Free") -> pd.Data
     Returns:
         pd.DataFrame: DataFrame of commodities.
     """
-    # The "symbol/available-commodities" path was retired and answers with an empty list,
-    # which then raised a KeyError on the missing columns further down.
+    # The "symbol/available-commodities" path was retired and answers with an empty list, which then raised a KeyError on the missing columns further down.  # noqa: E501
     url = f"https://financialmodelingprep.com/stable/commodities-list?apikey={api_key}"
 
     commody_list = get_cached_financial_data(
@@ -654,8 +650,7 @@ def get_etf_list(api_key: str, user_subscription: str = "Free") -> pd.DataFrame:
     Returns:
         pd.DataFrame: DataFrame of ETFs.
     """
-    # The "etf/list" path was retired and answers with an empty list, which then raised a
-    # KeyError on the missing columns further down.
+    # The "etf/list" path was retired and answers with an empty list, which then raised a KeyError on the missing columns further down.  # noqa: E501
     url = f"https://financialmodelingprep.com/stable/etf-list?apikey={api_key}"
 
     etf_list = get_cached_financial_data(url=url, user_subscription=user_subscription)
@@ -686,8 +681,7 @@ def get_index_list(api_key: str, user_subscription: str = "Free") -> pd.DataFram
     Returns:
         pd.DataFrame: DataFrame of indexes.
     """
-    # The "symbol/available-indexes" path was retired and answers with an empty list, which
-    # then raised a KeyError on the missing columns further down.
+    # The "symbol/available-indexes" path was retired and answers with an empty list, which then raised a KeyError on the missing columns further down.  # noqa: E501
     url = f"https://financialmodelingprep.com/stable/index-list?apikey={api_key}"
 
     index_list = get_cached_financial_data(url=url, user_subscription=user_subscription)

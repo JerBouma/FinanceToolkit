@@ -101,12 +101,7 @@ POLICIES: dict[str, CachePolicy] = {
     # Full history per series and no date range accepted, so only a TTL applies.
     f"{EUROPEAN_CENTRAL_BANK}.series": CachePolicy(ttl_seconds=DAY),
     f"{FEDERAL_RESERVE}.rate": CachePolicy(ttl_seconds=DAY),
-    # The Ken French factor files are published monthly as a single zip archive.
-    # Named "factors_decimal" because the loaders were corrected to divide the
-    # published percentages by 100; the rename is what stops a cache warmed by an
-    # older release from serving percent-scaled factors against decimal returns.
-    # The policy has to follow that rename or the archive falls back to the
-    # one day default and is re-downloaded every day.
+    # The Ken French factor files are published monthly as a single zip archive; named "factors_decimal" because the loaders were corrected to divide the published percentages by 100, and the rename is what stops a cache warmed by an older release from serving percent-scaled factors against decimal returns, so the policy has to follow that rename or the archive falls back to the one day default and is re-downloaded every day.  # noqa: E501
     f"{KEN_FRENCH}.factors_decimal": CachePolicy(ttl_seconds=7 * DAY),
     # Computed MCP tool responses layered on top of the source caches.
     f"{MCP}.tool": CachePolicy(ttl_seconds=DAY),

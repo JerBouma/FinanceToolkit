@@ -505,8 +505,7 @@ class Cache:
             )
 
         try:
-            # The payload and the range it covers are only true together, so they
-            # are written in a single transaction that another writer has to wait for.
+            # The payload and the range it covers are only true together, so they are written in a single transaction that another writer has to wait for.  # noqa: E501
             self._backend.store_series_and_coverage(
                 key,
                 entity,

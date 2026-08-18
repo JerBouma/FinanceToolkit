@@ -14,9 +14,7 @@ PERIOD_TRANSLATION: dict[str, str | dict[str, str]] = {
         "30min": "D",
         "1hour": "D",
     },
-    # The daily period nests the intraday observations of a single day, so it is only
-    # available when intraday data was fetched -- exactly the condition the Risk and
-    # Econometrics controllers already guard their period="daily" branches with.
+    # The daily period nests the intraday observations of a single day, so it is only available when intraday data was fetched -- exactly the condition the Risk and Econometrics controllers already guard their period="daily" branches with.  # noqa: E501
     "daily": "D",
     "weekly": "W",
     "monthly": "M",
@@ -55,8 +53,7 @@ def determine_within_historical_data(
     for period, symbol in PERIOD_TRANSLATION.items():
         if not intraday_period and period == "intraday":
             continue
-        # Without intraday observations there is nothing to nest inside a single day,
-        # so the daily period would collapse to one observation per group.
+        # Without intraday observations there is nothing to nest inside a single day, so the daily period would collapse to one observation per group.  # noqa: E501
         if intraday_historical_data.empty and period == "daily":
             continue
 
@@ -72,8 +69,7 @@ def determine_within_historical_data(
         else:
             source_data = daily_historical_data
 
-        # The daily period nests intraday observations inside each day, so like the
-        # intraday period it needs a minute-level inner index rather than a daily one.
+        # The daily period nests intraday observations inside each day, so like the intraday period it needs a minute-level inner index rather than a daily one.  # noqa: E501
         inner_freq = "min" if period in ("intraday", "daily") else "D"
         period_data = source_data.copy()
         period_data.index = pd.MultiIndex.from_arrays(

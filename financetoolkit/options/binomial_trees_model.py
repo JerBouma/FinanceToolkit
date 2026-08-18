@@ -80,9 +80,7 @@ def calculate_stock_prices(
         )
 
     if show_unique_combinations:
-        # The tree recombines, so only the net number of ups matters and there are just
-        # period_length + 1 distinct nodes. Enumerating all 2^period_length paths first
-        # and deduplicating afterwards is exponential and unusable beyond ~20 steps.
+        # The tree recombines, so only the net number of ups matters and there are just period_length + 1 distinct nodes; enumerating all 2^period_length paths first and deduplicating afterwards is exponential and unusable beyond ~20 steps.  # noqa: E501
         combinations_dict = {}
 
         for ups in range(period_length, -1, -1):

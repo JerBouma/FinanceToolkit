@@ -105,8 +105,7 @@ class Portfolio:
             )
         )
 
-        # An explicit None check is required because the truth value of a DataFrame
-        # is ambiguous, which made passing a DataFrame raise a ValueError here.
+        # An explicit None check is required because the truth value of a DataFrame is ambiguous, which made passing a DataFrame raise a ValueError here.
         if portfolio_dataset is None and not example:
             example = True
             logger.info(
@@ -1019,9 +1018,7 @@ class Portfolio:
                     f"Failed to create positions overview due to {error}"
                 ) from error
 
-        # Only the returned view is rounded. Rounding the cached frame in place would make
-        # every later call, including the portfolio performance, read back the precision of
-        # whichever call happened to run first.
+        # Only the returned view is rounded; rounding the cached frame in place would make every later call, including the portfolio performance, read back the precision of whichever call happened to run first.
         return self._positions_overview.round(rounding if rounding else self._rounding)
 
     def get_portfolio_overview(
@@ -1173,10 +1170,7 @@ class Portfolio:
             portfolio_returns = portfolio_returns.loc[common_dates]
             benchmark_returns = benchmark_returns.loc[common_dates]
 
-            # Compute beta for each portfolio ticker against the benchmark. The covariance
-            # and the variance are taken over the same non-missing sample, since a ticker
-            # with a shorter history would otherwise be divided by a variance measured over
-            # a longer window than its own covariance.
+            # Compute beta for each portfolio ticker against the benchmark; the covariance and the variance are taken over the same non-missing sample, since a ticker with a shorter history would otherwise be divided by a variance measured over a longer window than its own covariance.
             betas = {}
             for ticker in portfolio_returns.columns:
                 paired_returns = pd.concat(
@@ -1491,11 +1485,7 @@ class Portfolio:
         except (ValueError, IndexError, KeyError) as error:
             logger.error("Failed to create PnL overview: %s", error)
 
-        # The rounding and the filter are applied to the returned view only. The stored
-        # overview feeds create_positions_overview, so rounding it in place would push the
-        # rounding of whichever call ran first into every position metric, and removing the
-        # sell transactions would leave that function cumulating buys alone, keeping sold
-        # shares in the position forever.
+        # The rounding and the filter are applied to the returned view only; the stored overview feeds create_positions_overview, so rounding it in place would push the rounding of whichever call ran first into every position metric, and removing the sell transactions would leave that function cumulating buys alone, keeping sold shares in the position forever.
         transactions_overview = self._transactions_overview.round(
             rounding if rounding else self._rounding
         )

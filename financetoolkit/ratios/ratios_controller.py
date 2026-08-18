@@ -4576,8 +4576,7 @@ class Ratios:
                 .sum()
                 .T,
                 (
-                    # Dividends Paid is reported as a negative cash outflow, so the
-                    # magnitude is taken before it is subtracted from Net Income.
+                    # Dividends Paid is reported as a negative cash outflow, so the magnitude is taken before it is subtracted from Net Income.  # noqa: E501
                     self._cash_flow_statement.loc[:, "Dividends Paid", :]
                     .T.rolling(trailing)
                     .sum()
@@ -4598,8 +4597,7 @@ class Ratios:
             return_on_invested_capital = profitability_model.get_return_on_invested_capital(
                 self._income_statement.loc[:, "Net Income", :],
                 (
-                    # Dividends Paid is reported as a negative cash outflow, so the
-                    # magnitude is taken before it is subtracted from Net Income.
+                    # Dividends Paid is reported as a negative cash outflow, so the magnitude is taken before it is subtracted from Net Income.  # noqa: E501
                     self._cash_flow_statement.loc[:, "Dividends Paid", :].abs()
                     if dividend_adjusted
                     else 0
@@ -7494,8 +7492,7 @@ class Ratios:
         )
 
         if trailing:
-            # Preferred Dividends Paid is reported as a negative cash outflow, so the
-            # magnitude is taken before it is subtracted from Net Income.
+            # Preferred Dividends Paid is reported as a negative cash outflow, so the magnitude is taken before it is subtracted from Net Income.  # noqa: E501
             dividends = (
                 self._cash_flow_statement.loc[:, "Preferred Dividends Paid", :]
                 .T.rolling(trailing)
@@ -7514,8 +7511,7 @@ class Ratios:
                 average_shares,
             )
         else:
-            # Preferred Dividends Paid is reported as a negative cash outflow, so the
-            # magnitude is taken before it is subtracted from Net Income.
+            # Preferred Dividends Paid is reported as a negative cash outflow, so the magnitude is taken before it is subtracted from Net Income.  # noqa: E501
             dividends = (
                 self._cash_flow_statement.loc[:, "Preferred Dividends Paid", :].abs()
                 if include_dividends

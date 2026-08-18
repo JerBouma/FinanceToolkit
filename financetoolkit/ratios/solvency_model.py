@@ -257,8 +257,7 @@ def get_capex_coverage_ratio(
     Returns:
         float | pd.Series: The capital expenditure coverage ratio value.
     """
-    # Capital Expenditure is reported as a negative cash outflow, so the magnitude is
-    # used to keep the ratio positive and consistent with "higher is better".
+    # Capital Expenditure is reported as a negative cash outflow, so the magnitude is used to keep the ratio positive and consistent with "higher is better".  # noqa: E501
     return cash_flow_from_operations / abs(capital_expenditure)
 
 
@@ -282,8 +281,7 @@ def get_dividend_capex_coverage_ratio(
     Returns:
         float | pd.Series: The dividend paid and capex coverage ratio value.
     """
-    # Both are reported as negative cash outflows, so their magnitudes are used to keep
-    # the ratio positive and consistent with "higher is better".
+    # Both are reported as negative cash outflows, so their magnitudes are used to keep the ratio positive and consistent with "higher is better".  # noqa: E501
     return cash_flow_from_operations / (abs(capital_expenditure) + abs(dividends))
 
 

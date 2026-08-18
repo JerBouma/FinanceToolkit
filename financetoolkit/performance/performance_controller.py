@@ -105,9 +105,7 @@ class Performance:
 
         # Historical Data
         self._historical_data = historical_data
-        # The risk free rate is quoted as an annualized yield, so it is converted to the
-        # matching frequency. Without this, a daily return would have a full year of
-        # risk free rate subtracted from it.
+        # The risk free rate is quoted as an annualized yield, so it is converted to the matching frequency. Without this, a daily return would have a full year of risk free rate subtracted from it.  # noqa: E501
         self._risk_free_rate_data = {
             frequency: convert_annualized_rate_to_period(rate, frequency)
             for frequency, rate in risk_free_rate_data.items()
@@ -725,8 +723,7 @@ class Performance:
 
         factor_correlations: dict = {}
 
-        # The first index level repeats once per row, so it has to be de-duplicated
-        # before iterating or every period is recomputed once per day it contains.
+        # The first index level repeats once per row, so it has to be de-duplicated before iterating or every period is recomputed once per day it contains.  # noqa: E501
         dataset_periods = merged_df.index.get_level_values(0).unique()
 
         logger.info("Calculating Factor Asset Correlations")
@@ -858,8 +855,7 @@ class Performance:
             correlation=True,
         )
 
-        # The Ken French dataset starts in 1963, so without this slice the result covers
-        # six decades regardless of the date range the Toolkit was initialised with.
+        # The Ken French dataset starts in 1963, so without this slice the result covers six decades regardless of the date range the Toolkit was initialised with.  # noqa: E501
         self._factor_correlations = fama_and_french_period.round(
             rounding if rounding else self._rounding
         ).loc[self._start_date : self._end_date]
@@ -1019,8 +1015,7 @@ class Performance:
         factor_scores: dict = {}
         daily_residuals: dict = {}
 
-        # The first index level repeats once per row, so it has to be de-duplicated
-        # before iterating or every period is regressed once per day it contains.
+        # The first index level repeats once per row, so it has to be de-duplicated before iterating or every period is regressed once per day it contains.  # noqa: E501
         dataset_periods = merged_df.index.get_level_values(0).unique()
 
         logger.info(
@@ -1070,9 +1065,7 @@ class Performance:
                             excess_returns=excess_returns, factor=factor_data
                         )
 
-                        # The regression is fitted on the observations within the
-                        # period, so the reported Factor Value and Residual describe
-                        # the last observation of that period, on the same scale.
+                        # The regression is fitted on the observations within the period, so the reported Factor Value and Residual describe the last observation of that period, on the same scale.  # noqa: E501
                         factor_scores[ticker][factor][dataset_period][
                             "Factor Value"
                         ] = factor_data.iloc[-1]
@@ -1180,11 +1173,7 @@ class Performance:
                     .sort_index(axis=1, sort_remaining=False)
                 )
 
-            # Reshaping pairs every period with every date in the whole sample, so all
-            # but the dates actually inside a period come back as fully empty rows.
-            # Dropping them (and sorting what is left) is what makes the date slice
-            # below possible at all: it otherwise raises on the non-monotonic index of
-            # repeated dates.
+            # Reshaping pairs every period with every date in the whole sample, so all but the dates actually inside a period come back as fully empty rows. Dropping them (and sorting what is left) is what makes the date slice below possible at all: it otherwise raises on the non-monotonic index of repeated dates.  # noqa: E501
             daily_residuals_df = (
                 daily_residuals_df.dropna(how="all")
                 .sort_index()
@@ -1304,9 +1293,7 @@ class Performance:
             self._tickers_without_portfolio
         ]
 
-        # Carhart (1997) extends the *three* factor model. The three and five factor
-        # files share Mkt-RF, HML and RF but their SMB series differ, so the three
-        # factor file is the correct source here.
+        # Carhart (1997) extends the *three* factor model. The three and five factor files share Mkt-RF, HML and RF but their SMB series differ, so the three factor file is the correct source here.  # noqa: E501
         three_factor_dataset = (
             performance_model.obtain_fama_and_french_three_factor_dataset()
         )
@@ -1326,8 +1313,7 @@ class Performance:
         factors_to_calculate = ["Mkt-RF", "SMB", "HML", "MOM"]
         factor_scores: dict = {}
 
-        # The first index level repeats once per row, so it has to be de-duplicated
-        # before iterating or every period is regressed once per day it contains.
+        # The first index level repeats once per row, so it has to be de-duplicated before iterating or every period is regressed once per day it contains.  # noqa: E501
         dataset_periods = merged_df.index.get_level_values(0).unique()
 
         logger.info("Calculating Carhart Four Factor Exposures")
@@ -1931,9 +1917,7 @@ class Performance:
 
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
-        # The deflated variant needs the full (non within period) return history to
-        # approximate how dispersed the Sharpe ratio is across trials, regardless of
-        # whether the ratio being tested is itself a rolling one.
+        # The deflated variant needs the full (non within period) return history to approximate how dispersed the Sharpe ratio is across trials, regardless of whether the ratio being tested is itself a rolling one.  # noqa: E501
         if rolling or method == "deflated":
             period_returns = self._historical_data[period].loc[:, "Return"][
                 self._tickers_without_portfolio

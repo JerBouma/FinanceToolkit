@@ -22,9 +22,7 @@ DURBIN_WATSON_UPPER_BAND = 2.5
 # The nested F-test needs at least one added power term beyond the linear fit.
 MINIMUM_RESET_POWER = 2
 
-# `linear_reset` forwards covariance arguments under a name `fit()` does not accept,
-# so the two estimators that need extra arguments cannot be honoured -- see
-# `get_ramsey_reset_test`'s Notes.
+# `linear_reset` forwards covariance arguments under a name `fit()` does not accept, so the two estimators that need extra arguments cannot be honoured -- see `get_ramsey_reset_test`'s Notes.  # noqa: E501
 UNSUPPORTED_RESET_COV_TYPES = ("cluster", "HAC")
 
 

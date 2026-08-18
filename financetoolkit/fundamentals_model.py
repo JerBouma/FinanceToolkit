@@ -286,9 +286,7 @@ def collect_financial_statements(
             user_subscription=user_subscription,
         )
 
-        # A ticker that returned nothing at all leaves an empty frame behind. Keeping it
-        # makes the concatenation produce a frame without the (ticker, item) index every
-        # step below assumes, which turned an invalid ticker into a raw KeyError.
+        # A ticker that returned nothing at all leaves an empty frame behind; keeping it makes the concatenation produce a frame without the (ticker, item) index every step below assumes, which turned an invalid ticker into a raw KeyError.  # noqa: E501
         financial_statement_dict[source] = {
             ticker: statement
             for ticker, statement in financial_statement_dict[source].items()
@@ -316,8 +314,7 @@ def collect_financial_statements(
                 )
             )
         elif source == "YahooFinance" and financial_statement_dict[source]:
-            # Built before the statements are normalized, since the statistics are keyed
-            # by the same periods the raw statement is keyed by.
+            # Built before the statements are normalized, since the statistics are keyed by the same periods the raw statement is keyed by.  # noqa: E501
             yf_statistics_per_ticker = {
                 ticker: yfinance_model.get_statistics_statement(
                     ticker=ticker, periods=statement.columns
@@ -397,8 +394,7 @@ def collect_financial_statements(
         [fmp_financial_statements_total, yf_financial_statements_total], axis=0
     )
 
-    # Both sources contribute the reporting currency, so a Toolkit that fell back to
-    # Yahoo Finance for part of its tickers still knows the currency of all of them.
+    # Both sources contribute the reporting currency, so a Toolkit that fell back to Yahoo Finance for part of its tickers still knows the currency of all of them.  # noqa: E501
     financial_statement_statistics = (
         pd.concat(
             [
@@ -455,8 +451,7 @@ def collect_financial_statements(
     # Columns with no data over the entire period are dropped automatically.
     financial_statement_total = financial_statement_total.dropna(axis=1, how="all")
 
-    # Round the financial statement total if rounding is specified. rounding=None is
-    # documented as no rounding at all, and DataFrame.round(None) raises a TypeError.
+    # Round the financial statement total if rounding is specified; rounding=None is documented as no rounding at all, and DataFrame.round(None) raises a TypeError.  # noqa: E501
     financial_statement_total = apply_rounding(financial_statement_total, rounding)
 
     return (

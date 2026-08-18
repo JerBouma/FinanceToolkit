@@ -254,9 +254,7 @@ def _from_statsmodels_ols(
         "feature_names": feature_names,
         "design_matrix": design_matrix,
         "cov_type": cov_type,
-        # The fitted statsmodels object is carried along so that the nested-model tests
-        # can delegate to its own machinery without refitting. Refitting from the design
-        # matrix alone would silently drop the covariance type and the WLS/GLS weights.
+        # The fitted statsmodels object is carried along so that the nested-model tests can delegate to its own machinery without refitting. Refitting from the design matrix alone would silently drop the covariance type and the WLS/GLS weights.  # noqa: E501
         "statsmodels_result": sm_result,
     }
 

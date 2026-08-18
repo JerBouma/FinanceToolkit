@@ -121,9 +121,7 @@ def _filter_dataframe_columns(
     if df.empty:
         return df
 
-    # MultiIndex columns. Every level is searched, not only the first: a factor model
-    # is indexed by (ticker, coefficient), so asking for "Intercept" matched nothing at
-    # level 0 and the unfiltered frame came back as though the filter had been applied.
+    # MultiIndex columns. Every level is searched, not only the first: a factor model is indexed by (ticker, coefficient), so asking for "Intercept" matched nothing at level 0 and the unfiltered frame came back as though the filter had been applied.  # noqa: E501
     if isinstance(df.columns, pd.MultiIndex):
         mask = pd.Series(False, index=range(len(df.columns)))
         matched: list[str] = []
@@ -135,8 +133,7 @@ def _filter_dataframe_columns(
             available.extend(
                 value for value in level_available if value not in available
             )
-            # Only names not already resolved at a shallower level, so that a name
-            # occurring at two levels resolves at the outermost one.
+            # Only names not already resolved at a shallower level, so that a name occurring at two levels resolves at the outermost one.  # noqa: E501
             level_valid = [
                 column
                 for column in show_columns

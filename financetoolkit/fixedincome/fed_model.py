@@ -108,8 +108,7 @@ def get_effective_federal_funds_rate() -> pd.DataFrame:
 
     effective_federal_funds_rate = collect_fed_data(fed_code)
 
-    # The New York Fed publishes every rate column in percent, so they are divided
-    # by 100 into decimals. The volume column is a dollar amount and is left alone.
+    # The New York Fed publishes every rate column in percent, so they are divided by 100 into decimals. The volume column is a dollar amount and is left alone.  # noqa: E501
     effective_federal_funds_rate.loc[
         :, effective_federal_funds_rate.columns != "Volume ($Billions)"
     ] = (
@@ -135,8 +134,7 @@ def get_overnight_banking_funding_rate() -> pd.DataFrame:
 
     overnight_banking_funding_rate = collect_fed_data(fed_code)
 
-    # The New York Fed publishes every rate column in percent, so they are divided
-    # by 100 into decimals. The volume column is a dollar amount and is left alone.
+    # The New York Fed publishes every rate column in percent, so they are divided by 100 into decimals. The volume column is a dollar amount and is left alone.  # noqa: E501
     overnight_banking_funding_rate.loc[
         :, overnight_banking_funding_rate.columns != "Volume ($Billions)"
     ] = (
@@ -162,8 +160,7 @@ def get_tri_party_general_collateral_rate() -> pd.DataFrame:
 
     tri_party_general_collateral_rate = collect_fed_data(fed_code)
 
-    # The New York Fed publishes every rate column in percent, so they are divided
-    # by 100 into decimals. The volume column is a dollar amount and is left alone.
+    # The New York Fed publishes every rate column in percent, so they are divided by 100 into decimals. The volume column is a dollar amount and is left alone.  # noqa: E501
     tri_party_general_collateral_rate.loc[
         :, tri_party_general_collateral_rate.columns != "Volume ($Billions)"
     ] = (
@@ -189,8 +186,7 @@ def get_broad_general_collateral_rate() -> pd.DataFrame:
 
     broad_general_collateral_rate = collect_fed_data(fed_code)
 
-    # The New York Fed publishes every rate column in percent, so they are divided
-    # by 100 into decimals. The volume column is a dollar amount and is left alone.
+    # The New York Fed publishes every rate column in percent, so they are divided by 100 into decimals. The volume column is a dollar amount and is left alone.  # noqa: E501
     broad_general_collateral_rate.loc[
         :, broad_general_collateral_rate.columns != "Volume ($Billions)"
     ] = (
@@ -216,8 +212,7 @@ def get_secured_overnight_financing_rate() -> pd.DataFrame:
 
     secured_overnight_financing_rate = collect_fed_data(fed_code)
 
-    # The New York Fed publishes every rate column in percent, so they are divided
-    # by 100 into decimals. The volume column is a dollar amount and is left alone.
+    # The New York Fed publishes every rate column in percent, so they are divided by 100 into decimals. The volume column is a dollar amount and is left alone.  # noqa: E501
     secured_overnight_financing_rate.loc[
         :, secured_overnight_financing_rate.columns != "Volume ($Billions)"
     ] = (

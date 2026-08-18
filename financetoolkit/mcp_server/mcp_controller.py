@@ -287,8 +287,7 @@ def main() -> None:
         # Apply command line, then environment variable overrides for host/port
         host = arguments.host or os.environ.get("MCP_HOST", "0.0.0.0")  # noqa: S104
         port_env = os.environ.get("MCP_PORT", "8000")
-        # Compared against None rather than truth-tested: --port 0 is a valid
-        # request for an ephemeral port and must not fall through to the default.
+        # Compared against None rather than truth-tested: --port 0 is a valid request for an ephemeral port and must not fall through to the default.  # noqa: E501
         port = (
             arguments.port
             if arguments.port is not None

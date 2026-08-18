@@ -194,15 +194,12 @@ def convert_currencies(
                     if currency not in currencies:
                         currencies[currency] = []
 
-                    # The retrieved rate is between major units even when the price is
-                    # quoted in a fractional one, so it is scaled onto that unit here.
+                    # The retrieved rate is between major units even when the price is quoted in a fractional one, so it is scaled onto that unit here.  # noqa: E501
                     minor_unit_factor = get_minor_unit_factor(
                         base_currency, quote_currency
                     )
 
-                    # reindex (not .loc) since older periods can predate the FX pair's own history, e.g. a
-                    # statement stretching back to 1999 when TWDUSD=X only starts in 2004 — those periods
-                    # get NaN rather than raising and dropping the whole ticker from conversion.
+                    # reindex (not .loc) since older periods can predate the FX pair's own history, e.g. a statement stretching back to 1999 when TWDUSD=X only starts in 2004 — those periods get NaN rather than raising and dropping the whole ticker from conversion.  # noqa: E501
                     rates = exchange_rate_data[currency].reindex(periods)
 
                     if rates.isna().all():

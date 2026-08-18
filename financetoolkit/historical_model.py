@@ -39,18 +39,11 @@ INTERVAL_STR = {
     "1d": "D",
 }
 
-# Minimum fraction of the requested span a response must itself span to be
-# treated as "available" rather than a truncated data-plan limitation -- see
-# _covers_requested_range's own docstring.
+# Minimum fraction of the requested span a response must itself span to be treated as "available" rather than a truncated data-plan limitation -- see _covers_requested_range's own docstring.  # noqa: E501
 MIN_COVERAGE_RATIO = 0.5
-# Requested spans shorter than this are never flagged as truncated -- too
-# short to tell a genuine short window apart from a truncated one.
+# Requested spans shorter than this are never flagged as truncated -- too short to tell a genuine short window apart from a truncated one.  # noqa: E501
 MIN_SPAN_TO_CHECK_DAYS = 30
-# How much later than the requested start a response may begin before it is
-# treated as truncated. FinancialModelingPrep caps a response at a fixed number
-# of rows rather than a fixed span, so a capped response runs to the requested
-# end (or beyond) and is missing history at the *start* only -- a few days of
-# slack absorbs a start date that lands on a weekend or a market holiday.
+# How much later than the requested start a response may begin before it is treated as truncated. FinancialModelingPrep caps a response at a fixed number of rows rather than a fixed span, so a capped response runs to the requested end (or beyond) and is missing history at the *start* only -- a few days of slack absorbs a start date that lands on a weekend or a market holiday.  # noqa: E501
 MAX_START_SHORTFALL_DAYS = 30
 
 
@@ -248,8 +241,7 @@ def get_historical_data(
         The index of the DataFrame is the date of the data and the columns are a multi-index
         with the ticker symbol(s) as the first level and the OHLC data as the second level.
     """
-    # NaN rather than 0 so that a ticker without data is recognisable as missing
-    # instead of reading as a genuine price, volume and return of zero.
+    # NaN rather than 0 so that a ticker without data is recognisable as missing instead of reading as a genuine price, volume and return of zero.  # noqa: E501
     empty_historical_data = pd.DataFrame(
         data=np.nan,
         index=pd.PeriodIndex(pd.date_range(start, end), freq=INTERVAL_STR[interval]),
@@ -326,8 +318,7 @@ def get_historical_data(
         fetch_end = fetch_span[1].strftime("%Y-%m-%d") if fetch_span else end
 
         historical_data = pd.DataFrame()
-        # A non-empty but truncated FinancialModelingPrep response, held aside while
-        # Yahoo Finance is tried, so it can be restored if Yahoo is no better.
+        # A non-empty but truncated FinancialModelingPrep response, held aside while Yahoo Finance is tried, so it can be restored if Yahoo is no better.  # noqa: E501
         truncated_data = pd.DataFrame()
         attempted_fmp = False
 
@@ -378,10 +369,7 @@ def get_historical_data(
                     user_subscription=user_subscription,
                 )
 
-                # Only worth setting aside when there is somewhere to fall back to.
-                # With the source forced to FinancialModelingPrep, a truncated
-                # response is the best answer available and discarding it would
-                # return nothing at all.
+                # Only worth setting aside when there is somewhere to fall back to. With the source forced to FinancialModelingPrep, a truncated response is the best answer available and discarding it would return nothing at all.  # noqa: E501
                 can_fall_back = (
                     enforce_source != "FinancialModelingPrep" and ENABLE_YFINANCE
                 )
@@ -393,10 +381,7 @@ def get_historical_data(
                         historical_data, fetch_start, fetch_end
                     )
                 ):
-                    # Held rather than dropped: Yahoo is tried below and this is
-                    # restored if it does not actually reach further back -- see
-                    # _covers_requested_range for why a non-empty response can
-                    # still be truncated.
+                    # Held rather than dropped: Yahoo is tried below and this is restored if it does not actually reach further back -- see _covers_requested_range for why a non-empty response can still be truncated.  # noqa: E501
                     logger.debug(
                         "FinancialModelingPrep returned only %s to %s for %s, short of the %s to %s "
                         "requested -- likely a row cap or data-plan limitation for this ticker/endpoint, "
@@ -434,8 +419,7 @@ def get_historical_data(
                 if not truncated_data.empty and not _reaches_further_back(
                     historical_data, truncated_data
                 ):
-                    # Yahoo is no better -- a young ticker rather than a capped
-                    # response -- so keep what FinancialModelingPrep returned.
+                    # Yahoo is no better -- a young ticker rather than a capped response -- so keep what FinancialModelingPrep returned.  # noqa: E501
                     historical_data = truncated_data
                     fmp_tickers.append(ticker)
                     cache_source = policy_model.FINANCIAL_MODELING_PREP
@@ -656,9 +640,7 @@ def convert_daily_to_other_period(
     dates = daily_historical_data.index.asfreq(period_str)
     daily_historical_data = daily_historical_data.reset_index()
 
-    # Each column has to be aggregated on its own terms. Taking the last value of the
-    # period for every column would report the final day's Open, High, Low and Volume
-    # as if they described the whole period.
+    # Each column has to be aggregated on its own terms. Taking the last value of the period for every column would report the final day's Open, High, Low and Volume as if they described the whole period.  # noqa: E501
     aggregations = {
         "Open": "first",
         "High": "max",
@@ -703,8 +685,7 @@ def convert_daily_to_other_period(
 
         adjusted_return = period_historical_data.loc[start:end, "Return"]
 
-        # An empty selection means the requested range falls outside the data, which is
-        # a legitimate outcome rather than a reason to abort the whole conversion.
+        # An empty selection means the requested range falls outside the data, which is a legitimate outcome rather than a reason to abort the whole conversion.  # noqa: E501
         with contextlib.suppress(IndexError):
             adjusted_return.iloc[0] = 0
 
@@ -719,11 +700,7 @@ def convert_daily_to_other_period(
 
     period_historical_data = apply_rounding(period_historical_data, rounding)
 
-    # Deliberately not filled with zero. The first period has no preceding period to
-    # compare against, so its Return is unknown rather than flat, and a fabricated zero
-    # is indistinguishable from a genuinely unchanged period. It propagated into the
-    # first row of every period level performance metric, which is why an asset with a
-    # positive excess return could report a negative Ulcer Performance Index.
+    # Deliberately not filled with zero. The first period has no preceding period to compare against, so its Return is unknown rather than flat, and a fabricated zero is indistinguishable from a genuinely unchanged period. It propagated into the first row of every period level performance metric, which is why an asset with a positive excess return could report a negative Ulcer Performance Index.  # noqa: E501
     return period_historical_data
 
 

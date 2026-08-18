@@ -147,9 +147,7 @@ def get_cvar_studentt(
 
     returns = pd.DataFrame(returns)
 
-    # Fitting student-t parameters to the data. Missing observations are dropped per
-    # column, since scipy's fit raises on any non-finite value while the mean below
-    # simply skips them.
+    # Fitting student-t parameters to the data; missing observations are dropped per column, since scipy's fit raises on any non-finite value while the mean below simply skips them.  # noqa: E501
     v, scale = np.array([]), np.array([])
     for col in returns.columns:
         col_v, _, col_scale = stats.t.fit(returns[col].dropna())

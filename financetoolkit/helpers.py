@@ -79,8 +79,7 @@ def convert_period_end_dates_to_calendar_periods(
         and fiscal_year_adjustments is not None
         and ticker is not None
     ):
-        # Reported as plain integers for years so the value stays readable, and as
-        # period labels for quarters where a bare integer would lose the quarter.
+        # Reported as plain integers for years so the value stays readable, and as period labels for quarters where a bare integer would lose the quarter.  # noqa: E501
         adjustments = [
             {
                 "fiscal_year": str(fiscal) if quarter else fiscal.year,
@@ -91,9 +90,7 @@ def convert_period_end_dates_to_calendar_periods(
             )
         ]
 
-        # Called once per statement type (income, balance, cash, statistics), so the
-        # entries are merged rather than assigned -- assigning would let the last
-        # statement fetched silently discard the periods the earlier ones relabelled.
+        # Called once per statement type (income, balance, cash, statistics), so the entries are merged rather than assigned -- assigning would let the last statement fetched silently discard the periods the earlier ones relabelled.  # noqa: E501
         existing = fiscal_year_adjustments.setdefault(ticker, [])
         existing.extend(
             adjustment for adjustment in adjustments if adjustment not in existing

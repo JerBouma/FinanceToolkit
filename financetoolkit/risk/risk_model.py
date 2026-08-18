@@ -228,9 +228,7 @@ def get_kurtosis(
             return kurtosis.T
         return returns.aggregate(get_kurtosis, fisher=fisher)
     if isinstance(returns, pd.Series):
-        # Pearson is Fisher shifted by 3 by definition, so both branches must come
-        # from the same estimator -- the population moment ratio used previously is
-        # a different (biased) estimator, leaving the two definitions inconsistent.
+        # Pearson is Fisher shifted by 3 by definition, so both branches must come from the same estimator -- the population moment ratio used previously is a different (biased) estimator, leaving the two definitions inconsistent.  # noqa: E501
         return returns.kurtosis() if fisher else returns.kurtosis() + 3
 
     raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
@@ -859,10 +857,7 @@ def get_downside_deviation(
             minimum_acceptable_return=minimum_acceptable_return,
         )
     if isinstance(returns, pd.Series):
-        # The second order lower partial moment: shortfalls are squared and averaged over
-        # every observation, not only the ones below the threshold, and they are measured
-        # from the minimum acceptable return rather than from their own mean. Taking the
-        # standard deviation of the shortfalls alone understates the risk materially.
+        # The second order lower partial moment: shortfalls are squared and averaged over every observation, not only the ones below the threshold, and they are measured from the minimum acceptable return rather than from their own mean -- taking the standard deviation of the shortfalls alone understates the risk materially.  # noqa: E501
         shortfalls = (returns - minimum_acceptable_return).clip(upper=0)
 
         return np.sqrt((shortfalls**2).mean())
@@ -1208,10 +1203,7 @@ def get_hill_estimator(
                     period_data_list.append(period_data)
                     valid_periods.append(sub_period)
 
-            # Keyed on the sub-period, since every sub-period contributes a whole
-            # frame of statistics rather than the single row the other functions
-            # in this module return -- concatenating without the keys would drop
-            # the period labels entirely.
+            # Keyed on the sub-period, since every sub-period contributes a whole frame of statistics rather than the single row the other functions in this module return -- concatenating without the keys would drop the period labels entirely.  # noqa: E501
             return pd.concat(period_data_list, keys=valid_periods, axis=0)
 
         return pd.DataFrame(

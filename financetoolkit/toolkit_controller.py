@@ -334,9 +334,7 @@ class Toolkit:
             # Check whether the ticker is in ISIN format and if say so convert it to a ticker
             self._tickers.append(convert_isin_to_ticker(ticker))
 
-        # Take out duplicate tickers if applicable. Deduplicating through a set would
-        # make the ticker order, and therefore the column order of every single output,
-        # depend on the hash seed and change between runs.
+        # Take out duplicate tickers if applicable; deduplicating through a set would make the ticker order, and therefore the column order of every single output, depend on the hash seed and change between runs.
         deduplicated_tickers = list(dict.fromkeys(self._tickers))
 
         if len(deduplicated_tickers) != len(self._tickers):
@@ -2273,9 +2271,7 @@ class Toolkit:
             historical_data = self._daily_historical_data.loc[
                 self._start_date : self._end_date, :
             ]
-            # The first row of the window has no preceding observation, so its
-            # Return stays NaN. Cumulative Return is already anchored at 1 there
-            # by its own calculation, so nothing depends on fabricating a zero.
+            # The first row of the window has no preceding observation, so its Return stays NaN; Cumulative Return is already anchored at 1 there by its own calculation, so nothing depends on fabricating a zero.
 
         elif period == "weekly":
             if self._weekly_risk_free_rate.empty or overwrite:
@@ -2295,9 +2291,7 @@ class Toolkit:
             historical_data = self._weekly_historical_data.loc[
                 self._start_date : self._end_date, :
             ]
-            # The first row of the window has no preceding observation, so its
-            # Return stays NaN. Cumulative Return is already anchored at 1 there
-            # by its own calculation, so nothing depends on fabricating a zero.
+            # The first row of the window has no preceding observation, so its Return stays NaN; Cumulative Return is already anchored at 1 there by its own calculation, so nothing depends on fabricating a zero.
 
         elif period == "monthly":
             if self._monthly_risk_free_rate.empty or overwrite:
@@ -2317,9 +2311,7 @@ class Toolkit:
             historical_data = self._monthly_historical_data.loc[
                 self._start_date : self._end_date, :
             ]
-            # The first row of the window has no preceding observation, so its
-            # Return stays NaN. Cumulative Return is already anchored at 1 there
-            # by its own calculation, so nothing depends on fabricating a zero.
+            # The first row of the window has no preceding observation, so its Return stays NaN; Cumulative Return is already anchored at 1 there by its own calculation, so nothing depends on fabricating a zero.
 
         elif period == "quarterly":
             if self._quarterly_risk_free_rate.empty or overwrite:
@@ -2339,9 +2331,7 @@ class Toolkit:
             historical_data = self._quarterly_historical_data.loc[
                 self._start_date : self._end_date, :
             ]
-            # The first row of the window has no preceding observation, so its
-            # Return stays NaN. Cumulative Return is already anchored at 1 there
-            # by its own calculation, so nothing depends on fabricating a zero.
+            # The first row of the window has no preceding observation, so its Return stays NaN; Cumulative Return is already anchored at 1 there by its own calculation, so nothing depends on fabricating a zero.
 
         elif period == "yearly":
             if self._yearly_risk_free_rate.empty or overwrite:
@@ -2361,9 +2351,7 @@ class Toolkit:
             historical_data = self._yearly_historical_data.loc[
                 self._start_date : self._end_date, :
             ]
-            # The first row of the window has no preceding observation, so its
-            # Return stays NaN. Cumulative Return is already anchored at 1 there
-            # by its own calculation, so nothing depends on fabricating a zero.
+            # The first row of the window has no preceding observation, so its Return stays NaN; Cumulative Return is already anchored at 1 there by its own calculation, so nothing depends on fabricating a zero.
 
         else:
             raise ValueError(
@@ -2535,8 +2523,7 @@ class Toolkit:
             self._start_date : self._end_date, :
         ]
 
-        # The first row of the window has no preceding observation, so its Return
-        # stays NaN rather than being reported as an unchanged period.
+        # The first row of the window has no preceding observation, so its Return stays NaN rather than being reported as an unchanged period.
 
         if show_columns is not None:
             historical_data = filter_columns(historical_data, show_columns)
@@ -3318,9 +3305,7 @@ class Toolkit:
                     historical_currencies=self._historical_statistics.loc["Currency"],
                 )
 
-        # Separate same-currency comparisons from actual exchange rates. GBP and GBp are
-        # the same currency in different units, so there is no rate to retrieve for that
-        # pair either; the unit difference is applied as a factor during conversion.
+        # Separate same-currency comparisons from actual exchange rates; GBP and GBp are the same currency in different units, so there is no rate to retrieve for that pair either, and the unit difference is applied as a factor during conversion.
         currencies_to_collect_data_for = [
             currency
             for currency in self._currencies
@@ -3438,9 +3423,7 @@ class Toolkit:
             historical_data = self._daily_exchange_rate_data.loc[
                 self._start_date : self._end_date, :
             ]
-            # The first row of the window has no preceding observation, so its
-            # Return stays NaN. Cumulative Return is already anchored at 1 there
-            # by its own calculation, so nothing depends on fabricating a zero.
+            # The first row of the window has no preceding observation, so its Return stays NaN; Cumulative Return is already anchored at 1 there by its own calculation, so nothing depends on fabricating a zero.
 
             if len(self._currencies) == 1:
                 return historical_data.xs(self._currencies[0], level=1, axis="columns")
@@ -3459,9 +3442,7 @@ class Toolkit:
             historical_data = self._weekly_exchange_rate_data.loc[
                 self._start_date : self._end_date, :
             ]
-            # The first row of the window has no preceding observation, so its
-            # Return stays NaN. Cumulative Return is already anchored at 1 there
-            # by its own calculation, so nothing depends on fabricating a zero.
+            # The first row of the window has no preceding observation, so its Return stays NaN; Cumulative Return is already anchored at 1 there by its own calculation, so nothing depends on fabricating a zero.
 
             if len(self._currencies) == 1:
                 return historical_data.xs(self._currencies[0], level=1, axis="columns")
@@ -3480,9 +3461,7 @@ class Toolkit:
             historical_data = self._monthly_exchange_rate_data.loc[
                 self._start_date : self._end_date, :
             ]
-            # The first row of the window has no preceding observation, so its
-            # Return stays NaN. Cumulative Return is already anchored at 1 there
-            # by its own calculation, so nothing depends on fabricating a zero.
+            # The first row of the window has no preceding observation, so its Return stays NaN; Cumulative Return is already anchored at 1 there by its own calculation, so nothing depends on fabricating a zero.
 
             if len(self._currencies) == 1:
                 return historical_data.xs(self._currencies[0], level=1, axis="columns")
@@ -3501,9 +3480,7 @@ class Toolkit:
             historical_data = self._quarterly_exchange_rate_data.loc[
                 self._start_date : self._end_date, :
             ]
-            # The first row of the window has no preceding observation, so its
-            # Return stays NaN. Cumulative Return is already anchored at 1 there
-            # by its own calculation, so nothing depends on fabricating a zero.
+            # The first row of the window has no preceding observation, so its Return stays NaN; Cumulative Return is already anchored at 1 there by its own calculation, so nothing depends on fabricating a zero.
 
             if len(self._currencies) == 1:
                 return historical_data.xs(self._currencies[0], level=1, axis="columns")
@@ -3522,9 +3499,7 @@ class Toolkit:
             historical_data = self._yearly_exchange_rate_data.loc[
                 self._start_date : self._end_date, :
             ]
-            # The first row of the window has no preceding observation, so its
-            # Return stays NaN. Cumulative Return is already anchored at 1 there
-            # by its own calculation, so nothing depends on fabricating a zero.
+            # The first row of the window has no preceding observation, so its Return stays NaN; Cumulative Return is already anchored at 1 there by its own calculation, so nothing depends on fabricating a zero.
 
             return historical_data
 

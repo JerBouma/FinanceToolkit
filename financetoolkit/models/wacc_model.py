@@ -143,9 +143,7 @@ def get_weighted_average_cost_of_capital(
     # Calculate the Cost of Debt
     cost_of_debt = get_cost_of_debt(interest_expense, total_debt)
 
-    # If the cost of debt is infinite, change it to 0. Note that a negative infinity is just
-    # as possible as a positive one (a net interest income against zero debt) and must be
-    # caught too, which a membership test against np.inf alone would miss
+    # If the cost of debt is infinite, change it to 0; note that a negative infinity is just as possible as a positive one (a net interest income against zero debt) and must be caught too, which a membership test against np.inf alone would miss  # noqa: E501
     if np.isinf(cost_of_debt.to_numpy()).any():
         logger.info(
             "Please note that the Cost of Debt contains Inf. This is due to Total Debt being 0, "

@@ -556,8 +556,7 @@ class Options:
                     put_option=put_option,
                 )
 
-                # The solver returns NaN when the observed price admits no solution, for
-                # instance when it sits outside the no-arbitrage bounds or never traded.
+                # The solver returns NaN when the observed price admits no solution, for instance when it sits outside the no-arbitrage bounds or never traded.
                 if not pd.isna(implied_volatility_value):
                     implied_volatility[ticker][strike_price] = implied_volatility_value
 

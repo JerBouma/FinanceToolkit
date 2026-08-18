@@ -181,9 +181,7 @@ def read_normalization_file(statement: str, format_location: str = ""):
     except FileNotFoundError:
         return pd.Series()
 
-    # Stray whitespace around a normalized name makes the same concept resolve to two
-    # different labels depending on which source served the ticker, so every lookup on
-    # that name silently misses for one of them.
+    # Stray whitespace around a normalized name makes the same concept resolve to two different labels depending on which source served the ticker, so every lookup on that name silently misses for one of them.  # noqa: E501
     normalization.index = normalization.index.astype(str).str.strip()
 
     return normalization.astype(str).str.strip()
@@ -221,9 +219,7 @@ def convert_financial_statements(
         # If not format is provided, simply use the original financial statements
         return financial_statements
 
-    # Compared without surrounding whitespace so that statements normalized by an older
-    # version, which had stray spaces in a handful of names, are still recognised as
-    # already normalized instead of being dropped.
+    # Compared without surrounding whitespace so that statements normalized by an older version, which had stray spaces in a handful of names, are still recognised as already normalized instead of being dropped.  # noqa: E501
     normalized_names = {str(value).strip() for value in statement_format.to_numpy()}
 
     unmapped_names = []
@@ -235,8 +231,7 @@ def convert_financial_statements(
             else:
                 naming[name] = statement_format.loc[name]
         except KeyError:
-            # A line item the provider returned that no normalization file names. It is
-            # dropped from the output, so it is reported rather than disappearing.
+            # A line item the provider returned that no normalization file names. It is dropped from the output, so it is reported rather than disappearing.  # noqa: E501
             unmapped_names.append(str(name))
             continue
 
@@ -249,11 +244,7 @@ def convert_financial_statements(
         )
 
     if adjust_financial_statements:
-        # Add the line items the provider did not return, so that every ticker exposes
-        # the same rows. These are filled with NaN rather than zero: the provider not
-        # reporting an item says nothing about its value, and a fabricated zero is
-        # indistinguishable from a genuine zero while silently flowing into any ratio
-        # that uses it as a term or a denominator.
+        # Add the line items the provider did not return, so that every ticker exposes the same rows. These are filled with NaN rather than zero: the provider not reporting an item says nothing about its value, and a fabricated zero is indistinguishable from a genuine zero while silently flowing into any ratio that uses it as a term or a denominator.  # noqa: E501
         for name in statement_format.index:
             for ticker in financial_statements.index.unique(level=0):
                 if name not in financial_statements.loc[ticker].index:

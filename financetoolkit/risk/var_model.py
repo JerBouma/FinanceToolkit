@@ -289,9 +289,7 @@ def get_var_studentt(returns, alpha: float) -> pd.Series | pd.DataFrame:
 
         return value_at_risk.T
 
-    # Fitting Student-T parameters to the data. Missing observations are dropped per
-    # column, since scipy's fit raises on any non-finite value while the mean below
-    # simply skips them.
+    # Fitting Student-T parameters to the data; missing observations are dropped per column, since scipy's fit raises on any non-finite value while the mean below simply skips them.  # noqa: E501
     if isinstance(returns, pd.Series):
         fitted = [stats.t.fit(returns.dropna())]
     else:

@@ -35,8 +35,7 @@ FRED_API_KEY: str = os.environ.get("FRED_API_KEY", "")
 MCP_CACHE_SOURCE = policy_model.MCP
 MCP_CACHE_DATASET = "tool"
 
-# Part of every tool response cache key, so a release that changes a formula can
-# never be answered from the previous release's cached numbers.
+# Part of every tool response cache key, so a release that changes a formula can never be answered from the previous release's cached numbers.  # noqa: E501
 try:
     TOOLKIT_VERSION: str = metadata.version("financetoolkit")
 except metadata.PackageNotFoundError:  # pragma: no cover - running from a checkout
@@ -173,10 +172,7 @@ class ToolkitProvider:
                 )
 
         cache_params = {
-            # Unlike every other entry in this database, an MCP tool response is
-            # computed rather than fetched, so its meaning depends on the formulas
-            # of the release that produced it. Keying by version means an upgrade
-            # can never answer from the previous release's arithmetic.
+            # Unlike every other entry in this database, an MCP tool response is computed rather than fetched, so its meaning depends on the formulas of the release that produced it; keying by version means an upgrade can never answer from the previous release's arithmetic.  # noqa: E501
             "financetoolkit_version": TOOLKIT_VERSION,
             "module": module_name,
             "method": method_name,
@@ -186,11 +182,7 @@ class ToolkitProvider:
             "end": end_date,
             "quarterly": quarterly,
             "benchmark_ticker": benchmark_ticker,
-            # Every keyword argument, whatever its type. Filtering to scalars here
-            # dropped list-valued arguments from the key entirely, so `lag=[1, 4]`
-            # and `lag=[5, 10]` hashed the same and the second call was answered
-            # with the first one's frame. The key derivation canonicalises nested
-            # structures itself, so nothing has to be excluded to keep it stable.
+            # Every keyword argument, whatever its type: filtering to scalars here dropped list-valued arguments from the key entirely, so `lag=[1, 4]` and `lag=[5, 10]` hashed the same and the second call was answered with the first one's frame. The key derivation canonicalises nested structures itself, so nothing has to be excluded to keep it stable.  # noqa: E501
             **method_kwargs,
         }
 
@@ -328,10 +320,7 @@ class ToolkitProvider:
         fy_tickers = []
 
         for ticker, adjustments in fy_adj.items():
-            # The registry only ever records periods that were actually relabelled,
-            # so an entry present here means a shift happened. Comparing the two
-            # fields with .get() would turn an unexpected shape into "no shift at
-            # all", which is exactly the silent miss this note exists to prevent.
+            # The registry only ever records periods that were actually relabelled, so an entry present here means a shift happened. Comparing the two fields with .get() would turn an unexpected shape into "no shift at all", which is exactly the silent miss this note exists to prevent.  # noqa: E501
             shifted = [
                 (adjustment["fiscal_year"], adjustment["calendar_year"])
                 for adjustment in adjustments
@@ -353,8 +342,7 @@ class ToolkitProvider:
                 )
 
             if shifted:
-                # Values are bare years for annual data and period labels such as
-                # "2026Q1" for quarterly data, so an example carries both cases.
+                # Values are bare years for annual data and period labels such as "2026Q1" for quarterly data, so an example carries both cases.  # noqa: E501
                 fiscal, calendar = shifted[0]
                 fy_tickers.append(
                     f"{ticker} ({len(shifted)} periods, e.g. {fiscal} to {calendar})"

@@ -14,15 +14,10 @@ logger = logger_model.get_logger()
 
 # pylint: disable=comparison-with-itself,too-many-locals,protected-access
 
-# Set FINANCETOOLKIT_STRICT_ERRORS to 1 (or true/yes/on) to make every failure inside a
-# metric raise instead of being reported and returned as an empty Series. This is what
-# a test suite or a scheduled job should run with, since it turns a quietly missing
-# number into an immediate, traceable failure.
+# Set FINANCETOOLKIT_STRICT_ERRORS to 1 (or true/yes/on) to make every failure inside a metric raise instead of being reported and returned as an empty Series; this is what a test suite or a scheduled job should run with, since it turns a quietly missing number into an immediate, traceable failure.  # noqa: E501
 STRICT_ERRORS_ENVIRONMENT_VARIABLE = "FINANCETOOLKIT_STRICT_ERRORS"
 
-# AttributeError and TypeError cannot be produced by financial data that is merely
-# incomplete; they mean the code asked an object for something it does not have. There
-# is no value that can be returned for them that is not a lie, so they always raise.
+# AttributeError and TypeError cannot be produced by financial data that is merely incomplete; they mean the code asked an object for something it does not have, and there is no value that can be returned for them that is not a lie, so they always raise.  # noqa: E501
 ALWAYS_RAISED_ERRORS = (AttributeError, TypeError)
 
 
@@ -372,8 +367,7 @@ def check_for_error_messages(
         )
 
     if no_errors:
-        # These exhausted every connection retry, so this is a network failure rather
-        # than the absence of an error it is named after.
+        # These exhausted every connection retry, so this is a network failure rather than the absence of an error it is named after.  # noqa: E501
         logger.error(
             "The connection to Financial Modeling Prep could not be established for the "
             "following tickers: %s.\nNo data could be collected for them.",

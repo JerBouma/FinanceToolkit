@@ -76,8 +76,7 @@ def create_transactions_overview(
     value_return = []
 
     for row, (_, ticker) in enumerate(portfolio_volume.index):
-        # Transaction costs are part of what the position cost to acquire, so they are
-        # added to the invested amount rather than netted off it.
+        # Transaction costs are part of what the position cost to acquire, so they are added to the invested amount rather than netted off it.  # noqa: E501
         bought_value = portfolio_volume.iloc[row] * portfolio_price.iloc[row] + abs(
             portfolio_costs.iloc[row]
         )
@@ -267,22 +266,17 @@ def create_portfolio_overview(
     portfolio_overview["Name"] = portfolio_name
     portfolio_overview["Volume"] = portfolio_volume
     portfolio_overview["Costs"] = portfolio_costs
-    # Buys and sells are tracked separately so that sale proceeds never shrink the amount
-    # of capital that was deployed. Netting them results in a denominator that can reach
-    # zero or turn negative once a position has returned more cash than was put in, which
-    # in turn flips the sign of the reported return.
+    # Buys and sells are tracked separately so that sale proceeds never shrink the amount of capital that was deployed, since netting them results in a denominator that can reach zero or turn negative once a position has returned more cash than was put in, which in turn flips the sign of the reported return.  # noqa: E501
     portfolio_overview["Buy Volume"] = portfolio_volume.where(portfolio_volume > 0, 0.0)
     portfolio_overview["Buy Value"] = transaction_value.where(portfolio_volume > 0, 0.0)
     portfolio_overview["Proceeds"] = (-transaction_value).where(
         portfolio_volume < 0, 0.0
     )
-    # Transaction costs are part of what the position cost to acquire, so they are added
-    # to the invested amount rather than netted off it.
+    # Transaction costs are part of what the position cost to acquire, so they are added to the invested amount rather than netted off it.  # noqa: E501
     portfolio_overview["Invested"] = portfolio_overview["Buy Value"] + abs(
         portfolio_costs
     )
-    # The benchmark receives the identical cash flow on the identical date, so it is
-    # matched in money rather than in share count.
+    # The benchmark receives the identical cash flow on the identical date, so it is matched in money rather than in share count.  # noqa: E501
     portfolio_overview["Benchmark Volume"] = (
         transaction_value / benchmark_prices.to_numpy()
     )
@@ -504,8 +498,7 @@ def create_transactions_performance(
         - The "Benchmark Price" column is excluded from the final output as it is used only
           for intermediate calculations.
     """
-    # A copy is taken because the caller's transaction dataset is reused elsewhere and must
-    # not silently gain a "Benchmark Price" column.
+    # A copy is taken because the caller's transaction dataset is reused elsewhere and must not silently gain a "Benchmark Price" column.  # noqa: E501
     portfolio_dataset = portfolio_dataset.copy()
     portfolio_dataset["Benchmark Price"] = benchmark_specific_prices.to_numpy()
 
@@ -575,8 +568,7 @@ def create_transactions_performance(
         period_performance_grouped[volume_column] * last_prices
     )
 
-    # A period in which nothing was bought deployed no capital, so there is no return to
-    # report on it even though the absolute costs would form a non-zero denominator.
+    # A period in which nothing was bought deployed no capital, so there is no return to report on it even though the absolute costs would form a non-zero denominator.  # noqa: E501
     bought_in_period = period_performance_grouped["Buy Value"] > 0
 
     period_performance_grouped["Return"] = _safe_divide(
@@ -692,9 +684,7 @@ def create_positions_overview(
         transaction_volume < 0, 0.0
     )
 
-    # A transaction booked on a day without a price, such as a weekend or an exchange
-    # holiday, has no row to land on. Aligning on the date alone silently drops it from
-    # every position metric, so it is carried forward to the next date that does exist.
+    # A transaction booked on a day without a price, such as a weekend or an exchange holiday, has no row to land on, and aligning on the date alone silently drops it from every position metric, so it is carried forward to the next date that does exist.  # noqa: E501
     price_dates = pd.Index(period_dates).unique().sort_values()
     transaction_dates = transactions.index.get_level_values(0)
     date_locations = price_dates.get_indexer(transaction_dates, method="bfill")
@@ -934,9 +924,7 @@ def create_profit_and_loss_overview(
 
         return pnl
 
-    # The rows are addressed by position rather than by label. A groupby-apply returns the
-    # groups concatenated in group order whenever the index is not unique, which would
-    # attach every PnL figure to the wrong transaction once two trades share a date.
+    # The rows are addressed by position rather than by label, since a groupby-apply returns the groups concatenated in group order whenever the index is not unique, which would attach every PnL figure to the wrong transaction once two trades share a date.  # noqa: E501
     ordered_transactions = transactions_overview.reset_index()
 
     profit_and_loss = pd.DataFrame(

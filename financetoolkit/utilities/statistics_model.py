@@ -148,8 +148,7 @@ def finalize_dataset(
     Returns:
         pd.Series | pd.DataFrame: The processed metric values.
     """
-    # Explicitly compare to None so that rounding=0 is honoured rather than treated
-    # as "not supplied", and so that rounding=None disables rounding altogether.
+    # Explicitly compare to None so that rounding=0 is honoured rather than treated as "not supplied", and so that rounding=None disables rounding altogether.  # noqa: E501
     rounding = rounding if rounding is not None else default_rounding
 
     if rolling:
@@ -320,9 +319,7 @@ def calculate_growth(
 
         return apply_rounding(dataset_lag, rounding)
 
-    # The forward fill has to run along the same axis as the pct_change. A statement
-    # or ratio DataFrame is indexed by ticker with the periods as columns, so filling
-    # along the default axis would carry the previous ticker's value into the gap.
+    # The forward fill has to run along the same axis as the pct_change, since a statement or ratio DataFrame is indexed by ticker with the periods as columns, so filling along the default axis would carry the previous ticker's value into the gap.  # noqa: E501
     dataset = bounded_ffill(dataset, axis=axis)
 
     return apply_rounding(dataset.pct_change(periods=lag, axis=axis), rounding)

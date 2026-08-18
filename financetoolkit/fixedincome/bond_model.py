@@ -330,8 +330,7 @@ def get_effective_duration(
         par_value, coupon_rate, years_to_maturity, yield_to_maturity, frequency
     )
 
-    # Reprice symmetrically around the starting yield, so that the curvature of the
-    # price-yield relationship cancels out instead of biasing the estimate downwards.
+    # Reprice symmetrically around the starting yield, so that the curvature of the price-yield relationship cancels out instead of biasing the estimate downwards.  # noqa: E501
     price_increased = get_bond_price(
         par_value,
         coupon_rate,
@@ -701,15 +700,11 @@ def get_bond_equivalent_yield(discount_yield: float, days_to_maturity: float) ->
     if days_to_maturity <= 0:
         raise ValueError("days_to_maturity must be greater than 0.")
 
-    # A bill of half a year or less pays nothing before maturity, so the discount yield
-    # only has to be restated onto the purchase price and a 365-day year. At exactly
-    # 365 / 2 days the compounded formula below degenerates to this same expression
-    # while its denominator goes to zero, so that point is routed here as well.
+    # A bill of half a year or less pays nothing before maturity, so the discount yield only has to be restated onto the purchase price and a 365-day year. At exactly 365 / 2 days the compounded formula below degenerates to this same expression while its denominator goes to zero, so that point is routed here as well.  # noqa: E501
     if days_to_maturity <= 365 / 2:
         return (365 * discount_yield) / (360 - days_to_maturity * discount_yield)
 
-    # Beyond that, an equivalent note would have paid a coupon at the six month point,
-    # so the Treasury's semi-annually compounded solution is used instead.
+    # Beyond that, an equivalent note would have paid a coupon at the six month point, so the Treasury's semi-annually compounded solution is used instead.  # noqa: E501
     purchase_price = 1 - discount_yield * days_to_maturity / 360
     year_fraction = days_to_maturity / 365
 

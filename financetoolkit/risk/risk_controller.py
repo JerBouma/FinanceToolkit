@@ -107,9 +107,7 @@ class Risk:
         | 2022   | -0.0373 | -0.0385 |
         """
         self._historical_data = historical_data
-        # The risk free rate is quoted as an annualized yield, so it is converted to the
-        # matching frequency. Without this, a daily return would have a full year of
-        # risk free rate subtracted from it.
+        # The risk free rate is quoted as an annualized yield, so it is converted to the matching frequency. Without this, a daily return would have a full year of risk free rate subtracted from it.  # noqa: E501
         self._risk_free_rate_data = {
             frequency: convert_annualized_rate_to_period(rate, frequency)
             for frequency, rate in risk_free_rate_data.items()
@@ -2374,9 +2372,7 @@ class Risk:
         return parameters.round(rounding if rounding is not None else self._rounding)
 
     def _get_price_column(self, period: str, column: str) -> pd.DataFrame:
-        # Reads the plain period-frequency history rather than the "within period"
-        # multi-index, so period="daily" simply means daily observations here and
-        # (unlike every within-period method above) needs no intraday data.
+        # Reads the plain period-frequency history rather than the "within period" multi-index, so period="daily" simply means daily observations here and (unlike every within-period method above) needs no intraday data.  # noqa: E501
         if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
             raise ValueError(
                 "Period must be daily, weekly, monthly, quarterly, or yearly."
@@ -3343,8 +3339,7 @@ class Risk:
                 raw=False,
             )
 
-        # A trailing rolling window includes the current observation, so without the shift
-        # each estimate would be compared against a return it was computed from.
+        # A trailing rolling window includes the current observation, so without the shift each estimate would be compared against a return it was computed from.  # noqa: E501
         rolling_var = rolling_var.shift(1)
 
         results = []
@@ -3484,8 +3479,7 @@ class Risk:
                 raw=False,
             )
 
-        # A trailing rolling window includes the current observation, so without the shift
-        # each estimate would be compared against a return it was computed from.
+        # A trailing rolling window includes the current observation, so without the shift each estimate would be compared against a return it was computed from.  # noqa: E501
         rolling_var = rolling_var.shift(1)
         rolling_cvar = rolling_cvar.shift(1)
 
@@ -4388,8 +4382,7 @@ class Risk:
 
         toolkit = Toolkit(["AMZN", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
-        # Shown here for a single quarter (2022Q2); with the default within_period=True
-        # this is computed separately for every quarter in the Toolkit's date range.
+        # Shown for a single quarter; with the default within_period=True this runs separately for every quarter in range.
         toolkit.risk.get_roll_spread(period="quarterly").xs("2022Q2", level=0)
         ```
 
@@ -5003,9 +4996,7 @@ class Risk:
         | TSLA      | 0.5122 |
         | Benchmark | 0.4515 |
         """
-        # The estimator regresses the dispersion of lagged differences on the lag, which
-        # only identifies self-affinity on a level series. Feeding it returns, which are
-        # already differenced, collapses the exponent towards zero.
+        # The estimator regresses the dispersion of lagged differences on the lag, which only identifies self-affinity on a level series. Feeding it returns, which are already differenced, collapses the exponent towards zero.  # noqa: E501
         prices = self._historical_data["daily"]["Adj Close"]
 
         hurst_exponent = prices.apply(

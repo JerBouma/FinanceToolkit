@@ -74,8 +74,7 @@ def read_portfolio_dataset(
     additional_files = []
     spreadsheet_files = []
 
-    # A copy is iterated and a new list is built. Removing entries from the list being
-    # iterated skips every other directory and mutates the caller's list in place.
+    # A copy is iterated and a new list is built, since removing entries from the list being iterated skips every other directory and mutates the caller's list in place.  # noqa: E501
     for file in excel_location:
         if file.split(".")[-1] not in ["xlsx", "xls", "csv"]:
             for sub_file in os.listdir(file):
@@ -127,10 +126,7 @@ def read_portfolio_dataset(
             # Summing prices would falsely indicate a higher investment than made.
             number_columns.remove(selected_price_column)  # type: ignore
 
-            # Each group of identical rows collapses onto its first occurrence with the
-            # summable columns multiplied by how often the row appears. Adding the frame to
-            # itself instead only produced the right answer for a pair and silently deleted
-            # a group of three or more identical transactions altogether.
+            # Each group of identical rows collapses onto its first occurrence with the summable columns multiplied by how often the row appears; adding the frame to itself instead only produced the right answer for a pair and silently deleted a group of three or more identical transactions altogether.  # noqa: E501
             row_identity = portfolio_dataset.astype(str).agg("|".join, axis=1)
             occurrences = row_identity.map(row_identity.value_counts())
 
@@ -230,9 +226,7 @@ def format_portfolio_dataset(
         ValueError: If the currency column contains values other than 3-letter currency codes.
         ValueError: If the provided currency code is not a 3-letter code.
     """
-    # Clean trailing spaces and case if applicable. The column names are matched
-    # case-insensitively so that a DataFrame handed in directly behaves the same as a
-    # spreadsheet read from disk.
+    # Clean trailing spaces and case if applicable; the column names are matched case-insensitively so that a DataFrame handed in directly behaves the same as a spreadsheet read from disk.  # noqa: E501
     dataset = dataset.copy()
     dataset.columns = [str(column).strip().lower() for column in dataset.columns]
 
@@ -325,9 +319,7 @@ def format_portfolio_dataset(
         helpers.convert_to_float
     )
 
-    # An empty price or volume cell converts to NaN without raising, which would travel all
-    # the way into the invested amount and the weights as a missing number. The transaction
-    # is reported instead of being carried along silently.
+    # An empty price or volume cell converts to NaN without raising, which would travel all the way into the invested amount and the weights as a missing number, so the transaction is reported instead of being carried along silently.  # noqa: E501
     incomplete_rows = dataset[
         dataset[price_column_first].isna() | dataset[volume_column_first].isna()
     ]
@@ -407,9 +399,7 @@ def format_portfolio_dataset(
             raise ValueError(
                 "Currency must be a 3-letter currency code (e.g. EUR, USD or JPY)."
             )
-        # A single currency code applies to every transaction, so it becomes a column of
-        # its own. Using the code itself as the column name looked up a column that does
-        # not exist and made the rename below drop the currency entirely.
+        # A single currency code applies to every transaction, so it becomes a column of its own; using the code itself as the column name looked up a column that does not exist and made the rename below drop the currency entirely.  # noqa: E501
         currency_column_first = "TEMP Currency"
         dataset[currency_column_first] = currency_columns.upper()
     else:

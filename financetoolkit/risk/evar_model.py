@@ -43,6 +43,5 @@ def get_evar_gaussian(
 
         return value_at_risk.T
 
-    # The entropic bound is expressed on losses; subtracting it keeps the result a
-    # negative return, consistent with the VaR and CVaR functions in this module.
+    # The entropic bound is expressed on losses; subtracting it keeps the result a negative return, consistent with the VaR and CVaR functions in this module.  # noqa: E501
     return returns.mean() - returns.std(ddof=0) * np.sqrt(-2 * np.log(alpha))

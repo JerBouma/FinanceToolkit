@@ -14,8 +14,7 @@ ALPHA_CONSTRAINT = 0.5
 # Two levels when a 'within period' index nests days inside a period (2020Q1).
 MULTI_PERIOD_INDEX_LEVELS = 2
 
-# Number of deterministic Sobol starting points a GARCH-family fit tries, in addition to
-# the domain-informed initial guess.
+# Number of deterministic Sobol starting points a GARCH-family fit tries, in addition to the domain-informed initial guess.  # noqa: E501
 N_MULTI_START_POINTS = 32
 
 
@@ -164,11 +163,7 @@ def get_garch_weights(
     if t is None:
         t = len(returns)
 
-    # Omega is (1 - alpha - beta) * long run variance, not the long run variance
-    # itself, so both the bound and the starting value are anchored to the sample
-    # Variance. Searching omega over [0, 1] instead puts the optimum of a daily
-    # return series in the bottom millionth of the range, which the global search
-    # then routinely misses.
+    # Omega is (1 - alpha - beta) * long run variance, not the long run variance itself, so both the bound and the starting value are anchored to the sample Variance. Searching omega over [0, 1] instead puts the optimum of a daily return series in the bottom millionth of the range, which the global search then routinely misses.  # noqa: E501
     variance = float(np.var(returns[: t - 1]))
     omega_upper_bound = max(2 * variance, 1e-9)
 
@@ -357,9 +352,7 @@ def get_garch_forecast(
         if weights is None:
             weights = get_garch_weights(returns, p=p, q=q)
 
-        # One step past the sample so the recursion consumes the final observed
-        # return, making garch_values[-1] the one step ahead conditional variance
-        # rather than the in-sample variance of the last observation.
+        # One step past the sample so the recursion consumes the final observed return, making garch_values[-1] the one step ahead conditional variance rather than the in-sample variance of the last observation.  # noqa: E501
         garch_values = get_garch(returns, weights, len(returns) + 1, p=p, q=q)
 
         # Already a variance, so never squared; seeded from the one step ahead value.
@@ -437,12 +430,7 @@ def get_gjr_garch_weights(
     if t is None:
         t = len(returns)
 
-    # Anchored to the sample Variance for the same reason as in get_garch_weights:
-    # omega is (1 - alpha - gamma / 2 - beta) * long run variance, and searching it
-    # over [0, 1] leaves the optimum of a daily return series in the bottom
-    # millionth of the range, which cost this four-parameter fit far more than the
-    # three-parameter GARCH one (beta was routinely estimated near 0.2 rather than
-    # the 0.9 the likelihood actually prefers).
+    # Anchored to the sample Variance for the same reason as in get_garch_weights: omega is (1 - alpha - gamma / 2 - beta) * long run variance, and searching it over [0, 1] leaves the optimum of a daily return series in the bottom millionth of the range, which cost this four-parameter fit far more than the three-parameter GARCH one (beta was routinely estimated near 0.2 rather than the 0.9 the likelihood actually prefers).  # noqa: E501
     variance = float(np.var(returns[: t - 1]))
     omega_upper_bound = max(2 * variance, 1e-9)
 
@@ -640,9 +628,7 @@ def get_gjr_garch_forecast(
         if weights is None:
             weights = get_gjr_garch_weights(returns, p=p, q=q)
 
-        # One step past the sample so the recursion consumes the final observed
-        # return, making garch_values[-1] the one step ahead conditional variance
-        # rather than the in-sample variance of the last observation.
+        # One step past the sample so the recursion consumes the final observed return, making garch_values[-1] the one step ahead conditional variance rather than the in-sample variance of the last observation.  # noqa: E501
         garch_values = get_gjr_garch(returns, weights, len(returns) + 1, p=p, q=q)
 
         omega, alpha, gamma, beta = weights
@@ -919,9 +905,7 @@ def get_egarch_forecast(
         if weights is None:
             weights = get_egarch_weights(returns, p=p, q=q)
 
-        # One step past the sample so the recursion consumes the final observed
-        # return, making garch_values[-1] the one step ahead conditional variance
-        # rather than the in-sample variance of the last observation.
+        # One step past the sample so the recursion consumes the final observed return, making garch_values[-1] the one step ahead conditional variance rather than the in-sample variance of the last observation.  # noqa: E501
         garch_values = get_egarch(returns, weights, len(returns) + 1, p=p, q=q)
 
         omega, _, _, beta = weights

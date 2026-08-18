@@ -19,8 +19,7 @@ from financetoolkit.utilities.requests_model import get_request
 
 logger = logger_model.get_logger()
 
-# The reporting currency of a company changes almost never, so it is resolved once per
-# ticker per process rather than on every statement request.
+# The reporting currency of a company changes almost never, so it is resolved once per ticker per process rather than on every statement request.  # noqa: E501
 REPORTED_CURRENCY_CACHE: dict[str, str] = {}
 
 
@@ -105,9 +104,7 @@ def get_financial_statement(
         )
         return pd.DataFrame(columns=[error_code])
 
-    # yfinance returns dates as columns and items as rows; convert to periods. A fiscal
-    # period is labelled with the calendar period holding most of it, at both
-    # frequencies and identically to the FinancialModelingPrep path.
+    # yfinance returns dates as columns and items as rows; convert to periods. A fiscal period is labelled with the calendar period holding most of it, at both frequencies and identically to the FinancialModelingPrep path.  # noqa: E501
     financial_statement.columns = helpers.convert_period_end_dates_to_calendar_periods(
         period_end_dates=pd.DatetimeIndex(financial_statement.columns),
         quarter=quarter,
@@ -216,8 +213,7 @@ def get_reported_currency(ticker: str) -> str:
     ):
         return ""
 
-    # financialCurrency is the statement currency. currency is the trading currency and
-    # is only a fallback, since for most listings the two are in fact the same.
+    # financialCurrency is the statement currency. currency is the trading currency and is only a fallback, since for most listings the two are in fact the same.  # noqa: E501
     reported_currency = str(
         information.get("financialCurrency") or information.get("currency") or ""
     )
@@ -293,16 +289,13 @@ def get_historical_data(
     if interval in ["yearly", "quarterly"]:
         interval = "1d"
 
-    # The widened window is what is actually requested, matching the FinancialModelingPrep
-    # path. Fetching only the requested window would leave the first return in range NaN
-    # because it has no preceding close to compare against.
+    # The widened window is what is actually requested, matching the FinancialModelingPrep path. Fetching only the requested window would leave the first return in range NaN because it has no preceding close to compare against.  # noqa: E501
     start_date_string = start_date.strftime("%Y-%m-%d")
     end_date_string = end_date.strftime("%Y-%m-%d")
 
     try:
 
-        # auto_adjust=False matches FMP; True made Close disagree by the dividend history (1.8% median, AAPL 2022-2023).
-        # yfinance's split-repair misfires on synthetic instruments (^IRX 100x, CL=F 10,000x after oil went negative).
+        # auto_adjust=False matches FMP (True made Close disagree by the dividend history, 1.8% median, AAPL 2022-2023); repair is disabled for synthetic instruments since yfinance's split-repair misfires on them (^IRX 100x, CL=F 10,000x after oil went negative).  # noqa: E501
         repair_splits = not (ticker.startswith("^") or "=" in ticker)
 
         historical_data = yf.Ticker(ticker).history(

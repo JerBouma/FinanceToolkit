@@ -38,8 +38,7 @@ def get_euribor_rate(maturity: str, nominal: bool = True) -> pd.DataFrame:
     if maturity not in ["1M", "3M", "6M", "1Y"]:
         raise ValueError("Invalid maturity. Please choose from 1M, 3M, 6M, 1Y.")
 
-    # The ECB only publishes a real (inflation-adjusted) Euribor for the 3-month tenor;
-    # the other three series do not exist and would come back as a bare HTTP 404.
+    # The ECB only publishes a real (inflation-adjusted) Euribor for the 3-month tenor; the other three series do not exist and would come back as a bare HTTP 404.  # noqa: E501
     if not nominal and maturity != "3M":
         raise ValueError(
             f"The European Central Bank only publishes a real Euribor rate for the 3M "

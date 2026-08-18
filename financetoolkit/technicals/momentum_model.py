@@ -153,9 +153,7 @@ def get_aroon_indicator(
     Returns:
         pd.DataFrame: Aroon Up and Aroon Down values.
     """
-    # The lookback spans today plus the previous window bars, so the extreme can be up
-    # to window periods old and the indicator can reach zero. Reversing before taking
-    # the extreme breaks ties on the most recent occurrence, as the definition requires.
+    # The lookback spans today plus the previous window bars, so the extreme can be up to window periods old and the indicator can reach zero. Reversing before taking the extreme breaks ties on the most recent occurrence, as the definition requires.  # noqa: E501
     periods_since_high = prices_high.rolling(window=window + 1).apply(
         lambda values: window - (len(values) - 1 - values[::-1].argmax()), raw=True
     )
@@ -210,8 +208,7 @@ def get_commodity_channel_index(
     typical_prices = (prices_high + prices_low + prices_close) / 3
     sma_typical_prices = typical_prices.rolling(window=window).mean()
 
-    # Every point in the window is measured against the current window's mean, rather
-    # than each point against the mean of its own trailing window.
+    # Every point in the window is measured against the current window's mean, rather than each point against the mean of its own trailing window.  # noqa: E501
     mean_deviation = typical_prices.rolling(window=window).apply(
         lambda window_values: np.abs(window_values - window_values.mean()).mean(),
         raw=True,
@@ -520,9 +517,7 @@ def get_average_directional_index(
     """
     true_range = get_true_range(prices_high, prices_low, prices_close)
 
-    # Wilder's rule: only the larger of the two moves counts and the other is set to
-    # zero. Counting both on an outside bar inflates each Directional Indicator and
-    # compresses the resulting Directional Index.
+    # Wilder's rule: only the larger of the two moves counts and the other is set to zero. Counting both on an outside bar inflates each Directional Indicator and compresses the resulting Directional Index.  # noqa: E501
     up_move = prices_high.diff()
     down_move = -prices_low.diff()
 

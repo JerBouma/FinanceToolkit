@@ -1,14 +1,12 @@
 """Fundamentals Model"""
 
 import importlib.util
-import threading
-import time
 from datetime import datetime
 
 import numpy as np
 import pandas as pd
 
-from financetoolkit import fmp_model, normalization_model, yfinance_model
+from financetoolkit import fmp_model, helpers, normalization_model, yfinance_model
 from financetoolkit.cache import policy_model
 from financetoolkit.cache.cache_controller import Cache
 from financetoolkit.utilities import error_model, logger_model
@@ -228,7 +226,6 @@ def collect_financial_statements(
     fmp_tickers: list[str] = []
     yf_tickers: list[str] = []
     no_data: list[str] = []
-    threads = []
 
     # Shared registry; per-key dict writes are effectively atomic under the GIL.
     if fiscal_year_adjustments is None:
@@ -255,19 +252,10 @@ def collect_financial_statements(
                 date_axis=1,
             )
 
-    for ticker in ticker_list:
-        # Introduce a sleep timer to prevent rate limit errors
-        time.sleep(0.1)
-
-        thread = threading.Thread(
-            target=worker,
-            args=(ticker, financial_statement_dict, enforce_source),
-        )
-        thread.start()
-        threads.append(thread)
-
-    for thread in threads:
-        thread.join()
+    helpers.run_in_parallel(
+        worker,
+        [(ticker, financial_statement_dict, enforce_source) for ticker in ticker_list],
+    )
 
     if fiscal_year_adjustments:
         logger.info(

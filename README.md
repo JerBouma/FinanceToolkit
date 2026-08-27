@@ -572,7 +572,7 @@ This is related to the `benchmark_ticker` parameter which is set to "SPY" (S&P 5
 
 > **Data collection seems to be slow, what could be the issue?**
 
-Generally, it should take less than 15 seconds to retrieve the historical data of 100 tickers. If it takes much longer, this could be due to reaching the API limit (the Starter plan has 250 requests per minute), due to a slow internet connection or due to unoptimized code. As the Finance Toolkit makes use of threading, initializing the Toolkit with a single ticker will result in a slow process. This is because the Toolkit will have to wait for the previous request to finish before it can start the next one. Therefore, it is recommended to initialize the Toolkit with all tickers you want to analyze. If it is taking 10+ minutes consider having a look at [this issue](https://github.com/JerBouma/FinanceToolkit/issues/99#issuecomment-1889726000) that managed to resolve the problem.
+Generally, it should take less than 15 seconds to retrieve the historical data of 100 tickers. If it takes much longer, this could be due to reaching the API limit (the Starter plan has 250 requests per minute), due to a slow internet connection or due to unoptimized code. The Finance Toolkit collects data with a bounded pool of worker threads (10 by default, configurable through the `FINANCETOOLKIT_MAX_WORKERS` environment variable) over a shared connection, so it is recommended to initialize the Toolkit with all tickers you want to analyze at once rather than one at a time. If it is taking 10+ minutes consider having a look at [this issue](https://github.com/JerBouma/FinanceToolkit/issues/99#issuecomment-1889726000) that managed to resolve the problem.
 
 > **Are you part of FinancialModelingPrep?**
 

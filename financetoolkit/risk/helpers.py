@@ -14,7 +14,7 @@ PERIOD_TRANSLATION: dict[str, str | dict[str, str]] = {
         "30min": "D",
         "1hour": "D",
     },
-    # The daily period nests the intraday observations of a single day, so it is only available when intraday data was fetched -- exactly the condition the Risk and Econometrics controllers already guard their period="daily" branches with.  # noqa: E501
+    # The daily period nests the intraday observations of a single day, so it is only available when intraday data was fetched -- exactly the condition the Risk controller guards its period="daily" branches with, and the Econometrics controller its period="daily" branches that ask for within_period=True.  # noqa: E501
     "daily": "D",
     "weekly": "W",
     "monthly": "M",

@@ -672,7 +672,9 @@ class ToolRegistry:
         POS = P.POSITIONAL_OR_KEYWORD
         indicator_choices = group_methods
         indicator_ann = (
-            typing.Literal[tuple(indicator_choices)] if indicator_choices else str
+            typing.Literal[tuple(indicator_choices)]  # ty: ignore[invalid-type-form]
+            if indicator_choices
+            else str
         )
         indicator_default = P.empty
         indicator_param = P(

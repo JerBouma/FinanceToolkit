@@ -66,7 +66,7 @@ def get_max_drawdown(
     if method == "level":
         return (returns - returns.cummax()).min()
 
-    cum_returns = (1 + returns.fillna(0)).cumprod()  # type: ignore
+    cum_returns = (1 + returns.fillna(0)).cumprod()
 
     return (cum_returns / cum_returns.cummax() - 1).min()
 
@@ -435,7 +435,7 @@ def get_conditional_drawdown_at_risk(
     if method == "level":
         drawdowns = returns - returns.cummax()
     else:
-        cum_returns = (1 + returns.fillna(0)).cumprod()  # type: ignore
+        cum_returns = (1 + returns.fillna(0)).cumprod()
         drawdowns = cum_returns / cum_returns.cummax() - 1
 
     drawdown_at_risk = drawdowns.quantile(alpha)

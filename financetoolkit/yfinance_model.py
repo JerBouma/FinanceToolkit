@@ -10,6 +10,7 @@ from urllib.error import HTTPError, URLError
 import numpy as np
 import pandas as pd
 import yfinance as yf
+import yfinance.exceptions
 
 from financetoolkit import helpers
 from financetoolkit.cache import policy_model

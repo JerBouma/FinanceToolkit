@@ -124,7 +124,7 @@ def read_portfolio_dataset(
             number_columns = list(portfolio_dataset.select_dtypes(np.number).columns)
 
             # Summing prices would falsely indicate a higher investment than made.
-            number_columns.remove(selected_price_column)  # type: ignore
+            number_columns.remove(selected_price_column)
 
             # Each group of identical rows collapses onto its first occurrence with the summable columns multiplied by how often the row appears; adding the frame to itself instead only produced the right answer for a pair and silently deleted a group of three or more identical transactions altogether.  # noqa: E501
             row_identity = portfolio_dataset.astype(str).agg("|".join, axis=1)
@@ -153,18 +153,18 @@ def read_portfolio_dataset(
         combined_portfolio_dataset = combined_portfolio_dataset.drop_duplicates()
 
     combined_portfolio_dataset = combined_portfolio_dataset.sort_values(
-        by=selected_date_column, ascending=False, kind="stable"  # type: ignore
+        by=selected_date_column, ascending=False, kind="stable"
     )
 
     return (
         combined_portfolio_dataset,
-        selected_date_column,  # type: ignore
-        selected_name_column,  # type: ignore
-        selected_ticker_column,  # type: ignore
-        selected_price_column,  # type: ignore
-        selected_volume_column,  # type: ignore
-        selected_currency_column,  # type: ignore
-        selected_costs_column,  # type: ignore
+        selected_date_column,
+        selected_name_column,
+        selected_ticker_column,
+        selected_price_column,
+        selected_volume_column,
+        selected_currency_column,
+        selected_costs_column,
     )
 
 

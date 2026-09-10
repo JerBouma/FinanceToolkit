@@ -293,7 +293,7 @@ class Portfolio:
             if self._daily_historical_data.empty:
                 return pd.DataFrame()
 
-        symbols = list(self._tickers) + ["Portfolio"]  # type: ignore
+        symbols = list(self._tickers) + ["Portfolio"]
 
         historical_columns = self._daily_historical_data.columns.get_level_values(
             0
@@ -315,7 +315,7 @@ class Portfolio:
         historical = (
             self._daily_historical_data.sort_index(axis=1)
             .reindex(historical_columns, axis=1, level=0)
-            .reindex(list(self._tickers) + ["Benchmark"], axis=1, level=1)  # type: ignore
+            .reindex(list(self._tickers) + ["Benchmark"], axis=1, level=1)
         )
 
         if not self._toolkit_instance:
@@ -501,7 +501,7 @@ class Portfolio:
                 self._volume_column,
                 self._currency_column,
                 self._costs_column,
-            ) = portfolio_model.read_portfolio_dataset(  # type: ignore
+            ) = portfolio_model.read_portfolio_dataset(
                 excel_location=self._portfolio_dataset_path,
                 adjust_duplicates=adjust_duplicates,
                 date_column=date_column,
@@ -527,7 +527,7 @@ class Portfolio:
             self._portfolio_dataset[self._date_column].min().strftime("%Y-%m-%d")
         )
         self._transactions_currencies = list(
-            self._portfolio_dataset[self._currency_column].unique()  # type: ignore
+            self._portfolio_dataset[self._currency_column].unique()
         )
 
         self._portfolio_dataset = self._portfolio_dataset.set_index(
@@ -791,9 +791,9 @@ class Portfolio:
             )
 
         # Used when ISIN codes are provided and must be matched to tickers.
-        self._ticker_combinations = dict(zip(self._toolkit._tickers, self._tickers))  # type: ignore
+        self._ticker_combinations = dict(zip(self._toolkit._tickers, self._tickers))
         self._original_ticker_combinations = dict(
-            zip(self._tickers, self._original_tickers)  # type: ignore
+            zip(self._tickers, self._original_tickers)
         )
 
         self._daily_historical_data = self._toolkit.get_historical_data(period="daily")
@@ -813,7 +813,7 @@ class Portfolio:
         )
 
         currency_conversions = {}
-        if self._currency_column:  # type: ignore
+        if self._currency_column:
             self._historical_statistics = self._toolkit.get_historical_statistics()
             self._historical_statistics = self._historical_statistics.rename(
                 columns=self._ticker_combinations, level=0
@@ -821,7 +821,7 @@ class Portfolio:
 
             if not self._historical_statistics.empty:
                 for (_, ticker), currency in self._portfolio_dataset[
-                    self._currency_column  # type: ignore
+                    self._currency_column
                 ].items():
                     data_currency = self._historical_statistics.loc["Currency", ticker]
 

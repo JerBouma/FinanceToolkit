@@ -176,6 +176,33 @@ line_length = 122
 skip_gitignore = true
 combine_as_imports = true
 
+[tool.ty.src]
+# Mirror the other linters: the package is what is checked, not the tests, the
+# examples or the environment.
+include = ["financetoolkit"]
+
+[tool.ty.environment]
+python-version = "3.13"
+
+[tool.ty.rules]
+# The rules below are all variations of one theme: the pandas stubs describe most
+# operations as returning wide unions (e.g. `Series | DataFrame`, `Period | NaTType`),
+# which a numeric codebase like this one cannot satisfy without either a full
+# annotation overhaul or blanket per-line ignores. They are disabled wholesale rather
+# than suppressed inline so that a future typing cleanup can flip them back on one at
+# a time. The high-signal rules (unresolved references and imports, invalid type
+# forms, unused ignore comments) all remain at their default severity.
+invalid-argument-type = "ignore"
+invalid-return-type = "ignore"
+invalid-assignment = "ignore"
+unresolved-attribute = "ignore"
+no-matching-overload = "ignore"
+call-non-callable = "ignore"
+not-iterable = "ignore"
+not-subscriptable = "ignore"
+unsupported-operator = "ignore"
+unknown-argument = "ignore"
+
 [tool.codespell]
 ignore-words-list = 'te,hsi,amplitud,nam,tha,plaform,ine,daa,pring,pezier,trough,zar'
 skip = '*.json,./.git,pyproject.toml,poetry.lock,examples'

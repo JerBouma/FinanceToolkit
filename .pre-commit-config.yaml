@@ -29,6 +29,15 @@ repos:
         additional_dependencies: ["ruff>=0.13.2"]
   - repo: local
     hooks:
+      - id: uv-check
+        name: uv check (ty)
+        entry: uv check --preview-features check-command
+        language: python
+        types: [python]
+        pass_filenames: false
+        additional_dependencies: ["uv>=0.12"]
+  - repo: local
+    hooks:
       - id: codespell
         name: codespell
         entry: codespell

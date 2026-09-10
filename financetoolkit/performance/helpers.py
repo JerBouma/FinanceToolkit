@@ -53,9 +53,7 @@ def determine_within_historical_data(
         if not intraday_period and period == "intraday":
             continue
 
-        period_symbol = (
-            symbol[intraday_period] if period == "intraday" else symbol  # type: ignore
-        )
+        period_symbol = symbol[intraday_period] if period == "intraday" else symbol
 
         if not intraday_historical_data.empty and period in [
             "intraday",

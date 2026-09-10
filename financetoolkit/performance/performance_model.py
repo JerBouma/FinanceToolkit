@@ -6,6 +6,7 @@ import zipfile
 
 import numpy as np
 import pandas as pd
+from pandas.core.window.rolling import Rolling
 from scipy import stats
 from scipy.stats import linregress
 from sklearn.linear_model import LinearRegression
@@ -59,7 +60,7 @@ def get_covariance(
 
             return covariance
 
-        if isinstance(returns, pd.Series | pd.core.window.rolling.Rolling):
+        if isinstance(returns, pd.Series | Rolling):
             return returns.cov(benchmark_returns)
 
     return returns.cov(benchmark_returns)

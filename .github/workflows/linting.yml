@@ -30,6 +30,7 @@ jobs:
       - run: uv run black --diff --check financetoolkit
       - run: uv run ruff check financetoolkit
       - run: uv run codespell financetoolkit
+      - run: uv check --preview-features check-command
 
   markdown-link-check:
     name: Markdown Linting

@@ -5,6 +5,7 @@ __docformat__ = "google"
 
 import hashlib
 import importlib.util
+import random
 import time
 from datetime import datetime, timedelta
 from http.client import RemoteDisconnected
@@ -34,6 +35,30 @@ logger = logger_model.get_logger()
 # pylint: disable=no-member,too-many-locals,too-many-lines
 
 RETRY_LIMIT = 12
+
+# Base delay for the exponential backoff on rate limits and refused connections. The
+# delay doubles per attempt and carries random jitter: with 10 worker threads hitting
+# the limit at the same time, a fixed sleep would wake them all together and re-collide
+# on the very next attempt.
+RETRY_BASE_DELAY_SECONDS = 2.5
+RETRY_MAX_DELAY_SECONDS = 60.0
+
+
+def determine_retry_delay(attempt: int) -> float:
+    """
+    Determines how long to wait before retry `attempt` (starting at 0), doubling the
+    base delay per attempt up to a cap, with up to 50% random jitter added so that
+    concurrent workers spread out instead of retrying in lockstep.
+
+    Args:
+        attempt (int): The zero-based retry attempt number.
+
+    Returns:
+        float: The number of seconds to sleep before the retry.
+    """
+    delay = min(RETRY_BASE_DELAY_SECONDS * 2**attempt, RETRY_MAX_DELAY_SECONDS)
+
+    return delay * (1 + random.uniform(0, 0.5))  # noqa: S311
 
 
 def get_financial_data(
@@ -100,7 +125,7 @@ def get_financial_data(
                     and limit_retry_counter < RETRY_LIMIT
                     and user_subscription != "Free"
                 ):
-                    time.sleep(5.01)
+                    time.sleep(determine_retry_delay(limit_retry_counter))
                     limit_retry_counter += 1
                     continue
 
@@ -128,8 +153,8 @@ def get_financial_data(
             if error_retry_counter == RETRY_LIMIT:
                 return pd.DataFrame(columns=["NO ERRORS"])
 
+            time.sleep(determine_retry_delay(error_retry_counter))
             error_retry_counter += 1
-            time.sleep(5)
 
 
 PLAN_RESTRICTION_MESSAGES = (

@@ -92,6 +92,12 @@ class Econometrics:
         self._start_date: str | None = start_date
         self._end_date: str | None = end_date
         self._portfolio_weights: dict | None = None
+        # Memo for the sliced-and-dropna'd frames handed to the calculations: nearly
+        # every method starts from the same (period, column) slice, and re-copying it
+        # per call adds up when many metrics are collected in a row (as the MCP server
+        # does). The historical data is never mutated after initialisation, and the
+        # slices are treated as read-only by every caller, so sharing them is safe.
+        self._data_cache: dict[tuple, pd.DataFrame] = {}
 
         # Within Return Calculations
         daily_historical_data = self._historical_data["daily"].copy().fillna(0)
@@ -193,11 +199,7 @@ class Econometrics:
             )
 
         returns = self._filter_benchmark(
-            (
-                self._within_historical_data[period]["Return"]
-                if within_period
-                else self._historical_data[period]["Return"]
-            ).dropna(),
+            self._get_returns(period, within_period),
             include_benchmark=include_benchmark,
         )
 
@@ -283,11 +285,7 @@ class Econometrics:
             )
 
         returns = self._filter_benchmark(
-            (
-                self._within_historical_data[period]["Return"]
-                if within_period
-                else self._historical_data[period]["Return"]
-            ).dropna(),
+            self._get_returns(period, within_period),
             include_benchmark=include_benchmark,
         )
 
@@ -376,11 +374,7 @@ class Econometrics:
             )
 
         returns = self._filter_benchmark(
-            (
-                self._within_historical_data[period]["Return"]
-                if within_period
-                else self._historical_data[period]["Return"]
-            ).dropna(),
+            self._get_returns(period, within_period),
             include_benchmark=include_benchmark,
         )
 
@@ -471,11 +465,7 @@ class Econometrics:
             )
 
         returns = self._filter_benchmark(
-            (
-                self._within_historical_data[period]["Return"]
-                if within_period
-                else self._historical_data[period]["Return"]
-            ).dropna(),
+            self._get_returns(period, within_period),
             include_benchmark=include_benchmark,
         )
 
@@ -574,11 +564,7 @@ class Econometrics:
             )
 
         returns = self._filter_benchmark(
-            (
-                self._within_historical_data[period]["Return"]
-                if within_period
-                else self._historical_data[period]["Return"]
-            ).dropna(),
+            self._get_returns(period, within_period),
             include_benchmark=include_benchmark,
         )
 
@@ -592,7 +578,28 @@ class Econometrics:
                 "Period must be daily, weekly, monthly, quarterly, or yearly."
             )
 
-        return self._historical_data[period][column].dropna()
+        key = ("column", period, column)
+
+        if key not in self._data_cache:
+            self._data_cache[key] = self._historical_data[period][column].dropna()
+
+        return self._data_cache[key]
+
+    def _get_returns(self, period: str, within_period: bool) -> pd.DataFrame:
+        """
+        The Return slice the diagnostic tests run on, memoized per (period,
+        within_period) pair -- see `_data_cache` in `__init__`.
+        """
+        key = ("returns", period, within_period)
+
+        if key not in self._data_cache:
+            self._data_cache[key] = (
+                self._within_historical_data[period]["Return"]
+                if within_period
+                else self._historical_data[period]["Return"]
+            ).dropna()
+
+        return self._data_cache[key]
 
     def _get_tickers(self, include_benchmark: bool = False) -> list[str]:
         """
@@ -3079,7 +3086,7 @@ class Econometrics:
         index = returns.index
         timestamps = (
             index.to_timestamp()
-            if hasattr(index, "to_timestamp")
+            if isinstance(index, pd.PeriodIndex)
             else pd.DatetimeIndex(index)
         )
         break_index = int(timestamps.searchsorted(pd.Timestamp(break_date)))
@@ -3290,7 +3297,7 @@ class Econometrics:
         index = returns.index
         timestamps = (
             index.to_timestamp()
-            if hasattr(index, "to_timestamp")
+            if isinstance(index, pd.PeriodIndex)
             else pd.DatetimeIndex(index)
         )
         post_flags = pd.Series(

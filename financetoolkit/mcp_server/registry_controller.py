@@ -11,6 +11,7 @@ from __future__ import annotations
 import difflib
 import importlib
 import inspect
+import time
 import types
 import typing
 from datetime import datetime, timedelta
@@ -622,6 +623,7 @@ class ToolRegistry:
                 dispatch_module, dispatch_category = module_name, category
 
             try:
+                call_started = time.perf_counter()
                 result = provider.call_method(
                     module_name=dispatch_module,
                     method_name=method_name,
@@ -633,6 +635,16 @@ class ToolRegistry:
                     quarterly=quarterly,
                     benchmark_ticker=benchmark_ticker,
                     **method_kwargs,
+                )
+                # Per-call timing at debug level, so a "tool X is slow" report can be
+                # diagnosed from the logs alone (a first call pays for data collection,
+                # a repeat call should be near-instant off the provider cache).
+                logger.debug(
+                    "Tool %s (%s) took %.0f ms for %d ticker(s)",
+                    tool_name,
+                    method_name,
+                    (time.perf_counter() - call_started) * 1000,
+                    len(tickers) if tickers else 0,
                 )
                 if show_columns is not None:
                     result = _filter_columns(result, show_columns)
@@ -672,7 +684,9 @@ class ToolRegistry:
         POS = P.POSITIONAL_OR_KEYWORD
         indicator_choices = group_methods
         indicator_ann = (
-            typing.Literal[tuple(indicator_choices)] if indicator_choices else str
+            typing.Literal[tuple(indicator_choices)]  # ty: ignore[invalid-type-form]
+            if indicator_choices
+            else str
         )
         indicator_default = P.empty
         indicator_param = P(

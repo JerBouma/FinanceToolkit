@@ -4,8 +4,6 @@ __docformat__ = "google"
 
 import contextlib
 import importlib.util
-import threading
-import time
 
 import numpy as np
 import pandas as pd
@@ -63,7 +61,9 @@ def _first_observed_date(data: pd.DataFrame) -> pd.Timestamp | None:
         return None
 
     index = (
-        data.index.to_timestamp() if hasattr(data.index, "to_timestamp") else data.index
+        data.index.to_timestamp()
+        if isinstance(data.index, pd.PeriodIndex)
+        else data.index
     )
 
     if not isinstance(index, pd.DatetimeIndex):
@@ -157,7 +157,9 @@ def _covers_requested_range(
         return True
 
     observed_index = (
-        data.index.to_timestamp() if hasattr(data.index, "to_timestamp") else data.index
+        data.index.to_timestamp()
+        if isinstance(data.index, pd.PeriodIndex)
+        else data.index
     )
 
     covered_days = (observed_index.max() - observed_index.min()).days
@@ -199,8 +201,8 @@ def get_historical_data(
     opposes limits to Free plans (e.g. no tickers from outside the American exchanges) and in some cases
     Yahoo Finance has a broader universe.
 
-    By using threading, multiple API calls can be made at the same time, which speeds up the process
-    significantly. For example, collecting historical data of 100 tickers takes around 10 seconds.
+    By using a bounded pool of worker threads (see helpers.run_in_parallel), multiple API calls can
+    be made at the same time, which speeds up the process significantly for larger ticker universes.
 
     Args:
         tickers (list of str): A list of one or more ticker symbols to retrieve data for.
@@ -476,7 +478,6 @@ def get_historical_data(
     fmp_tickers: list[str] = []
     yf_tickers: list[str] = []
     no_data: list[str] = []
-    threads = []
 
     # One plan per allowed provider, since either may have served an earlier run.
     cache_plans = (
@@ -501,19 +502,13 @@ def get_historical_data(
     ):
         logger.info("%s from the cache for %d ticker(s)", log_message, len(ticker_list))
 
-    for ticker in ticker_list:
-        # Introduce a sleep timer to prevent rate limit errors
-        time.sleep(0.1)
-
-        thread = threading.Thread(
-            target=worker,
-            args=(ticker, historical_data_dict, historical_data_error_dict),
-        )
-        thread.start()
-        threads.append(thread)
-
-    for thread in threads:
-        thread.join()
+    helpers.run_in_parallel(
+        worker,
+        [
+            (ticker, historical_data_dict, historical_data_error_dict)
+            for ticker in ticker_list
+        ],
+    )
 
     if show_errors:
         error_model.check_for_error_messages(
@@ -773,21 +768,10 @@ def get_historical_statistics(
     logger.info("%s for %d ticker(s)", log_message, len(ticker_list))
     historical_statistics_dict: dict[str, pd.DataFrame] = {}
     no_data: list[str] = []
-    threads = []
 
-    for ticker in ticker_list:
-        # Introduce a sleep timer to prevent rate limit errors
-        time.sleep(0.1)
-
-        thread = threading.Thread(
-            target=worker,
-            args=(ticker, historical_statistics_dict),
-        )
-        thread.start()
-        threads.append(thread)
-
-    for thread in threads:
-        thread.join()
+    helpers.run_in_parallel(
+        worker, [(ticker, historical_statistics_dict) for ticker in ticker_list]
+    )
 
     historical_statistics_dict = (
         error_model.check_for_error_messages(

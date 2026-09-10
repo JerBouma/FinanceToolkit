@@ -4,6 +4,9 @@ __docformat__ = "google"
 
 import contextlib
 import inspect
+import os
+from collections.abc import Callable, Iterable
+from concurrent.futures import ThreadPoolExecutor
 from functools import wraps
 
 import numpy as np
@@ -13,6 +16,86 @@ from financetoolkit.utilities import logger_model
 from financetoolkit.utilities.statistics_model import bounded_ffill
 
 logger = logger_model.get_logger()
+
+
+# Set FINANCETOOLKIT_MAX_WORKERS to raise or lower the number of API calls made at the same time; the default is a deliberate middle ground between fetching a large universe quickly and not tripping the data providers' rate limits (which the retry logic in fmp_model.get_financial_data absorbs when they are hit anyway).  # noqa: E501
+MAX_WORKERS_ENVIRONMENT_VARIABLE = "FINANCETOOLKIT_MAX_WORKERS"
+
+DEFAULT_MAX_WORKERS = 10
+
+
+def determine_max_workers() -> int:
+    """
+    Determines the number of worker threads used for concurrent API calls, taking the
+    FINANCETOOLKIT_MAX_WORKERS environment variable when it is set to a positive integer
+    and falling back to DEFAULT_MAX_WORKERS otherwise.
+
+    Returns:
+        int: The number of worker threads to use.
+    """
+    max_workers = os.environ.get(MAX_WORKERS_ENVIRONMENT_VARIABLE, "").strip()
+
+    if max_workers:
+        try:
+            if int(max_workers) > 0:
+                return int(max_workers)
+
+            raise ValueError("The number of workers must be positive.")
+        except ValueError:
+            logger.warning(
+                "The %s environment variable is set to %s which is not a positive "
+                "integer. Using the default of %d instead.",
+                MAX_WORKERS_ENVIRONMENT_VARIABLE,
+                max_workers,
+                DEFAULT_MAX_WORKERS,
+            )
+
+    return DEFAULT_MAX_WORKERS
+
+
+def run_in_parallel(
+    worker: Callable,
+    worker_args: Iterable[tuple],
+    max_workers: int | None = None,
+) -> list:
+    """
+    Runs a worker function over a collection of argument tuples with a bounded pool of
+    threads, which is what every data collection function uses to make multiple API
+    calls at the same time. For example, collecting historical data of 100 tickers
+    this way takes seconds rather than minutes.
+
+    A bounded pool (rather than one thread per ticker) keeps the number of concurrent
+    API calls predictable regardless of how large the ticker universe is, which is
+    kinder to both the data providers' rate limits and the local machine. Exceptions
+    raised inside a worker are re-raised here instead of dying silently inside their
+    thread, so a genuine defect surfaces as an immediate, traceable failure.
+
+    Args:
+        worker (Callable): The function to execute for each tuple of arguments.
+        worker_args (Iterable[tuple]): The argument tuples, one per call, e.g. one per
+        ticker. Each tuple is unpacked into the worker.
+        max_workers (int | None, optional): The maximum number of threads to use.
+        Defaults to None, which uses the FINANCETOOLKIT_MAX_WORKERS environment
+        variable when set and DEFAULT_MAX_WORKERS otherwise.
+
+    Returns:
+        list: The worker results in the same order as worker_args. Workers that
+        collect their results into a shared dictionary simply produce a list of None.
+    """
+    worker_args = list(worker_args)
+
+    if not worker_args:
+        return []
+
+    if max_workers is None:
+        max_workers = determine_max_workers()
+
+    with ThreadPoolExecutor(max_workers=min(max_workers, len(worker_args))) as executor:
+        futures = [executor.submit(worker, *args) for args in worker_args]
+
+        # Collecting in submission order keeps the result aligned with worker_args;
+        # the calls themselves still run concurrently.
+        return [future.result() for future in futures]
 
 
 def convert_period_end_dates_to_calendar_periods(

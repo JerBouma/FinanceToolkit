@@ -149,6 +149,23 @@ class Performance:
             intraday_period=intraday_period,
         )
 
+    def _get_within_historical_data(self, period: str) -> pd.DataFrame:
+        """
+        The within-period historical data for `period`, with the one impossible
+        combination turned into a clear error: a single day only nests observations
+        when intraday data was fetched, so without it the daily entry does not exist
+        and a plain lookup would surface as an unhelpful KeyError. Guarding at the
+        access point (rather than per method) keeps the rolling code paths, which
+        read the regular historical data, free to use period="daily".
+        """
+        if period == "daily" and self._historical_data["intraday"].empty:
+            raise ValueError(
+                "Intraday data is required for within-period daily calculations. "
+                "Initialise the Toolkit with an intraday_period to use period='daily' here."
+            )
+
+        return self._within_historical_data[period]
+
     @handle_errors
     def collect_all_metrics(
         self,
@@ -474,7 +491,7 @@ class Performance:
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
         historical_data = (
-            self._within_historical_data[period]
+            self._get_within_historical_data(period)
             if not rolling
             else self._historical_data[period]
         )
@@ -600,7 +617,7 @@ class Performance:
                 returns, benchmark_returns, rolling
             )
         else:
-            historical_data = self._within_historical_data[period]
+            historical_data = self._get_within_historical_data(period)
             returns = historical_data.loc[:, "Return"][self._tickers_without_portfolio]
             benchmark_returns = historical_data.loc[:, "Return"][self._benchmark_name]
 
@@ -703,7 +720,7 @@ class Performance:
 
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
-        historical_data_within = self._within_historical_data[period]
+        historical_data_within = self._get_within_historical_data(period)
         returns = historical_data_within.loc[:, "Return"][
             self._tickers_without_portfolio
         ]
@@ -997,7 +1014,7 @@ class Performance:
 
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
-        historical_data_within = self._within_historical_data[period]
+        historical_data_within = self._get_within_historical_data(period)
         returns = historical_data_within.loc[:, "Return"][
             self._tickers_without_portfolio
         ]
@@ -1088,9 +1105,10 @@ class Performance:
                 orient="index",
             )
 
-            fama_and_french_model = fama_and_french_model.unstack(
-                level=0, sort=False
-            ).swaplevel(0, 1, axis=1)
+            fama_and_french_model = fama_and_french_model.unstack(level=0, sort=False)
+            fama_and_french_model.columns = fama_and_french_model.columns.swaplevel(
+                0, 1
+            )
 
             # Sort the DataFrame with respect to the original column order
             tickers_column_order = fama_and_french_model.columns.get_level_values(
@@ -1288,7 +1306,7 @@ class Performance:
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
-        historical_data_within = self._within_historical_data[period]
+        historical_data_within = self._get_within_historical_data(period)
         returns = historical_data_within.loc[:, "Return"][
             self._tickers_without_portfolio
         ]
@@ -1349,9 +1367,8 @@ class Performance:
             orient="index",
         )
 
-        carhart_model = carhart_model.unstack(level=0, sort=False).swaplevel(
-            0, 1, axis=1
-        )
+        carhart_model = carhart_model.unstack(level=0, sort=False)
+        carhart_model.columns = carhart_model.columns.swaplevel(0, 1)
 
         tickers_column_order = carhart_model.columns.get_level_values(0).unique()
         parameters_column_order = carhart_model.columns.get_level_values(1).unique()
@@ -1576,7 +1593,7 @@ class Performance:
                 returns, benchmark_returns, rolling
             )
         else:
-            historical_within_data = self._within_historical_data[period]
+            historical_within_data = self._get_within_historical_data(period)
             returns = historical_within_data.loc[:, "Return"][
                 self._tickers_without_portfolio
             ]
@@ -1694,7 +1711,7 @@ class Performance:
                 returns, benchmark_returns, rolling
             )
         else:
-            historical_within_data = self._within_historical_data[period]
+            historical_within_data = self._get_within_historical_data(period)
             returns = historical_within_data.loc[:, "Return"][
                 self._tickers_without_portfolio
             ]
@@ -1932,7 +1949,7 @@ class Performance:
                 excess_return, rolling
             )
         else:
-            excess_return = self._within_historical_data[period].loc[
+            excess_return = self._get_within_historical_data(period).loc[
                 :, "Excess Return"
             ][self._tickers_without_portfolio]
             sharpe_ratio = performance_model.get_sharpe_ratio(excess_return)
@@ -2102,7 +2119,7 @@ class Performance:
                 excess_return, rolling
             )
         else:
-            historical_data = self._within_historical_data[period]
+            historical_data = self._get_within_historical_data(period)
             excess_return = historical_data.loc[:, "Excess Return"][
                 self._tickers_without_portfolio
             ]
@@ -2187,7 +2204,7 @@ class Performance:
 
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
-        historical_data = self._within_historical_data[period]
+        historical_data = self._get_within_historical_data(period)
         returns = historical_data.loc[:, "Return"][self._tickers_without_portfolio]
 
         period_returns = self._historical_data[period].loc[:, "Return"][
@@ -2294,7 +2311,7 @@ class Performance:
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
         returns = (
-            self._within_historical_data[period]
+            self._get_within_historical_data(period)
             if within_period
             else self._historical_data[period]
         ).loc[:, "Return"][self._tickers_without_portfolio]
@@ -2398,7 +2415,7 @@ class Performance:
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
         returns = (
-            self._within_historical_data[period]
+            self._get_within_historical_data(period)
             if within_period
             else self._historical_data[period]
         ).loc[:, "Return"][self._tickers_without_portfolio]
@@ -2498,7 +2515,7 @@ class Performance:
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
         returns = (
-            self._within_historical_data[period]
+            self._get_within_historical_data(period)
             if within_period
             else self._historical_data[period]
         ).loc[:, "Return"][self._tickers_without_portfolio]
@@ -2739,7 +2756,7 @@ class Performance:
                 returns, benchmark_returns, rolling
             )
         else:
-            historical_data = self._within_historical_data[period]
+            historical_data = self._get_within_historical_data(period)
             returns = historical_data.loc[:, "Return"][self._tickers_without_portfolio]
             benchmark_returns = historical_data.loc[:, "Return"][self._benchmark_name]
 
@@ -2852,7 +2869,7 @@ class Performance:
                 returns, benchmark_returns, rolling
             )
         else:
-            historical_data = self._within_historical_data[period]
+            historical_data = self._get_within_historical_data(period)
             returns = historical_data.loc[:, "Return"][self._tickers_without_portfolio]
             benchmark_returns = historical_data.loc[:, "Return"][self._benchmark_name]
 
@@ -2937,7 +2954,7 @@ class Performance:
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
-        historical_data = self._within_historical_data[period]
+        historical_data = self._get_within_historical_data(period)
         returns = historical_data.loc[:, "Return"][self._tickers_without_portfolio]
         benchmark_returns = historical_data.loc[:, "Return"][self._benchmark_name]
 
@@ -3022,7 +3039,7 @@ class Performance:
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
-        historical_data = self._within_historical_data[period]
+        historical_data = self._get_within_historical_data(period)
         returns = historical_data.loc[:, "Return"][self._tickers_without_portfolio]
         benchmark_returns = historical_data.loc[:, "Return"][self._benchmark_name]
 
@@ -3103,7 +3120,7 @@ class Performance:
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
-        historical_data = self._within_historical_data[period]
+        historical_data = self._get_within_historical_data(period)
         returns = historical_data.loc[:, "Return"][self._tickers_without_portfolio]
         benchmark_returns = historical_data.loc[:, "Return"][self._benchmark_name]
 
@@ -3190,7 +3207,7 @@ class Performance:
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
-        historical_data = self._within_historical_data[period]
+        historical_data = self._get_within_historical_data(period)
         excess_return = historical_data.loc[:, "Excess Return"][
             self._tickers_without_portfolio
         ]
@@ -3296,7 +3313,7 @@ class Performance:
             )
         else:
             returns = (
-                self._within_historical_data[period]
+                self._get_within_historical_data(period)
                 if within_period
                 else self._historical_data[period]
             ).loc[:, "Return"][self._tickers_without_portfolio]
@@ -3387,7 +3404,7 @@ class Performance:
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
         returns = (
-            self._within_historical_data[period]
+            self._get_within_historical_data(period)
             if within_period
             else self._historical_data[period]
         ).loc[:, "Return"][self._tickers_without_portfolio]
@@ -3891,7 +3908,7 @@ class Performance:
                 within_excess_return, 0.0, beta, within_benchmark_excess_return
             )
         else:
-            historical_within_data = self._within_historical_data[period]
+            historical_within_data = self._get_within_historical_data(period)
             returns = historical_within_data.loc[:, "Return"][
                 self._tickers_without_portfolio
             ]
@@ -4042,7 +4059,7 @@ class Performance:
                 returns, benchmark_returns, rolling
             )
         else:
-            historical_within_data = self._within_historical_data[period]
+            historical_within_data = self._get_within_historical_data(period)
             returns = historical_within_data.loc[:, "Return"][
                 self._tickers_without_portfolio
             ]
@@ -4186,7 +4203,7 @@ class Performance:
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
         returns = (
-            self._within_historical_data[period]
+            self._get_within_historical_data(period)
             if within_period
             else self._historical_data[period]
         ).loc[:, "Return"][self._tickers_without_portfolio]
@@ -4294,7 +4311,7 @@ class Performance:
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
         returns = (
-            self._within_historical_data[period]
+            self._get_within_historical_data(period)
             if within_period
             else self._historical_data[period]
         ).loc[:, "Return"][self._tickers_without_portfolio]
@@ -4387,7 +4404,7 @@ class Performance:
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
-        historical_within_data = self._within_historical_data[period]
+        historical_within_data = self._get_within_historical_data(period)
         excess_return = historical_within_data.loc[:, "Excess Return"][
             self._tickers_without_portfolio
         ]
@@ -4502,7 +4519,7 @@ class Performance:
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
-        historical_within_data = self._within_historical_data[period]
+        historical_within_data = self._get_within_historical_data(period)
         excess_return = historical_within_data.loc[:, "Excess Return"][
             self._tickers_without_portfolio
         ]

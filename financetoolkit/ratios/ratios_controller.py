@@ -406,7 +406,7 @@ class Ratios:
         custom_ratios = pd.DataFrame(
             0,
             index=pd.MultiIndex.from_product(
-                [self._tickers, custom_ratios_dict.keys()]  # type: ignore
+                [self._tickers, custom_ratios_dict.keys()]
             ),
             columns=self._balance_sheet_statement.columns,
         )
@@ -427,9 +427,9 @@ class Ratios:
         ]
 
         formula_dict = {}
-        for name, formula in custom_ratios_dict.items():  # type: ignore
+        for name, formula in custom_ratios_dict.items():
             # Reordered so a formula depending on another is evaluated after it.
-            for sub_name, sub_formula in custom_ratios_dict.items():  # type: ignore
+            for sub_name, sub_formula in custom_ratios_dict.items():
                 if sub_name in formula:
                     formula_dict[sub_name] = sub_formula
 
@@ -499,7 +499,7 @@ class Ratios:
                 ).to_numpy()
 
                 self._custom_ratios = total_financials.loc[
-                    :, list(custom_ratios_dict.keys()), :  # type: ignore
+                    :, list(custom_ratios_dict.keys()), :
                 ]
                 self._custom_ratios = self._custom_ratios.sort_index(
                     axis=0, level=0, sort_remaining=False

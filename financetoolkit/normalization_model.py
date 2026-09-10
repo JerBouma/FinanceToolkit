@@ -172,7 +172,7 @@ def read_normalization_file(statement: str, format_location: str = ""):
     if format_location:
         file_location = f"{format_location}/{statement}.csv"
     else:
-        file_location = resources.files(__package__).joinpath(  # type: ignore
+        file_location = resources.files(__package__).joinpath(
             f"normalization/{statement}.csv"
         )
 
@@ -346,7 +346,7 @@ def copy_normalization_files(
         if format_location:
             file_location = f"{format_location}/{statement}.csv"
         else:
-            file_location = resources.files(__package__).joinpath(  # type: ignore
+            file_location = resources.files(__package__).joinpath(
                 f"normalization/{statement}.csv"
             )
 

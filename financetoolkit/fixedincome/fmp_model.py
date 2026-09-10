@@ -2,11 +2,11 @@
 
 __docformat__ = "google"
 
-import time
 from datetime import datetime, timedelta
 
 import pandas as pd
 
+from financetoolkit import helpers
 from financetoolkit.cache import frame_model, policy_model
 from financetoolkit.cache.cache_controller import get_active_cache
 from financetoolkit.fmp_model import get_financial_data
@@ -129,30 +129,31 @@ def get_treasury_rates(
         end_date_value.date(),
     )
 
-    treasury_rates_list = []
+    windows = []
     window_end = end_date_value
 
     while window_end >= start_date_value:
         window_start = max(
             window_end - timedelta(days=WINDOW_DAYS - 1), start_date_value
         )
+        windows.append((window_start, window_end))
+        window_end = window_start - timedelta(days=1)
 
+    def fetch_window(window_start: datetime, window_end: datetime) -> pd.DataFrame:
         url = (
             "https://financialmodelingprep.com/stable/treasury-rates?"
             f"from={window_start.strftime('%Y-%m-%d')}&to={window_end.strftime('%Y-%m-%d')}"
             f"&apikey={api_key}"
         )
 
-        treasury_rates_list.append(
-            get_financial_data(
-                url=url, sleep_timer=sleep_timer, user_subscription=user_subscription
-            )
+        return get_financial_data(
+            url=url, sleep_timer=sleep_timer, user_subscription=user_subscription
         )
 
-        window_end = window_start - timedelta(days=1)
-
-        # Introduce a sleep timer to prevent rate limit errors
-        time.sleep(0.1)
+    # The windows are independent slices of the same series, so they are fetched with
+    # the same bounded worker pool the ticker-based collection functions use; a
+    # 10-year default lookback goes from ~40 sequential requests to a few rounds.
+    treasury_rates_list = helpers.run_in_parallel(fetch_window, windows)
 
     treasury_rates = pd.concat(treasury_rates_list, axis=0)
 

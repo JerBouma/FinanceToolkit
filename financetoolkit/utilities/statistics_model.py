@@ -285,7 +285,7 @@ def calculate_growth(
 
                 dataset_lag.loc[new_index] = (
                     bounded_ffill(dataset.loc[other_indices])
-                    .pct_change(periods=lag_dict[lag_key])  # type: ignore
+                    .pct_change(periods=lag_dict[lag_key])
                     .to_numpy()
                     .reshape(-1)
                 )
@@ -312,7 +312,7 @@ def calculate_growth(
 
                 dataset_lag.loc[:, new_index] = (
                     bounded_ffill(dataset.loc[:, other_indices])
-                    .pct_change(periods=lag_dict[lag_key])  # type: ignore
+                    .pct_change(periods=lag_dict[lag_key])
                     .to_numpy()
                     .reshape(-1)
                 )

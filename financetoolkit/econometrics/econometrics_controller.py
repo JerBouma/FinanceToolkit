@@ -92,6 +92,12 @@ class Econometrics:
         self._start_date: str | None = start_date
         self._end_date: str | None = end_date
         self._portfolio_weights: dict | None = None
+        # Memo for the sliced-and-dropna'd frames handed to the calculations: nearly
+        # every method starts from the same (period, column) slice, and re-copying it
+        # per call adds up when many metrics are collected in a row (as the MCP server
+        # does). The historical data is never mutated after initialisation, and the
+        # slices are treated as read-only by every caller, so sharing them is safe.
+        self._data_cache: dict[tuple, pd.DataFrame] = {}
 
         # Within Return Calculations
         daily_historical_data = self._historical_data["daily"].copy().fillna(0)
@@ -117,7 +123,7 @@ class Econometrics:
     def get_arch_lm_test(
         self,
         period: str | None = None,
-        within_period: bool = True,
+        within_period: bool = False,
         lags: int = 5,
         include_benchmark: bool = False,
         rounding: int | None = None,
@@ -142,10 +148,11 @@ class Econometrics:
 
         Args:
             period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
-                Defaults to "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
+                Defaults to "daily".
             within_period (bool, optional): Whether to calculate the test within the specified period or for
             the entire period. Thus whether to look at the test within a specific year (if period = 'yearly')
-            or look at the entirety of all years. Defaults to True.
+            or look at the entirety of all years. Defaults to False. Note that this requires intraday data
+            when period = 'daily', since a single day only nests observations when intraday data was fetched.
             lags (int, optional): The number of lags to test for ARCH effects. Defaults to 5.
             include_benchmark (bool, optional): Whether to include "Benchmark" among the
             assets tested. Defaults to False.
@@ -175,21 +182,24 @@ class Econometrics:
         | ARCH-LM Statistic |   4.0116 | 3.7793 |
         | P-Value           |   0.548  | 0.5817 |
         """
-        period = period if period else "quarterly" if self._quarterly else "yearly"
+        period = period if period else "daily"
 
         if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
             raise ValueError(
                 "Period must be daily, weekly, monthly, quarterly, or yearly."
             )
-        if period == "daily" and self._historical_data["intraday"].empty:
-            raise ValueError("Intraday data is required for daily calculations.")
+        if (
+            period == "daily"
+            and within_period
+            and self._historical_data["intraday"].empty
+        ):
+            raise ValueError(
+                "Intraday data is required for within-period daily calculations. Either set "
+                "within_period=False or initialise the Toolkit with an intraday_period."
+            )
 
         returns = self._filter_benchmark(
-            (
-                self._within_historical_data[period]["Return"]
-                if within_period
-                else self._historical_data[period]["Return"]
-            ).dropna(),
+            self._get_returns(period, within_period),
             include_benchmark=include_benchmark,
         )
 
@@ -202,7 +212,7 @@ class Econometrics:
     def get_jarque_bera_test(
         self,
         period: str | None = None,
-        within_period: bool = True,
+        within_period: bool = False,
         include_benchmark: bool = False,
         rounding: int | None = None,
     ) -> pd.DataFrame:
@@ -225,10 +235,11 @@ class Econometrics:
 
         Args:
             period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
-                Defaults to "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
+                Defaults to "daily".
             within_period (bool, optional): Whether to calculate the test within the specified period or for
             the entire period. Thus whether to look at the test within a specific year (if period = 'yearly')
-            or look at the entirety of all years. Defaults to True.
+            or look at the entirety of all years. Defaults to False. Note that this requires intraday data
+            when period = 'daily', since a single day only nests observations when intraday data was fetched.
             include_benchmark (bool, optional): Whether to include "Benchmark" among the
             assets tested. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
@@ -257,21 +268,24 @@ class Econometrics:
         | Jarque-Bera Statistic |  3.0505 |  1.9354 |
         | P-Value               |  0.2175 |  0.38   |
         """
-        period = period if period else "quarterly" if self._quarterly else "yearly"
+        period = period if period else "daily"
 
         if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
             raise ValueError(
                 "Period must be daily, weekly, monthly, quarterly, or yearly."
             )
-        if period == "daily" and self._historical_data["intraday"].empty:
-            raise ValueError("Intraday data is required for daily calculations.")
+        if (
+            period == "daily"
+            and within_period
+            and self._historical_data["intraday"].empty
+        ):
+            raise ValueError(
+                "Intraday data is required for within-period daily calculations. Either set "
+                "within_period=False or initialise the Toolkit with an intraday_period."
+            )
 
         returns = self._filter_benchmark(
-            (
-                self._within_historical_data[period]["Return"]
-                if within_period
-                else self._historical_data[period]["Return"]
-            ).dropna(),
+            self._get_returns(period, within_period),
             include_benchmark=include_benchmark,
         )
 
@@ -284,7 +298,7 @@ class Econometrics:
     def get_ljung_box_test(
         self,
         period: str | None = None,
-        within_period: bool = True,
+        within_period: bool = False,
         lags: int = 10,
         include_benchmark: bool = False,
         rounding: int | None = None,
@@ -309,10 +323,11 @@ class Econometrics:
 
         Args:
             period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
-                Defaults to "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
+                Defaults to "daily".
             within_period (bool, optional): Whether to calculate the test within the specified period or for
             the entire period. Thus whether to look at the test within a specific year (if period = 'yearly')
-            or look at the entirety of all years. Defaults to True.
+            or look at the entirety of all years. Defaults to False. Note that this requires intraday data
+            when period = 'daily', since a single day only nests observations when intraday data was fetched.
             lags (int, optional): The number of lags to test for autocorrelation up to. Defaults to 10.
             include_benchmark (bool, optional): Whether to include "Benchmark" among the
             assets tested. Defaults to False.
@@ -342,21 +357,24 @@ class Econometrics:
         | Ljung-Box Statistic | 8.7703 | 7.1814 |
         | P-Value             | 0.554  | 0.7082 |
         """
-        period = period if period else "quarterly" if self._quarterly else "yearly"
+        period = period if period else "daily"
 
         if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
             raise ValueError(
                 "Period must be daily, weekly, monthly, quarterly, or yearly."
             )
-        if period == "daily" and self._historical_data["intraday"].empty:
-            raise ValueError("Intraday data is required for daily calculations.")
+        if (
+            period == "daily"
+            and within_period
+            and self._historical_data["intraday"].empty
+        ):
+            raise ValueError(
+                "Intraday data is required for within-period daily calculations. Either set "
+                "within_period=False or initialise the Toolkit with an intraday_period."
+            )
 
         returns = self._filter_benchmark(
-            (
-                self._within_historical_data[period]["Return"]
-                if within_period
-                else self._historical_data[period]["Return"]
-            ).dropna(),
+            self._get_returns(period, within_period),
             include_benchmark=include_benchmark,
         )
 
@@ -369,7 +387,7 @@ class Econometrics:
     def get_variance_ratio_test(
         self,
         period: str | None = None,
-        within_period: bool = True,
+        within_period: bool = False,
         q: int = 2,
         include_benchmark: bool = False,
         rounding: int | None = None,
@@ -394,10 +412,11 @@ class Econometrics:
 
         Args:
             period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
-                Defaults to "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
+                Defaults to "daily".
             within_period (bool, optional): Whether to calculate the test within the specified period or for
             the entire period. Thus whether to look at the test within a specific year (if period = 'yearly')
-            or look at the entirety of all years. Defaults to True.
+            or look at the entirety of all years. Defaults to False. Note that this requires intraday data
+            when period = 'daily', since a single day only nests observations when intraday data was fetched.
             q (int, optional): The number of periods to compound returns over. Defaults to 2.
             include_benchmark (bool, optional): Whether to include "Benchmark" among the
             assets tested. Defaults to False.
@@ -429,21 +448,24 @@ class Econometrics:
         | Variance Ratio Statistic | -0.6757 | -1.1353 |
         | P-Value                  |  0.4993 |  0.2563 |
         """
-        period = period if period else "quarterly" if self._quarterly else "yearly"
+        period = period if period else "daily"
 
         if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
             raise ValueError(
                 "Period must be daily, weekly, monthly, quarterly, or yearly."
             )
-        if period == "daily" and self._historical_data["intraday"].empty:
-            raise ValueError("Intraday data is required for daily calculations.")
+        if (
+            period == "daily"
+            and within_period
+            and self._historical_data["intraday"].empty
+        ):
+            raise ValueError(
+                "Intraday data is required for within-period daily calculations. Either set "
+                "within_period=False or initialise the Toolkit with an intraday_period."
+            )
 
         returns = self._filter_benchmark(
-            (
-                self._within_historical_data[period]["Return"]
-                if within_period
-                else self._historical_data[period]["Return"]
-            ).dropna(),
+            self._get_returns(period, within_period),
             include_benchmark=include_benchmark,
         )
 
@@ -456,7 +478,7 @@ class Econometrics:
     def get_cusum_test(
         self,
         period: str | None = None,
-        within_period: bool = True,
+        within_period: bool = False,
         include_benchmark: bool = False,
         rounding: int | None = None,
     ) -> pd.DataFrame:
@@ -479,10 +501,11 @@ class Econometrics:
 
         Args:
             period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
-                Defaults to "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
+                Defaults to "daily".
             within_period (bool, optional): Whether to calculate the test within the specified period or for
             the entire period. Thus whether to look at the test within a specific year (if period = 'yearly')
-            or look at the entirety of all years. Defaults to True.
+            or look at the entirety of all years. Defaults to False. Note that this requires intraday data
+            when period = 'daily', since a single day only nests observations when intraday data was fetched.
             include_benchmark (bool, optional): Whether to include "Benchmark" among the
             assets tested. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
@@ -524,21 +547,24 @@ class Econometrics:
         | Critical Value 10%     |  1.22   |  1.22   |
         | Reject Stability (5%)  |  0      |  0      |
         """
-        period = period if period else "quarterly" if self._quarterly else "yearly"
+        period = period if period else "daily"
 
         if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
             raise ValueError(
                 "Period must be daily, weekly, monthly, quarterly, or yearly."
             )
-        if period == "daily" and self._historical_data["intraday"].empty:
-            raise ValueError("Intraday data is required for daily calculations.")
+        if (
+            period == "daily"
+            and within_period
+            and self._historical_data["intraday"].empty
+        ):
+            raise ValueError(
+                "Intraday data is required for within-period daily calculations. Either set "
+                "within_period=False or initialise the Toolkit with an intraday_period."
+            )
 
         returns = self._filter_benchmark(
-            (
-                self._within_historical_data[period]["Return"]
-                if within_period
-                else self._historical_data[period]["Return"]
-            ).dropna(),
+            self._get_returns(period, within_period),
             include_benchmark=include_benchmark,
         )
 
@@ -551,10 +577,29 @@ class Econometrics:
             raise ValueError(
                 "Period must be daily, weekly, monthly, quarterly, or yearly."
             )
-        if period == "daily" and self._historical_data["intraday"].empty:
-            raise ValueError("Intraday data is required for daily calculations.")
 
-        return self._historical_data[period][column].dropna()
+        key = ("column", period, column)
+
+        if key not in self._data_cache:
+            self._data_cache[key] = self._historical_data[period][column].dropna()
+
+        return self._data_cache[key]
+
+    def _get_returns(self, period: str, within_period: bool) -> pd.DataFrame:
+        """
+        The Return slice the diagnostic tests run on, memoized per (period,
+        within_period) pair -- see `_data_cache` in `__init__`.
+        """
+        key = ("returns", period, within_period)
+
+        if key not in self._data_cache:
+            self._data_cache[key] = (
+                self._within_historical_data[period]["Return"]
+                if within_period
+                else self._historical_data[period]["Return"]
+            ).dropna()
+
+        return self._data_cache[key]
 
     def _get_tickers(self, include_benchmark: bool = False) -> list[str]:
         """
@@ -737,7 +782,7 @@ class Econometrics:
         | Critical Value 10%    |  -2.7298 |  -2.7298 |
         | Reject Unit Root (5%) |   1      |   0      |
         """
-        period = period if period else "quarterly" if self._quarterly else "yearly"
+        period = period if period else "daily"
         prices = self._filter_benchmark(
             self._get_price_column(period, column), include_benchmark=include_benchmark
         )
@@ -834,7 +879,7 @@ class Econometrics:
         | Critical Value 10%        |  0.347  |  0.347  |
         | Reject Stationarity (5%)  |  0      |  1      |
         """
-        period = period if period else "quarterly" if self._quarterly else "yearly"
+        period = period if period else "daily"
         prices = self._filter_benchmark(
             self._get_price_column(period, column), include_benchmark=include_benchmark
         )
@@ -921,7 +966,7 @@ class Econometrics:
         | Critical Value 10%       |  -2.57   |  -2.57   |
         | Reject Unit Root (5%)     |   0      |   0      |
         """
-        period = period if period else "quarterly" if self._quarterly else "yearly"
+        period = period if period else "daily"
         prices = self._filter_benchmark(
             self._get_price_column(period, column), include_benchmark=include_benchmark
         )
@@ -1028,7 +1073,7 @@ class Econometrics:
         | Critical Value 10%      |  -4.5662 |  -4.5662 |
         | Reject Unit Root (5%)   |   0      |   0      |
         """
-        period = period if period else "quarterly" if self._quarterly else "yearly"
+        period = period if period else "daily"
         prices = self._filter_benchmark(
             self._get_price_column(period, column), include_benchmark=include_benchmark
         )
@@ -1110,7 +1155,7 @@ class Econometrics:
         | AAPL        | MSFT          |        -1.4334 |    0.7858 |    -3.8927 | False               |
         | MSFT        | AAPL          |        -2.8297 |    0.1564 |    -3.8927 | False               |
         """
-        period = period if period else "quarterly" if self._quarterly else "yearly"
+        period = period if period else "daily"
         prices = self._get_price_column(period, column)
 
         pairs = self._all_ordered_pairs(include_benchmark=include_benchmark)
@@ -1204,7 +1249,7 @@ class Econometrics:
         | r <= 0 |       0.5653 |             14.1993 |                       15.4943 | False                   |
         | r <= 1 |       0.3674 |              5.0363 |                        3.8415 | True                    |
         """
-        period = period if period else "quarterly" if self._quarterly else "yearly"
+        period = period if period else "daily"
         prices = self._get_price_column(period, column)
 
         tickers = self._get_tickers(include_benchmark=include_benchmark)
@@ -1280,7 +1325,7 @@ class Econometrics:
         | AAPL        | MSFT          |        2.4852 |    0.0630 | False                 |
         | MSFT        | AAPL          |        0.3750 |    0.7712 | False                 |
         """
-        period = period if period else "quarterly" if self._quarterly else "yearly"
+        period = period if period else "daily"
         returns = self._get_price_column(period, column)
 
         pairs = self._all_ordered_pairs(include_benchmark=include_benchmark)
@@ -1498,7 +1543,7 @@ class Econometrics:
         | Intercept |        0.0134 |       0.026  |        0.5143 |    0.6119 |
         | TSLA      |        0.2479 |       0.0817 |        3.0331 |    0.0059 |
         """
-        period = period if period else "quarterly" if self._quarterly else "yearly"
+        period = period if period else "daily"
         returns = self._get_price_column(period, column)
 
         dependent_ticker, independent_tickers = self._resolve_dependent_independent(
@@ -1600,7 +1645,7 @@ class Econometrics:
         | Intercept |        0.0016 |       0.0024 |        0.6712 |    0.5031 |
         | MSFT      |        0.8681 |       0.0596 |       14.5659 |    0      |
         """
-        period = period if period else "quarterly" if self._quarterly else "yearly"
+        period = period if period else "daily"
         returns = self._get_price_column(period, column)
 
         dependent_ticker, independent_tickers = self._resolve_dependent_independent(
@@ -1696,7 +1741,7 @@ class Econometrics:
         | Intercept |        0.0016 |       0.0024 |        0.6712 |    0.5031 |
         | MSFT      |        0.8681 |       0.0596 |       14.5659 |    0      |
         """
-        period = period if period else "quarterly" if self._quarterly else "yearly"
+        period = period if period else "daily"
         returns = self._get_price_column(period, column)
 
         dependent_ticker, independent_tickers = self._resolve_dependent_independent(
@@ -1783,7 +1828,7 @@ class Econometrics:
         | MSFT      |       24.8481 |      10.1178 |        2.4559 |    0.0141 |
         | Benchmark |       63.677  |      15.5493 |        4.0952 |    0      |
         """
-        period = period if period else "quarterly" if self._quarterly else "yearly"
+        period = period if period else "daily"
         returns = self._get_price_column(period, column)
 
         dependent_ticker, independent_tickers = self._resolve_dependent_independent(
@@ -1869,7 +1914,7 @@ class Econometrics:
         | MSFT      |       15.7063 |       5.7385 |        2.737  |    0.0062 |
         | Benchmark |       35.3471 |       8.1355 |        4.3448 |    0      |
         """
-        period = period if period else "quarterly" if self._quarterly else "yearly"
+        period = period if period else "daily"
         returns = self._get_price_column(period, column)
 
         dependent_ticker, independent_tickers = self._resolve_dependent_independent(
@@ -1953,7 +1998,7 @@ class Econometrics:
         | MSFT      |        0.3593 |       0.0854 |
         | Benchmark |        0.6885 |       0.1037 |
         """
-        period = period if period else "quarterly" if self._quarterly else "yearly"
+        period = period if period else "daily"
         returns = self._get_price_column(period, column)
 
         dependent_ticker, independent_tickers = self._resolve_dependent_independent(
@@ -2042,7 +2087,7 @@ class Econometrics:
         |:----------|---------------:|-------------:|--------------:|----------:|
         | Benchmark |         0.0032 |       0.0016 |        1.9798 |    0.0486 |
         """
-        period = period if period else "quarterly" if self._quarterly else "yearly"
+        period = period if period else "daily"
         returns = self._get_price_column(period, column)
 
         factor_tickers = (
@@ -2093,7 +2138,7 @@ class Econometrics:
         since the F-test, Wald test and Likelihood Ratio test all operate directly
         on the result dict's residuals/coefficients/covariance matrix.
         """
-        period = period if period else "quarterly" if self._quarterly else "yearly"
+        period = period if period else "daily"
         returns = self._get_price_column(period, column)
 
         independent_tickers = (
@@ -2163,7 +2208,7 @@ class Econometrics:
         |:-----------|:-----------|--------------:|----------------------:|----------:|---------:|---------:|
         | AAPL       | MSFT       |        0.2318 |               306.6549 |    0.8168 |   0.0047 |   0.0036 |
         """
-        period = period if period else "quarterly" if self._quarterly else "yearly"
+        period = period if period else "daily"
         returns = self._get_price_column(period, column)
 
         rows = {
@@ -2209,7 +2254,7 @@ class Econometrics:
             unrestricted_independent_tickers (str | list[str]): The independent asset(s) in the
             unrestricted (larger) model -- must be a superset of `restricted_independent_tickers`.
             period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly).
-            Defaults to "quarterly".
+            Defaults to "daily".
             column (str, optional): The historical data column to regress on. Defaults to "Return".
             add_constant (bool, optional): Whether to include an intercept in both models. Defaults
             to True.
@@ -2294,7 +2339,7 @@ class Econometrics:
             unrestricted_independent_tickers (str | list[str]): The independent asset(s) in the
             unrestricted (larger) model -- must be a superset of `restricted_independent_tickers`.
             period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly).
-            Defaults to "quarterly".
+            Defaults to "daily".
             column (str, optional): The historical data column to regress on. Defaults to "Return".
             add_constant (bool, optional): Whether to include an intercept in both models. Defaults
             to True.
@@ -2388,7 +2433,7 @@ class Econometrics:
             restriction_values (pd.Series | np.ndarray | None, optional): The length-`q` vector of
             hypothesized values. Defaults to None, i.e. all restrictions equal zero.
             period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly).
-            Defaults to "quarterly".
+            Defaults to "daily".
             column (str, optional): The historical data column to regress on. Defaults to "Return".
             add_constant (bool, optional): Whether to include an intercept. Defaults to True.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to
@@ -2518,7 +2563,7 @@ class Econometrics:
         | P-Value                   |   0.0000 |
         | Endogenous (5%)            |   1      |
         """
-        period = period if period else "quarterly" if self._quarterly else "yearly"
+        period = period if period else "daily"
         returns = self._get_price_column(period, column)
 
         instrument_tickers = (
@@ -2562,7 +2607,7 @@ class Econometrics:
         so the controller's job is simply to assemble that same fit `get_ols` itself
         produces before handing it off to the requested diagnostic.
         """
-        period = period if period else "quarterly" if self._quarterly else "yearly"
+        period = period if period else "daily"
         returns = self._get_price_column(period, column)
 
         independent_tickers = (
@@ -2607,7 +2652,7 @@ class Econometrics:
             default independent ticker(s) (has no effect when independent_tickers is given
             explicitly). Defaults to False.
             period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly).
-            Defaults to "quarterly".
+            Defaults to "daily".
             column (str, optional): The historical data column to regress on. Defaults to "Return".
             add_constant (bool, optional): Whether to include an intercept in the underlying
             regression. Defaults to True.
@@ -2682,7 +2727,7 @@ class Econometrics:
             default independent ticker(s) (has no effect when independent_tickers is given
             explicitly). Defaults to False.
             period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly).
-            Defaults to "quarterly".
+            Defaults to "daily".
             column (str, optional): The historical data column to regress on. Defaults to "Return".
             add_constant (bool, optional): Whether to include an intercept in the underlying
             regression. Defaults to True.
@@ -2758,7 +2803,7 @@ class Econometrics:
             default independent ticker(s) (has no effect when independent_tickers is given
             explicitly). Defaults to False.
             period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly).
-            Defaults to "quarterly".
+            Defaults to "daily".
             column (str, optional): The historical data column to regress on. Defaults to "Return".
             add_constant (bool, optional): Whether to include an intercept in the underlying
             regression. Defaults to True.
@@ -2863,7 +2908,7 @@ class Econometrics:
         | AAPL | 2.3688 |
         | MSFT | 2.3688 |
         """
-        period = period if period else "quarterly" if self._quarterly else "yearly"
+        period = period if period else "daily"
         returns = self._get_price_column(period, column)
 
         tickers = self._get_tickers(include_benchmark=include_benchmark)
@@ -2903,7 +2948,7 @@ class Econometrics:
             default independent ticker(s) (has no effect when independent_tickers is given
             explicitly). Defaults to False.
             period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly).
-            Defaults to "quarterly".
+            Defaults to "daily".
             column (str, optional): The historical data column to regress on. Defaults to "Return".
             add_constant (bool, optional): Whether to include an intercept in the underlying
             regression. Defaults to True.
@@ -3029,7 +3074,7 @@ class Econometrics:
             include_benchmark=include_benchmark,
         )
 
-        period = period if period else "quarterly" if self._quarterly else "yearly"
+        period = period if period else "daily"
         returns = self._get_price_column(period, column)
 
         result_full = regression_model.get_ols(
@@ -3041,7 +3086,7 @@ class Econometrics:
         index = returns.index
         timestamps = (
             index.to_timestamp()
-            if hasattr(index, "to_timestamp")
+            if isinstance(index, pd.PeriodIndex)
             else pd.DatetimeIndex(index)
         )
         break_index = int(timestamps.searchsorted(pd.Timestamp(break_date)))
@@ -3128,7 +3173,7 @@ class Econometrics:
         | Intercept |         0.0006 |        0.0025 |         0.2336 |     0.8156 |
         | MSFT      |         1.1453 |        0.0813 |        14.0938 |     0.0000 |
         """
-        period = period if period else "quarterly" if self._quarterly else "yearly"
+        period = period if period else "daily"
         returns = self._get_price_column(period, column)
 
         endogenous_ticker = (
@@ -3233,7 +3278,7 @@ class Econometrics:
         | Post            |        -0.0074 |        0.0045 |        -1.6572 |     0.0982 |
         | Treated x Post  |        -0.0020 |        0.0077 |        -0.2571 |     0.7972 |
         """
-        period = period if period else "quarterly" if self._quarterly else "yearly"
+        period = period if period else "daily"
         returns = self._get_price_column(period, column)
 
         treated_tickers = (
@@ -3252,7 +3297,7 @@ class Econometrics:
         index = returns.index
         timestamps = (
             index.to_timestamp()
-            if hasattr(index, "to_timestamp")
+            if isinstance(index, pd.PeriodIndex)
             else pd.DatetimeIndex(index)
         )
         post_flags = pd.Series(
@@ -3365,7 +3410,7 @@ class Econometrics:
         | N Left        |  71      |
         | N Right       |  85      |
         """
-        period = period if period else "quarterly" if self._quarterly else "yearly"
+        period = period if period else "daily"
         returns = self._get_price_column(period, column)
 
         result = causal_inference_model.get_regression_discontinuity(
@@ -3460,7 +3505,7 @@ class Econometrics:
         | N Treated     |  84      |
         | N Control     |  73      |
         """
-        period = period if period else "quarterly" if self._quarterly else "yearly"
+        period = period if period else "daily"
         returns = self._get_price_column(period, column)
 
         covariate_tickers = (
@@ -3563,7 +3608,7 @@ class Econometrics:
         | N Pre-Periods             | 78      |
         | N Post-Periods            | 79      |
         """
-        period = period if period else "quarterly" if self._quarterly else "yearly"
+        period = period if period else "daily"
         returns = self._get_price_column(period, column)
 
         if donor_tickers is None:
@@ -3651,14 +3696,12 @@ class Econometrics:
                 "regressor taken from each dependent ticker's own data)."
             )
 
-        period = period if period else "quarterly" if self._quarterly else "yearly"
+        period = period if period else "daily"
 
         if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
             raise ValueError(
                 "Period must be daily, weekly, monthly, quarterly, or yearly."
             )
-        if period == "daily" and self._historical_data["intraday"].empty:
-            raise ValueError("Intraday data is required for daily calculations.")
 
         # Not `_get_price_column`: panel methods need each entity's own NaN pattern.
         prices = self._historical_data[period][column]
@@ -3771,7 +3814,7 @@ class Econometrics:
             entity tickers to explain. Defaults to None, meaning every ticker in
             the `Toolkit` instance (other than `independent_tickers`, if given).
             period (str, optional): The data frequency (daily, weekly, monthly,
-            quarterly, or yearly). Defaults to "quarterly".
+            quarterly, or yearly). Defaults to "daily".
             column (str, optional): The dependent variable's historical data
             column. Defaults to "Return".
             entity_effects (bool, optional): Whether to control for time-invariant
@@ -3881,7 +3924,7 @@ class Econometrics:
             entity tickers to explain. Defaults to None, meaning every ticker in
             the `Toolkit` instance (other than `independent_tickers`, if given).
             period (str, optional): The data frequency (daily, weekly, monthly,
-            quarterly, or yearly). Defaults to "quarterly".
+            quarterly, or yearly). Defaults to "daily".
             column (str, optional): The dependent variable's historical data
             column. Defaults to "Return".
             rounding (int | None, optional): The number of decimals to round the
@@ -3965,7 +4008,7 @@ class Econometrics:
             entity tickers to explain. Defaults to None, meaning every ticker in
             the `Toolkit` instance (other than `independent_tickers`, if given).
             period (str, optional): The data frequency (daily, weekly, monthly,
-            quarterly, or yearly). Defaults to "quarterly".
+            quarterly, or yearly). Defaults to "daily".
             column (str, optional): The dependent variable's historical data
             column. Defaults to "Return".
             rounding (int | None, optional): The number of decimals to round the
@@ -4088,7 +4131,7 @@ class Econometrics:
         |    4 | 162.323 | 264.014 |
         |    5 | 169.180 | 270.922 |
         """
-        period = period if period else "quarterly" if self._quarterly else "yearly"
+        period = period if period else "daily"
         prices = self._get_price_column(period, column)
 
         tickers = self._get_tickers(include_benchmark=include_benchmark)
@@ -4177,7 +4220,7 @@ class Econometrics:
         |    4 | 0.0661 | 0.0454 |
         |    5 | 0.0716 | 0.0496 |
         """
-        period = period if period else "quarterly" if self._quarterly else "yearly"
+        period = period if period else "daily"
         returns = self._get_price_column(period, column)
 
         tickers = self._get_tickers(include_benchmark=include_benchmark)
@@ -4264,7 +4307,7 @@ class Econometrics:
         | 4         |              0.0033 |              0.0032 |              -0.0054|             -0.002  |
         | 5         |              0.0019 |              0.0008 |               0.0007|              0.0013 |
         """
-        period = period if period else "quarterly" if self._quarterly else "yearly"
+        period = period if period else "daily"
         returns = self._get_price_column(period, column)
 
         tickers = self._get_tickers(include_benchmark=include_benchmark)
@@ -4347,7 +4390,7 @@ class Econometrics:
         | 4         |              0.7942 |              0.2058 |              0.502  |              0.498  |
         | 5         |              0.7936 |              0.2064 |              0.5022 |              0.4978 |
         """
-        period = period if period else "quarterly" if self._quarterly else "yearly"
+        period = period if period else "daily"
         returns = self._get_price_column(period, column)
 
         tickers = self._get_tickers(include_benchmark=include_benchmark)
@@ -4444,7 +4487,7 @@ class Econometrics:
         |    4 | 154.833 | 289.048 |     413.568 |
         |    5 | 152.306 | 273.929 |     396.546 |
         """
-        period = period if period else "quarterly" if self._quarterly else "yearly"
+        period = period if period else "daily"
         prices = self._get_price_column(period, column)
 
         tickers = self._get_tickers(include_benchmark=include_benchmark)
@@ -4512,7 +4555,7 @@ class Econometrics:
         |:-----------|:-----------|-------:|
         | AAPL       | MSFT       | 0.1084 |
         """
-        period = period if period else "quarterly" if self._quarterly else "yearly"
+        period = period if period else "daily"
         returns = self._get_price_column(period, column)
 
         values = {
@@ -4577,7 +4620,7 @@ class Econometrics:
         |:-----------|:-----------|-------:|
         | AAPL       | MSFT       | 0.0887 |
         """
-        period = period if period else "quarterly" if self._quarterly else "yearly"
+        period = period if period else "daily"
         returns = self._get_price_column(period, column)
 
         values = {
@@ -4687,7 +4730,7 @@ class Econometrics:
         | MAE                   | 10.2476 | 20.6824 |
         | Holdout Observations  | 32      | 32      |
         """
-        period = period if period else "quarterly" if self._quarterly else "yearly"
+        period = period if period else "daily"
         prices = self._get_price_column(period, column)
 
         tickers = self._get_tickers(include_benchmark=include_benchmark)

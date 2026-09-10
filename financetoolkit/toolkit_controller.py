@@ -4,9 +4,7 @@ __docformat__ = "google"
 
 
 import os
-import re
 import warnings
-from collections import Counter
 from collections.abc import Callable
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any
@@ -50,9 +48,8 @@ from financetoolkit.performance.performance_controller import Performance
 from financetoolkit.ratios.ratios_controller import Ratios
 from financetoolkit.risk.risk_controller import Risk
 from financetoolkit.technicals.technicals_controller import Technicals
-from financetoolkit.utilities import logger_model
+from financetoolkit.utilities import logger_model, validation_model
 from financetoolkit.utilities.dataframe_model import filter_columns
-from financetoolkit.utilities.requests_model import convert_isin_to_ticker
 from financetoolkit.utilities.statistics_model import apply_rounding, calculate_growth
 
 if TYPE_CHECKING:
@@ -270,28 +267,19 @@ class Toolkit:
         self._allow_stale_oecd_cache = allow_stale_oecd_cache
         self._benchmark_ticker = benchmark_ticker
 
-        if start_date and re.match(r"^\d{4}-\d{2}-\d{2}$", start_date) is None:
-            raise ValueError(
-                "Please input a valid start date (%Y-%m-%d) like '2010-01-01'"
-            )
-        if end_date and re.match(r"^\d{4}-\d{2}-\d{2}$", end_date) is None:
-            raise ValueError(
-                "Please input a valid end date (%Y-%m-%d) like '2020-01-01'"
-            )
-        if start_date and end_date and start_date > end_date:
-            raise ValueError(
-                f"Please ensure the start date {start_date} is before the end date {end_date}"
-            )
-
-        if risk_free_rate not in [
-            "13w",
-            "5y",
-            "10y",
-            "30y",
-        ]:
-            raise ValueError(
-                "Please select a valid risk free rate (13w, 5y, 10y or 30y)"
-            )
+        # Everything the user can get wrong is checked in one place; this raises on
+        # invalid input and hands back the normalized ticker list (upper-cased, ISIN
+        # codes converted, duplicates and the benchmark ticker removed).
+        validated_tickers = validation_model.validate_toolkit_parameters(
+            tickers=tickers,
+            start_date=start_date,
+            end_date=end_date,
+            risk_free_rate=risk_free_rate,
+            enforce_source=enforce_source,
+            api_key=api_key,
+            intraday_period=intraday_period,
+            benchmark_ticker=benchmark_ticker,
+        )
 
         self._start_date = (
             start_date
@@ -316,58 +304,8 @@ class Toolkit:
 
         # The cache tracks each ticker and range, so these arguments are always used.
 
-        if isinstance(tickers, str):
-            tickers = [tickers.upper()]
-        elif isinstance(tickers, list):
-            tickers = [
-                ticker.upper() if ticker != "Portfolio" else ticker
-                for ticker in tickers
-            ]
-        elif tickers is None:
-            raise ValueError("Please input a ticker or a list of tickers.")
-        else:
-            raise TypeError("Tickers must be a string or a list of strings.")
-
-        self._tickers: list[str] = []
-
-        for ticker in tickers:
-            # Check whether the ticker is in ISIN format and if say so convert it to a ticker
-            self._tickers.append(convert_isin_to_ticker(ticker))
-
-        # Take out duplicate tickers if applicable; deduplicating through a set would make the ticker order, and therefore the column order of every single output, depend on the hash seed and change between runs.
-        deduplicated_tickers = list(dict.fromkeys(self._tickers))
-
-        if len(deduplicated_tickers) != len(self._tickers):
-            duplicate_tickers = [
-                ticker for ticker, count in Counter(self._tickers).items() if count > 1
-            ]
-            logger.warning(
-                "Found duplicate tickers, duplicate entries of the following tickers are removed: %s",
-                ", ".join(duplicate_tickers),
-            )
-            self._tickers = deduplicated_tickers
-
-        if self._benchmark_ticker in self._tickers:
-            logger.warning(
-                "Please note that the benchmark ticker (%s) is also "
-                "included in the tickers. Therefore, this ticker will be removed from the "
-                "tickers list. If this is not desired, please set the benchmark_ticker to None.",
-                self._benchmark_ticker,
-            )
-            self._tickers.remove(self._benchmark_ticker)
-
+        self._tickers: list[str] = validated_tickers
         self._enforce_source: str | None = enforce_source
-
-        if self._enforce_source not in [None, "FinancialModelingPrep", "YahooFinance"]:
-            raise ValueError(
-                "Please select either FinancialModelingPrep or YahooFinance as the "
-                "enforced source."
-            )
-        if self._enforce_source == "FinancialModelingPrep" and not self._api_key:
-            raise ValueError(
-                "Please input an API key from FinancialModelingPrep if you wish to use "
-                "historical data from FinancialModelingPrep."
-            )
 
         if sleep_timer is None:
             # Determines the plan, which drives the sleep timer and other components.
@@ -409,17 +347,6 @@ class Toolkit:
             self._commitment_of_traders: pd.DataFrame = pd.DataFrame()
 
             # Resolved per ticker on request, so a different list reuses what it shares.
-
-        if intraday_period and intraday_period not in [
-            "1min",
-            "5min",
-            "15min",
-            "30min",
-            "1hour",
-        ]:
-            raise ValueError(
-                "Please select a valid intraday period (1min, 5min, 15min, 30min or 1hour)"
-            )
 
         self._intraday_period = intraday_period
 

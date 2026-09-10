@@ -5,7 +5,7 @@ __docformat__ = "google"
 
 import hashlib
 import importlib.util
-import threading
+import random
 import time
 from datetime import datetime, timedelta
 from http.client import RemoteDisconnected
@@ -35,6 +35,30 @@ logger = logger_model.get_logger()
 # pylint: disable=no-member,too-many-locals,too-many-lines
 
 RETRY_LIMIT = 12
+
+# Base delay for the exponential backoff on rate limits and refused connections. The
+# delay doubles per attempt and carries random jitter: with 10 worker threads hitting
+# the limit at the same time, a fixed sleep would wake them all together and re-collide
+# on the very next attempt.
+RETRY_BASE_DELAY_SECONDS = 2.5
+RETRY_MAX_DELAY_SECONDS = 60.0
+
+
+def determine_retry_delay(attempt: int) -> float:
+    """
+    Determines how long to wait before retry `attempt` (starting at 0), doubling the
+    base delay per attempt up to a cap, with up to 50% random jitter added so that
+    concurrent workers spread out instead of retrying in lockstep.
+
+    Args:
+        attempt (int): The zero-based retry attempt number.
+
+    Returns:
+        float: The number of seconds to sleep before the retry.
+    """
+    delay = min(RETRY_BASE_DELAY_SECONDS * 2**attempt, RETRY_MAX_DELAY_SECONDS)
+
+    return delay * (1 + random.uniform(0, 0.5))  # noqa: S311
 
 
 def get_financial_data(
@@ -101,7 +125,7 @@ def get_financial_data(
                     and limit_retry_counter < RETRY_LIMIT
                     and user_subscription != "Free"
                 ):
-                    time.sleep(5.01)
+                    time.sleep(determine_retry_delay(limit_retry_counter))
                     limit_retry_counter += 1
                     continue
 
@@ -129,8 +153,8 @@ def get_financial_data(
             if error_retry_counter == RETRY_LIMIT:
                 return pd.DataFrame(columns=["NO ERRORS"])
 
+            time.sleep(determine_retry_delay(error_retry_counter))
             error_retry_counter += 1
-            time.sleep(5)
 
 
 PLAN_RESTRICTION_MESSAGES = (
@@ -833,24 +857,13 @@ def get_revenue_segmentation(
 
     revenue_segmentation_dict: dict = {}
     no_data: list[str] = []
-    threads = []
 
     logger.info(
         "Obtaining %s segmentation data for %d ticker(s)", method, len(ticker_list)
     )
-    for ticker in ticker_list:
-        # Introduce a sleep timer to prevent rate limit errors
-        time.sleep(0.1)
-
-        thread = threading.Thread(
-            target=worker,
-            args=(ticker, revenue_segmentation_dict),
-        )
-        thread.start()
-        threads.append(thread)
-
-    for thread in threads:
-        thread.join()
+    helpers.run_in_parallel(
+        worker, [(ticker, revenue_segmentation_dict) for ticker in ticker_list]
+    )
 
     # Checks if any errors are in the dataset and if this is the case, reports them
     revenue_segmentation_dict = error_model.check_for_error_messages(
@@ -1031,22 +1044,11 @@ def get_analyst_estimates(
 
     analyst_estimates_dict: dict = {}
     no_data: list[str] = []
-    threads = []
 
     logger.info("Obtaining analyst estimates for %d ticker(s)", len(ticker_list))
-    for ticker in ticker_list:
-        # Introduce a sleep timer to prevent rate limit errors
-        time.sleep(0.1)
-
-        thread = threading.Thread(
-            target=worker,
-            args=(ticker, analyst_estimates_dict),
-        )
-        thread.start()
-        threads.append(thread)
-
-    for thread in threads:
-        thread.join()
+    helpers.run_in_parallel(
+        worker, [(ticker, analyst_estimates_dict) for ticker in ticker_list]
+    )
 
     # Checks if any errors are in the dataset and if this is the case, reports them
     analyst_estimates_dict = error_model.check_for_error_messages(
@@ -1166,22 +1168,9 @@ def get_profile(
 
     profile_dict: dict[str, pd.DataFrame] = {}
     no_data: list[str] = []
-    threads = []
 
     logger.info("Obtaining company profiles for %d ticker(s)", len(ticker_list))
-    for ticker in ticker_list:
-        # Introduce a sleep timer to prevent rate limit errors
-        time.sleep(0.1)
-
-        thread = threading.Thread(
-            target=worker,
-            args=(ticker, profile_dict),
-        )
-        thread.start()
-        threads.append(thread)
-
-    for thread in threads:
-        thread.join()
+    helpers.run_in_parallel(worker, [(ticker, profile_dict) for ticker in ticker_list])
 
     # Checks if any errors are in the dataset and if this is the case, reports them
     profile_dict = error_model.check_for_error_messages(
@@ -1274,22 +1263,9 @@ def get_quote(
 
     quote_dict: dict[str, pd.DataFrame] = {}
     no_data: list[str] = []
-    threads = []
 
     logger.info("Obtaining company quotes for %d ticker(s)", len(ticker_list))
-    for ticker in ticker_list:
-        # Introduce a sleep timer to prevent rate limit errors
-        time.sleep(0.1)
-
-        thread = threading.Thread(
-            target=worker,
-            args=(ticker, quote_dict),
-        )
-        thread.start()
-        threads.append(thread)
-
-    for thread in threads:
-        thread.join()
+    helpers.run_in_parallel(worker, [(ticker, quote_dict) for ticker in ticker_list])
 
     # Checks if any errors are in the dataset and if this is the case, reports them
     quote_dict = error_model.check_for_error_messages(
@@ -1363,22 +1339,9 @@ def get_rating(
 
     ratings_dict: dict[str, pd.DataFrame] = {}
     no_data: list[str] = []
-    threads = []
 
     logger.info("Obtaining company ratings for %d ticker(s)", len(ticker_list))
-    for ticker in ticker_list:
-        # Introduce a sleep timer to prevent rate limit errors
-        time.sleep(0.1)
-
-        thread = threading.Thread(
-            target=worker,
-            args=(ticker, ratings_dict),
-        )
-        thread.start()
-        threads.append(thread)
-
-    for thread in threads:
-        thread.join()
+    helpers.run_in_parallel(worker, [(ticker, ratings_dict) for ticker in ticker_list])
 
     # Checks if any errors are in the dataset and if this is the case, reports them
     ratings_dict = error_model.check_for_error_messages(
@@ -1482,22 +1445,11 @@ def get_earnings_calendar(
 
     earnings_calendar_dict: dict = {}
     no_data: list[str] = []
-    threads = []
 
     logger.info("Obtaining earnings calendars for %d ticker(s)", len(ticker_list))
-    for ticker in ticker_list:
-        # Introduce a sleep timer to prevent rate limit errors
-        time.sleep(0.1)
-
-        thread = threading.Thread(
-            target=worker,
-            args=(ticker, earnings_calendar_dict),
-        )
-        thread.start()
-        threads.append(thread)
-
-    for thread in threads:
-        thread.join()
+    helpers.run_in_parallel(
+        worker, [(ticker, earnings_calendar_dict) for ticker in ticker_list]
+    )
 
     # Checks if any errors are in the dataset and if this is the case, reports them
     earnings_calendar_dict = error_model.check_for_error_messages(
@@ -1600,22 +1552,11 @@ def get_dividend_calendar(
 
     dividend_calendar_dict: dict = {}
     no_data: list[str] = []
-    threads = []
 
     logger.info("Obtaining dividend calendars for %d ticker(s)", len(ticker_list))
-    for ticker in ticker_list:
-        # Introduce a sleep timer to prevent rate limit errors
-        time.sleep(0.1)
-
-        thread = threading.Thread(
-            target=worker,
-            args=(ticker, dividend_calendar_dict),
-        )
-        thread.start()
-        threads.append(thread)
-
-    for thread in threads:
-        thread.join()
+    helpers.run_in_parallel(
+        worker, [(ticker, dividend_calendar_dict) for ticker in ticker_list]
+    )
 
     # Checks if any errors are in the dataset and if this is the case, reports them
     dividend_calendar_dict = error_model.check_for_error_messages(
@@ -1720,22 +1661,11 @@ def get_esg_scores(
 
     esg_scores_dict: dict = {}
     no_data: list[str] = []
-    threads = []
 
     logger.info("Obtaining ESG scores for %d ticker(s)", len(ticker_list))
-    for ticker in ticker_list:
-        # Introduce a sleep timer to prevent rate limit errors
-        time.sleep(0.1)
-
-        thread = threading.Thread(
-            target=worker,
-            args=(ticker, esg_scores_dict),
-        )
-        thread.start()
-        threads.append(thread)
-
-    for thread in threads:
-        thread.join()
+    helpers.run_in_parallel(
+        worker, [(ticker, esg_scores_dict) for ticker in ticker_list]
+    )
 
     # Checks if any errors are in the dataset and if this is the case, reports them
     esg_scores_dict = error_model.check_for_error_messages(
@@ -1910,24 +1840,11 @@ def get_commitment_of_traders(
 
     cot_dict: dict = {}
     no_data: list[str] = []
-    threads = []
 
     logger.info(
         "Obtaining Commitment of Traders data for %d ticker(s)", len(ticker_list)
     )
-    for ticker in ticker_list:
-        # Introduce a sleep timer to prevent rate limit errors
-        time.sleep(0.1)
-
-        thread = threading.Thread(
-            target=worker,
-            args=(ticker, cot_dict),
-        )
-        thread.start()
-        threads.append(thread)
-
-    for thread in threads:
-        thread.join()
+    helpers.run_in_parallel(worker, [(ticker, cot_dict) for ticker in ticker_list])
 
     # Checks if any errors are in the dataset and if this is the case, reports them
     cot_dict = error_model.check_for_error_messages(

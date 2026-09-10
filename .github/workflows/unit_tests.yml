@@ -24,9 +24,11 @@ jobs:
 
       - name: Install uv
         uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
 
       - name: Install dependencies
         run: uv sync --extra mcp
 
       - name: Test with pytest
-        run: uv run pytest --timeout=60
+        run: uv run pytest -n auto --timeout=60

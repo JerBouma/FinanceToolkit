@@ -1,14 +1,12 @@
 """Fundamentals Model"""
 
 import importlib.util
-import threading
-import time
 from datetime import datetime
 
 import numpy as np
 import pandas as pd
 
-from financetoolkit import fmp_model, normalization_model, yfinance_model
+from financetoolkit import fmp_model, helpers, normalization_model, yfinance_model
 from financetoolkit.cache import policy_model
 from financetoolkit.cache.cache_controller import Cache
 from financetoolkit.utilities import error_model, logger_model
@@ -98,6 +96,11 @@ def collect_financial_statements(
         policy_model.FINANCIAL_MODELING_PREP,
         policy_model.YAHOO_FINANCE,
     )
+
+    # Normalised before the nested workers below capture it, so that they see a dict
+    # rather than an Optional they would each have to re-check.
+    if fiscal_year_adjustments is None:
+        fiscal_year_adjustments = {}
 
     def restore_from_cache(ticker) -> bool:
         """Serve a ticker from the cache, reporting whether it was fully served."""
@@ -228,11 +231,6 @@ def collect_financial_statements(
     fmp_tickers: list[str] = []
     yf_tickers: list[str] = []
     no_data: list[str] = []
-    threads = []
-
-    # Shared registry; per-key dict writes are effectively atomic under the GIL.
-    if fiscal_year_adjustments is None:
-        fiscal_year_adjustments = {}
 
     # Coverage needs a concrete range on both ends or the gap never closes.
     coverage_start = start_date or "1900-01-01"
@@ -255,19 +253,10 @@ def collect_financial_statements(
                 date_axis=1,
             )
 
-    for ticker in ticker_list:
-        # Introduce a sleep timer to prevent rate limit errors
-        time.sleep(0.1)
-
-        thread = threading.Thread(
-            target=worker,
-            args=(ticker, financial_statement_dict, enforce_source),
-        )
-        thread.start()
-        threads.append(thread)
-
-    for thread in threads:
-        thread.join()
+    helpers.run_in_parallel(
+        worker,
+        [(ticker, financial_statement_dict, enforce_source) for ticker in ticker_list],
+    )
 
     if fiscal_year_adjustments:
         logger.info(

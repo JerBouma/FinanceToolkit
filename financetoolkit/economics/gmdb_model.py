@@ -3,6 +3,7 @@
 import io
 
 import pandas as pd
+from pandas.io.stata import StataReader
 
 from financetoolkit.cache import policy_model
 from financetoolkit.cache.cache_controller import Cache
@@ -52,7 +53,11 @@ def collect_global_macro_database_dataset(
     response = get_request(gmd_location, timeout=30)
     response.raise_for_status()
 
-    gmd_dataset = pd.read_stata(filepath_or_buffer=io.BytesIO(response.content))
+    # Read through an explicit StataReader: the whole file is consumed in one go,
+    # while `.read()` is typed as returning a DataFrame (pd.read_stata itself is
+    # typed as a DataFrame | StataReader union that trips up the type checker).
+    with StataReader(io.BytesIO(response.content)) as reader:
+        gmd_dataset = reader.read()
     gmd_dataset["year"] = pd.PeriodIndex(gmd_dataset["year"].astype(int), freq="Y")
     gmd_dataset = gmd_dataset.set_index(["year", "countryname"])
     gmd_dataset.index.names = [None] * gmd_dataset.index.nlevels

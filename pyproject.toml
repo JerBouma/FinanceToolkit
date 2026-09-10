@@ -197,11 +197,6 @@ invalid-return-type = "ignore"
 invalid-assignment = "ignore"
 unresolved-attribute = "ignore"
 no-matching-overload = "ignore"
-call-non-callable = "ignore"
-not-iterable = "ignore"
-not-subscriptable = "ignore"
-unsupported-operator = "ignore"
-unknown-argument = "ignore"
 
 [tool.codespell]
 ignore-words-list = 'te,hsi,amplitud,nam,tha,plaform,ine,daa,pring,pezier,trough,zar'

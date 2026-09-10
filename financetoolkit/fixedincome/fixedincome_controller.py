@@ -773,8 +773,8 @@ class FixedIncome:
     def get_forward_rate(
         self,
         spot_rates: pd.Series | dict | None = None,
-        near_maturity: float | list | None = None,
-        far_maturity: float | list | None = None,
+        near_maturity: float | range | list | None = None,
+        far_maturity: float | range | list | None = None,
         show_input_info: bool = True,
     ):
         """
@@ -890,7 +890,7 @@ class FixedIncome:
     def get_par_yield(
         self,
         spot_rates: pd.Series | dict | None = None,
-        years_to_maturity: float | list | None = None,
+        years_to_maturity: float | range | list | None = None,
         frequency: int = 1,
         par_value: float = 100,
         show_input_info: bool = True,
@@ -993,8 +993,8 @@ class FixedIncome:
     def get_yield_curve_spread(
         self,
         spot_rates: pd.Series | dict | None = None,
-        long_maturity: float | list | None = None,
-        short_maturity: float | list | None = None,
+        long_maturity: float | range | list | None = None,
+        short_maturity: float | range | list | None = None,
         show_input_info: bool = True,
     ):
         """
@@ -1452,9 +1452,9 @@ class FixedIncome:
         self,
         par_value: float = 100,
         coupon_rate: float = 0.05,
-        years_to_maturity: float | list | None = None,
+        years_to_maturity: float | range | list | None = None,
         spot_rates: pd.Series | dict | None = None,
-        key_rate_maturity: float | list | None = None,
+        key_rate_maturity: float | range | list | None = None,
         frequency: int = 1,
         yield_change: float = 0.0001,
         show_input_info: bool = True,

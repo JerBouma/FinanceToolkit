@@ -61,7 +61,9 @@ def _first_observed_date(data: pd.DataFrame) -> pd.Timestamp | None:
         return None
 
     index = (
-        data.index.to_timestamp() if hasattr(data.index, "to_timestamp") else data.index
+        data.index.to_timestamp()
+        if isinstance(data.index, pd.PeriodIndex)
+        else data.index
     )
 
     if not isinstance(index, pd.DatetimeIndex):
@@ -155,7 +157,9 @@ def _covers_requested_range(
         return True
 
     observed_index = (
-        data.index.to_timestamp() if hasattr(data.index, "to_timestamp") else data.index
+        data.index.to_timestamp()
+        if isinstance(data.index, pd.PeriodIndex)
+        else data.index
     )
 
     covered_days = (observed_index.max() - observed_index.min()).days

@@ -352,6 +352,31 @@ def _validate_no_country_name_collision(
     )
 
 
+def _shifted_period(date: str, period_code: str, buffer_periods: int = 0) -> pd.Period:
+    """
+    Parse a YYYY-MM-DD date string into a pandas Period of the given frequency,
+    shifted back by `buffer_periods` periods.
+
+    Args:
+        date (str): A date in YYYY-MM-DD format.
+        period_code (str): The period code of the data ('M', 'Q' or 'Y').
+        buffer_periods (int): Number of periods to subtract. Defaults to 0.
+
+    Returns:
+        pd.Period: The shifted period.
+
+    Raises:
+        ValueError: If the date does not parse to a period (pandas hands back NaT
+            rather than raising for an empty or 'NaT' string).
+    """
+    period = pd.Period(date, freq=period_code)
+
+    if not isinstance(period, pd.Period):
+        raise ValueError(f"'{date}' is not a valid date, expected YYYY-MM-DD.")
+
+    return period - buffer_periods
+
+
 def _format_oecd_period(date: str, period_code: str, buffer_periods: int = 0) -> str:
     """
     Convert a YYYY-MM-DD date string into the OECD API's period format for the given
@@ -367,7 +392,7 @@ def _format_oecd_period(date: str, period_code: str, buffer_periods: int = 0) ->
     Returns:
         str: The OECD-formatted period string (e.g. "2020", "2020-Q2" or "2020-05").
     """
-    period = pd.Period(date, freq=period_code) - buffer_periods
+    period = _shifted_period(date, period_code, buffer_periods)
 
     if period_code == "Y":
         return str(period.year)
@@ -421,7 +446,7 @@ def collect_oecd_data(
 
     if start_date:
         buffer_periods = START_BUFFER_PERIODS.get(period_code, 0)
-        buffered_period = pd.Period(start_date, freq=period_code) - buffer_periods
+        buffered_period = _shifted_period(start_date, period_code, buffer_periods)
         buffered_start_date = buffered_period.to_timestamp().strftime("%Y-%m-%d")
         extensions += (
             f"&startPeriod="

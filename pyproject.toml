@@ -98,6 +98,7 @@ dev = [
     "nbconvert>=7.17.1",
     "matplotlib>=3.11.1",
     "seaborn>=0.13.2",
+    "pytest-xdist>=3.8.0",
 ]
 
 [tool.uv]

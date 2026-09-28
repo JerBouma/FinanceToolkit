@@ -184,7 +184,7 @@ class Economics:
 
         It is also possible to acquire the data from the Global Macro Database (GMDB) source which
         also provides inflation adjusted data. For more information see:
-        https://www.globalmacrodata.com/files/documentations/Variables/nGDP.pdf
+        https://www.globalmacrodata.com/documentation.html
 
         Also known as: GDP, national income, economic growth.
 

@@ -1942,8 +1942,12 @@ class FixedIncome:
         standardize: bool = False,
     ):
         """
-        Long-term interest rates refer to government bonds maturing in ten years.
-        Rates are mainly determined by the price charged by the lender, the risk
+        Get the government bond yield for a variety of countries over time from the OECD. By
+        default this is the long-term (10-year) government bond yield; set short_term=True to
+        get the short-term (3-month) rate instead. The two maturities are described below.
+
+        Long-term (short_term=False): long-term interest rates refer to government bonds maturing
+        in ten years. Rates are mainly determined by the price charged by the lender, the risk
         from the borrower and the fall in the capital value. Long-term interest rates
         are generally averages of daily rates, measured as a percentage. These interest
         rates are implied by the prices at which the government bonds are traded on
@@ -1956,13 +1960,13 @@ class FixedIncome:
 
         See definition: https://data.oecd.org/interest/long-term-interest-rates.htm
 
-        Short-term interest rates are the rates at which short-term borrowings are
-        effected between financial institutions or the rate at which short-term government
-        paper is issued or traded in the market. Short-term interest rates are generally
-        averages of daily rates, measured as a percentage.
-
-        Short-term interest rates are based on three-month money market rates where available.
-        Typical standardised names are "money market rate" and "treasury bill rate".
+        Short-term (short_term=True): short-term interest rates are the rates at which short-term
+        borrowings are effected between financial institutions or the rate at which short-term
+        government paper is issued or traded in the market. Short-term interest rates are
+        generally averages of daily rates, measured as a percentage. They are based on
+        three-month money market rates where available; the OECD source specifically returns
+        the 3-month interbank offered rate rather than a government bill yield, so for most
+        countries it tracks the central bank's policy rate closely.
 
         See definition: https://data.oecd.org/interest/short-term-interest-rates.htm
 
@@ -1980,7 +1984,8 @@ class FixedIncome:
                 values. Defaults to False.
 
         Returns:
-            pd.DataFrame: A DataFrame containing the Long Term Interest Rate.
+            pd.DataFrame: A DataFrame containing the long-term (10-year) government bond yield, or the
+                short-term (3-month) interest rate when short_term=True.
 
         As an example:
 

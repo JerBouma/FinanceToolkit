@@ -4552,13 +4552,15 @@ class Options:
         standardize: bool = False,
     ):
         """
-        Calculate the gamma of an option based on the Black Scholes Model. The Black Scholes Model
-        is a mathematical model used to estimate the price of European—style options. The gamma is
-        the rate of change of the delta with respect to the price of the underlying asset.
+        Calculate the dual gamma of an option based on the Black Scholes Model. The Black Scholes Model
+        is a mathematical model used to estimate the price of European—style options. The dual gamma is
+        the second derivative of the option price with respect to the strike price, i.e. the rate of change
+        of the dual delta as the strike price changes. It is the strike-space counterpart of gamma and
+        describes the (discounted) risk-neutral probability density of the underlying finishing at the strike.
 
-        The gamma calculation is the theoretical value of the gamma. The actual gamma can differ from this
-        value due to several factors such as the volatility of the underlying asset, the time to expiration,
-        the risk free rate and more.
+        The dual gamma calculation is the theoretical value of the dual gamma. The actual dual gamma can differ
+        from this value due to several factors such as the volatility of the underlying asset, the time to
+        expiration, the risk free rate and more.
 
         The formula is as follows:
 

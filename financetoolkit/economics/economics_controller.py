@@ -202,7 +202,7 @@ class Economics:
         indicator: str | None = None,
         base: str | None = None,
         quote: str | None = None,
-        limit: int = 100,
+        limit: int | None = None,
         api_key: str | None = None,
         **kwargs,
     ) -> pd.DataFrame:
@@ -214,6 +214,14 @@ class Economics:
         forex, cot, commodity, commodities_latest, curves, curve_proxies,
         forward_curves, rate_differentials, forward_differentials,
         market_sessions, risk_sentiment, news, and press_releases.
+
+        History datasets (announcements, predictions, forex, cot, commodity and the
+        rate differential series) are requested for the toolkit start and end dates
+        and read page by page, as the API returns at most 100 rows per request.
+
+        Args:
+            limit (int | None, optional): Maximum number of rows to return. Defaults
+                to None, which returns the whole start to end date window.
         """
         params = {
             "currency": currency,
@@ -223,6 +231,10 @@ class Economics:
             "limit": limit,
             **kwargs,
         }
+        dataset_name = fxmacrodata_model._dataset_name(dataset)
+        if dataset_name in fxmacrodata_model.FXMACRODATA_PAGED_DATASETS:
+            params.setdefault("start_date", self._start_date)
+            params.setdefault("end_date", self._end_date)
         params = {key: value for key, value in params.items() if value is not None}
         dataset_frame = fxmacrodata_model.get_fxmacrodata_dataset(
             dataset,
@@ -3914,9 +3926,7 @@ class Economics:
         period = (
             period
             if period is not None
-            else "quarterly"
-            if self._quarterly
-            else "yearly"
+            else "quarterly" if self._quarterly else "yearly"
         )
 
         share_prices = oecd_model.get_share_prices(
@@ -4016,9 +4026,7 @@ class Economics:
         period = (
             period
             if period is not None
-            else "quarterly"
-            if self._quarterly
-            else "yearly"
+            else "quarterly" if self._quarterly else "yearly"
         )
         gmdb_source = gmdb_source if gmdb_source is not None else self._gmdb_source
 
@@ -4456,9 +4464,7 @@ class Economics:
         period = (
             period
             if period is not None
-            else "quarterly"
-            if self._quarterly
-            else "yearly"
+            else "quarterly" if self._quarterly else "yearly"
         )
 
         gmdb_source = gmdb_source if gmdb_source is not None else self._gmdb_source
@@ -4582,9 +4588,7 @@ class Economics:
         period = (
             period
             if period is not None
-            else "quarterly"
-            if self._quarterly
-            else "yearly"
+            else "quarterly" if self._quarterly else "yearly"
         )
 
         gmdb_source = gmdb_source if gmdb_source is not None else self._gmdb_source
@@ -5158,9 +5162,7 @@ class Economics:
         period = (
             period
             if period is not None
-            else "quarterly"
-            if self._quarterly
-            else "yearly"
+            else "quarterly" if self._quarterly else "yearly"
         )
         gmdb_source = gmdb_source if gmdb_source is not None else self._gmdb_source
 

@@ -11,6 +11,19 @@ import pandas as pd
 
 FXMACRODATA_BASE_URL = "https://api.fxmacrodata.com/v1"
 FXMACRODATA_API_KEY_ENV_VARS = ("FXMACRODATA_API_KEY", "FXMD_API_KEY")
+# List endpoints return at most 100 rows per request, newest first.
+FXMACRODATA_PAGE_SIZE = 100
+FXMACRODATA_MAX_PAGES = 100
+FXMACRODATA_PAGED_DATASETS = {
+    "announcements",
+    "predictions",
+    "forex",
+    "cot",
+    "commodity",
+    "rate_differentials",
+    "forward_differentials",
+    "risk_sentiment",
+}
 FXMACRODATA_ENDPOINTS = {
     "data_catalogue": (
         "data_catalogue/{currency}",
@@ -121,8 +134,9 @@ def _clean_params(params):
         if value is None:
             continue
         if isinstance(value, (list, tuple, set)):
-            value = ",".join(str(item) for item in value)
-        cleaned[key] = value
+            cleaned[key] = ",".join(str(item) for item in value)
+        else:
+            cleaned[key] = value
     return cleaned
 
 
@@ -138,7 +152,7 @@ def _format_path(path_template, kwargs):
         return path_template.format(**values)
     except KeyError as exc:
         raise ValueError(
-            "missing required FXMacroData parameter: %s" % exc.args[0]
+            f"missing required FXMacroData parameter: {exc.args[0]}"
         ) from exc
 
 
@@ -208,21 +222,27 @@ class FXMacroDataClient:
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
 
+    def _headers(self):
+        headers = {"User-Agent": "fxmacrodata-integration"}
+        if self.api_key:
+            headers["X-API-Key"] = self.api_key
+        return headers
+
     def fetch_dataset(self, dataset, **kwargs):
         dataset = _dataset_name(dataset)
         if dataset not in FXMACRODATA_ENDPOINTS:
             raise ValueError(
-                "dataset must be one of %s" % ", ".join(sorted(FXMACRODATA_ENDPOINTS))
+                f"dataset must be one of {', '.join(sorted(FXMACRODATA_ENDPOINTS))}"
             )
         path_template, query_keys = FXMACRODATA_ENDPOINTS[dataset]
         path = _format_path(path_template, kwargs)
         query = _clean_params({key: kwargs.get(key) for key in query_keys})
-        if self.api_key and "api_key" not in query:
-            query["api_key"] = self.api_key
-        url = "%s/%s" % (self.base_url, path.lstrip("/"))
+        if dataset in FXMACRODATA_PAGED_DATASETS and "limit" in query:
+            query["limit"] = min(int(query["limit"]), FXMACRODATA_PAGE_SIZE)
+        url = f"{self.base_url}/{path.lstrip('/')}"
         if query:
-            url = "%s?%s" % (url, urlencode(query))
-        request = Request(url, headers={"User-Agent": "fxmacrodata-integration"})
+            url = f"{url}?{urlencode(query)}"
+        request = Request(url, headers=self._headers())
         with urlopen(request, timeout=self.timeout) as response:  # nosec B310
             return json.loads(response.read().decode("utf-8"))
 
@@ -231,12 +251,9 @@ class FXMacroDataClient:
             "utf-8"
         )
         request = Request(
-            "%s/graphql" % self.base_url,
+            f"{self.base_url}/graphql",
             data=body,
-            headers={
-                "Content-Type": "application/json",
-                "User-Agent": "fxmacrodata-integration",
-            },
+            headers={"Content-Type": "application/json", **self._headers()},
             method="POST",
         )
         with urlopen(request, timeout=self.timeout) as response:  # nosec B310
@@ -314,11 +331,50 @@ class FXMacroDataClient:
     def press_releases(self, currency, **kwargs):
         return self.fetch_dataset("press_releases", currency=currency, **kwargs)
 
+    def fetch_rows(
+        self, dataset, limit=None, max_pages=FXMACRODATA_MAX_PAGES, **kwargs
+    ):
+        """Page through a list endpoint and return up to ``limit`` rows.
+
+        Rows come back newest first, at most 100 per request, so the window is
+        read with ``offset`` until ``pagination.has_more`` is false. With
+        ``limit=None`` the whole window is read, up to ``max_pages`` requests.
+        """
+        kwargs.pop("page", None)
+        offset = int(kwargs.pop("offset", None) or 0)
+        limit = None if limit is None else max(1, int(limit))
+        rows = []
+        for _ in range(max(1, int(max_pages))):
+            page_size = FXMACRODATA_PAGE_SIZE
+            if limit is not None:
+                page_size = min(page_size, limit - len(rows))
+            payload = self.fetch_dataset(
+                dataset, limit=page_size, offset=offset, **kwargs
+            )
+            page = payload.get("data") if isinstance(payload, dict) else payload
+            if not isinstance(page, list) or not page:
+                break
+            rows.extend(page)
+            if limit is not None and len(rows) >= limit:
+                break
+            pagination = (
+                payload.get("pagination") if isinstance(payload, dict) else None
+            )
+            if not isinstance(pagination, dict) or not pagination.get("has_more"):
+                break
+            next_offset = pagination.get("next_offset")
+            offset = int(next_offset) if next_offset is not None else offset + len(page)
+        return rows
+
     def dataframe(self, dataset, limit=None, min_tier=None, index=True, **kwargs):
-        api_limit = None if _dataset_name(dataset) == "calendar" else limit
-        payload = self.fetch_dataset(
-            dataset, **{**kwargs, **({"limit": api_limit} if api_limit else {})}
-        )
+        name = _dataset_name(dataset)
+        if name in FXMACRODATA_PAGED_DATASETS:
+            payload = {"data": self.fetch_rows(name, limit=limit, **kwargs)}
+        else:
+            api_limit = None if name == "calendar" else limit
+            payload = self.fetch_dataset(
+                name, **{**kwargs, **({"limit": api_limit} if api_limit else {})}
+            )
         frame = self.to_dataframe(payload, limit=limit, index=index)
         return _filter_market_tier(frame, min_tier)
 
@@ -496,9 +552,7 @@ def fxmacrodata_event_windows(index, events, days_before=1, days_after=1):
     return mask
 
 
-get_data_catalogue = load_fxmacrodata_catalogue
 get_macro_indicators = load_fxmacrodata_announcements
-get_release_calendar = load_fxmacrodata_release_calendar
 get_forex = load_fxmacrodata_forex
 fxmacrodata_release_calendar = load_fxmacrodata_release_calendar
 load_release_calendar = load_fxmacrodata_release_calendar

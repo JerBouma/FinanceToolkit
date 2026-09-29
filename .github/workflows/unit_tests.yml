@@ -11,9 +11,17 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    # The 3.15 job runs against the pre-release interpreter (the classifiers claim
+    # support up to 3.15) and is allowed to fail until 3.15 and the compiled
+    # dependencies ship final wheels, so it cannot block a PR.
+    continue-on-error: ${{ matrix.experimental }}
     strategy:
       matrix:
         python-version: ["3.11", "3.12", "3.13", "3.14"]
+        experimental: [false]
+        include:
+          - python-version: "3.15"
+            experimental: true
 
     steps:
       - uses: actions/checkout@v4
@@ -21,6 +29,7 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
+          allow-prereleases: ${{ matrix.experimental }}
 
       - name: Install uv
         uses: astral-sh/setup-uv@v5

@@ -873,6 +873,8 @@ class ToolRegistry:
         """
         total = 0
         for spec in self.build_router_group_specs():
+            # Each group becomes a single router tool, so this is a success flag rather than a count; failures
+            # are already logged as a warning by _register_router_group.
             registered = self._register_router_group(spec)
             if registered:
                 logger.info(
@@ -881,5 +883,3 @@ class ToolRegistry:
             total += registered
         logger.info(f"Total master tools registered: {total}")
         return total
-            # Each group becomes a single router tool, so this is a success flag rather than a count; failures
-            # are already logged as a warning by _register_router_group.

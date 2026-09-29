@@ -380,7 +380,12 @@ def format_portfolio_dataset(
         else:
             currency_column_first = currency_columns_match[0]
 
-            if dataset[currency_column_first].str.len().max() != CURRENCY_CODE_LENGTH:
+            # Checking only the max length lets a valid 3-letter code (e.g. "USD") mask an
+            # invalid one elsewhere in the same column (e.g. "EU"), since the max would still
+            # equal CURRENCY_CODE_LENGTH. Every value must be checked individually instead.
+            if (
+                dataset[currency_column_first].str.len() != CURRENCY_CODE_LENGTH
+            ).any():
                 raise ValueError(
                     "Currency column must contain 3-letter currency codes only (e.g. EUR, USD or JPY)."
                 )

@@ -21,6 +21,7 @@ from financetoolkit import helpers
 from financetoolkit.cache import policy_model
 from financetoolkit.cache.cache_controller import get_active_cache
 from financetoolkit.utilities import error_model, logger_model
+from financetoolkit.utilities.dataframe_model import to_dataframe
 from financetoolkit.utilities.requests_model import get_request
 
 logger = logger_model.get_logger()
@@ -455,7 +456,7 @@ def get_historical_data(
         return pd.DataFrame()
 
     historical_data.index = pd.to_datetime(historical_data.index)
-    historical_data.index = historical_data.index.to_period(freq="D")
+    historical_data.index = pd.DatetimeIndex(historical_data.index).to_period(freq="D")
 
     historical_data = historical_data.rename(
         columns={
@@ -514,7 +515,9 @@ def get_historical_data(
 
                 if not dividends_df.empty:
                     dividends_df.index = pd.to_datetime(dividends_df.index)
-                    dividends_df.index = dividends_df.index.to_period(freq="D")
+                    dividends_df.index = pd.DatetimeIndex(dividends_df.index).to_period(
+                        freq="D"
+                    )
                     dividends_df = dividends_df[
                         ~dividends_df.index.duplicated(keep="first")
                     ]
@@ -643,7 +646,9 @@ def get_intraday_data(
         )
 
     historical_data.index = pd.to_datetime(historical_data.index)
-    historical_data.index = historical_data.index.to_period(freq=frequency)
+    historical_data.index = pd.DatetimeIndex(historical_data.index).to_period(
+        freq=frequency
+    )
 
     historical_data = historical_data.rename(
         columns={
@@ -735,7 +740,7 @@ def get_revenue_segmentation(
     end_date: str | None = None,
     sleep_timer: bool = False,
     user_subscription: str = "Free",
-) -> pd.DataFrame:
+) -> tuple[pd.DataFrame, list[str]]:
     """
     Retrieves revenue segmentation data (geographic or product) for one or multiple companies,
     and returns a DataFrame containing the data.
@@ -752,13 +757,14 @@ def get_revenue_segmentation(
         user_subscription (str): The subscription type of the user. Defaults to "Free".
 
     Returns:
-        pd.DataFrame: A DataFrame containing the financial statement data. If only one ticker is provided, the
+        tuple[pd.DataFrame, list[str]]: A DataFrame containing the financial statement data and the list of
+                      tickers without data. If only one ticker is provided, the
                       returned DataFrame will have a single column containing the data for that ticker. If multiple
                       tickers are provided, the returned DataFrame will have multiple columns, one for each ticker,
                       with the ticker symbol as the column name.
     """
 
-    def worker(ticker, revenue_segmentation_dict):
+    def worker(ticker):
         url = (
             f"https://financialmodelingprep.com/stable/{location}"
             f"?symbol={ticker}&period={period}&structure=flat&apikey={api_key}"
@@ -803,13 +809,12 @@ def get_revenue_segmentation(
                 # This groups items that have the same naming convention
                 revenue_segmentation = revenue_segmentation.groupby(level=0).sum()
 
-                revenue_segmentation_dict[ticker] = revenue_segmentation
+                return ticker, revenue_segmentation, True
             except (KeyError, ValueError):
-                no_data.append(ticker)
-                revenue_segmentation_dict[ticker] = revenue_segmentation
-        else:
-            no_data.append(ticker)
-            revenue_segmentation_dict[ticker] = revenue_segmentation_json
+                return ticker, revenue_segmentation, False
+
+        # An error frame rather than JSON; kept so the error reporting can inspect it.
+        return ticker, revenue_segmentation_json, False
 
     if isinstance(tickers, str):
         ticker_list = [tickers]
@@ -855,15 +860,13 @@ def get_revenue_segmentation(
 
     period = "quarter" if quarter else "annual"
 
-    revenue_segmentation_dict: dict = {}
-    no_data: list[str] = []
-
     logger.info(
         "Obtaining %s segmentation data for %d ticker(s)", method, len(ticker_list)
     )
-    helpers.run_in_parallel(
-        worker, [(ticker, revenue_segmentation_dict) for ticker in ticker_list]
-    )
+    results = helpers.run_in_parallel(worker, [(ticker,) for ticker in ticker_list])
+
+    revenue_segmentation_dict: dict = {ticker: data for ticker, data, _ in results}
+    no_data: list[str] = [ticker for ticker, _, has_data in results if not has_data]
 
     # Checks if any errors are in the dataset and if this is the case, reports them
     revenue_segmentation_dict = error_model.check_for_error_messages(
@@ -919,7 +922,7 @@ def get_analyst_estimates(
     rounding: int | None = 4,
     sleep_timer: bool = False,
     user_subscription: str = "Free",
-) -> pd.DataFrame:
+) -> tuple[pd.DataFrame, list[str]]:
     """
     Retrieves analyst estimates for one or multiple companies, and returns a DataFrame containing the data.
 
@@ -956,10 +959,11 @@ def get_analyst_estimates(
         user_subscription (str): The subscription type of the user. Defaults to "Free".
 
     Returns:
-        pd.DataFrame: A DataFrame containing the analyst estimates for all provided tickers.
+        tuple[pd.DataFrame, list[str]]: A DataFrame containing the analyst estimates for all provided
+            tickers and the list of tickers without data.
     """
 
-    def worker(ticker, analyst_estimates_dict):
+    def worker(ticker):
         url = (
             "https://financialmodelingprep.com/stable/analyst-estimates"
             f"?symbol={ticker}&period={period}&apikey={api_key}"
@@ -1001,10 +1005,9 @@ def get_analyst_estimates(
                 ["numAnalystsRevenue", "numAnalystsEps"], axis=0
             )
 
-            analyst_estimates_dict[ticker] = analyst_estimates.rename(index=naming)
+            return ticker, analyst_estimates.rename(index=naming), True
         except KeyError:
-            no_data.append(ticker)
-            analyst_estimates_dict[ticker] = analyst_estimates
+            return ticker, analyst_estimates, False
 
     naming: dict = {
         "revenueLow": "Estimated Revenue Low",
@@ -1042,13 +1045,11 @@ def get_analyst_estimates(
 
     period = "quarter" if quarter else "annual"
 
-    analyst_estimates_dict: dict = {}
-    no_data: list[str] = []
-
     logger.info("Obtaining analyst estimates for %d ticker(s)", len(ticker_list))
-    helpers.run_in_parallel(
-        worker, [(ticker, analyst_estimates_dict) for ticker in ticker_list]
-    )
+    results = helpers.run_in_parallel(worker, [(ticker,) for ticker in ticker_list])
+
+    analyst_estimates_dict: dict = {ticker: data for ticker, data, _ in results}
+    no_data: list[str] = [ticker for ticker, _, has_data in results if not has_data]
 
     # Checks if any errors are in the dataset and if this is the case, reports them
     analyst_estimates_dict = error_model.check_for_error_messages(
@@ -1100,7 +1101,7 @@ def get_profile(
     tickers: list[str] | str,
     api_key: str,
     user_subscription: str = "Free",
-) -> pd.DataFrame:
+) -> tuple[pd.DataFrame, list[str]]:
     """
     Gives information about the profile of a company which includes i.a. beta, company description, industry and sector.
 
@@ -1111,18 +1112,17 @@ def get_profile(
         user_subscription (str): The subscription type of the user. Defaults to "Free".
 
     Returns:
-        pd.DataFrame: the profile data.
+        tuple[pd.DataFrame, list[str]]: the profile data and the tickers without data.
     """
 
-    def worker(ticker, profile_dict):
+    def worker(ticker):
         url = f"https://financialmodelingprep.com/stable/profile?symbol={ticker}&apikey={api_key}"
         profile_data = get_financial_data(url=url, user_subscription=user_subscription)
 
         if profile_data.empty:
-            no_data.append(ticker)
-            profile_dict[ticker] = profile_data
-        else:
-            profile_dict[ticker] = profile_data.T
+            return ticker, profile_data, False
+
+        return ticker, profile_data.T, True
 
     naming: dict = {
         "symbol": "Symbol",
@@ -1166,11 +1166,13 @@ def get_profile(
     else:
         raise ValueError(f"Type for the tickers ({type(tickers)}) variable is invalid.")
 
-    profile_dict: dict[str, pd.DataFrame] = {}
-    no_data: list[str] = []
-
     logger.info("Obtaining company profiles for %d ticker(s)", len(ticker_list))
-    helpers.run_in_parallel(worker, [(ticker, profile_dict) for ticker in ticker_list])
+    results = helpers.run_in_parallel(worker, [(ticker,) for ticker in ticker_list])
+
+    profile_dict: dict[str, pd.DataFrame] = {
+        ticker: data for ticker, data, _ in results
+    }
+    no_data: list[str] = [ticker for ticker, _, has_data in results if not has_data]
 
     # Checks if any errors are in the dataset and if this is the case, reports them
     profile_dict = error_model.check_for_error_messages(
@@ -1179,7 +1181,9 @@ def get_profile(
 
     if profile_dict:
         try:
-            profile_dataframe = pd.concat(profile_dict)[0].unstack(level=0)
+            profile_dataframe = to_dataframe(
+                pd.concat(profile_dict)[0].unstack(level=0)
+            )
             profile_dataframe = profile_dataframe.rename(index=naming)
             profile_dataframe = profile_dataframe.drop(
                 [
@@ -1204,7 +1208,7 @@ def get_quote(
     tickers: list[str] | str,
     api_key: str,
     user_subscription: str = "Free",
-) -> pd.DataFrame:
+) -> tuple[pd.DataFrame, list[str]]:
     """
     Gives information about the quote of a company which includes i.a. high/low close prices,
     price-to-earning ratio and shares outstanding.
@@ -1216,18 +1220,17 @@ def get_quote(
         user_subscription (str): The subscription type of the user. Defaults to "Free".
 
     Returns:
-        pd.DataFrame: the quote data.
+        tuple[pd.DataFrame, list[str]]: the quote data and the tickers without data.
     """
 
-    def worker(ticker, quote_dict):
+    def worker(ticker):
         url = f"https://financialmodelingprep.com/stable/quote?symbol={ticker}&apikey={api_key}"
         quote_data = get_financial_data(url=url, user_subscription=user_subscription)
 
         if quote_data.empty:
-            no_data.append(ticker)
-            quote_dict[ticker] = quote_data
-        else:
-            quote_dict[ticker] = quote_data.T
+            return ticker, quote_data, False
+
+        return ticker, quote_data.T, True
 
     naming: dict = {
         "symbol": "Symbol",
@@ -1261,11 +1264,11 @@ def get_quote(
     else:
         raise ValueError(f"Type for the tickers ({type(tickers)}) variable is invalid.")
 
-    quote_dict: dict[str, pd.DataFrame] = {}
-    no_data: list[str] = []
-
     logger.info("Obtaining company quotes for %d ticker(s)", len(ticker_list))
-    helpers.run_in_parallel(worker, [(ticker, quote_dict) for ticker in ticker_list])
+    results = helpers.run_in_parallel(worker, [(ticker,) for ticker in ticker_list])
+
+    quote_dict: dict[str, pd.DataFrame] = {ticker: data for ticker, data, _ in results}
+    no_data: list[str] = [ticker for ticker, _, has_data in results if not has_data]
 
     # Checks if any errors are in the dataset and if this is the case, reports them
     quote_dict = error_model.check_for_error_messages(
@@ -1273,7 +1276,7 @@ def get_quote(
     )
 
     if quote_dict:
-        quote_dataframe = pd.concat(quote_dict)[0].unstack(level=0)
+        quote_dataframe = to_dataframe(pd.concat(quote_dict)[0].unstack(level=0))
         quote_dataframe = quote_dataframe.rename(index=naming)
 
     return quote_dataframe, no_data
@@ -1283,7 +1286,7 @@ def get_rating(
     tickers: list[str] | str,
     api_key: str,
     user_subscription: str = "Free",
-) -> pd.DataFrame:
+) -> tuple[pd.DataFrame, list[str]]:
     """
     Gives information about the rating of a company which includes i.a. the company rating and
     recommendation as well as ratings based on a variety of ratios.
@@ -1295,10 +1298,10 @@ def get_rating(
         user_subscription (str): The subscription type of the user. Defaults to "Free".
 
     Returns:
-        pd.DataFrame: the rating data.
+        tuple[pd.DataFrame, list[str]]: the rating data and the tickers without data.
     """
 
-    def worker(ticker, ratings_dict):
+    def worker(ticker):
         url = (
             f"https://financialmodelingprep.com/stable/ratings-historical?symbol={ticker}&"
             f"apikey={api_key}&limit={'99999' if user_subscription != 'Free' else '1'}"
@@ -1325,10 +1328,9 @@ def get_rating(
                 }
             )
 
-            ratings_dict[ticker] = ratings
+            return ticker, ratings, True
         except (KeyError, ValueError):
-            no_data.append(ticker)
-            ratings_dict[ticker] = ratings
+            return ticker, ratings, False
 
     if isinstance(tickers, str):
         ticker_list = [tickers]
@@ -1337,11 +1339,13 @@ def get_rating(
     else:
         raise ValueError(f"Type for the tickers ({type(tickers)}) variable is invalid.")
 
-    ratings_dict: dict[str, pd.DataFrame] = {}
-    no_data: list[str] = []
-
     logger.info("Obtaining company ratings for %d ticker(s)", len(ticker_list))
-    helpers.run_in_parallel(worker, [(ticker, ratings_dict) for ticker in ticker_list])
+    results = helpers.run_in_parallel(worker, [(ticker,) for ticker in ticker_list])
+
+    ratings_dict: dict[str, pd.DataFrame] = {
+        ticker: data for ticker, data, _ in results
+    }
+    no_data: list[str] = [ticker for ticker, _, has_data in results if not has_data]
 
     # Checks if any errors are in the dataset and if this is the case, reports them
     ratings_dict = error_model.check_for_error_messages(
@@ -1352,7 +1356,7 @@ def get_rating(
         ratings_dataframe = pd.concat(ratings_dict, axis=0).dropna()
 
         if len(ticker_list) == 1:
-            ratings_dataframe = ratings_dataframe.loc[ticker_list[0]]
+            ratings_dataframe = to_dataframe(ratings_dataframe.loc[ticker_list[0]])
 
         return ratings_dataframe, no_data
 
@@ -1367,7 +1371,7 @@ def get_earnings_calendar(
     actual_dates: bool = True,
     sleep_timer: bool = False,
     user_subscription: str = "Free",
-) -> pd.DataFrame:
+) -> tuple[pd.DataFrame, list[str]]:
     """
     Obtains Earnings Calendar which shows the expected earnings and EPS for a company.
 
@@ -1384,10 +1388,10 @@ def get_earnings_calendar(
         user_subscription (str): The subscription type of the user. Defaults to "Free".
 
     Returns:
-        pd.DataFrame: the earnings calendar data.
+        tuple[pd.DataFrame, list[str]]: the earnings calendar data and the tickers without data.
     """
 
-    def worker(ticker, earnings_calendar_dict):
+    def worker(ticker):
         url = (
             "https://financialmodelingprep.com/stable/earnings"
             f"?symbol={ticker}&apikey={api_key}&limit={'99999' if user_subscription != 'Free' else '5'}"
@@ -1417,10 +1421,9 @@ def get_earnings_calendar(
                 before=start_date, after=end_date, axis=0
             )
 
-            earnings_calendar_dict[ticker] = earnings_calendar[naming.values()]
+            return ticker, earnings_calendar[naming.values()], True
         except KeyError:
-            no_data.append(ticker)
-            earnings_calendar_dict[ticker] = earnings_calendar
+            return ticker, earnings_calendar, False
 
     naming: dict = {
         "epsActual": "EPS",
@@ -1443,13 +1446,11 @@ def get_earnings_calendar(
             "For more information, look here: https://www.jeroenbouma.com/fmp"
         )
 
-    earnings_calendar_dict: dict = {}
-    no_data: list[str] = []
-
     logger.info("Obtaining earnings calendars for %d ticker(s)", len(ticker_list))
-    helpers.run_in_parallel(
-        worker, [(ticker, earnings_calendar_dict) for ticker in ticker_list]
-    )
+    results = helpers.run_in_parallel(worker, [(ticker,) for ticker in ticker_list])
+
+    earnings_calendar_dict: dict = {ticker: data for ticker, data, _ in results}
+    no_data: list[str] = [ticker for ticker, _, has_data in results if not has_data]
 
     # Checks if any errors are in the dataset and if this is the case, reports them
     earnings_calendar_dict = error_model.check_for_error_messages(
@@ -1474,7 +1475,7 @@ def get_dividend_calendar(
     end_date: str | None = None,
     sleep_timer: bool = False,
     user_subscription: str = "Free",
-) -> pd.DataFrame:
+) -> tuple[pd.DataFrame, list[str]]:
     """
     Obtains Dividend Calendar which shows the dividends and related dates.
 
@@ -1489,10 +1490,10 @@ def get_dividend_calendar(
         user_subscription (str): The subscription type of the user. Defaults to "Free".
 
     Returns:
-        pd.DataFrame: the earnings calendar data.
+        tuple[pd.DataFrame, list[str]]: the earnings calendar data and the tickers without data.
     """
 
-    def worker(ticker, dividend_calendar_dict):
+    def worker(ticker):
         url = (
             "https://financialmodelingprep.com/stable/dividends"
             f"?symbol={ticker}&apikey={api_key}&limit={'99999' if user_subscription != 'Free' else '5'}"
@@ -1508,25 +1509,28 @@ def get_dividend_calendar(
             dividend_calendar = pd.DataFrame(dividend_calendar)
 
             if "date" not in dividend_calendar.columns:
-                no_data.append(ticker)
-            else:
-                dividend_calendar = dividend_calendar.set_index("date")
+                # Nothing to store: without a date column there is no calendar and no
+                # error frame worth reporting either.
+                return ticker, None, False
 
-                dividend_calendar.index = pd.to_datetime(dividend_calendar.index)
-                dividend_calendar.index = dividend_calendar.index.to_period(freq="D")
+            dividend_calendar = dividend_calendar.set_index("date")
 
-                dividend_calendar = dividend_calendar.sort_index()
+            dividend_calendar.index = pd.to_datetime(dividend_calendar.index)
+            dividend_calendar.index = pd.DatetimeIndex(
+                dividend_calendar.index
+            ).to_period(freq="D")
 
-                dividend_calendar = dividend_calendar.rename(columns=naming)
+            dividend_calendar = dividend_calendar.sort_index()
 
-                dividend_calendar = dividend_calendar.sort_index(axis=0).truncate(
-                    before=start_date, after=end_date, axis=0
-                )
+            dividend_calendar = dividend_calendar.rename(columns=naming)
 
-                dividend_calendar_dict[ticker] = dividend_calendar[naming.values()]
+            dividend_calendar = dividend_calendar.sort_index(axis=0).truncate(
+                before=start_date, after=end_date, axis=0
+            )
+
+            return ticker, dividend_calendar[naming.values()], True
         except KeyError:
-            no_data.append(ticker)
-            dividend_calendar_dict[ticker] = dividend_calendar
+            return ticker, dividend_calendar, False
 
     naming: dict = {
         "adjDividend": "Adj Dividend",
@@ -1550,13 +1554,13 @@ def get_dividend_calendar(
             "For more information, look here: https://www.jeroenbouma.com/fmp"
         )
 
-    dividend_calendar_dict: dict = {}
-    no_data: list[str] = []
-
     logger.info("Obtaining dividend calendars for %d ticker(s)", len(ticker_list))
-    helpers.run_in_parallel(
-        worker, [(ticker, dividend_calendar_dict) for ticker in ticker_list]
-    )
+    results = helpers.run_in_parallel(worker, [(ticker,) for ticker in ticker_list])
+
+    dividend_calendar_dict: dict = {
+        ticker: data for ticker, data, _ in results if data is not None
+    }
+    no_data: list[str] = [ticker for ticker, _, has_data in results if not has_data]
 
     # Checks if any errors are in the dataset and if this is the case, reports them
     dividend_calendar_dict = error_model.check_for_error_messages(
@@ -1582,7 +1586,7 @@ def get_esg_scores(
     end_date: str | None = None,
     sleep_timer: bool = False,
     user_subscription: str = "Free",
-):
+) -> tuple[pd.DataFrame, list[str]]:
     """
     Obtains the ESG Scores for a selection of companies.
 
@@ -1598,10 +1602,10 @@ def get_esg_scores(
         user_subscription (str): The subscription type of the user. Defaults to "Free".
 
     Returns:
-        pd.DataFrame: the earnings calendar data.
+        tuple[pd.DataFrame, list[str]]: the earnings calendar data and the tickers without data.
     """
 
-    def worker(ticker, esg_scores_dict):
+    def worker(ticker):
         url = (
             "https://financialmodelingprep.com/stable/esg-disclosures?"
             f"symbol={ticker}&apikey={api_key}"
@@ -1612,32 +1616,28 @@ def get_esg_scores(
 
         try:
             if "date" not in esg_scores.columns:
-                no_data.append(ticker)
-                esg_scores_dict[ticker] = esg_scores
-            else:
-                # One day is deducted: a period reported as 2023-07-01 is really 2023Q2.
-                esg_scores["date"] = pd.to_datetime(
-                    esg_scores["date"]
-                ) - pd.offsets.Day(1)
+                return ticker, esg_scores, False
 
-                esg_scores = esg_scores.set_index("date")
-                esg_scores.index = esg_scores.index.to_period(
-                    freq="Q" if quarter else "Y"
-                )
+            # One day is deducted: a period reported as 2023-07-01 is really 2023Q2.
+            esg_scores["date"] = pd.to_datetime(esg_scores["date"]) - pd.offsets.Day(1)
 
-                esg_scores = esg_scores.sort_index()
-                esg_scores = esg_scores.rename(columns=naming)
+            esg_scores = esg_scores.set_index("date")
+            esg_scores.index = pd.DatetimeIndex(esg_scores.index).to_period(
+                freq="Q" if quarter else "Y"
+            )
 
-                esg_scores = esg_scores.sort_index(axis=0).truncate(
-                    before=start_date, after=end_date, axis=0
-                )
+            esg_scores = esg_scores.sort_index()
+            esg_scores = esg_scores.rename(columns=naming)
 
-                esg_scores = esg_scores[~esg_scores.index.duplicated()]
+            esg_scores = esg_scores.sort_index(axis=0).truncate(
+                before=start_date, after=end_date, axis=0
+            )
 
-                esg_scores_dict[ticker] = esg_scores[naming.values()]
+            esg_scores = esg_scores[~esg_scores.index.duplicated()]
+
+            return ticker, esg_scores[naming.values()], True
         except KeyError:
-            no_data.append(ticker)
-            esg_scores_dict[ticker] = esg_scores
+            return ticker, esg_scores, False
 
     naming: dict = {
         "environmentalScore": "Environmental Score",
@@ -1659,13 +1659,11 @@ def get_esg_scores(
             "For more information, look here: https://www.jeroenbouma.com/fmp"
         )
 
-    esg_scores_dict: dict = {}
-    no_data: list[str] = []
-
     logger.info("Obtaining ESG scores for %d ticker(s)", len(ticker_list))
-    helpers.run_in_parallel(
-        worker, [(ticker, esg_scores_dict) for ticker in ticker_list]
-    )
+    results = helpers.run_in_parallel(worker, [(ticker,) for ticker in ticker_list])
+
+    esg_scores_dict: dict = {ticker: data for ticker, data, _ in results}
+    no_data: list[str] = [ticker for ticker, _, has_data in results if not has_data]
 
     # Checks if any errors are in the dataset and if this is the case, reports them
     esg_scores_dict = error_model.check_for_error_messages(
@@ -1740,7 +1738,7 @@ def get_commitment_of_traders(
     start_date: str | None = None,
     end_date: str | None = None,
     user_subscription: str = "Free",
-) -> pd.DataFrame:
+) -> tuple[pd.DataFrame, list[str]]:
     """
     Obtains the CFTC Commitment of Traders (COT) report for a selection of tickers. Published
     weekly by the U.S. Commodity Futures Trading Commission, it breaks down open interest in
@@ -1762,10 +1760,10 @@ def get_commitment_of_traders(
         user_subscription (str): The subscription type of the user. Defaults to "Free".
 
     Returns:
-        pd.DataFrame: the Commitment of Traders report data.
+        tuple[pd.DataFrame, list[str]]: the Commitment of Traders report data and the tickers without data.
     """
 
-    def worker(ticker, cot_dict):
+    def worker(ticker):
         url = (
             "https://financialmodelingprep.com/stable/commitment-of-traders-report?"
             f"symbol={ticker}&apikey={api_key}"
@@ -1776,28 +1774,24 @@ def get_commitment_of_traders(
 
         try:
             if "date" not in cot_report.columns:
-                no_data.append(ticker)
-                cot_dict[ticker] = cot_report
-            else:
-                cot_report["date"] = pd.to_datetime(cot_report["date"])
-                cot_report = cot_report.set_index("date").sort_index()
+                return ticker, cot_report, False
 
-                cot_report = cot_report.rename(columns=naming)
+            cot_report["date"] = pd.to_datetime(cot_report["date"])
+            cot_report = cot_report.set_index("date").sort_index()
 
-                cot_report = cot_report.truncate(
-                    before=start_date, after=end_date, axis=0
-                )
+            cot_report = cot_report.rename(columns=naming)
 
-                cot_report = cot_report[~cot_report.index.duplicated()]
+            cot_report = cot_report.truncate(before=start_date, after=end_date, axis=0)
 
-                columns = [
-                    column for column in naming.values() if column in cot_report.columns
-                ]
+            cot_report = cot_report[~cot_report.index.duplicated()]
 
-                cot_dict[ticker] = cot_report[columns]
+            columns = [
+                column for column in naming.values() if column in cot_report.columns
+            ]
+
+            return ticker, cot_report[columns], True
         except KeyError:
-            no_data.append(ticker)
-            cot_dict[ticker] = cot_report
+            return ticker, cot_report, False
 
     naming: dict = {
         "name": "Name",
@@ -1838,13 +1832,13 @@ def get_commitment_of_traders(
 
     sleep_timer = user_subscription != "Free"
 
-    cot_dict: dict = {}
-    no_data: list[str] = []
-
     logger.info(
         "Obtaining Commitment of Traders data for %d ticker(s)", len(ticker_list)
     )
-    helpers.run_in_parallel(worker, [(ticker, cot_dict) for ticker in ticker_list])
+    results = helpers.run_in_parallel(worker, [(ticker,) for ticker in ticker_list])
+
+    cot_dict: dict = {ticker: data for ticker, data, _ in results}
+    no_data: list[str] = [ticker for ticker, _, has_data in results if not has_data]
 
     # Checks if any errors are in the dataset and if this is the case, reports them
     cot_dict = error_model.check_for_error_messages(

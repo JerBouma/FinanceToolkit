@@ -1085,7 +1085,7 @@ requires-dist = [
     { name = "fastmcp", marker = "extra == 'mcp'", specifier = ">=3.4.2" },
     { name = "financetoolkit", extras = ["econometrics"], marker = "extra == 'mcp'", editable = "." },
     { name = "linearmodels", marker = "extra == 'econometrics'", specifier = ">=6.0" },
-    { name = "mcp", extras = ["cli"], marker = "extra == 'mcp'", specifier = ">=1.27.0" },
+    { name = "mcp", extras = ["cli"], marker = "extra == 'mcp'", specifier = ">=1.27.0,<2" },
     { name = "openpyxl", specifier = ">=3.1" },
     { name = "pandas", specifier = ">=3.0" },
     { name = "python-dotenv", marker = "extra == 'mcp'", specifier = ">=1.0" },

@@ -107,10 +107,6 @@ skip_params:
   - "progress_bar"
   - "overwrite"
   - "rounding"
-  # Deprecated misspelling of smooth_window kept for backwards compatibility on
-  # get_stochastic_oscillator. Exposing it would teach the model the typo, and
-  # passing both raises, so only the correct spelling reaches the tool schema.
-  - "smooth_widow"
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Parameters handled at wrapper level (not forwarded to sub-methods)

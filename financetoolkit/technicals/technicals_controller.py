@@ -2,7 +2,6 @@
 
 __docformat__ = "google"
 
-import warnings
 
 import pandas as pd
 
@@ -23,7 +22,7 @@ from financetoolkit.utilities.statistics_model import (
 # pylint: disable=too-many-lines,too-many-instance-attributes,too-many-public-methods,too-many-locals,eval-used
 # pylint: disable=too-many-boolean-expressions
 
-# The default number of periods the Stochastic Oscillator's %K line is smoothed over to obtain the %D signal line, named so the deprecated `smooth_widow` alias can tell an explicitly passed `smooth_window` apart from the untouched default.  # noqa: E501
+# The default number of periods the Stochastic Oscillator's %K line is smoothed over to obtain the %D signal line.  # noqa: E501
 DEFAULT_STOCHASTIC_SMOOTH_WINDOW = 3
 
 
@@ -3113,7 +3112,6 @@ class Technicals:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
-        smooth_widow: int | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
         Calculate the Stochastic Oscillator indicator for a given price series.
@@ -3147,16 +3145,12 @@ class Technicals:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            smooth_widow (int | None, optional): Deprecated misspelling of `smooth_window`,
-                accepted so that existing callers keep working. Passing it emits a
-                DeprecationWarning and forwards the value to `smooth_window`. Defaults to None.
 
         Returns:
             pd.Series or pd.DataFrame: Stochastic Oscillator (%K and %D) values.
 
         Raises:
-            ValueError: If the specified `period` is not one of the valid options, or if both
-                `smooth_window` and the deprecated `smooth_widow` are given conflicting values.
+            ValueError: If the specified `period` is not one of the valid options.
 
         Notes:
         - The method retrieves historical data based on the specified `period` and calculates
@@ -3189,20 +3183,6 @@ class Technicals:
         | 2026-07-01 |         51.4243 |         71.9567 |
         | 2026-07-02 |         74.7297 |         97.7853 |
         """
-        if smooth_widow is not None:
-            warnings.warn(
-                "The 'smooth_widow' parameter is a misspelling and is deprecated, use "
-                "'smooth_window' instead. It will be removed in a future version.",
-                DeprecationWarning,
-                stacklevel=2,
-            )
-            if smooth_window not in (DEFAULT_STOCHASTIC_SMOOTH_WINDOW, smooth_widow):
-                raise ValueError(
-                    "Received conflicting values for 'smooth_window' and the deprecated "
-                    "'smooth_widow'. Pass only 'smooth_window'."
-                )
-            smooth_window = smooth_widow
-
         if period not in [
             "intraday",
             "daily",
